@@ -71,17 +71,6 @@ internal sealed partial class StreamingFileImportService
 
         var updatedWarnings = parquetMeta.Warnings;
 
-        // Hard-reject files with any oversized row group — Parquet.Net materializes
-        // an entire row group's columns in memory, so unbounded groups defeat the
-        // streaming memory contract. Log and fail fast instead of silently spiking memory.
-        if (parquetMeta.MaxRowGroupRowCount > GeoParquetReader.MaxRowsPerRowGroup)
-        {
-            GeoParquetLog.LargeRowGroupDetected(_logger, parquetMeta.RowGroupCount, parquetMeta.MaxRowGroupRowCount);
-            var msg = GeoParquetReader.BuildLargeRowGroupMessage(
-                parquetMeta.MaxRowGroupRowCount, parquetMeta.RowGroupCount);
-            return new GeoParquetPrepResult(scratch, null, null, updatedWarnings, msg);
-        }
-
         // Hard-reject non-WKB encoding before any further processing
         if (!parquetMeta.IsWkbEncoding)
         {

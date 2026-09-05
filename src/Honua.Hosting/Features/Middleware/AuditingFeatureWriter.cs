@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data;
 using System.Globalization;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -83,6 +84,14 @@ internal sealed class AuditingFeatureWriter(
             await EmitBulkEditFailureAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
             throw;
         }
+    }
+
+    public async Task<IFeatureWriterTransaction> BeginTransactionAsync(
+        IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+        CancellationToken cancellationToken = default)
+    {
+        var transaction = await _inner.BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
+        return new AuditingFeatureWriterTransaction(this, transaction);
     }
 
     private Task EmitDeleteAsync(int layerId, long featureId, bool deleted, CancellationToken cancellationToken)
@@ -205,6 +214,83 @@ internal sealed class AuditingFeatureWriter(
         catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // Auditing must never break the edit path. Sinks log their own errors.
+        }
+    }
+
+    private sealed class AuditingFeatureWriterTransaction(
+        AuditingFeatureWriter owner,
+        IFeatureWriterTransaction inner) : IFeatureWriterTransaction
+    {
+        private readonly List<(int LayerId, FeatureEditBatch Batch, FeatureEditResult Result)> _applied = [];
+        private bool _auditFinalized;
+
+        public async Task<FeatureEditResult> ApplyEditsAsync(
+            int layerId,
+            FeatureEditBatch editBatch,
+            CancellationToken cancellationToken = default)
+        {
+            var result = await inner.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+            _applied.Add((layerId, editBatch, result));
+            return result;
+        }
+
+        public async Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var outcome = await inner.CommitAsync(cancellationToken).ConfigureAwait(false);
+                if (outcome == FeatureWriterTransactionCommitOutcome.Unknown)
+                {
+                    await EmitRollbackFailuresAsync(CancellationToken.None).ConfigureAwait(false);
+                    return outcome;
+                }
+
+                foreach (var (layerId, batch, result) in _applied)
+                {
+                    await owner.EmitBulkEditAsync(layerId, batch, result, cancellationToken).ConfigureAwait(false);
+                }
+
+                _auditFinalized = true;
+                return outcome;
+            }
+            catch
+            {
+                await EmitRollbackFailuresAsync(CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        public async Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            await inner.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            await EmitRollbackFailuresAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await inner.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                await EmitRollbackFailuresAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+
+        private async Task EmitRollbackFailuresAsync(CancellationToken cancellationToken)
+        {
+            if (_auditFinalized)
+            {
+                return;
+            }
+
+            _auditFinalized = true;
+            foreach (var (layerId, batch, _) in _applied)
+            {
+                await owner.EmitBulkEditFailureAsync(layerId, batch, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 }

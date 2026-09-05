@@ -1,0 +1,81 @@
+{
+  "format": "honua.sdk.realtime-conformance-evidence.v1",
+  "schemaVersion": 1,
+  "lane": "live",
+  "generatedAt": "2026-08-26T07:14:07.173Z",
+  "sdk": {
+    "package": "@honua/sdk-js",
+    "version": "0.1.7-beta.0",
+    "revision": "53abfb9e9afe422b68a07c1f11059e02a6a7e142"
+  },
+  "server": {
+    "version": "1.0.0",
+    "revision": "f897700159e2791c9468c6ca85bb4e2a3a8d8433",
+    "revisionSource": "capabilities",
+    "capabilities": { "sse": true, "websocket": true, "odata": false }
+  },
+  "summary": {
+    "status": "failed",
+    "transportCount": 3,
+    "scenarioCount": 1,
+    "executionCount": 2,
+    "executed": 0,
+    "unsupported": 1,
+    "degraded": 1,
+    "failed": 1
+  },
+  "conformance": {
+    "status": "skipped",
+    "reason": {
+      "code": "controlled-mutation-not-opted-in",
+      "message": "HONUA_REALTIME_LIVE_CONFORMANCE_MUTATE is not true, so this lane observed without driving a mutation."
+    },
+    "runId": null,
+    "serviceId": null,
+    "layerId": null,
+    "deploymentRevision": null,
+    "mutations": { "insert": 0, "touch": 0 },
+    "baseline": null
+  },
+  "transports": [
+    {
+      "id": "sse",
+      "freshness": "push",
+      "advertised": true,
+      "status": "failed",
+      "scenarioCounts": { "total": 1, "passed": 0, "failed": 1 },
+      "scenarios": [{ "id": "snapshot-delta-contract", "result": "failed" }],
+      "diagnostics": [{
+        "code": "invalid-event",
+        "message": "Advertised realtime transport failed the live conformance contract.",
+        "scenario": "snapshot-delta-contract"
+      }]
+    },
+    {
+      "id": "websocket",
+      "freshness": "push",
+      "advertised": true,
+      "status": "degraded",
+      "scenarioCounts": { "total": 1, "passed": 0, "failed": 1 },
+      "scenarios": [{ "id": "snapshot-delta-contract", "result": "failed" }],
+      "diagnostics": [{
+        "code": "transport-unavailable",
+        "message": "Advertised realtime transport was temporarily unavailable during observation.",
+        "scenario": "snapshot-delta-contract"
+      }]
+    },
+    {
+      "id": "odata",
+      "freshness": "poll",
+      "advertised": false,
+      "status": "unsupported",
+      "scenarioCounts": { "total": 0, "passed": 0, "failed": 0 },
+      "scenarios": [],
+      "diagnostics": [{
+        "code": "transport-not-advertised",
+        "message": "honua-server did not advertise odata.",
+        "scenario": null
+      }]
+    }
+  ]
+}

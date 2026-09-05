@@ -23,15 +23,15 @@ public sealed class DatabaseMigrationSafetyTests
         foreach (var migrationFile in EnumerateMigrationFiles())
         {
             var sql = File.ReadAllText(migrationFile);
-            var matchedRules = AnalyzePotentiallyBreakingChanges(sql);
+            var classification = MigrationSafetyClassifier.Classify(Path.GetFileName(migrationFile), sql);
 
-            if (matchedRules.Count == 0 || MigrationSafetyClassifier.HasCompatibilityReviewMarker(sql))
+            if (classification.Classification != MigrationSafetyClassification.ContractUnannotated)
             {
                 continue;
             }
 
             violations.Add(
-                $"{Path.GetFileName(migrationFile)} contains potentially breaking schema changes ({string.Join(", ", matchedRules)}) " +
+                $"{Path.GetFileName(migrationFile)} contains potentially breaking schema changes ({string.Join(", ", classification.BreakingRules)}) " +
                 "but does not declare an explicit compatibility review marker. Add a comment like " +
                 "'-- honua:compatibility-review reason=<why this migration is rollout-safe>'.");
         }
@@ -52,7 +52,7 @@ public sealed class DatabaseMigrationSafetyTests
     }
 
     [Fact]
-    public void MigrationSafetyAnalyzer_ShouldIgnoreStatementsEmbeddedInsideFunctionBodies()
+    public void MigrationSafetyAnalyzer_ShouldDetectStatementsEmbeddedInsideFunctionBodies()
     {
         const string sql = """
             CREATE OR REPLACE FUNCTION honua.create_import_table(table_name text)
@@ -66,7 +66,30 @@ public sealed class DatabaseMigrationSafetyTests
             $$;
             """;
 
-        AnalyzePotentiallyBreakingChanges(sql).Should().BeEmpty();
+        AnalyzePotentiallyBreakingChanges(sql).Should().BeEquivalentTo(
+            ["rename-column", "drop-table"],
+            options => options.WithStrictOrdering());
+    }
+
+    [Fact]
+    public void MigrationSafetyAnalyzer_ShouldClassifyMigration108WithExecutableBodyRules()
+    {
+        var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
+        var migration = ArchitectureTestHelpers.CombinePath(
+            projectRoot,
+            "src",
+            "Honua.Server",
+            "Migrations",
+            "108_FixLongImportIndexNames.sql");
+
+        var classification = MigrationSafetyClassifier.Classify(
+            Path.GetFileName(migration),
+            File.ReadAllText(migration));
+
+        classification.Classification.Should().Be(MigrationSafetyClassification.ContractAnnotated);
+        classification.BreakingRules.Should().BeEquivalentTo(
+            ["rename-table", "rename-index", "drop-table"],
+            options => options.WithStrictOrdering());
     }
 
     [ArchitectureTest]
@@ -108,17 +131,24 @@ public sealed class DatabaseMigrationSafetyTests
 
     private static IEnumerable<string> EnumerateMigrationFiles()
     {
-        var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
-        var migrationDirectories = new[]
-        {
-            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Server", "Migrations"),
-            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Db", "Postgres", "Migrations")
-        };
+        var migrationDirectories = GetMigrationDirectories();
+        migrationDirectories.Should().OnlyContain(
+            directory => Directory.Exists(directory),
+            "both numbered migration roots are part of the safety denominator and neither may disappear silently");
 
         return migrationDirectories
-            .Where(Directory.Exists)
             .SelectMany(directory => Directory.EnumerateFiles(directory, "*.sql", SearchOption.TopDirectoryOnly))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string[] GetMigrationDirectories()
+    {
+        var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
+        return
+        [
+            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Server", "Migrations"),
+            ArchitectureTestHelpers.CombinePath(projectRoot, "src", "Honua.Db", "Postgres", "Migrations")
+        ];
     }
 
     private static string FindProjectRoot(string startDirectory)

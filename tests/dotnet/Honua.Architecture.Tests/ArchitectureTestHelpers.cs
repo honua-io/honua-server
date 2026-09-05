@@ -18,6 +18,7 @@ internal static class ArchitectureTestHelpers
     private static readonly Type[] ApiCoverageAttributeTypes =
     [
         typeof(IntegrationTestAttribute),
+        typeof(IntegrationTheoryAttribute),
         typeof(Honua.Worker.Gdal.Tests.GdalCliFactAttribute)
     ];
 

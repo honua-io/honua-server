@@ -135,14 +135,14 @@ is preserved**: consumers see the same manifest shape; only its source of truth
 changes from a hand-kept list to a registry projection. Per-env behavior (which
 capabilities an environment exposes) stays a property of the resolver layer.
 
-### Two mechanisms hold the experimental + disabled set OFF (the registry flag is one, not both)
+### Two mechanisms hold the opt-in lifecycle set OFF (the registry flag is one, not both)
 
 The registry-derived manifest is **one of two** levers that keep the
-experimental + disabled set (ADR-0059 §2) out of a default deployment — not a
+Experimental and Preview opt-in set (ADR-0059 §2) out of a default deployment — not a
 single uniform lever over the whole set.
 
-**(a) Registry-flag gating** covers exactly the experimental-tier capabilities
-whose API routes are enumerated in the feature catalog's `experimental` tier —
+**(a) Registry-flag gating** covers exactly the opt-in capabilities whose API
+routes are enumerated in the feature catalog's non-GA lifecycle tiers —
 the route-bearing descriptors: **temporal** analytics/versioning
 (`/api/v1/temporal/*`, incl. as-of/diff/timeline and rollback/rollback-plan),
 **disconnected-sync / replicas** (`/api/v1/admin/services/{id}/replicas` +
@@ -155,13 +155,13 @@ flipping the capability off in the registry removes it from the manifest,
 ADR gives the registry, and the manifest lever the Console release gate
 (honua-io/honua-console#264) consumes.
 
-> **Update (#2427).** **Geofence alerting** (`alerts.geofence`,
-> `/api/v1/admin/alerts/*`) was promoted from `experimental` to `Implemented`
-> (GA) — the first `Experimental → Implemented` promotion. It is therefore no
-> longer part of the registry-flag experimental roster (a): its routes ship on
-> the default first-release surface like any other GA capability. The alerts
-> pipeline still self-gates on `Alerts:Enabled` (default `false`), so GA does not
-> mean on-by-default; it means no longer hidden/unadvertised.
+> **Operator amendment (2026-09-04; honua-release#268).** **Customer alerting**
+> (`alerts.geofence`, `/api/v1/admin/alerts/*`) ships as **Preview** in 2026.1.
+> This supersedes #2427's GA claim: section 7.3 conditional GA is not pursued
+> for this release. The implementation and qualification tests remain, but the
+> routes and workers stay off by default behind the canonical capability opt-in
+> and `Alerts:Enabled`. Registry, manifest, generated catalog/matrix, docs, and
+> site must all advertise Preview.
 
 > **Update (#2429).** **Temporal analytics** (`temporal.filtering`,
 > `temporal.extent-discovery`, `temporal.histogram`, `temporal.time-series-tiles`,
@@ -232,6 +232,11 @@ ADR gives the registry, and the manifest lever the Console release gate
 > extension withholds conflicting edits for operator review rather than forcing
 > last-write-wins; and delete-vs-delete field-collection conflicts are now
 > produced as conflicts instead of being silently treated as idempotent.
+
+> **Amendment (2026-09-03, honua-release#266 / #264).** The operator ruling supersedes
+> this earlier GA note for release 2026.1: offline sync is Preview. Registry, catalog,
+> parity, and lifecycle artifacts must report Preview; non-security parity is deferred
+> to release/2026.2.
 
 **(b) Edition/entitlement + Console-UI gating** covers the remainder of the
 experimental + disabled set — the capabilities that are **not** held back by a

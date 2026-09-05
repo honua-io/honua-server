@@ -177,8 +177,22 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
                 payload JSONB NOT NULL DEFAULT '{}'::jsonb,
                 incident_status SMALLINT NOT NULL DEFAULT 1,
                 incident_duration_ms BIGINT NOT NULL DEFAULT 0,
+                source_event_id TEXT NULL,
+                job_id TEXT NULL,
+                operation_instance_id TEXT NULL,
+                correlation_id TEXT NULL,
+                audit_id TEXT NULL,
+                proposal_id TEXT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
+
+            ALTER TABLE IF EXISTS honua.alert_events
+                ADD COLUMN IF NOT EXISTS source_event_id TEXT,
+                ADD COLUMN IF NOT EXISTS job_id TEXT,
+                ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+                ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+                ADD COLUMN IF NOT EXISTS audit_id TEXT,
+                ADD COLUMN IF NOT EXISTS proposal_id TEXT;
 
             CREATE TABLE IF NOT EXISTS honua.alert_event_lifecycle (
                 event_id BIGINT PRIMARY KEY REFERENCES honua.alert_events(event_id) ON DELETE CASCADE,

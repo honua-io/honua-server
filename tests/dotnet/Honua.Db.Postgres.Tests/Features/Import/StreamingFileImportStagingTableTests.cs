@@ -42,6 +42,18 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         END;
         $$;
 
+        CREATE OR REPLACE FUNCTION honua.ensure_import_table(schema_name text, table_name text, target_srid integer DEFAULT 4326)
+        RETURNS void
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
+            EXECUTE format(
+                'CREATE TABLE IF NOT EXISTS %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+                schema_name, table_name, target_srid);
+        END;
+        $$;
+
         -- The default import path is Replace, which streams into a fresh
         -- <table>__staging sibling (honua.create_import_staging_table) and then
         -- atomically renames it over the live table (honua.swap_import_table).
@@ -56,13 +68,29 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             staging_name text;
         BEGIN
             staging_name := table_name || '__staging';
+            IF length(staging_name) > 63 THEN
+                staging_name := 'stg_' || md5(table_name);
+            END IF;
             EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
             EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
             EXECUTE format(
                 'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
                 schema_name, staging_name, target_srid);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || staging_name || '_geometry', schema_name, staging_name);
+            EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || staging_name || '_properties', schema_name, staging_name);
             RETURN staging_name;
+        END;
+        $$;
+
+        CREATE OR REPLACE FUNCTION honua.import_index_name(table_name text, index_kind text)
+        RETURNS text LANGUAGE plpgsql IMMUTABLE AS $$
+        DECLARE index_name text;
+        BEGIN
+            index_name := 'idx_' || table_name || '_' || index_kind;
+            IF length(index_name) > 63 THEN
+                index_name := left(index_name, 46) || '_' || left(md5(index_name), 16);
+            END IF;
+            RETURN index_name;
         END;
         $$;
 
@@ -74,10 +102,15 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             staging_name text;
         BEGIN
             staging_name := table_name || '__staging';
+            IF length(staging_name) > 63 THEN
+                staging_name := 'stg_' || md5(table_name);
+            END IF;
             EXECUTE format('DROP TABLE IF EXISTS %I.%I CASCADE', schema_name, table_name);
             EXECUTE format('ALTER TABLE %I.%I RENAME TO %I', schema_name, staging_name, table_name);
             EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
-                schema_name, 'idx_' || staging_name || '_geometry', 'idx_' || table_name || '_geometry');
+                schema_name, 'idx_' || staging_name || '_geometry', honua.import_index_name(table_name, 'geometry'));
+            EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
+                schema_name, 'idx_' || staging_name || '_properties', honua.import_index_name(table_name, 'properties'));
         END;
         $$;
 
@@ -109,6 +142,224 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
           ]
         }
         """;
+
+    [Theory]
+    [InlineData(ImportLoadMode.Replace, 2)]
+    [InlineData(ImportLoadMode.Append, 3)]
+    public async Task ImportFileAsync_LongNameWithLegacyTable_PreservesPhysicalIdentity(
+        ImportLoadMode loadMode,
+        int expectedRowCount)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("legacy_names");
+        const string logicalName = "legacy_identifier_imported_before_hash_suffix";
+        var legacyName = "imported_" + logicalName;
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    CREATE TABLE "{schema}"."{legacyName}" (
+                        id SERIAL PRIMARY KEY,
+                        geometry GEOMETRY(Geometry, 4326),
+                        properties JSONB,
+                        created_at TIMESTAMPTZ DEFAULT NOW());
+                    INSERT INTO "{schema}"."{legacyName}" (geometry, properties)
+                    VALUES (ST_SetSRID(ST_MakePoint(0, 0), 4326), jsonb_build_object('name', 'legacy'));
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "points.geojson",
+                TableName = logicalName,
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = loadMode,
+                OverwriteExisting = loadMode == ImportLoadMode.Replace,
+            });
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.PhysicalTableName.Should().Be(legacyName);
+
+            await using var verificationConnection = await fixture.DataSource.OpenConnectionAsync();
+            await using var verificationCommand = verificationConnection.CreateCommand();
+            verificationCommand.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".\"{legacyName}\"";
+            (await verificationCommand.ExecuteScalarAsync()).Should().Be(expectedRowCount);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [Fact]
+    public async Task ImportFileAsync_TruncatedLegacyPrefix_DoesNotClaimDifferentLogicalName()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("legacy_collision");
+        const string sharedPrefix = "legacy_identifier_with_a_shared_prefix_that_is_long_eno_";
+        var firstLogicalName = sharedPrefix + "first";
+        var secondLogicalName = sharedPrefix + "second";
+        var truncatedLegacyName = ("imported_" + firstLogicalName)[..63];
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"CREATE TABLE \"{schema}\".\"{truncatedLegacyName}\" (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, 4326), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())";
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "points.geojson",
+                TableName = secondLogicalName,
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Append,
+            });
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.PhysicalTableName.Should().NotBe(truncatedLegacyName);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_ConcurrentReplaceImportsToSameTarget_IsolatedUntilPromotion()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("concurrent_replace");
+        GateStream? firstStream = null;
+        Task<ImportResult>? firstTask = null;
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            var firstProvider = new TestConnectionProvider(fixture.DataSource, schema);
+            var secondProvider = new TestConnectionProvider(fixture.DataSource, schema);
+            var firstService = new StreamingFileImportService(
+                firstProvider,
+                new CrsDetectionService(firstProvider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+            var secondService = new StreamingFileImportService(
+                secondProvider,
+                new CrsDetectionService(secondProvider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+
+            firstStream = new GateStream(Encoding.UTF8.GetBytes("POINT(10 10)"));
+            firstTask = firstService.ImportFileAsync(new ImportRequest
+            {
+                FileStream = firstStream,
+                FileName = "first.wkt",
+                TableName = "concurrent_replace_guard",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true,
+            });
+            await firstStream.WaitForReadStartedAsync();
+
+            await using var secondStream = new MemoryStream(Encoding.UTF8.GetBytes("POINT(20 20)"));
+            var secondTask = secondService.ImportFileAsync(new ImportRequest
+            {
+                FileStream = secondStream,
+                FileName = "second.wkt",
+                TableName = "concurrent_replace_guard",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true,
+            });
+
+            // Give the second request a chance to contend while the first owns the target's
+            // staging state. Release the first only after the overlap is established.
+            await Task.Delay(100);
+            firstStream.Release();
+            var firstResult = await firstTask;
+            var secondResult = await secondTask;
+
+            firstResult.Success.Should().BeTrue(firstResult.ErrorMessage);
+            secondResult.Success.Should().BeTrue(secondResult.ErrorMessage);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".imported_concurrent_replace_guard";
+            (await command.ExecuteScalarAsync()).Should().Be(1);
+        }
+        finally
+        {
+            firstStream?.Release();
+            if (firstTask is not null)
+            {
+                // Observe completion without allowing cleanup to replace the primary assertion.
+                await ((Task)firstTask).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
+
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private sealed class GateStream(byte[] bytes) : MemoryStream(bytes, writable: false)
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _readStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => _release.TrySetResult();
+
+        public Task WaitForReadStartedAsync() => _readStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            _readStarted.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return await base.ReadAsync(buffer, cancellationToken);
+        }
+
+        public override async Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+        {
+            _readStarted.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return await base.ReadAsync(buffer.AsMemory(offset, count), cancellationToken);
+        }
+    }
 
     // A self-intersecting "bowtie" polygon: the exterior ring crosses itself, so the geometry is
     // topologically invalid but structurally well-formed (closed ring, finite coordinates). Under
@@ -482,6 +733,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 TargetSchema = schema,
                 SourceSrid = 4326,
                 TargetSrid = 4326,
+                OverwriteExisting = true,
             });
 
             result.Success.Should().BeFalse();

@@ -297,8 +297,10 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "versionName parameter is required.");
         }
 
-        var owner = GeoServicesRequestValueHelpers.GetValueString(values!, "owner")
-            ?? ResolveOwner(context);
+        // The owner is security metadata, not a client-controlled version attribute.
+        // ArcGIS clients may send an owner field, but accepting it lets any editor create
+        // a version attributed to another principal (#4036).
+        var owner = ResolveOwner(context);
         var access = ParseAccess(GeoServicesRequestValueHelpers.GetValueString(values!, "accessPermission"));
         var description = GeoServicesRequestValueHelpers.GetValueString(values!, "description");
 

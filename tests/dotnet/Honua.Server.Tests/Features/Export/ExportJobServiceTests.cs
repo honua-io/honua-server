@@ -262,6 +262,83 @@ public sealed class ExportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ProcessQueuedJobAsync_ShapefileNullRow_PreservesRowAndSurfacesWarningsAndActualCount()
+    {
+        var progressStore = new InMemoryUniversalProgressStore();
+        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var channel = Channel.CreateUnbounded<string>();
+
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        streamingStore
+            .StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(CreateWarningFeatures());
+
+        var crsRegistry = new NullCrsRegistry();
+
+        await using var uploaded = new MemoryStream();
+        var cloudStorage = Substitute.For<ICloudFileStorage>();
+        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await call.Arg<FileUploadRequest>().Content.CopyToAsync(uploaded);
+                return UploadResult.CreateSuccess(new CloudFile
+                {
+                    FileId = "file-1",
+                    FileName = "export.zip",
+                    StoragePath = "exports/export.zip",
+                    ContentType = "application/zip",
+                    SizeBytes = 32,
+                    UploadedAt = DateTimeOffset.UtcNow,
+                    Provider = CloudStorageProvider.AwsS3
+                });
+            });
+        cloudStorage.GetPresignedUrlAsync("file-1", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns("https://example.test/export.zip");
+
+        using var services = new ServiceCollection()
+            .AddSingleton<IStreamingFeatureStore>(streamingStore)
+            .AddSingleton<ICrsRegistry>(crsRegistry)
+            .AddSingleton<ICloudFileStorage>(cloudStorage)
+            .BuildServiceProvider();
+
+        var sut = new ExportJobService(
+            progressStore,
+            requestCache,
+            channel,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<ExportJobService>.Instance);
+
+        var job = CreateJob("complete-export") with
+        {
+            Format = "shapefile",
+            GeometryType = ExportGeometryType.Point,
+            Fields = [new ExportField("name", ExportFieldType.String, true), new ExportField("descriptive_name", ExportFieldType.String, true)],
+            TotalFeatures = 99
+        };
+        await sut.StartAsync(job);
+
+        await sut.ProcessQueuedJobAsync(job.JobId);
+
+        var persistedRequest = await requestCache.GetStringAsync("export:request:complete-export");
+        persistedRequest.Should().BeNull();
+
+        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Completed);
+        progress.DownloadUrl.Should().Be("https://example.test/export.zip");
+        progress.ProcessedFeatures.Should().Be(1);
+        progress.Warnings.Should().Contain(warning => warning.Contains("descriptive_name", StringComparison.Ordinal));
+        uploaded.Position = 0;
+        using var archive = new System.IO.Compression.ZipArchive(uploaded, System.IO.Compression.ZipArchiveMode.Read);
+        var warningEntry = archive.GetEntry("export-warnings.txt");
+        warningEntry.Should().NotBeNull();
+        using var warningReader = new StreamReader(warningEntry!.Open());
+        var warnings = await warningReader.ReadToEndAsync();
+        warnings.Should().Contain("descriptive_name");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task StartAsync_WhenProgressInitializationFails_RollsBackPersistedRequest()
     {
         var progressStore = new ThrowOnFirstSetProgressStore();
@@ -417,6 +494,13 @@ public sealed class ExportJobServiceTests
         (await channel.Reader.ReadAsync()).Should().Be(job.JobId);
         cloudStorage.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(ICloudFileStorage.UploadAsync))
             .Should().Be(0);
+    }
+
+    private static async IAsyncEnumerable<Feature> CreateWarningFeatures()
+    {
+        yield return Feature.Create(1, geometry: null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", "Unlocated").Add("descriptive_name", "Retained detail"));
+        await Task.CompletedTask;
     }
 
     private static async IAsyncEnumerable<Feature> CreateFeatures()

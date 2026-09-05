@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"Propose finding remediation","type":"object","required":["candidateId","findingId"],"properties":{"candidateId":{"type":"string","minLength":1,"maxLength":256},"findingId":{"type":"string","minLength":1,"maxLength":256}},"additionalProperties":false,"x-honua-extension":true}

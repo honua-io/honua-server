@@ -10,6 +10,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -92,7 +93,8 @@ public sealed class McpPlatformOpsToolTests
               "targetId": "serving-us-west",
               "toRevision": "rev-9",
               "reason": "SLO regression",
-              "idempotencyKey": "rb-1"
+              "idempotencyKey": "rb-1",
+              "parameterOverrides": { "activePort": "5102" }
             }
             """);
 
@@ -105,6 +107,7 @@ public sealed class McpPlatformOpsToolTests
         reader.RollbackArgument.ToRevision.Should().Be("rev-9");
         reader.RollbackArgument.Reason.Should().Be("SLO regression");
         reader.RollbackArgument.IdempotencyKey.Should().Be("rb-1");
+        reader.RollbackArgument.ParameterOverrides.Should().Contain("activePort", "5102");
     }
 
     private static DefaultHttpContext BuildContext(IMcpPlatformOpsReader reader)
@@ -186,5 +189,26 @@ public sealed class McpPlatformOpsToolTests
                 ResourceUri = "honua://proposals/proposal-1",
             });
         }
+
+        public Task<McpProposeOperationOutput> ProposeFindingAsync(ClaimsPrincipal principal, McpProposeFindingArgument argument, CancellationToken cancellationToken)
+            => Proposal(principal);
+
+        public Task<McpProposeOperationOutput> ProposeDeployPlanAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken)
+            => Proposal(principal);
+
+        public Task<McpProposeOperationOutput> ProposeDeployOperationAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken)
+            => Proposal(principal);
+
+        public Task<McpProposeOperationOutput> ProposePlatformReleaseConvergenceAsync(ClaimsPrincipal principal, McpPlatformReleaseConvergenceArgument argument, CancellationToken cancellationToken)
+            => Proposal(principal);
+
+        private Task<McpProposeOperationOutput> Proposal(ClaimsPrincipal principal)
+        {
+            LastPrincipal = principal;
+            return Task.FromResult(new McpProposeOperationOutput { Outcome = "ProposalCreated", RequiresApproval = true, ProposalId = "proposal-1" });
+        }
+
+        public Task<McpProposeOperationOutput> ProposeMetadataReleaseAsync(ClaimsPrincipal principal, McpMetadataReleaseMutationArgument argument, CancellationToken cancellationToken)
+            => Task.FromResult(new McpProposeOperationOutput());
     }
 }

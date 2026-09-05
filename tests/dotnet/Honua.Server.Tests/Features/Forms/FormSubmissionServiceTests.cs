@@ -1003,6 +1003,9 @@ public sealed class FormSubmissionServiceTests
         public Task<Attachment> UpdateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<Attachment> UpdateKeywordsAsync(int layerId, long featureId, long attachmentId, string? keywords, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task<Attachment> ReplaceAsync(
             int layerId,
             long featureId,

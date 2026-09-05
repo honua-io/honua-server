@@ -25,6 +25,7 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 ADMIN_SPEC_NAME = "admin-api"
+STUDIO_SPEC_NAME = "studio-api"
 
 
 def admin_config():
@@ -47,6 +48,12 @@ class AdminSpecRegistrationTests(unittest.TestCase):
             "admin bundle omissions must be declared in a sidecar file",
         )
         self.assertTrue((ROOT / config.undocumented_routes_path).is_file())
+
+    def test_Specs_StudioBundle_IsRegisteredWithoutExemptions(self):
+        config = next(spec for spec in MODULE.SPECS if spec.name == STUDIO_SPEC_NAME)
+        self.assertEqual(config.protocol_paths, ("/api/v1/studio",))
+        self.assertIsNone(config.undocumented_routes_path)
+        self.assertTrue((ROOT / config.path).is_file())
 
 
 class LoadUndocumentedRoutesTests(unittest.TestCase):

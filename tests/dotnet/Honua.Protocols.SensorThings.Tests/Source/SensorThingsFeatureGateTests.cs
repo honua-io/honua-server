@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
 /// <summary>
 /// Verifies the experimental feature gate for OGC SensorThings API (PA-096/PA-103/PA-116/PA-145).
-/// When <c>Experimental:Features:SensorThings</c> is absent or <c>false</c>, no STA routes are
+/// When <c>Capabilities:Experimental:serve.sensorthings:Enabled</c> is absent or <c>false</c>, no STA routes are
 /// registered and all <c>/sta/v1.1/...</c> paths return 404. When the flag is <c>true</c>, the
 /// routes are active and return expected responses.
 /// </summary>
@@ -35,7 +35,8 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
                 {
                     cfg.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["Experimental:Features:SensorThings"] = "false",
+                        ["Capabilities:Experimental:Enabled"] = "false",
+                        ["Capabilities:Experimental:serve.sensorthings:Enabled"] = "false",
                     });
                 });
             });
@@ -54,7 +55,7 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync("/sta/v1.1/Things");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "SensorThings routes must not be registered unless Experimental:Features:SensorThings is explicitly true");
+            "SensorThings routes must not be registered unless its Preview capability is explicitly enabled");
     }
 
     [IntegrationTest]
@@ -67,7 +68,7 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync("/sta/v1.1/Observations", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "SensorThings ingest routes must not be registered when Experimental:Features:SensorThings is false");
+            "SensorThings ingest routes must not be registered when its Preview capability is disabled");
     }
 
     [IntegrationTest]
@@ -80,7 +81,7 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync("/sta/v1.1/Datastreams", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "SensorThings datastream creation routes must not be registered when Experimental:Features:SensorThings is false");
+            "SensorThings datastream creation routes must not be registered when its Preview capability is disabled");
     }
 
     [IntegrationTest]
@@ -92,6 +93,6 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync("/sta/v1.1/Observations");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "SensorThings read routes must not be registered when Experimental:Features:SensorThings is false");
+            "SensorThings read routes must not be registered when its Preview capability is disabled");
     }
 }

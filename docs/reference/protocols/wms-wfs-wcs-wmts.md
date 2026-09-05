@@ -112,6 +112,10 @@ When the coverage's native grid exceeds the per-axis pixel limit and no scaling 
 
 ## WMTS operations
 
+WMTS is **Preview in 2026.1**, including its OGC, MapServer and ImageServer
+routes. Conformance results below describe tested behavior; the 2026-09-03
+operator ruling keeps non-security parity work deferred to release/2026.2.
+
 | Operation | Notes |
 | --- | --- |
 | `GetCapabilities` | KVP and RESTful (`.../WMTS/1.0.0/WMTSCapabilities.xml` style paths via `{**restPath}`). Advertises the reserved built-in gridsets (`WebMercatorQuad`, `WorldCRS84Quad`) plus any operator-defined custom gridsets from the `TileMatrixSets` configuration section, with per-layer links. `TopLeftCorner` follows the advertised CRS axis order (CRS84 is longitude/latitude; geographic EPSG identifiers are latitude/longitude) and preserves configured origin precision. |
@@ -122,7 +126,7 @@ When the coverage's native grid exceeds the per-axis pixel limit and no scaling 
 
 ## Conformance
 
-All four classic services pass their published OGC CITE profiles at 100% (WMS 1.1.1/1.3: 126/213, WFS 1.0/1.1/2.0: 162/39/167 plus WFS 2.0 Transactional: 25, WCS 2.0: 82/82, WMTS 1.0: 60/60). The passing counts cover the built-in gridsets and parameters; custom-gridset and elevation-dimension behaviour is additive and CITE-neutral (re-validation pending). Authoritative status: [API standards summary](../compatibility/ogc-conformance.md) and [cite-status.md](../../cite-status.md).
+The published classic-service profiles currently pass 1137/1138 assertions in aggregate. WFS 2.0 `basic` is 166/167 because multi-layer `rollbackOnFailure=true` transactions are rejected; WMS 1.1.1/1.3 (126/126 and 213/213), WFS 1.0/1.1 (162/162 and 39/39), the separate WFS 2.0 Transactional profile (25/25), WCS 2.0 (82/82), and WMTS 1.0 (60/60) pass in full. The passing counts cover the built-in gridsets and parameters; custom-gridset and elevation-dimension behaviour is additive and CITE-neutral (re-validation pending). Authoritative status and receipt: [API standards summary](../compatibility/ogc-conformance.md) and [cite-status.md](../../cite-status.md).
 
 ## Guides that use this
 

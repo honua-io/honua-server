@@ -12,6 +12,7 @@ using Microsoft.Extensions.Hosting;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Security;
 
@@ -35,7 +36,13 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
             });
     }
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
+        // Production ignores test schema headers; this isolated host reads the baseline graph.
+        _fixture.GetService<TestMetadataV2GraphProvider>().SetGraph(_fixture.GetCurrentV2GraphSnapshot().Graph);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
@@ -238,7 +245,8 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
         content.Should().NotContain("SQL injection attempt detected");
 
         using var document = JsonDocument.Parse(content);
-        document.RootElement.TryGetProperty("addResults", out var addResults).Should().BeTrue();
+        document.RootElement.TryGetProperty("addResults", out var addResults).Should()
+            .BeTrue("the edit response should contain results: {0}", content);
         addResults.GetArrayLength().Should().Be(1);
         addResults[0].GetProperty("success").GetBoolean().Should().BeTrue();
     }

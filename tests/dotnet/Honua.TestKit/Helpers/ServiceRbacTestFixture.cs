@@ -276,7 +276,7 @@ public interface ITestMetadataV2GraphSource
 public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
 {
     private static readonly string[] _supportedFormats = ["JSON", "GeoJSON"];
-    private static readonly string[] _capabilities = ["Query", "Create", "Update", "Delete"];
+    private static readonly string[] _capabilities = ["Query", "Create", "Update", "Delete", "Sync"];
 
     private readonly string _alphaServiceName;
     private readonly string _betaServiceName;

@@ -119,7 +119,7 @@ internal sealed class StudioLifecycleAuthorizationHandler(
     /// </summary>
     internal static bool IsRecognizedAdmin(ClaimsPrincipal principal, AdminRoleOptions options)
     {
-        if (principal.IsInRole("admin"))
+        if (principal.IsInRole("admin") || principal.IsInRole(AdminApiKeyPermission.ScopedAdminRole))
         {
             return true;
         }

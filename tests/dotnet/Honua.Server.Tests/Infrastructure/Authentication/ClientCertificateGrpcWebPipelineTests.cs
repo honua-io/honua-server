@@ -25,6 +25,8 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Operation(Operations.Security)]
 public sealed class ClientCertificateGrpcWebPipelineTests
 {
+    private const string AdminApiKey = "grpc-web-mtls-admin-key";
+
     [IntegrationTest]
     [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
     public async Task RequiredForNative_WithGrpcWebContentType_DoesNotReturn401()
@@ -37,6 +39,7 @@ public sealed class ClientCertificateGrpcWebPipelineTests
         {
             Headers = { ContentType = new MediaTypeHeaderValue("application/grpc-web+proto") }
         };
+        request.Headers.Add("X-API-Key", AdminApiKey);
 
         using var response = await client.SendAsync(request);
 
@@ -99,6 +102,8 @@ public sealed class ClientCertificateGrpcWebPipelineTests
                 // #2958: mTLS is experimental and gated behind Capabilities:Experimental:security.mtls;
                 // this suite exercises the enforcement middleware directly, so it opts in explicitly.
                 builder.UseSetting("Capabilities:Experimental:security.mtls:Enabled", "true");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminApiKey);
             });
     }
 }

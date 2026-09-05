@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Diagnostics;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -13,6 +14,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -23,6 +25,37 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// </summary>
 public sealed class McpAuthorizationHelperTests
 {
+    [UnitTest]
+    public void CanonicalActor_ApiKeyWithoutImmutableId_FailsClosed()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "mutable-display-name"),
+        ], AuthenticationExtensions.ApiKeyScheme));
+
+        CanonicalSecurityActor.Resolve(principal).Should().BeNull();
+    }
+
+    [UnitTest]
+    public void EnrichActivity_StampedTenant_AddsTenantDimension()
+    {
+        var context = CreateBearerContext("operator", "https://issuer.example", "tenant-a");
+        CanonicalSecurityActor.StampRequestBinding(context.User, "tenant-a");
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static _ => true,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var source = new ActivitySource("Honua.Tests.McpTenant");
+        using var activity = source.StartActivity("mcp-test");
+
+        McpTelemetry.EnrichActivity("tools/call", context);
+
+        activity.Should().NotBeNull();
+        activity!.GetTagItem("honua.tenant.id").Should().Be("tenant-a");
+    }
+
     [UnitTest]
     public void ResolvePrincipalKey_IncludesAuthenticationScheme_WithNameIdentifier()
     {
@@ -348,6 +381,108 @@ public sealed class McpAuthorizationHelperTests
         (context.User.Identity?.IsAuthenticated ?? false).Should().BeFalse();
         McpBearerAuthenticationEndpointExtensions.HasAuthenticationFailure(context).Should().BeFalse();
         authorizationFailure.Should().NotBeNull("tool authorization must still reject the anonymous caller");
+    }
+
+    [UnitTest]
+    public async Task InvalidBearer_IsRejectedBeforeTenantResolutionMiddlewareRuns()
+    {
+        var authentication = new CountingAuthenticationService(
+            AuthenticateResult.Fail("invalid bearer"));
+        var oidc = new OidcAuthenticationOptions
+        {
+            Enabled = true,
+            Generic = new GenericOidcProviderOptions
+            {
+                Enabled = true,
+                Authority = "https://issuer.example",
+                ClientId = "mcp-client",
+            },
+        };
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IAuthenticationService>(authentication)
+            .AddSingleton<IOptions<OidcAuthenticationOptions>>(Options.Create(oidc))
+            .BuildServiceProvider();
+        await using var provider = services;
+        var app = new ApplicationBuilder(provider);
+        var tenantResolutionReached = false;
+
+        app.UseMcpBearerAuthentication();
+        app.UseWhen(
+            McpBearerAuthenticationEndpointExtensions.HasAuthenticationFailure,
+            branch => branch.UseMcpBearerAuthenticationRejection());
+        app.Run(_ =>
+        {
+            tenantResolutionReached = true;
+            return Task.CompletedTask;
+        });
+
+        var context = new DefaultHttpContext { RequestServices = provider };
+        context.Response.Body = new MemoryStream();
+        context.Request.Path = "/mcp";
+        context.Request.Headers.Authorization = "Bearer invalid-token";
+
+        await app.Build()(context);
+
+        authentication.AuthenticateCount.Should().Be(1);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        tenantResolutionReached.Should().BeFalse(
+            "a rejected credential must terminate before tenant resolution can observe the request");
+    }
+
+    [UnitTest]
+    public async Task ValidBearer_IsAuthenticatedBeforeTenantResolution_ThenBoundToResolvedTenant()
+    {
+        var sourcePrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "shared-subject"),
+            new Claim("iss", "https://issuer.example"),
+            new Claim("tenant_id", "tenant-a"),
+        ], OidcAuthenticationExtensions.JwtBearerScheme));
+        var authentication = new CountingAuthenticationService(AuthenticateResult.Success(
+            new AuthenticationTicket(sourcePrincipal, OidcAuthenticationExtensions.JwtBearerScheme)));
+        var oidc = new OidcAuthenticationOptions
+        {
+            Enabled = true,
+            Generic = new GenericOidcProviderOptions
+            {
+                Enabled = true,
+                Authority = "https://issuer.example",
+                ClientId = "mcp-client",
+            },
+        };
+        var serviceCollection = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IAuthenticationService>(authentication)
+            .AddSingleton<IOptions<OidcAuthenticationOptions>>(Options.Create(oidc));
+        serviceCollection.AddHonuaTenantContext(new ConfigurationBuilder().Build());
+        var services = serviceCollection.BuildServiceProvider();
+        await using var provider = services;
+        var app = new ApplicationBuilder(provider);
+        string? bindingSeenByEndpoint = null;
+        ITenantContext? tenantSeenByEndpoint = null;
+
+        app.UseMcpBearerAuthentication();
+        app.UseHonuaTenantContext();
+        app.Run(context =>
+        {
+            tenantSeenByEndpoint = context.RequestServices.GetRequiredService<ITenantContext>();
+            bindingSeenByEndpoint = McpAuthorizationHelper.ResolveSessionBindingKey(context);
+            return Task.CompletedTask;
+        });
+
+        var context = new DefaultHttpContext { RequestServices = provider };
+        context.Request.Path = "/mcp";
+        context.Request.Headers.Authorization = "Bearer validated-token";
+
+        await app.Build()(context);
+
+        authentication.AuthenticateCount.Should().Be(1);
+        tenantSeenByEndpoint.Should().NotBeNull();
+        tenantSeenByEndpoint!.TenantId.Should().Be("tenant-a");
+        tenantSeenByEndpoint.Source.Should().Be(TenantContextSource.Claim);
+        bindingSeenByEndpoint.Should().Contain("subject:https%3A%2F%2Fissuer.example:shared-subject");
+        bindingSeenByEndpoint.Should().Contain("tenant:value%3Atenant-a");
     }
 
     [UnitTest]

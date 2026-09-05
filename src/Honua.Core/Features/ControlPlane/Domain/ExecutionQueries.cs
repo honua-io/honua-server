@@ -35,6 +35,17 @@ public sealed record ExecutionJobQuery
     public string? RequestedBy { get; init; }
 
     /// <summary>
+    /// Whether to require an exact submitter tenant match before pagination.
+    /// When enabled, a null TenantId selects only jobs without a recorded tenant.
+    /// </summary>
+    public bool ApplyTenantScope { get; init; }
+
+    /// <summary>
+    /// Effective tenant required when ApplyTenantScope is enabled.
+    /// </summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>
     /// Optional correlation identifier filter.
     /// </summary>
     public string? CorrelationId { get; init; }

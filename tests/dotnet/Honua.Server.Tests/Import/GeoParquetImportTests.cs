@@ -182,12 +182,11 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
-    public async Task Upload_WithLargeSingleRowGroup_RejectsWithError()
+    public async Task Upload_WithLargeSingleRowGroup_ImportsFeatures()
     {
-        // Arrange — file exceeds GeoParquetReader.MaxRowsPerRowGroup (100,000)
-        // in a single row group. Service must reject before streaming features.
+        // pyarrow/GeoPandas writes a 150,000-row table as one row group by default.
         await using var stream = await GeoParquetTestFactory.CreateStreamAsync(
-            rowCount: 100_001,
+            rowCount: 150_000,
             crs: GeoParquetTestFactory.CrsStyle.PropertiesName);
         var fileBytes = stream.ToArray();
 
@@ -201,8 +200,8 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
 
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("geoparquet_large_rg_test");
-        responseContent.Should().Contain("\"success\":false");
-        responseContent.Should().Contain("row group");
+        responseContent.Should().Contain("\"success\":true");
+        responseContent.Should().Contain("\"featureCount\":150000");
     }
 
     [IntegrationTest]

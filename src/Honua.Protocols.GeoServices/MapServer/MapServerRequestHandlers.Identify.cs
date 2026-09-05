@@ -22,6 +22,7 @@ using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
+using NetTopologySuite.IO;
 using static Honua.Infrastructure.Helpers.DelimitedParameterHelpers;
 
 namespace Honua.Protocols.GeoServices.MapServer;
@@ -1354,6 +1355,7 @@ internal static partial class MapServerEndpoints
                             geometry.Xmax.Value,
                             geometry.Ymax.Value);
 
+                        wkb = ApplyIdentifyTolerance(wkb, tolerance);
                         spatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
                         return true;
                     }
@@ -1374,6 +1376,7 @@ internal static partial class MapServerEndpoints
                             return false;
                         }
 
+                        wkb = ApplyIdentifyTolerance(wkb, tolerance);
                         spatialFilter = SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid);
                         return true;
                     }
@@ -1387,6 +1390,22 @@ internal static partial class MapServerEndpoints
             error = InvalidIdentifyGeometryMessage;
             return false;
         }
+    }
+
+    private static byte[] ApplyIdentifyTolerance(byte[] wkb, double tolerance)
+    {
+        if (tolerance <= 0)
+        {
+            return wkb;
+        }
+
+        var geometry = new WKBReader().Read(wkb);
+        if (geometry.IsEmpty)
+        {
+            return wkb;
+        }
+
+        return new WKBWriter().Write(geometry.Buffer(tolerance));
     }
 
     private static byte[] CreatePointBufferWkb(double x, double y, double tolerance)

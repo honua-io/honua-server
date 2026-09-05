@@ -13,10 +13,11 @@ namespace Honua.Infrastructure.Authentication;
 /// Authenticates requests that carry an ArcGIS-style opaque portal token.
 /// </summary>
 /// <remarks>
-/// ArcGIS clients deliver the token in one of three places: the <c>token</c> query
+/// ArcGIS clients deliver the token in one of four places: the <c>token</c> query
 /// string parameter (legacy/embedded clients), the <c>Authorization: Bearer</c>
-/// header, or the <c>X-Esri-Authorization: Bearer</c> header used by newer Esri
-/// SDKs. The handler accepts any of these and delegates to
+/// header, the <c>X-Esri-Authorization: Bearer</c> header used by newer Esri
+/// SDKs, or the <c>token</c> field in an <c>application/x-www-form-urlencoded</c>
+/// request body. The handler accepts any of these and delegates to
 /// <see cref="IPortalTokenIssuer.ValidateAsync"/> for verification.
 /// </remarks>
 internal sealed class PortalTokenAuthenticationHandler(
@@ -34,7 +35,7 @@ internal sealed class PortalTokenAuthenticationHandler(
     /// <inheritdoc />
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var token = ExtractToken();
+        var token = await ExtractTokenAsync().ConfigureAwait(false);
         if (string.IsNullOrEmpty(token))
         {
             return AuthenticateResult.NoResult();
@@ -53,7 +54,7 @@ internal sealed class PortalTokenAuthenticationHandler(
         return AuthenticateResult.Success(new AuthenticationTicket(validation.Principal, Scheme.Name));
     }
 
-    private string? ExtractToken()
+    private async ValueTask<string?> ExtractTokenAsync()
     {
         if (Request.Query.TryGetValue(TokenQueryParameter, out var queryToken) && !StringValues.IsNullOrEmpty(queryToken))
         {
@@ -82,7 +83,59 @@ internal sealed class PortalTokenAuthenticationHandler(
             }
         }
 
-        return null;
+        return await TryReadFormTokenAsync().ConfigureAwait(false);
+    }
+
+    private async ValueTask<string?> TryReadFormTokenAsync()
+    {
+        // Form tokens are an ArcGIS POST transport. Do not parse multipart or
+        // arbitrary request bodies as credentials: those surfaces have their own
+        // validation and must not gain an implicit authentication path.
+        if (!HasFormUrlEncodedContentType(Request))
+        {
+            return null;
+        }
+
+        Request.EnableBuffering();
+        try
+        {
+            var form = await Request.ReadFormAsync(Context.RequestAborted).ConfigureAwait(false);
+            if (!form.TryGetValue(TokenQueryParameter, out var formToken) || StringValues.IsNullOrEmpty(formToken))
+            {
+                return null;
+            }
+
+            var candidate = formToken.ToString();
+            return string.IsNullOrWhiteSpace(candidate) ? null : candidate.Trim();
+        }
+        catch (InvalidDataException)
+        {
+            // A malformed form is not a credential. Let the endpoint retain its
+            // normal request-validation behavior rather than failing auth parsing.
+            return null;
+        }
+        finally
+        {
+            // Preserve the raw body for downstream endpoint handlers as well as
+            // Request.Form's cached collection.
+            if (Request.Body.CanSeek)
+            {
+                Request.Body.Position = 0;
+            }
+        }
+    }
+
+    internal static bool HasFormUrlEncodedContentType(HttpRequest request)
+    {
+        var contentType = request.ContentType;
+        if (string.IsNullOrWhiteSpace(contentType))
+        {
+            return false;
+        }
+
+        var separator = contentType.IndexOf(';');
+        var mediaType = (separator >= 0 ? contentType[..separator] : contentType).Trim();
+        return string.Equals(mediaType, "application/x-www-form-urlencoded", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? TryReadBearerHeader(StringValues headerValues)

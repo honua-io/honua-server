@@ -105,7 +105,7 @@ public sealed class PostgresPromotionStoreTests(PostgresFixture fixture)
             })
             .Build();
 
-        services.AddPostgreSqlServices(configuration);
+        services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
 
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IPublishedServiceStore) &&

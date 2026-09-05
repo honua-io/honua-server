@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -278,7 +279,15 @@ internal static class McpEndpointExtensions
                 else
                 {
                     McpLog.SessionRejected(logger, "capacity-reached");
-                    response = ErrorResponse(response.Id ?? JsonNullId, McpErrorMapper.SessionCapacityReached());
+                    var options = context.RequestServices.GetRequiredService<IOptions<McpOptions>>().Value;
+                    context.Response.Headers["Retry-After"] =
+                        options.SessionCapacityRetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+                    context.Response.Headers["Honua-Retryable"] = "true";
+                    response = ErrorResponse(
+                        response.Id ?? JsonNullId,
+                        McpErrorMapper.SessionCapacityReached(
+                            options.SessionCapacityRetryAfterSeconds,
+                            context.TraceIdentifier));
                 }
             }
 

@@ -62,7 +62,7 @@ function admissionRun(overrides = {}) {
 function admissionJob(overrides = {}) {
   return {
     id: 200,
-    name: 'PR Gate',
+    name: 'PR Gate / Build and tests',
     status: 'completed',
     conclusion: 'success',
     started_at: '2026-08-14T08:00:10Z',

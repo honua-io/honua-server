@@ -103,7 +103,9 @@ public sealed class StudioAiChatRequestMapperTests
                 {
                     Name = "list_incidents",
                     Description = "List open incidents.",
-                    InputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement
+                    InputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement,
+                    Annotations = JsonDocument.Parse("""{"title":"Incident list","readOnlyHint":true}""").RootElement,
+                    OutputSchema = JsonDocument.Parse("""{"type":"object","required":["incidents"]}""").RootElement
                 }
             ],
             ToolChoice = new StudioAiChatHttpToolChoice { Mode = "specific", ToolName = "list_incidents" },
@@ -126,10 +128,46 @@ public sealed class StudioAiChatRequestMapperTests
         request.Messages[2].Role.Should().Be(StudioAiRole.Tool, "role parsing is case-insensitive");
         request.Messages[2].ToolCallId.Should().Be("call-1");
         request.Tools.Should().ContainSingle(t => t.Name == "list_incidents");
+        request.Tools![0].Annotations!.Value.GetProperty("readOnlyHint").GetBoolean().Should().BeTrue();
+        request.Tools[0].OutputSchema!.Value.GetProperty("required")[0].GetString().Should().Be("incidents");
         request.ToolChoice!.Mode.Should().Be(StudioAiToolChoiceMode.Specific);
         request.ToolChoice.ToolName.Should().Be("list_incidents");
         request.MaxTokens.Should().Be(2048);
         request.Temperature.Should().Be(0.2);
+    }
+
+    [UnitTest]
+    public void HttpToolContract_RoundTripsAnnotationsAndOutputSchema()
+    {
+        const string json = """
+            {
+              "messages": [{"role":"user","content":"list incidents"}],
+              "tools": [{
+                "name": "list_incidents",
+                "description": "List open incidents.",
+                "inputSchema": {"type":"object"},
+                "annotations": {"title":"Incident list","readOnlyHint":true},
+                "outputSchema": {"type":"object","properties":{"incidents":{"type":"array"}}}
+              }]
+            }
+            """;
+
+        var request = JsonSerializer.Deserialize(
+            json,
+            StudioAiProxyJsonContext.Default.StudioAiChatHttpRequest)!;
+
+        request.Tools.Should().ContainSingle();
+        request.Tools![0].Annotations!.Value.GetProperty("title").GetString().Should().Be("Incident list");
+        request.Tools[0].OutputSchema!.Value.GetProperty("properties").TryGetProperty("incidents", out _).Should().BeTrue();
+
+        var serialized = JsonSerializer.Serialize(
+            request,
+            StudioAiProxyJsonContext.Default.StudioAiChatHttpRequest);
+        using var document = JsonDocument.Parse(serialized);
+        var serializedTool = document.RootElement.GetProperty("tools")[0];
+
+        serializedTool.GetProperty("annotations").GetProperty("readOnlyHint").GetBoolean().Should().BeTrue();
+        serializedTool.GetProperty("outputSchema").GetProperty("type").GetString().Should().Be("object");
     }
 
     [UnitTest]

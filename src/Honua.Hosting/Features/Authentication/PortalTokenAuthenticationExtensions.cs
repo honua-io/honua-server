@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -20,12 +21,14 @@ namespace Honua.Infrastructure.Authentication;
 /// The scheme is registered alongside the existing API-key authentication so that
 /// FeatureServer/MapServer endpoints (which use <c>AllowAnonymous</c> route metadata
 /// and authorize per-resource) can observe portal-token credentials carried as
-/// <c>?token=</c>, <c>Authorization: Bearer ...</c>, or <c>X-Esri-Authorization: Bearer ...</c>.
+/// <c>?token=</c>, <c>Authorization: Bearer ...</c>, <c>X-Esri-Authorization: Bearer ...</c>,
+/// or a form-encoded POST <c>token</c> field.
 /// A small middleware bridges anonymous requests by authenticating the scheme on
 /// demand and projecting the resulting principal onto <see cref="HttpContext.User"/>.
 /// </remarks>
 public static class PortalTokenAuthenticationExtensions
 {
+    internal static readonly object AuthenticationFailureKey = new();
     /// <summary>
     /// Authentication scheme name for ArcGIS-compatible portal tokens.
     /// </summary>
@@ -81,6 +84,27 @@ public static class PortalTokenAuthenticationExtensions
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.UseMiddleware<PortalTokenAuthenticationMiddleware>();
+    }
+
+    /// <summary>
+    /// Rejects invalid portal tokens after the shared audit and rate-limit middleware has
+    /// entered the request. This preserves the Esri 498 response while ensuring repeated
+    /// invalid credentials consume the configured source-IP rate-limit bucket.
+    /// </summary>
+    public static IApplicationBuilder UsePortalTokenAuthenticationRejection(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.Use(async (context, next) =>
+        {
+            if (!context.Items.TryGetValue(AuthenticationFailureKey, out var failure) || failure is not true)
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            context.Response.Headers.Append("WWW-Authenticate", "Bearer");
+            await StandardErrorHelpers.CreateInvalidToken(context).ExecuteAsync(context).ConfigureAwait(false);
+        });
     }
 
     private static void TryAddSingletonPortalTokenIssuer(this IServiceCollection services)
@@ -154,8 +178,10 @@ public static class PortalTokenAuthenticationExtensions
         // #1888). Singletons mirror the in-memory IAdminApiKeyStore pattern: no
         // parallel durable token store (ADR-0049). They are additive — the flag-gated
         // Increment-1 client_credentials path keeps working via the API-key fallback.
-        services.TryAddSingleton<IOAuthClientStore>(
-            sp => new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
+        services.TryAddSingleton<IOAuthClientStore>(sp =>
+            sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
+                ? new RedisOAuthClientStore(redis, sp.GetService<TimeProvider>())
+                : new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IOAuthScopeCatalogue, InMemoryOAuthScopeCatalogue>();
 
         // Portal community-group + item-sharing surface (#1868). In-memory singletons
@@ -240,6 +266,10 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             {
                 context.User = result.Principal;
             }
+            else if (!result.Succeeded && result.Failure is not null && IsGeoServicesPortalRequest(context))
+            {
+                context.Items[PortalTokenAuthenticationExtensions.AuthenticationFailureKey] = true;
+            }
         }
 
         await _next(context).ConfigureAwait(false);
@@ -270,7 +300,30 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             return true;
         }
 
+        // Only standard URL-encoded forms carry the ArcGIS POST token transport.
+        // OAuth endpoints use form fields such as RFC 7009's `token` as operation
+        // operands, not request credentials, so they must retain anonymous semantics.
+        // Multipart and arbitrary request bodies must never trigger credential parsing.
+        if (!context.Request.Path.StartsWithSegments("/sharing/rest/oauth2", StringComparison.OrdinalIgnoreCase) &&
+            PortalTokenAuthenticationHandler.HasFormUrlEncodedContentType(context.Request))
+        {
+            return true;
+        }
+
         return false;
+    }
+
+    private static bool IsGeoServicesPortalRequest(HttpContext context)
+    {
+        if (context.Request.Path.StartsWithSegments("/rest"))
+        {
+            return true;
+        }
+
+        // OAuth2 uses `token` as an operation operand on revoke/introspect, so an
+        // unknown operand must not be mistaken for an invalid request credential.
+        return context.Request.Path.StartsWithSegments("/sharing/rest") &&
+            !context.Request.Path.StartsWithSegments("/sharing/rest/oauth2");
     }
 
     private static bool HasBearerPrefix(Microsoft.Extensions.Primitives.StringValues values)

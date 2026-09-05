@@ -99,9 +99,35 @@ public sealed class FeatureServerAccessFilteringTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WhenServiceDoesNotAdvertiseSync_ReturnsBadRequest()
+    {
+        using var factory = CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
+
+        using var content = new FormUrlEncodedContent(
+            new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["replicaName"] = "sync-disabled",
+                ["layers"] = "0",
+                ["syncModel"] = "perReplica"
+            });
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            content);
+
+        await response.AssertGeoServicesErrorAsync((int)HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("Sync capability");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
-    public async Task LayerMetadata_WithAttachmentSurface_AdvertisesUploads()
+    public async Task LayerMetadata_WithAttachmentSurface_DoesNotAdvertiseUnsupportedUploadId()
     {
         using var factory = CreateFactory();
         using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
@@ -124,7 +150,7 @@ public sealed class FeatureServerAccessFilteringTests
         // to issue the request when it is absent/false.
         root.GetProperty("supportsQueryAttachments").GetBoolean().Should().BeTrue();
         root.GetProperty("supportsAttachmentKeywords").GetBoolean().Should().BeTrue();
-        root.GetProperty("supportsAttachmentsByUploadId").GetBoolean().Should().BeTrue();
+        root.GetProperty("supportsAttachmentsByUploadId").GetBoolean().Should().BeFalse();
 
         // Regression for the operations-block inconsistency: the @arcgis/core JS SDK
         // reads supportsQueryAttachments off the nested advancedQueryCapabilities

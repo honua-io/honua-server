@@ -254,8 +254,8 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}-${{ matrix.arch }}
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}-${{ matrix.arch }},mode=max
           provenance: true
           sbom: true
 
@@ -302,8 +302,8 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=gha,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}-${{ matrix.arch }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}-${{ matrix.arch }}
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}-${{ matrix.arch }},mode=max
           provenance: true
           sbom: true
 

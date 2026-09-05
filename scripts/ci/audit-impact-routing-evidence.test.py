@@ -6,6 +6,7 @@ import importlib.util
 import hashlib
 import json
 import shutil
+import subprocess
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -291,8 +292,8 @@ def test_policy_and_discovery() -> None:
     for invalid in (
         policy(receipt_retention_days=91),
         policy(maximum_pages_per_query=11),
-        policy(maximum_producer_run_catalogs=1601),
-        policy(maximum_receipt_downloads=1001, maximum_producer_run_catalogs=1500),
+        policy(maximum_producer_run_catalogs=3001),
+        policy(maximum_receipt_downloads=2501, maximum_producer_run_catalogs=3000),
         # The catalog bound must never be tighter than the download bound, or
         # it silently becomes the binding cap on window size again.
         policy(maximum_producer_run_catalogs=19),
@@ -518,7 +519,6 @@ def test_policy_generation_ignores_routing_irrelevant_workflow_edits() -> None:
         changed_observer = MODULE.current_blobs(root)
         assert changed_observer["policy_generation_sha256"] != original["policy_generation_sha256"]
         observer.write_bytes((REPOSITORY_ROOT / MODULE.NATIVE_WORKFLOW).read_bytes())
-
         classifier = root / "scripts/ci/native-image-impact.py"
         classifier.write_text(
             classifier.read_text(encoding="utf-8") + "\n# routing policy revision\n",
@@ -534,6 +534,74 @@ def test_policy_generation_ignores_routing_irrelevant_workflow_edits() -> None:
         )
         changed_policy = MODULE.current_blobs(root)
         assert changed_policy["policy_generation_sha256"] != original["policy_generation_sha256"]
+
+
+def test_expired_receipt_is_reclassified_as_loss() -> None:
+    counters = {
+        MODULE.PR_GATE_STREAM: {
+            "observer_runs_successful": 1,
+            "receipts_indexed": 1,
+            "receipts_skipped": 0,
+            "receipts_pending_index": 0,
+            "receipts_missing": 0,
+        },
+        MODULE.NATIVE_STREAM: {
+            "observer_runs_successful": 1,
+            "receipts_indexed": 1,
+            "receipts_skipped": 0,
+            "receipts_pending_index": 0,
+            "receipts_missing": 0,
+        },
+    }
+    index = {
+        "contract": MODULE.INDEX_CONTRACT,
+        "repository": MODULE.REPOSITORY,
+        "cutoff": "2026-08-15T00:00:00Z",
+        "artifacts": [
+            entry(MODULE.PR_GATE_STREAM, 11, 1),
+            entry(MODULE.NATIVE_STREAM, 12, 2),
+        ],
+        "exclusions": [],
+        "receipt_emission": MODULE.receipt_emission(counters),
+        "integrity_failures": [],
+    }
+
+    result = MODULE.expire_indexed_receipt(index, 11)
+    assert [item["artifact_id"] for item in result["artifacts"]] == [12]
+    assert result["receipt_emission"][MODULE.PR_GATE_STREAM]["receipts_indexed"] == 0
+    assert result["receipt_emission"][MODULE.PR_GATE_STREAM]["receipts_missing"] == 1
+    assert result["receipt_emission"]["all"]["receipts_owed"] == 2
+    assert result["receipt_emission"]["all"]["loss_ratio"] == 0.5
+    assert result["exclusions"] == [{
+        "stream": MODULE.PR_GATE_STREAM,
+        "producer_run_id": 1,
+        "artifact_id": 11,
+        "reason": "observation-receipt-expired-before-download",
+    }]
+    # Reclassification is exact and fail-closed; an unknown or repeated
+    # artifact identity cannot silently improve the loss measurement.
+    for artifact_id in (10, 11):
+        try:
+            MODULE.expire_indexed_receipt(result, artifact_id)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("only a uniquely indexed artifact may expire")
+
+    # Exercise the policy-free workflow command, not only the helper. This
+    # command runs after discovery and intentionally receives no policy path.
+    with tempfile.TemporaryDirectory() as temporary:
+        index_path = Path(temporary) / "index.json"
+        index_path.write_text(json.dumps(index), encoding="utf-8")
+        subprocess.run(
+            [
+                "python3", str(SCRIPT), "expire-indexed-receipt",
+                "--index", str(index_path), "--artifact-id", "11",
+            ],
+            check=True,
+        )
+        cli_result = json.loads(index_path.read_text(encoding="utf-8"))
+        assert cli_result["receipt_emission"]["all"]["loss_ratio"] == 0.5
 
 
 def test_summary_requires_real_candidate_and_image_evidence() -> None:
@@ -607,6 +675,51 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         assert ledger["counts"]["worker_impacted_heads"] == 1
         assert ledger["counts"]["worker_avoided_heads"] == 1
         assert all(ledger["gates"].values())
+
+        # A candidate-only route is still report-only. The authoritative
+        # legacy workflow therefore has no exact-head run by design, and the
+        # ledger must not manufacture a missing authoritative outcome for it.
+        candidate_only = native_receipt(
+            blobs,
+            pr=13,
+            head=HEAD_D,
+            worker=False,
+            serving=lambda_only,
+            legacy_serving={name: False for name in MODULE.SERVING_VARIANTS},
+            legacy_worker=False,
+        )
+        candidate_only["comparison"]["serving_candidate_only"] = True
+        archive(archives, 104, MODULE.NATIVE_STREAM, candidate_only)
+        pages(root / "serving", "workflow_runs", serving[:2])
+        candidate_shadow = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert candidate_shadow["counts"]["authoritative_image_outcome_failures"] == 0
+        assert candidate_shadow["counts"]["native_countable_heads"] == 2
+        assert candidate_shadow["counts"]["candidate_only_shadow_heads"] == 1
+        assert candidate_shadow["candidate_only_shadow_heads"][0][
+            "candidate_only_classes"
+        ] == ["serving_lambda"]
+        archive(
+            archives,
+            104,
+            MODULE.NATIVE_STREAM,
+            native_receipt(
+                blobs,
+                pr=13,
+                head=HEAD_D,
+                worker=False,
+                serving=lambda_only,
+                legacy_serving=lambda_only,
+                legacy_worker=False,
+            ),
+        )
+        pages(root / "serving", "workflow_runs", serving)
 
         # #3343: `pull_requests` on a workflow run is a LIVE view of the pull
         # request. Once a later push moves the PR, every earlier head's run
@@ -791,6 +904,33 @@ def test_integrity_failures_do_not_count() -> None:
         }
         pages(root / "serving", "workflow_runs", [])
         pages(root / "worker", "workflow_runs", [])
+        # Full-gate classifier exits that happen before file normalization have
+        # no file-list claim to digest. The producer contract uses an empty
+        # digest for those explicitly fail-closed reasons; accepting exactly
+        # that shape does not weaken docs-only receipt integrity.
+        undigested = pr_gate_receipt(blobs)
+        undigested.update({
+            "mode": "full",
+            "reason": "unbounded-file-count",
+            "changed_file_count": 0,
+            "files_sha256": "",
+        })
+        index["artifacts"][0]["artifact_name"] = "pr-gate-impact-full-v3-attempt-1"
+        archive(archives, 301, MODULE.PR_GATE_STREAM, undigested)
+        accepted = MODULE.summarize(
+            index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT,
+        )
+        assert accepted["counts"]["validated_pr_gate_receipts"] == 1
+        undigested["reason"] = "path-requires-full-gate"
+        archive(archives, 301, MODULE.PR_GATE_STREAM, undigested)
+        rejected_digest = MODULE.summarize(
+            index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT,
+        )
+        assert rejected_digest["counts"]["integrity_failures"] == 1
+        index["artifacts"][0]["artifact_name"] = artifact_name(MODULE.PR_GATE_STREAM)
+
         # #3343: a stale policy input is COHORT DRIFT, not an integrity
         # violation. Any commit touching one of the nine pinned inputs — the
         # `actions/checkout` bump 741f0d7b5 did exactly this — moves the policy
@@ -932,6 +1072,11 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     assert "ref: ${{ github.workflow_sha }}" in ledger
     assert "actions/runs/${run_id}/artifacts?per_page=100" in ledger
     assert "producer_count > MAXIMUM_CATALOGS" in ledger
+    assert 'id: download' in ledger
+    assert 'zipfile.is_zipfile(sys.argv[1])' in ledger
+    assert 'receipt artifact %s was unavailable or invalid after 4 attempts' in ledger
+    assert "steps.download.outcome == 'success'" in ledger
+    assert 'DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}' in ledger
     assert "serving-image-boundary.yml/runs" in ledger
     assert '--receipt-cutoff "${RECEIPT_CUTOFF}"' in ledger
     assert "worker-gdal-image.yml/runs" in ledger
@@ -1616,6 +1761,18 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
         "native_heads": 8,
     }
 
+    # v3 ledgers could count candidate-only routes that had never executed.
+    # Retained artifacts using those semantics must not seed a v4 sample.
+    legacy = daily(18)
+    legacy["contract"] = "honua.impact-routing-evidence-ledger/v3"
+    legacy["counts"]["docs_only_success_heads"] = 100
+    legacy["counts"]["native_countable_heads"] = 100
+    current_only = MODULE.trend([legacy, daily(19)], policy(), now)
+    assert current_only["largest_sample_within_generation"] == {
+        "docs_only_heads": 1,
+        "native_heads": 2,
+    }
+
     independent_maxima = MODULE.trend([
         {**daily(19), "counts": {
             "integrity_failures": 0, "docs_only_success_heads": 20,
@@ -1663,6 +1820,7 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
 
 test_policy_and_discovery()
 test_policy_generation_ignores_routing_irrelevant_workflow_edits()
+test_expired_receipt_is_reclassified_as_loss()
 test_summary_requires_real_candidate_and_image_evidence()
 test_integrity_failures_do_not_count()
 test_workflows_are_read_only_and_attempt_bound()

@@ -82,6 +82,12 @@ public sealed record OperationPolicyContext
     /// </summary>
     public string? CorrelationId { get; init; }
 
+    /// <summary>The durable acceptance-audit identity for this exact invocation.</summary>
+    public string? AuditId { get; init; }
+
+    /// <summary>The durable proposal identity explicitly joined to this invocation.</summary>
+    public string? ProposalId { get; init; }
+
     /// <summary>Trusted tenant identity captured at invocation time.</summary>
     public string? TenantId { get; init; }
 
@@ -122,6 +128,12 @@ public sealed record OperationPolicyContext
     /// default ignores them. Empty for an unauthenticated or role-less caller.
     /// </summary>
     public IReadOnlyList<string> Roles { get; init; } = [];
+
+    /// <summary>Whether the invoking authority is narrowed by OAuth scopes.</summary>
+    public bool ScopeGoverned { get; init; }
+
+    /// <summary>Normalized recognized OAuth scopes forming the invocation's upper bound.</summary>
+    public IReadOnlyList<string> RecognizedScopes { get; init; } = [];
 }
 
 /// <summary>
@@ -161,6 +173,9 @@ public sealed record OperationValidation
 /// </summary>
 public sealed record OperationHandle
 {
+    /// <summary>Trusted tenant owner captured when the operation was accepted.</summary>
+    public string? TenantId { get; init; }
+
     /// <summary>Optimistic-concurrency version incremented by the durable store.</summary>
     public long Version { get; init; }
 

@@ -67,17 +67,17 @@ This section is the single contract for attempt-1 reuse. `ci.yml`, the plan
 script and ADR-0074 point here rather than restating it.
 
 Reads happen on attempt 1 as well as on reruns. This is the only build-reuse
-slice promoted out of shadow, and it is promoted precisely because it adds no
-producer job and no wait:
+slice promoted out of shadow, and it is promoted without adding a producer job:
 
 - the payload it reads is already written today, by the same writer shard, on
   the same attempt — only the read was previously gated on `run_attempt > 1`;
-- the lookup is single-shot. A shard that starts alongside or ahead of the
-  writer misses and takes the unchanged restore/build path. A shard that starts
-  later — the common case once the 65-shard matrix queues behind the runner
-  concurrency limit — skips its duplicate build of the same project;
-- nothing polls and no `needs:` edge is introduced, so the same-run producer
-  fan-out regression measured in run 31768277005 cannot recur;
+- the lookup runs at the latest safe point after checkout and setup. A first
+  miss waits 90 seconds and makes one final exact-key attempt before taking the
+  unchanged restore/build path. The retry is deliberately bounded at two total
+  attempts so it adds at most 90 seconds to a cold consumer;
+- no `needs:` edge is introduced, so shards retain independent scheduling and
+  the same-run producer fan-out regression measured in run 31768277005 cannot
+  recur;
 - cache write volume is unchanged, so the repository cache quota is unaffected.
 
 #### Run-scoped keys
@@ -142,8 +142,8 @@ Fail-open is enforced at three levels and every outcome is printed in the job
 step summary (read mode, switch value, lookup outcome, decision, and — only when
 a build actually succeeded — an explicit "restored and built locally" line):
 
-1. the `actions/cache/restore` step is `continue-on-error`, so a cache-service
-   error, throttle, or timeout is a miss rather than a red shard;
+1. both bounded `actions/cache/restore` steps are `continue-on-error`, so a
+   cache-service error, throttle, or timeout is a miss rather than a red shard;
 2. `restore-server-test-binaries.sh` stays fail-closed on evidence (contract,
    project, source SHA, SDK, size, digest, TTL, archive entry safety) and
    `server-test-shard-cache.sh restore` converts any rejection into

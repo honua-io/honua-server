@@ -10,7 +10,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - Server-owned field form packages with versioned drafts, immutable published versions, offline policy discovery, and idempotent published-package submissions through the shared edit and attachment pipelines.
 - File import for GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase zips, GeoParquet, and raster import; ArcGIS GeoServices REST layer import and migration inventory; GeoServer REST migration inventory, dry-run validation, and bounded PostGIS-backed catalog apply; and cross-server consume probes.
 - Streaming feature change/events endpoints, async geoprocessing over the canonical process runtime, and durable analysis content for saved-query/package versions plus reusable result artifacts.
-- ArcGIS-compatible Portal Sharing token issuance at `POST`/`GET /sharing/rest/generateToken`, so Esri clients can exchange username/password credentials for an opaque bearer token and reuse it against `/rest/services/*` via `?token=`, `Authorization: Bearer`, or `X-Esri-Authorization: Bearer` (Community-tier, gated by the `identity.portal-token` entitlement; see [Security](../../guides/secure/authentication.md#authentication)).
+- ArcGIS-compatible Portal Sharing token issuance at `POST`/`GET /sharing/rest/generateToken`, so Esri clients can exchange username/password credentials for an opaque bearer token and reuse it against `/rest/services/*` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field (Community-tier, gated by the `identity.portal-token` entitlement; see [Security](../../guides/secure/authentication.md#authentication)).
 
 ## Control Plane
 

@@ -846,7 +846,9 @@ internal sealed class StreamingGeoJsonReader
         return element.ValueKind switch
         {
             JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal : element.GetDouble(),
+            // Box the integer before the conditional can promote it to double and
+            // round values beyond 2^53. This path also handles top-level feature IDs.
+            JsonValueKind.Number => element.TryGetInt64(out var longVal) ? (object)longVal : element.GetDouble(),
             JsonValueKind.True => true,
             JsonValueKind.False => false,
             JsonValueKind.Null => null,

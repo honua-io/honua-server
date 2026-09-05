@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -187,6 +188,51 @@ public sealed class DeployWorkflowReconcilerRollbackFailureTests
         updated.Should().NotBeNull();
         updated!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
         updated.CurrentPhase.Should().Contain("telemetry detected canary degradation");
+    }
+
+    [Fact]
+    public async Task Reconciler_WhenRollbackEvidenceNeverConverges_EscalatesAfterBoundedObservations()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new FailingRollbackBackend(
+            rollbackStatus: WorkflowOperationStatus.RollbackRequested,
+            rollbackMessage: "Provider did not prove the requested prior revision.");
+        var operation = CreateOperation(WorkflowOperationStatus.RollbackRequested);
+        operation = operation with
+        {
+            Deploy = operation.Deploy! with
+            {
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [DeployWorkflowReconciler.RollbackObservationStartedAtParameterKey] =
+                        DateTimeOffset.UtcNow.AddMinutes(-6).ToString("O", CultureInfo.InvariantCulture)
+                }
+            }
+        };
+        await store.TryCreateAsync(operation);
+
+        var reconciler = CreateReconciler(store, backend, new StubDeployTelemetrySignalEvaluator(null));
+        WorkflowOperationRecord? updated = null;
+        for (var cycle = 0; cycle < 5; cycle++)
+        {
+            await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+            updated = await store.GetAsync(operation.OperationId);
+            if (updated is not null && IsTerminal(updated.Status))
+            {
+                break;
+            }
+        }
+
+        if (updated is null)
+        {
+            Assert.Fail("Reconciliation loop never produced an updated operation record.");
+            return;
+        }
+
+        updated.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        updated.ErrorMessage.Should().Contain("evidence remained incomplete after the 300-second observation timeout");
+        updated.Deploy!.Parameters[DeployWorkflowReconciler.RollbackObservationStartedAtParameterKey]
+            .Should().NotBeNullOrWhiteSpace();
     }
 
     // ---- helpers ---------------------------------------------------------

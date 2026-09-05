@@ -9,6 +9,8 @@ REPO_ROOT="${HONUA_SERVER_TEST_CACHE_REPO_ROOT:-${DEFAULT_REPO_ROOT}}"
 REGISTRY="${HONUA_SERVER_TEST_CACHE_REGISTRY:-${REPO_ROOT}/.github/server-test-artifact-projects.json}"
 DEFAULT_PROJECT="tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
 CONTRACT_VERSION="1"
+RESTORE_ATTEMPTS="2"
+RESTORE_RETRY_DELAY_SECONDS="90"
 OUTPUT_FILE="${GITHUB_OUTPUT:-/dev/stdout}"
 
 emit() {
@@ -165,6 +167,8 @@ case "${mode}" in
     fi
     emit restore_mode "${restore_mode}"
     emit restore_enabled "$([[ "${restore_mode}" == "disabled" ]] && echo false || echo true)"
+    emit restore_attempts "${RESTORE_ATTEMPTS}"
+    emit restore_retry_delay_seconds "${RESTORE_RETRY_DELAY_SECONDS}"
 
     # Single place that parses the attempt counter. The designated writer
     # publishes on attempt 1; on a rerun any shard that had to rebuild may

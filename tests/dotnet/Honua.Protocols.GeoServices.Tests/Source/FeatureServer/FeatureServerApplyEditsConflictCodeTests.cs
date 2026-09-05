@@ -197,6 +197,9 @@ public sealed class FeatureServerApplyEditsConflictCodeTests
             fixture.ReplaceService<IRelationshipStore>(store);
             fixture.ReplaceService<IStreamingFeatureStore>(store);
             await fixture.InitializeAsync();
+            fixture.EnableV2ServiceEditingCapabilities(
+                ServiceId,
+                ["Create", "Update", "Delete"]);
             return new EditHarness(fixture);
         }
 

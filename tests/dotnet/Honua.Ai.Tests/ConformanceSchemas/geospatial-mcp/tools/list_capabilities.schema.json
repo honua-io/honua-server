@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/list_capabilities.schema.json",
   "title": "list_capabilities inputSchema",
-  "description": "Argument shape for enumerating the server's full tool/resource surface plus grounding resources for a cold client LLM. The bare standard taxonomy models capability discovery as a CapabilityCatalog read; the reference implementation exposes it as a discrete tool (advertised name honua_list_capabilities). x-honua-extension: this is a documented Honua extension over the bare taxonomy, pending formalization in the geospatial-mcp standard. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "description": "Argument shape for bounded capability discovery. Full inventory export is an explicit admin-only operation.",
   "x-honua-extension": true,
   "x-honua-reference-shape": true,
   "type": "object",
@@ -16,6 +16,19 @@
       "type": "boolean",
       "default": true,
       "description": "Include the grounding/catalog resource URIs a client LLM should read first to ground a workflow."
+    },
+    "toolCursor": {
+      "type": "string",
+      "description": "Opaque cursor returned as nextToolCursor."
+    },
+    "resourceCursor": {
+      "type": "string",
+      "description": "Opaque cursor returned as nextResourceCursor."
+    },
+    "fullExport": {
+      "type": "boolean",
+      "default": false,
+      "description": "Explicit admin-only full inventory export."
     }
   }
 }

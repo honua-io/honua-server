@@ -56,6 +56,18 @@ public interface IAttachmentStore
     Task<Attachment> UpdateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically replaces only the keywords, preserving the current file reference and metadata.
+    /// </summary>
+    /// <param name="layerId">Layer identifier containing the feature</param>
+    /// <param name="featureId">Feature identifier that owns the attachment</param>
+    /// <param name="attachmentId">Unique attachment identifier</param>
+    /// <param name="keywords">Replacement keywords, or null to clear them</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Updated attachment</returns>
+    /// <exception cref="ResourceNotFoundException">Thrown if the attachment does not exist</exception>
+    Task<Attachment> UpdateKeywordsAsync(int layerId, long featureId, long attachmentId, string? keywords, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Replaces the stored file content for an existing attachment while preserving its identifier.
     /// </summary>
     /// <param name="layerId">Layer identifier containing the feature</param>

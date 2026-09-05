@@ -314,13 +314,17 @@ internal sealed partial class YarpRollingDeployBackend(
             {
                 // Rollback settles once the standby replica is gone and the active replica is serving.
                 var standbyGone = replicas.Standby is null || !replicas.Standby.Running;
-                if (standbyGone)
+                string? activeRevision = null;
+                var activeIsPriorRevision = replicas.Active is { Running: true } active &&
+                    active.Labels.TryGetValue(LabelRevision, out activeRevision) &&
+                    string.Equals(activeRevision, spec.CurrentRevision, StringComparison.OrdinalIgnoreCase);
+                if (standbyGone && activeIsPriorRevision)
                 {
                     return new DeployObservation
                     {
                         Status = WorkflowOperationStatus.RolledBack,
                         ProviderOperationId = operation.ProviderOperationId,
-                        ObservedRevision = spec.CurrentRevision,
+                        ObservedRevision = activeRevision,
                         Message = "Rolling deploy rolled back: the standby replica was stopped and the active replica is serving."
                     };
                 }
@@ -470,6 +474,16 @@ internal sealed partial class YarpRollingDeployBackend(
 
         var target = ResolveTarget(spec);
 
+        if (string.IsNullOrWhiteSpace(spec.CurrentRevision))
+        {
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                ProviderOperationId = operation.ProviderOperationId,
+                Message = "Rollback requires a previously observed revision, but none was captured for this operation."
+            };
+        }
+
         try
         {
             var replicas = await DiscoverReplicasAsync(operation, target, cancellationToken).ConfigureAwait(false);
@@ -488,6 +502,19 @@ internal sealed partial class YarpRollingDeployBackend(
             var newRevisionServing = replicas.Standby is { Running: true }
                 && (replicas.Active is null || !replicas.Active.Running);
             var alreadyPromoted = proxyPointsAtStandby || newRevisionServing;
+
+            if (replicas.Active is { Running: true } active &&
+                (!active.Labels.TryGetValue(LabelRevision, out var activeRevision) ||
+                 !string.Equals(activeRevision, spec.CurrentRevision, StringComparison.Ordinal)))
+            {
+                return new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.ManualInterventionRequired,
+                    ProviderOperationId = operation.ProviderOperationId,
+                    ObservedRevision = activeRevision,
+                    Message = "Rolling deploy rollback cannot prove the running active replica is the requested prior revision."
+                };
+            }
 
             if (!alreadyPromoted)
             {

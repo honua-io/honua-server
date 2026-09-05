@@ -351,6 +351,12 @@ public static class FeatureCatalog
     public const string ScenePointCloudIngestKey = "scene.pointcloud-ingest";
 
     /// <summary>
+    /// Entitlement key for H3-indexed spatial aggregation and H3 vector tile surfaces.
+    /// Pro-tier: gates FeatureServer <c>queryH3</c> and H3 tile generation.
+    /// </summary>
+    public const string H3AnalyticsKey = "analytics.h3";
+
+    /// <summary>
     /// All edition-gated features in the platform.
     /// </summary>
     public static IReadOnlyList<FeatureDefinition> All { get; } =
@@ -482,6 +488,8 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Buffer features by a fixed distance and dissolve or aggregate per group."),
         new("analytics.density", "Density Binning", Categories.Analytics,
             HonuaEdition.Pro, "Hex or square grid density (heatmap) binning over a filtered subset."),
+        new(H3AnalyticsKey, "H3 Aggregation", Categories.Analytics,
+            HonuaEdition.Pro, "Aggregate features into H3 cells and publish H3 vector tiles."),
         new("analytics.sun-shadow", "Sun/Shadow Analysis", Categories.Analytics,
             HonuaEdition.Pro, "Compute solar position from date/time/location and cast the shadow extent against the elevation surface."),
         new("analytics.slice", "Slice/Volumetric Analysis", Categories.Analytics,

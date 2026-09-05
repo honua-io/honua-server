@@ -193,11 +193,5 @@ internal sealed partial class StreamingFileImportService
             Message = "Failed to clean up GeoParquet scratch directory {ScratchDir}")]
         public static partial void CleanupScratchFailed(ILogger logger, Exception exception, string scratchDir);
 
-        [LoggerMessage(
-            EventId = 7441,
-            Level = LogLevel.Warning,
-            Message = "GeoParquet file has {RowGroupCount} row group(s) with largest group containing {MaxGroupRows} rows. " +
-                      "Row groups exceeding the per-group limit will materialize too much data in memory during import")]
-        public static partial void LargeRowGroupDetected(ILogger logger, int rowGroupCount, long maxGroupRows);
     }
 }

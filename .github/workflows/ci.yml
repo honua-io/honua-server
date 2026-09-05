@@ -23,10 +23,9 @@ on:
   # only merge path, which meant the batch CI never ran on merged work (that is
   # how a stale feature-catalog.json reached trunk). The fix is a SEPARATE
   # workflow, `.github/workflows/pr-gate.yml`, publishing the context `PR Gate`:
-  # one cheap runner (build + format + Fast unit + architecture smoke + the
-  # Server governance/drift tests, no `services:` orchestration, no matrix — the
-  # governance step boots one ephemeral Testcontainers Postgres for the
-  # EndpointRegistry drift check, #2882), sharing its steps with `merge-queue-gate`
+  # one cheap runner (build + format + Fast unit + architecture/MCP governance
+  # smoke, no `services:` orchestration, no Testcontainers), sharing its steps
+  # with `merge-queue-gate`
   # below via ./.github/actions/lean-gate.
   # DO NOT "simplify" that by adding a `pull_request` trigger to THIS workflow.
   # The heavy jobs below guard on `event_name != 'pull_request' || <not
@@ -66,22 +65,6 @@ on:
     inputs:
       merge_train_nonce:
         description: 'Opaque merge-train dispatch identity used to correlate the exact Actions run'
-        required: false
-        default: ''
-      pr_gate_run_id:
-        description: 'Exact admitted PR Gate run eligible for report-only tree-equivalent build evidence'
-        required: false
-        default: ''
-      pr_gate_run_attempt:
-        description: 'Exact admitted PR Gate run attempt'
-        required: false
-        default: ''
-      pr_gate_pr:
-        description: 'Single admitted pull request associated with optional PR Gate build evidence'
-        required: false
-        default: ''
-      pr_gate_head_sha:
-        description: 'Exact admitted pull-request head associated with optional PR Gate build evidence'
         required: false
         default: ''
       sdk_ref:
@@ -656,295 +639,6 @@ jobs:
           echo "descriptor=${descriptor}" >> "$GITHUB_OUTPUT"
           echo "matrix_include=${matrix_include}" >> "$GITHUB_OUTPUT"
 
-  pr-gate-build-reuse-shadow:
-    name: PR Gate Build Reuse Shadow
-    # This is evidence collection only. The source run identity is supplied by
-    # the trusted merge-train controller for one-member batches; multi-PR and
-    # ordinary manual/full CI runs omit it and never instantiate this job.
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      startsWith(github.ref, 'refs/heads/train/batch/') &&
-      vars.HONUA_PR_GATE_BUILD_REUSE_SHADOW == 'true' &&
-      inputs.pr_gate_run_id != '' &&
-      inputs.pr_gate_run_attempt != '' &&
-      inputs.pr_gate_pr != '' &&
-      inputs.pr_gate_head_sha != ''
-    needs: [changes, targeted-shards]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - name: Checkout exact merge-tree consumer
-        continue-on-error: true
-        uses: actions/checkout@v7.0.1
-
-      - id: receipt-artifact
-        name: Locate unique trusted build receipt
-        continue-on-error: true
-        uses: actions/github-script@v9
-        env:
-          SOURCE_RUN_ID: ${{ inputs.pr_gate_run_id }}
-          SOURCE_RUN_ATTEMPT: ${{ inputs.pr_gate_run_attempt }}
-        with:
-          script: |
-            const runId = Number(process.env.SOURCE_RUN_ID);
-            const runAttempt = Number(process.env.SOURCE_RUN_ATTEMPT);
-            if (!Number.isSafeInteger(runId) || runId <= 0 ||
-                !Number.isSafeInteger(runAttempt) || runAttempt <= 0) {
-              core.notice('PR Gate build evidence input is absent or malformed.');
-              return;
-            }
-            const name = `pr-gate-build-evidence-receipt-${runId}-attempt-${runAttempt}`;
-            const artifacts = await github.paginate(
-              github.rest.actions.listArtifactsForRepo,
-              { ...context.repo, name, per_page: 100 },
-            );
-            const candidates = [];
-            for (const artifact of artifacts.filter((item) =>
-              item.name === name && item.expired === false,
-            )) {
-              if (!artifact.workflow_run?.id) continue;
-              const { data: run } = await github.rest.actions.getWorkflowRun({
-                ...context.repo,
-                run_id: artifact.workflow_run.id,
-              });
-              const trustedObserverEvents = new Set(['workflow_run', 'workflow_dispatch']);
-              if (run.path === '.github/workflows/pr-gate-impact-observe.yml' &&
-                  run.name === 'PR Gate Impact Observation' &&
-                  trustedObserverEvents.has(run.event) && run.status === 'completed' &&
-                  run.conclusion === 'success' && run.head_branch === context.payload.repository.default_branch &&
-                  run.repository?.full_name === `${context.repo.owner}/${context.repo.repo}` &&
-                  Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0 &&
-                  Number.isSafeInteger(artifact.size_in_bytes) && artifact.size_in_bytes > 0 &&
-                  artifact.size_in_bytes <= 524288 &&
-                  /^sha256:[0-9a-f]{64}$/.test(artifact.digest || '')) {
-                candidates.push(artifact);
-              }
-            }
-            if (candidates.length !== 1) {
-              core.notice(`Trusted receipt artifact count is ${candidates.length}; reuse is a cache miss.`);
-              return;
-            }
-            core.setOutput('artifact_id', String(candidates[0].id));
-            core.setOutput('observer_run_id', String(candidates[0].workflow_run.id));
-            const { data: observerRun } = await github.rest.actions.getWorkflowRun({
-              ...context.repo,
-              run_id: candidates[0].workflow_run.id,
-            });
-            core.setOutput('observer_run_attempt', String(observerRun.run_attempt));
-
-      - name: Download trusted build receipt
-        if: steps.receipt-artifact.outputs.artifact_id != ''
-        id: receipt-download
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          artifact-ids: ${{ steps.receipt-artifact.outputs.artifact_id }}
-          path: ${{ runner.temp }}/pr-gate-build-receipt
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.receipt-artifact.outputs.observer_run_id }}
-
-      - id: payload-artifact
-        name: Resolve exact immutable source payload
-        if: steps.receipt-download.outcome == 'success'
-        continue-on-error: true
-        uses: actions/github-script@v9
-        env:
-          RECEIPT_PATH: ${{ runner.temp }}/pr-gate-build-receipt/receipt.json
-          SOURCE_RUN_ID: ${{ inputs.pr_gate_run_id }}
-          SOURCE_RUN_ATTEMPT: ${{ inputs.pr_gate_run_attempt }}
-          SOURCE_HEAD: ${{ inputs.pr_gate_head_sha }}
-          OBSERVER_RUN_ID: ${{ steps.receipt-artifact.outputs.observer_run_id }}
-          OBSERVER_RUN_ATTEMPT: ${{ steps.receipt-artifact.outputs.observer_run_attempt }}
-        with:
-          script: |
-            const fs = require('fs');
-            const receipt = JSON.parse(fs.readFileSync(process.env.RECEIPT_PATH, 'utf8'));
-            const runId = Number(process.env.SOURCE_RUN_ID);
-            const runAttempt = Number(process.env.SOURCE_RUN_ATTEMPT);
-            const artifactId = receipt?.artifact?.artifact_id;
-            const artifactName = receipt?.artifact?.artifact_name;
-            const observerRunId = Number(process.env.OBSERVER_RUN_ID);
-            const observerRunAttempt = Number(process.env.OBSERVER_RUN_ATTEMPT);
-            if (!Number.isSafeInteger(artifactId) || artifactId <= 0 ||
-                !Number.isSafeInteger(observerRunId) || observerRunId <= 0 ||
-                !Number.isSafeInteger(observerRunAttempt) || observerRunAttempt <= 0 ||
-                receipt?.source?.run_id !== runId ||
-                receipt?.source?.run_attempt !== runAttempt ||
-                receipt?.source?.head_sha !== process.env.SOURCE_HEAD ||
-                receipt?.observer?.run_id !== observerRunId ||
-                receipt?.observer?.run_attempt !== observerRunAttempt ||
-                receipt?.observer?.workflow_path !== '.github/workflows/pr-gate-impact-observe.yml') {
-              throw new Error('trusted receipt does not match dispatch identity');
-            }
-            const { data: sourceRun } = await github.rest.actions.getWorkflowRun({
-              ...context.repo,
-              run_id: runId,
-            });
-            if (sourceRun.path !== '.github/workflows/pr-gate.yml' ||
-                sourceRun.name !== 'PR Gate' || sourceRun.event !== 'pull_request' ||
-                sourceRun.status !== 'completed' || sourceRun.conclusion !== 'success' ||
-                sourceRun.run_attempt !== runAttempt || sourceRun.head_sha !== process.env.SOURCE_HEAD ||
-                sourceRun.repository?.full_name !== `${context.repo.owner}/${context.repo.repo}` ||
-                sourceRun.head_repository?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
-              throw new Error('source PR Gate run is no longer canonical');
-            }
-            const sourceArtifacts = await github.paginate(
-              github.rest.actions.listWorkflowRunArtifacts,
-              { ...context.repo, run_id: runId, per_page: 100 },
-            );
-            const matches = sourceArtifacts.filter((artifact) =>
-              artifact.id === artifactId && artifact.name === artifactName && artifact.expired === false &&
-              artifact.size_in_bytes === receipt?.artifact?.artifact_bytes &&
-              artifact.digest === receipt?.artifact?.artifact_digest,
-            );
-            if (matches.length !== 1) throw new Error('source payload artifact is absent or ambiguous');
-            core.setOutput('artifact_id', String(artifactId));
-
-      - name: Download exact PR Gate build payload
-        if: steps.payload-artifact.outputs.artifact_id != ''
-        id: payload-download
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          artifact-ids: ${{ steps.payload-artifact.outputs.artifact_id }}
-          path: ${{ runner.temp }}/pr-gate-build-payload
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ inputs.pr_gate_run_id }}
-
-      - name: Setup exact .NET toolchain
-        if: steps.payload-download.outcome == 'success'
-        id: reuse-dotnet
-        continue-on-error: true
-        uses: ./.github/actions/setup-dotnet-ci
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - id: shadow-proof
-        name: Prove tree-equivalent payload without build
-        if: steps.reuse-dotnet.outcome == 'success'
-        continue-on-error: true
-        shell: bash
-        env:
-          RECEIPT: ${{ runner.temp }}/pr-gate-build-receipt/receipt.json
-          PAYLOAD: ${{ runner.temp }}/pr-gate-build-payload
-        run: |
-          set +e
-          mkdir -p tests/TestResults "${RUNNER_TEMP}/pr-gate-build-shadow"
-          runner_image="${ImageOS:-unknown}-${ImageVersion:-unknown}"
-          status=accepted
-          reason=tree_equivalent_proof_passed
-          proof_project_count=0
-          proof_executed_tests=0
-          tab="$(printf '\t')"
-          while IFS="${tab}" read -r project proof_filter artifact_id merge_sha; do
-            python3 scripts/ci/pr-gate-build-evidence.py validate \
-              --repository "${GITHUB_REPOSITORY}" \
-              --pull-request '${{ inputs.pr_gate_pr }}' \
-              --head-sha '${{ inputs.pr_gate_head_sha }}' \
-              --source-run-id '${{ inputs.pr_gate_run_id }}' \
-              --source-run-attempt '${{ inputs.pr_gate_run_attempt }}' \
-              --configuration Release \
-              --dotnet-sdk "$(dotnet --version)" \
-              --runner-os "${RUNNER_OS}" \
-              --runner-arch "${RUNNER_ARCH}" \
-              --runner-image "${runner_image}" \
-              --consumer-root . \
-              --consumer-sha "${GITHUB_SHA}" \
-              --source-artifact-id "${artifact_id}" \
-              --payload-dir "${PAYLOAD}" \
-              --project "${project}" \
-              --receipt "${RECEIPT}" || { status=rejected; reason=receipt_or_tree_rejected; break; }
-            manifest="${PAYLOAD}/$(jq -r --arg project "${project}" '.projects[] | select(.project == $project) | .manifest_file' "${RECEIPT}")"
-            HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="$(dotnet --version)" \
-              scripts/ci/restore-server-test-binaries.sh \
-                --manifest "${manifest}" \
-                --destination . \
-                --project "${project}" \
-                --source-sha "${merge_sha}" || { status=rejected; reason=payload_restore_rejected; break; }
-            suffix="$(jq -r --arg project "${project}" '.projects[] | select(.project == $project) | .project_suffix' "${RECEIPT}")"
-            trx_name="pr-gate-build-shadow-${suffix}.trx"
-            trx_path="tests/TestResults/${trx_name}"
-            proof_evidence="${RUNNER_TEMP}/pr-gate-build-shadow/proof-${suffix}.json"
-            dotnet test "${project}" --no-build --no-restore --configuration Release \
-              --filter "${proof_filter}" \
-              --logger "trx;LogFileName=${trx_name}" \
-              --results-directory tests/TestResults || { status=rejected; reason=proof_test_failed; break; }
-            python3 scripts/ci/summarize-dotnet-trx.py \
-              --input "${trx_path}" \
-              --output "${proof_evidence}" || { status=rejected; reason=proof_result_empty_or_invalid; break; }
-            executed="$(jq -er '.result_count | select(type == "number" and floor == . and . > 0)' \
-              "${proof_evidence}")" || { status=rejected; reason=proof_result_empty_or_invalid; break; }
-            proof_project_count=$((proof_project_count + 1))
-            proof_executed_tests=$((proof_executed_tests + executed))
-          done < <(jq -r '. as $receipt | .projects[] |
-            [.project,.proof_filter,($receipt.artifact.artifact_id|tostring),$receipt.source.merge_sha] | @tsv' "${RECEIPT}")
-          jq -nS \
-            --arg contract 'honua.pr-gate-server-test-shadow/v1' \
-            --arg status "${status}" \
-            --arg reason "${reason}" \
-            --arg batch_sha "${GITHUB_SHA}" \
-            --arg batch_tree_sha "$(git rev-parse HEAD^{tree})" \
-            --argjson source_run_id '${{ inputs.pr_gate_run_id }}' \
-            --argjson source_run_attempt '${{ inputs.pr_gate_run_attempt }}' \
-            --argjson proof_project_count "${proof_project_count}" \
-            --argjson proof_executed_tests "${proof_executed_tests}" \
-            --arg receipt_fingerprint "$(jq -r '.fingerprint' "${RECEIPT}")" \
-            '{contract:$contract,mode:"observe",mutation:"none",promotion_authority:"none",
-              status:$status,reason:$reason,batch_sha:$batch_sha,batch_tree_sha:$batch_tree_sha,
-              source_run_id:$source_run_id,source_run_attempt:$source_run_attempt,
-              proof_project_count:$proof_project_count,proof_executed_tests:$proof_executed_tests,
-              receipt_fingerprint:$receipt_fingerprint}' \
-            > "${RUNNER_TEMP}/pr-gate-build-shadow/result.json"
-          echo "status=${status}" >> "${GITHUB_OUTPUT}"
-          exit 0
-
-      - name: Record unavailable shadow evidence
-        if: always() && steps.shadow-proof.outputs.status == ''
-        shell: bash
-        run: |
-          mkdir -p "${RUNNER_TEMP}/pr-gate-build-shadow"
-          jq -nS \
-            --arg contract 'honua.pr-gate-server-test-shadow/v1' \
-            --arg batch_sha "${GITHUB_SHA}" \
-            --arg receipt '${{ steps.receipt-artifact.outcome }}' \
-            --arg payload '${{ steps.payload-download.outcome }}' \
-            '{contract:$contract,mode:"observe",mutation:"none",promotion_authority:"none",
-              status:"unavailable",reason:"trusted_evidence_not_materialized",
-              batch_sha:$batch_sha,receipt_step:$receipt,payload_step:$payload}' \
-            > "${RUNNER_TEMP}/pr-gate-build-shadow/result.json"
-
-      - name: Report PR Gate build reuse shadow
-        if: always()
-        shell: bash
-        run: |
-          status="$(jq -r '.status' "${RUNNER_TEMP}/pr-gate-build-shadow/result.json")"
-          reason="$(jq -r '.reason' "${RUNNER_TEMP}/pr-gate-build-shadow/result.json")"
-          {
-            echo '### PR Gate build reuse shadow'
-            echo "- Result: \`${status}\`"
-            echo "- Reason: \`${reason}\`"
-            echo '- Mutation / promotion authority: `none / none`'
-            echo '- Authoritative server shards: `independent restore + build (unchanged)`'
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Retain PR Gate build reuse shadow evidence
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: pr-gate-build-reuse-shadow-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/pr-gate-build-shadow/result.json
-            ${{ runner.temp }}/pr-gate-build-shadow/proof-*.json
-            tests/TestResults/pr-gate-build-shadow-*.trx
-          if-no-files-found: error
-          retention-days: 7
-
   ci-router-validation:
     name: CI Router Validation
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
@@ -1295,6 +989,71 @@ jobs:
           fi
           echo "All .NET Foundation Tests families passed."
 
+  # The complete Server-project Category=Architecture assertion set formerly
+  # ran inside the required PR Gate. It boots the real WebAppFixture and a
+  # Testcontainers PostgreSQL so EndpointRegistryDriftTests sees store-gated
+  # routes; that fidelity is preserved here, including the exact filter and
+  # test project. The accepted #3213 trade is timing only: drift is detected on
+  # the trailing trunk matrix and fixed forward instead of blocking the PR.
+  #
+  # Restricting this job to refs/heads/trunk keeps it off train/batch branches
+  # and the dormant merge queue. Both selective trailing dispatches and full
+  # scheduled/manual trunk runs execute it. Its ordinary failure flows through
+  # Test Suite Summary into CI Gate, so the fleet's deterministic-failure brake
+  # engages exactly as it does for every other real gate.
+  server-governance-drift:
+    name: Server Governance/Drift
+    if: ${{ github.ref == 'refs/heads/trunk' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Pre-pull Testcontainers PostGIS image (background)
+        run: scripts/ci/prepull-testcontainers-postgis.sh
+
+      - name: Restore
+        run: scripts/ci/dotnet-restore-retry.sh tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+
+      - name: Build
+        run: |
+          dotnet build tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-restore \
+            --configuration Release \
+            /p:TreatWarningsAsErrors=true
+
+      - name: Create Test Results Directory
+        run: mkdir -p ./tests/TestResults
+
+      - name: Await Testcontainers PostGIS pre-pull
+        run: scripts/ci/prepull-testcontainers-postgis.sh --await
+
+      - name: Run .NET Tests (Server Governance/Drift)
+        run: |
+          timeout 15m \
+            dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+              --no-build \
+              --no-restore \
+              --configuration Release \
+              --filter "Category=Architecture" \
+              --logger "trx;LogFileName=trailing-server-governance.trx" \
+              --logger "console;verbosity=minimal" \
+              --results-directory ./tests/TestResults
+
+      - name: Upload governance/drift test results
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: server-governance-drift-results
+          path: tests/TestResults/
+          if-no-files-found: warn
+          retention-days: 7
+
   server-tests:
     name: Server Tests (${{ matrix.shard_name }})
     # Per ADR-0037 the PR gate runs only the targeted shards selected by
@@ -1360,18 +1119,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      # Reclaim runner disk before building. The modular topology (8 protocol
+      # Reclaim runner disk while .NET setup and cache planning run. The
+      # modular topology (8 protocol
       # assemblies + native packages such as ParquetSharp/Apache.Arrow/SkiaSharp
       # duplicated across their bin/obj, plus Coverlet coverage output) pushed
       # some shards over the ~14GB free-disk limit ("No space left on device").
       # Remove preinstalled toolchains the .NET test shards never use. Best-effort.
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/swift || true
-          sudo rm -rf /usr/local/.ghcup || true
-          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
-          df -h / || true
+      - name: Start freeing disk space
+        run: scripts/ci/server-test-shard-free-disk.sh
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1402,6 +1157,9 @@ jobs:
             --run-attempt '${{ github.run_attempt }}' \
             --prebuild-consume "${PREBUILD_CONSUME}"
 
+      - name: Wait for free disk space
+        run: scripts/ci/server-test-shard-free-disk.sh --await
+
       - name: Start exact-head cache restore timer
         if: steps.shard-cache-plan.outputs.restore_enabled == 'true'
         id: shard-cache-restore-start
@@ -1409,11 +1167,25 @@ jobs:
         run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
 
       - name: Restore exact-head shard cache
-        # Single-shot and fail-open: never waits for the writer, and a cache
-        # service error is a miss rather than a red shard. See
+        # Fail-open: a cache service error is a miss rather than a red shard. See
         # docs/internal/ci/server-test-binary-artifacts.md.
         if: steps.shard-cache-plan.outputs.restore_enabled == 'true'
         id: shard-cache-download
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.shard-cache-plan.outputs.payload_dir }}
+          key: ${{ steps.shard-cache-plan.outputs.cache_key }}
+          fail-on-cache-miss: false
+
+      - name: Wait before retrying exact-head shard cache
+        if: steps.shard-cache-plan.outputs.restore_enabled == 'true' && steps.shard-cache-plan.outputs.cache_writer != 'true' && steps.shard-cache-download.outputs.cache-hit != 'true'
+        shell: bash
+        run: sleep '${{ steps.shard-cache-plan.outputs.restore_retry_delay_seconds }}'
+
+      - name: Retry exact-head shard cache restore
+        if: steps.shard-cache-plan.outputs.restore_enabled == 'true' && steps.shard-cache-plan.outputs.cache_writer != 'true' && steps.shard-cache-download.outputs.cache-hit != 'true'
+        id: shard-cache-download-retry
         continue-on-error: true
         uses: actions/cache/restore@v6
         with:
@@ -1431,13 +1203,18 @@ jobs:
         id: shard-cache-materialize
         shell: bash
         env:
-          CACHE_HIT: ${{ steps.shard-cache-download.outputs.cache-hit }}
+          CACHE_HIT_FIRST: ${{ steps.shard-cache-download.outputs.cache-hit }}
+          CACHE_HIT_RETRY: ${{ steps.shard-cache-download-retry.outputs.cache-hit }}
         run: |
+          cache_hit=false
+          if [[ "${CACHE_HIT_FIRST:-false}" == "true" || "${CACHE_HIT_RETRY:-false}" == "true" ]]; then
+            cache_hit=true
+          fi
           scripts/ci/server-test-shard-cache.sh restore \
             --project '${{ steps.shard-cache-plan.outputs.project }}' \
             --source-sha '${{ github.sha }}' \
             --payload '${{ steps.shard-cache-plan.outputs.payload_dir }}' \
-            --cache-hit "${CACHE_HIT:-false}" \
+            --cache-hit "${cache_hit}" \
             --read-mode '${{ steps.shard-cache-plan.outputs.restore_mode }}'
 
       - name: Restore
@@ -1508,13 +1285,15 @@ jobs:
           CACHE_KEY: ${{ steps.shard-cache-plan.outputs.cache_key }}
           RESTORE_MODE: ${{ steps.shard-cache-plan.outputs.restore_mode }}
           CONSUME_SWITCH: ${{ steps.shard-cache-plan.outputs.consume_switch }}
-          DOWNLOAD_OUTCOME: ${{ steps.shard-cache-download.outcome }}
+          DOWNLOAD_OUTCOME_FIRST: ${{ steps.shard-cache-download.outcome }}
+          DOWNLOAD_OUTCOME_RETRY: ${{ steps.shard-cache-download-retry.outcome }}
           BUILD_OUTCOME: ${{ steps.shard-cache-build.outcome }}
           PACKAGE_OUTCOME: ${{ steps.shard-cache-package.outcome }}
           SAVE_OUTCOME: ${{ steps.shard-cache-save.outcome }}
           CACHE_WRITER: ${{ steps.shard-cache-plan.outputs.cache_writer }}
           CACHE_WRITER_SHARD: ${{ steps.shard-cache-plan.outputs.cache_writer_shard }}
-          CACHE_HIT: ${{ steps.shard-cache-download.outputs.cache-hit }}
+          CACHE_HIT_FIRST: ${{ steps.shard-cache-download.outputs.cache-hit }}
+          CACHE_HIT_RETRY: ${{ steps.shard-cache-download-retry.outputs.cache-hit }}
           MATERIALIZED: ${{ steps.shard-cache-materialize.outputs.restored }}
           REASON: ${{ steps.shard-cache-materialize.outputs.reason }}
           TRANSFER_MS: ${{ steps.shard-cache-restore-elapsed.outputs.milliseconds }}
@@ -1534,14 +1313,18 @@ jobs:
               package_ms="$(jq -r '.package_milliseconds' "${manifest}")"
             fi
           fi
+          cache_hit=false
+          if [[ "${CACHE_HIT_FIRST:-false}" == 'true' || "${CACHE_HIT_RETRY:-false}" == 'true' ]]; then
+            cache_hit=true
+          fi
           {
             echo '### Server-test shard cache'
             echo
             echo "- Key: \`${CACHE_KEY:-unavailable}\`"
             echo "- Attempt: \`${{ github.run_attempt }}\`"
-            echo "- Read mode: \`${RESTORE_MODE:-disabled}\` (HONUA_SERVER_TEST_PREBUILD_CONSUME=\`${CONSUME_SWITCH:-unset}\`, lookup outcome \`${DOWNLOAD_OUTCOME:-skipped}\`)"
+            echo "- Read mode: \`${RESTORE_MODE:-disabled}\` (HONUA_SERVER_TEST_PREBUILD_CONSUME=\`${CONSUME_SWITCH:-unset}\`, lookup outcomes first=\`${DOWNLOAD_OUTCOME_FIRST:-skipped}\` retry=\`${DOWNLOAD_OUTCOME_RETRY:-skipped}\`)"
             echo "- Decision: \`${REASON:-not_evaluated}\`"
-            echo "- Exact cache hit: \`${CACHE_HIT:-false}\`"
+            echo "- Exact cache hit: \`${cache_hit}\`"
             echo "- Materialized without build: \`${MATERIALIZED:-false}\`"
             # Only claim a successful local fallback when one actually happened.
             # A failed or cancelled build must not be reported as the unchanged
@@ -1862,6 +1645,7 @@ jobs:
       # check cannot then leave a foundation family un-gated (#3567).
       - dotnet-foundation-family-tests
       - dotnet-foundation-tests
+      - server-governance-drift
       - server-tests
       - worker-gdal-tests
       - python-integration-tests
@@ -1918,27 +1702,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: tests/js/package-lock.json
 
-      # The setup-honua-server action redirects the server's stdout/stderr to
-      # ${RUNNER_TEMP}/honua-server-setup.log but only dumps it when the readiness
-      # wait *fails*. When readiness succeeds and a later JS request 500s (e.g. a
-      # WFS GetFeature), the server-side exception is otherwise lost — leaving the
-      # failure undiagnosable. Surface the log (and DB seed status) on ANY later
-      # failure in this job so the actual exception/stack trace is visible.
-      - name: Dump Honua Server log on failure
-        if: failure()
-        run: |
-          SERVER_LOG="${RUNNER_TEMP:-/tmp}/honua-server-setup.log"
-          if [ -f "$SERVER_LOG" ]; then
-            echo "----- Honua Server log (${SERVER_LOG}) -----"
-            cat "$SERVER_LOG"
-          else
-            echo "No Honua Server log found at ${SERVER_LOG}."
-          fi
-          echo "----- DB seed status (features per layer) -----"
-          PGPASSWORD=honua psql -h localhost -U honua -d honua_test \
-            -c "SELECT layer_id, COUNT(*) AS feature_count FROM features GROUP BY layer_id ORDER BY layer_id;" 2>&1 || \
-            echo "(could not query feature counts — DB unreachable?)"
-
       - name: Install JavaScript test dependencies
         run: npm ci
         working-directory: tests/js
@@ -1953,7 +1716,7 @@ jobs:
       # be resolved on a hit as well as a miss. On a hit, `playwright install` finds the
       # expected browser revision already present and skips the download.
       - name: Cache Playwright browsers
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('tests/js/package-lock.json') }}
@@ -1972,7 +1735,7 @@ jobs:
         working-directory: tests/js
 
       - name: Run JavaScript Integration Tests
-        run: npm test
+        run: npm test -- --reporter=verbose --reporter=junit --outputFile="${RUNNER_TEMP}/javascript-integration-tests.xml"
         working-directory: tests/js
         env:
           HONUA_BASE_URL: http://localhost:5000
@@ -1990,6 +1753,38 @@ jobs:
           HONUA_SERVICE_ID: test_service
           HONUA_LAYER_ID: '0'
           HONUA_API_KEY: "ci-admin-password"
+
+      # The setup-honua-server action redirects the server's stdout/stderr to
+      # ${RUNNER_TEMP}/honua-server-setup.log but only dumps it when the readiness
+      # wait *fails*. When readiness succeeds and a later JS request 500s (e.g. a
+      # WFS GetFeature), the server-side exception is otherwise lost — leaving the
+      # failure undiagnosable. Surface the log (and DB seed status) on ANY later
+      # failure in this job so the actual exception/stack trace is visible.
+      # Keep this after both test steps: failure() only sees earlier failures.
+      - name: Dump Honua Server log on failure
+        if: failure()
+        run: |
+          SERVER_LOG="${RUNNER_TEMP:-/tmp}/honua-server-setup.log"
+          if [ -f "$SERVER_LOG" ]; then
+            echo "----- Honua Server log (${SERVER_LOG}) -----"
+            cat "$SERVER_LOG"
+          else
+            echo "No Honua Server log found at ${SERVER_LOG}."
+          fi
+          echo "----- DB seed status (features per layer) -----"
+          PGPASSWORD=honua psql -h localhost -U honua -d honua_test \
+            -c "SELECT layer_id, COUNT(*) AS feature_count FROM features GROUP BY layer_id ORDER BY layer_id;" 2>&1 || \
+            echo "(could not query feature counts — DB unreachable?)"
+
+      - name: Upload JavaScript test diagnostics
+        uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: javascript-integration-results
+          path: |
+            ${{ runner.temp }}/javascript-integration-tests.xml
+            ${{ runner.temp }}/honua-server-setup.log
+          retention-days: 7
 
       - name: Upload OpenLayers Evidence
         uses: actions/upload-artifact@v7.0.1
@@ -2025,10 +1820,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install pyyaml
+        shell: bash
+        run: python -m pip install 'pyyaml>=6,<7'
+
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Seed Esri Leaflet sample service
+        run: bash tests/seed/apply-yaml-seed.sh tests/seed/admin-sample-feature-server.yaml
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -2069,7 +1876,7 @@ jobs:
       # be resolved on a hit as well as a miss. On a hit, `playwright install` finds the
       # expected browser revision already present and skips the download.
       - name: Cache Playwright browsers
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('tests/js-browser/package-lock.json') }}
@@ -2183,7 +1990,7 @@ jobs:
       # be resolved on a hit as well as a miss. On a hit, `playwright install` finds the
       # expected browser revision already present and skips the download.
       - name: Cache Playwright browsers
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('tests/js-browser/package-lock.json') }}
@@ -2218,11 +2025,20 @@ jobs:
             tests/js-browser/playwright-report/
           retention-days: 14
 
+      # Startup failures happen before Playwright can produce test results.
+      - name: Upload MapLibre server startup log
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: maplibre-server-startup-log
+          path: ${{ runner.temp }}/honua-server-setup.log
+          retention-days: 14
+
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
     if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
+    needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
     outputs:
       # Matrix job: GHA keeps the last-finishing leg's output.
@@ -2660,7 +2476,7 @@ jobs:
     # critical path.
     if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
+    needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
@@ -2712,6 +2528,9 @@ jobs:
     # time for the filesystem scan or endpoint proof. Keep the whole gate
     # bounded while allowing every release-evidence step to execute (#2634).
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -2749,6 +2568,13 @@ jobs:
         timeout-minutes: 3
         uses: docker/setup-buildx-action@v4
 
+      - name: Log in to GHCR for build cache
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build Docker image
         id: docker_build
         timeout-minutes: 20
@@ -2767,8 +2593,8 @@ jobs:
           # produce identical layers; the only build-arg that differs between them is
           # HONUA_GIT_SHA, declared at Dockerfile:188 of 208 in the runtime stage,
           # after every expensive layer.
-          cache-from: type=gha,scope=honua-jit-amd64
-          cache-to: type=gha,mode=max,scope=honua-jit-amd64
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-amd64
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-amd64,mode=max
           # provenance/sbom must be false for `load: true` — the local docker exporter
           # can't load a manifest list. SBOM is generated separately via Anchore below.
           provenance: false

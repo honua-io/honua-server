@@ -34,4 +34,10 @@ internal interface IMcpPlatformOpsReader
         ClaimsPrincipal principal,
         McpProposeRollbackArgument argument,
         CancellationToken cancellationToken);
+
+    Task<McpProposeOperationOutput> ProposeFindingAsync(ClaimsPrincipal principal, McpProposeFindingArgument argument, CancellationToken cancellationToken);
+    Task<McpProposeOperationOutput> ProposeDeployPlanAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken);
+    Task<McpProposeOperationOutput> ProposeDeployOperationAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken);
+    Task<McpProposeOperationOutput> ProposeMetadataReleaseAsync(ClaimsPrincipal principal, McpMetadataReleaseMutationArgument argument, CancellationToken cancellationToken);
+    Task<McpProposeOperationOutput> ProposePlatformReleaseConvergenceAsync(ClaimsPrincipal principal, McpPlatformReleaseConvergenceArgument argument, CancellationToken cancellationToken);
 }

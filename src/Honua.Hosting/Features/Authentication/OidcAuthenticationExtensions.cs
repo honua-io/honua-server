@@ -256,7 +256,13 @@ public static class OidcAuthenticationExtensions
         {
             var schemes = BuildSchemes(
                 ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled(configuration));
-            var adminRoles = BuildRoleSet(oidcOptions.AdminRoles, "admin", "administrator", "Administrator");
+            var adminRoles = BuildRoleSet(
+                oidcOptions.AdminRoles,
+                "admin",
+                "administrator",
+                "Administrator",
+                AdminApiKeyPermission.ApprovedOperationRole,
+                AdminApiKeyPermission.ScopedAdminRole);
 
             UpdateRolePolicy(
                 authzOptions,
@@ -289,6 +295,9 @@ public static class OidcAuthenticationExtensions
                 AuthenticationExtensions.TemporalRollbackExecutePolicy,
                 adminRoles,
                 schemes);
+
+            UpdateRolePolicy(authzOptions, AuthenticationExtensions.OpsReadPolicy, adminRoles, schemes);
+            UpdateRolePolicy(authzOptions, AuthenticationExtensions.ConformanceMutatePolicy, adminRoles, schemes);
         });
 
         return services;
@@ -675,7 +684,7 @@ public static class OidcAuthenticationExtensions
                         CanonicalSecurityActor.StampFrameworkClaim(
                             bearerIdentity,
                             CanonicalSecurityActor.AuthenticationSchemeClaim,
-                            context.Scheme.Name);
+                            JwtBearerScheme);
                         CanonicalSecurityActor.StampFrameworkClaim(
                             bearerIdentity,
                             OperatorScopeCatalog.ScopeGovernedClaimType,

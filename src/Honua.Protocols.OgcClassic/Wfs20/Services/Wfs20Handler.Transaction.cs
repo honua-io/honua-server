@@ -3,6 +3,7 @@
 
 using System.Collections;
 using System.Collections.Immutable;
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Security;
@@ -474,7 +475,8 @@ internal sealed partial class Wfs20Handler
 
         distinctLayerIds.Add(descriptor.StorageLayerId);
 
-        var changes = ParseTransactionUpdateChanges(descriptor.Resource, updateElement);
+        var changes = await ParseTransactionUpdateChangesAsync(
+            descriptor.Resource, updateElement, cancellationToken).ConfigureAwait(false);
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
             descriptor,
             updateElement,
@@ -714,7 +716,8 @@ internal sealed partial class Wfs20Handler
         XElement featureElement,
         CancellationToken cancellationToken)
     {
-        var payload = ReadTransactionFeaturePayload(resource, featureElement);
+        var payload = await ReadTransactionFeaturePayloadAsync(
+            resource, featureElement, cancellationToken).ConfigureAwait(false);
 
         return await CreateTransactionFeatureAsync(
             resource,
@@ -731,7 +734,8 @@ internal sealed partial class Wfs20Handler
         XElement featureElement,
         CancellationToken cancellationToken)
     {
-        var payload = ReadTransactionFeaturePayload(resource, featureElement);
+        var payload = await ReadTransactionFeaturePayloadAsync(
+            resource, featureElement, cancellationToken).ConfigureAwait(false);
 
         return await CreateTransactionFeatureAsync(
             resource,
@@ -748,21 +752,20 @@ internal sealed partial class Wfs20Handler
         TransactionFeatureChanges changes,
         CancellationToken cancellationToken)
     {
-        var attributes = existing.Attributes.ToBuilder();
-        foreach (var (key, value) in changes.Attributes)
+        // The shared feature writer currently replaces both geometry and attributes; it
+        // does not carry EditUpdateMode through to the provider. Materialize the merged
+        // row here so a property-only WFS-T update cannot clear omitted fields or geometry.
+        var mergedAttributes = existing.Attributes.ToBuilder();
+        foreach (var (name, value) in changes.Attributes)
         {
-            attributes[key] = value;
+            mergedAttributes[name] = value;
         }
-
-        var geometry = changes.GeometrySpecified
-            ? changes.Geometry
-            : existing.Geometry;
 
         return await CreateTransactionFeatureAsync(
             resource,
             existing.Id,
-            geometry,
-            attributes.ToImmutable(),
+            changes.GeometrySpecified ? changes.Geometry : existing.Geometry,
+            mergedAttributes.ToImmutable(),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -795,9 +798,10 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static TransactionFeaturePayload ReadTransactionFeaturePayload(
+    private async Task<TransactionFeaturePayload> ReadTransactionFeaturePayloadAsync(
         MetadataV2Resource resource,
-        XElement featureElement)
+        XElement featureElement,
+        CancellationToken cancellationToken)
     {
         var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
         var gmlAssignedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -836,7 +840,8 @@ internal sealed partial class Wfs20Handler
             if (geometryField != null &&
                 resolvedField.Field.Name.Equals(geometryField.Name, StringComparison.OrdinalIgnoreCase))
             {
-                geometry = ParseTransactionGeometryProperty(propertyElement, resource);
+                geometry = await ParseTransactionGeometryPropertyAsync(
+                    propertyElement, resource, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -859,9 +864,10 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static TransactionFeatureChanges ParseTransactionUpdateChanges(
+    private async Task<TransactionFeatureChanges> ParseTransactionUpdateChangesAsync(
         MetadataV2Resource resource,
-        XElement updateElement)
+        XElement updateElement,
+        CancellationToken cancellationToken)
     {
         var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
         var propertyElements = updateElement.Elements()
@@ -933,7 +939,8 @@ internal sealed partial class Wfs20Handler
                 geometrySpecified = true;
                 geometry = valueElement == null
                     ? null
-                    : ParseTransactionGeometryProperty(valueElement, resource);
+                    : await ParseTransactionGeometryPropertyAsync(
+                        valueElement, resource, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -1314,9 +1321,10 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static byte[]? ParseTransactionGeometryProperty(
+    private async Task<byte[]?> ParseTransactionGeometryPropertyAsync(
         XElement propertyElement,
-        MetadataV2Resource resource)
+        MetadataV2Resource resource,
+        CancellationToken cancellationToken)
     {
         if (HasNilAttribute(propertyElement))
         {
@@ -1340,7 +1348,41 @@ internal sealed partial class Wfs20Handler
 
         var defaultSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var geometry = ParseTransactionGeometry(geometryElement, defaultSrid);
+        if (geometry.SRID != defaultSrid)
+        {
+            var coordinates = geometry.Coordinates;
+            var xs = coordinates.Select(static coordinate => coordinate.X).ToArray();
+            var ys = coordinates.Select(static coordinate => coordinate.Y).ToArray();
+            if (!await _coordinateTransformService.TransformPointsAsync(
+                    xs, ys, geometry.SRID, defaultSrid, cancellationToken).ConfigureAwait(false))
+            {
+                throw new ArgumentException(
+                    $"Unable to transform transaction geometry from EPSG:{geometry.SRID} to EPSG:{defaultSrid}.");
+            }
+
+            var transformed = geometry.Copy();
+            transformed.Apply(new TransactionCoordinateRewriteFilter(xs, ys));
+            transformed.SRID = defaultSrid;
+            geometry = transformed;
+        }
+
         return GeometryWkbWriter.Write(geometry);
+    }
+
+    private sealed class TransactionCoordinateRewriteFilter(double[] xs, double[] ys) : ICoordinateSequenceFilter
+    {
+        private int _index;
+
+        public bool Done => false;
+
+        public bool GeometryChanged => true;
+
+        public void Filter(CoordinateSequence sequence, int index)
+        {
+            sequence.SetX(index, xs[_index]);
+            sequence.SetY(index, ys[_index]);
+            _index++;
+        }
     }
 
     private static string GetResourceFeatureTypeName(MetadataV2Resource resource)
@@ -1749,18 +1791,11 @@ internal sealed partial class Wfs20Handler
                 cancellationToken).ConfigureAwait(false);
         }
 
-        // Multi-layer transactions cannot provide a single atomic cross-layer rollback:
-        // each layer is committed independently by the data layer.  If rollbackOnFailure=true
-        // is requested, reject before any data is committed rather than silently leaving a
-        // partially-committed state the client believes was rolled back (ISO 19142 §15.2.5.3).
-        if (rollbackOnFailure)
-        {
-            throw new WfsTransactionException(
-                "OperationProcessingFailed",
-                "Multi-layer transactions with rollbackOnFailure=true are not supported because cross-layer atomicity cannot be guaranteed. " +
-                "Submit each feature type in a separate Transaction or set rollbackOnFailure=false.",
-                "Transaction");
-        }
+        await using var writerTransaction = rollbackOnFailure
+            ? await _featureWriter.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken).ConfigureAwait(false)
+            : null;
 
         var createResultIndexes = new Dictionary<int, int>();
         var updateResultIndexes = new Dictionary<int, int>();
@@ -1817,10 +1852,20 @@ internal sealed partial class Wfs20Handler
                         .Select(static operation => operation.RequestGeometryChanged)
                         .ToImmutableArray(),
                     rollbackOnFailure,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    writerTransaction).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (writerTransaction is not null)
+                {
+                    await writerTransaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                    throw new WfsTransactionException(
+                        "OperationProcessingFailed",
+                        "The WFS transaction failed and all layer edits were rolled back.",
+                        "Transaction");
+                }
+
                 // BH3-011: If ExecutePreparedEditAsync throws for this layer, layers processed
                 // before it have already committed to the database. Rather than letting the
                 // exception escape (which would bypass the post-commit cache-invalidation block
@@ -1902,7 +1947,7 @@ internal sealed partial class Wfs20Handler
             }
         }
 
-        return FeatureEditResult.Success(
+        var aggregatedResult = FeatureEditResult.Success(
             createdCount,
             updatedCount,
             deletedCount,
@@ -1913,7 +1958,42 @@ internal sealed partial class Wfs20Handler
             createResults: aggregatedCreateResults.ToImmutableArray(),
             updateResults: aggregatedUpdateResults.ToImmutableArray(),
             deleteResults: aggregatedDeleteResults.ToImmutableArray());
+
+        if (writerTransaction is null)
+        {
+            return aggregatedResult;
+        }
+
+        if (!aggregatedResult.IsSuccess)
+        {
+            await writerTransaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            return FeatureEditResult.Rollback(
+                aggregatedResult.CreateResults,
+                aggregatedResult.UpdateResults,
+                aggregatedResult.DeleteResults);
+        }
+
+        var commitOutcome = await writerTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        if (commitOutcome == FeatureWriterTransactionCommitOutcome.Committed)
+        {
+            return aggregatedResult;
+        }
+
+        const string errorMessage = "Transaction commit outcome is unknown.";
+        return FeatureEditResult.FailureWithUnknownCommitOutcome(
+            MarkCommitOutcomeUnknown(aggregatedResult.CreateResults, errorMessage),
+            MarkCommitOutcomeUnknown(aggregatedResult.UpdateResults, errorMessage),
+            MarkCommitOutcomeUnknown(aggregatedResult.DeleteResults, errorMessage));
     }
+
+    private static ImmutableArray<EditOperationResult> MarkCommitOutcomeUnknown(
+        ImmutableArray<EditOperationResult> results,
+        string errorMessage)
+        => results
+            .Select(result => EditOperationResult.FailureWithUnknownCommitOutcome(
+                errorMessage,
+                objectId: result.ObjectId))
+            .ToImmutableArray();
 
     private async Task<FeatureEditResult> ExecutePreparedEditAsync(
         HttpContext context,
@@ -1922,7 +2002,8 @@ internal sealed partial class Wfs20Handler
         ImmutableArray<FeatureEditOperation> operations,
         ImmutableArray<bool> requestGeometryChangedFlags,
         bool rollbackOnFailure,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IFeatureWriterTransaction? writerTransaction = null)
     {
         var editAdapterResult = await _editParameterAdapter.ConvertAsync(
             new Wfs20EditRequest
@@ -1959,7 +2040,9 @@ internal sealed partial class Wfs20Handler
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
-        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        return writerTransaction is null
+            ? await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false)
+            : await writerTransaction.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -2145,6 +2228,7 @@ internal sealed partial class Wfs20Handler
     {
         var inserted = new List<(PreparedTransactionOperation Operation, EditOperationResult Result)>();
         var replaced = new List<(PreparedTransactionOperation Operation, EditOperationResult Result)>();
+        var receipts = new List<(PreparedTransactionOperation Operation, EditOperationResult Result)>();
         var updatedCount = 0;
         var deletedCount = 0;
         var createResultIndex = 0;
@@ -2161,6 +2245,7 @@ internal sealed partial class Wfs20Handler
                             ? editResult.CreateResults[createResultIndex]
                             : default;
                         createResultIndex++;
+                        receipts.Add((operation, result));
 
                         if (result.IsSuccess && result.ObjectId.HasValue)
                         {
@@ -2176,6 +2261,7 @@ internal sealed partial class Wfs20Handler
                             ? editResult.UpdateResults[updateResultIndex]
                             : default;
                         updateResultIndex++;
+                        receipts.Add((operation, result));
 
                         if (!result.IsSuccess || !result.ObjectId.HasValue)
                         {
@@ -2200,6 +2286,7 @@ internal sealed partial class Wfs20Handler
                             ? editResult.DeleteResults[deleteResultIndex]
                             : default;
                         deleteResultIndex++;
+                        receipts.Add((operation, result));
 
                         if (result.IsSuccess)
                         {
@@ -2282,10 +2369,53 @@ internal sealed partial class Wfs20Handler
                 writer.WriteEndElement();
             }
 
+            // ISO 19142's TransactionResponse reports successful inserts/replaces and aggregate
+            // counts, but has no per-operation failure shape for best-effort transactions. Emit
+            // an explicitly namespaced extension whenever failures exist so a retrying client can
+            // account for every submitted operation without inferring failures from omissions.
+            if (receipts.Any(static receipt => !receipt.Result.IsSuccess))
+            {
+                writer.WriteStartElement("honua", "OperationResults", FeatureNamespaceUri);
+                foreach (var (operation, result) in receipts.OrderBy(static receipt => receipt.Operation.Sequence))
+                {
+                    writer.WriteStartElement("honua", "OperationResult", FeatureNamespaceUri);
+                    writer.WriteAttributeString("sequence", operation.Sequence.ToString(CultureInfo.InvariantCulture));
+                    writer.WriteAttributeString("action", operation.ActionKind.ToString());
+                    writer.WriteAttributeString("committed", GetReceiptCommitState(result));
+                    if (!string.IsNullOrWhiteSpace(operation.Handle))
+                    {
+                        writer.WriteAttributeString("handle", operation.Handle);
+                    }
+
+                    if (result.ObjectId.HasValue)
+                    {
+                        WriteTransactionResourceId(writer, operation.Descriptor, result.ObjectId.Value);
+                    }
+
+                    if (!result.IsSuccess)
+                    {
+                        writer.WriteElementString(
+                            "honua",
+                            "Error",
+                            FeatureNamespaceUri,
+                            result.ErrorMessage ?? "Operation failed.");
+                    }
+
+                    writer.WriteEndElement();
+                }
+
+                writer.WriteEndElement();
+            }
+
             writer.WriteEndElement();
             writer.WriteEndDocument();
         });
     }
+
+    internal static string GetReceiptCommitState(EditOperationResult result)
+        => result.IsCommitOutcomeUnknown
+            ? "unknown"
+            : result.IsSuccess ? "true" : "false";
 
 
     private static void WriteTransactionResourceId(

@@ -519,7 +519,7 @@ def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
             name for name, node in parsed.items()
             if csprojs[name] == classes[fqn]["csproj"] and MODULE._eval(node, fqn)
         ]
-        assert owners == ["Raster Serving"], (fqn, owners)
+        assert owners == ["Raster Serving Scene Geometry and Terrain"], (fqn, owners)
 
 
 test_clause_flattening_and_selection_pool()

@@ -61,9 +61,9 @@ public sealed class AlertDispatchBackgroundServiceTests
         sink.Delivered.Should().NotContain(suppressedEventId, "a suppressed event must not deliver while suppressed");
 
         // Suppressed dispatch is deferred (rescheduled), never delivered or dead-lettered — the event stays recorded.
-        await dispatchStore.Received().RescheduleAsync(suppressedDispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
-        await dispatchStore.DidNotReceive().MarkDeliveredAsync(suppressedDispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
-        await dispatchStore.Received().MarkDeliveredAsync(normalDispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        await dispatchStore.Received().RescheduleAsync(suppressedDispatchId, Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        await dispatchStore.DidNotReceive().MarkDeliveredAsync(suppressedDispatchId, Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        await dispatchStore.Received().MarkDeliveredAsync(normalDispatchId, Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -94,9 +94,9 @@ public sealed class AlertDispatchBackgroundServiceTests
             settleDelayMs: 400);
 
         sink.Delivered.Should().BeEmpty("an open channel defers delivery rather than driving it to dead-letter");
-        await dispatchStore.Received().RescheduleAsync(dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        await dispatchStore.Received().RescheduleAsync(dispatchId, Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         await dispatchStore.DidNotReceive().MarkFailedAsync(
-            dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            dispatchId, Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -116,12 +116,12 @@ public sealed class AlertDispatchBackgroundServiceTests
         var decisionStartedAt = DateTimeOffset.UtcNow;
         DateTimeOffset? retryAt = null;
         dispatchStore
-            .RescheduleAsync(dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .RescheduleAsync(dispatchId, Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                retryAt = call.ArgAt<DateTimeOffset>(1);
+                retryAt = call.ArgAt<DateTimeOffset>(2);
                 deferred.TrySetResult();
-                return Task.CompletedTask;
+                return true;
             });
 
         var sink = new RecordingSink();
@@ -136,16 +136,16 @@ public sealed class AlertDispatchBackgroundServiceTests
 
         sink.Delivered.Should().BeEmpty("an inactive channel entitlement defers delivery until it can become active again");
         await dispatchStore.Received(1).RescheduleAsync(
-            dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+            dispatchId, Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         retryAt.Should().NotBeNull();
         retryAt!.Value.Should().BeCloseTo(
             decisionStartedAt.AddMinutes(5),
             TimeSpan.FromSeconds(5),
             "the queue needs a bounded delay rather than an immediate entitlement spin");
         await dispatchStore.DidNotReceive().MarkFailedAsync(
-            dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            dispatchId, Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await dispatchStore.DidNotReceive().MarkDeliveredAsync(
-            dispatchId, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+            dispatchId, Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         await eventStore.DidNotReceive().GetAsync(eventId, Arg.Any<CancellationToken>());
     }
 
@@ -158,6 +158,12 @@ public sealed class AlertDispatchBackgroundServiceTests
                 : Array.Empty<AlertDispatchItem>());
         dispatchStore.GetBacklogAsync(Arg.Any<CancellationToken>())
             .Returns(new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 });
+        dispatchStore.MarkDeliveredAsync(Arg.Any<long>(), Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        dispatchStore.MarkFailedAsync(Arg.Any<long>(), Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        dispatchStore.RescheduleAsync(Arg.Any<long>(), Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(true);
     }
 
     private static async Task RunDispatcherAsync(
@@ -224,6 +230,7 @@ public sealed class AlertDispatchBackgroundServiceTests
         {
             DispatchId = dispatchId,
             EventId = eventId,
+            ClaimToken = Guid.NewGuid(),
             ChannelType = AlertChannelType.Webhook,
             Status = AlertDispatchStatus.Pending,
             Attempts = 0,

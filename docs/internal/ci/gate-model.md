@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-08-17
+> Last updated: 2026-08-31
 
 ## Tier Definitions
 
@@ -55,7 +55,7 @@ shared lean gate was 18m09s, split roughly:
 | `dotnet format Honua.sln --verify-no-changes` | 5m51s |
 | Server Fast tier | 2m05s |
 | Architecture tests | 1m31s |
-| Governance/Drift (Testcontainers PostGIS, warm) | 1m15s |
+| Governance/Drift (Testcontainers PostGIS, warm; moved to trailing trunk) | 1m15s |
 | Fixtures, policy checks, restore | ~1m |
 
 Two of those are addressed here.
@@ -107,16 +107,16 @@ solution, never a list — and most of its cost is loading that workspace rather
 than analysing documents, so narrowing it is a separate, measured change rather
 than a free win.
 
-**PostGIS pre-pull.** `scripts/ci/prepull-testcontainers-postgis.sh` starts a
-background `docker pull` of the image `Honua.TestKit/PostgresFixture.cs` names,
-as the gate's first step, and a later step waits for it immediately before the
-Governance/Drift test. That step is ~1.5 min warm and ~3-4 min cold, and the
-delta is almost entirely the pull; overlapping it with the fixtures/restore/build
-makes the cold case look like the warm one. The tag is read out of the fixture
-rather than hardcoded, so bumping `PostgresFixture` cannot leave CI warming a
-stale image. The drift test itself does not move (#2882). Every failure path in
-the script is a no-op — composite steps cannot set `continue-on-error`, so it
-must never be able to fail the required gate.
+**Governance/drift relocation.** The complete `Category=Architecture` set in
+`Honua.Server.Tests` still runs against the real store-gated host and its
+Testcontainers PostgreSQL. It now runs as the trunk-only
+`Server Governance/Drift` job in `ci.yml`; `Test Suite Summary` requires that
+leaf job, so a failure makes `CI Gate` red and engages the fleet brake. The
+operator-approved trade is detection after landing with fix-forward handling,
+instead of blocking the PR. `scripts/ci/prepull-testcontainers-postgis.sh` still
+reads the image tag from `Honua.TestKit/PostgresFixture.cs`, starts the pull
+before restore/build, and awaits it immediately before the test. Every helper
+failure remains a no-op so Testcontainers can perform its normal pull fallback.
 
 ### Import-fidelity gates: correctness and performance
 

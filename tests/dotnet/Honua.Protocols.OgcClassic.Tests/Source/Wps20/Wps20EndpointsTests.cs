@@ -84,9 +84,32 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
         xml.Should().Contain($"xmlns:wps=\"http://www.opengis.net/wps/2.0\"");
         xml.Should().Contain("<ows:Identifier>geometry.buffer</ows:Identifier>");
-        xml.Should().Contain("<ows:Identifier>result</ows:Identifier>");
+        xml.Should().Contain("<ows:Identifier>featureLayer1</ows:Identifier>");
+        xml.Should().Contain("<LiteralDataDomain").And.NotContain("<wps:LiteralDataDomain");
         xml.Should().Contain("<wps:ProcessOffering processVersion=\"1.0.0\"");
         xml.Should().Contain("<wps:Process>").And.NotContain("<wps:Process processVersion=");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /wps")]
+    [InterfaceOperation(TestProtocols.Wps202, "DescribeProcess")]
+    public async Task DescribeProcess_AllCanonicalProcessesDeclareLiteralDataDomains()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier=ALL");
+        var xml = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        var document = XDocument.Parse(xml);
+        XNamespace wps = "http://www.opengis.net/wps/2.0";
+        var processes = document.Descendants(wps + "Process").ToArray();
+
+        processes.Should().NotBeEmpty();
+        processes.SelectMany(process => process.Descendants(wps + "LiteralData"))
+            .Select(literalData => literalData.Element(XName.Get("LiteralDataDomain")))
+            .Should().NotBeEmpty()
+            .And.OnlyContain(domain => domain != null);
     }
 
     [IntegrationTest]
@@ -250,6 +273,71 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         xml.Should().Contain("<ows:Identifier>result</ows:Identifier>");
         xml.Should().Contain("<wps:Data mimeType=\"text/plain\">");
         xml.Should().Contain("<wps:LiteralValue>buffer complete</wps:LiteralValue>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /wps")]
+    [InterfaceOperation(TestProtocols.Wps202, "GetResult")]
+    public async Task GetResult_ExposesEveryArtifactOutput()
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        jobs.GetJobResultsAsync("wps-job-artifacts", Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(new AnalysisResultPackage
+            {
+                ResultPackageId = "result-artifacts",
+                Status = GeoprocessingWorkflowStatus.Completed,
+                Summary = new ResultSummary { Title = "summary must not replace outputs" },
+                Artifacts =
+                [
+                    new ArtifactRef
+                    {
+                        ArtifactId = "artifact-1",
+                        Kind = ArtifactKind.FeatureLayer,
+                        Label = "features",
+                        Uri = "https://example.test/results/features.geojson",
+                        ContentType = "application/geo+json"
+                    },
+                    new ArtifactRef
+                    {
+                        ArtifactId = "artifact-2",
+                        Kind = ArtifactKind.Scalar,
+                        Label = "count",
+                        Uri = "data:text/plain;base64,MTI=",
+                        ContentType = "text/plain"
+                    }
+                ],
+                Provenance = null!
+            });
+        await using var fixture = new WebAppFixture().ReplaceService(jobs);
+        await fixture.InitializeAsync();
+
+        var response = await fixture.Client.GetAsync("/wps?service=WPS&request=GetResult&version=2.0.0&jobId=wps-job-artifacts");
+        var xml = await response.Content.ReadAsStringAsync();
+        var document = XDocument.Parse(xml);
+        XNamespace wps = "http://www.opengis.net/wps/2.0";
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        var outputs = document.Descendants(wps + "Output").ToArray();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        outputs.Select(output => output.Element(ows + "Identifier")?.Value)
+            .Should().Equal("featureLayer1", "scalar1");
+        outputs[0].Element(wps + "Reference")!.Attribute(XName.Get("href", "http://www.w3.org/1999/xlink"))!.Value
+            .Should().Be("https://example.test/results/features.geojson");
+        xml.Should().NotContain("summary must not replace outputs");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wps")]
+    [InterfaceOperation(TestProtocols.Wps202, "GetCapabilities")]
+    public async Task GetCapabilities_KvpAcceptVersionsNegotiatesWithoutVersion()
+    {
+        var response = await _fixture.Client.GetAsync("/wps?service=WPS&request=GetCapabilities&acceptVersions=2.0.0");
+        var xml = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        xml.Should().Contain("<wps:Capabilities").And.Contain("version=\"2.0.0\"");
     }
 
     [IntegrationTest]

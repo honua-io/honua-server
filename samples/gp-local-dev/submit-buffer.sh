@@ -65,4 +65,10 @@ curl -fsS "$BASE/ogc/processes/jobs/$JOB/results" -H "X-API-Key: $KEY"
 echo
 
 echo "==> Dismiss the job (cleanup)"
-curl -fsS -X DELETE "$BASE/ogc/processes/jobs/$JOB" -H "X-API-Key: $KEY" >/dev/null && echo "    dismissed"
+DISMISS_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE \
+  "$BASE/ogc/processes/jobs/$JOB" -H "X-API-Key: $KEY")"
+case "$DISMISS_STATUS" in
+  200|204) echo "    dismissed" ;;
+  409) echo "    already terminal; no dismissal required" ;;
+  *) echo "    unexpected dismiss response: HTTP $DISMISS_STATUS" >&2; exit 1 ;;
+esac

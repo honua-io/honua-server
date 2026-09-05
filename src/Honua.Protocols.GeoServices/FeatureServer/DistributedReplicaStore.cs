@@ -339,7 +339,8 @@ internal sealed record ReplicaState(
     string ServiceId,
     string SyncModel,
     int[] LayerIds,
-    DateTimeOffset CreatedAt)
+    DateTimeOffset CreatedAt,
+    string? OwnerId = null)
 {
     public DateTimeOffset LastSyncTime { get; init; } = CreatedAt;
 

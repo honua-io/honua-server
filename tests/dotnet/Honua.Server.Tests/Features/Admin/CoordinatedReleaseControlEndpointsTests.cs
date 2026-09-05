@@ -208,7 +208,7 @@ public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/rollback")]
-    public async Task Rollback_FaultInMetadataStep_UnwindsBothReversibleSteps()
+    public async Task Rollback_FaultInMetadataStep_StopsWhenMetadataRollbackCannotSettle()
     {
         _metadata.ObserveOutcome = CoordinatedStepOutcome.Failed;
 
@@ -241,9 +241,12 @@ public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
             }
         }
 
-        // The metadata-step fault triggered ONE coordinated rollback that unwound both reversible steps.
-        root.GetProperty("status").GetString().Should().Be("RolledBack");
-        _container.RollbackCalls.Should().Be(1);
+        // The metadata-step fault triggered ONE coordinated rollback. The provider's
+        // incomplete rollback evidence is terminal manual intervention, not a claimed
+        // successful rollback. Since metadata cannot be proven settled, the container
+        // rollback must not be requested speculatively.
+        root.GetProperty("status").GetString().Should().Be("ManualInterventionRequired");
+        _container.RollbackCalls.Should().Be(0);
         _metadata.RollbackCalls.Should().Be(1);
     }
 
@@ -278,10 +281,15 @@ public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
         public Task<CoordinatedStepResult> ObserveAsync(string childOperationId, CancellationToken cancellationToken = default)
             => Task.FromResult(new CoordinatedStepResult { Outcome = ObserveOutcome, ChildOperationId = childOperationId });
 
-        public Task RollbackAsync(string childOperationId, CancellationToken cancellationToken = default)
+        public Task<CoordinatedStepResult> RollbackAsync(string childOperationId, CancellationToken cancellationToken = default)
         {
             RollbackCalls++;
-            return Task.CompletedTask;
+            return Task.FromResult(new CoordinatedStepResult
+            {
+                Outcome = CoordinatedStepOutcome.Pending,
+                ChildOperationId = childOperationId,
+                Detail = "container rollback requested"
+            });
         }
     }
 

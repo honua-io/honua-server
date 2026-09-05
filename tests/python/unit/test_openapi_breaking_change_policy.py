@@ -247,6 +247,7 @@ class SuppressedFindingVisibilityTests(unittest.TestCase):
             "admin-api.json",
             "ogc-api-features.json",
             "ogc-api-tiles.json",
+            "studio-api.json",
         ):
             shutil.copy2(ROOT / "docs/developer/api-specs" / name, specs_target / name)
 
@@ -261,6 +262,17 @@ class SuppressedFindingVisibilityTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+        studio_path = specs_target / "studio-api.json"
+        current_studio = json.loads(studio_path.read_text(encoding="utf-8"))
+        baseline_studio = json.loads(json.dumps(current_studio))
+        baseline_studio["paths"]["/__studio-breaking-change-visibility-probe"] = {
+            "get": {"responses": {"200": {"description": "probe"}}}
+        }
+        studio_path.write_text(
+            json.dumps(baseline_studio, separators=(",", ":")),
+            encoding="utf-8",
+        )
+
         self._git("init")
         self._git("config", "user.name", "OpenAPI Policy Test")
         self._git("config", "user.email", "openapi-policy-test@example.invalid")
@@ -268,6 +280,7 @@ class SuppressedFindingVisibilityTests(unittest.TestCase):
         self._git("commit", "-m", "baseline")
 
         admin_path.write_text(json.dumps(current_admin), encoding="utf-8")
+        studio_path.write_text(json.dumps(current_studio), encoding="utf-8")
         self.summary_path = self.repo / "step-summary.md"
 
     def _git(self, *args: str) -> None:
@@ -308,6 +321,10 @@ class SuppressedFindingVisibilityTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Path '/__breaking-change-visibility-probe' was removed", result.stdout)
+        self.assertIn(
+            "Path '/__studio-breaking-change-visibility-probe' was removed",
+            result.stdout,
+        )
         self.assertNotIn("::warning title=OpenAPI breaking-change suppression", result.stdout)
 
     def test_Validator_AcknowledgedBreakingChange_AnnotatesAndSummarizes(self):
@@ -320,7 +337,7 @@ class SuppressedFindingVisibilityTests(unittest.TestCase):
         )
         self.assertIn("pull-request marker OPENAPI_BREAKING_CHANGE_APPROVED", result.stdout)
         summary = self.summary_path.read_text(encoding="utf-8")
-        self.assertIn("Admin OpenAPI breaking changes acknowledged", summary)
+        self.assertIn("OpenAPI breaking changes acknowledged", summary)
         self.assertIn("/__breaking-change-visibility-probe", summary)
 
 

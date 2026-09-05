@@ -32,6 +32,27 @@ public sealed class OperationGatewayAutonomyTests
     private const string RedriveAction = "alerts.redrive_dead_letters";
 
     [Fact]
+    public async Task CreateApprovalProposal_NonAutonomyAction_PreservesDiscriminatorForReplay()
+    {
+        var store = new MultiProposalStore();
+        var executor = new RecordingExecutor();
+        var sut = BuildGateway(store, new RecordingAutonomyEvaluator(new OpsAutonomyRouteDecision
+        {
+            ShouldAutoApply = false,
+        }),
+            executor, RecordingConvergence.Converged());
+        var request = Request() with { AutonomyContext = null };
+
+        var result = await sut.CreateApprovalProposalAsync(request.OperationInstanceId!, request);
+        var proposal = await store.GetAsync(result.ProposalId!);
+        await sut.ApplyApprovedProposalAsync(result.ProposalId!, "human-approver");
+
+        proposal!.AutonomyMetadata.Should().BeNull();
+        proposal.ActionDiscriminator.Should().Be(RedriveAction);
+        executor.LastActionDiscriminator.Should().Be(RedriveAction);
+    }
+
+    [Fact]
     public async Task RouteAsync_AutonomyApprovesApprovalTierRequest_ExecutesDirectWithoutProposal()
     {
         var store = new MultiProposalStore();
@@ -365,6 +386,7 @@ public sealed class OperationGatewayAutonomyTests
         OpsNotificationService? opsNotificationService = null)
     {
         var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.AdminConfigChange).Returns(RequiresApprovalDecision());
         ladder.Resolve(OperationClass.AdminConfigChange, RedriveAction).Returns(RequiresApprovalDecision());
 
         return CanonicalOperationGatewayTestComposition.Build(
@@ -619,6 +641,16 @@ public sealed class OperationGatewayAutonomyTests
     {
         public List<AlertEventEnvelope> Events { get; } = [];
 
+        public Task<System.Collections.Immutable.ImmutableArray<bool>> CommitEvaluationAsync(
+            IReadOnlyCollection<AlertStateSnapshot> states,
+            IReadOnlyList<AlertOutboxEntry> dispatches,
+            CancellationToken cancellationToken = default)
+        {
+            Events.AddRange(dispatches.Select(static dispatch => dispatch.AlertEvent));
+            return Task.FromResult(System.Collections.Immutable.ImmutableArray.CreateRange(
+                Enumerable.Repeat(true, dispatches.Count)));
+        }
+
         public Task<long?> AppendAndEnqueueAsync(
             AlertEventEnvelope alertEvent,
             System.Collections.Immutable.ImmutableArray<AlertChannelType> channels,
@@ -652,6 +684,8 @@ public sealed class OperationGatewayAutonomyTests
 
         public int ExecuteCount { get; private set; }
 
+        public string? LastActionDiscriminator { get; private set; }
+
         public OperationClass OperationClass => OperationClass.AdminConfigChange;
 
         public Task<OperationProposalPlan?> PlanAsync(
@@ -669,6 +703,7 @@ public sealed class OperationGatewayAutonomyTests
             CancellationToken cancellationToken = default)
         {
             ExecuteCount++;
+            LastActionDiscriminator = request.ActionDiscriminator;
             return Task.FromResult<string?>(OperationId);
         }
     }

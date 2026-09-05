@@ -283,12 +283,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         // Evidence integrity precedes both the deterministic auto-safe policy and gateway lookup, so
         // an incomplete source makes zero gateway/actuator calls. The posture comes from the same
         // evaluation pass that produced the finding and is derived from the signals the rule read.
-        var requiredSourceIds = OpsFindingEvidenceMap.RequiredSourceIds(finding.Rule);
-        var requiredSources = evaluation.Posture.Sources
-            .Where(source => requiredSourceIds.Contains(source.SourceId, StringComparer.Ordinal))
-            .ToArray();
-        if (requiredSources.Length != requiredSourceIds.Count ||
-            requiredSources.Any(source => !EvidencePostureFactory.IsActionable(source)))
+        if (!OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out var requiredSources))
         {
             return new OpsFindingProposalResult
             {

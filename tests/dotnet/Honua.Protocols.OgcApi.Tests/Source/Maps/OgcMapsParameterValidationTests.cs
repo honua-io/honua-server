@@ -183,13 +183,13 @@ public class OgcMapsParameterValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_BackgroundParameters_ReturnBadRequest()
+    public async Task GetCollectionMap_BackgroundParameters_ReturnSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map" +
             "?bbox=-180,-90,180,90&f=png&bgcolor=0xFF0000&transparent=false");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     #endregion

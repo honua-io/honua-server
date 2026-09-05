@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Infrastructure.Backpressure;
 using Honua.Infrastructure.Security;
 
 namespace Honua.Infrastructure.Models;
@@ -37,6 +38,23 @@ internal static class StandardErrorHelpers
     {
         var errorResponse = StandardErrorResponse.Unauthorized(detail, additionalDetails);
         return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+    }
+
+    /// <summary>
+    /// Creates the Esri GeoServices invalid-token envelope. The HTTP response remains
+    /// 200 per the GeoServices wire convention while the body carries code 498, which
+    /// distinguishes a supplied-but-invalid token from a missing credential (499).
+    /// </summary>
+    internal static IResult CreateInvalidToken(HttpContext context, string detail = "Invalid token.")
+    {
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status401Unauthorized,
+            "Invalid Token",
+            detail);
+        return StandardErrorResponseFormatter.FormatError(
+            context,
+            errorResponse,
+            new ErrorResponseFormatterOptions { GeoServicesBodyCode = GeoServicesErrorCodes.InvalidToken });
     }
 
     /// <summary>
@@ -209,26 +227,23 @@ internal static class StandardErrorHelpers
     /// <param name="detail">The error detail message.</param>
     /// <param name="retryAfterSeconds">Optional retry-after seconds.</param>
     /// <param name="additionalDetails">Optional additional details.</param>
+    /// <param name="retryable">Whether the unavailable condition is expected to clear without operator intervention.</param>
     /// <returns>A protocol-specific Service Unavailable response.</returns>
-    internal static IResult CreateServiceUnavailable(HttpContext context, string detail, int? retryAfterSeconds = null, IReadOnlyList<string>? additionalDetails = null)
+    internal static IResult CreateServiceUnavailable(
+        HttpContext context,
+        string detail,
+        int? retryAfterSeconds = null,
+        IReadOnlyList<string>? additionalDetails = null,
+        bool retryable = false)
     {
+        retryable |= retryAfterSeconds.HasValue;
         var errorResponse = StandardErrorResponse.ServiceUnavailable(detail, retryAfterSeconds, additionalDetails);
 
-        // Add Retry-After header if specified
-        var options = new ErrorResponseFormatterOptions();
-        if (retryAfterSeconds.HasValue)
-        {
-            options = new ErrorResponseFormatterOptions
-            {
-                IncludeAdditionalDetails = options.IncludeAdditionalDetails,
-                IncludeDebugInfo = options.IncludeDebugInfo,
-                ContentType = options.ContentType,
-                AdditionalHeaders = new Dictionary<string, string>
-                {
-                    ["Retry-After"] = retryAfterSeconds.Value.ToString()
-                }
-            };
-        }
+        var options = CreateBackpressureOptions(
+            context,
+            BackpressureMetadata.ServiceUnavailableCode,
+            retryAfterSeconds,
+            retryable);
 
         return StandardErrorResponseFormatter.FormatError(context, errorResponse, options);
     }
@@ -246,20 +261,11 @@ internal static class StandardErrorHelpers
     {
         var errorResponse = StandardErrorResponse.TooManyRequests(detail, retryAfterSeconds, additionalDetails);
 
-        var options = new ErrorResponseFormatterOptions();
-        if (retryAfterSeconds.HasValue)
-        {
-            options = new ErrorResponseFormatterOptions
-            {
-                IncludeAdditionalDetails = options.IncludeAdditionalDetails,
-                IncludeDebugInfo = options.IncludeDebugInfo,
-                ContentType = options.ContentType,
-                AdditionalHeaders = new Dictionary<string, string>
-                {
-                    ["Retry-After"] = retryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                }
-            };
-        }
+        var options = CreateBackpressureOptions(
+            context,
+            BackpressureMetadata.RateLimitExceededCode,
+            retryAfterSeconds,
+            retryable: true);
 
         return StandardErrorResponseFormatter.FormatError(context, errorResponse, options);
     }
@@ -288,24 +294,20 @@ internal static class StandardErrorHelpers
     {
         var errorResponse = StandardErrorResponse.FromException(exception, includeDebugDetails);
 
-        var options = new ErrorResponseFormatterOptions
+        ErrorResponseFormatterOptions options = new()
         {
             IncludeDebugInfo = includeDebugDetails
         };
 
-        // Add special handling for ServiceUnavailableException
-        if (exception is ServiceUnavailableException serviceEx && serviceEx.RetryAfterSeconds.HasValue)
+        if (errorResponse.StatusCode == StatusCodes.Status503ServiceUnavailable)
         {
-            options = new ErrorResponseFormatterOptions
-            {
-                IncludeAdditionalDetails = options.IncludeAdditionalDetails,
-                IncludeDebugInfo = options.IncludeDebugInfo,
-                ContentType = options.ContentType,
-                AdditionalHeaders = new Dictionary<string, string>
-                {
-                    ["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString()
-                }
-            };
+            var retryAfterSeconds = (exception as ServiceUnavailableException)?.RetryAfterSeconds;
+            options = CreateBackpressureOptions(
+                context,
+                BackpressureMetadata.ServiceUnavailableCode,
+                retryAfterSeconds,
+                retryable: true,
+                includeDebugInfo: includeDebugDetails);
         }
 
         return StandardErrorResponseFormatter.FormatError(context, errorResponse, options);
@@ -371,4 +373,35 @@ internal static class StandardErrorHelpers
     /// <returns>A sanitized error message.</returns>
     private static string SanitizeCqlErrorMessage(string errorMessage)
         => ErrorMessageSanitizer.Sanitize(errorMessage, "Syntax error in filter expression.");
+
+    private static ErrorResponseFormatterOptions CreateBackpressureOptions(
+        HttpContext context,
+        string machineCode,
+        int? retryAfterSeconds,
+        bool retryable,
+        bool includeDebugInfo = false)
+    {
+        var headers = new Dictionary<string, string>
+        {
+            ["X-Correlation-ID"] = context.TraceIdentifier,
+            ["Honua-Retryable"] = retryable.ToString().ToLowerInvariant(),
+        };
+
+        if (retryAfterSeconds.HasValue)
+        {
+            headers["Retry-After"] = retryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new ErrorResponseFormatterOptions
+        {
+            IncludeDebugInfo = includeDebugInfo,
+            AdditionalHeaders = headers,
+            MachineCode = machineCode,
+            ODataErrorCode = machineCode,
+            WfsExceptionCode = machineCode,
+            WmsExceptionCode = machineCode,
+            Retryable = retryable,
+            RetryAfterSeconds = retryAfterSeconds,
+        };
+    }
 }

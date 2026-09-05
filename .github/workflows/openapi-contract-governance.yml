@@ -13,6 +13,7 @@ on:
       - '.github/pull_request_template.md'
       - 'scripts/ci/openapi-breaking-change-policy.py'
       - 'scripts/ci/validate-openapi-contracts.sh'
+      - 'docs/developer/api-specs/studio-api.json'
       - 'tests/python/unit/test_openapi_breaking_change_policy.py'
       - '.github/workflows/openapi-contract-governance.yml'
   workflow_dispatch:

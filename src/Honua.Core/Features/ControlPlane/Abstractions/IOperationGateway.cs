@@ -67,6 +67,9 @@ public enum OperationGatewayOutcome
 /// </summary>
 public sealed record OperationGatewayRequest
 {
+    /// <summary>Trusted tenant owner captured when the operation was accepted.</summary>
+    public string? TenantId { get; init; }
+
     /// <summary>
     /// Typed descriptor identity for requests entering through the canonical operation runtime.
     /// Persisting it prevents approval replay from guessing a descriptor from a broad legacy class.
@@ -129,6 +132,12 @@ public sealed record OperationGatewayRequest
     /// the operation. Persisted with the proposal so approval can replay it.
     /// </summary>
     public string? ExecutionPayload { get; init; }
+
+    /// <summary>Whether the proposer was governed by an OAuth scope ceiling.</summary>
+    public bool ScopeGoverned { get; init; }
+
+    /// <summary>Normalized recognized OAuth scopes retained as the proposal authority ceiling.</summary>
+    public IReadOnlyList<string> RecognizedScopes { get; init; } = [];
 
     /// <summary>
     /// Optional deterministic ops-finding autonomy context. When present, the gateway may ask the

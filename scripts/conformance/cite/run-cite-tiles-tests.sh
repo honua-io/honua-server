@@ -488,7 +488,7 @@ cat > "$SUMMARY_FILE" << EOF
 
 **Execution Date**: $(date)
 **Profile**: $PROFILE
-**Honua Server Version**: $(git describe --tags --always 2>/dev/null || echo "unknown")
+**Honua Server Version**: ${HONUA_CITE_TESTED_GIT_SHA:-$(git describe --tags --always 2>/dev/null || echo "unknown")}
 
 ## Test Summary
 

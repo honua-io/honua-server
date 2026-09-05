@@ -28,6 +28,7 @@ namespace Honua.Server.Tests.Features.Spec;
 [Protocol(TestProtocols.Grpc)]
 public sealed class GrpcSpecServiceIntegrationTests : IDisposable
 {
+    private const string AdminApiKey = "grpc-spec-integration-admin-key";
     private readonly WebApplicationFactory<Program> _factory;
     private readonly GrpcChannel _channel;
     private readonly Proto.SpecService.SpecServiceClient _client;
@@ -612,6 +613,8 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
         return new TestWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminApiKey);
                 builder.ConfigureServices(services =>
                 {
                     services.Replace(ServiceDescriptor.Singleton<ILicenseEntitlementService>(license));
@@ -624,9 +627,12 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     {
         var testServerHandler = factory.Server.CreateHandler();
         var grpcWebHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, testServerHandler);
+        var httpClient = new HttpClient(grpcWebHandler);
+        httpClient.DefaultRequestHeaders.Add("X-API-Key", AdminApiKey);
         return GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
         {
-            HttpHandler = grpcWebHandler
+            HttpClient = httpClient,
+            DisposeHttpClient = true
         });
     }
 }

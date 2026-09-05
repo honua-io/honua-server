@@ -236,7 +236,9 @@ make the configured 20/20 cohort's reachability explicit.
 
 The promotion policy and ledger contracts are
 `honua.impact-routing-promotion-policy/v3` and
-`honua.impact-routing-evidence-ledger/v3`: v2 added required reuse minimums and
+`honua.impact-routing-evidence-ledger/v4`: v4 resets retained promotion samples
+after candidate-only routes stopped being countable without execution evidence;
+v2 added required reuse minimums and
 renamed the savings gates, and v3 added the receipt-loss budget, the indexing
 grace window, and the consecutive-green promotion streak.
 

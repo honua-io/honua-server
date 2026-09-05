@@ -457,10 +457,9 @@ public sealed class WmsServiceRbacTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0");
 
         var body = await response.Content.ReadAsStringAsync();
-        // PA-069 (#2418): a WMS ServiceExceptionReport MUST be returned with HTTP 200 OK
-        // per WMS 1.3.0 §7.3.3.4 — the access-denied condition is signalled through the
-        // XML exception body (code="AccessDenied"), not the HTTP status.
-        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        // WMS 1.3.0 §7.3.3.4 defines the ServiceExceptionReport payload; it does
+        // not turn an access denial into a successful HTTP response.
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, body);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         body.Should().Contain("ServiceExceptionReport");
         body.Should().Contain("code=\"AccessDenied\"");

@@ -23,6 +23,7 @@ namespace Honua.Architecture.Tests;
 public sealed class EndpointAuthorizationGuardTests
 {
     private const string FeaturesRelativePath = "src/Honua.Server/Features";
+    private const string ProgramRelativePath = "src/Honua.Server/Program.cs";
 
     private static readonly string[] AuthOptInMarkers =
     {
@@ -121,6 +122,26 @@ public sealed class EndpointAuthorizationGuardTests
             + string.Join(", ", AuthOptInMarkers)
             + " on either the route itself or its parent group; intentionally public endpoints "
             + "must opt in via AllowAnonymous() so the decision is visible to reviewers.");
+    }
+
+    /// <summary>
+    /// The gRPC SpecService is a mutating twin of the admin-only REST Spec surface,
+    /// so its service mapping must carry the same canonical Admin policy metadata.
+    /// </summary>
+    [ArchitectureTest]
+    public void GrpcSpecServiceMapping_RequiresCanonicalAdminAuthorization()
+    {
+        var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var programPath = ArchitectureTestHelpers.CombinePath(repoRoot, ProgramRelativePath);
+        var program = File.ReadAllText(programPath);
+
+        var authorizedMapping = new Regex(
+            @"MapGrpcService<Honua\.Server\.Features\.Spec\.HonuaSpecService>\s*\(\s*\)\s*\.RequireAdminAuthorization\s*\(\s*\)",
+            RegexOptions.CultureInvariant);
+
+        authorizedMapping.IsMatch(program).Should().BeTrue(
+            "geospatial.v1.SpecService plan/apply/cancel operations must inherit the same "
+            + "Admin authorization policy as their POST-based REST twins before handler execution");
     }
 
     /// <summary>

@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Core.Features.Guardrails.Domain;
+using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -55,7 +59,7 @@ internal sealed class ProposalStatusResource : IMcpResource
         CancellationToken cancellationToken)
     {
         McpTelemetry.EnrichActivity("GetProposal");
-        _ = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
 
         var proposalId = uri[McpResourceUris.ProposalsPrefix.Length..];
         McpLog.ResourceRead(_logger, Family, uri);
@@ -65,6 +69,34 @@ internal sealed class ProposalStatusResource : IMcpResource
 
         var proposal = await store.GetAsync(proposalId, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Proposal '{proposalId}' was not found.");
+
+        if (!OperationTenantAuthorization.CanAccess(httpContext, proposal.TenantId))
+        {
+            throw new KeyNotFoundException($"Proposal '{proposalId}' was not found.");
+        }
+
+        var actor = McpAuthorizationHelper.ResolveActorId(principal);
+        var isProposer = !string.IsNullOrWhiteSpace(proposal.RequestedBy)
+            && string.Equals(proposal.RequestedBy, actor, StringComparison.Ordinal);
+        if (!isProposer)
+        {
+            var authorization = httpContext.RequestServices.GetService<IGeoprocessingJobService>()
+                ?? throw new InvalidOperationException("The authorization service is unavailable.");
+            try
+            {
+                await authorization.EnsureCallerAuthorizedAsync(
+                    principal,
+                    proposal.Kind is OperationClass.Deploy or OperationClass.MetadataRelease
+                        ? OperatorResourceType.Deployment
+                        : OperatorResourceType.Catalog,
+                    OperatorOperation.Read,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (GeoprocessingAuthorizationException)
+            {
+                throw new KeyNotFoundException($"Proposal '{proposalId}' was not found.");
+            }
+        }
 
         var resource = new McpProposalResource
         {

@@ -478,7 +478,8 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         string serviceName,
         IReadOnlyList<string>? enabledProtocols,
         AccessPolicy? accessPolicy,
-        bool clearAccessPolicy)
+        bool clearAccessPolicy,
+        IReadOnlyList<string>? capabilities)
     {
         var provider = RequireProvider(fixture);
 
@@ -504,6 +505,15 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
             else if (accessPolicy is not null)
             {
                 next = next with { AccessPolicy = accessPolicy };
+            }
+
+            if (capabilities is not null)
+            {
+                var options = new Dictionary<string, JsonElement>(next.Options, StringComparer.Ordinal)
+                {
+                    ["capabilities"] = JsonSerializer.SerializeToElement(capabilities)
+                };
+                next = next with { Options = options };
             }
 
             services[i] = next;

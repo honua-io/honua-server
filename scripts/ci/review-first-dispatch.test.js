@@ -28,14 +28,14 @@ function run(overrides = {}) {
 
 function job(overrides = {}) {
   return {
-    name: 'PR Gate',
+    name: 'PR Gate / Build and tests',
     conclusion: 'failure',
     steps: [
       { name: 'Admission receipt', conclusion: 'success' },
       { name: 'Await exact-head review', conclusion: 'failure' },
       { name: 'Free disk space', conclusion: 'skipped' },
       { name: 'Setup .NET', conclusion: 'skipped' },
-      { name: 'Lean gate (build + format + fast unit/architecture smoke)', conclusion: 'skipped' },
+      { name: 'Lean gate (build + fast unit/architecture smoke)', conclusion: 'skipped' },
       { name: 'Test serving-image boundary detector', conclusion: 'skipped' },
     ],
     ...overrides,

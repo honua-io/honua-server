@@ -251,7 +251,7 @@ internal static class ConsoleOpenDataMapper
             Id = collectionId,
             Title = page.Title,
             Description = page.Description ?? page.Title ?? collectionId,
-            License = string.IsNullOrWhiteSpace(page.License) ? "other" : page.License,
+            License = string.IsNullOrWhiteSpace(page.License) ? "proprietary" : page.License,
             Keywords = page.Tags.Count > 0 ? page.Tags : null,
             Extent = BuildStacExtent(page),
             Links = new[]
@@ -282,7 +282,7 @@ internal static class ConsoleOpenDataMapper
 
         var properties = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            ["datetime"] = datetime?.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+            ["datetime"] = datetime?.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
         };
         if (!string.IsNullOrWhiteSpace(page.Title))
         {
@@ -388,8 +388,8 @@ internal static class ConsoleOpenDataMapper
         {
             new[]
             {
-                page.TemporalExtent?.Start?.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
-                page.TemporalExtent?.End?.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+                page.TemporalExtent?.Start?.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+                page.TemporalExtent?.End?.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
             },
         };
 
@@ -400,13 +400,8 @@ internal static class ConsoleOpenDataMapper
         };
     }
 
-    private static Dictionary<string, StacProjectionAsset>? BuildStacAssets(ConsoleOpenDataPage page)
+    private static Dictionary<string, StacProjectionAsset> BuildStacAssets(ConsoleOpenDataPage page)
     {
-        if (page.Distributions.Count == 0)
-        {
-            return null;
-        }
-
         var assets = new Dictionary<string, StacProjectionAsset>(StringComparer.Ordinal);
         for (var i = 0; i < page.Distributions.Count; i++)
         {

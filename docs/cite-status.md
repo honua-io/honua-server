@@ -1,6 +1,6 @@
 # CITE Status — Authoritative Snapshot
 
-Last reviewed: 2026-08-28
+Last reviewed: 2026-09-02
 Owner: Honua Server platform
 
 This page is the single fixed-path answer to "what is the current OGC CITE
@@ -30,15 +30,12 @@ directory — check the workflow.
 
 ## Current Per-Protocol Status
 
-Snapshot copied from
+The latest WFS 2.0 `basic` receipt is
+[run 33583116921](https://github.com/honua-io/honua-server/actions/runs/33583116921)
+on candidate commit `a59e204c75a1b51a433faf45d7511c10840786d7`, completed
+2026-09-02. It reports 167 passed, 0 failed, and 0 skipped. All other rows remain backed by
 [CITE Evidence Report run 33205558805](https://github.com/honua-io/honua-server/actions/runs/33205558805)
-on `trunk@f5ac595ee5e3d4bce3df3c726ca1127ca4e2da0f`, completed
-2026-08-28T20:25:07Z. The run failed only at its final snapshot-freshness
-check; the successfully generated `cite-conformance-evidence-13` bundle
-reported `allPassed=true`: 1138 passed, 0 failed, 0 skipped, 0 CantTell. This
-page records the artifact's conformance result, not a successful workflow-run
-conclusion. (The artifact also validates the hermetic
-OGC test-data stub from #3169 end-to-end on trunk; see #3156.)
+and its `cite-conformance-evidence-13` bundle from 2026-08-28.
 
 | Suite | Profile | Passed / Total | Pass Rate | Last Evidence Run |
 |---|---|---:|---:|---|
@@ -49,7 +46,7 @@ OGC test-data stub from #3169 end-to-end on trunk; see #3156.)
 | KML 2.2 | `applicable` | 42 / 42 | 100% | 2026-08-28 |
 | WFS 1.0 | `basic` | 162 / 162 | 100% | 2026-08-28 |
 | WFS 1.1 | `basic` | 39 / 39 | 100% | 2026-08-28 |
-| WFS 2.0 | `basic` | 167 / 167 | 100% | 2026-08-28 |
+| WFS 2.0 | `basic` | 167 / 167 | 100% | [2026-09-02](https://github.com/honua-io/honua-server/actions/runs/33583116921) |
 | WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | 2026-08-28 |
 | WCS 2.0 | `core` | 82 / 82 | 100% | 2026-08-28 |
 | WPS 2.0 | `basic-async` | 21 / 21 | 100% | 2026-08-28 |
@@ -57,20 +54,18 @@ OGC test-data stub from #3169 end-to-end on trunk; see #3156.)
 | WMS 1.3 | `default` | 213 / 213 | 100% | 2026-08-28 |
 | WMTS 1.0 | `default` | 60 / 60 | 100% | 2026-08-28 |
 
-The WFS 2.0 transactional leg (`cite-wfs20-transactional-results`) measures the
-Transaction + LockFeature conformance classes independently from the `basic`
-leg. WMS 1.1.1 is likewise a first-class evidence leg (`cite-wms11-results`);
+The WFS 2.0 transactional leg (`cite-wfs20-transactional-results`) measures
+TransactionalWFS independently from the `basic` leg; LockFeature is not
+advertised by this server and is not part of the profile. WMS 1.1.1 is likewise a first-class evidence leg (`cite-wms11-results`);
 the runner exercises version negotiation, 1.1.1 axis order,
 `WMT_MS_Capabilities`, `application/vnd.ogc.se_xml` exceptions, `X`/`Y`
 GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 
 ### Common Re-Grading Mistakes To Avoid
 
-- **"WFS 2.0 CITE is 75% pass."** Incorrect. The `basic` profile is 167/167
-  (100%) on the 2026-08-28 evidence run. The 75% figure does not match any
-  published or archived result on `trunk` — likely a confusion with a
-  partial-run diagnostic, an older branch, or the GML 3.2 `default` profile
-  that intentionally loads inapplicable classes.
+- **"WFS 2.0 CITE remains at 166/167."** Incorrect. The `basic` profile is
+  167/167 (100%) on run 33583116921; the receipt records zero failures and zero
+  skipped tests.
 - **"No CITE results in the repo, so CITE is unimplemented."** Incorrect.
   Result directories are gitignored (see `.gitignore`); they only exist as CI
   artifacts. The workflows, runners, and Docker compositions all live under
@@ -86,8 +81,16 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 
 ## Profile Scope, In One Line Each
 
-- **OGC API Features `default`** — Part 1 Core, Part 2 CRS, Part 3 Filtering on
-  the seeded fixture.
+- **OGC API Features `default`** — Part 1 Core on the seeded fixture. Part 2,
+  Part 4, and the specialized CQL2 classes are not included in the public
+  conformance declaration until an exact-candidate lane proves their complete
+  classes.
+- **OGC API building blocks** — the exact-candidate
+  `ogc-api-building-block-conformance.yml` lane runs the complete vendored CQL2,
+  MVT/TMS 2.0, Maps, and Schemathesis validator set. Its artifact is evidence
+  for the narrower Features Part 3/queryables claim; CQL2/filter probes remain
+  blocking regression coverage but do not certify complete CQL2 classes. It is
+  not folded into the official ETS totals above.
 - **OGC API Tiles `default`** — vector + raster tiles against the seeded tile
   matrix sets.
 - **GeoPackage 1.2 `applicable`** — core and feature classes for Honua's
@@ -101,8 +104,8 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
   spatial filters, response paging, and managed stored queries for the
   advertised profile. Locking, feature versioning, and spatial joins are not
   advertised by the `basic` profile and not in scope.
-- **WFS 2.0 `transactional`** — the dedicated Transaction + LockFeature
-  conformance-class leg.
+- **WFS 2.0 `transactional`** — the dedicated TransactionalWFS
+  conformance-class leg. Locking is not advertised by this server.
 - **WCS 2.0 `core`** — official ETS core profile, with preflight on
   `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`.
 - **WPS 2.0 `basic-async`** — official ETS Basic and Asynchronous conformance

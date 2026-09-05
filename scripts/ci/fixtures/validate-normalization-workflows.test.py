@@ -8,6 +8,7 @@ tree is not a control; these cases pin the shapes it must keep catching.
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -131,10 +132,19 @@ class NormalizationContractTests(unittest.TestCase):
             run(consumer=consumer)
 
     def test_floating_mint_tag_is_rejected(self) -> None:
-        consumer = SOURCES["consumer"].replace(
-            "uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349",
+        # Substitute whatever commit SHA the live workflow currently pins — keying on a
+        # literal SHA rots on every dependabot bump: after fee1f7d6 -> bcd2ba49 the
+        # replace silently no-opped, the pin stayed valid, and this test failed for
+        # "AssertionError not raised" (trunk run 33368594871).
+        consumer, substitutions = re.subn(
+            r"uses: actions/create-github-app-token@[0-9a-f]{40}",
             "uses: actions/create-github-app-token@v2",
+            SOURCES["consumer"],
         )
+        self.assertGreater(
+            substitutions, 0,
+            "fixture drift: the consumer workflow no longer pins "
+            "actions/create-github-app-token by commit SHA")
         with self.assertRaisesRegex(AssertionError, "pin actions/create-github-app-token"):
             run(consumer=consumer)
 

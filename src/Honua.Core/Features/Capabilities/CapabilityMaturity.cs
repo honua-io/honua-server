@@ -28,9 +28,15 @@ public enum CapabilityMaturity
     /// </summary>
     Experimental = 2,
 
+    /// <summary>
+    /// Preview — implemented and available only through an explicit operator opt-in
+    /// until the release qualification gates have passed.
+    /// </summary>
+    Preview = 3,
+
     /// <summary>Partially implemented — a subset of the capability is served.</summary>
-    Partial = 3,
+    Partial = 4,
 
     /// <summary>Fully implemented and shipped in the current live surface.</summary>
-    Implemented = 4,
+    Implemented = 5,
 }

@@ -50,6 +50,11 @@ public static class StudioServiceCollectionExtensions
         services.TryAddScoped<IStudioPackageFamilyRegistry, StudioPackageFamilyRegistry>();
         services.TryAddScoped<IStudioPackageValidator, StudioPackageValidator>();
         services.TryAddScoped<IStudioPackageLifecycleService, StudioPackageLifecycleService>();
+        // StudioAuthorizationService enforces the OAuth scope ceiling itself (honua-server#3431),
+        // so the Studio slice must be able to resolve a scope authorizer even in a host that does
+        // not run Honua.Server's authentication registration. TryAdd leaves the server's own
+        // AddSingleton registration authoritative wherever it also runs.
+        services.TryAddSingleton<Honua.Core.Features.Authorization.Abstractions.IOperatorScopeAuthorizer, OperatorScopeAuthorizer>();
         services.TryAddScoped<IStudioAuthorizationService, StudioAuthorizationService>();
 
         var optionsBuilder = services.AddOptions<StudioEndUserAuthorizationOptions>();

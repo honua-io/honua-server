@@ -10,6 +10,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -25,6 +26,30 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 public sealed class GeoServicesFieldSerializationTests
 {
     private const int DefaultStringLength = 256;
+
+    [Theory]
+    [InlineData(MetadataV2FieldType.Json)]
+    [InlineData(MetadataV2FieldType.Time)]
+    public void Metadata_StringProjectedFieldsHavePositiveLength(MetadataV2FieldType fieldType)
+    {
+        var field = new MetadataV2Field { Name = "value", Type = fieldType, Nullable = true };
+        var mapped = FeatureServerEndpoints.MapFieldInfoV2(field, FieldNames.ObjectId);
+
+        mapped.Type.Should().Be("esriFieldTypeString");
+        mapped.Length.Should().Be(DefaultStringLength);
+    }
+
+    [Theory]
+    [InlineData(MetadataV2FieldType.String, "sqlTypeNVarchar")]
+    [InlineData(MetadataV2FieldType.Integer, "sqlTypeInteger")]
+    [InlineData(MetadataV2FieldType.DateTime, "sqlTypeOther")]
+    [InlineData(MetadataV2FieldType.Json, "sqlTypeNVarchar")]
+    public void Metadata_UsesEsriSqlTypeEnumeration(MetadataV2FieldType fieldType, string expected)
+    {
+        var field = new MetadataV2Field { Name = "value", Type = fieldType, Nullable = true };
+
+        FeatureServerEndpoints.MapFieldInfoV2(field, FieldNames.ObjectId).SqlType.Should().Be(expected);
+    }
 
     // ----- Bug 1: string field length -----
 

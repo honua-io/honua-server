@@ -2,11 +2,15 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua OGC API Coverages",
-    "description": "OGC API Coverages implementation for raster coverage discovery, schema metadata, and coverage retrieval.\n\nCompliance: OGC CITE 1138/1138 across 14 conformance suites — see docs/cite-status.md.",
+    "description": "OGC API Coverages implementation for raster coverage discovery, schema metadata, and coverage retrieval.\n\nCompliance: OGC CITE 1138/1138 across 14 conformance suites; WFS 2.0 basic is 167/167 — see docs/cite-status.md and run 33583116921.",
     "version": "1.0.0",
     "x-honua-cite-compliance": {
-      "summary": "Coverage retrieval is exercised through the classic WCS 2.0 ETS, which passes 82/82 on trunk; full Honua suite is 1138/1138.",
-      "lastEvidenceRun": "2026-08-28",
+      "summary": "Coverage retrieval is exercised through the classic WCS 2.0 ETS, which passes 82/82; the full Honua suite is 1138/1138.",
+      "lastEvidenceRun": "2026-09-02",
+      "evidenceRuns": {
+        "aggregate": "https://github.com/honua-io/honua-server/actions/runs/33205558805",
+        "wfs20Basic": "https://github.com/honua-io/honua-server/actions/runs/33583116921"
+      },
       "authoritativeSource": "docs/cite-status.md",
       "suites": [
         { "suite": "WCS 2.0", "profile": "core", "passed": 82, "total": 82, "passRate": "100%" }

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -589,6 +590,61 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             createResults: createResults.ToImmutableArray(),
             updateResults: updateResults.ToImmutableArray(),
             deleteResults: deleteResults.ToImmutableArray());
+    }
+
+    public Task<IFeatureWriterTransaction> BeginTransactionAsync(
+        IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+        CancellationToken cancellationToken = default)
+    {
+        var snapshot = _layerFeatures.ToDictionary(
+            static pair => pair.Key,
+            static pair => pair.Value.ToList());
+        return Task.FromResult<IFeatureWriterTransaction>(new TestFeatureWriterTransaction(this, snapshot));
+    }
+
+    private sealed class TestFeatureWriterTransaction(
+        TestFeatureStore owner,
+        Dictionary<int, List<Feature>> snapshot) : IFeatureWriterTransaction
+    {
+        private bool _completed;
+
+        public Task<FeatureEditResult> ApplyEditsAsync(
+            int layerId,
+            FeatureEditBatch editBatch,
+            CancellationToken cancellationToken = default)
+            => owner.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            CancellationToken cancellationToken = default)
+        {
+            _completed = true;
+            return Task.FromResult(FeatureWriterTransactionCommitOutcome.Committed);
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            if (_completed)
+            {
+                return Task.CompletedTask;
+            }
+
+            owner._layerFeatures.Clear();
+            foreach (var (layerId, features) in snapshot)
+            {
+                owner._layerFeatures[layerId] = features.ToList();
+            }
+
+            _completed = true;
+            return Task.CompletedTask;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (!_completed)
+            {
+                await RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+        }
     }
 
     private static Dictionary<long, FeatureEditPrecondition>? BuildPreconditionMap(FeatureEditBatch editBatch)

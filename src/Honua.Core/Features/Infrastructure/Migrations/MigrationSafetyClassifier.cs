@@ -100,13 +100,20 @@ public static class MigrationSafetyClassifier
         @"^\s*--\s*honua:compatibility-review\b.*\breason[ \t]*=[ \t]*\S",
         RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
 
+    // A declared contract-phase marker remains a separate finding for migrations whose executable
+    // behavior is intentionally broader than these lexical DDL rules.
+    private static readonly Regex DeclaredContractPhaseMarker = new(
+        @"^\s*--\s*honua:migration-phase[ \t]+contract\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
     private static readonly (string RuleName, Regex Pattern)[] PotentiallyBreakingPatterns =
     [
-        CreatePattern("drop-column", @"\bALTER\s+TABLE\b[\s\S]*?\bDROP\s+COLUMN\b"),
-        CreatePattern("rename-column", @"\bALTER\s+TABLE\b[\s\S]*?\bRENAME\s+COLUMN\b"),
-        CreatePattern("rename-table", @"\bALTER\s+TABLE\b[\s\S]*?\bRENAME\s+TO\b"),
-        CreatePattern("alter-column-type", @"\bALTER\s+TABLE\b[\s\S]*?\bALTER\s+COLUMN\b[\s\S]*?\bTYPE\b"),
-        CreatePattern("set-not-null", @"\bALTER\s+TABLE\b[\s\S]*?\bALTER\s+COLUMN\b[\s\S]*?\bSET\s+NOT\s+NULL\b"),
+        CreatePattern("drop-column", @"\bALTER\s+TABLE\b[^;]*?\bDROP\s+COLUMN\b"),
+        CreatePattern("rename-column", @"\bALTER\s+TABLE\b[^;]*?\bRENAME\s+COLUMN\b"),
+        CreatePattern("rename-table", @"\bALTER\s+TABLE\b[^;]*?\bRENAME\s+TO\b"),
+        CreatePattern("rename-index", @"\bALTER\s+INDEX\b[^;]*?\bRENAME\s+TO\b"),
+        CreatePattern("alter-column-type", @"\bALTER\s+TABLE\b[^;]*?\bALTER\s+COLUMN\b[^;]*?\bTYPE\b"),
+        CreatePattern("set-not-null", @"\bALTER\s+TABLE\b[^;]*?\bALTER\s+COLUMN\b[^;]*?\bSET\s+NOT\s+NULL\b"),
         CreatePattern("drop-table", @"\bDROP\s+TABLE\b"),
         CreatePattern("drop-schema", @"\bDROP\s+SCHEMA\b"),
         CreatePattern("drop-sequence", @"\bDROP\s+SEQUENCE\b"),
@@ -149,8 +156,9 @@ public static class MigrationSafetyClassifier
 
     /// <summary>
     /// Returns the names of the potentially-breaking (contract-phase) rules the SQL matches,
-    /// after stripping comments and quoted/function bodies. An empty list means the script is
-    /// an additive (expand) change.
+    /// after stripping comments and inert literals while recursively inspecting executable
+    /// routine, <c>DO</c>, and dynamic-SQL bodies. An empty list means the script is an additive
+    /// (expand) change.
     /// </summary>
     /// <param name="sql">The raw SQL contents to analyze.</param>
     /// <returns>The matched breaking-rule names, in rule order.</returns>
@@ -158,8 +166,13 @@ public static class MigrationSafetyClassifier
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var normalized = StripCommentsAndQuotedBodies(sql);
+        var normalized = ExtractExecutableSql(sql);
         var matchedRules = new List<string>();
+
+        if (DeclaredContractPhaseMarker.IsMatch(sql))
+        {
+            matchedRules.Add("declared-contract-phase");
+        }
 
         foreach (var (ruleName, pattern) in PotentiallyBreakingPatterns)
         {
@@ -184,18 +197,28 @@ public static class MigrationSafetyClassifier
         return CompatibilityReviewMarker.IsMatch(sql);
     }
 
-    // A single left-to-right lexer pass that removes comments and quoted/dollar-quoted bodies. A
-    // regex-per-construct approach is order-sensitive and unsafe: stripping string literals before
+    // A single left-to-right lexer pass removes comments and inert literals but recursively retains
+    // routine/DO bodies and dynamic SQL executed from them. A regex-per-construct approach is
+    // order-sensitive and unsafe: stripping string literals before
     // line comments lets an apostrophe inside a `--` comment (e.g. "-- don't ship" ... "-- isn't used")
     // open a spurious quote span that swallows real DDL between the two comments, hiding a DROP TABLE
     // and misclassifying a contract migration as expand. A lexer honors the real precedence — a `--`
     // or `/* */` outside a string starts a comment, and a `'`/`$tag$` outside a comment starts a
-    // literal — so no construct can leak across another's boundary.
-    private static string StripCommentsAndQuotedBodies(string sql)
+    // literal — so no construct can leak across another's boundary. Executable quoted content is
+    // parsed in its own statement scope so concatenated literals join without crossing semicolons.
+    private static string ExtractExecutableSql(string sql)
     {
         var result = new StringBuilder(sql.Length);
+        AppendExecutableSql(sql, result, insideRoutineBody: false);
+        return result.ToString();
+    }
+
+    private static void AppendExecutableSql(string sql, StringBuilder result, bool insideRoutineBody)
+    {
         var i = 0;
         var length = sql.Length;
+        var statementStart = result.Length;
+        var dynamicSql = new StringBuilder();
 
         while (i < length)
         {
@@ -214,61 +237,149 @@ public static class MigrationSafetyClassifier
                 continue;
             }
 
-            // Block comment: /* ... */ (Postgres does not nest these by default; a flat scan matches
-            // how the classifier's DDL detection needs it).
+            // PostgreSQL block comments nest. Track the depth so an inner terminator cannot expose
+            // supposedly-commented DDL and create a false finding.
             if (current == '/' && i + 1 < length && sql[i + 1] == '*')
             {
                 i += 2;
-                while (i + 1 < length && !(sql[i] == '*' && sql[i + 1] == '/'))
+                var depth = 1;
+                while (i < length && depth > 0)
                 {
-                    i++;
+                    if (i + 1 < length && sql[i] == '/' && sql[i + 1] == '*')
+                    {
+                        depth++;
+                        i += 2;
+                    }
+                    else if (i + 1 < length && sql[i] == '*' && sql[i + 1] == '/')
+                    {
+                        depth--;
+                        i += 2;
+                    }
+                    else
+                    {
+                        i++;
+                    }
                 }
 
-                i = Math.Min(length, i + 2);
                 result.Append(' ');
                 continue;
             }
 
-            // Single-quoted string literal with '' escape.
             if (current == '\'')
             {
-                i++;
-                while (i < length)
+                var contents = ReadSingleQuotedContents(sql, ref i);
+                if (IsRoutineBodyPrefix(result, statementStart))
                 {
-                    if (sql[i] == '\'')
-                    {
-                        if (i + 1 < length && sql[i + 1] == '\'')
-                        {
-                            i += 2;
-                            continue;
-                        }
-
-                        i++;
-                        break;
-                    }
-
-                    i++;
+                    AppendExecutableSql(contents, result, insideRoutineBody: true);
+                }
+                else if (insideRoutineBody
+                    && IsDynamicExecutePrefix(result, statementStart)
+                    && IsDynamicSqlTemplatePosition(result, statementStart))
+                {
+                    AppendExecutableSql(contents, dynamicSql, insideRoutineBody: false);
+                    dynamicSql.Append(' ');
                 }
 
                 result.Append(' ');
                 continue;
             }
 
-            // Dollar-quoted body: $tag$ ... $tag$ (tag may be empty).
             if (current == '$' && TryReadDollarTag(sql, i) is { } tag)
             {
                 var closeIndex = sql.IndexOf(tag, i + tag.Length, StringComparison.Ordinal);
+                var contentsStart = i + tag.Length;
+                var contentsLength = (closeIndex < 0 ? length : closeIndex) - contentsStart;
+                var contents = sql.Substring(contentsStart, contentsLength);
                 i = closeIndex < 0 ? length : closeIndex + tag.Length;
+
+                if (IsRoutineBodyPrefix(result, statementStart))
+                {
+                    AppendExecutableSql(contents, result, insideRoutineBody: true);
+                }
+                else if (insideRoutineBody
+                    && IsDynamicExecutePrefix(result, statementStart)
+                    && IsDynamicSqlTemplatePosition(result, statementStart))
+                {
+                    AppendExecutableSql(contents, dynamicSql, insideRoutineBody: false);
+                    dynamicSql.Append(' ');
+                }
+
                 result.Append(' ');
                 continue;
             }
 
             result.Append(current);
             i++;
+
+            if (current == ';')
+            {
+                if (dynamicSql.Length > 0)
+                {
+                    result.Append(' ');
+                    result.Append(dynamicSql);
+                    result.Append(';');
+                    dynamicSql.Clear();
+                }
+
+                statementStart = result.Length;
+            }
         }
 
-        return result.ToString();
+        if (dynamicSql.Length > 0)
+        {
+            result.Append(' ');
+            result.Append(dynamicSql);
+        }
     }
+
+    private static string ReadSingleQuotedContents(string sql, ref int index)
+    {
+        var contents = new StringBuilder();
+        index++;
+
+        while (index < sql.Length)
+        {
+            if (sql[index] != '\'')
+            {
+                contents.Append(sql[index]);
+                index++;
+                continue;
+            }
+
+            if (index + 1 < sql.Length && sql[index + 1] == '\'')
+            {
+                contents.Append('\'');
+                index += 2;
+                continue;
+            }
+
+            index++;
+            break;
+        }
+
+        return contents.ToString();
+    }
+
+    private static bool IsRoutineBodyPrefix(StringBuilder result, int statementStart)
+        => RoutineBodyPrefix.IsMatch(result.ToString(statementStart, result.Length - statementStart));
+
+    private static bool IsDynamicExecutePrefix(StringBuilder result, int statementStart)
+        => DynamicExecutePrefix.IsMatch(result.ToString(statementStart, result.Length - statementStart));
+
+    private static bool IsDynamicSqlTemplatePosition(StringBuilder result, int statementStart)
+        => !DynamicFormatArgumentPrefix.IsMatch(result.ToString(statementStart, result.Length - statementStart));
+
+    private static readonly Regex RoutineBodyPrefix = new(
+        @"(?:\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[^;]*\bAS\s*|\bDO(?:\s+LANGUAGE\s+[A-Za-z_][A-Za-z0-9_$]*)?\s*)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex DynamicExecutePrefix = new(
+        @"\bEXECUTE\b(?!\s+FUNCTION\b)[^;]*$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex DynamicFormatArgumentPrefix = new(
+        @"\bEXECUTE\b(?!\s+FUNCTION\b)[^;]*\bFORMAT\s*\([^;]*,[^;]*$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static string? TryReadDollarTag(string sql, int start)
     {
@@ -294,7 +405,18 @@ public static class MigrationSafetyClassifier
             i++;
         }
 
-        return i < length && sql[i] == '$' ? sql[start..(i + 1)] : null;
+        if (i >= length || sql[i] != '$')
+        {
+            return null;
+        }
+
+        var tag = sql[start..(i + 1)];
+        // DbUp variables use the same delimiters as PostgreSQL dollar quotes. They are
+        // substituted before execution and must remain visible to the migration-safety
+        // classifier; treating $HonuaSchema$ as a quoted body can hide following DDL.
+        return string.Equals(tag, "$HonuaSchema$", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : tag;
     }
 
     /// <summary>

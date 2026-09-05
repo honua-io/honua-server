@@ -39,6 +39,23 @@ public class ZarrMetadataExtractorTests
     }
 
     [Fact]
+    public async Task ReadMetadataAsync_LargeConsolidatedMetadata_IsNotTruncated()
+    {
+        var objects = ZarrFixtureBuilder.BuildGroupedZlib(
+            root: "stores/large-metadata", rows: 4, cols: 4, chunkRows: 4, chunkCols: 4,
+            sample: (r, c) => r + c, srid: 4326, xMin: -180, yMin: -90, xMax: 180, yMax: 90);
+        objects["stores/large-metadata/.zattrs"] = Encoding.UTF8.GetBytes("{}");
+        objects["stores/large-metadata/.zmetadata"] = Encoding.UTF8.GetBytes(
+            "{\"zarr_consolidated_format\":1,\"metadata\":{\"temperature/.zarray\":{},\"padding\":\""
+            + new string('x', 70_000) + "\"}}");
+
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(
+            new InMemoryZarrRangeReader(objects), "bucket", "stores/large-metadata");
+
+        metadata.Arrays.Should().ContainSingle().Which.Name.Should().Be("temperature");
+    }
+
+    [Fact]
     public async Task ReadMetadataAsync_SingleArrayUncompressed_DiscoversShapeAndDtype()
     {
         var objects = ZarrFixtureBuilder.BuildSingleVariableUncompressed(

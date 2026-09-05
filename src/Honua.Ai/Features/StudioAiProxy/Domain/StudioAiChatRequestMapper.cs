@@ -23,7 +23,8 @@ public static class StudioAiChatRequestMapper
     /// </summary>
     public static (StudioAiChatRequest? Request, string? Error) ToDomain(
         StudioAiChatHttpRequest http,
-        bool allowCallerOverrides = true)
+        bool allowCallerOverrides = true,
+        byte[]? acceptedRequestJson = null)
     {
         ArgumentNullException.ThrowIfNull(http);
 
@@ -133,7 +134,24 @@ public static class StudioAiChatRequestMapper
                     return (null, $"tools[].inputSchema for tool '{tool.Name}' must be a JSON object.");
                 }
 
-                tools.Add(new StudioAiToolDefinition { Name = tool.Name, Description = tool.Description, InputSchema = tool.InputSchema });
+                if (tool.Annotations is { ValueKind: not JsonValueKind.Object })
+                {
+                    return (null, $"tools[].annotations for tool '{tool.Name}' must be a JSON object when provided.");
+                }
+
+                if (tool.OutputSchema is { ValueKind: not JsonValueKind.Object })
+                {
+                    return (null, $"tools[].outputSchema for tool '{tool.Name}' must be a JSON object when provided.");
+                }
+
+                tools.Add(new StudioAiToolDefinition
+                {
+                    Name = tool.Name,
+                    Description = tool.Description,
+                    InputSchema = tool.InputSchema,
+                    Annotations = tool.Annotations,
+                    OutputSchema = tool.OutputSchema
+                });
             }
         }
 
@@ -150,6 +168,7 @@ public static class StudioAiChatRequestMapper
 
         var request = new StudioAiChatRequest
         {
+            AcceptedRequestJson = acceptedRequestJson,
             Certification = http.Certification,
             Provider = http.Provider,
             Model = allowCallerOverrides ? http.Model : null,

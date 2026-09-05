@@ -203,4 +203,33 @@ public sealed class TestFeatureStorePreconditionTests
         var persisted = (await store.GetAsync(LayerId, 1))!.Value;
         persisted.Attributes["name"].Should().Be("stale-write");
     }
+
+    [UnitTest]
+    public async Task WriterTransaction_LaterLayerFailure_RollsBackEarlierLayer()
+    {
+        using var store = new TestFeatureStore();
+        var original = (await store.GetAsync(LayerId, 1))!.Value;
+
+        await using var transaction = await store.BeginTransactionAsync();
+        var firstResult = await transaction.ApplyEditsAsync(
+            LayerId,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(WithName(original, "must-rollback")),
+                rollbackOnFailure: true));
+        var secondResult = await transaction.ApplyEditsAsync(
+            99,
+            FeatureEditBatch.Create(
+                updates: ImmutableArray.Create(Feature.Create(
+                    999_999,
+                    geometry: null,
+                    attributes: ImmutableDictionary<string, object?>.Empty.Add("name", "missing"))),
+                rollbackOnFailure: true));
+
+        firstResult.IsSuccess.Should().BeTrue();
+        secondResult.WasRolledBack.Should().BeTrue();
+        await transaction.RollbackAsync();
+
+        var persisted = (await store.GetAsync(LayerId, 1))!.Value;
+        persisted.Attributes["name"].Should().Be("Test Feature");
+    }
 }

@@ -2,17 +2,16 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Net;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
-using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Core.Features.RateLimiting.Domain;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.RateLimiting;
 
@@ -50,16 +49,18 @@ internal sealed partial class RateLimitingMiddleware
     private const string UnknownKeyFamily = "unknown";
 
     /// <summary>
-    /// Soft cap on process-local counter entries before stale windows are pruned.
+    /// Hard cap on process-local counter entries. New keys fail closed at capacity.
     /// </summary>
     private const int MaxMemoryCounterEntries = 10_000;
 
     /// <summary>
     /// Process-local fixed-window counters used when Redis is unavailable. Counters
-    /// are mutated under a per-entry lock so concurrent requests for the same key
-    /// cannot lose increments (a get/set round-trip through a cache is not atomic).
+    /// are admitted, incremented, and expired under one lock so the capacity and
+    /// existing budgets remain correct during concurrent high-cardinality traffic.
     /// </summary>
     private static readonly ConcurrentDictionary<string, FixedWindowCounter> _memoryCounters = new();
+    private static readonly object _memoryCountersLock = new();
+    private static DateTimeOffset _nextMemoryCounterPrune = DateTimeOffset.MinValue;
 
     private readonly RequestDelegate _next;
     private readonly IRateLimitPolicyStore _policyStore;
@@ -250,13 +251,13 @@ internal sealed partial class RateLimitingMiddleware
             var endpointLimit = ResolveEndpointLimit(context);
             if (endpointLimit is null)
             {
-                return subjectResult;
+                return subjectResult.Result;
             }
 
             var scopedKey = $"{rateLimitKey}|policy:{endpointLimit.Value.Scope}";
-            var endpointResult = await CheckCounterAsync(scopedKey, endpointLimit.Value);
+            var endpointResult = await CheckCounterAsync(scopedKey, endpointLimit.Value, useRedis: !subjectResult.UsedMemory);
 
-            return CombineResults(subjectResult, endpointResult);
+            return CombineResults(subjectResult.Result, endpointResult.Result);
         }
         // Intentional catch-all: this is the request-handling boundary for the rate-limit
         // check (Redis/counter faults, etc.); allow the request through on failure rather
@@ -280,11 +281,23 @@ internal sealed partial class RateLimitingMiddleware
     /// <paramref name="resolved"/>, using the Redis sliding window when available and falling back
     /// to a process-local fixed window otherwise. Every call increments the counter.
     /// </summary>
-    private async Task<RateLimitResult> CheckCounterAsync(string counterKey, ResolvedRateLimit resolved)
+    private async Task<(RateLimitResult Result, bool UsedMemory)> CheckCounterAsync(
+        string counterKey, ResolvedRateLimit resolved, bool useRedis = true)
     {
-        return _redis != null
-            ? await CheckRateLimitRedisAsync(counterKey, resolved)
-            : CheckRateLimitMemory(counterKey, resolved);
+        if (useRedis && _redis != null)
+        {
+            try
+            {
+                return (await CheckRateLimitRedisAsync(counterKey, resolved), false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                var (keyFamily, keyHash) = SplitRateLimitKey(counterKey);
+                RateLimitingLog.RedisCounterFallback(_logger, keyFamily, keyHash, ex);
+            }
+        }
+
+        return (CheckRateLimitMemory(counterKey, resolved), true);
     }
 
     /// <summary>
@@ -328,17 +341,14 @@ internal sealed partial class RateLimitingMiddleware
         // Use Redis sorted set for sliding window
         var pipeline = database.CreateTransaction();
 
-        // Remove entries older than the window. The returned task resolves only after
-        // pipeline.ExecuteAsync() below and its per-command result isn't needed individually
-        // (only countTask's result matters), so it's discarded rather than named — the
-        // discard still suppresses the "unawaited task" warning that a bare statement would emit.
-        _ = pipeline.SortedSetRemoveRangeByScoreAsync(
+        // Every mutation must succeed before the count can authorize a request.
+        var trimTask = pipeline.SortedSetRemoveRangeByScoreAsync(
             windowKey,
             0,
             windowStart.ToUnixTimeMilliseconds());
 
         // Add current request
-        _ = pipeline.SortedSetAddAsync(
+        var addTask = pipeline.SortedSetAddAsync(
             windowKey,
             Guid.NewGuid().ToString(),
             now.ToUnixTimeMilliseconds());
@@ -347,9 +357,14 @@ internal sealed partial class RateLimitingMiddleware
         var countTask = pipeline.SortedSetLengthAsync(windowKey);
 
         // Set expiration to twice the window so stale entries self-evict.
-        _ = pipeline.KeyExpireAsync(windowKey, window + window);
+        var expireTask = pipeline.KeyExpireAsync(windowKey, window + window);
 
-        await pipeline.ExecuteAsync();
+        var executeTask = pipeline.ExecuteAsync();
+        await Task.WhenAll(executeTask, trimTask, addTask, countTask, expireTask);
+        if (!await executeTask)
+        {
+            throw new InvalidOperationException("The Redis rate-limit transaction was not committed.");
+        }
 
         var requestCount = await countTask;
         var limit = resolved.Limit;
@@ -366,9 +381,8 @@ internal sealed partial class RateLimitingMiddleware
 
     /// <summary>
     /// Checks rate limit using process-local counters with a fixed window algorithm.
-    /// Increments happen under a per-counter lock so concurrent requests for the
-    /// same key are counted exactly (the previous get-increment-set round trip lost
-    /// updates under concurrency, letting clients exceed the limit).
+    /// Admission, expiry, and increments share a lock so concurrent requests cannot
+    /// exceed the hard capacity, lose increments, or reset a live counter by eviction.
     /// </summary>
     /// <param name="counterKey">The counter key (subject identity plus any per-endpoint policy scope).</param>
     /// <param name="resolved">The resolved limit and window for this request.</param>
@@ -385,65 +399,84 @@ internal sealed partial class RateLimitingMiddleware
         var bucketStartTicks = now.UtcTicks / windowTicks * windowTicks;
         var windowStart = new DateTimeOffset(bucketStartTicks, TimeSpan.Zero);
 
-        var counter = _memoryCounters.GetOrAdd(counterKey, static _ => new FixedWindowCounter());
-        int currentCount;
-        lock (counter)
+        lock (_memoryCountersLock)
         {
+            if (!_memoryCounters.TryGetValue(counterKey, out var counter))
+            {
+                if (_memoryCounters.Count >= MaxMemoryCounterEntries)
+                {
+                    PruneExpiredMemoryCounters(now);
+                }
+                if (_memoryCounters.Count >= MaxMemoryCounterEntries)
+                {
+                    return new RateLimitResult
+                    {
+                        IsAllowed = false,
+                        RequestsRemaining = 0,
+                        WindowReset = _nextMemoryCounterPrune,
+                        Limit = resolved.Limit
+                    };
+                }
+                counter = new FixedWindowCounter();
+                _memoryCounters[counterKey] = counter;
+            }
+
             if (counter.WindowStart != windowStart)
             {
                 counter.WindowStart = windowStart;
                 counter.Count = 0;
             }
+            counter.WindowEnd = windowStart + window;
+            if (counter.WindowEnd < _nextMemoryCounterPrune)
+            {
+                _nextMemoryCounterPrune = counter.WindowEnd;
+            }
+            var currentCount = ++counter.Count;
+            var limit = resolved.Limit;
 
-            currentCount = ++counter.Count;
+            return new RateLimitResult
+            {
+                IsAllowed = currentCount <= limit,
+                RequestsRemaining = Math.Max(0, limit - currentCount),
+                WindowReset = counter.WindowEnd,
+                RequestCount = currentCount,
+                Limit = limit
+            };
         }
-
-        PruneExpiredMemoryCounters(windowStart);
-
-        var limit = resolved.Limit;
-
-        return new RateLimitResult
-        {
-            IsAllowed = currentCount <= limit,
-            RequestsRemaining = Math.Max(0, limit - currentCount),
-            WindowReset = windowStart + window,
-            RequestCount = currentCount,
-            Limit = limit
-        };
     }
 
     /// <summary>
-    /// Opportunistically removes counters from previous windows once the dictionary
-    /// grows beyond <see cref="MaxMemoryCounterEntries"/>, bounding memory use.
+    /// Reclaims only expired windows while holding the admission lock. The earliest
+    /// expiry avoids scanning all counters for every rejected high-cardinality request.
     /// </summary>
-    private static void PruneExpiredMemoryCounters(DateTimeOffset currentWindowStart)
+    private static void PruneExpiredMemoryCounters(DateTimeOffset now)
     {
-        if (_memoryCounters.Count <= MaxMemoryCounterEntries)
+        if (now < _nextMemoryCounterPrune)
         {
             return;
         }
 
+        _nextMemoryCounterPrune = DateTimeOffset.MaxValue;
         foreach (var entry in _memoryCounters)
         {
-            bool stale;
-            lock (entry.Value)
-            {
-                stale = entry.Value.WindowStart < currentWindowStart;
-            }
-
-            if (stale)
+            if (entry.Value.WindowEnd <= now)
             {
                 _memoryCounters.TryRemove(entry);
+            }
+            else if (entry.Value.WindowEnd < _nextMemoryCounterPrune)
+            {
+                _nextMemoryCounterPrune = entry.Value.WindowEnd;
             }
         }
     }
 
     /// <summary>
-    /// Mutable fixed-window counter state; mutated only under a lock on the instance.
+    /// Mutable fixed-window state protected by the process-local admission lock.
     /// </summary>
     private sealed class FixedWindowCounter
     {
         public DateTimeOffset WindowStart;
+        public DateTimeOffset WindowEnd;
         public int Count;
     }
 
@@ -594,27 +627,11 @@ internal sealed partial class RateLimitingMiddleware
         // RFC 9110 Retry-After: advise clients how long to wait (in whole seconds, never
         // negative) before retrying. Mirrors the X-RateLimit-Reset window boundary.
         var retryAfterSeconds = Math.Max(0, (int)Math.Ceiling((result.WindowReset - DateTimeOffset.UtcNow).TotalSeconds));
-        context.Response.Headers.RetryAfter =
-            retryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-        context.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
-        context.Response.ContentType = "application/json";
-
-        var response = new RateLimitExceededResponse
-        {
-            Error = "rate_limit_exceeded",
-            Message = "Too many requests. Please try again later.",
-            Details = new RateLimitExceededDetails
-            {
-                Limit = result.Limit,
-                WindowReset = result.WindowReset.ToUnixTimeSeconds()
-            }
-        };
-
-        await context.Response.WriteAsync(
-            System.Text.Json.JsonSerializer.Serialize(
-                response,
-                RateLimitingJsonContext.Default.RateLimitExceededResponse));
+        await BackpressureResponseWriter.WriteAsync(
+            context,
+            BackpressureKind.Throttled,
+            retryAfterSeconds,
+            context.RequestAborted).ConfigureAwait(false);
     }
 
     /// <summary>

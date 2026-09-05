@@ -52,9 +52,12 @@ internal static class ProductionHealthChecks
                 DatabaseTags);
         }
 
-        // Redis cache health check (if Redis is configured)
+        // Community deployments may retain a Redis connection string for configuration parity
+        // while the caching.redis entitlement deliberately leaves IConnectionMultiplexer
+        // unregistered. Only add the check when its dependency can be resolved.
         var redisConnectionString = configuration.GetConnectionString("Redis");
-        if (!string.IsNullOrEmpty(redisConnectionString))
+        if (!string.IsNullOrEmpty(redisConnectionString)
+            && services.Any(descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer)))
         {
             healthChecksBuilder.AddCheck<RedisHealthCheck>(
                 "redis",

@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -40,6 +41,27 @@ internal sealed class TenantContextMiddleware(
     {
         var principal = context.User;
         var isAuthenticated = principal?.Identity?.IsAuthenticated == true;
+
+        // Approved replay has already sealed its tenant. Honor the authenticated
+        // credential binding even if header/claim configuration changed after approval.
+        if (isAuthenticated && principal!.Identity?.AuthenticationType == AuthenticationExtensions.ApiKeyScheme &&
+            principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole) &&
+            principal.FindFirst("api_key_id") is not null)
+        {
+            var approvedTenant = principal.FindFirst(AdminApiKeyPermission.ApprovedOperationTenantClaim)?.Value;
+            var approvedContext = context.RequestServices.GetService<ITenantContext>() as RequestTenantContext;
+            if (approvedContext is null || approvedTenant is null ||
+                approvedTenant.Length > _options.MaxTenantIdLength || !IsSafeTenantId(approvedTenant))
+            {
+                await TenantDenialResponseWriter.WriteAsync(context, TenantDenialKind.AuthenticationRequired).ConfigureAwait(false);
+                return;
+            }
+
+            approvedContext.Set(approvedTenant, TenantContextSource.Claim);
+            CanonicalSecurityActor.StampRequestBinding(principal, approvedContext.TenantId);
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
 
         if (!_options.Enabled)
         {
@@ -99,7 +121,9 @@ internal sealed class TenantContextMiddleware(
                 // Audit still needs the issuer-qualified actor even though the rejected
                 // override has no accepted effective tenant.
                 CanonicalSecurityActor.StampRequestBinding(principal!, effectiveTenant: null);
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await TenantDenialResponseWriter
+                    .WriteAsync(context, TenantDenialKind.PermissionDenied)
+                    .ConfigureAwait(false);
                 return;
             }
         }
@@ -130,12 +154,18 @@ internal sealed class TenantContextMiddleware(
             // principals use the same boundary and remain available only on routes
             // carrying the explicit tenant-independent marker. MCP data-bearing
             // operations apply their own tenant requirement to both bearer schemes.
-            if (!context.Request.Path.StartsWithSegments(
-                    "/mcp",
-                    StringComparison.OrdinalIgnoreCase)
+            var tenantBoundMcpCall = await TenantDenialResponseWriter
+                .IsTenantBoundMcpRequestAsync(context.Request)
+                .ConfigureAwait(false);
+            if ((!context.Request.Path.StartsWithSegments(
+                     "/mcp",
+                     StringComparison.OrdinalIgnoreCase)
+                    || tenantBoundMcpCall)
                 && !IsTenantIndependentControlPlaneEndpoint(context))
             {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await TenantDenialResponseWriter
+                    .WriteAsync(context, TenantDenialKind.AuthenticationRequired)
+                    .ConfigureAwait(false);
                 return;
             }
 

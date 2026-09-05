@@ -3,7 +3,9 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using Honua.Infrastructure.Security;
 using Honua.ServiceDefaults;
+using Microsoft.AspNetCore.Http;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -134,7 +136,7 @@ internal static class McpTelemetry
     /// Enriches the current activity with <c>honua.protocol = "Mcp"</c> and the
     /// supplied operation name. Mirrors the gRPC/GPServer adapter pattern.
     /// </summary>
-    public static void EnrichActivity(string operation)
+    public static void EnrichActivity(string operation, HttpContext? httpContext = null)
     {
         var activity = Activity.Current;
         if (activity == null)
@@ -144,5 +146,15 @@ internal static class McpTelemetry
 
         activity.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Mcp);
         activity.SetTag(HonuaTelemetry.Tags.Operation, operation);
+
+        var tenant = httpContext is null
+            ? null
+            : CanonicalSecurityActor.FindStampedValue(
+                httpContext.User,
+                CanonicalSecurityActor.EffectiveTenantClaim);
+        if (!string.IsNullOrWhiteSpace(tenant))
+        {
+            activity.SetTag("honua.tenant.id", tenant);
+        }
     }
 }

@@ -22,6 +22,11 @@ public sealed class DeleteAttachmentResult
     /// Global ID of the attachment when available.
     /// </summary>
     public string? GlobalId { get; init; }
+
+    /// <summary>
+    /// Error information when the attachment could not be deleted.
+    /// </summary>
+    public EditError? Error { get; init; }
 }
 
 /// <summary>

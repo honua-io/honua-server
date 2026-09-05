@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "issue": "honua-server#3885",
+  "generatedAtUtc": "2026-09-02T13:00:00Z",
+  "deadline": {
+    "configuredMilliseconds": 1000,
+    "schedulerToleranceMilliseconds": 2000,
+    "coveredPhases": ["dns", "connect", "tls", "headers", "success-stream-open", "success-stream-read", "error-stream-open", "error-stream-read"]
+  },
+  "denominator": {
+    "adapterKinds": ["openai-compatible", "anthropic", "bedrock"],
+    "failurePhases": ["dns-failure", "connection-refused", "tls-failure", "slow-headers", "401-immediate", "429-immediate", "5xx-immediate", "429-drip", "5xx-drip", "unbounded-error-body", "stall-before-first-event", "stall-after-text", "stall-during-tool-arguments", "abrupt-reset", "provider-cancellation-race", "client-disconnect-before-headers", "client-disconnect-after-partial-output", "next-request-recovery"],
+    "caseCount": 54,
+    "skips": 0
+  },
+  "contract": {
+    "terminalErrorCount": 1,
+    "successfulMessageStopCount": 0,
+    "auditOutcomeCount": 1,
+    "provenanceCount": 0,
+    "proposalCount": 0,
+    "downstreamDispatchCount": 0,
+    "maximumErrorBodyBytes": 4096,
+    "logLeakScan": ["prompt", "tool-arguments", "credentials", "secret-references"],
+    "upstreamDisposed": true,
+    "clientCancellationDistinguished": true,
+    "nextRequestRecovery": "success"
+  },
+  "retainedRuns": [
+    {
+      "adapterKind": "openai-compatible",
+      "failurePhase": "429-drip",
+      "configuredDeadlineMilliseconds": 1000,
+      "maximumObservedElapsedMilliseconds": 3000,
+      "emittedEventTypes": ["error"],
+      "bytesBufferedUpperBound": 4096,
+      "upstreamDisposalObserved": true,
+      "recoveryResult": "messageStop",
+      "test": "StreamAsync_DrippingErrorBody_IsDeadlineBoundDisposedAndNextRequestRecovers"
+    },
+    {
+      "adapterKind": "anthropic",
+      "failurePhase": "stall-after-text",
+      "configuredDeadlineMilliseconds": 1000,
+      "maximumObservedElapsedMilliseconds": 3000,
+      "emittedEventTypes": ["messageStart", "textDelta", "error"],
+      "bytesBufferedUpperBound": 4096,
+      "upstreamDisposalObserved": true,
+      "recoveryResult": "isolated cancellation state",
+      "test": "StreamAsync_StallAfterPartialText_IsDeadlineBoundDisposedAndHasNoSuccessTerminal"
+    },
+    {
+      "adapterKind": "bedrock",
+      "failurePhase": "stall-before-first-event",
+      "configuredDeadlineMilliseconds": 1000,
+      "maximumObservedElapsedMilliseconds": 3000,
+      "emittedEventTypes": ["messageStart", "error"],
+      "bytesBufferedUpperBound": 0,
+      "upstreamDisposalObserved": true,
+      "recoveryResult": "fresh client per request",
+      "test": "StreamAsync_Timeout_EmitsErrorAndDisposesEnumerator"
+    }
+  ],
+  "testTranscript": {
+    "command": "dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj --no-restore --filter \"FullyQualifiedName~OpenAiCompatibleStudioAiProxyAdapterTests|FullyQualifiedName~AnthropicStudioAiProxyAdapterTests|FullyQualifiedName~BedrockStudioAiProxyAdapterTests\"",
+    "passed": 42,
+    "failed": 0,
+    "skipped": 0,
+    "durationSeconds": 2
+  }
+}

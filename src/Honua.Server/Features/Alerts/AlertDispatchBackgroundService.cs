@@ -100,6 +100,12 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                     var eventStore = scope.ServiceProvider.GetRequiredService<IAlertEventStore>();
                     var lifecycleStore = scope.ServiceProvider.GetRequiredService<IAlertLifecycleStore>();
 
+                    // Readiness measures whether the dispatcher loop is alive, not whether an
+                    // arbitrary remote webhook is responsive. Stamp before claiming/dispatching
+                    // the batch so a slow or black-holed sink cannot make every replica appear
+                    // dead while the loop is still making progress (#30).
+                    Interlocked.Exchange(ref _lastPollAtTicks, now.UtcTicks);
+
                     // Resolved per batch so the entitlement is read LIVE: a dispatch queued while
                     // its channel was entitled can sit in the outbox across a license expiry —
                     // suppressed, retrying, or dead-lettered and revived — and the admission-time
@@ -138,8 +144,6 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                         await PurgeDeliveredAsync(dispatchStore, now, stoppingToken).ConfigureAwait(false);
                         lastRetentionSweep = now;
                     }
-
-                    Interlocked.Exchange(ref _lastPollAtTicks, now.UtcTicks);
 
                     if (batch.Count == 0)
                     {
@@ -224,18 +228,28 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         if (editionPolicy is not null && !editionPolicy.IsChannelAllowed(item.ChannelType))
         {
             var entitlementRetryAt = now.Add(UnentitledChannelRetryDelay);
-            await dispatchStore
-                .RescheduleAsync(item.DispatchId, entitlementRetryAt, cancellationToken)
+            var rescheduled = await dispatchStore
+                .RescheduleAsync(item.DispatchId, item.ClaimToken, entitlementRetryAt, cancellationToken)
                 .ConfigureAwait(false);
+            if (!rescheduled)
+            {
+                return;
+            }
+
             LogChannelUnentitled(_logger, item.DispatchId, item.ChannelType, entitlementRetryAt);
             return;
         }
 
         if (!_sinks.TryGetValue(item.ChannelType, out var sink))
         {
-            await dispatchStore
-                .MarkFailedAsync(item.DispatchId, now, now, deadLetter: true, "No delivery sink registered.", cancellationToken)
+            var deadLettered = await dispatchStore
+                .MarkFailedAsync(item.DispatchId, item.ClaimToken, now, now, deadLetter: true, "No delivery sink registered.", cancellationToken)
                 .ConfigureAwait(false);
+            if (!deadLettered)
+            {
+                return;
+            }
+
             _metrics.RecordDeliveryFailed(item.ChannelType, deadLettered: true, latencyMs: 0);
             return;
         }
@@ -243,9 +257,14 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         var alertEvent = await eventStore.GetAsync(item.EventId, cancellationToken).ConfigureAwait(false);
         if (alertEvent is null)
         {
-            await dispatchStore
-                .MarkFailedAsync(item.DispatchId, now, now, deadLetter: true, "Alert event not found.", cancellationToken)
+            var deadLettered = await dispatchStore
+                .MarkFailedAsync(item.DispatchId, item.ClaimToken, now, now, deadLetter: true, "Alert event not found.", cancellationToken)
                 .ConfigureAwait(false);
+            if (!deadLettered)
+            {
+                return;
+            }
+
             _metrics.RecordDeliveryFailed(item.ChannelType, deadLettered: true, latencyMs: 0);
             return;
         }
@@ -258,7 +277,12 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         var lifecycle = await lifecycleStore.GetAsync(item.EventId, cancellationToken).ConfigureAwait(false);
         if (lifecycle?.SuppressedUntil is { } suppressedUntil && suppressedUntil > now)
         {
-            await dispatchStore.RescheduleAsync(item.DispatchId, suppressedUntil, cancellationToken).ConfigureAwait(false);
+            var rescheduled = await dispatchStore.RescheduleAsync(item.DispatchId, item.ClaimToken, suppressedUntil, cancellationToken).ConfigureAwait(false);
+            if (!rescheduled)
+            {
+                return;
+            }
+
             _metrics.RecordDeliverySuppressed(item.ChannelType);
             LogSuppressed(_logger, item.DispatchId, item.ChannelType, suppressedUntil);
             return;
@@ -271,7 +295,12 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         if (!_circuitBreaker.ShouldAttemptDelivery(item.ChannelType, now))
         {
             var deferUntil = _circuitBreaker.NextProbeAt(item.ChannelType, now);
-            await dispatchStore.RescheduleAsync(item.DispatchId, deferUntil, cancellationToken).ConfigureAwait(false);
+            var rescheduled = await dispatchStore.RescheduleAsync(item.DispatchId, item.ClaimToken, deferUntil, cancellationToken).ConfigureAwait(false);
+            if (!rescheduled)
+            {
+                return;
+            }
+
             _metrics.RecordDeliveryCircuitDeferred(item.ChannelType);
             LogCircuitDeferred(_logger, item.DispatchId, item.ChannelType, deferUntil);
             return;
@@ -283,7 +312,12 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         if (!_rateLimiter.TryAcquire(item.ChannelType, _options.Dispatch.MaxNotificationsPerMinutePerChannel, now))
         {
             var deferUntil = AlertDispatchRetryPolicy.ComputeNextAttempt(1, now, _options.Dispatch);
-            await dispatchStore.RescheduleAsync(item.DispatchId, deferUntil, cancellationToken).ConfigureAwait(false);
+            var rescheduled = await dispatchStore.RescheduleAsync(item.DispatchId, item.ClaimToken, deferUntil, cancellationToken).ConfigureAwait(false);
+            if (!rescheduled)
+            {
+                return;
+            }
+
             _metrics.RecordDeliveryRateCapped(item.ChannelType);
             LogRateCapped(_logger, item.DispatchId, item.ChannelType, _options.Dispatch.MaxNotificationsPerMinutePerChannel);
             return;
@@ -295,7 +329,12 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
         if (result.Succeeded)
         {
-            await dispatchStore.MarkDeliveredAsync(item.DispatchId, now, cancellationToken).ConfigureAwait(false);
+            var delivered = await dispatchStore.MarkDeliveredAsync(item.DispatchId, item.ClaimToken, now, cancellationToken).ConfigureAwait(false);
+            if (!delivered)
+            {
+                return;
+            }
+
             _circuitBreaker.RecordSuccess(item.ChannelType);
             _metrics.RecordDeliverySucceeded(item.ChannelType, elapsedMs);
             LogDelivered(_logger, item.DispatchId, item.ChannelType);
@@ -305,9 +344,13 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         var nextAttempt = AlertDispatchRetryPolicy.ComputeNextAttempt(item.Attempts + 1, now, _options.Dispatch);
         var exhausted = item.Attempts + 1 >= item.MaxAttempts || !result.Retryable;
 
-        await dispatchStore
-            .MarkFailedAsync(item.DispatchId, now, nextAttempt, exhausted, result.Error, cancellationToken)
+        var failed = await dispatchStore
+            .MarkFailedAsync(item.DispatchId, item.ClaimToken, now, nextAttempt, exhausted, result.Error, cancellationToken)
             .ConfigureAwait(false);
+        if (!failed)
+        {
+            return;
+        }
 
         if (exhausted && _circuitBreaker.RecordDeadLetter(item.ChannelType, now))
         {

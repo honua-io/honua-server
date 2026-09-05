@@ -4,6 +4,7 @@
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
@@ -59,6 +60,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request = request with { TenantId = ResolveTenantId(request.TenantId) };
         var actionDiscriminator = request.ActionDiscriminator
             ?? (request.Kind == OperationClass.AdminConfigChange
                 ? TryReadActionDiscriminator(request.ExecutionPayload)
@@ -86,6 +88,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 {
                     OperationInstanceId = request.OperationInstanceId,
                     CorrelationId = request.CorrelationId,
+                    TenantId = request.TenantId,
                     PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
                     AuthorizationOutcome = "gateway-authorized",
                 },
@@ -175,6 +178,33 @@ internal sealed partial class OperationGateway : IOperationGateway
         ArgumentNullException.ThrowIfNull(request);
         request = request with { OperationInstanceId = operationInstanceId };
 
+        if (request.Plan is null)
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var invoker = scope.ServiceProvider.GetRequiredService<ICanonicalOperationInvoker>();
+            var validation = await invoker.ValidateAsync(
+                    new OperationRequest
+                    {
+                        OperationId = request.OperationId ?? LegacyOperationIds.For(request.Kind),
+                        GatewayRequest = request,
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!validation.IsValid)
+            {
+                return new OperationGatewayResult
+                {
+                    Outcome = OperationGatewayOutcome.Failed,
+                    Decision = _ladder.Resolve(request.Kind),
+                    Message = validation.Messages.Count == 0
+                        ? "Canonical operation validation failed."
+                        : string.Join(" ", validation.Messages),
+                };
+            }
+
+            request = request with { Plan = validation.ApprovalPlan };
+        }
+
         // The approval requirement was already decided by an upstream domain gate
         // (e.g. the geoprocessing destructive-plan gate), so we do NOT re-run the
         // edition ladder — we only need the RequiresApproval floor. Resolve the class
@@ -262,6 +292,8 @@ internal sealed partial class OperationGateway : IOperationGateway
                         AuthorizationOutcome = "approved",
                         ApprovedProposalId = proposal.ProposalId,
                         ApprovedPlanHash = proposal.SealedPlanHash,
+                        ScopeGoverned = proposal.ScopeGoverned,
+                        RecognizedScopes = proposal.RecognizedScopes,
                     },
                     cancellationToken)
                     .ConfigureAwait(false);
@@ -428,6 +460,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 new OperationPolicyContext
                 {
                     CorrelationId = request.CorrelationId,
+                    TenantId = request.TenantId,
                     PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
                     AuthorizationOutcome = "autonomy-authorized",
                 },
@@ -456,10 +489,11 @@ internal sealed partial class OperationGateway : IOperationGateway
         GuardrailDecision decision,
         CancellationToken cancellationToken)
     {
+        request = request with { TenantId = ResolveTenantId(request.TenantId) };
         var hasIdempotencyKey = !string.IsNullOrWhiteSpace(request.IdempotencyKey);
         if (hasIdempotencyKey)
         {
-            var existing = await FindActiveByIdempotencyKeyAsync(request.Kind, request.OperationId, request.IdempotencyKey!, cancellationToken)
+            var existing = await FindActiveByIdempotencyKeyAsync(request.Kind, request.OperationId, request.IdempotencyKey!, request.TenantId, cancellationToken)
                 .ConfigureAwait(false);
             if (existing != null)
             {
@@ -477,6 +511,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                     {
                         CorrelationId = request.CorrelationId,
                         IdempotencyKey = request.IdempotencyKey,
+                        TenantId = request.TenantId,
                         PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
                         AuthorizationOutcome = "gateway-authorized",
                     },
@@ -513,13 +548,24 @@ internal sealed partial class OperationGateway : IOperationGateway
         // proposal id is derived deterministically from the key so a concurrent
         // duplicate TryCreate collides and we fetch-and-return the winner (race-safe).
         var now = DateTimeOffset.UtcNow;
+        var proposalId = hasIdempotencyKey
+            ? DeriveProposalId(request.Kind, request.OperationId, request.IdempotencyKey!, request.TenantId)
+            : $"proposal-{Guid.NewGuid():N}";
         var proposal = new OperationProposal
         {
-            ProposalId = hasIdempotencyKey
-                ? DeriveProposalId(request.Kind, request.OperationId, request.IdempotencyKey!)
-                : $"proposal-{Guid.NewGuid():N}",
+            ProposalId = proposalId,
+            TenantId = request.TenantId,
             OperationId = request.OperationId,
+            ScopeGoverned = request.ScopeGoverned,
+            RecognizedScopes = request.RecognizedScopes
+                .Where(scope => OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(scope => scope, StringComparer.Ordinal)
+                .ToArray(),
             Kind = request.Kind,
+            ActionDiscriminator = IsBoundedIdentifier(request.ActionDiscriminator, 128)
+                ? request.ActionDiscriminator
+                : null,
             // Planned is deliberately non-actionable. The proposal transitions to
             // AwaitingApproval only after the durable audit sink assigns its identity.
             Status = OperationProposalStatus.Planned,
@@ -536,6 +582,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 Reason = request.Reason,
                 IdempotencyKey = request.IdempotencyKey,
                 CorrelationId = request.CorrelationId,
+                ProposalId = proposalId,
             },
             CreatedAt = now,
             UpdatedAt = now,
@@ -691,11 +738,13 @@ internal sealed partial class OperationGateway : IOperationGateway
         OperationClass kind,
         string? operationId,
         string idempotencyKey,
+        string? tenantId,
         CancellationToken cancellationToken)
     {
         var active = await _proposalStore.ListActiveAsync(kind, cancellationToken).ConfigureAwait(false);
         return active.FirstOrDefault(
-            proposal => string.Equals(proposal.OperationId, operationId, StringComparison.Ordinal)
+            proposal => string.Equals(proposal.TenantId, tenantId, StringComparison.Ordinal)
+                && string.Equals(proposal.OperationId, operationId, StringComparison.Ordinal)
                 && string.Equals(proposal.Audit.IdempotencyKey, idempotencyKey, StringComparison.Ordinal));
     }
 
@@ -728,9 +777,10 @@ internal sealed partial class OperationGateway : IOperationGateway
     // Derive a stable proposal id from (kind, descriptor, idempotency key) so a repeated proposal
     // maps to the same durable record. This makes TryCreate collide on a duplicate,
     // giving the gateway a race-safe fetch-and-return instead of a second proposal.
-    private static string DeriveProposalId(OperationClass kind, string? operationId, string idempotencyKey)
+    private static string DeriveProposalId(OperationClass kind, string? operationId, string idempotencyKey, string? tenantId)
     {
-        var material = System.Text.Encoding.UTF8.GetBytes($"{kind}:{operationId}:{idempotencyKey}");
+        var key = $"{kind}:{operationId}:{idempotencyKey}";
+        var material = System.Text.Encoding.UTF8.GetBytes(tenantId is null ? key : $"{tenantId.Length}:{tenantId}:{key}");
         var hash = System.Security.Cryptography.SHA256.HashData(material);
         return $"proposal-{Convert.ToHexString(hash)[..32].ToLowerInvariant()}";
     }
@@ -881,9 +931,19 @@ internal sealed partial class OperationGateway : IOperationGateway
         return null;
     }
 
+    private string? ResolveTenantId(string? suppliedTenantId)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var httpContext = scope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
+        return httpContext is null
+            ? suppliedTenantId
+            : httpContext.RequestServices.GetService<ITenantContext>()?.TenantId;
+    }
+
     private static OperationGatewayRequest RebuildRequest(OperationProposal proposal) => new()
     {
         OperationId = proposal.OperationId,
+        TenantId = proposal.TenantId,
         OperationInstanceId = proposal.Audit.OperationInstanceId,
         Kind = proposal.Kind,
         RequestedBy = proposal.RequestedBy,
@@ -893,7 +953,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         IdempotencyKey = proposal.Audit.IdempotencyKey,
         Plan = proposal.Plan,
         ExecutionPayload = proposal.Plan.ExecutionPayload,
-        ActionDiscriminator = proposal.AutonomyMetadata?.ActionDiscriminator,
+        ActionDiscriminator = proposal.ActionDiscriminator ?? proposal.AutonomyMetadata?.ActionDiscriminator,
         AutonomyContext = proposal.AutonomyMetadata is null
             ? null
             : new OperationGatewayAutonomyContext

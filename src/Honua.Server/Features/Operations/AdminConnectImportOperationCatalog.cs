@@ -207,13 +207,8 @@ internal sealed class AdminConnectImportApprovalRequestMapper(
             Reason = decision.Reason,
             CorrelationId = context.CorrelationId,
             ExecutionPayload = serialized,
-            Plan = new OperationProposalPlan
-            {
-                Summary = $"Execute {OperationId} through the canonical admin operation runtime.",
-                RiskLevel = definition.SideEffect == OperationSideEffectClass.DestroysState
-                    ? ProposalRiskLevel.High : ProposalRiskLevel.Medium,
-                ExecutionPayload = serialized
-            }
+            Plan = AdminOperationReview.Create(descriptor, request, context, definition.Method.Method,
+                definition.Path, definition.SideEffect == OperationSideEffectClass.DestroysState ? ProposalRiskLevel.High : ProposalRiskLevel.Medium, serialized)
         };
     }
 

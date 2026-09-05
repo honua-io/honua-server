@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using System.Security.Claims;
+using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -154,6 +154,9 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
                     CorrelationId = httpContext.TraceIdentifier,
                     AuthorizationOutcome = "authorized",
                     Roles = principal.FindAll(ClaimTypes.Role).Select(static claim => claim.Value).ToArray(),
+                    ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
+                    RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
+                        .OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
                 },
                 cancellationToken).ConfigureAwait(false);
         }

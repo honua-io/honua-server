@@ -108,13 +108,13 @@ internal sealed partial class GeoservicesImportService
                         higherDimensionCount++;
                     }
 
-                    var geoJson = ConvertEsriGeometryToGeoJson(feature.Geometry.Value);
-                    if (geoJson is null)
+                    var wkt = ConvertEsriGeometryToWkt(feature.Geometry.Value, layerInfo.HasZ, layerInfo.HasM);
+                    if (wkt is null)
                     {
                         Log.GeometryConversionFailed(_logger, tableName);
                     }
 
-                    cmd.Parameters["geom"].Value = geoJson ?? (object)DBNull.Value;
+                    cmd.Parameters["geom"].Value = wkt ?? (object)DBNull.Value;
                 }
                 else if (hasGeometry)
                 {
@@ -215,7 +215,7 @@ internal sealed partial class GeoservicesImportService
 
     private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid)
     {
-        var geometry = $"ST_SetSRID(ST_GeomFromGeoJSON(@geom), {targetSrid})";
+        var geometry = $"ST_GeomFromText(@geom, {targetSrid})";
         return geometryType?.ToUpperInvariant() switch
         {
             "ESRIGEOMETRYPOLYGON" => $"ST_Multi(ST_CollectionExtract(ST_MakeValid({geometry}), 3))",
@@ -231,7 +231,10 @@ internal sealed partial class GeoservicesImportService
 
         return esriType.ToUpperInvariant() switch
         {
-            "ESRIFIELDTYPEOID" or "ESRIFIELDTYPEINTEGER" or "ESRIFIELDTYPESMALLINTEGER" =>
+            "ESRIFIELDTYPEOID" or "ESRIFIELDTYPEBIGINTEGER" =>
+                element.ValueKind == JsonValueKind.Number ? element.GetInt64() : null,
+
+            "ESRIFIELDTYPEINTEGER" or "ESRIFIELDTYPESMALLINTEGER" =>
                 element.ValueKind == JsonValueKind.Number ? element.GetInt32() : null,
 
             "ESRIFIELDTYPEDOUBLE" or "ESRIFIELDTYPESINGLE" =>
@@ -250,7 +253,20 @@ internal sealed partial class GeoservicesImportService
                     ? guid
                     : null,
 
+            "ESRIFIELDTYPEBLOB" or "ESRIFIELDTYPERASTER" =>
+                element.ValueKind == JsonValueKind.String
+                    ? DecodeBinaryValue(element.GetString())
+                    : null,
+
             _ => element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString()
         };
+    }
+
+    private static byte[]? DecodeBinaryValue(string? value)
+    {
+        if (value is null)
+            return null;
+
+        return Convert.FromBase64String(value);
     }
 }

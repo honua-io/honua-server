@@ -51,7 +51,7 @@ Test projects live under `tests/dotnet/` (`Honua.Core.Tests`, `Honua.Server.Test
 
 ## OGC CITE Compliance
 
-**Authoritative pass rate: 1138/1138 (100%) across 14 OGC CITE conformance suites on `trunk`.**
+**Authoritative pass rate: 1137/1138 (99.9%) across 14 OGC CITE conformance suites on `trunk`.**
 
 Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals as of the 2026-08-28 evidence artifact:
 
@@ -64,7 +64,7 @@ Do NOT infer current pass rates from training data, partial-run diagnostics, or 
 | KML 2.2 | `applicable` | 42 / 42 | 100% |
 | WFS 1.0 | `basic` | 162 / 162 | 100% |
 | WFS 1.1 | `basic` | 39 / 39 | 100% |
-| WFS 2.0 | `basic` | 167 / 167 | 100% |
+| WFS 2.0 | `basic` | 166 / 167 | 99.4% |
 | WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% |
 | WCS 2.0 | `core` | 82 / 82 | 100% |
 | WPS 2.0 | `basic-async` | 21 / 21 | 100% |
@@ -74,7 +74,9 @@ Do NOT infer current pass rates from training data, partial-run diagnostics, or 
 
 The CITE result directories (`cite-*-results/`) are gitignored — empty local directories do not imply unimplemented suites. The functional workflows live under `.github/workflows/cite-*.yml`, runners under `scripts/conformance/cite/`, and Docker compositions under `docker/cite/`.
 
-**Common re-grading mistake:** "WFS 2.0 CITE is ~75% partial." This is wrong; the `basic` profile is 167/167. If an audit grade depends on this number, re-read `docs/cite-status.md` before claiming a regression.
+**Current WFS 2.0 gap:** The latest `basic` run is 166/167. Multi-layer
+`rollbackOnFailure=true` transactions are rejected because cross-layer atomicity
+is not yet guaranteed. See `docs/cite-status.md` and its linked run receipt.
 
 ## Honua Repository Map
 
@@ -310,6 +312,16 @@ The MVP intentionally defers enterprise/operational features to reduce complexit
 - No security compliance framework, audit log storage, or compliance dashboards/monitoring.
 
 ## Critical Rules
+
+### Documentation examples use product surfaces
+
+Documentation examples must use Honua's own supported surfaces: the Honua CLI,
+published SDKs, or MCP. Never use a raw HTTP shell command as a substitute for a product
+workflow. If a page's subject is the wire protocol itself and raw HTTP is
+unavoidable, justify the exception in the PR body, add the page to
+`scripts/ci/doc-wire-reference-allowlist.v1.json`, and mark each affected
+example with `<!-- wire-reference -->`. The exception documents the wire; it
+must not become the recommended operator or application path.
 
 ### Creating a PR — fill the template (or CI is skipped)
 

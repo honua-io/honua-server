@@ -3,6 +3,7 @@
 
 using System.Collections.Frozen;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Helpers;
 
 namespace Honua.Server.Features.Admin.Services;
@@ -50,7 +51,13 @@ internal static class ConfigurationValidationService
         // Experimental feature gates (audit PA-096/PA-103/PA-116/PA-145/PA-001/PA-181/PA-182, #2436).
         // Each is default-off; operators must explicitly opt in. All three warehouse providers are
         // reported here so an operator's startup log shows the same evidence for each of them.
-        LogExperimentalFeatureStatus(configuration, logger, "Experimental:Features:SensorThings", "SensorThings API");
+        LogExperimentalFeatureStatus(configuration, logger, "Capabilities:Experimental:serve.sensorthings:Enabled", "SensorThings API Preview");
+        // Use the existing structured startup feature-status event for the Preview
+        // notice, with the same global/per-capability opt-in as runtime discovery.
+        ConfigurationLog.FeatureStatus(logger, "Customer alerting",
+            CapabilityFlagOptions.IsExperimentalEnabled(configuration, "alerts.geofence")
+                ? "preview (opted in; workers require Alerts:Enabled)"
+                : "disabled (preview, default)");
         LogExperimentalFeatureStatus(configuration, logger, "Experimental:Features:FederatedQuery", "Federated Query");
         LogExperimentalFeatureStatus(configuration, logger, "Experimental:Features:RedshiftProvider", "Redshift provider");
         LogExperimentalFeatureStatus(configuration, logger, "Experimental:Features:SnowflakeProvider", "Snowflake provider");

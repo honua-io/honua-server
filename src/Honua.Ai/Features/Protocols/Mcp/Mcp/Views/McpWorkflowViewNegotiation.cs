@@ -17,11 +17,10 @@ internal sealed class McpWorkflowViewOptions
 
     /// <summary>
     /// The view a session gets when it negotiates none and asks for none.
-    /// <c>null</c> (the default) means no view: <c>tools/list</c> serves the
-    /// complete paginated catalog exactly as before, so turning this feature on
-    /// never narrows an existing host's discovery by surprise.
+    /// The bounded discovery view is the secure default. Set this explicitly to
+    /// another published task view to select it for otherwise-unnegotiated sessions.
     /// </summary>
-    public string? DefaultView { get; set; }
+    public string? DefaultView { get; set; } = McpWorkflowViewCatalog.DefaultViewName;
 }
 
 /// <summary>
@@ -51,8 +50,8 @@ internal sealed class McpWorkflowViewOptions
 /// Selecting a view can only <em>narrow discovery</em>. It never grants,
 /// caches, or implies authority, and it never hides the escape hatch: a
 /// <c>tools/list</c> that selects no view — or explicitly selects
-/// <see cref="FullCatalogViewName"/> — returns the complete paginated catalog
-/// unchanged, with its parity counts untouched.
+/// <see cref="FullCatalogViewName"/> — requests the explicit authenticated complete
+/// catalog export.
 /// </para>
 /// </remarks>
 internal static class McpWorkflowViewNegotiation
@@ -71,7 +70,7 @@ internal static class McpWorkflowViewNegotiation
 
     /// <summary>
     /// Reserved name a client sends to explicitly opt back out of any negotiated
-    /// or configured view and receive the complete paginated catalog.
+    /// or configured view and request the authenticated complete paginated catalog.
     /// </summary>
     public const string FullCatalogViewName = "full";
 

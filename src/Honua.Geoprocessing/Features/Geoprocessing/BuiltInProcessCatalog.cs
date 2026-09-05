@@ -304,8 +304,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "analytics",
             Parameters =
             [
-                Param("input", "Target Features", "Target FeatureCollection as a data:application/geo+json;base64 data URI. Each target is preserved one-to-one with its match summary.", ProcessParameterValueType.Text, required: true),
-                Param("join", "Join Features", "Join (reference) FeatureCollection as a data:application/geo+json;base64 data URI. Materialized into an in-memory STRtree spatial index.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Target Features", "Target FeatureCollection as a data:application/geo+json;base64 data URI. Each target is preserved one-to-one with its match summary.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
+                Param("join", "Join Features", "Join (reference) FeatureCollection as a data:application/geo+json;base64 data URI. Materialized into an in-memory STRtree spatial index.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("predicate", "Predicate", "Spatial predicate evaluating join-vs-target. Allowed values: intersects (default), contains (join geometry contains the target — point-in-polygon), within (target contains the join geometry).", ProcessParameterValueType.Text, defaultValue: "intersects",
                     allowedValues: ProcessValueDomains.ManagedSpatialJoinPredicate),
                 Param("statistics", "Statistics", "Semicolon-separated 'field:stat' aggregates over matched join features. Supported stats: count (always emitted as JOIN_COUNT), sum, mean, min, max on numeric join fields (emitted as STAT_field). Example: 'pop:sum;pop:mean'.", ProcessParameterValueType.Text),
@@ -320,7 +320,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "analytics",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI. Non-point geometries cluster on their centroid; features with null/empty geometry are dropped before clustering.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI. Non-point geometries cluster on their centroid; features with null/empty geometry are dropped before clustering.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("algorithm", "Algorithm", "Clustering algorithm. Allowed values: dbscan (default), kmeans.", ProcessParameterValueType.Text, defaultValue: "dbscan",
                     allowedValues: ProcessValueDomains.ClusterAlgorithm),
                 Param("eps", "Epsilon", "Maximum distance between neighbours for DBSCAN, in CRS units. Must be a finite positive number. Required when algorithm is dbscan.", ProcessParameterValueType.FloatingPoint),
@@ -337,7 +337,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "analytics",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("distance", "Distance", "Buffer distance in the supplied unit. Must be a finite non-negative number. The unit factor converts the value to meters, which are then applied as planar CRS units to the supplied geometries — only meaningful when those geometries are in a metric projected CRS.", ProcessParameterValueType.FloatingPoint, required: true),
                 Param("unit", "Unit", "Distance unit. Allowed values: meters (default), kilometers, feet, miles. The chosen unit is converted to meters and applied as planar CRS units; geographic (degree) inputs are unsupported (a meters-as-degrees buffer is meaningless) — project to a metric CRS first. No geodesic conversion is performed.", ProcessParameterValueType.Text, defaultValue: "meters",
                     allowedValues: ProcessValueDomains.BufferAggregateUnit),
@@ -355,7 +355,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "analytics",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI. Features with null/empty geometry are dropped before binning.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI. Features with null/empty geometry are dropped before binning.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("mode", "Bin Mode", "Binning mode. Allowed values: hex (default), square.", ProcessParameterValueType.Text, defaultValue: "hex",
                     allowedValues: ProcessValueDomains.DensityMode),
                 Param("cellSize", "Cell Size", "Grid cell size in CRS units. Must be a finite positive number.", ProcessParameterValueType.FloatingPoint, required: true),
@@ -371,7 +371,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "analytics",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI. Non-point geometries are analysed on their centroid; features with null/empty geometry are dropped before analysis.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI. Non-point geometries are analysed on their centroid; features with null/empty geometry are dropped before analysis.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("field", "Analysis Field", "Attribute name whose numeric values are analysed for clustering. Every located feature must carry a numeric value for this field.", ProcessParameterValueType.Text, required: true),
                 Param("distanceBand", "Distance Band", "Fixed distance band in CRS units. Features within this Euclidean distance of one another are neighbours (each feature is always its own neighbour for Gi*). Must be a finite positive number.", ProcessParameterValueType.FloatingPoint, required: true),
             ],
@@ -389,9 +389,9 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "enrichment",
             Parameters =
             [
-                Param("datasetId", "Enrichment Dataset", "Identifier of the managed enrichment dataset (slug) or configuration key, resolved through the same merged catalog as POST /api/enrich.", ProcessParameterValueType.Text, required: true),
+                Param("datasetId", "Enrichment Dataset", "Identifier of the managed enrichment dataset (slug) or configuration key, resolved through the same merged catalog as POST /api/enrich.", ProcessParameterValueType.Text, required: true, isAuthorizationSelector: true),
                 Param("layerId", "Source Layer", "Identifier of the registered source layer whose features are enriched. Supply EXACTLY ONE of 'layerId' or 'input'.", ProcessParameterValueType.LayerId),
-                Param("input", "Staged Source Features", "Staged source FeatureCollection as a data:application/geo+json;base64 data URI. Supply EXACTLY ONE of 'layerId' or 'input'.", ProcessParameterValueType.Text),
+                Param("input", "Staged Source Features", "Staged source FeatureCollection as a data:application/geo+json;base64 data URI. Supply EXACTLY ONE of 'layerId' or 'input'.", ProcessParameterValueType.Text, acceptsGeoJsonDataUri: true),
                 Param("method", "Method", "Enrichment method vocabulary mirroring POST /api/enrich: intersects (default), point-in-polygon (dataset feature contains the target), within (target contains the dataset feature), within-distance (requires 'distance'), nearest-neighbor (annotates the closest dataset feature with NEAR_DIST). Takes precedence over 'predicate'.", ProcessParameterValueType.Text,
                     allowedValues: ProcessValueDomains.EnrichmentMethod),
                 Param("predicate", "Predicate", "Raw spatial predicate override. Allowed values: intersects, contains, within, dwithin. Falls back to the dataset default when neither 'method' nor this is supplied.", ProcessParameterValueType.Text,
@@ -425,8 +425,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "overlay",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("clip", "Clip Features", "Clip FeatureCollection as a data:application/geo+json;base64 data URI. Its union defines the clip region.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
+                Param("clip", "Clip Features", "Clip FeatureCollection as a data:application/geo+json;base64 data URI. Its union defines the clip region.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -438,8 +438,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "overlay",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("overlay", "Overlay Features", "Overlay FeatureCollection as a data:application/geo+json;base64 data URI, indexed in-memory via an STRtree.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
+                Param("overlay", "Overlay Features", "Overlay FeatureCollection as a data:application/geo+json;base64 data URI, indexed in-memory via an STRtree.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -451,8 +451,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "overlay",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("overlay", "Overlay Features", "Overlay FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
+                Param("overlay", "Overlay Features", "Overlay FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -464,8 +464,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "overlay",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("erase", "Erase Features", "Erase FeatureCollection as a data:application/geo+json;base64 data URI. Its union is subtracted from each input geometry.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
+                Param("erase", "Erase Features", "Erase FeatureCollection as a data:application/geo+json;base64 data URI. Its union is subtracted from each input geometry.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -477,8 +477,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "overlay",
             Parameters =
             [
-                Param("input", "Input Features", "First FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("merge", "Merge Features", "Second FeatureCollection as a data:application/geo+json;base64 data URI to combine with the input.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "First FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
+                Param("merge", "Merge Features", "Second FeatureCollection as a data:application/geo+json;base64 data URI to combine with the input.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -490,8 +490,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "overlay",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("split", "Split Features", "Optional split-zone polygon FeatureCollection as a data:application/geo+json;base64 data URI. When supplied, input features are clipped per zone.", ProcessParameterValueType.Text),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
+                Param("split", "Split Features", "Optional split-zone polygon FeatureCollection as a data:application/geo+json;base64 data URI. When supplied, input features are clipped per zone.", ProcessParameterValueType.Text, acceptsGeoJsonDataUri: true),
                 Param("splitField", "Split Field", "Attribute whose value names each partition: the split-zone field when a split layer is supplied, otherwise the input field to group by. Required when no split layer is supplied.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -510,8 +510,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "proximity",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("near", "Near Features", "Near (reference) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
+                Param("near", "Near Features", "Near (reference) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("nearIdField", "Near ID Field", "Optional near-layer attribute used as NEAR_FID. When omitted, the near feature's 0-based ordinal is used.", ProcessParameterValueType.Text),
                 Param("searchRadius", "Search Radius", "Optional maximum distance (CRS units) to consider a neighbour. Non-positive or omitted means unbounded.", ProcessParameterValueType.FloatingPoint),
             ],
@@ -525,8 +525,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "proximity",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("near", "Near Features", "Near (reference) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
+                Param("near", "Near Features", "Near (reference) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("inputIdField", "Input ID Field", "Optional input-layer attribute used as IN_FID. When omitted, the input feature's 0-based ordinal is used.", ProcessParameterValueType.Text),
                 Param("nearIdField", "Near ID Field", "Optional near-layer attribute used as NEAR_FID. When omitted, the near feature's 0-based ordinal is used.", ProcessParameterValueType.Text),
                 Param("searchRadius", "Search Radius", "Optional maximum distance (CRS units) to consider a neighbour. Non-positive or omitted means unbounded.", ProcessParameterValueType.FloatingPoint),
@@ -588,7 +588,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "statistics",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("caseFields", "Case Fields", "Comma-separated attribute columns to group by. When empty, a single all-rows summary row is produced.", ProcessParameterValueType.Text),
                 Param("statistics", "Statistics", "Semicolon-separated 'field:stat' aggregates. Supported stats: count, sum, mean, min, max, stddev (sample, n-1). Example: 'pop:sum;pop:mean;pop:stddev'.", ProcessParameterValueType.Text),
             ],
@@ -602,7 +602,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "statistics",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("frequencyFields", "Frequency Fields", "Comma-separated attribute columns whose distinct combinations are counted. At least one is required.", ProcessParameterValueType.Text, required: true),
                 Param("summaryFields", "Summary Fields", "Optional comma-separated numeric attribute columns summed per combination as SUM_<field>.", ProcessParameterValueType.Text),
             ],
@@ -616,7 +616,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "statistics",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("fields", "Fields", "Comma-separated numeric attribute columns to summarize. At least one is required.", ProcessParameterValueType.Text, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.Table]
@@ -1200,8 +1200,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "data-management",
             Parameters =
             [
-                Param("input", "Target Features", "Target FeatureCollection as a data:application/geo+json;base64 data URI. Its features are preserved and define the output schema.", ProcessParameterValueType.Text, required: true),
-                Param("append", "Source Features", "Source FeatureCollection as a data:application/geo+json;base64 data URI to append into the target schema.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Target Features", "Target FeatureCollection as a data:application/geo+json;base64 data URI. Its features are preserved and define the output schema.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
+                Param("append", "Source Features", "Source FeatureCollection as a data:application/geo+json;base64 data URI to append into the target schema.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("fieldMap", "Field Map", "Optional semicolon-separated 'source:target' field name pairs used to remap source attributes onto target fields.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
@@ -1297,7 +1297,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("from", "From", "Existing attribute name to rename.", ProcessParameterValueType.Text, required: true),
                 Param("to", "To", "New attribute name.", ProcessParameterValueType.Text, required: true),
             ],
@@ -1311,7 +1311,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("field", "Field", "Attribute name to cast.", ProcessParameterValueType.Text, required: true),
                 Param("to", "Target Type", "Target CLR type. Allowed values: int, long, double, bool, string.", ProcessParameterValueType.Text, required: true,
                     allowedValues: ProcessValueDomains.AttributeCastTargetType),
@@ -1328,7 +1328,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("target", "Target Field", "Attribute name to write the computed value to.", ProcessParameterValueType.Text, required: true),
                 Param("op", "Operation", "Computation. Allowed values: concat, add, subtract, multiply, divide, const, expression. Optional when 'expression' is supplied (defaults to expression mode).", ProcessParameterValueType.Text),
                 Param("expression", "Expression", "Whitelisted expression evaluated per feature when op=expression. Bare identifiers reference source attributes; supports arithmetic, string/conditional/math/date functions, comparison and logical operators, and a ternary. AOT-safe parsed AST — no reflection, no arbitrary code. Example: upper(trim(name)) + \"-\" + cast(year, string).", ProcessParameterValueType.Text),
@@ -1348,7 +1348,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("field", "Field", "Attribute name to test.", ProcessParameterValueType.Text, required: true),
                 Param("op", "Operator", "Comparison operator. Allowed values: eq, neq, gt, gte, lt, lte, contains, exists. Defaults to eq.", ProcessParameterValueType.Text, defaultValue: "eq",
                     allowedValues: ProcessValueDomains.AttributeFilterOp),
@@ -1364,8 +1364,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input (left/probe) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
-                Param("right", "Right Features", "Join (right/build) FeatureCollection as a data:application/geo+json;base64 data URI. Materialized into an in-memory hash table keyed by rightKeys.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input (left/probe) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
+                Param("right", "Right Features", "Join (right/build) FeatureCollection as a data:application/geo+json;base64 data URI. Materialized into an in-memory hash table keyed by rightKeys.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("leftKeys", "Left Keys", "Comma-separated input attribute names forming the join key.", ProcessParameterValueType.Text, required: true),
                 Param("rightKeys", "Right Keys", "Comma-separated right attribute names forming the join key. Defaults to leftKeys. Must match the leftKeys column count.", ProcessParameterValueType.Text),
                 Param("fields", "Carry Fields", "Comma-separated right-side fields to bring onto the output. When omitted, all right attributes are carried.", ProcessParameterValueType.Text),
@@ -1382,7 +1382,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("groupBy", "Group By", "Comma-separated attribute names to group by. When empty the whole stream collapses into a single group.", ProcessParameterValueType.Text),
                 Param("aggregates", "Aggregates", "Semicolon-separated 'field:function[:alias]' aggregate specs. Functions: count, sum, min, max, mean, stddev, first, collect. When omitted a plain group COUNT is emitted. Example: 'pop:sum;pop:mean;name:collect'.", ProcessParameterValueType.Text),
                 Param("geometry", "Geometry Aggregate", "Optional per-group geometry reduction. Allowed values: none (default), union, centroid, extent.", ProcessParameterValueType.Text, defaultValue: "none"),
@@ -1397,7 +1397,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input (long) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input (long) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("groupBy", "Group By", "Comma-separated attribute names identifying each output row. When empty all input rows pivot into a single feature.", ProcessParameterValueType.Text),
                 Param("pivotField", "Pivot Field", "Attribute whose distinct values become new output columns.", ProcessParameterValueType.Text, required: true),
                 Param("valueField", "Value Field", "Attribute whose value fills each pivoted cell.", ProcessParameterValueType.Text, required: true),
@@ -1413,7 +1413,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input (wide) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input (wide) FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("fields", "Fields", "Comma-separated attribute columns to unpivot; one output feature is emitted per column per input feature.", ProcessParameterValueType.Text, required: true),
                 Param("keep", "Keep Fields", "Comma-separated attribute columns carried unchanged onto every output feature.", ProcessParameterValueType.Text),
                 Param("nameField", "Name Field", "Output column receiving the source column name. Defaults to 'name'.", ProcessParameterValueType.Text, defaultValue: "name"),
@@ -1430,7 +1430,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("bbox", "Bounding Box", "Region as 'minX,minY,maxX,maxY' in the feature CRS. Supply this or 'wkt'.", ProcessParameterValueType.Text),
                 Param("wkt", "WKT Region", "Region geometry as WKT. Supply this or 'bbox'.", ProcessParameterValueType.Text),
                 Param("predicate", "Predicate", "Spatial predicate. Allowed values: intersects (default), within.", ProcessParameterValueType.Text, defaultValue: "intersects",
@@ -1446,7 +1446,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("bbox", "Bounding Box", "Clip region as 'minX,minY,maxX,maxY' in the feature CRS. Supply this or 'wkt'.", ProcessParameterValueType.Text),
                 Param("wkt", "WKT Region", "Clip region geometry as WKT. Supply this or 'bbox'.", ProcessParameterValueType.Text),
             ],
@@ -1460,7 +1460,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("keys", "Key Fields", "Comma-separated attribute field names whose values form the dedup key.", ProcessParameterValueType.Text),
                 Param("geometry", "Use Geometry", "Include the normalized geometry in the dedup key.", ProcessParameterValueType.Flag, defaultValue: "false"),
             ],
@@ -1474,7 +1474,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "transform",
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("fromSrid", "From SRID", "Source spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
                 Param("toSrid", "To SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
             ],
@@ -1497,7 +1497,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("inline", "Inline GeoJSON", "GeoJSON FeatureCollection document supplied directly. Supply this or 'input'.", ProcessParameterValueType.Text),
-                Param("input", "Input Data URI", "FeatureCollection as a data:application/geo+json;base64 data URI. Supply this or 'inline'.", ProcessParameterValueType.Text),
+                Param("input", "Input Data URI", "FeatureCollection as a data:application/geo+json;base64 data URI. Supply this or 'inline'.", ProcessParameterValueType.Text, acceptsGeoJsonDataUri: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -1654,7 +1654,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("path", "Output Path", "Relative output file path under the configured geoprocessing output root (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.File]
@@ -1668,7 +1668,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
-                Param("input", "Rejected Features", "Input FeatureCollection of rejected rows as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Rejected Features", "Input FeatureCollection of rejected rows as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("path", "Output Path", "Relative dead-letter output file path under the configured geoprocessing output root (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
                 Param("reasonField", "Reason Field", "Attribute name carrying a per-row reason string. Defaults to _quarantine_reason.", ProcessParameterValueType.Text, defaultValue: "_quarantine_reason"),
                 Param("batchId", "Batch Id", "Run batch identifier tagged on every quarantined row. Defaults to the operation id.", ProcessParameterValueType.Text),
@@ -1684,7 +1684,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("connectionName", "Secure Connection Name", "Registered secure connection name for the external PostGIS database. Either connectionName or connectionId is required.", ProcessParameterValueType.Text),
                 Param("connectionId", "Secure Connection Id", "Registered secure connection id for the external PostGIS database. Either connectionName or connectionId is required.", ProcessParameterValueType.Text),
                 Param("table", "Table", "Destination table name (created if missing). Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, required: true),
@@ -1705,7 +1705,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ExecutionTier = ProcessExecutionTier.Mutating,
             Parameters =
             [
-                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true, acceptsGeoJsonDataUri: true),
                 Param("layer", "Layer Name", "Destination layer/table name in the catalog (created if missing). Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, required: true),
                 Param("targetSrid", "Target SRID", "Geometry SRID for the destination column.", ProcessParameterValueType.Srid, required: true),
                 Param("loadMode", "Load Mode", "How incoming rows reconcile with existing rows: append, replace, or upsert. Defaults to append.", ProcessParameterValueType.Text, defaultValue: "append"),
@@ -1840,7 +1840,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     [
         Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Supply this OR a layerId/rasterId that resolves to a registered catalog raster.", ProcessParameterValueType.Text, acceptsRasterSource: true),
         Param("layerId", "Layer", "Catalog raster layer identifier. Resolved at submit time to the layer's registered raster (newest registration when several exist). Supply this OR an inline source / rasterId.", ProcessParameterValueType.LayerId),
-        Param("rasterId", "Raster", "Registered raster identifier. Resolved at submit time to the registered raster bytes. Supply this OR an inline source / layerId. When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text),
+        Param("rasterId", "Raster", "Registered raster identifier. Resolved at submit time to the registered raster bytes. Supply this OR an inline source / layerId. When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text, isAuthorizationSelector: true),
     ];
 
     private static ProcessParameterSpec Param(
@@ -1852,7 +1852,9 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         string? defaultValue = null,
         IReadOnlyList<string>? allowedValues = null,
         ProcessLayerAccess layerAccess = ProcessLayerAccess.Read,
-        bool acceptsRasterSource = false) => new()
+        bool acceptsRasterSource = false,
+        bool acceptsGeoJsonDataUri = false,
+        bool isAuthorizationSelector = false) => new()
         {
             Name = name,
             DisplayName = displayName,
@@ -1862,6 +1864,9 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             DefaultValue = defaultValue,
             AllowedValues = allowedValues,
             LayerAccess = layerAccess,
-            AcceptsRasterSource = acceptsRasterSource
+            AcceptsRasterSource = acceptsRasterSource,
+            AcceptsGeoJsonDataUri = acceptsGeoJsonDataUri,
+            IsAuthorizationSelector = isAuthorizationSelector
+                || (valueType == ProcessParameterValueType.LayerId && layerAccess != ProcessLayerAccess.None)
         };
 }

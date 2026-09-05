@@ -331,3 +331,49 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }
+
+/// <summary>
+/// Regression coverage for Community deployments that retain the stock Redis connection string
+/// even though the Redis entitlement leaves <c>IConnectionMultiplexer</c> unregistered.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.Admin)]
+[Operation(Operations.HealthCheck)]
+public sealed class CommunityRedisOpsHealthEndpointsTests : IAsyncLifetime
+{
+    private const string AdminPassword = "community-redis-ops-health-key";
+    private readonly WebAppFixture _fixture;
+    private HttpClient _client = null!;
+
+    public CommunityRedisOpsHealthEndpointsTests()
+    {
+        _fixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_DEV_GRANT_EDITION", "Community");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("ConnectionStrings:Redis", "redis:6379");
+            });
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _client = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+    }
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Trait("Tier", "Fast")]
+    [Endpoint("GET /api/v1/admin/observability/ops-health")]
+    public async Task GetOpsHealth_WithCommunityEditionAndRedisConfigured_DoesNotReturnServerError()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/observability/ops-health");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+}

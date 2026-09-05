@@ -14,6 +14,7 @@ namespace Honua.Protocols.GeoServices.Sharing;
 [JsonSerializable(typeof(SearchResponse))]
 [JsonSerializable(typeof(PortalItem))]
 [JsonSerializable(typeof(OAuth2TokenResponse))]
+[JsonSerializable(typeof(OAuth2UserInfoResponse))]
 [JsonSerializable(typeof(OAuth2ErrorResponse))]
 [JsonSerializable(typeof(OAuth2IntrospectionResponse))]
 [JsonSerializable(typeof(GroupResponse))]

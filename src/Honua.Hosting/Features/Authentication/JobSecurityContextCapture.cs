@@ -196,9 +196,15 @@ internal static class JobSecurityContextCapture
                 membershipPrincipalId));
         }
 
-        var tenantId = tenantContext is null
-            ? principal.FindFirstValue(TenantClaimType) ?? principal.FindFirstValue(AzureTenantClaimType)
-            : tenantContext.TenantId;
+        // Detached polling retains the principal after HttpContext disposal. A trusted
+        // middleware binding preserves its effective tenant, including an explicitly
+        // unscoped request whose raw token still carries a tenant claim.
+        var hasRequestBinding = CanonicalSecurityActor.FindStampedValue(
+            principal, CanonicalSecurityActor.CanonicalActorClaim) is not null;
+        var detachedTenant = hasRequestBinding
+            ? CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.EffectiveTenantClaim)
+            : principal.FindFirstValue(TenantClaimType) ?? principal.FindFirstValue(AzureTenantClaimType);
+        var tenantId = tenantContext is null ? detachedTenant : tenantContext.TenantId;
 
         return new JobSecurityContext(
             CanonicalSecurityActor.FindStampedValue(principal, CanonicalSecurityActor.CanonicalActorClaim)

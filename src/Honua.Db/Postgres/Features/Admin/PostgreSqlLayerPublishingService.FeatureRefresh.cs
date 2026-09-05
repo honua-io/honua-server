@@ -173,8 +173,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         int layerId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
-            DELETE FROM features
+        var featuresTable = await ResolveCanonicalFeaturesTableAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
+        var sql = $"""
+            DELETE FROM {featuresTable}
             WHERE layer_id = @layerId;
             """;
 

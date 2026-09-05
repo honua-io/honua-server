@@ -61,6 +61,16 @@ internal sealed record ProblemDetailsResponse
     public string? Code { get; init; }
 
     /// <summary>
+    /// Indicates that retrying the request may succeed once backpressure clears.
+    /// </summary>
+    public bool? Retryable { get; init; }
+
+    /// <summary>
+    /// Server-advised delay before retrying, in seconds, when known.
+    /// </summary>
+    public int? RetryAfterSeconds { get; init; }
+
+    /// <summary>
     /// Capability-manifest id this refusal disables (RFC 7807 extension member), for example
     /// <c>jobs.runner</c>. Lets a client join the refusal to
     /// <c>GET /api/v1/capabilities/manifest</c> without parsing prose (honua-release#202).

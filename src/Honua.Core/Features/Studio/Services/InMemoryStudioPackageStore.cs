@@ -517,6 +517,25 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
     }
 
     /// <inheritdoc />
+    public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
+        Guid itemId,
+        Guid versionId,
+        Guid requestId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            return Task.FromResult(
+                _publicationRequests.TryGetValue(requestId, out var request) &&
+                request.ItemId == itemId &&
+                request.VersionId == versionId
+                    ? request
+                    : null);
+        }
+    }
+
+    /// <inheritdoc />
     public Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,

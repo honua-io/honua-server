@@ -30,6 +30,29 @@ public sealed class StudioAiTranscriptSignerTests
     }
 
     [Fact]
+    public void Canonicalize_EscapedStringsAndNumericForms_ProduceIdenticalBytes()
+    {
+        var first = StudioAiTranscriptSigner.Canonicalize("{\"text\":\"caf\\u00e9\",\"number\":1.0}"u8);
+        var second = StudioAiTranscriptSigner.Canonicalize("{\"number\":1e0,\"text\":\"café\"}"u8);
+
+        first.Should().Equal(second);
+        System.Text.Encoding.UTF8.GetString(first).Should().Be("{\"number\":1,\"text\":\"caf\\u00E9\"}");
+    }
+
+    [Fact]
+    public void Canonicalize_ArbitraryPrecisionNumbers_RemainDistinctAndLossless()
+    {
+        var tiny = StudioAiTranscriptSigner.Canonicalize("{\"number\":1e-400}"u8);
+        var zero = StudioAiTranscriptSigner.Canonicalize("{\"number\":0}"u8);
+        var large = StudioAiTranscriptSigner.Canonicalize("{\"number\":123456789012345678901234567890123456789}"u8);
+        var adjacent = StudioAiTranscriptSigner.Canonicalize("{\"number\":123456789012345678901234567890123456788}"u8);
+
+        System.Text.Encoding.UTF8.GetString(tiny).Should().Be("{\"number\":1e-400}");
+        tiny.Should().NotEqual(zero);
+        large.Should().NotEqual(adjacent);
+    }
+
+    [Fact]
     public async Task Sign_UsesResolvedThrowawayKey_AndBindsEveryCertificationIdentity()
     {
         var seed = new byte[Ed25519PrivateKeyParameters.KeySize];
@@ -57,6 +80,56 @@ public sealed class StudioAiTranscriptSignerTests
         canonical[^2] ^= 1;
         Verify(key.PublicKey, canonical, Convert.FromBase64String(signed.Signature)).Should().BeFalse(
             "post-signature mutation must invalidate the detached signature");
+    }
+
+    [Theory]
+    [InlineData("honua_propose_deploy_operation", "targetId")]
+    [InlineData("honua_propose_rollback", "targetId")]
+    [InlineData("honua_propose_metadata_release", "targetEnvironment")]
+    public void Sign_GovernedToolTargetDiffersFromCertifiedCandidate_RejectsBeforeSigning(
+        string toolName,
+        string targetProperty)
+    {
+        var privateKey = new Ed25519PrivateKeyParameters(new byte[Ed25519PrivateKeyParameters.KeySize], 0);
+        var key = new StudioAiTranscriptSigner.SigningKey(
+            "test-key", privateKey, privateKey.GeneratePublicKey().GetEncoded());
+        using var arguments = JsonDocument.Parse($$"""{"{{targetProperty}}":"candidate-other"}""");
+        var events = new StudioAiChatEvent[]
+        {
+            new() { Type = StudioAiChatEventType.MessageStart, Model = "model-v1" },
+            new() { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = toolName },
+            new()
+            {
+                Type = StudioAiChatEventType.ToolCallStop,
+                ToolCallId = "call-1",
+                ToolArguments = arguments.RootElement.Clone()
+            },
+            new() { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.ToolCall }
+        };
+
+        var sign = () => CreateSigner(Substitute.For<ISecretProvider>())
+            .Sign(key, Request(), "provider-a", "model-v1", events);
+
+        sign.Should().Throw<InvalidOperationException>()
+            .WithMessage("*does not match the certified candidate*");
+    }
+
+    [Fact]
+    public async Task Sign_AcceptedRawRequest_UsesItsCanonicalBytesInsteadOfReserializedDomainShape()
+    {
+        var seed = new byte[Ed25519PrivateKeyParameters.KeySize];
+        new SecureRandom().NextBytes(seed);
+        var signer = CreateSigner(SecretProvider(Convert.ToBase64String(seed)));
+        CryptographicOperations.ZeroMemory(seed);
+        var key = await signer.ResolveKeyAsync(CancellationToken.None);
+        var raw = "{ \"messages\" : [ { \"content\" : \"caf\\u00e9\", \"role\" : \"user\" } ], \"certification\" : { \"runNonce\" : \"run-nonce-unique\", \"releaseId\" : \"release-9\", \"endpointIdentity\" : \"honua.example/api/v1/studio/ai/chat\", \"candidateId\" : \"candidate-7\", \"actionId\" : \"compose-map\" } }";
+        var request = WithAcceptedJson(System.Text.Encoding.UTF8.GetBytes(raw));
+
+        var signed = signer.Sign(key!, request, "provider-a", "model-v1", Events());
+        using var envelope = JsonDocument.Parse(Convert.FromBase64String(signed.CanonicalTranscript));
+        var signedRequest = envelope.RootElement.GetProperty("request").GetBytesFromBase64();
+
+        signedRequest.Should().Equal(StudioAiTranscriptSigner.Canonicalize(System.Text.Encoding.UTF8.GetBytes(raw)));
     }
 
     [Fact]
@@ -101,6 +174,7 @@ public sealed class StudioAiTranscriptSignerTests
         {
             KeyId = "previous-2026-07",
             PublicKey = Convert.ToBase64String(overlapPublic),
+            NotBefore = DateTimeOffset.Parse("2026-08-15T00:00:00Z", null, System.Globalization.DateTimeStyles.RoundtripKind),
             NotAfter = DateTimeOffset.Parse("2026-09-15T00:00:00Z", null, System.Globalization.DateTimeStyles.RoundtripKind)
         });
         CryptographicOperations.ZeroMemory(activeSeed);
@@ -150,6 +224,14 @@ public sealed class StudioAiTranscriptSignerTests
         },
         System = "system prompt",
         Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "request bytes" }]
+    };
+
+    private static StudioAiChatRequest WithAcceptedJson(byte[] raw) => new()
+    {
+        AcceptedRequestJson = raw,
+        Certification = Request().Certification,
+        System = Request().System,
+        Messages = Request().Messages
     };
 
     private static IReadOnlyList<StudioAiChatEvent> Events() =>

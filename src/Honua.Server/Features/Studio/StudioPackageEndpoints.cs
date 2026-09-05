@@ -4,6 +4,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -113,6 +114,11 @@ internal static class StudioPackageEndpoints
         group.MapPost("/content-items/{itemId:guid}/versions/{versionId:guid}/publish-requests", HandleCreatePublishRequest)
             .WithDisplayName("Create Studio Publication Request")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        group.MapGet("/content-items/{itemId:guid}/versions/{versionId:guid}/publish-requests/{requestId:guid}", HandleGetPublishRequest)
+            .WithDisplayName("Get Studio Publication Request")
+            .WithSummary("Returns one owner-scoped Studio publication request for status polling.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/content-items/{itemId:guid}/versions/{versionId:guid}/reopen", HandleReopenVersion)
             .WithDisplayName("Reopen Studio Content Version")
@@ -805,6 +811,10 @@ internal static class StudioPackageEndpoints
         IdempotencyKey = context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
         AuthorizationOutcome = "authorized",
         Roles = context.User.FindAll(ClaimTypes.Role).Select(static claim => claim.Value).ToArray(),
+        ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(context.User),
+        RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(context.User)
+            .OrderBy(static scope => scope, StringComparer.Ordinal)
+            .ToArray(),
     };
 
     private static void SetOperationHeaders(HttpContext context, OperationHandle operation)
@@ -962,6 +972,7 @@ internal static class StudioPackageEndpoints
         Guid draftId,
         SaveStudioContentVersionRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -1007,11 +1018,21 @@ internal static class StudioPackageEndpoints
                 return itemAuthResult;
             }
 
-            var version = await service.SaveDraftAsVersionAsync(
+            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var receipt = await mutationRuntime.SaveVersionAsync(
                 draftId,
+                existing.Generation,
                 request.ChangeNote,
-                ConsolePrincipal.ResolveActorId(context.User),
-                cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                actor,
+                BuildMutationContext(context, actor),
+                context.RequestAborted).ConfigureAwait(false);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+
+            var version = receipt.Value;
             if (version is null)
             {
                 return NotFound(context, "Studio package draft was not found.");
@@ -1527,6 +1548,7 @@ internal static class StudioPackageEndpoints
         Guid versionId,
         CreateStudioPublicationRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -1569,13 +1591,21 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var publication = await service.CreatePublicationRequestAsync(
+            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var receipt = await mutationRuntime.CreatePublicationRequestAsync(
                 itemId,
                 versionId,
                 request.Intent,
                 request.WarningAcknowledgement,
-                ConsolePrincipal.ResolveActorId(context.User),
+                actor,
+                BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+            var publication = receipt.Value;
             if (publication is null)
             {
                 return NotFound(context, "Studio content version was not found.");
@@ -1613,10 +1643,53 @@ internal static class StudioPackageEndpoints
         }
     }
 
+    private static async Task<IResult> HandleGetPublishRequest(
+        Guid itemId,
+        Guid versionId,
+        Guid requestId,
+        [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] StudioEndpointAuthorization authorization,
+        [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
+        HttpContext context)
+    {
+        try
+        {
+            var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            if (pointers is null)
+            {
+                return NotFound(context, "Studio content item was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorization, context,
+                StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
+                resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                isPubliclyReadable: false).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
+            var publication = await service.GetPublicationRequestAsync(
+                itemId, versionId, requestId, context.RequestAborted).ConfigureAwait(false);
+            return publication is null
+                ? NotFound(context, "Studio publication request was not found.")
+                : Results.Json(
+                    ApiResponse<StudioPublicationRequest>.CreateSuccess(publication),
+                    StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            StudioEndpointsLog.EndpointFailed(logger, "publish-request.get", ex);
+            return ServerError(context, "Studio publication request could not be read.");
+        }
+    }
+
     private static async Task<IResult> HandleReopenVersion(
         Guid itemId,
         Guid versionId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -1638,11 +1711,19 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var draft = await service.ReopenVersionAsync(
+            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var receipt = await mutationRuntime.ReopenVersionAsync(
                 itemId,
                 versionId,
-                ConsolePrincipal.ResolveActorId(context.User),
+                actor,
+                BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+            var draft = receipt.Value;
             if (draft is null)
             {
                 return NotFound(context, "Studio content version was not found.");
@@ -1669,6 +1750,7 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         CreateStudioRollbackRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -1713,13 +1795,21 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var rollback = await service.RollbackAsync(
+            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var receipt = await mutationRuntime.RollbackAsync(
                 itemId,
                 request.TargetVersionId,
                 request.Target,
-                ConsolePrincipal.ResolveActorId(context.User),
+                actor,
                 request.Reason,
+                BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+            var rollback = receipt.Value;
             if (rollback is null)
             {
                 return NotFound(context, "Studio content version was not found.");

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers;
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -87,8 +88,9 @@ internal sealed class StudioAiTranscriptSigner(
         string model,
         IReadOnlyList<StudioAiChatEvent> events)
     {
+        ValidateGovernedToolTargets(request.Certification!, events);
         var issuedAt = timeProvider.GetUtcNow();
-        var requestBytes = Canonicalize(JsonSerializer.SerializeToUtf8Bytes(
+        var requestBytes = Canonicalize(request.AcceptedRequestJson ?? JsonSerializer.SerializeToUtf8Bytes(
             request, StudioAiProxyJsonContext.Default.StudioAiChatRequest));
         var eventBytes = Canonicalize(JsonSerializer.SerializeToUtf8Bytes(
             events.ToList(), StudioAiProxyJsonContext.Default.ListStudioAiChatEvent));
@@ -132,6 +134,62 @@ internal sealed class StudioAiTranscriptSigner(
             TranscriptDigest = Convert.ToHexStringLower(SHA256.HashData(canonicalTranscript)),
             Signature = Convert.ToBase64String(signature)
         };
+    }
+
+    private static void ValidateGovernedToolTargets(
+        StudioAiTranscriptCertification certification,
+        IReadOnlyList<StudioAiChatEvent> events)
+    {
+        var toolNamesByCallId = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var evt in events.Where(candidate => candidate.Type == StudioAiChatEventType.ToolCallStart))
+        {
+            if (string.IsNullOrWhiteSpace(evt.ToolCallId)
+                || string.IsNullOrWhiteSpace(evt.ToolName)
+                || !toolNamesByCallId.TryAdd(evt.ToolCallId, evt.ToolName))
+            {
+                throw new InvalidOperationException("Tool call start events must have unique IDs and names.");
+            }
+        }
+
+        foreach (var evt in events.Where(candidate => candidate.Type == StudioAiChatEventType.ToolCallStop))
+        {
+            if (string.IsNullOrWhiteSpace(evt.ToolCallId)
+                || !toolNamesByCallId.TryGetValue(evt.ToolCallId, out var toolName))
+            {
+                throw new InvalidOperationException("Tool call stop event does not match a tool call start event.");
+            }
+
+            if (string.Equals(
+                    toolName,
+                    "honua_propose_platform_release_convergence",
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Multi-target release convergence is not eligible for candidate-certified transcripts.");
+            }
+
+            var targetProperty = toolName switch
+            {
+                "honua_propose_deploy_operation" => "targetId",
+                "honua_propose_deploy_plan" => "targetId",
+                "honua_propose_rollback" => "targetId",
+                "honua_propose_finding" => "candidateId",
+                "honua_propose_metadata_release" => "targetEnvironment",
+                _ => null
+            };
+            if (targetProperty is null)
+            {
+                continue;
+            }
+
+            if (evt.ToolArguments is not { ValueKind: JsonValueKind.Object } arguments
+                || !arguments.TryGetProperty(targetProperty, out var target)
+                || target.ValueKind != JsonValueKind.String
+                || !string.Equals(target.GetString(), certification.CandidateId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Governed tool target does not match the certified candidate.");
+            }
+        }
     }
 
     public async Task<StudioAiTranscriptSigningManifest> GetManifestAsync(CancellationToken cancellationToken)
@@ -206,10 +264,74 @@ internal sealed class StudioAiTranscriptSigner(
                 foreach (var item in value.EnumerateArray()) WriteCanonical(writer, item);
                 writer.WriteEndArray();
                 break;
-            default:
-                value.WriteTo(writer);
+            case JsonValueKind.String:
+                writer.WriteStringValue(value.GetString());
                 break;
+            case JsonValueKind.Number:
+                writer.WriteRawValue(CanonicalizeNumber(value.GetRawText()), skipInputValidation: true);
+                break;
+            case JsonValueKind.True:
+                writer.WriteBooleanValue(true);
+                break;
+            case JsonValueKind.False:
+                writer.WriteBooleanValue(false);
+                break;
+            case JsonValueKind.Null:
+                writer.WriteNullValue();
+                break;
+            default:
+                throw new JsonException($"Unsupported JSON value kind '{value.ValueKind}'.");
         }
+    }
+
+    private static string CanonicalizeNumber(string raw)
+    {
+        var negative = raw[0] == '-';
+        var unsigned = negative ? raw.AsSpan(1) : raw.AsSpan();
+        var exponentIndex = unsigned.IndexOfAny('e', 'E');
+        var significand = exponentIndex >= 0 ? unsigned[..exponentIndex] : unsigned;
+        var exponent = exponentIndex >= 0
+            ? BigInteger.Parse(unsigned[(exponentIndex + 1)..], System.Globalization.CultureInfo.InvariantCulture)
+            : BigInteger.Zero;
+        var decimalIndex = significand.IndexOf('.');
+        var fractionalDigits = decimalIndex >= 0 ? significand.Length - decimalIndex - 1 : 0;
+        var digits = decimalIndex >= 0
+            ? string.Concat(significand[..decimalIndex], significand[(decimalIndex + 1)..])
+            : significand.ToString();
+
+        digits = digits.TrimStart('0');
+        if (digits.Length == 0)
+        {
+            return "0";
+        }
+
+        var trailingZeros = digits.Length - digits.TrimEnd('0').Length;
+        if (trailingZeros > 0)
+        {
+            digits = digits[..^trailingZeros];
+        }
+
+        exponent = exponent - fractionalDigits + trailingZeros;
+        var scientificExponent = exponent + digits.Length - 1;
+        var sign = negative ? "-" : string.Empty;
+        if (scientificExponent >= -6 && scientificExponent <= 20)
+        {
+            var decimalPosition = checked((int)(digits.Length + exponent));
+            if (decimalPosition <= 0)
+            {
+                return $"{sign}0.{new string('0', -decimalPosition)}{digits}";
+            }
+
+            if (decimalPosition >= digits.Length)
+            {
+                return $"{sign}{digits}{new string('0', decimalPosition - digits.Length)}";
+            }
+
+            return $"{sign}{digits[..decimalPosition]}.{digits[decimalPosition..]}";
+        }
+
+        var fraction = digits.Length == 1 ? string.Empty : $".{digits[1..]}";
+        return $"{sign}{digits[0]}{fraction}e{scientificExponent}";
     }
 
     internal sealed record SigningKey(string KeyId, Ed25519PrivateKeyParameters PrivateKey, byte[] PublicKey);

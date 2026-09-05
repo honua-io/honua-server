@@ -331,6 +331,7 @@ public sealed class RasterSurfaceServiceTests : IAsyncLifetime
         => new PostgresRasterStore(
             CreateConnectionProvider(),
             NullLogger<PostgresRasterStore>.Instance,
+            FixtureBypassDatabaseSchemaGuard.Instance,
             _fixture.CurrentSchema);
 
     private PostgresSurfaceAnalysisService CreateSurfaceService()

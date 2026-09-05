@@ -268,7 +268,7 @@ __ci_jobs() {
       printf 'success\tBuild & Format Check\nsuccess\tServer Tests (Core)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
       ;;
     blocking-skipped)
-      printf 'success\tBuild & Format Check\nsuccess\tServer Tests (Core)\nskipped\tServer Tests (Workflow Packages)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
+      printf 'success\tBuild & Format Check\nsuccess\tServer Tests (Core)\nskipped\tServer Tests (Server Features Misc)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
       ;;
     timed-out)
       printf 'success\tBuild & Format Check\ntimed_out\tServer Tests (Core)\nfailure\tTest Suite Summary\nfailure\tCI Gate\n'
@@ -280,7 +280,7 @@ __ci_jobs() {
 }
 export -f __ci_jobs
 SAFE_DESCRIPTOR='{"run_all":false,"shards":["Core"]}'
-TWO_SHARD_DESCRIPTOR='{"run_all":false,"shards":["Core","Workflow Packages"]}'
+TWO_SHARD_DESCRIPTOR='{"run_all":false,"shards":["Core","Server Features Misc"]}'
 CI_JOBS_CASE=safe train_nonblocking_failures_are_safe 1 "${SAFE_DESCRIPTOR}" \
   && ok "ci-safe: optional failures with successful blocking jobs may land" \
   || bad "ci-safe: valid optional-only failure was rejected"
@@ -334,7 +334,7 @@ assert_contains "attribute cleanup: drop adds escalation" "${drop_log}" \
 assert_contains "attribute cleanup: drop clears landing" "${drop_log}" \
   "gh pr edit 3197 --remove-label train:landing"
 # Build a 2-PR batch where pr401 touches a FeatureServer path and pr402 an OGC
-# path; a failing "FeatureServer Endpoints" shard must attribute to pr401 only.
+# path; a failing "FeatureServer Endpoints Query Services and Replication" shard must attribute to pr401 only.
 : >"${INC}"
 printf '401\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"   # head placeholder (overridden below)
 printf '402\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"
@@ -347,17 +347,17 @@ __diff_for_pr() {
   esac
 }
 export -f __diff_for_pr
-culprits="$(train_attribute "server-tests (FeatureServer Endpoints)" "${INC}")"
+culprits="$(train_attribute "server-tests (FeatureServer Endpoints Query Services and Replication)" "${INC}")"
 assert_eq "attribute: single suspect => #401" "$(tr '\n' ' ' <<<"${culprits}" | xargs)" "401"
 # 0-suspect: a failing shard whose paths no PR touches => ESCALATE_BATCH.
 __diff_for_pr_none() { printf 'docs/readme.md\n'; }
 export TRAIN_DIFF_FOR_PR=__diff_for_pr_none; export -f __diff_for_pr_none
-esc="$(train_attribute "server-tests (FeatureServer Endpoints)" "${INC}")"
+esc="$(train_attribute "server-tests (FeatureServer Endpoints Query Services and Replication)" "${INC}")"
 assert_eq "attribute: 0 suspects => ESCALATE_BATCH" "${esc}" "ESCALATE_BATCH"
 # >=2 suspects: both PRs touch FeatureServer paths => both dropped.
 __diff_for_pr_both() { printf 'src/Honua.Protocols.GeoServices/FeatureServer/x.cs\n'; }
 export TRAIN_DIFF_FOR_PR=__diff_for_pr_both; export -f __diff_for_pr_both
-both="$(train_attribute "server-tests (FeatureServer Endpoints)" "${INC}" | sort | tr '\n' ' ' | xargs)"
+both="$(train_attribute "server-tests (FeatureServer Endpoints Query Services and Replication)" "${INC}" | sort | tr '\n' ' ' | xargs)"
 assert_eq "attribute: >=2 suspects => drop all" "${both}" "401 402"
 unset TRAIN_DIFF_FOR_PR
 
@@ -695,24 +695,6 @@ assert_contains "derived artifacts: shell generators do not require executable b
 assert_contains "derived artifacts: parity reuses the feature-catalog build" \
   "$(cat "${TRAIN_DIR}/train.sh")" \
   'generate-geoservices-parity.sh" --no-build --no-restore'
-
-single_reuse='[{"number":77,"headRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","prGateRunId":424242,"prGateRunAttempt":2}]'
-TRAIN_PR_GATE_REUSE_RUN_ID="stale"
-unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW
-train_configure_pr_gate_build_reuse "${single_reuse}" "77"
-assert_eq "smart-ci: disabled shadow clears optional reuse identity" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" ""
-export TRAIN_PR_GATE_BUILD_REUSE_SHADOW=true
-train_configure_pr_gate_build_reuse "${single_reuse}" "77"
-assert_eq "smart-ci: one-member exact batch carries PR Gate run id" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" "424242"
-assert_eq "smart-ci: one-member exact batch carries PR Gate attempt" "${TRAIN_PR_GATE_REUSE_RUN_ATTEMPT:-}" "2"
-assert_eq "smart-ci: one-member exact batch carries PR identity" "${TRAIN_PR_GATE_REUSE_PR:-}" "77"
-assert_eq "smart-ci: one-member exact batch carries head identity" \
-  "${TRAIN_PR_GATE_REUSE_HEAD:-}" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-train_configure_pr_gate_build_reuse "${single_reuse}" "77,78"
-assert_eq "smart-ci: multi-member batch clears optional reuse identity" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" ""
-train_configure_pr_gate_build_reuse '[{"number":77,"headRefOid":"bad","prGateRunId":424242,"prGateRunAttempt":2}]' "77"
-assert_eq "smart-ci: malformed admitted metadata clears optional reuse identity" "${TRAIN_PR_GATE_REUSE_RUN_ID:-}" ""
-unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW single_reuse
 
 # A dispatched run may become visible on the first post-dispatch query. The
 # baseline must be captured before dispatch or that run is rejected as stale.
@@ -1068,57 +1050,6 @@ assert_eq "select: StatusContext FAILURE => FAIL" \
 assert_eq "select: recovery status supersedes failed CheckRun" \
   "$(train_select_ci_gate_state '[{"__typename":"CheckRun","name":"CI Gate","status":"COMPLETED","conclusion":"FAILURE"},{"__typename":"StatusContext","context":"CI Gate","state":"SUCCESS","startedAt":"2026-01-02T00:00:00Z"}]')" "SUCCESS"
 
-# Optional build reuse metadata is accepted only from one exact successful PR
-# Gate CheckRun whose Actions run remains canonical for the admitted head. A
-# miss never changes admission; it merely omits the shadow inputs.
-reuse_head="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-disabled_lookup_marker="${SCRATCH}/unexpected-pr-gate-run-lookup"
-__disabled_pr_gate_run_json() {
-  : >"${disabled_lookup_marker}"
-  return 1
-}
-export disabled_lookup_marker
-export -f __disabled_pr_gate_run_json
-export TRAIN_PR_GATE_RUN_JSON_FOR_ID=__disabled_pr_gate_run_json
-unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW
-assert_eq "select: disabled shadow omits optional reuse metadata" \
-  "$(train_select_pr_gate_reuse_metadata \
-    '{"statusCheckRollup":[{"__typename":"CheckRun","name":"PR Gate","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://github.com/honua-io/honua-server/actions/runs/424242/job/7"}]}' \
-    "${reuse_head}")" '{}'
-[[ ! -e "${disabled_lookup_marker}" ]] \
-  && ok "select: disabled shadow avoids PR Gate run lookup" \
-  || bad "select: disabled shadow unexpectedly queried PR Gate run"
-unset -f __disabled_pr_gate_run_json
-export TRAIN_PR_GATE_BUILD_REUSE_SHADOW=true
-__pr_gate_run_json() {
-  local run_id="$1"
-  jq -nc --argjson id "${run_id}" --arg head "${reuse_head}" \
-    '{id:$id,status:"completed",conclusion:"success",event:"pull_request",
-      path:".github/workflows/pr-gate.yml",head_sha:$head,run_attempt:2}'
-}
-export reuse_head
-export -f __pr_gate_run_json
-export TRAIN_PR_GATE_RUN_JSON_FOR_ID=__pr_gate_run_json
-reuse_snapshot="$(jq -nc '{statusCheckRollup:[
-  {__typename:"CheckRun",name:"PR Gate",status:"COMPLETED",conclusion:"SUCCESS",
-   detailsUrl:"https://github.com/honua-io/honua-server/actions/runs/424242/job/7"}
-]}')"
-assert_eq "select: canonical PR Gate run enables optional reuse metadata" \
-  "$(train_select_pr_gate_reuse_metadata "${reuse_snapshot}" "${reuse_head}")" \
-  '{"prGateRunId":424242,"prGateRunAttempt":2}'
-assert_eq "select: head mismatch is an ordinary reuse miss" \
-  "$(train_select_pr_gate_reuse_metadata "${reuse_snapshot}" "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")" '{}'
-duplicate_reuse_snapshot="$(jq -c '.statusCheckRollup += [.statusCheckRollup[0]]' <<<"${reuse_snapshot}")"
-assert_eq "select: ambiguous successful PR Gate checks are a reuse miss" \
-  "$(train_select_pr_gate_reuse_metadata "${duplicate_reuse_snapshot}" "${reuse_head}")" '{}'
-assert_eq "select: absent PR Gate details URL is a reuse miss" \
-  "$(train_select_pr_gate_reuse_metadata \
-    '{"statusCheckRollup":[{"__typename":"CheckRun","name":"PR Gate","status":"COMPLETED","conclusion":"SUCCESS"}]}' \
-    "${reuse_head}")" '{}'
-unset TRAIN_PR_GATE_BUILD_REUSE_SHADOW TRAIN_PR_GATE_RUN_JSON_FOR_ID \
-  disabled_lookup_marker reuse_head reuse_snapshot duplicate_reuse_snapshot
-unset -f __pr_gate_run_json
-
 echo
 echo "== select: merge-through-flakes (FAILURE => FLAKE only when flake-only) =="
 # Mock the run-id + per-run failing-job + per-job-log lookups (no network).
@@ -1350,7 +1281,7 @@ __preexisting_job_log() {  # <run-id> <job-name> [job-id]
     all_pre:*:"Server Tests (STAC and API Governance)"|some_new:*:"Server Tests (STAC and API Governance)")
       printf '[xUnit.net 00:00:00.42]    Honua.Server.Tests.Stac.ItemTests.Returns200 [FAIL]\n'
       ;;
-    some_new:batch-run-9:"Server Tests (FeatureServer Endpoints)")
+    some_new:batch-run-9:"Server Tests (FeatureServer Endpoints Query Services and Replication)")
       printf 'Failed Honua.Server.Tests.GeoServices.FeatureServer.QueryEndpointTests.Query_Returns200 [12 ms]\n'
       ;;
     buildfmt_20260705:trunk-run-1:"Build & Format Check")
@@ -1376,20 +1307,20 @@ assert_eq "preexisting: all-pre-existing => rc11 (land)" "${rc_pe}" "11"
 # and only the introduced job is emitted (the pre-existing STAC one is stripped).
 set +e
 survivors="$(PE_CASE=some_new train_preexisting_filter batch-run-9 \
-  $'Server Tests (STAC and API Governance)\nServer Tests (FeatureServer Endpoints)')"
+  $'Server Tests (STAC and API Governance)\nServer Tests (FeatureServer Endpoints Query Services and Replication)')"
 rc_pe2=$?
 set -e
 assert_eq "preexisting: some-introduced => rc0 (act)" "${rc_pe2}" "0"
-assert_contains "preexisting: introduced job survives" "${survivors}" "FeatureServer Endpoints"
+assert_contains "preexisting: introduced job survives" "${survivors}" "FeatureServer Endpoints Query Services and Replication"
 assert_not_contains "preexisting: pre-existing job stripped" "${survivors}" "STAC and API Governance"
 
 # (c) trunk has NO failures => every batch failure is batch-introduced (rc0).
 set +e
-survivors2="$(PE_CASE=none_pre train_preexisting_filter batch-run-9 'Server Tests (FeatureServer Endpoints)')"
+survivors2="$(PE_CASE=none_pre train_preexisting_filter batch-run-9 'Server Tests (FeatureServer Endpoints Query Services and Replication)')"
 rc_pe3=$?
 set -e
 assert_eq "preexisting: clean-trunk => all introduced (rc0)" "${rc_pe3}" "0"
-assert_contains "preexisting: introduced survives on clean trunk" "${survivors2}" "FeatureServer Endpoints"
+assert_contains "preexisting: introduced survives on clean trunk" "${survivors2}" "FeatureServer Endpoints Query Services and Replication"
 # (d) Regression for 2026-07-05: same job name, different cause. Trunk has
 # format drift, but the batch has a C# compile error, so this is NOT pre-existing.
 set +e

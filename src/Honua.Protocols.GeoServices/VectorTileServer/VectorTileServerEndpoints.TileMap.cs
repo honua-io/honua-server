@@ -48,7 +48,8 @@ internal static partial class VectorTileServerEndpoints
             .AllowAnonymous()
             .Produces(200, contentType: JsonContentType)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(422);
 
         // The tileMap root resource. ArcGIS clients sometimes GET the bare `tilemap` pointer
         // advertised by the service descriptor before walking the {z}/{y}/{x}/{dim}/{dim}
@@ -70,24 +71,24 @@ internal static partial class VectorTileServerEndpoints
     /// availability block (a single tile that always exists).
     /// </summary>
     private static Task<IResult> HandleGetTileMapRoot(HttpContext context)
-        => HandleTileMapAsync(context, z: 0, y: 0, x: 0, height: 1, width: 1);
+        => HandleTileMapAsync(context, z: 0, y: 0, x: 0, width: 1, height: 1);
 
     /// <summary>
     /// Handles a tileMap block request (<c>tilemap/{z}/{y}/{x}/{dim}/{dim}</c>). The route
     /// segments are <c>z</c> (LOD), <c>y</c>/<c>x</c> (top-left tile of the block), and two
-    /// dimensions (block height then width, in tiles, per the Esri tileMap convention).
+    /// dimensions (block width then height, in tiles, per the Esri tileMap convention).
     /// </summary>
     private static Task<IResult> HandleGetTileMap(HttpContext context)
     {
         var z = GetRouteInt(context, "z");
         var y = GetRouteInt(context, "y");
         var x = GetRouteInt(context, "x");
-        var height = GetRouteInt(context, "dimension");
-        var width = GetRouteInt(context, "dimension2");
-        return HandleTileMapAsync(context, z, y, x, height, width);
+        var width = GetRouteInt(context, "dimension");
+        var height = GetRouteInt(context, "dimension2");
+        return HandleTileMapAsync(context, z, y, x, width, height);
     }
 
-    private static async Task<IResult> HandleTileMapAsync(HttpContext context, int z, int y, int x, int height, int width)
+    private static async Task<IResult> HandleTileMapAsync(HttpContext context, int z, int y, int x, int width, int height)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
@@ -138,10 +139,10 @@ internal static partial class VectorTileServerEndpoints
 
             // A tileMap request whose LOD lies outside the service tiling scheme cannot be
             // satisfied — Esri returns an error rather than an all-zero block. Reject it as a
-            // bad request so clients distinguish "level not served" from "tiles not present".
+            // unprocessable request so clients distinguish "level not served" from "tiles not present".
             if (z > maxLod)
             {
-                return StandardErrorHelpers.CreateBadRequest(
+                return StandardErrorHelpers.CreateUnprocessableEntity(
                     context,
                     $"Requested level {z} is outside the service tiling scheme (0..{maxLod}).");
             }

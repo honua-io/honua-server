@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Features.FeatureStore.Services;
 
 namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
@@ -192,6 +193,17 @@ internal static partial class SqlServerFeatureQueryBuilder
 
     private static void AppendWhereClause(StringBuilder sb, FeatureQuery query, List<object> parameters)
     {
+        if (query.TextSearch is { } search)
+        {
+            var predicate = FeatureTextSearchSql.Build(search, SqlServerIdentifier.QuoteAttribute, text =>
+            {
+                var marker = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+                parameters.Add(text);
+                return marker;
+            }, (column, value) => $"CHARINDEX({value}, {column})");
+            sb.Append(" AND ").Append(predicate);
+        }
+
         // Prefer the canonical Where text. SqlFilter on FeatureQuery is produced by the shared
         // ISqlFilterTranslator pipeline, which only registers a Postgres translator today. Passing
         // a Postgres-emitted fragment through here would yield invalid T-SQL (JSON path operators,

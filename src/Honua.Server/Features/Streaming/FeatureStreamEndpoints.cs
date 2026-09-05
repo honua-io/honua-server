@@ -4,6 +4,8 @@
 using System.Globalization;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Helpers;
@@ -37,9 +39,8 @@ internal static partial class FeatureStreamEndpoints
     public static void MapFeatureStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var streamGroup = endpoints.MapGroup("/api/v{version:apiVersion}/streaming")
-            // Promoted to GA in #2428: realtime feature streaming ships on the default
-            // first-release surface (no capability gate). Pro-edition entitlement is still
-            // enforced per request (RequireProEdition / streaming.feature-subscriptions).
+            // Opt-in Preview until the exact-candidate transport qualification gate passes.
+            .WithCapabilityGate("realtime.feature-streams")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Streaming");
@@ -67,7 +68,7 @@ internal static partial class FeatureStreamEndpoints
 
         // Admin endpoints for session visibility
         var adminGroup = endpoints.MapGroup("/api/v{version:apiVersion}/admin/streaming/features")
-            // GA in #2428 — no capability gate; admin authorization still required below.
+            .WithCapabilityGate("realtime.feature-streams")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Streaming")
@@ -132,7 +133,8 @@ internal static partial class FeatureStreamEndpoints
             isWebSocket ? WebSocketTransport : SseTransport,
             NullIfEmpty(context.Request.Query["clientLabel"].ToString()),
             filterResult.Filter,
-            addDefaultSubscription);
+            addDefaultSubscription,
+            ResolveAdmissionPartition(context));
         if (session is null)
         {
             return CreateSessionLimitExceeded(context, deps.Options.Value.MaxConcurrentSessions);
@@ -320,6 +322,18 @@ internal static partial class FeatureStreamEndpoints
 
     private static string? NullIfEmpty(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    internal static string ResolveAdmissionPartition(HttpContext context)
+    {
+        var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        if (!string.IsNullOrWhiteSpace(tenant))
+        {
+            return $"tenant:{tenant}";
+        }
+
+        var actor = CanonicalSecurityActor.Resolve(context.User);
+        return actor is null ? "anonymous" : $"principal:{actor.ActorId}";
+    }
 
     private static IResult CreateSessionLimitExceeded(HttpContext context, int maxConcurrentSessions)
         => ProblemDetailsHelpers.CreateAdminProblem(

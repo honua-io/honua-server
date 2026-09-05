@@ -1,12 +1,12 @@
 # GeoServices REST (ArcGIS-compatible)
 
-Honua serves an ArcGIS-compatible GeoServices REST surface under `/rest/services`, plus a Portal Sharing slice under `/sharing/rest` for token issuance and item discovery. Existing Esri clients (ArcGIS JS API, ArcGIS Pro, Field Maps, Koop) connect without modification.
+Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sharing slice under `/sharing/rest` for token issuance and item discovery. Compatibility is limited to the operations documented in the [GeoServices parity matrix](../compatibility/geoservices-parity.md) and the client workflows covered by the [cross-client certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md); it does not imply blanket support for ArcGIS Pro, Field Maps, Koop, or the ArcGIS Maps SDK for JavaScript.
 
 ## Catalog and portal routes
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/rest/info` | Server info (version, token endpoint). |
+| GET | `/rest/info` | Compatibility info (`currentVersion: 10.8`, SOAP URLs, and `authInfo.isTokenBasedSecurity: false`; no token endpoint is emitted). |
 | GET | `/rest/services` | Service catalog listing. |
 | GET, POST | `/sharing/rest/generateToken` | ArcGIS token issuance. |
 | GET | `/sharing/rest/info` | Portal sharing info. |
@@ -27,14 +27,14 @@ Base: `/rest/services/{serviceId}/FeatureServer` (service and `/{layerId}` metad
 | Edits | `applyEdits` (service and layer), `/{layerId}/addFeatures`, `updateFeatures`, `deleteFeatures` | POST only. |
 | Attachments | `/{layerId}/queryAttachments`, `/{layerId}/{featureId}/attachments`, `addAttachment`, `updateAttachment`, `deleteAttachments`, `attachments/{attachmentId}` | |
 | Related records | `/{layerId}/queryRelatedRecords` (GET, POST), `/relationships` | |
-| Offline sync | `createReplica`, `extractChanges`, `synchronizeReplica`, `unRegisterReplica`, `replicas`, `replicas/{replicaId}` | `synchronizeReplica` accepts the Honua extension parameter `conflictHandling`: `lastWriteWins` (default — the conflicting client edit is still committed and the conflict is recorded as advisory review evidence) or `manualReview` (the conflicting edit is withheld and only recorded, for operator resolution through the admin conflict-review API). Any other value is a 400. |
-| Branch versioning | `/rest/services/{serviceId}/VersionManagementServer` — `versions`, `create`, per-version `alter`, `delete`, `startReading`/`stopReading`, `startEditing`/`stopEditing`, `reconcile`, `inspectConflicts`, `resolveConflicts`, `post`, `jobs/{jobId}` | |
+| Offline sync | `createReplica`, `extractChanges`, `synchronizeReplica`, `unRegisterReplica`, `replicas`, `replicas/{replicaId}` | Preview/opt-in in 2026.1, with service-local `Sync` capability required. Security/isolation and lifecycle truth are in scope; broader parity is deferred to release/2026.2. |
+| Branch versioning | `/rest/services/{serviceId}/VersionManagementServer` — `versions`, `create`, per-version operations and jobs | Experimental and off by default; routes return 404 until `versioning.branch` is enabled. |
 | Bulk and SQL | `append` (service and layer), `/{layerId}/calculate`, `validateSQL`, `queryDomains`, `getEstimates` | |
 | Temporal and binning | `/{layerId}/queryTopFeatures`, `queryDateBins`, `temporalExtent`, `queryBins` | |
 | Spatial analytics (Pro tier) | `/{layerId}/queryH3` (GET, POST), `queryClusters`, `spatialJoin`, `queryBufferAggregate`, `queryDensity` (POST) | Return 402 when the entitlement is inactive. |
 | Renderer | `/{layerId}/generateRenderer` (GET, POST) | |
 
-Registered but **not implemented** (return a spec-shaped not-implemented error): `queryContingentValues`, `sharedTemplates` (and its `query`/`add`/`update`/`delete`), `htmlPopup`, `image`, `/{layerId}/hasAssets`, `queryAssets`, `cleanupAssets`, `uploadAssets`, `convert3D`, `query3D`, `/{layerId}/metadata/update`.
+Registered but **not implemented** (return a spec-shaped not-implemented error): `sharedTemplates` (and its `query`/`add`/`update`/`delete`), `htmlPopup`, `image`, `/{layerId}/hasAssets`, `queryAssets`, `cleanupAssets`, `uploadAssets`, `convert3D`, `query3D`, `/{layerId}/metadata/update`. GET-only `queryContingentValues` is implemented and returns graph-backed definitions (or an empty collection).
 
 > Open `https://server.example.com/rest/services/roads/FeatureServer/0/query?where=1%3D1&outFields=*&resultRecordCount=10&f=json` in a browser.
 
@@ -62,6 +62,11 @@ Base: `/rest/services/{serviceId}/MapServer` (service and `/{layerId}` metadata 
 See [GeoServices parity — MapServer](../compatibility/geoservices-parity.md#mapserver--wms--wmts) for parameter-level coverage.
 
 ## ImageServer
+
+ImageServer and its WMTS routes are **Preview in 2026.1**. Security, isolation
+and lifecycle-truth fixes remain in scope; other parity work is deferred to
+release/2026.2. See the [Preview contract](../compatibility/geoservices-parity.md#imageserver),
+including the explicit unavailable-export error behavior.
 
 Base: `/rest/services/{serviceId}/ImageServer` (raster-backed services).
 
@@ -122,11 +127,11 @@ Operations: `findAddressCandidates`, `reverseGeocode`, `suggest`, `geocodeAddres
 
 ## NAServer (network analysis)
 
-Minimal mobile routing compatibility (POST only): `/rest/services/{serviceId}/NAServer/Route/solve`, `.../ServiceArea/solveServiceArea`, `.../ClosestFacility/solveClosestFacility`.
+GET and POST solves are available for Route, ServiceArea, ClosestFacility, ODCostMatrix, and LocationAllocation under `/rest/services/{serviceId}/NAServer`; see the parity matrix for per-solver limitations.
 
 ## SceneServer (I3S)
 
-`GET /scenes/{sceneId}/SceneServer` and `.../SceneServer/layers/{layerId}` serve Esri I3S scene layers (Enterprise-gated) — see [3D Tiles and scenes](3d-tiles-and-scenes.md).
+`GET /scenes/{sceneId}/SceneServer` and `.../SceneServer/layers/{layerId}` serve Esri I3S scene layers only when experimental capability `serve.i3s-scene` is enabled. The default is 404; an enabled route without the Enterprise entitlement returns 402. See [3D Tiles and scenes](3d-tiles-and-scenes.md).
 
 ## Conformance
 

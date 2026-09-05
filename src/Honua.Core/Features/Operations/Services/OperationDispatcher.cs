@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 
@@ -90,6 +91,26 @@ public sealed class OperationDispatcher : IOperationInvoker
         string? acceptanceAuditId;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
+            if (context.ScopeGoverned &&
+                (context.RecognizedScopes.Count == 0 ||
+                 context.RecognizedScopes.Any(scope =>
+                     !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal)) ||
+                 !OperationScopeMapping.TryResolve(request, out var requiredOperation) ||
+                 !OperatorScopeCatalog.PermitsOperation(
+                     context.RecognizedScopes.ToHashSet(StringComparer.Ordinal), requiredOperation)))
+            {
+                return new OperationHandle
+                {
+                    OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
+                    OperationId = request.OperationId,
+                    CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
+                    Status = OperationHandleStatus.Failed,
+                    CreatedAt = createdAt,
+                    UpdatedAt = _clock.GetUtcNow(),
+                    Reason = "Approved replay operation exceeds the sealed OAuth scope authority.",
+                };
+            }
+
             if (string.IsNullOrWhiteSpace(context.OperationInstanceId) ||
                 string.IsNullOrWhiteSpace(context.ApprovedPlanHash) ||
                 _approvalReplayVerifier is null ||
@@ -151,6 +172,8 @@ public sealed class OperationDispatcher : IOperationInvoker
             {
                 OperationInstanceId = envelope.OperationInstanceId,
                 CorrelationId = envelope.CorrelationId,
+                AuditId = acceptanceAuditId,
+                ProposalId = context.ApprovedProposalId,
             };
             createdAt = envelope.CreatedAt;
         }
@@ -172,6 +195,8 @@ public sealed class OperationDispatcher : IOperationInvoker
             {
                 OperationInstanceId = envelope.OperationInstanceId,
                 CorrelationId = envelope.CorrelationId,
+                AuditId = envelope.AuditId,
+                ProposalId = envelope.ProposalId,
             };
             acceptanceAuditId = envelope.AuditId;
             createdAt = envelope.CreatedAt;
@@ -188,6 +213,15 @@ public sealed class OperationDispatcher : IOperationInvoker
             descriptor = await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken).ConfigureAwait(false)
                 ?? throw new OperationNotFoundException(request.OperationId);
             executor = ResolveExecutor(request.OperationId);
+            if (executor is IOperationRequestPreparer preparer)
+            {
+                var prepared = await preparer.PrepareAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
+                if (!string.Equals(prepared.OperationId, request.OperationId, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("Request preparation cannot change the operation identity.");
+                }
+                request = prepared;
+            }
             validation = await executor.ValidateAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -350,6 +384,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         {
             OperationInstanceId = operationInstanceId,
             OperationId = descriptor.OperationId,
+            TenantId = envelope.TenantId,
             CorrelationId = correlationId,
             AuditId = acceptanceAuditId,
             CreatedAt = createdAt,
@@ -619,6 +654,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             OperationInstanceId = context.OperationInstanceId
                 ?? throw new InvalidOperationException("The canonical operation instance id was not assigned."),
             OperationId = descriptor.OperationId,
+            TenantId = context.TenantId,
             CorrelationId = context.CorrelationId
                 ?? throw new InvalidOperationException("The canonical correlation id was not assigned."),
             Status = status,

@@ -1,0 +1,6 @@
+case_id,authority,axis_order,geometry_ewkt,expected_longitude,expected_latitude
+wgs84-lon-lat,EPSG:4326,xy,"SRID=4326;POINT(-157.8583 21.3069)",-157.8583,21.3069
+web-mercator,EPSG:3857,xy,"SRID=3857;POINT(-17572705.57 2428510.98)",-157.8583,21.3069
+utm-hawaii-zone-4,EPSG:26904,xy,"SRID=26904;POINT(618417.64 2356542.92)",-157.8583,21.3069
+crs84-lon-lat,OGC:CRS84,xy,"POINT(-157.8583 21.3069)",-157.8583,21.3069
+wgs84-authority-axis,EPSG:4326,yx,"POINT(21.3069 -157.8583)",-157.8583,21.3069
