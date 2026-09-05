@@ -128,10 +128,11 @@ public sealed class McpProviderRoutingTests
         }, CancellationToken.None);
 
         response!.Error.Should().BeNull();
+        var resultPayload = response.Result ?? throw new InvalidOperationException("Expected an MCP tool result.");
         var tenantVisible = publicationTenant is null || publicationTenant == requestTenant;
         if (toolName == ListLayersTool.ToolName || !tenantVisible)
         {
-            var result = response.Result!.Value;
+            var result = resultPayload;
             if (toolName == ListLayersTool.ToolName)
             {
                 result.GetProperty("isError").GetBoolean().Should().BeFalse();
@@ -152,7 +153,7 @@ public sealed class McpProviderRoutingTests
         }
         if (!includeRouter)
         {
-            var result = response.Result!.Value;
+            var result = resultPayload;
             if (toolName == DescribeLayerTool.ToolName)
             {
                 result.GetProperty("isError").GetBoolean().Should().BeFalse();
@@ -169,8 +170,8 @@ public sealed class McpProviderRoutingTests
             boundReader.ReceivedCalls().Should().BeEmpty();
             return;
         }
-        response.Result!.Value.GetProperty("isError").GetBoolean().Should().BeFalse(response.Result.Value.ToString());
-        var output = response.Result.Value.GetProperty("structuredContent");
+        resultPayload.GetProperty("isError").GetBoolean().Should().BeFalse(resultPayload.ToString());
+        var output = resultPayload.GetProperty("structuredContent");
         output.GetProperty(toolName == DescribeLayerTool.ToolName ? "rowCount" : "count").GetInt64().Should().Be(17);
         if (toolName == QueryFeaturesTool.ToolName && !countOnly)
         {
