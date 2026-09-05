@@ -49,11 +49,29 @@ Before upgrading a deployment with schema routing enabled:
    exact tenant IDs; schema values must be safe ASCII identifiers of at most 63
    bytes. Duplicate schema targets (including case variants) are rejected for
    both owners. Mapped schemas are reserved: another tenant cannot derive the
-   same target. For example, mapping `acme-east` to `tenant_acme_east` preserves
+   same target. Use `SchemaMappings` entries with `TenantId` and `SchemaName`
+   values for IDs containing colons (configuration uses colons as key delimiters).
+   For example, mapping `acme-east` to `tenant_acme_east` preserves
    that tenant's live schema and blocks an unmapped `acme_east` tenant from it.
 4. Deploy identical configuration to every instance, then verify distinct tenant
    principals against their known data. Keep the mapping with the database
    backup and restore it with the application configuration.
+
+Example configuration preserving two **verified, separate** existing schemas:
+
+```json
+{
+  "MultiTenancy": {
+    "SchemaRouting": {
+      "Enabled": true,
+      "SchemaMap": { "acme-east": "tenant_acme_east" },
+      "SchemaMappings": [
+        { "TenantId": "acme:east", "SchemaName": "legacy_acme_colon" }
+      ]
+    }
+  }
+}
+```
 
 For new installations, or after an explicit schema migration, set
 `MultiTenancy:SchemaRouting:UseEncodedSchemaNames=true`. Encoding preserves

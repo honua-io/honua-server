@@ -244,6 +244,30 @@ public class TenantSchemaRoutingMiddlewareTests
         }
     }
 
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
+    public async Task ExistingColonTenant_CanPinSchemaThroughConfigurationBinding()
+    {
+        var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["default"] = AuthenticatedPrincipal(("tid", "acme:east")),
+            },
+            defaultPrincipalKey: "default",
+            routingEnabled: true,
+            routingSettings: new()
+            {
+                ["SchemaMappings:0:TenantId"] = "acme:east",
+                ["SchemaMappings:0:SchemaName"] = "legacy_acme",
+            });
+
+        var response = await client.GetAsync("/schema");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("legacy_acme", await response.Content.ReadAsStringAsync());
+    }
+
     private static ClaimsPrincipal AuthenticatedPrincipal((string Type, string Value) claim)
     {
         var claims = new List<Claim>
