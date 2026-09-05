@@ -88,4 +88,36 @@ public sealed class McpStyleGovernanceEndpointTests
             await fixture.DisposeAsync();
         }
     }
+
+    [Theory]
+    [InlineData("not-a-layer")]
+    [InlineData("2147483648")]
+    [Trait("Category", "Integration")]
+    [Trait("Tier", "Integration")]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/operations/style.apply-preset/validate")]
+    public async Task RestStyleValidation_MalformedLayerId_ReturnsBadRequest(string layerId)
+    {
+        var fixture = new WebAppFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.PostAsJsonAsync("/api/v1/operations/style.apply-preset/validate", new
+            {
+                parameters = new Dictionary<string, string>
+                {
+                    ["serviceId"] = WebAppFixture.TestServiceId,
+                    ["layerId"] = layerId,
+                    ["styleId"] = "validation-preset",
+                },
+            });
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
 }

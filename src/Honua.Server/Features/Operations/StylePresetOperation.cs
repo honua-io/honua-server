@@ -135,8 +135,12 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
             throw new ArgumentException("The published service does not exist.", nameof(request));
         }
 
-        var publication = snapshot.FindPublicationByLayerIndex(serviceId,
-            int.Parse(Required(request, "layerId"), CultureInfo.InvariantCulture));
+        if (!int.TryParse(Required(request, "layerId"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+        {
+            throw new ArgumentException("The published layer ID must be a 32-bit integer.", nameof(request));
+        }
+
+        var publication = snapshot.FindPublicationByLayerIndex(serviceId, layerId);
         if (publication is null || !snapshot.IsRoutable(publication))
         {
             throw new ArgumentException("The published layer is not routable.", nameof(request));
