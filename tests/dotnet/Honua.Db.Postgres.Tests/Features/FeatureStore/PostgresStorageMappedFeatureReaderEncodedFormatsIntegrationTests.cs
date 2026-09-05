@@ -147,7 +147,7 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
     [Fact]
     public async Task GetMvtTileAsync_SourceBackedLayer_EnforcesEncodedByteBudget()
     {
-        var provider = (ITileProvider)CreateReader();
+        var provider = CreateReader();
         var query = new FeatureQuery { SpatialReferenceSrid = 4326, OutputSrid = 4326 };
         var options = new TileOptions { TileBuffer = 0, TileExtent = 4096 };
         var payload = await provider.GetMvtTileAsync(1, 0, 0, 0, query, options, new TileLimits());
