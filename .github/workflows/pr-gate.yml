@@ -205,6 +205,7 @@ jobs:
         uses: ./.github/actions/lean-gate
         with:
           trx-prefix: pr-gate
+          prepull-postgis: 'true'
           # Per-PR only. The gate compiles the diff's reverse-dependency closure
           # plus every project its own --no-build test steps consume, and falls
           # back to the full solution whenever the diff base is untrustworthy or
