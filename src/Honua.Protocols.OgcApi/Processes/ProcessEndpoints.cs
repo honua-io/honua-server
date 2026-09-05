@@ -413,6 +413,7 @@ internal static class ProcessEndpoints
             {
                 var normalized = await NormalizeInputReferencesAsync(
                     request,
+                    definition,
                     httpClientFactory,
                     context.RequestServices.GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
                         ?? 50L * 1024L * 1024L,
@@ -449,9 +450,12 @@ internal static class ProcessEndpoints
             var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["submittedVia"] = "OGC-API-Processes",
-                ["protocolProcessId"] = processId,
-                [OgcProcessesExecutionMetadata.ResponseMode] = rawResponse ? "raw" : "document"
+                ["protocolProcessId"] = processId
             };
+            if (definition != null || rawResponse)
+            {
+                metadata[OgcProcessesExecutionMetadata.ResponseMode] = rawResponse ? "raw" : "document";
+            }
             if (definition != null)
             {
                 if (OgcProcessesCiteEchoFixture.IsDefinition(definition))
@@ -815,7 +819,11 @@ internal static class ProcessEndpoints
             }
             else
             {
-                inputs[input.Key] = JsonElementToCanonicalInput(effectiveValue);
+                inputs[input.Key] = parameter?.AcceptsGeoJsonDataUri == true
+                    && effectiveValue.ValueKind == JsonValueKind.Object
+                        ? "data:application/geo+json;base64," + Convert.ToBase64String(
+                            System.Text.Encoding.UTF8.GetBytes(effectiveValue.GetRawText()))
+                        : JsonElementToCanonicalInput(effectiveValue);
             }
         }
 
@@ -925,6 +933,7 @@ internal static class ProcessEndpoints
 
     private static async Task<InputNormalizationResult> NormalizeInputReferencesAsync(
         OgcExecuteRequest request,
+        ProcessDefinition definition,
         IHttpClientFactory httpClientFactory,
         long maxArtifactBytes,
         CancellationToken cancellationToken)
@@ -934,6 +943,18 @@ internal static class ProcessEndpoints
             return new InputNormalizationResult(request, null);
         }
 
+        var parameterNames = definition.Parameters.Select(parameter => parameter.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var inputName in request.Inputs.Keys)
+        {
+            if (!parameterNames.Contains(inputName))
+            {
+                return new InputNormalizationResult(null, $"Unknown input '{inputName}' for process '{definition.ProcessId}'.");
+            }
+        }
+
+        // The catalog bounds the number of references; the shared byte budget bounds
+        // their aggregate payload before any resolved values are retained together.
+        var remainingBytes = maxArtifactBytes;
         var inputs = request.Inputs.ToBuilder();
         foreach (var input in request.Inputs)
         {
@@ -957,7 +978,7 @@ internal static class ProcessEndpoints
                 hrefElement.GetString()!,
                 mediaTypeHint,
                 httpClientFactory,
-                maxArtifactBytes,
+                remainingBytes,
                 cancellationToken).ConfigureAwait(false);
             if (resolved.Value.ValueKind == JsonValueKind.Undefined)
             {
@@ -967,6 +988,7 @@ internal static class ProcessEndpoints
             }
 
             inputs[input.Key] = BuildQualifiedInput(resolved.Value, resolved.MediaType);
+            remainingBytes -= resolved.SizeBytes;
         }
 
         return new InputNormalizationResult(
@@ -1047,7 +1069,7 @@ internal static class ProcessEndpoints
             if (IsJsonMediaType(mediaType))
             {
                 using var document = JsonDocument.Parse(payload);
-                return new ResolvedInputReference(document.RootElement.Clone(), mediaType, null);
+                return new ResolvedInputReference(document.RootElement.Clone(), mediaType, null, payload.LongLength);
             }
 
             var scalarValue = GetMediaTypeEssence(mediaType)?.StartsWith("text/", StringComparison.OrdinalIgnoreCase) == true
@@ -1059,7 +1081,8 @@ internal static class ProcessEndpoints
             return new ResolvedInputReference(
                 scalar.RootElement.Clone(),
                 mediaType ?? "application/octet-stream",
-                null);
+                null,
+                payload.LongLength);
         }
         catch (JsonException)
         {
@@ -1113,7 +1136,7 @@ internal static class ProcessEndpoints
             mediaType = "text/plain";
         }
 
-        var encodedPayload = uri[(separator + 1)..];
+        var encodedPayload = Uri.UnescapeDataString(uri[(separator + 1)..]);
         if (base64 && encodedPayload.Length > ((maxArtifactBytes + 2L) / 3L) * 4L)
         {
             error = "the referenced value exceeds the configured input limit.";
@@ -1124,7 +1147,7 @@ internal static class ProcessEndpoints
         {
             payload = base64
                 ? Convert.FromBase64String(encodedPayload)
-                : System.Text.Encoding.UTF8.GetBytes(Uri.UnescapeDataString(encodedPayload));
+                : System.Text.Encoding.UTF8.GetBytes(encodedPayload);
         }
         catch (Exception exception) when (exception is FormatException or UriFormatException)
         {
@@ -1179,7 +1202,7 @@ internal static class ProcessEndpoints
 
     private readonly record struct InputNormalizationResult(OgcExecuteRequest? Request, string? Error);
 
-    private readonly record struct ResolvedInputReference(JsonElement Value, string? MediaType, string? Error);
+    private readonly record struct ResolvedInputReference(JsonElement Value, string? MediaType, string? Error, long SizeBytes = 0);
 
     private static JsonElement GetInlineInputValue(JsonElement input, out string? mediaType)
     {
@@ -1288,7 +1311,7 @@ internal static class ProcessEndpoints
             MinOccurs = parameter.Required ? 1 : 0,
             Schema = new OgcProcessIoSchema
             {
-                Type = parameter.ValueType == ProcessParameterValueType.Wkb
+                Type = parameter.ValueType == ProcessParameterValueType.Wkb || parameter.AcceptsGeoJsonDataUri
                     ? null
                     : parameter.ValueType switch
                     {
@@ -1303,13 +1326,13 @@ internal static class ProcessEndpoints
                     ProcessParameterValueType.WkbArray => "application/json",
                     _ => null
                 },
-                OneOf = parameter.ValueType == ProcessParameterValueType.Wkb
+                OneOf = parameter.ValueType == ProcessParameterValueType.Wkb || parameter.AcceptsGeoJsonDataUri
                     ? ImmutableArray.Create(
                         new OgcProcessIoSchema
                         {
                             Type = "string",
-                            Format = "byte",
-                            ContentMediaType = "application/wkb"
+                            Format = parameter.AcceptsGeoJsonDataUri ? "uri" : "byte",
+                            ContentMediaType = parameter.AcceptsGeoJsonDataUri ? null : "application/wkb"
                         },
                         new OgcProcessIoSchema
                         {

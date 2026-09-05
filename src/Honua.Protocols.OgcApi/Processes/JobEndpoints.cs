@@ -11,6 +11,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Geoprocessing;
+using Honua.Geoprocessing.Execution;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Common;
@@ -770,6 +771,11 @@ internal static class JobEndpoints
         var maxArtifactBytes = context.RequestServices
             .GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
             ?? 50L * 1024L * 1024L;
+        if (FeatureStreamArtifact.IsStreamReference(artifact.Uri))
+        {
+            return await MaterializeFeatureStreamAsync(context, artifact.Uri!, maxArtifactBytes).ConfigureAwait(false);
+        }
+
         if (!string.IsNullOrWhiteSpace(artifact.Uri)
             && artifact.Uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
@@ -858,6 +864,62 @@ internal static class JobEndpoints
             }
 
             body.Write(buffer, 0, read);
+        }
+    }
+
+    private static async Task<MaterializedArtifact> MaterializeFeatureStreamAsync(
+        HttpContext context,
+        string reference,
+        long maxBytes)
+    {
+        const string mediaType = "application/geo+json";
+        var outputRoot = context.RequestServices.GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.OutputRootDirectory;
+        if (string.IsNullOrWhiteSpace(outputRoot))
+        {
+            return new MaterializedArtifact(null, mediaType, "The feature stream output store is unavailable.", false);
+        }
+
+        try
+        {
+            if (!FeatureStreamArtifact.TryOpenRead(reference, out _, out var features, maxBytes, outputRoot)
+                || !FeatureStreamArtifact.TryParseStreamReference(reference, out var descriptor, out _))
+            {
+                return new MaterializedArtifact(null, mediaType, "The feature stream output is unavailable.", false);
+            }
+
+            // Use the actual backing-file size, not the size claimed in the reference.
+            // This also bounds the largest line the canonical reader may materialize.
+            if (new FileInfo(descriptor.Path).Length > maxBytes)
+            {
+                return new MaterializedArtifact(null, mediaType, "The output exceeds the configured artifact response limit.", true);
+            }
+
+            using var body = new MemoryStream();
+            using var writer = new Utf8JsonWriter(body);
+            var featureWriter = GeoJsonArtifactCodec.CreateWriter();
+            writer.WriteStartObject();
+            writer.WriteString("type", "FeatureCollection");
+            writer.WriteStartArray("features");
+            await foreach (var feature in features.WithCancellation(context.RequestAborted).ConfigureAwait(false))
+            {
+                writer.WriteRawValue(featureWriter.Write(feature));
+                writer.Flush();
+                if (body.Length > maxBytes)
+                {
+                    return new MaterializedArtifact(null, mediaType, "The output exceeds the configured artifact response limit.", true);
+                }
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+            writer.Flush();
+            return body.Length > maxBytes
+                ? new MaterializedArtifact(null, mediaType, "The output exceeds the configured artifact response limit.", true)
+                : new MaterializedArtifact(body.ToArray(), mediaType, null, false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or Newtonsoft.Json.JsonException)
+        {
+            return new MaterializedArtifact(null, mediaType, "The feature stream output is unavailable.", false);
         }
     }
 

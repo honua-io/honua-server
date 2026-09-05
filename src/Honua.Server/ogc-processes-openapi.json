@@ -529,6 +529,9 @@
               "application/geo+json": {
                 "schema": { "type": "object" }
               },
+              "image/tiff": { "schema": { "type": "string", "format": "binary" } },
+              "image/png": { "schema": { "type": "string", "format": "binary" } },
+              "image/jpeg": { "schema": { "type": "string", "format": "binary" } },
               "application/octet-stream": {
                 "schema": { "type": "string", "format": "binary" }
               },

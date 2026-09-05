@@ -15,5 +15,7 @@ internal static class OgcProcessesExecutionMetadata
            && string.Equals(mode, "raw", StringComparison.OrdinalIgnoreCase);
 
     internal static bool UsesValueTransmission(IReadOnlyDictionary<string, string> metadata)
-        => metadata.ContainsKey(ResponseMode);
+        => metadata.ContainsKey(ResponseMode)
+           && (!metadata.TryGetValue("protocolProcessId", out var processId)
+               || !string.Equals(processId, "honua-geoprocessing", StringComparison.Ordinal));
 }

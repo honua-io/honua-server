@@ -200,6 +200,13 @@ public sealed record ProcessParameterSpec
     public bool AcceptsRasterSource { get; init; }
 
     /// <summary>
+    /// Whether the executor consumes this text parameter as a GeoJSON FeatureCollection
+    /// data URI. Protocol adapters use this contract when normalizing qualified or
+    /// referenced GeoJSON values, instead of passing raw JSON to a URI reader.
+    /// </summary>
+    public bool AcceptsGeoJsonDataUri { get; init; }
+
+    /// <summary>
     /// For a <see cref="ProcessParameterValueType.LayerId"/> parameter, what the process does to
     /// the layer — which is what decides the authorization operation the submit-time gate
     /// requires for it. Ignored for every other value type.
