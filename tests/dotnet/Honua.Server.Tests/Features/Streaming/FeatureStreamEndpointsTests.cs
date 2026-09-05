@@ -86,7 +86,15 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public Task WebSocket_SubscriberPolicies_Replay_FieldMaskOnly() => VerifySubscriberPoliciesAsync(true, true, false);
 
-    private static async Task VerifySubscriberPoliciesAsync(bool webSocket, bool replay, bool restrictRows = true)
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task Sse_SubscriberPolicies_SnapshotHandoff_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(false, false, snapshot: true);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task WebSocket_SubscriberPolicies_SnapshotHandoff_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(true, false, snapshot: true);
+
+    private static async Task VerifySubscriberPoliciesAsync(bool webSocket, bool replay, bool restrictRows = true, bool snapshot = false)
     {
         var rows = Substitute.For<IRlsPolicyStore>();
         rows.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -136,7 +144,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
             var anchor = await store.AppendAsync(new FeatureChangeEventRequest
             {
-                ServiceId = "test", LayerId = 0, ObjectId = 999, Operation = "update", Protocol = "rest"
+                ServiceId = "test", LayerId = 0, ObjectId = 999, Operation = "update", Protocol = "rest", RequestId = "policy-anchor"
             });
             async Task PublishAsync()
             {
@@ -144,7 +152,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 {
                     await publisher.PublishAsync(new FeatureChangeEventRequest
                     {
-                        ServiceId = "test", LayerId = 0, ObjectId = id, Operation = id == 101 ? "delete" : "update", Protocol = "rest",
+                        ServiceId = "test", LayerId = 0, ObjectId = id, Operation = id == 101 ? "delete" : "update", Protocol = "rest", RequestId = "policy-change",
                         PropertiesJson = id == 102
                             ? """{"name":"admin","secret":"private-value","SECRET":"private-uppercase"}"""
                             : """{"name":"forbidden","secret":"private-row"}""",
@@ -158,7 +166,17 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 await PublishAsync();
             }
 
-            var path = $"/api/v1/streaming/features?layers=0&cursor={anchor.Cursor}&clientLabel=policy-test";
+            var position = snapshot ? "mode=snapshot-then-delta" : $"cursor={anchor.Cursor}";
+            var path = $"/api/v1/streaming/features?layers=0&{position}&clientLabel=policy-test";
+            var sawSnapshot = false;
+            void CheckSnapshot(JsonElement frame)
+            {
+                if (frame.GetProperty("type").GetString() == "snapshot")
+                {
+                    sawSnapshot = true;
+                    frame.GetRawText().Should().NotContain("private-").And.NotContain("forbidden");
+                }
+            }
             JsonElement delivered;
             if (webSocket)
             {
@@ -172,6 +190,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 do
                 {
                     delivered = await ReceiveWebSocketJsonAsync(socket, cts.Token);
+                    CheckSnapshot(delivered);
                 } while (delivered.GetProperty("type").GetString() != "feature-change");
             }
             else
@@ -193,8 +212,14 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 do
                 {
                     frame = await ReadNextSseEventAsync(reader, cts.Token);
+                    CheckSnapshot(frame.Data);
                 } while (frame.EventName != "feature-change");
                 delivered = frame.Data;
+            }
+
+            if (snapshot)
+            {
+                sawSnapshot.Should().BeTrue();
             }
 
             delivered.GetProperty("objectId").GetInt64().Should().Be(102, "hidden updates and deletes must not be delivered");
