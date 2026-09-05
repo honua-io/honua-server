@@ -309,7 +309,8 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         await using (var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync())
         await using (var seed = connection.CreateCommand())
         {
-            var schema = new Npgsql.NpgsqlCommandBuilder().QuoteIdentifier(_fixture.CurrentSchema!);
+            using var identifierBuilder = new Npgsql.NpgsqlCommandBuilder();
+            var schema = identifierBuilder.QuoteIdentifier(_fixture.CurrentSchema!);
             seed.CommandText = $$"""
                 INSERT INTO {{schema}}.features (layer_id, objectid, geometry, attributes)
                 VALUES (0,701,ST_SetSRID(ST_Point(-122.25,37.75),4326),'{"gid":701,"id":0,"name":"first"}'::jsonb),
