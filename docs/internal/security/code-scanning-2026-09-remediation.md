@@ -106,3 +106,22 @@ Pinned action source confirming the SARIF behavior:
 [entrypoint.sh:75-79](https://github.com/aquasecurity/trivy-action/blob/ed142fd0673e97e23eac54620cfb913e5ce36c25/entrypoint.sh#L75).
 The full-image action-equivalent SARIF receipt is
 `/tmp/honua-security-jit-action-equivalent.sarif` on the validation host.
+
+## Additional validation
+
+The repository's actual `scripts/ci/pre-pr-check.sh --fast` completed
+successfully: warnings-as-errors build, 68 MCP/AI tests and 286 architecture
+tests passed, with no skips in either selected suite. Server integration shards
+and native-AOT publishing are excluded by that script's explicit FAST mode and
+are tracked separately above.
+
+A newer supported Ubuntu candidate was also rebuilt with the exact runtime
+package layer: `dotnet/aspnet:10.0-resolute` at
+`sha256:e12b240891f34144edd813a11e86649dca6120165adfb5ad0a29bbde6753a975`.
+Its all-severity scan had 63 findings (50 Medium, 5 Low, 8 High), so it was not
+adopted. This candidate does not solve the zero-alert requirement.
+
+Of the 34 findings in the patched Noble JIT image, nine match the original
+packet: #3393, #3395, #3399, #3400, #3402, #3404, #3406, #3411 and #3412.
+The other 25 are newly surfaced local Trivy findings. These local comparisons
+are separate from the default-branch API counts.
