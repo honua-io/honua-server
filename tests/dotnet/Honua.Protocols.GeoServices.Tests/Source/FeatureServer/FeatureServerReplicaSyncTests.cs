@@ -29,7 +29,7 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete", "Sync"]);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
