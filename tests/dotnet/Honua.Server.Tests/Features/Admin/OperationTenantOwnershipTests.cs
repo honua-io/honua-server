@@ -43,6 +43,7 @@ public sealed class OperationTenantOwnershipTests
         var result = await Invoke(typeof(ProposalEndpoints), handler, context, store, gateway);
         ((IStatusCodeHttpResult)result).StatusCode.Should().Be(404);
         await gateway.DidNotReceiveWithAnyArgs().ApplyApprovedProposalAsync(default!, default(string)!, default);
+        await gateway.DidNotReceiveWithAnyArgs().ApplyApprovedProposalAsync(default!, default(OperationProposalApprovalContext)!, default);
         await gateway.DidNotReceiveWithAnyArgs().RejectProposalAsync(default!, default!, default!, default);
     }
 
