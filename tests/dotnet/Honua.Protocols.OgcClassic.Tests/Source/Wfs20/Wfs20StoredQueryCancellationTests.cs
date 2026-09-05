@@ -128,7 +128,10 @@ public sealed class Wfs20StoredQueryCancellationTests
                 returned.SetResult((Task<IResult>)endpoint.Invoke(null,
                     [context, parameters, handler, NullLogger.Instance])!);
             }
-            catch (Exception ex) { returned.SetException(ex); }
+            catch (TargetInvocationException ex)
+            {
+                returned.SetException(ex.InnerException ?? ex);
+            }
         })
         { IsBackground = true };
         thread.Start();
@@ -168,7 +171,11 @@ public sealed class Wfs20StoredQueryCancellationTests
             if (returned.Task.IsCompletedSuccessfully)
             {
                 try { await (await returned.Task); }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException)
+                {
+                    cancellation.IsCancellationRequested.Should().BeTrue(
+                        "cleanup may only observe cancellation requested by this test");
+                }
             }
         }
     }
