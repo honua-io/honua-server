@@ -152,7 +152,7 @@ internal sealed partial class TileOperationExecutionCore
             throw new InvalidOperationException("Unable to resolve a target layer for tile operation.");
         }
 
-        var tileCoordinates = BuildTileCoordinates(request);
+        var tileCoordinates = BuildTileCoordinates(request).Coordinates;
         if (tileCoordinates.Count == 0)
         {
             throw new InvalidOperationException("Tile operation produced no target tiles.");
@@ -436,7 +436,9 @@ internal sealed partial class TileOperationExecutionCore
 
         var layerId = request.LayerId.Value;
 
-        var build = await BuildPMTilesArchiveAsync("archive", progress, request, layerId, tileSources, cancellationToken).ConfigureAwait(false);
+        var graphProvider = serviceProvider.GetRequiredService<IMetadataV2GraphProvider>();
+        var build = await BuildPMTilesArchiveAsync(
+            "archive", progress, request, layerId, tileSources, graphProvider, cancellationToken).ConfigureAwait(false);
         if (!build.HasArchive)
         {
             return build.Progress;
@@ -555,7 +557,9 @@ internal sealed partial class TileOperationExecutionCore
             };
         }
 
-        var build = await BuildPMTilesArchiveAsync("publish", progress, request, layerId, tileSources, cancellationToken).ConfigureAwait(false);
+        var graphProvider = serviceProvider.GetRequiredService<IMetadataV2GraphProvider>();
+        var build = await BuildPMTilesArchiveAsync(
+            "publish", progress, request, layerId, tileSources, graphProvider, cancellationToken).ConfigureAwait(false);
         if (!build.HasArchive)
         {
             return build.Progress;
@@ -715,9 +719,11 @@ internal sealed partial class TileOperationExecutionCore
         TileOperationStartRequest request,
         int layerId,
         IReadOnlyDictionary<int, TileSource> tileSources,
+        IMetadataV2GraphProvider graphProvider,
         CancellationToken cancellationToken)
     {
-        var tileCoordinates = BuildTileCoordinates(request);
+        var selection = BuildTileCoordinates(request);
+        var tileCoordinates = selection.Coordinates;
         if (tileCoordinates.Count == 0)
         {
             throw new InvalidOperationException($"{operationName} operation produced no target tiles.");
@@ -728,10 +734,17 @@ internal sealed partial class TileOperationExecutionCore
         long successful = 0;
         long failed = 0;
         var warningList = new List<string>();
+        var writtenCoordinates = new List<TileCoordinate>(tileCoordinates.Count);
+        if (selection.WasTruncated)
+        {
+            warningList.Add(
+                $"Tile pyramid exceeded maxTiles={selection.MaxTiles}; the archive contains {tileCoordinates.Count} selected tiles and its header describes that truncated coverage.");
+        }
 
         var current = progress with
         {
             TotalTiles = total,
+            Warnings = warningList.ToArray(),
             CurrentPhase = $"Generating tiles for {operationName}"
         };
         await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
@@ -755,6 +768,7 @@ internal sealed partial class TileOperationExecutionCore
                 if (tileData is { Length: > 0 })
                 {
                     writer.AddTile(coordinate.Z, coordinate.X, coordinate.Y, tileData);
+                    writtenCoordinates.Add(coordinate);
                     successful++;
                 }
             }
@@ -812,26 +826,35 @@ internal sealed partial class TileOperationExecutionCore
         current = current with { CurrentPhase = "Writing PMTiles archive" };
         await _progressStore.SetProgressAsync(current.JobId, current, ProgressRetention, cancellationToken).ConfigureAwait(false);
 
-        var bbox = request.Bbox is { Length: 4 }
-            ? request.Bbox
-            : [-180d, -SpatialConstants.WebMercatorMaxLatitude, 180d, SpatialConstants.WebMercatorMaxLatitude];
-
-        var minZoom = Math.Clamp(request.MinZoom ?? _tileLimits.MinTileZoom, _tileLimits.MinTileZoom, _tileLimits.MaxTileZoom);
-        var maxZoom = Math.Clamp(request.MaxZoom ?? minZoom, minZoom, _tileLimits.MaxTileZoom);
-
-        var minLon = Math.Min(bbox[0], bbox[2]);
-        var minLat = Math.Min(bbox[1], bbox[3]);
-        var maxLon = Math.Max(bbox[0], bbox[2]);
-        var maxLat = Math.Max(bbox[1], bbox[3]);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var resource = ResolveArchiveResource(snapshot, request, layerId);
+        var coverage = BuildTileCoverage(writtenCoordinates);
+        var layerName = resource?.Metadata.Title ?? resource?.Metadata.Name ?? $"Layer {layerId}";
+        var vectorFields = BuildVectorFields(resource);
 
         var metadata = new PMTilesArchiveMetadata
         {
-            MinLon = minLon,
-            MinLat = minLat,
-            MaxLon = maxLon,
-            MaxLat = maxLat,
-            MinZoom = minZoom,
-            MaxZoom = maxZoom
+            Name = layerName,
+            Description = resource?.Metadata.Description,
+            MinLon = coverage.MinLon,
+            MinLat = coverage.MinLat,
+            MaxLon = coverage.MaxLon,
+            MaxLat = coverage.MaxLat,
+            MinZoom = coverage.MinZoom,
+            MaxZoom = coverage.MaxZoom,
+            VectorLayers =
+            [
+                new PMTilesVectorLayerMetadata
+                {
+                    Id = "layer",
+                    Description = string.IsNullOrWhiteSpace(resource?.Metadata.Description)
+                        ? layerName
+                        : resource!.Metadata.Description,
+                    MinZoom = coverage.MinZoom,
+                    MaxZoom = coverage.MaxZoom,
+                    Fields = vectorFields
+                }
+            ]
         };
 
         // Spill the archive to a self-deleting temp file rather than a MemoryStream: archive size
@@ -863,12 +886,12 @@ internal sealed partial class TileOperationExecutionCore
                 ArchiveStream = archiveStream,
                 ArchiveSize = archiveSize,
                 Failed = failed,
-                MinZoom = minZoom,
-                MaxZoom = maxZoom,
-                MinLon = minLon,
-                MinLat = minLat,
-                MaxLon = maxLon,
-                MaxLat = maxLat
+                MinZoom = coverage.MinZoom,
+                MaxZoom = coverage.MaxZoom,
+                MinLon = coverage.MinLon,
+                MinLat = coverage.MinLat,
+                MaxLon = coverage.MaxLon,
+                MaxLat = coverage.MaxLat
             };
         }
         catch
@@ -1005,7 +1028,7 @@ internal sealed partial class TileOperationExecutionCore
             graphProvider,
             cancellationToken).ConfigureAwait(false)];
 
-    private List<TileCoordinate> BuildTileCoordinates(TileOperationStartRequest request)
+    private TileCoordinateSelection BuildTileCoordinates(TileOperationStartRequest request)
     {
         var maxTiles = Math.Clamp(request.MaxTiles ?? 500, 1, _maxTilesCeiling);
         var minZoom = Math.Clamp(request.MinZoom ?? _tileLimits.MinTileZoom, _tileLimits.MinTileZoom, _tileLimits.MaxTileZoom);
@@ -1036,14 +1059,109 @@ internal sealed partial class TileOperationExecutionCore
                     result.Add(new TileCoordinate(z, x, y));
                     if (result.Count >= maxTiles)
                     {
-                        return result;
+                        var hasRemaining = y < yMax || x < xMax || z < maxZoom;
+                        return new TileCoordinateSelection(result, hasRemaining, maxTiles);
                     }
                 }
             }
         }
 
-        return result;
+        return new TileCoordinateSelection(result, WasTruncated: false, maxTiles);
     }
+
+    private static MetadataV2Resource? ResolveArchiveResource(
+        MetadataV2GraphSnapshot snapshot,
+        TileOperationStartRequest request,
+        int layerId)
+    {
+        // A service-scoped archive names its layer by the publication's index
+        // within that service; that number is not a storage-layer id. Resolve
+        // the requested service's publication first so the archive's name and
+        // vector_layers describe the resource the caller asked for, and only
+        // then fall back to the global storage-layer index.
+        if (!string.IsNullOrWhiteSpace(request.ServiceId) &&
+            snapshot.FindService(request.ServiceId) is { } service)
+        {
+            var publication = snapshot.PublicationsForService(service.Metadata.Id)
+                .Where(candidate => candidate.LayerIndex == layerId || snapshot.ResolveStorageLayerId(candidate) == layerId)
+                .FirstOrDefault();
+            if (publication is not null)
+            {
+                return snapshot.ResolveResource(publication);
+            }
+        }
+
+        if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var byStorageLayer))
+        {
+            return byStorageLayer;
+        }
+
+        return null;
+    }
+
+    private static Dictionary<string, string> BuildVectorFields(MetadataV2Resource? resource)
+    {
+        var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (resource is null)
+        {
+            return fields;
+        }
+
+        var geometryField = resource.FindPrimaryGeometryField();
+        foreach (var field in resource.SchemaFields)
+        {
+            if (geometryField is not null &&
+                string.Equals(field.Name, geometryField.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            fields[field.Name] = string.IsNullOrWhiteSpace(field.Description)
+                ? field.Type switch
+                {
+                    MetadataV2FieldType.String => "string",
+                    MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger => "integer",
+                    MetadataV2FieldType.Double or MetadataV2FieldType.Float => "number",
+                    MetadataV2FieldType.Boolean => "boolean",
+                    MetadataV2FieldType.DateTime or MetadataV2FieldType.Date or MetadataV2FieldType.Time => "string",
+                    MetadataV2FieldType.Json => "object",
+                    MetadataV2FieldType.Binary => "binary",
+                    MetadataV2FieldType.Uuid => "string",
+                    _ => "string"
+                }
+                : field.Description!;
+        }
+
+        return fields;
+    }
+
+    private static TileCoverage BuildTileCoverage(IReadOnlyList<TileCoordinate> coordinates)
+    {
+        var minZoom = coordinates.Min(static coordinate => coordinate.Z);
+        var maxZoom = coordinates.Max(static coordinate => coordinate.Z);
+        var minLon = double.MaxValue;
+        var minLat = double.MaxValue;
+        var maxLon = double.MinValue;
+        var maxLat = double.MinValue;
+
+        foreach (var coordinate in coordinates)
+        {
+            var n = 1 << coordinate.Z;
+            var west = ((double)coordinate.X / n * 360.0) - 180.0;
+            var east = ((double)(coordinate.X + 1) / n * 360.0) - 180.0;
+            var north = TileYToLatitude(coordinate.Y, n);
+            var south = TileYToLatitude(coordinate.Y + 1, n);
+            minLon = Math.Min(minLon, west);
+            maxLon = Math.Max(maxLon, east);
+            minLat = Math.Min(minLat, south);
+            maxLat = Math.Max(maxLat, north);
+        }
+
+        return new TileCoverage(minZoom, maxZoom, minLon, minLat, maxLon, maxLat);
+    }
+
+    private static double TileYToLatitude(int y, int matrixSize)
+        => Math.Atan(Math.Sinh(Math.PI * (1.0 - (2.0 * y / matrixSize)))) * 180.0 / Math.PI;
 
     private static int LonToTileX(double lon, int z, int n)
     {
@@ -1062,6 +1180,19 @@ internal sealed partial class TileOperationExecutionCore
     }
 
     private readonly record struct TileCoordinate(int Z, int X, int Y);
+
+    private readonly record struct TileCoordinateSelection(
+        IReadOnlyList<TileCoordinate> Coordinates,
+        bool WasTruncated,
+        int MaxTiles);
+
+    private readonly record struct TileCoverage(
+        int MinZoom,
+        int MaxZoom,
+        double MinLon,
+        double MinLat,
+        double MaxLon,
+        double MaxLat);
 
     private sealed record PMTilesBuildResult
     {

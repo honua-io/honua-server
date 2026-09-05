@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Tiles;
 
@@ -59,6 +60,12 @@ public sealed class TileMatrixSetOptionsValidator : OptionsValidator<TileMatrixS
                 failures.Add($"{label} must specify a positive Srid.");
             }
 
+            if (entry.MetersPerUnit is { } metersPerUnit &&
+                (!double.IsFinite(metersPerUnit) || metersPerUnit <= 0))
+            {
+                failures.Add($"{label} MetersPerUnit must be finite and positive.");
+            }
+
             if (entry.TileWidth <= 0 || entry.TileHeight <= 0)
             {
                 failures.Add($"{label} must have positive TileWidth and TileHeight.");
@@ -93,12 +100,12 @@ public sealed class TileMatrixSetOptionsValidator : OptionsValidator<TileMatrixS
                 failures.Add($"{label} has a duplicate level id {level.Id}.");
             }
 
-            if (level.ScaleDenominator <= 0)
+            if (!double.IsFinite(level.ScaleDenominator) || level.ScaleDenominator <= 0)
             {
                 failures.Add($"{label} level {level.Id} must have a positive ScaleDenominator.");
             }
 
-            if (level.CellSize <= 0)
+            if (!double.IsFinite(level.CellSize) || level.CellSize <= 0)
             {
                 failures.Add($"{label} level {level.Id} must have a positive CellSize.");
             }
@@ -120,6 +127,22 @@ public sealed class TileMatrixSetOptionsValidator : OptionsValidator<TileMatrixS
             if (level.ScaleDenominator > 0)
             {
                 previousScaleDenominator = level.ScaleDenominator;
+            }
+
+            if (double.IsFinite(level.ScaleDenominator) && level.ScaleDenominator > 0 &&
+                double.IsFinite(level.CellSize) && level.CellSize > 0)
+            {
+                var metersPerUnit = entry.MetersPerUnit ??
+                    (GeographicSridClassifier.IsGeographicSrid(entry.Srid)
+                        ? SpatialConstants.WebMercatorExtent / 180.0
+                        : 1.0);
+                var expectedCellSize = level.ScaleDenominator * SpatialConstants.PixelSizeMeters / metersPerUnit;
+                var tolerance = Math.Max(1e-12, Math.Abs(expectedCellSize) * 1e-6);
+                if (Math.Abs(level.CellSize - expectedCellSize) > tolerance)
+                {
+                    failures.Add(
+                        $"{label} level {level.Id} CellSize {level.CellSize:R} contradicts ScaleDenominator {level.ScaleDenominator:R}; expected approximately {expectedCellSize:R} CRS units/pixel.");
+                }
             }
         }
     }

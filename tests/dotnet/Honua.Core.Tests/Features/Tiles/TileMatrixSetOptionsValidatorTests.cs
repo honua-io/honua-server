@@ -84,6 +84,61 @@ public class TileMatrixSetOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_ScaleDenominatorAndCellSize_MustAgreeForGeographicGrid()
+    {
+        var custom = new CustomTileMatrixSet
+        {
+            Id = "Crs84Custom",
+            Crs = "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+            Srid = 4326,
+            TopLeftCorner = [-180, 90],
+            Levels =
+            [
+                new TileMatrixLevel
+                {
+                    Id = 0,
+                    ScaleDenominator = 279541132.014,
+                    CellSize = 0.703125,
+                    MatrixWidth = 2,
+                    MatrixHeight = 1
+                },
+                new TileMatrixLevel
+                {
+                    Id = 1,
+                    ScaleDenominator = 139770566.007,
+                    CellSize = 0.703125,
+                    MatrixWidth = 4,
+                    MatrixHeight = 2
+                }
+            ]
+        };
+
+        var result = Validate(custom);
+
+        result.Failed.Should().BeTrue();
+        result.Failures.Should().Contain(f => f.Contains("contradicts ScaleDenominator"));
+    }
+
+    [Fact]
+    public void Validate_ScaleDenominatorAndCellSize_AcceptConsistentGeographicGrid()
+    {
+        var custom = new CustomTileMatrixSet
+        {
+            Id = "Crs84Custom",
+            Crs = "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+            Srid = 4326,
+            TopLeftCorner = [-180, 90],
+            Levels =
+            [
+                new TileMatrixLevel { Id = 0, ScaleDenominator = 279541132.014, CellSize = 0.703125, MatrixWidth = 2, MatrixHeight = 1 },
+                new TileMatrixLevel { Id = 1, ScaleDenominator = 139770566.007, CellSize = 0.3515625, MatrixWidth = 4, MatrixHeight = 2 }
+            ]
+        };
+
+        Validate(custom).Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
     public void Validate_NonPositiveMatrixDimensions_Fails()
     {
         var custom = Valid();
