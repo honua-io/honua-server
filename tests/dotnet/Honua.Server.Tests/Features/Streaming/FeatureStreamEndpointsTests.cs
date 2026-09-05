@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Collections.Immutable;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -68,14 +70,30 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public Task WebSocket_SubscriberPolicies_Replay_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(true, true);
 
-    private static async Task VerifySubscriberPoliciesAsync(bool webSocket, bool replay)
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task Sse_SubscriberPolicies_Live_FieldMaskOnly() => VerifySubscriberPoliciesAsync(false, false, false);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task Sse_SubscriberPolicies_Replay_FieldMaskOnly() => VerifySubscriberPoliciesAsync(false, true, false);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task WebSocket_SubscriberPolicies_Live_FieldMaskOnly() => VerifySubscriberPoliciesAsync(true, false, false);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task WebSocket_SubscriberPolicies_Replay_FieldMaskOnly() => VerifySubscriberPoliciesAsync(true, true, false);
+
+    private static async Task VerifySubscriberPoliciesAsync(bool webSocket, bool replay, bool restrictRows = true)
     {
         var rows = Substitute.For<IRlsPolicyStore>();
         rows.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new RlsPolicy[]
+            .Returns(restrictRows ? new RlsPolicy[]
             {
                 new() { Role = "*", Service = "*", Layer = "*", Attribute = "name", ClaimType = ClaimTypes.Role }
-            });
+            } : Array.Empty<RlsPolicy>());
         var fields = Substitute.For<IFieldMaskPolicyStore>();
         fields.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new FieldMaskPolicy[]
@@ -90,6 +108,30 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var writer = fixture.GetService<IFeatureWriter>();
+            foreach (var name in new[] { "admin", "forbidden" })
+            {
+                await writer.CreateAsync(0, Feature.Create(0,
+                    new NetTopologySuite.Geometries.Point(1, 1).AsBinary(),
+                    new Dictionary<string, object?> { ["name"] = name, ["secret"] = "private-rest-value" }.ToImmutableDictionary()), cts.Token);
+            }
+
+            using (var restClient = fixture.CreateAdminClient())
+            using (var restResponse = await restClient.GetAsync(
+                "/rest/services/test/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=false&f=json", cts.Token))
+            {
+                restResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var rest = JsonDocument.Parse(await restResponse.Content.ReadAsStringAsync(cts.Token));
+                var features = rest.RootElement.GetProperty("features").EnumerateArray().ToArray();
+                features.Should().Contain(feature => feature.GetProperty("attributes").GetProperty("name").GetString() == "admin");
+                if (restrictRows)
+                {
+                    features.Should().OnlyContain(feature => feature.GetProperty("attributes").GetProperty("name").GetString() == "admin");
+                }
+
+                rest.RootElement.GetRawText().Should().NotContain("private-rest-value");
+            }
+
             var store = fixture.GetService<IFeatureChangeEventStore>();
             var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
             var anchor = await store.AppendAsync(new FeatureChangeEventRequest
@@ -98,7 +140,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             });
             async Task PublishAsync()
             {
-                foreach (var id in new long[] { 100, 101, 102 })
+                foreach (var id in restrictRows ? new long[] { 100, 101, 102 } : new long[] { 102 })
                 {
                     await publisher.PublishAsync(new FeatureChangeEventRequest
                     {
@@ -106,7 +148,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                         PropertiesJson = id == 102
                             ? """{"name":"admin","secret":"private-value","SECRET":"private-uppercase"}"""
                             : """{"name":"forbidden","secret":"private-row"}""",
-                        ChangedAttributes = ["name", "secret", "SECRET"]
+                        ChangedAttributes = new Dictionary<string, object?> { ["name"] = "changed", ["secret"] = "private-delta", ["SECRET"] = "private-uppercase-delta" }
                     }, cts.Token);
                 }
             }
@@ -158,7 +200,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             delivered.GetProperty("objectId").GetInt64().Should().Be(102, "hidden updates and deletes must not be delivered");
             delivered.GetProperty("attributes").GetProperty("name").GetString().Should().Be("admin");
             delivered.GetProperty("attributes").EnumerateObject().Select(p => p.Name).Should().Equal("name");
-            delivered.GetProperty("changedAttributes").EnumerateArray().Select(p => p.GetString()).Should().Equal("name");
+            delivered.GetProperty("changedAttributes").EnumerateObject().Select(p => p.Name).Should().Equal("name");
             delivered.GetRawText().Should().NotContain("private-");
         }
         finally
