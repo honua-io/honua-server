@@ -228,7 +228,8 @@ run_validator schemathesis \
     bash "$HERE/run-schemathesis.sh" --base-url "$BASE_URL" --max-examples "${SCHEMATHESIS_MAX_EXAMPLES:-15}"
 
 overall_status=0
-while IFS=$'\t' read -r name exit_code; do
+# Executable scripts disallow ANSI-C quoting under the merge-authority guard.
+while IFS="$(printf '\t')" read -r name exit_code; do
     if [[ "$exit_code" != "0" ]]; then
         overall_status=1
     fi
