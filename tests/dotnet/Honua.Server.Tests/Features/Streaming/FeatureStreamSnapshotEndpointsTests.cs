@@ -1387,7 +1387,10 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         try
         {
             var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
-            using var heldSession = sessionManager.CreateSession("WebSocket", "held-session");
+            using var heldClient = fixture.CreateAdminClient();
+            using var heldRequest = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=delta");
+            using var heldSession = await heldClient.SendAsync(heldRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            heldSession.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var request = BuildSseRequest("/api/v1/streaming/features?layers=0&mode=snapshot");
             using var response = await fixture.CreateAdminClient()

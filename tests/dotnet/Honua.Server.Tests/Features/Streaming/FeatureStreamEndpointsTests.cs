@@ -2003,7 +2003,11 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         try
         {
             var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
-            using var heldSession = sessionManager.CreateSession("WebSocket", "held-session");
+            using var heldClient = fixture.CreateAdminClient();
+            using var heldRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features");
+            heldRequest.Headers.Accept.ParseAdd("text/event-stream");
+            using var heldSession = await heldClient.SendAsync(heldRequest, HttpCompletionOption.ResponseHeadersRead);
+            heldSession.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features");
             request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
@@ -2031,7 +2035,11 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         try
         {
             var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
-            using var heldSession = sessionManager.CreateSession("WebSocket", "held-session");
+            using var heldClient = fixture.CreateAdminClient();
+            using var heldRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features");
+            heldRequest.Headers.Accept.ParseAdd("text/event-stream");
+            using var heldSession = await heldClient.SendAsync(heldRequest, HttpCompletionOption.ResponseHeadersRead);
+            heldSession.StatusCode.Should().Be(HttpStatusCode.OK);
 
             var wsClient = fixture.CreateWebSocketClient();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));

@@ -5385,6 +5385,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamAdmissionTests.SaturatedPartition_DoesNotRejectAnotherTenantOrPrincipal",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.ControlledMutation_IsObservedOnTheStreamAfterTheBaseline",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Heartbeat_BroadcastsToConnectedSessions",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Reconnect_WithCursor_ReplaysMissedEvents",
