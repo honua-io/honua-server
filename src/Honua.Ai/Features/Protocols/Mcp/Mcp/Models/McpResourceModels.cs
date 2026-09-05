@@ -15,9 +15,6 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 /// </summary>
 internal sealed class McpProposalResource
 {
-    [JsonPropertyName("sealedPlanHash")]
-    public string? SealedPlanHash { get; set; }
-
     [JsonPropertyName("proposalId")]
     public string ProposalId { get; set; } = string.Empty;
 

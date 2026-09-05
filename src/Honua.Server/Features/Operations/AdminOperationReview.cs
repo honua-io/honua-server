@@ -20,7 +20,8 @@ internal static class AdminOperationReview
     {
         var lines = new List<string>
         {
-            $"Request: {method} /api/v1/admin{path}",
+            $"Mode: {(request.DryRun ? "dry-run (validation only; no mutation)" : "execute")}",
+            $"Target operation: {method} /api/v1/admin{path}",
             $"Tenant: {DisplayText(context.TenantId)}",
         };
         if (request.ConnectionId is not null) lines.Add($"connectionId: {DisplayText(request.ConnectionId)}");

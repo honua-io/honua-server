@@ -362,7 +362,6 @@ internal static class ProposalEndpoints
 
     private static ProposalDetailResponse ToDetail(OperationProposal proposal) => new()
     {
-        SealedPlanHash = proposal.SealedPlanHash,
         ProposalId = proposal.ProposalId,
         Kind = proposal.Kind.ToString(),
         Status = proposal.Status.ToString(),

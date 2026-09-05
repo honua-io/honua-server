@@ -69,9 +69,9 @@ The admin API follows the control-plane versioning and deprecation policy in [Ve
 New Admin operation proposals include the HTTP operation, accepted tenant,
 connection/service target, selected fields, and declared parameter values in the
 reviewable `diff`. For example, a layer-filter proposal identifies the layer and
-its proposed permanent-filter expression. REST proposal details and the MCP
-proposal resource expose `sealedPlanHash`, which identifies the exact persisted
-plan, including its replay payload. Approval replay verifies this seal.
+its proposed permanent-filter expression. The review distinguishes dry-run
+validation from execution. Approval replay verifies the complete plan seal
+internally; neither REST nor MCP exposes that private seal or replay payload.
 
 Credentials, opaque bodies, malformed JSON, and undeclared values are marked as
 redacted. Known secret references remain visible so the reviewer can identify the
