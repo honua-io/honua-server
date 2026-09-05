@@ -76,6 +76,19 @@ public sealed class OperationTenantOwnershipTests
         (((IStatusCodeHttpResult)result).StatusCode ?? 200).Should().Be(status);
     }
 
+    [Theory]
+    [InlineData("tenant-a", "admin", 200)]
+    [InlineData("", "admin", 404)]
+    [InlineData("", "platform_admin", 200)]
+    public async Task ProposalRead_LegacyOwnershipRequiresPlatformAuthority(string owner, string role, int status)
+    {
+        var store = Substitute.For<IOperationProposalStore>();
+        store.GetAsync("proposal-a", Arg.Any<CancellationToken>()).Returns(Proposal(owner));
+        using var services = Services("tenant-a", store);
+        var result = await Invoke(typeof(ProposalEndpoints), "HandleGetProposal", Context(services, role), store);
+        (((IStatusCodeHttpResult)result).StatusCode ?? 200).Should().Be(status);
+    }
+
     [Fact]
     public async Task EnvelopeAcceptance_PreservesTenantAndSeparatesIdempotentRequests()
     {
