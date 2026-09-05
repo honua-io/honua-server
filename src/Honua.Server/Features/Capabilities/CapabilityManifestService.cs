@@ -441,6 +441,8 @@ internal sealed class CapabilityManifestService(
                 maturity: CapabilityMaturity.Preview),
             Capability("serve.wmts", "raster", context,
                 maturity: CapabilityMaturity.Preview),
+            Capability("serve.ogc-api-coverages", "raster", context,
+                maturity: CapabilityMaturity.Preview),
             Capability("alerts.geofence", "alerts", context,
                 maturity: CapabilityMaturity.Preview,
                 entitlementKey: "alerts.enter-exit",

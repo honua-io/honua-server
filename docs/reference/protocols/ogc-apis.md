@@ -84,7 +84,7 @@ Custom tile matrix sets are merged in from the `TileMatrixSets` configuration se
 
 ## OGC API Coverages
 
-OGC API Coverages is **Preview in 2026.1** and requires `Capabilities:Experimental:serve.ogc-api-coverages:Enabled=true`. It has no GA support commitment. Security, tenant isolation, and truthful lifecycle reporting remain required.
+OGC API Coverages is **Preview in 2026.1** and retains its existing default route availability. It has no GA support commitment. Security, tenant isolation, and truthful lifecycle reporting remain required.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
