@@ -46,11 +46,8 @@ public static class CapabilityKeyCatalog
     /// </summary>
     public const string ExperimentalStatus = "experimental";
 
-    /// <summary>Release-posture value marking a capability as Preview.</summary>
-    public const string PreviewStatus = "preview";
-
     /// <summary>
-    /// Release-posture value for a shipped capability that remains outside the GA
+    /// Release-posture value marking a shipped capability as Preview, outside the GA
     /// operational, SLA, and scale commitments.
     /// </summary>
     public const string PreviewStatus = "preview";
