@@ -9,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.FileStorage;
+using Honua.Infrastructure.Security;
 using Honua.Server.Tests.Infrastructure;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
