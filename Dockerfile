@@ -11,7 +11,7 @@
 # scripts/ci/base-image-mirrors.sh reads them and the nightly `mirror-base-images`
 # job mirrors exactly what it prints, so no second digest list needs updating.
 # digest pinned 2026-08-12
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c
 # digest pinned 2026-08-20
 ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:a4556ed033fa96f984bb7a8d348851cb2d36b1281dd2420070045f664fbb5f94
 
@@ -118,6 +118,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 
 # Runtime stage
 FROM ${DOTNET_ASPNET_IMAGE} AS runtime
+
+# The current upstream digest predates available OS fixes. Bump this revision
+# with security refreshes so a cached package layer cannot retain old packages.
+ARG RUNTIME_PACKAGE_REVISION=20260905
 
 # Security: Install runtime dependencies. The glibc runtime is required by
 # ParquetSharp's native library, which backs the GeoParquet writer.
