@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
+using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -194,6 +195,60 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
         inputs["srid"].Should().Be("4326");
         inputs["distance"].Should().Be("25.5");
         new WKBReader().Read(Convert.FromBase64String(inputs["wkb"])).GeometryType.Should().Be("Point");
+        AssertSubmittedPlanIsValid();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_QualifiedWkbAndHttpsReference_ProduceValidCatalogPlans()
+    {
+        var geometries = new[]
+        {
+            $$"""{"value":"{{PointWkbBase64}}","mediaType":"application/wkb"}""",
+            """{"value":{"type":"Point","coordinates":[1,2]},"mediaType":"application/geo+json"}""",
+            """{"href":"https://93.184.216.34/point.geojson","type":"application/geo+json"}"""
+        };
+
+        foreach (var geometry in geometries)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post,
+                "/ogc/processes/processes/geometry.buffer/execution");
+            request.Headers.Add("Prefer", "respond-async");
+            request.Content = new StringContent(
+                $$"""{"inputs":{"wkb":{{geometry}},"srid":{"value":4326},"distance":{"value":25.5}}}""",
+                Encoding.UTF8, "application/json");
+
+            using var response = await _fixture.App.Client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            AssertSubmittedPlanIsValid();
+            new WKBReader().Read(Convert.FromBase64String(_fixture.SubmittedPlan!.Steps.Single().Inputs["wkb"]))
+                .GeometryType.Should().Be("Point");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_UnsafeInputReferences_AreRejectedBeforeSubmission()
+    {
+        foreach (var href in new[] { "https://127.0.0.1/secret", "https://169.254.169.254/", "file:///C:/secret", "data:application/json;base64,!!!" })
+        {
+            var submissions = _fixture.SubmissionCount;
+            using var content = new StringContent(
+                $$"""{"inputs":{"wkb":{"href":"{{href}}"},"srid":4326,"distance":25.5}}""",
+                Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.PostAsync(
+                "/ogc/processes/processes/geometry.buffer/execution", content);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _fixture.SubmissionCount.Should().Be(submissions);
+        }
+    }
+
+    private void AssertSubmittedPlanIsValid()
+    {
+        var catalog = _fixture.App.Services.GetRequiredService<IProcessCatalog>();
+        ProcessPlanValidator.Validate(_fixture.SubmittedPlan!, catalog).Violations.Should().BeEmpty();
     }
 
     [IntegrationTest]
@@ -223,6 +278,7 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
 
         response.StatusCode.Should().Be(HttpStatusCode.Created,
             "the reference documentation's only execute request must run verbatim (#4150)");
+        AssertSubmittedPlanIsValid();
     }
 
     [IntegrationTest]
@@ -415,6 +471,8 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
             services.AddSingleton(jobService);
             services.RemoveAll<IGeoprocessingJobTerminalService>();
             services.AddSingleton(terminalService);
+            services.AddHttpClient(OgcProcessInputReferenceHttpClient.Name)
+                .ConfigurePrimaryHttpMessageHandler(() => new InputReferenceHandler());
         });
 
         Task<ExecutionJobRecord> RecordSubmission(
@@ -429,6 +487,18 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
     }
 
     public Task InitializeAsync() => App.InitializeAsync();
+
+    private sealed class InputReferenceHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.RequestUri!.AbsoluteUri.Should().Be("https://93.184.216.34/point.geojson");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"type":"Point","coordinates":[1,2]}""", Encoding.UTF8, "application/geo+json")
+            });
+        }
+    }
 
     public Task DisposeAsync() => App.DisposeAsync();
 
