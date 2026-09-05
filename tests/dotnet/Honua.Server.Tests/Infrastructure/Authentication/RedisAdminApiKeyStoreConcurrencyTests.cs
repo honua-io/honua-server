@@ -40,7 +40,8 @@ public sealed class RedisAdminApiKeyStoreConcurrencyTests
         await transaction.Received(allowed ? 2 : 1).ExecuteAsync();
         if (allowed)
         {
-            Assert.Equal(original.Id, result!.Record.Id);
+            Assert.NotNull(result);
+            Assert.Equal(original.Id, result.Record.Id);
             Assert.Equal(now, result.Record.LastUsedAt);
             Assert.Equal(current!.Permissions, result.Record.Permissions);
         }
