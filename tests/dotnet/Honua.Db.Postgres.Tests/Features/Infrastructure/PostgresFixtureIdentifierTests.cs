@@ -11,7 +11,7 @@ namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
 [Collection("Database")]
 public sealed class PostgresFixtureIdentifierTests(PostgresFixture fixture)
 {
-    [Theory]
+    [IntegrationTheory]
     [InlineData("PostgresStudioPackageStoreTests_WithAnEvenLongerClassName")]
     [InlineData("É中文_'\";\n")]
     [InlineData("")]
