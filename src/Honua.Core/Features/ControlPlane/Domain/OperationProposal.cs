@@ -170,6 +170,9 @@ public sealed record OperationProposalAutonomyMetadata
 /// </summary>
 public sealed record OperationProposal
 {
+    /// <summary>Trusted tenant owner captured when the operation was accepted.</summary>
+    public string? TenantId { get; init; }
+
     /// <summary>
     /// Stable proposal identifier.
     /// </summary>

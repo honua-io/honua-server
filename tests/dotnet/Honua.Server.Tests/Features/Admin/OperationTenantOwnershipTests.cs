@@ -69,11 +69,28 @@ public sealed class OperationTenantOwnershipTests
     {
         var store = Substitute.For<InstanceStore>();
         store.GetAsync("handle-a", Arg.Any<CancellationToken>()).Returns(JsonSerializer.Deserialize<OperationHandle>("""
-            {"OperationInstanceId":"handle-a","OperationId":"admin.test","TenantId":"tenant-a","CorrelationId":"corr-a"}
+            {"OperationInstanceId":"handle-a","OperationId":"admin.test","TenantId":"tenant-a","CorrelationId":"corr-a","Status":0,"CreatedAt":"2026-09-04T00:00:00Z","UpdatedAt":"2026-09-04T00:00:00Z"}
             """)!);
         using var services = Services(tenant, Substitute.For<IOperationProposalStore>());
         var result = await Invoke(typeof(OperationsEndpoints), "HandleGetHandleStatus", Context(services, role), instanceStore: store);
-        ((IStatusCodeHttpResult)result).StatusCode.Should().Be(status);
+        (((IStatusCodeHttpResult)result).StatusCode ?? 200).Should().Be(status);
+    }
+
+    [Fact]
+    public async Task EnvelopeAcceptance_PreservesTenantAndSeparatesIdempotentRequests()
+    {
+        var store = Substitute.For<InstanceStore>();
+        store.TryCreateAsync(Arg.Any<OperationHandle>(), Arg.Any<CancellationToken>()).Returns(true);
+        var audit = Substitute.For<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>();
+        audit.RecordAsync(Arg.Any<Honua.Core.Features.AuditLog.Abstractions.AuditEvent>(), Arg.Any<CancellationToken>()).Returns("audit-a");
+        var factory = new Honua.Core.Features.Operations.Services.OperationEnvelopeFactory(store, audit, TimeProvider.System);
+        var context = new OperationPolicyContext { TenantId = "tenant-a", IdempotencyKey = "same-key" };
+        var first = await factory.CreateAcceptedAsync("admin.test", context);
+        var second = await factory.CreateAcceptedAsync("admin.test", context with { TenantId = "tenant-b" });
+        var serialized = JsonSerializer.SerializeToElement(first);
+        serialized.TryGetProperty("TenantId", out var tenant).Should().BeTrue();
+        tenant.GetString().Should().Be("tenant-a");
+        first.OperationInstanceId.Should().NotBe(second.OperationInstanceId);
     }
 
     private static OperationProposal Proposal(string tenant) => JsonSerializer.Deserialize<OperationProposal>(

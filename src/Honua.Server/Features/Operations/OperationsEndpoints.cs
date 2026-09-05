@@ -241,7 +241,7 @@ internal static class OperationsEndpoints
         }
 
         var handle = await instanceStore.GetAsync(handleId, cancellationToken).ConfigureAwait(false);
-        if (handle is null)
+        if (handle is null || !Honua.Infrastructure.MultiTenancy.OperationTenantAuthorization.CanAccess(context, handle.TenantId))
         {
             return NotFound(context, $"Operation handle '{handleId}' was not found.");
         }

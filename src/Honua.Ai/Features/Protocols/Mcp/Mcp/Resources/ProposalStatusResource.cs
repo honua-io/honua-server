@@ -69,6 +69,11 @@ internal sealed class ProposalStatusResource : IMcpResource
         var proposal = await store.GetAsync(proposalId, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Proposal '{proposalId}' was not found.");
 
+        if (!Honua.Infrastructure.MultiTenancy.OperationTenantAuthorization.CanAccess(httpContext, proposal.TenantId))
+        {
+            throw new KeyNotFoundException($"Proposal '{proposalId}' was not found.");
+        }
+
         var actor = McpAuthorizationHelper.ResolveActorId(principal);
         var isProposer = !string.IsNullOrWhiteSpace(proposal.RequestedBy)
             && string.Equals(proposal.RequestedBy, actor, StringComparison.Ordinal);

@@ -97,6 +97,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
             var routed = await gateway.RouteAsync(new OperationGatewayRequest
             {
+                TenantId = "public",
                 Kind = kind,
                 RequestedBy = requestedBy,
                 ExecutionPayload = executionPayload,
@@ -114,6 +115,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         var proposal = new OperationProposal
         {
             ProposalId = $"proposal-{Guid.NewGuid():N}",
+            TenantId = "public",
             Kind = kind,
             Status = status,
             RequestedBy = requestedBy,

@@ -257,6 +257,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             envelope = envelope with
             {
                 OperationId = descriptor.OperationId,
+                TenantId = context.TenantId,
                 PolicyDecision = decision.Kind,
                 UpdatedAt = _clock.GetUtcNow(),
             };
@@ -375,6 +376,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         {
             OperationInstanceId = operationInstanceId,
             OperationId = descriptor.OperationId,
+            TenantId = context.TenantId,
             CorrelationId = correlationId,
             AuditId = acceptanceAuditId,
             CreatedAt = createdAt,
@@ -644,6 +646,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             OperationInstanceId = context.OperationInstanceId
                 ?? throw new InvalidOperationException("The canonical operation instance id was not assigned."),
             OperationId = descriptor.OperationId,
+            TenantId = context.TenantId,
             CorrelationId = context.CorrelationId
                 ?? throw new InvalidOperationException("The canonical correlation id was not assigned."),
             Status = status,
