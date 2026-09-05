@@ -478,7 +478,7 @@ def main() -> int:
         for failure in failures:
             print(f"- {failure}")
         return 1
-    print("distributed-availability: PASS â€” exact two replicas and 4/4 ledger-equal cells")
+    print("distributed-availability: PASS — exact two replicas and 4/4 ledger-equal cells")
     return 0
 
 

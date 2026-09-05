@@ -1,4 +1,4 @@
-﻿name: Availability evidence contract
+name: Availability evidence contract
 on:
   pull_request:
     paths:
