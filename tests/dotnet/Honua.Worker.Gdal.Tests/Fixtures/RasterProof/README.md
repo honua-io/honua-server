@@ -21,7 +21,7 @@ the pinned GDAL image with this directory mounted at `/proof` and entrypoint
 | #3926 reproject | Spherical Mercator forward bounds with R=6378137, transformed diagonal cell size, inverse-mapped output cell centers, nearest/bilinear weights and nodata in both bands. |
 | #3927 mosaic | Two 3x2 two-band tiles overlap one column; explicit arrays for first/last source precedence, nodata fallback and a remaining hole. |
 | #3928 resample | Half-sized cells use independently calculated separable linear weights or nearest selection; nodata central samples stay masked and other weights renormalize. |
-| #3929 IDW | Five known point values, reciprocal squared-distance weighting, exact coincident center, and empty radius searches. |
+| #3929 IDW | Five known point values, reciprocal squared-distance weighting, exact coincident center (including valid zero), and NaN nodata for empty radius searches. |
 | #3930 histogram | Counts 3,2,5,1 for values 0,1,2,3; all other buckets zero, including excluded nodata 255; valid count 11. |
 
 Every raster output checks CRS, all six affine ordinates, dimensions, band count,
@@ -29,6 +29,12 @@ pixel type, nodata metadata, and decoded pixel values. Fixtures and assertions
 distinguish well-formed but wrong results such as copied inputs, swapped bands,
 wrong resamplers, reversed mosaic precedence, nodata counted as data, and global
 statistics substituted for zone selection.
+
+IDW's unbounded default uses GDAL's documented reduced-precision SSE/AVX path,
+even with Float64 output. The interior tolerance is eight Float32 rounding units
+at the fixture maximum magnitude (100), about 0.0000954; bounded searches retain
+1e-9 and coincident source values require exact equality. See
+[GDALGridCreate](https://gdal.org/en/stable/api/gdal_alg.html#_CPPv414GDALGridCreate17GDALGridAlgorithmPKv8GUInt32PKdPKdPKdddddd8GUInt328GUInt3212GDALDataTypePv16GDALProgressFuncPv).
 
 ## Qualification boundary
 

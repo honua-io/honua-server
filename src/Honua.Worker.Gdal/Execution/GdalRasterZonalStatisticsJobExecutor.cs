@@ -20,8 +20,8 @@ namespace Honua.Worker.Gdal.Execution;
 /// <c>raster.zonal-statistics</c> process. Consumes a source raster and an
 /// inline GeoJSON <c>FeatureCollection</c> of zone polygons. For each zone the
 /// executor runs <c>gdalwarp -cutline -crop_to_cutline</c> to extract the
-/// intersecting pixels, then <c>gdalinfo -json -stats</c> on the clipped raster
-/// to compute per-band aggregates. Aggregates are projected onto a single JSON
+/// intersecting pixels, then reads the clipped band's valid cells in bounded
+/// windows through the worker's GDAL Python helper. Aggregates are projected onto a single JSON
 /// scalar artifact (one entry per zone, only the requested statistics emitted).
 /// </summary>
 internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
@@ -122,7 +122,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         }
 
         // Bound the cumulative per-zone work BEFORE the loop runs: each zone drives
-        // its own gdalwarp + gdalinfo subprocess pair, so an unbounded zone count
+        // its own clip + statistics subprocess pair, so an unbounded zone count
         // (or a handful of pathologically dense polygons) is a resource DoS even
         // under the per-invocation ToolTimeout (#2766).
         if (!GdalZoneAdmission.TryAdmit(zones, opts, out var zoneError))
@@ -177,7 +177,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             // rooted and silently discard workspace.
             var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
 
-            // Bound the DECLARED pixel footprint before any gdalwarp/gdalinfo runs
+            // Bound the DECLARED pixel footprint before any native tool runs
             // so a compressible GeoTIFF declaring enormous dimensions cannot force a
             // decompression-bomb allocation (#2766).
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
@@ -237,7 +237,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                     cancellationToken).ConfigureAwait(false);
 
                 // ToolTimeout is documented as the per-invocation ceiling.
-                // Each gdalwarp/gdalinfo call gets its own CTS so a multi-zone
+                // Each clip/statistics call gets its own CTS so a multi-zone
                 // job whose cumulative runtime exceeds the per-tool ceiling is
                 // not aborted unless an individual invocation actually hangs.
                 await GdalCommandLog.LogCommandAsync(context, "gdalwarp", clipArgs, workspace, cancellationToken).ConfigureAwait(false);
@@ -366,11 +366,11 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
     }
 
     private static Dictionary<string, double?> ExtractZoneStatistics(
-        string gdalinfoJson,
+        string statisticsJson,
         int band,
         HashSet<string> requested)
     {
-        using var document = JsonDocument.Parse(gdalinfoJson);
+        using var document = JsonDocument.Parse(statisticsJson);
         var root = document.RootElement;
         if (!root.TryGetProperty("bands", out var bandsElement) || bandsElement.ValueKind != JsonValueKind.Array)
         {
@@ -410,8 +410,8 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             stats["variance"] = stdDev.HasValue ? stdDev.Value * stdDev.Value : null;
         }
 
-        // count: prefer explicit validCount when present (newer gdalinfo emits
-        // it); otherwise leave as null and let downstream callers note the gap.
+        // The bounded reader supplies an exact validCount, including zero for
+        // all-nodata zones. Retain null for an incomplete statistics document.
         double? count = null;
         if (target.TryGetProperty("validCount", out var validCountElement) && validCountElement.ValueKind == JsonValueKind.Number
             && validCountElement.TryGetDouble(out var validCount))
@@ -556,7 +556,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         public static partial void ZonesParseFailed(ILogger logger, string operationId, Exception exception);
 
         [LoggerMessage(9297, LogLevel.Warning,
-            "GDAL zonal statistics executor could not parse gdalinfo JSON for job {OperationId}, zone {ZoneIndex}")]
+            "GDAL zonal statistics executor could not parse statistics JSON for job {OperationId}, zone {ZoneIndex}")]
         public static partial void ZoneStatisticsParseFailed(
             ILogger logger,
             string operationId,

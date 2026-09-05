@@ -175,7 +175,13 @@ public sealed class RasterExecutionProofTests : IDisposable
                 .Where(p => !bounded || p.Distance <= 0.01).ToArray();
             expected[i] = weights.Length == 0 ? double.NaN : weights.Sum(p => p.Value / p.Distance) / weights.Sum(p => 1 / p.Distance);
         }
-        AssertBand(output, 0, expected, "Float64", double.NaN, 1e-6);
+        // Native invdist's default SSE/AVX path uses reduced precision even
+        // though the output is Float64 (GDALGridCreate documentation). Budget
+        // eight float rounding units at the fixture's maximum magnitude, not
+        // a tolerance fitted to the observed output. Coincident values stay exact.
+        var tolerance = bounded ? 1e-9 : 8 * Math.ScaleB(1, -23) * 100;
+        AssertBand(output, 0, expected, "Float64", double.NaN, tolerance);
+        output.GetProperty("bands")[0].GetProperty("values")[12].GetDouble().Should().Be(centerValue);
     }
 
     [Fact]
