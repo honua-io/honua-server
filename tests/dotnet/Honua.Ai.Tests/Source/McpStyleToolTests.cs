@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -662,7 +663,7 @@ public sealed class McpStyleToolTests
             Parameters = new Dictionary<string, string?>
             {
                 ["serviceId"] = ServiceId,
-                ["layerId"] = LayerIndex.ToString(),
+                ["layerId"] = LayerIndex.ToString(CultureInfo.InvariantCulture),
                 ["styleId"] = PresetStyleId,
             },
         }, context);
@@ -677,7 +678,7 @@ public sealed class McpStyleToolTests
         }
         var activity = recorded.Should().ContainSingle().Subject;
         activity.GetTagItem("service.id").Should().Be(ServiceId);
-        activity.GetTagItem("layer.id").Should().Be(LayerIndex.ToString());
+        activity.GetTagItem("layer.id").Should().Be(LayerIndex.ToString(CultureInfo.InvariantCulture));
         activity.GetTagItem("style.id").Should().Be(PresetStyleId);
         activity.GetTagItem("storage.layer.id").Should().Be(StorageLayerId);
         activity.GetTagItem("operation.result").Should().Be(outcome);
