@@ -135,6 +135,7 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
                 "dispatcherEnabled",
                 "storagePollFailing",
                 "lastPollAt",
+                "backlogObservedAt",
                 "pendingCount",
                 "deadLetteredCount",
                 "retryingCount",
@@ -142,6 +143,7 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
                 "channels",
             ]);
         dispatch.GetProperty("pendingCount").GetInt64().Should().Be(4);
+        dispatch.GetProperty("backlogObservedAt").GetDateTimeOffset().Should().Be(TestNow);
         dispatch.GetProperty("retryingCount").GetInt64().Should().Be(2);
         dispatch.GetProperty("deadLetteredCount").GetInt64().Should().Be(2);
         dispatch.GetProperty("oldestItemAgeSeconds").GetInt64().Should().Be(600);

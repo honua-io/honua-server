@@ -49,11 +49,11 @@ def main():
         return docker("exec", args.postgres_container, "psql", "-U", "honua", "-d",
                       "honua_evidence", "-v", "ON_ERROR_STOP=1", "-At", "-c", statement)
 
-    def request(path, body=None):
+    def request(path, body=None, method="POST"):
         headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(args.base_url + path, data=data, headers=headers,
-                                     method="POST")
+                                     method=method)
         with urllib.request.urlopen(req, timeout=30) as response:
             assert response.status == 200
             return json.load(response)
@@ -105,6 +105,9 @@ def main():
             "WHERE d.event_id=event.event_id)")
         initial = wait_for("complete")
         fresh(initial)
+        assert sql("SELECT count(*) FROM honua.alert_dispatch WHERE status=4 AND attempts=5") == "1"
+        assert sql("SELECT count(*) FROM honua.alert_dispatch") == "1"
+        receipt["expectedBacklog"] = {"pending": 0, "deadLettered": 1, "attempts": 5}
         finding = next(f for f in initial["findings"] if f["rule"] == "alert-dispatch-backlog")
         assert SOURCE in finding["requiredSourceIds"]
         receipt["initial"] = initial
@@ -117,6 +120,16 @@ def main():
         receipt["unavailable"] = unavailable
         assert unavailable["evidencePosture"]["status"] == "unavailable"
         assert "sourceUnavailable" in source(unavailable)["reasonCodes"]
+        rest_findings = request("/api/v1/admin/observability/findings", method="GET")
+        assert source(rest_findings) == source(unavailable)
+        health = request("/api/v1/admin/observability/ops-health", method="GET")
+        health_source = next(s for s in health["evidencePosture"]["sources"]
+                             if s["sourceId"] == "honua_ops_health.alert_dispatch")
+        assert health_source["completeness"] == "unavailable"
+        assert health_source["observedAt"] == source(unavailable)["observedAt"]
+        assert health_source["lastSuccessfulAt"] == source(unavailable)["lastSuccessfulAt"]
+        receipt["restMcpSourceParity"] = True
+        receipt["unavailableHealthSource"] = health_source
         proposal = request("/api/v1/admin/observability/findings/" + finding["id"] + "/propose")
         receipt["proposal"] = proposal
         assert proposal["status"] == "Blocked", proposal
