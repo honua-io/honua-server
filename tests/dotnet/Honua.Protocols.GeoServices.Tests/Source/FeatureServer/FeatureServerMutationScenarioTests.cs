@@ -213,14 +213,21 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
             Name = "id", Type = MetadataV2FieldType.Integer
         });
         const string path = "/rest/services/test/FeatureServer/0/applyEdits";
-        using var add = await PostJsonAsync(path, """
-            {"adds":[
-              {"attributes":{"gid":701,"id":0,"name":"first"},"geometry":{"x":-122.25,"y":37.75}},
-              {"attributes":{"gid":702,"id":0,"name":"second"},"geometry":{"x":-121.25,"y":38.75}}
-            ]}
-            """);
-        var added = await DeserializeEditsAsync(add);
-        added.AddResults.Should().HaveCount(2).And.OnlyContain(result => result.Success);
+        // Represent a published source whose physical primary keys are 701/702 and
+        // whose unrelated id attribute is duplicated. Canonical storage names the
+        // physical key objectid; the resource publishes that key as gid. applyEdits
+        // inserts allocate keys and cannot create this pre-existing-key fixture.
+        await using (var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync())
+        await using (var seed = connection.CreateCommand())
+        {
+            var schema = new Npgsql.NpgsqlCommandBuilder().QuoteIdentifier(_fixture.CurrentSchema!);
+            seed.CommandText = $$"""
+                INSERT INTO {{schema}}.features (layer_id, objectid, geometry, attributes)
+                VALUES (0,701,ST_SetSRID(ST_Point(-122.25,37.75),4326),'{"gid":701,"id":0,"name":"first"}'::jsonb),
+                       (0,702,ST_SetSRID(ST_Point(-121.25,38.75),4326),'{"gid":702,"id":0,"name":"second"}'::jsonb)
+                """;
+            await seed.ExecuteNonQueryAsync();
+        }
 
         using var metadataResponse = await _fixture.Client.GetAsync("/rest/services/test/FeatureServer/0?f=json");
         metadataResponse.Be200Ok();
@@ -230,10 +237,17 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         using var update = await PostJsonAsync(path,
             """{"updates":[{"attributes":{"gid":701,"name":"changed"}}]}""");
         var updated = await DeserializeEditsAsync(update);
-        updated.UpdateResults.Should().ContainSingle(result => result.Success && result.ObjectId == 701);
+        updated.UpdateResults.Should().ContainSingle(result => result.Success && result.ObjectId == 701,
+            await update.Content.ReadAsStringAsync());
         await AssertFeatureNameAsync(701, "changed");
         await AssertFeatureNameAsync(702, "second");
         (await ReadFeatureCountAsync(0)).Should().Be(0);
+
+        using var remove = await PostJsonAsync(path, """{"deletes":[701]}""");
+        var removed = await DeserializeEditsAsync(remove);
+        removed.DeleteResults.Should().ContainSingle(result => result.Success && result.ObjectId == 701);
+        (await ReadFeatureCountAsync(701)).Should().Be(0);
+        await AssertFeatureNameAsync(702, "second");
     }
 
     private async Task<HttpResponseMessage> PostJsonAsync(string path, string json)

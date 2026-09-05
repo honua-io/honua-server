@@ -278,7 +278,13 @@ internal sealed partial class FeatureDataAccess
             // Committed is intentional for that case: if the reservation waits for an inserting
             // transaction, the following SELECT must observe the inserter's commit. Ordinary feature
             // batches retain RepeatableRead to prevent phantom reads during batch operations.
-            var isolationLevel = editBatch.Preconditions.Any(p => p.ExpectedRowAbsent)
+            // One unconditional UPDATE already locks its target row atomically and has no
+            // cross-operation snapshot to preserve. ReadCommitted lets concurrent ordinary
+            // applyEdits calls wait for that row instead of failing with SQLSTATE 40001 (#4113).
+            var singleUnconditionalUpdate = editBatch.Updates.Length == 1 &&
+                editBatch.Creates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty &&
+                editBatch.Operations.IsDefaultOrEmpty && editBatch.Preconditions.IsDefaultOrEmpty;
+            var isolationLevel = singleUnconditionalUpdate || editBatch.Preconditions.Any(p => p.ExpectedRowAbsent)
                 ? IsolationLevel.ReadCommitted
                 : IsolationLevel.RepeatableRead;
             var (txConnection, dbTransaction) = await _connectionProvider
@@ -1542,7 +1548,6 @@ internal sealed partial class FeatureDataAccess
             // GetSafeEditOperationError and let the rest of the batch continue.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                Log.ApplyEditsFailed(_logger, layerId, 1, ex);
                 results.Add(CreateFailedOperationResult(ex, "Update", feature.Id));
             }
         }
