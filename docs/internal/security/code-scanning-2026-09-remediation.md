@@ -63,3 +63,35 @@ but its startup check rejected singleton `ZarrTileService` capturing scoped
 Its actual registration regression fails before the change and passes after;
 the startup smoke test remains enabled. Full local native image builds are
 still in progress, so their final scan/startup results are not yet claimed.
+
+## Findings newly surfaced by the fresh trunk analysis
+
+The successful trunk CodeQL run 33942910415 closed original SQL alert #3376
+and surfaced 22 additional alerts, outside the initial 73-alert inventory.
+The live count immediately after that analysis was CodeQL 24, Trivy 66,
+Hadolint 4. Original-packet remaining counts were CodeQL 2, Trivy 66,
+Hadolint 4. New findings must not be confused with regressions introduced by
+this image refresh.
+
+The following evidence review uses trunk commit
+`91db1196c9d43d1fb0a42904937c0880b5d809ce`, which the analysis actually scanned.
+No query configuration or suppression is changed by this review.
+
+| Alerts | Code path and disposition evidence |
+| --- | --- |
+| #3470–#3487 (`cs/sql-injection`) | Every tainted table expression in `PostgresObservationStore.cs:26-30` passes the schema to `SchemaSearchPath.QualifyTable`. That helper calls `ValidateAndQuote`, which rejects anything outside `\A[A-Za-z_][A-Za-z0-9_]{0,62}\z` and uses `NpgsqlCommandBuilder.QuoteIdentifier`. The table suffixes are the five literal `sta_*` names. Request values in the query bodies use Npgsql parameters; the tracked query-string flow is the schema identifier, which cannot introduce SQL syntax after that guard and quoting. The original packet's actual-helper/PostGIS regression suite has 13 passing tests, including injection-shaped, newline, and overlength values. This is evidence for a sanitizer-model false positive, not permission to interpolate other input. |
+| #3488 (`cs/insecure-sql-connection`) | `SqlServerConnectionSecurity.RequireEncryption` constructs a `SqlConnectionStringBuilder` at line 14, then explicitly sets `Encrypt = true` in the object initializer before returning `builder.ConnectionString`. Constructing the builder opens no connection. Both `SqlServerConnectionFactory` and `SqlServerConnectionDriver` use the secured return value to open connections. The exact production helper and existing three encryption tests pass with the repository-pinned SqlClient 6.1.2: missing/false encryption becomes Mandatory, and certificate validation remains enabled when explicitly configured. |
+| #3465–#3467 (`cs/user-controlled-bypass`) | The flagged `form == null` conditions in attachment add/update/delete only reject unsupported content types. Each handler first awaits `TryValidateLayerAccessAsync` with Write scope and a fixed Insert/Update/Delete operation and returns on denial. That helper always checks resource access and operation-specific data-editor authorization before returning a resource. `TryReadAttachmentFormAsync` writes HTTP 415 and returns null for unsupported content, so either branch preserves authorization. These conditions cannot bypass the earlier mandatory authorization. |
+
+Source paths for review:
+
+- `src/Honua.Db/Postgres/Features/SensorThings/PostgresObservationStore.cs`
+- `src/Honua.Db/Postgres.Shared/Features/Infrastructure/SchemaSearchPath.cs`
+- `src/Honua.Db/SqlServer/Features/Security/SqlServerConnectionSecurity.cs`
+- `src/Honua.Db/SqlServer/Features/FeatureStore/Services/SqlServerConnectionFactory.cs`
+- `src/Honua.Db/SqlServer/Features/Security/SqlServerConnectionDriver.cs`
+- `src/Honua.Protocols.GeoServices/FeatureServer/AttachmentEndpoints.cs`
+
+At the time this evidence was written, none of these new alerts had been
+dismissed. Any subsequent false-positive disposition must include its specific
+code-path evidence in the GitHub dismissal comment.
