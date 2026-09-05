@@ -334,9 +334,14 @@ public class TenantSchemaRoutingMiddlewareTests
         builder.Services.AddHonuaTenantSchemaRouting(config);
         builder.Services.AddRateLimiting(config);
 
-        // Mirror the production registration of the request-scoped schema context.
-        builder.Services.AddScoped<SchemaContext>();
-        builder.Services.AddScoped<ISchemaContext>(sp => sp.GetRequiredService<SchemaContext>());
+        if (!routingEnabled)
+        {
+            // Disabled-routing controls use a test schema context to observe that routing is a no-op.
+            builder.Services.AddScoped<SchemaContext>();
+            builder.Services.AddScoped<ISchemaContext>(sp => sp.GetRequiredService<SchemaContext>());
+        }
+        // Enabled-routing tests rely entirely on the production service registration,
+        // with no HONUA_TEST_SCHEMA_HEADERS or test-only schema context registration.
 
         var app = builder.Build();
 
