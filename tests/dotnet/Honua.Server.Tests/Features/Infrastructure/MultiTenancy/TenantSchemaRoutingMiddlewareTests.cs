@@ -164,6 +164,86 @@ public class TenantSchemaRoutingMiddlewareTests
         Assert.Equal("acme=4", body);
     }
 
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("acme-east")]
+    [InlineData("acme.east")]
+    [InlineData("acme:east")]
+    [InlineData("ACME")]
+    [InlineData("PUBLIC")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
+    public async Task RoutingEnabled_AmbiguousOrTruncatedTenant_FailsClosed(string tenantId)
+    {
+        var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["default"] = AuthenticatedPrincipal(("tid", tenantId)),
+            },
+            defaultPrincipalKey: "default",
+            routingEnabled: true);
+
+        var response = await client.GetAsync("/schema");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.DoesNotContain("tenant_", await response.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("acme-east", "acme_east")]
+    [InlineData("acme.east", "acme:east")]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
+    public async Task EncodedRouting_DistinctTenantPrincipals_ReceiveDistinctSchemas(string first, string second)
+    {
+        var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["first"] = AuthenticatedPrincipal(("tid", first)),
+                ["second"] = AuthenticatedPrincipal(("tid", second)),
+            },
+            routingEnabled: true,
+            routingSettings: new() { ["UseEncodedSchemaNames"] = "true" });
+
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/schema");
+        firstRequest.Headers.Add("X-Test-Principal", "first");
+        using var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/schema");
+        secondRequest.Headers.Add("X-Test-Principal", "second");
+        var responses = await Task.WhenAll(client.SendAsync(firstRequest), client.SendAsync(secondRequest));
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
+        Assert.NotEqual(await responses[0].Content.ReadAsStringAsync(), await responses[1].Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("acme-east", HttpStatusCode.OK, "tenant_acme_east")]
+    [InlineData("acme_east", HttpStatusCode.ServiceUnavailable, null)]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
+    public async Task ExistingSchemaMapping_PreservesOwnerAndBlocksAlias(
+        string tenantId, HttpStatusCode expectedStatus, string? expectedSchema)
+    {
+        var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["default"] = AuthenticatedPrincipal(("tid", tenantId)),
+            },
+            defaultPrincipalKey: "default",
+            routingEnabled: true,
+            routingSettings: new() { ["SchemaMap:acme-east"] = "tenant_acme_east" });
+
+        var response = await client.GetAsync("/schema");
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        if (expectedSchema is not null)
+        {
+            Assert.Equal(expectedSchema, await response.Content.ReadAsStringAsync());
+        }
+    }
+
     private static ClaimsPrincipal AuthenticatedPrincipal((string Type, string Value) claim)
     {
         var claims = new List<Claim>
@@ -179,7 +259,8 @@ public class TenantSchemaRoutingMiddlewareTests
         Dictionary<string, ClaimsPrincipal?> principals,
         bool routingEnabled,
         string? defaultPrincipalKey = null,
-        string? pinnedSchema = null)
+        string? pinnedSchema = null,
+        Dictionary<string, string?>? routingSettings = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -188,6 +269,14 @@ public class TenantSchemaRoutingMiddlewareTests
         {
             ["MultiTenancy:SchemaRouting:Enabled"] = routingEnabled ? "true" : "false",
         };
+        if (routingSettings is not null)
+        {
+            foreach (var setting in routingSettings)
+            {
+                settings[$"MultiTenancy:SchemaRouting:{setting.Key}"] = setting.Value;
+            }
+        }
+
         var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
 
         builder.Services.AddHonuaTenantContext(config, _ => { });
