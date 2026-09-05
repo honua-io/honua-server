@@ -110,7 +110,7 @@ public sealed class OgcProcessesReferenceAuthorizationTests
     {
         using var fixture = new AuthorizationFixture(allowLayers: false);
         var action = () => fixture.NormalizeAsync("enrichment.enrich",
-            """{"datasetId":"boundaries","input":{"href":"https://93.184.216.34/payload","type":"application/geo+json"}}""");
+            """{"datasetId":"boundaries","input":{"href":"https://93.184.216.34/features","type":"application/geo+json"}}""");
         await action.Should().ThrowAsync<GeoprocessingAuthorizationException>();
         fixture.Requests.Should().BeEmpty();
     }
@@ -121,9 +121,9 @@ public sealed class OgcProcessesReferenceAuthorizationTests
         using var fixture = new AuthorizationFixture();
         fixture.OnPayload = () => fixture.DatasetLayerId = 9;
         var action = () => fixture.NormalizeAsync("enrichment.enrich",
-            """{"datasetId":"boundaries","input":{"href":"https://93.184.216.34/payload","type":"application/geo+json"}}""");
+            """{"datasetId":"boundaries","input":{"href":"https://93.184.216.34/features","type":"application/geo+json"}}""");
         await action.Should().ThrowAsync<GeoprocessingAuthorizationException>();
-        fixture.Requests.Should().Equal("/payload");
+        fixture.Requests.Should().Equal("/features");
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public sealed class OgcProcessesReferenceAuthorizationTests
     {
         using var fixture = new AuthorizationFixture();
         var result = await fixture.NormalizeAsync("enrichment.enrich",
-            """{"datasetId":"boundaries","input":{"href":"https://93.184.216.34/payload","type":"application/geo+json"}}""");
+            """{"datasetId":"boundaries","input":{"href":"https://93.184.216.34/features","type":"application/geo+json"}}""");
         var authorized = result.AuthorizedPlan!;
         authorized.Steps.Single().Inputs[EnrichmentJobExecutor.AuthorizedDatasetLayerInput].Should().Be("8");
         var canonical = authorized with
@@ -190,7 +190,10 @@ public sealed class OgcProcessesReferenceAuthorizationTests
                 Publications = new[] { 7, 8, 9 }.Select(id => new MetadataV2Publication
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = $"publication-{id}", Name = $"layer-{id}" },
-                    ServiceId = "service", ResourceId = $"resource-{id}", LayerIndex = id, IsPrimary = true,
+                    ServiceId = "service",
+                    ResourceId = $"resource-{id}",
+                    LayerIndex = id,
+                    IsPrimary = true,
                     Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
                 }).ToArray()
             };
@@ -264,7 +267,9 @@ public sealed class OgcProcessesReferenceAuthorizationTests
 
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = new StringContent(identifier ? fixture.Identifier : "25.5", Encoding.UTF8, "text/plain")
+                    Content = new StringContent(identifier ? fixture.Identifier
+                        : request.RequestUri.AbsolutePath == "/features" ? """{"type":"FeatureCollection","features":[]}"""
+                        : "25.5", Encoding.UTF8, "text/plain")
                 });
             }
         }

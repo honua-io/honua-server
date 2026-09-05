@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
+using Honua.Geoprocessing.Execution;
 using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -290,6 +291,30 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
         finally
         {
             _fixture.DenyReferenceAuthorization = false;
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_ReferenceAuthorizationBindings_ReachCanonicalSubmission()
+    {
+        _fixture.ReferenceAuthorizationBinding = "8";
+        try
+        {
+            using var content = new StringContent(
+                """{"inputs":{"datasetId":"boundaries","input":{"href":"https://93.184.216.34/point.geojson"}}}""",
+                Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.PostAsync(
+                "/ogc/processes/processes/enrichment.enrich/execution", content);
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            var inputs = _fixture.SubmittedPlan!.Steps.Single().Inputs;
+            inputs[EnrichmentJobExecutor.AuthorizedDatasetLayerInput].Should().Be("8");
+            inputs["input"].Should().StartWith("data:application/geo+json;base64,");
+        }
+        finally
+        {
+            _fixture.ReferenceAuthorizationBinding = null;
         }
     }
 
@@ -613,6 +638,8 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
 
     public bool DenyReferenceAuthorization { get; set; }
 
+    public string? ReferenceAuthorizationBinding { get; set; }
+
     public AnalysisPlan? ReferenceAuthorizationPlan { get; private set; }
 
     public OgcProcessesSynchronousExecutionFixture()
@@ -635,6 +662,16 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
                 {
                     throw new GeoprocessingAuthorizationException(false, "Reference input authorization denied.",
                         OperatorResourceType.Process, OperatorOperation.ExecuteMutatingProcess);
+                }
+
+                if (ReferenceAuthorizationBinding != null)
+                {
+                    var step = ReferenceAuthorizationPlan.Steps.Single();
+                    var inputs = new Dictionary<string, string>(step.Inputs, StringComparer.Ordinal)
+                    {
+                        [EnrichmentJobExecutor.AuthorizedDatasetLayerInput] = ReferenceAuthorizationBinding
+                    };
+                    return ReferenceAuthorizationPlan with { Steps = [step with { Inputs = inputs }] };
                 }
 
                 return ReferenceAuthorizationPlan;
