@@ -657,6 +657,61 @@ public sealed class RedisCacheServiceTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task IsCacheHealthyAsync_ConcurrentReplicaWrite_PreservesPatternInvalidation()
+    {
+        var entries = new ConcurrentDictionary<string, byte[]>();
+        var indexReadStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseIndexRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var indexReads = 0;
+        var distributedCache = Substitute.For<IDistributedCache>();
+        distributedCache.SetAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<DistributedCacheEntryOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                entries[call.ArgAt<string>(0)] = call.ArgAt<byte[]>(1);
+                return Task.CompletedTask;
+            });
+        distributedCache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var key = call.ArgAt<string>(0);
+                entries.TryGetValue(key, out var snapshot);
+                if (key.EndsWith("__cache_key_index__", StringComparison.Ordinal)
+                    && Interlocked.Increment(ref indexReads) == 1)
+                {
+                    indexReadStarted.SetResult();
+                    await releaseIndexRead.Task;
+                }
+                return snapshot;
+            });
+        distributedCache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                entries.TryRemove(call.ArgAt<string>(0), out _);
+                return Task.CompletedTask;
+            });
+        using var first = new RedisCacheService(distributedCache, Options.Create(_options),
+            NullLogger<RedisCacheService>.Instance, _performanceMonitor);
+        using var second = new RedisCacheService(distributedCache, Options.Create(_options),
+            NullLogger<RedisCacheService>.Instance, _performanceMonitor);
+
+        var probe = first.IsCacheHealthyAsync();
+        try
+        {
+            await indexReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await second.SetAsync("layer:concurrent", new MetadataV2Field { Name = "concurrent", Type = MetadataV2FieldType.String });
+        }
+        finally
+        {
+            releaseIndexRead.TrySetResult();
+        }
+        Assert.True(await probe);
+        Assert.NotNull(await second.GetAsync<MetadataV2Field>("layer:concurrent"));
+        await second.RemoveByPatternAsync("layer:*");
+        Assert.Null(await second.GetAsync<MetadataV2Field>("layer:concurrent"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task TryRestoreRedisAsync_WhenRedisRecovers_ClearsFallbackState()
     {
         var distributedCache = Substitute.For<IDistributedCache>();
