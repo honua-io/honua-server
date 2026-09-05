@@ -36,15 +36,17 @@ and existing `.trivyignore`; neither the filters nor ignore files are changed.
 | Target | Result |
 | --- | --- |
 | Repository filesystem, vulnerability scanner, all severities | 0 vulnerabilities |
-| Fully rebuilt JIT application image, nightly High/Critical configuration | 0 findings |
+| Fully rebuilt JIT application image, nightly High/Critical JSON and SARIF configuration | 0 findings |
+| Rebuilt Alpine arm64 runtime package layer, all severities | 0 findings |
 | Exact JIT runtime package layer, all severities without ignores | 29 Medium, 5 Low; no vendor fixed versions |
 | Rebuilt pystac image, pytest collection | 64 tests collected |
 
 The remaining unpatched OS inventory includes glibc, libexpat, ICU, systemd,
 shadow/login, tar, and wget advisories. A clean High/Critical gate does not mean
 this full inventory is empty. None of these findings is dismissed or newly
-suppressed by this remediation. The all-severity zero-alert objective cannot
-be claimed from the current upstream package inventory.
+suppressed by this remediation. The exact nightly SARIF pass is clean; this is separate from the broader
+all-severity package inventory. Clearing the default-branch API still requires
+merged fixes and successful scans of the same analysis categories.
 
 Full AOT and other platform-image validation is pending; the PR must record
 its actual results before claiming those images are verified.
