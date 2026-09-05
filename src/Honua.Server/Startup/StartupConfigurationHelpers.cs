@@ -91,8 +91,8 @@ internal static class StartupConfigurationHelpers
             "Security:ConnectionEncryption:MasterKey"
         };
 
-        // AddSecurityConfiguration can introduce either key after the initial environment-reference
-        // pass near the start of Program.cs, so normalize env: references again at the final source order.
+        // Normalize references for direct callers as well. Program.cs finalizes source precedence
+        // before its initial environment-reference pass, so security-file overrides are already visible.
         foreach (var key in keys)
         {
             ResolveEnvironmentSecretReference(configuration, key);
