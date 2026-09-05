@@ -56,7 +56,10 @@ public sealed class ProgramMiddlewareOrderTests
             "invalid credentials must be rejected before tenant resolution");
         tenantIndex.Should().BeLessThan(schemaIndex);
         schemaIndex.Should().BeLessThan(statusIndex);
-        statusIndex.Should().BeLessThan(normalRateLimitIndex);
+        tenantIndex.Should().BeLessThan(normalRateLimitIndex,
+            "rate limiting needs the resolved tenant identity");
+        normalRateLimitIndex.Should().BeLessThan(schemaIndex,
+            "failed schema routes must consume the tenant request budget before returning 503");
     }
 
     private static string ResolveProgramPath()

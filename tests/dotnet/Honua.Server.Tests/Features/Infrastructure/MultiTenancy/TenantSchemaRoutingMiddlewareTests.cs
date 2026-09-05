@@ -344,6 +344,8 @@ public class TenantSchemaRoutingMiddlewareTests
         // (or the default key) and attaches it to HttpContext.User before tenant resolution.
         app.Use(async (ctx, next) =>
         {
+            // TestServer has no socket peer; provide the connection address a real host supplies.
+            ctx.Connection.RemoteIpAddress = IPAddress.Loopback;
             string? key = ctx.Request.Headers.TryGetValue("X-Test-Principal", out var hv) && hv.Count > 0
                 ? hv[0]
                 : defaultPrincipalKey;

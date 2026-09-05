@@ -1396,8 +1396,7 @@ app.UseHonuaTenantContext();
 
 // App-level rate limiting (issue #355). Runs after authentication and tenant resolution
 // so schema-routing failures also consume the tenant + authenticated user/API-key bucket
-// (falling back to
-// source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
+// (falling back to source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
 // posture is still edge enforcement (ADR-0004).
 app.UseRateLimiting();
 
@@ -1410,8 +1409,6 @@ app.UseHonuaTenantSchemaRouting();
 // resolution. A no-op for tenants not present in the catalog, so the default pipeline is
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
-
-
 
 // Reject invalid Esri portal tokens only after the shared rate limiter has metered the
 // request, so repeated bad credentials cannot bypass the configured source-IP bucket.
