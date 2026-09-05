@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -1234,6 +1235,83 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_RasterProviderUnavailable_ReturnsServiceUnavailable()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TestDbException("Raster export provider failed"));
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status503ServiceUnavailable);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_TransientRasterSelectionFailure_ReturnsServiceUnavailable()
+    {
+        _rasterStore.QueryRastersAsync(1, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TestDbException("Private selection error"));
+        var context = CreateImageServerContext();
+
+        var result = await _handler.ExportImageAsync(context, 1, CreateRequest(responseFormat: "image"));
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status503ServiceUnavailable);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_TransientExtentLookupFailure_ReturnsServiceUnavailable()
+    {
+        _rasterStore.QueryRastersAsync(1, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
+            .Returns([CreateTestRasterInfo() with { Extent = null }]);
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterResult());
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TestDbException("Private extent error"));
+        SetupTemporaryStorage();
+        var context = CreateImageServerContext();
+
+        var result = await _handler.ExportImageAsync(context, 1, CreateRequest(responseFormat: "json"));
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status503ServiceUnavailable);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_NonTransientDatabaseError_RemainsServerError()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TestDbException("Private SQL details", transient: false));
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ExportImageAsync(context, 1, CreateRequest(responseFormat: "image"));
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_UnavailableExportFormat_ReturnsNotImplementedWithoutProviderDetails()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new NotSupportedException("Private provider configuration details"));
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ExportImageAsync(context, 1, CreateRequest(responseFormat: "image"));
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
+        context.Response.Body.Position = 0;
+        using var reader = new StreamReader(context.Response.Body);
+        (await reader.ReadToEndAsync()).Should().NotContain("Private provider configuration details");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_TemporaryStorageLimitExceeded_ReturnsServiceUnavailable()
     {
         SetupLayerAndRasters();
@@ -1302,15 +1380,17 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_WithValidNoData_AllowsExport()
+    public async Task ExportImageAsync_WithValidNoData_ReturnsNotImplementedInsteadOfIgnoringIt()
     {
-        SetupSuccessfulExport();
+        SetupLayerAndRasters();
 
         var context = CreateImageServerContext();
         var request = CreateRequest(noData: "0,0,0", noDataInterpretation: "esriNoDataMatchAll");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -1581,4 +1661,9 @@ public class ImageServerExportHandlerTests
         Height = 256,
         Srid = 4326
     };
+
+    private sealed class TestDbException(string message, bool transient = true) : DbException(message)
+    {
+        public override bool IsTransient => transient;
+    }
 }

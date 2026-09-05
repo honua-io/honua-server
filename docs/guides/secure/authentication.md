@@ -23,12 +23,16 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 ```json
 {
   "name": "ci-publisher",
-  "permissions": [],
+  "permissions": ["admin:write"],
   "expiresAt": null
 }
 ```
 
 The response's `data.key` is shown once — store it immediately. Manage the lifecycle with `POST /api/v1/admin/api-keys/{id}/rotate` (returns a new secret), `POST .../{id}/revoke`, and `GET .../{id}/effective-permissions`.
+
+An empty permissions array is normalized to `admin:*` for legacy compatibility and
+therefore grants full admin access; do not use it for CI. Grant only the operations
+the job needs, and prefer a narrower service or layer grant when available.
 
 For the focused Console read/approve client, mint a named key with:
 
@@ -54,10 +58,28 @@ token are authorized by operator RBAC instead of this API-key recipe.
 Approval and execution remain separate authorities. The Console sends the
 read/approve key only to the proposal decision endpoint. After approval, Honua
 mints a short-lived, single-use credential bound to the exact approved Admin API
-method and path, uses it for the replay, and revokes it immediately. The
+method, path, and sealed tenant, uses it for the replay, and revokes it immediately.
+The tenant binding is restored from the persisted credential during authentication
+and survives OIDC claim sanitization, including repeated transformation. An
+issuer-supplied copy of the internal tenant claim is removed; a caller-supplied
+tenant header cannot change the binding. Credentials without an explicit
+tenant binding are rejected. An explicit empty binding preserves an invocation
+accepted with tenant resolution disabled. The
 approver's key and identity headers are never forwarded as execution authority;
 `admin:operation:*` grants are server-reserved and cannot be requested through
-the API-key creation endpoint.
+the API-key creation endpoint. Internal replay credentials are excluded from
+public key listings and permission inspection, and cannot be rotated into a
+new plaintext credential.
+
+Proposal lists, proposal reads and decisions, and operation-handle reads are
+restricted to the tenant recorded when the operation was accepted. A record
+owned by another tenant is omitted from lists and returns `404` on direct
+access. Cross-tenant access requires a configured `MultiTenancy:MultiTenantAdminRoles`
+role (by default `multi_tenant_admin` or `platform_admin`); the ordinary `admin`
+role does not grant it. MCP proposal resources use the same ownership boundary.
+Legacy records without a tenant owner are hidden from tenant-scoped callers;
+a platform operator can inspect those records and re-propose pending work in
+its intended tenant. Idempotency keys are scoped to the accepted tenant.
 
 ### 3. Enable OIDC for browser and admin sign-in
 

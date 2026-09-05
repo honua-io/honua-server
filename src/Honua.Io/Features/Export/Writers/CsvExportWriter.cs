@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Services;
 using Honua.Infrastructure.Services;
 using NetTopologySuite.IO;
 
@@ -20,7 +21,9 @@ internal static class CsvExportWriter
     [ThreadStatic]
     private static WKTWriter? _wktWriter;
 
-    private static WKTWriter WktWriter => _wktWriter ??= new WKTWriter();
+    // WKT can carry both elevation and measure ordinates. The default writer is
+    // XY-only and silently drops them after the WKB reader has preserved them.
+    private static WKTWriter WktWriter => _wktWriter ??= new WKTWriter(4);
 
     public static async Task<int> WriteAsync(
         Stream output,
@@ -93,14 +96,5 @@ internal static class CsvExportWriter
         };
     }
 
-    private static string EscapeCsvField(string value)
-    {
-        if (value.Length == 0)
-            return value;
-
-        if (value.AsSpan().IndexOfAny(',', '"', '\n') >= 0 || value.Contains('\r'))
-            return string.Concat("\"", value.Replace("\"", "\"\""), "\"");
-
-        return value;
-    }
+    private static string EscapeCsvField(string value) => CsvFieldFormatter.Escape(value);
 }

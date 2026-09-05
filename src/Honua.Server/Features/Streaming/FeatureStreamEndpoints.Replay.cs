@@ -80,6 +80,11 @@ internal static partial class FeatureStreamEndpoints
                     continue;
                 }
 
+                if (subscriptionFilter is StreamSubscriptionFilter securedFilter)
+                {
+                    envelope = securedFilter.Project(envelope);
+                }
+
                 // When a session manager and generation are supplied, claim the
                 // (event, subscription) slot atomically. The claim also verifies
                 // the subscription's generation, fencing stale replays after an
@@ -176,6 +181,11 @@ internal static partial class FeatureStreamEndpoints
                     && !subscriptionFilter.Matches(envelope, evt.GeometryEnvelope, evt.PropertiesJson))
                 {
                     continue;
+                }
+
+                if (subscriptionFilter is StreamSubscriptionFilter securedFilter)
+                {
+                    envelope = securedFilter.Project(envelope);
                 }
 
                 var stampedEnvelope = StampSequence(

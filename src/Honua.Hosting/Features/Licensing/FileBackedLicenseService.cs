@@ -14,7 +14,8 @@ internal sealed class FileBackedLicenseService :
     IHostedService,
     ILicenseEntitlementService,
     ILicenseStatusProvider,
-    ILicenseManager
+    ILicenseManager,
+    IDisposable
 {
     private const int MaxLicenseFileBytes = 64 * 1024;
     private const int ExpectedEnvelopeVersion = 1;
@@ -27,6 +28,7 @@ internal sealed class FileBackedLicenseService :
     private readonly IEd25519Verifier _verifier;
     private readonly ILogger<FileBackedLicenseService> _logger;
     private readonly IReadOnlyList<ILicenseContentSecretResolver> _secretResolvers;
+    private readonly SemaphoreSlim _uploadLock = new(1, 1);
     private LicenseSnapshot _snapshot;
     private long _snapshotVersion;
 
@@ -56,6 +58,8 @@ internal sealed class FileBackedLicenseService :
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public void Dispose() => _uploadLock.Dispose();
 
     public LicenseSnapshot GetSnapshot()
     {
@@ -144,7 +148,7 @@ internal sealed class FileBackedLicenseService :
             return DevLicenseSnapshotFactory.Create(grantEdition);
         }
 
-        var service = new FileBackedLicenseService(
+        using var service = new FileBackedLicenseService(
             Options.Create(options),
             new BouncyCastleEd25519Verifier(),
             loggerFactory.CreateLogger<FileBackedLicenseService>(),
@@ -257,8 +261,16 @@ internal sealed class FileBackedLicenseService :
     {
         var options = _options.Value;
 
-        // A secret-store reference takes highest precedence: the ~2KB signed envelope is
-        // fetched from a secret manager (e.g. AWS Secrets Manager) at startup so it does not
+        // A successful admin upload is an explicit persisted override. Check it before
+        // contacting a secret store, including when subsequent uploads have been disabled.
+        if (!string.IsNullOrWhiteSpace(options.LicensePath)
+            && await TryLoadUploadedOverrideAsync(options, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        // Without an uploaded override, a secret-store reference takes highest precedence:
+        // the ~2KB signed envelope is fetched from a secret manager (e.g. AWS Secrets Manager) at startup so it does not
         // have to fit a serverless environment-variable size limit or be baked into the image.
         // Resolution is fail-safe — a missing resolver / unreachable secret degrades to Community
         // rather than crashing the host.
@@ -294,17 +306,7 @@ internal sealed class FileBackedLicenseService :
 
         try
         {
-            await using var licenseStream = new FileStream(
-                options.LicensePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                bufferSize: 4096,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var licenseData = await ReadBoundedLicenseDataAsync(licenseStream, cancellationToken).ConfigureAwait(false);
-            var result = ValidateLicenseData(licenseData, options);
-            PublishSnapshot(result.Snapshot);
-            LogValidationResult(result);
+            await ReadAndPublishLicenseFileAsync(options.LicensePath, options, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -317,6 +319,42 @@ internal sealed class FileBackedLicenseService :
             PublishSnapshot(snapshot);
             LicenseRuntimeLog.LicenseMalformed(_logger, ex.GetType().Name);
         }
+    }
+
+    private async Task<bool> TryLoadUploadedOverrideAsync(LicenseOptions options, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ReadAndPublishLicenseFileAsync(options.LicensePath + ".uploaded", options, cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // An unreadable/malformed override must not silently resurrect a stale source.
+            PublishCommunity(LicenseValidationState.Malformed, isValid: false, payload: null, keyId: null);
+            LicenseRuntimeLog.LicenseMalformed(_logger, ex.GetType().Name);
+            return true;
+        }
+    }
+
+    private async Task ReadAndPublishLicenseFileAsync(string path, LicenseOptions options, CancellationToken cancellationToken)
+    {
+        await using var licenseStream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var licenseData = await ReadBoundedLicenseDataAsync(licenseStream, cancellationToken).ConfigureAwait(false);
+        var result = ValidateLicenseData(licenseData, options);
+        PublishSnapshot(result.Snapshot);
+        LogValidationResult(result);
     }
 
     /// <summary>
@@ -402,6 +440,21 @@ internal sealed class FileBackedLicenseService :
         byte[] licenseData,
         CancellationToken cancellationToken)
     {
+        await _uploadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await ApplyUploadedLicenseDataCoreAsync(licenseData, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _uploadLock.Release();
+        }
+    }
+
+    private async Task<LicenseUploadResult> ApplyUploadedLicenseDataCoreAsync(
+        byte[] licenseData,
+        CancellationToken cancellationToken)
+    {
         var options = _options.Value;
 
         if (!options.AllowAdminUpload)
@@ -441,28 +494,45 @@ internal sealed class FileBackedLicenseService :
                 Directory.CreateDirectory(directory);
             }
 
-            // Unique temp file per upload so concurrent admin uploads cannot interleave
-            // writes/moves on the same temporary path.
-            var tempPath = $"{options.LicensePath}.{Guid.NewGuid():N}.tmp";
-            try
-            {
-                await File.WriteAllBytesAsync(tempPath, licenseData, cancellationToken).ConfigureAwait(false);
-                File.Move(tempPath, options.LicensePath, overwrite: true);
-            }
-            catch
-            {
-                TryDeleteFile(tempPath);
-                throw;
-            }
+            // This atomic replacement is the commit point. A failed upload must never
+            // change the fallback file before the authoritative override is durable.
+            await WriteLicenseFileAsync(options.LicensePath + ".uploaded", licenseData, cancellationToken).ConfigureAwait(false);
 
             PublishSnapshot(result.Snapshot);
             LogValidationResult(result);
-            return new LicenseUploadResult(true, "License applied.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             LicenseRuntimeLog.LicenseUploadSaveFailed(_logger, ex);
             return new LicenseUploadResult(false, "License upload could not be saved. See server logs for details.");
+        }
+
+        // Retain the configured file for existing operator tooling. Once committed,
+        // cancellation or a mirror failure cannot turn the applied upload into a rejection.
+        try
+        {
+            await WriteLicenseFileAsync(options.LicensePath, licenseData, CancellationToken.None).ConfigureAwait(false);
+            return new LicenseUploadResult(true, "License applied.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LicenseRuntimeLog.LicenseUploadSaveFailed(_logger, ex);
+            return new LicenseUploadResult(true,
+                "License applied to the persisted upload override; the LicensePath mirror could not be updated. See server logs for details.");
+        }
+    }
+
+    private static async Task WriteLicenseFileAsync(string path, byte[] licenseData, CancellationToken cancellationToken)
+    {
+        var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await File.WriteAllBytesAsync(tempPath, licenseData, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        finally
+        {
+            TryDeleteFile(tempPath);
         }
     }
 

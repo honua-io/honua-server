@@ -229,14 +229,14 @@ internal sealed class ExportJobService(
                 var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();
 
                 var features = streamingStore.StreamFeaturesAsync(job.LayerId, job.Query, processingToken);
-                var outputFile = await WriteToFileAsync(job, features, scratchDir, crsRegistry, _logger, processingToken).ConfigureAwait(false);
-                var fileInfo = new FileInfo(outputFile);
+                var output = await WriteToFileAsync(job, features, scratchDir, crsRegistry, _logger, processingToken).ConfigureAwait(false);
+                var fileInfo = new FileInfo(output.Path);
 
-                await using var fileStream = File.OpenRead(outputFile);
+                await using var fileStream = File.OpenRead(output.Path);
                 var uploadResult = await cloudStorage.UploadAsync(new FileUploadRequest
                 {
                     Content = fileStream,
-                    FileName = Path.GetFileName(outputFile),
+                    FileName = Path.GetFileName(output.Path),
                     ContentType = GetContentType(job.Format),
                     Folder = "exports",
                     TimeToLive = _jobRetention
@@ -250,7 +250,8 @@ internal sealed class ExportJobService(
                 var completed = progress with
                 {
                     Status = OperationStatus.Completed,
-                    ProcessedFeatures = job.TotalFeatures,
+                    ProcessedFeatures = output.WrittenCount,
+                    Warnings = output.Warnings,
                     OutputSizeBytes = fileInfo.Length,
                     DownloadUrl = downloadUrl,
                     CompletedAt = DateTimeOffset.UtcNow,
@@ -341,7 +342,9 @@ internal sealed class ExportJobService(
         }
     }
 
-    private static async Task<string> WriteToFileAsync(
+    private sealed record ExportFileResult(string Path, int WrittenCount, IReadOnlyList<string> Warnings);
+
+    private static async Task<ExportFileResult> WriteToFileAsync(
         ExportJob job,
         IAsyncEnumerable<Feature> features,
         string scratchDir,
@@ -369,23 +372,23 @@ internal sealed class ExportJobService(
                 {
                     var csvPath = Path.Join(scratchDir, $"{baseName}.csv");
                     await using var stream = File.Create(csvPath);
-                    await CsvExportWriter.WriteAsync(stream, features, job.Fields, cancellationToken).ConfigureAwait(false);
-                    return csvPath;
+                    var writtenCount = await CsvExportWriter.WriteAsync(stream, features, job.Fields, cancellationToken).ConfigureAwait(false);
+                    return new ExportFileResult(csvPath, writtenCount, []);
                 }
             case "shapefile":
                 {
                     var zipPath = Path.Join(scratchDir, $"{baseName}.zip");
                     await using var stream = File.Create(zipPath);
-                    await ShapefileExportWriter.WriteAsync(
+                    var result = await ShapefileExportWriter.WriteAsync(
                         stream, features, job.Fields, job.GeometryType, srsWkt, logger, cancellationToken).ConfigureAwait(false);
-                    return zipPath;
+                    return new ExportFileResult(zipPath, result.WrittenCount, result.Warnings);
                 }
             case "gpkg":
                 {
                     var gpkgPath = Path.Join(scratchDir, $"{baseName}.gpkg");
-                    await GeoPackageExportWriter.WriteAsync(
+                    var writtenCount = await GeoPackageExportWriter.WriteAsync(
                         gpkgPath, features, job.Fields, job.GeometryType, job.OutputSrid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
-                    return gpkgPath;
+                    return new ExportFileResult(gpkgPath, writtenCount, []);
                 }
             default:
                 throw new InvalidOperationException($"Unsupported export format: {job.Format}");

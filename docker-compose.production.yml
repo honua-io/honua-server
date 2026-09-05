@@ -1,0 +1,96 @@
+services:
+  honua:
+    image: ${HONUA_IMAGE:?Set an immutable HONUA_IMAGE from the release manifest}
+    env_file: .env.production
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      AllowedHosts: "${HONUA_HOST:?Set the public proxy hostname};localhost;127.0.0.1"
+      PUBLIC_BASE_URL: "https://${HONUA_HOST:?Set the public proxy hostname}"
+      ForwardedHeaders__Enabled: "true"
+      ForwardedHeaders__ForwardLimit: "1"
+      ForwardedHeaders__KnownProxies__0: "${HONUA_PROXY_IP:?Set the trusted proxy address from the Compose network gateway}"
+      ConnectionStrings__DefaultConnection: "${ConnectionStrings__DefaultConnection:-Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}}"
+      HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Set HONUA_ADMIN_PASSWORD}
+      Security__ConnectionEncryption__MasterKey: ${Security__ConnectionEncryption__MasterKey:-${HONUA_MASTER_KEY:?Set the connection encryption master key}}
+      Cors__AllowedOrigins__0: ${Cors__AllowedOrigins__0:-${HONUA_CORS_ORIGIN:?Set the browser origin}}
+      HONUA_OBSERVABILITY: "${HONUA_OBSERVABILITY:-true}"
+      ConnectionStrings__Redis: "${ConnectionStrings__Redis:-redis:6379}"
+      Database__MigrationSafety__ContractApplyPolicy: "${Database__MigrationSafety__ContractApplyPolicy:-Gate}"
+      FileStorage__Provider: Local
+      FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/healthz/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    volumes:
+      - honua_storage:/var/lib/honua/storage
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+
+  postgres:
+    image: pgrouting/pgrouting:17-3.5-3.7.3
+    environment:
+      POSTGRES_DB: honua
+      POSTGRES_USER: honua
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    configs:
+      - source: postgis_init
+        target: /docker-entrypoint-initdb.d/10-honua-postgis.sql
+    healthcheck:
+      # The PostGIS image starts a temporary postmaster while initializing a
+      # fresh volume. Wait for the final postmaster (PID 1) before migrations.
+      test: ["CMD-SHELL", "test \"$(head -n 1 /var/lib/postgresql/data/postmaster.pid 2>/dev/null)\" = \"1\" && pg_isready -U honua -d honua"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  honua_storage:
+    name: ${HONUA_STORAGE_VOLUME_NAME}
+
+networks:
+  default:
+    name: ${HONUA_NETWORK_NAME:-honua-production}
+
+configs:
+  postgis_init:
+    content: |
+      CREATE EXTENSION IF NOT EXISTS postgis;
+      CREATE EXTENSION IF NOT EXISTS postgis_topology;
+      CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
+      CREATE EXTENSION IF NOT EXISTS postgis_tiger_geocoder;

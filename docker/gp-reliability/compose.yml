@@ -42,6 +42,18 @@ services:
       Security__ConnectionEncryption__Salt: aG9udWEtZ3AtcmVsaWFiaWxpdHktc2FsdA==
       Kestrel__Endpoints__Http__Url: http://+:8080
       Kestrel__Endpoints__Http__Protocols: Http1
+      Oidc__Enabled: ${HONUA_GP_OIDC_ENABLED:-false}
+      Oidc__Generic__Enabled: ${HONUA_GP_OIDC_ENABLED:-false}
+      Oidc__Generic__Authority: ${HONUA_GP_OIDC_ISSUER:-https://gp-qualification.invalid}
+      Oidc__Generic__ClientId: ${HONUA_GP_OIDC_AUDIENCE:-gp-lifecycle}
+      Oidc__TokenValidation__SymmetricSigningKey: ${HONUA_GP_OIDC_SIGNING_KEY:-honua-gp-local-signing-key-0123456789}
+      Oidc__TokenValidation__EnableTokenReplayProtection: "false"
+      ExecutionAdmission__Enabled: "true"
+      ExecutionAdmission__MaxConcurrentJobsPerPartition: ${HONUA_GP_MAX_CONCURRENT_PARTITION:-10000}
+      ExecutionAdmission__MaxConcurrentJobsGlobal: ${HONUA_GP_MAX_CONCURRENT_GLOBAL:-100000}
+      ExecutionAdmission__MaxSubmissionsPerWindow: "1000"
+      ExecutionAdmission__DefaultRetryAfterSeconds: "2"
+      Geoprocessing__Executors__MaxArtifactBytes: ${HONUA_GP_MAX_ARTIFACT_BYTES:-52428800}
     depends_on:
       postgres:
         condition: service_healthy

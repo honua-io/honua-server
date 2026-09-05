@@ -65,6 +65,18 @@ public sealed class GdalInfoCoverageEnricherTests
         extent.XMax.Should().BeApproximately(-156.05, 1e-9);
         extent.YMax.Should().BeApproximately(20.85, 1e-9);
         extent.Srid.Should().Be(4326);
+        enriched.YAxisAscending.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Enrich_PositivePixelHeight_RecordsAscendingYAxis()
+    {
+        var json = GdalInfoJson.Replace(
+            "20.85, 0.0, -0.1", "20.45, 0.0, 0.1", StringComparison.Ordinal);
+
+        var enriched = GdalInfoCoverageEnricher.Enrich(BaseMetadata(), json);
+
+        enriched.YAxisAscending.Should().BeTrue();
     }
 
     [UnitTest]

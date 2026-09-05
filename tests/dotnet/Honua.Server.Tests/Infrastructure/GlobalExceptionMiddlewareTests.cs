@@ -395,6 +395,9 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         // Should include Retry-After header
         response.Headers.Should().ContainKey("Retry-After");
         response.Headers.GetValues("Retry-After").First().Should().Be("30");
+        response.Headers.GetValues("Honua-Retryable").Should().ContainSingle().Which.Should().Be("true");
+        problemDetails.GetProperty("retryable").GetBoolean().Should().BeTrue();
+        problemDetails.GetProperty("code").GetString().Should().Be("service_unavailable");
     }
 
     [Fact]

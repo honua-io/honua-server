@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: honua_dev
       POSTGRES_USER: honua_user
-      POSTGRES_PASSWORD: honua_password
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Run python3 scripts/docker/quickstart.py to initialize per-install credentials}"
       # Enable encryption at rest and security features
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
       POSTGRES_HOST_AUTH_METHOD: "scram-sha-256"
@@ -15,7 +15,7 @@ services:
       POSTGRESQL_CONF_log_connections: "on"
       POSTGRESQL_CONF_log_disconnections: "on"
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
@@ -86,8 +86,14 @@ services:
       - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_GRPC_PORT:-8081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=${POSTGRES_PASSWORD:?Initialize quickstart credentials first}"
       ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
+      # These values make the documented local reverse-proxy/Console hostnames valid
+      # inputs to the production host-validation middleware when this file is reused.
+      PUBLIC_BASE_URL: "${HONUA_PUBLIC_BASE_URL:-http://localhost:8080}"
+      HostValidation__AllowedHosts__0: "${HONUA_ALLOWED_HOST_0:-localhost}"
+      HostValidation__AllowedHosts__1: "${HONUA_ALLOWED_HOST_1:-127.0.0.1}"
+      HostValidation__AllowedHosts__2: "${HONUA_ALLOWED_HOST_2:-honua}"
       Database__MigrationSafety__ContractApplyPolicy: "${HONUA_CONTRACT_APPLY_POLICY:-Gate}"
       Licensing__DevGrantEdition: "${HONUA_DEV_GRANT_EDITION:-}"
       HONUA_ENABLE_OBSERVABILITY_TEST_SEED: "${HONUA_ENABLE_OBSERVABILITY_TEST_SEED:-false}"
@@ -159,7 +165,7 @@ services:
       honua:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/operate"]
+      test: ["CMD-SHELL", "test -s /app/wwwroot/version.json"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -181,11 +187,11 @@ services:
     profiles:
       - minio
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${MINIO_PORT:-9000}:9000"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
       MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?Initialize quickstart credentials first}"
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data

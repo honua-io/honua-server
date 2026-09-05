@@ -13,6 +13,7 @@ using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Import;
@@ -87,6 +88,40 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("valid HTTPS");
+    }
+
+    [IntegrationTheory]
+    [InlineData(0, HttpStatusCode.Unauthorized, "authentication is required")]
+    [InlineData(1, HttpStatusCode.Unauthorized, "credentials have expired")]
+    [InlineData(2, HttpStatusCode.Forbidden, "credentials were denied")]
+    [Endpoint("POST /api/v1/admin/import/geoservices/discover")]
+    public async Task Discover_WithArcGisAuthenticationFailure_PreservesClientStatus(
+        int kindValue,
+        HttpStatusCode expectedStatus,
+        string expectedMessage)
+    {
+        var kind = (ArcGisAuthenticationFailureKind)kindValue;
+        var service = new TestGeoservicesImportService(
+            TimeSpan.Zero,
+            new ArcGisAuthenticationException(kind, kind == ArcGisAuthenticationFailureKind.CredentialDenied ? 403 : 498, "upstream secret"));
+        var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
+            .ReplaceService<IGeoservicesImportService>(service);
+        try
+        {
+            await fixture.InitializeAsync();
+            var response = await fixture.Client.PostAsJsonAsync(
+                "/api/v1/admin/import/geoservices/discover",
+                new { ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer" });
+
+            response.StatusCode.Should().Be(expectedStatus);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().Contain(expectedMessage).And.NotContain("upstream secret");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -803,7 +838,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         };
 }
 
-internal sealed class TestGeoservicesImportService(TimeSpan delay) : IGeoservicesImportService
+internal sealed class TestGeoservicesImportService(TimeSpan delay, Exception? discoveryException = null) : IGeoservicesImportService
 {
     public ConcurrentQueue<GeoservicesDiscoveryRequest> DiscoveryRequests { get; } = new();
     public ConcurrentQueue<GeoservicesImportRequest> ImportRequests { get; } = new();
@@ -813,6 +848,11 @@ internal sealed class TestGeoservicesImportService(TimeSpan delay) : IGeoservice
         CancellationToken cancellationToken = default)
     {
         DiscoveryRequests.Enqueue(request);
+        if (discoveryException is not null)
+        {
+            return Task.FromException<GeoservicesServiceInfo>(discoveryException);
+        }
+
         return Task.FromResult(new GeoservicesServiceInfo
         {
             ServiceUrl = request.ServiceUrl,

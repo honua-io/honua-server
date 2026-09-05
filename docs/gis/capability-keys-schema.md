@@ -64,7 +64,7 @@ Both lists share one naming rule: every key is dot-namespaced lowercase,
 | `category` | string | Grouping label — one of `FeatureCatalog.Categories` (Alerts, Editing, …) or `CapabilityKeyCatalog.Categories` (Serve, Discovery, ControlPlane, Ops, DataProviders, Format, Process, Collaboration, Demo, Enrichment). |
 | `edition` | string | `Community`, `Pro`, or `Enterprise` — the minimum `HonuaEdition` required. |
 | `description` | string | One- or two-sentence description of what the capability does. |
-| `status` | string or null | Optional explicit release posture. The warehouse-provider keys use `experimental`; the provider-neutral GeoArrow format key uses `live`. Absence preserves the existing maturity/evidence projection. |
+| `status` | string or null | Optional explicit release posture. Customer-alert trigger and delivery-channel keys use `preview`; warehouse-provider keys use `experimental`; the provider-neutral GeoArrow format key uses `live`. Absence preserves the existing maturity/evidence projection. |
 
 ### `crosswalks`
 

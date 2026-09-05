@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Capabilities;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Xunit;
@@ -195,6 +196,42 @@ public sealed class CapabilityKeyDriftTests
                 "every feature-catalog entry for '{0}' must carry the overridden tier '{1}'; "
                 + "regenerate with scripts/generate-feature-catalog.sh", row.Capability, row.Maturity);
         }
+    }
+
+    [ArchitectureTest]
+    public void OfflineSync_IsPreviewInRegistryAndEveryCatalogProjection()
+    {
+        new CapabilityRegistry().Find("sync.offline")!.Maturity
+            .Should().Be(CapabilityMaturity.Preview);
+
+        var entries = LoadCommittedCatalog().Entries
+            .Where(entry => string.Equals(entry.Capability, "fieldops.offline-sync", StringComparison.Ordinal))
+            .ToArray();
+
+        entries.Should().NotBeEmpty();
+        entries.Should().OnlyContain(entry => entry.Maturity == "preview");
+    }
+
+    [ArchitectureTest]
+    public void RasterAndEnvironmentalSurfaces_ArePreviewInRegistryAndEveryCatalogProjection()
+    {
+        var registry = new CapabilityRegistry();
+        var catalog = LoadCommittedCatalog();
+        foreach (var capability in new[] { "serve.geoservices-imageserver", "serve.wmts", "serve.ogc-api-coverages", "serve.ogc-api-edr" })
+        {
+            registry.Find(capability).Should().NotBeNull();
+            registry.Find(capability)!.Maturity.Should().Be(CapabilityMaturity.Preview);
+
+            var entries = catalog.Entries.Where(entry => entry.Capability == capability).ToArray();
+            entries.Should().NotBeEmpty();
+            entries.Should().OnlyContain(entry => entry.Maturity == "preview");
+        }
+
+        var wmtsRoutes = catalog.Entries
+            .Where(entry => entry.Route.Contains("/WMTS", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        wmtsRoutes.Should().NotBeEmpty();
+        wmtsRoutes.Should().OnlyContain(entry => entry.Maturity == "preview");
     }
 
     [ArchitectureTest]

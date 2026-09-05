@@ -38,6 +38,9 @@ public sealed class GeometryValidationTests : IAsyncLifetime
         _fixture.ReplaceService<IRelationshipStore>(featureStore);
         _fixture.ReplaceService<IStreamingFeatureStore>(featureStore);
         await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(
+            TestServiceId,
+            ["Create", "Update", "Delete"]);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();

@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Honua.Server;
 using Xunit;
 
@@ -106,7 +107,8 @@ public sealed class FeatureCatalogDriftTests
 
         var unexplained = catalog.Entries
             .Where(entry => entry.Maturity != FeatureCatalogGenerator.MaturityImplemented
-                && entry.Maturity != FeatureCatalogGenerator.MaturityExperimental)
+                && entry.Maturity != FeatureCatalogGenerator.MaturityExperimental
+                && entry.Maturity != FeatureCatalogGenerator.MaturityPreview)
             .Where(entry => !(overriddenCapabilities.TryGetValue(entry.Capability, out var demoted)
                 && string.Equals(demoted, entry.Maturity, StringComparison.Ordinal)))
             .Select(entry => $"{EndpointKey.Format(entry.Method, entry.Route)} -> {entry.Maturity}")
@@ -136,9 +138,13 @@ public sealed class FeatureCatalogDriftTests
         foreach (var entry in catalog.Entries)
         {
             var gatedDescriptorId = FeatureCatalogGenerator.ResolveDescriptorIdForRoute(entry.Route);
-            var gateTier = gatedDescriptorId is null
-                ? FeatureCatalogGenerator.MaturityImplemented
-                : FeatureCatalogGenerator.MaturityExperimental;
+            var descriptor = gatedDescriptorId is null ? null : new CapabilityRegistry().Find(gatedDescriptorId);
+            var gateTier = descriptor?.Maturity switch
+            {
+                CapabilityMaturity.Experimental => FeatureCatalogGenerator.MaturityExperimental,
+                CapabilityMaturity.Preview => FeatureCatalogGenerator.MaturityPreview,
+                _ => FeatureCatalogGenerator.MaturityImplemented,
+            };
             var expected = overrides.ResolveEffective(entry.Capability, gateTier);
 
             if (string.Equals(expected, gateTier, StringComparison.Ordinal))
@@ -172,18 +178,53 @@ public sealed class FeatureCatalogDriftTests
             .Select(entry => entry.Route)
             .ToArray();
 
-        // /api/v1/admin/alerts/* and /api/v1/temporal/* were promoted to GA; neither remains an
-        // experimental route group, so both are intentionally absent from this set.
+        // /api/v1/temporal/* was promoted to GA and intentionally remains absent from this set.
+        // /api/v1/admin/alerts/* is opt-in Preview and is therefore not part of the default
+        // advertised surface even though its maturity is preview rather than experimental.
         // /api/v1/admin/security/client-certificates/* was promoted to GA in #2431 but DEMOTED
         // back to experimental in #2958, so it IS a flipped experimental route group today.
         experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/security/client-certificates", StringComparison.OrdinalIgnoreCase));
-        // /api/v1/admin/services/{serviceId}/replicas* was promoted to GA (Implemented) in #2430
-        // — no longer an experimental route group, so it is intentionally absent from this
-        // sanity set.
-        // /api/v1/streaming/features* was promoted to GA (Implemented) in #2428 — no longer an
-        // experimental route group, so it is intentionally absent from this sanity set.
+        // /api/v1/admin/services/{serviceId}/replicas* is not part of the FeatureServer sync
+        // route family; the gated FeatureServer routes are covered by the preview set below.
+        // /api/v1/streaming/features* remains Preview, so it is intentionally absent here.
         // Branch versioning (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+
+        var previewRoutes = catalog.Entries
+            .Where(entry => entry.Maturity == FeatureCatalogGenerator.MaturityPreview)
+            .Select(entry => entry.Route)
+            .ToArray();
+        previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/alerts", StringComparison.OrdinalIgnoreCase));
+        previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase));
+        previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase));
+        previewRoutes.Should().Contain(route => route.StartsWith("/sta/v1.1", StringComparison.OrdinalIgnoreCase));
         experimentalRoutes.Should().Contain(route => route.Contains("/VersionManagementServer", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [ArchitectureTest]
+    public void GatedProductionRouteFamilies_AreProjectedAsNonGa()
+    {
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute("/api/v1/admin/alerts/rules")
+            .Should().Be("alerts.geofence");
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute(
+                "/rest/services/{serviceId}/FeatureServer/createReplica")
+            .Should().Be("sync.offline");
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute("/api/v1/admin/scenes/ingest/citygml")
+            .Should().Be("scene.bim-ingest");
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute("/scenes/{sceneId}/tileset.json")
+            .Should().Be("serve.3d-tiles-scene");
+    }
+
+    [ArchitectureTest]
+    public void CustomerAlertingRoutes_RemainPreviewWithoutGaReceipts()
+    {
+        var alerting = LoadCommittedCatalog().Entries
+            .Where(entry => entry.Route.StartsWith("/api/v1/admin/alerts/", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        alerting.Should().NotBeEmpty();
+        alerting.Should().OnlyContain(entry => entry.Maturity == FeatureCatalogGenerator.MaturityPreview,
+            "the 2026-09-04 operator ruling keeps every customer-alerting route Preview; "
+            + "qualification tests do not replace a reviewed GA promotion with receipts");
     }
 
     [ArchitectureTest]

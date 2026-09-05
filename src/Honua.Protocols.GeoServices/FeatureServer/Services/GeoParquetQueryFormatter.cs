@@ -65,9 +65,6 @@ internal static class GeoParquetQueryFormatter
         MetadataV2Resource resource)
         => GeoParquetFeatureWriter.DetectRuntimeFields(features, resource);
 
-    internal static string MapGeometryTypeToGeoParquet(MetadataV2GeometryType geometryType, bool returnZ)
-        => GeoParquetFeatureWriter.MapGeometryTypeToGeoParquet(geometryType, returnZ);
-
     internal static object? GetAttributeValue(Feature feature, string fieldName)
         => GeoParquetFeatureWriter.GetAttributeValue(feature, fieldName);
 

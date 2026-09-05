@@ -108,14 +108,14 @@ public sealed class SharingCommunityTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/community/createGroup")]
-    public async Task CreateGroup_InvalidFormToken_Returns401()
+    public async Task CreateGroup_InvalidFormToken_Returns498()
     {
         using var client = CreateUserClient();
         using var response = await PostFormAsync(client, "/sharing/rest/community/createGroup",
             ("token", "invalid-portal-token"),
             ("title", "Field Crew"));
 
-        await response.AssertGeoServicesErrorAsync(401, 499);
+        await response.AssertGeoServicesErrorAsync(498);
     }
 
     [IntegrationTest]

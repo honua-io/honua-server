@@ -76,6 +76,7 @@ using Honua.Server.Features.StaticMap;
 using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.Protocols.Ogc.Classic.Wps20;
 using Honua.Core.Features.Studio;
+using Honua.Core.Features.Capabilities;
 
 namespace Honua.Infrastructure.Hosting;
 
@@ -128,26 +129,40 @@ internal static class FeatureRegistrationExtensions
         services.AddGeometryService();
         services.AddHonuaGrpc(configuration);
         services.AddObservability(configuration, redisCacheEntitled);
+        // Alert health and streaming abstractions are shared by always-on operations
+        // surfaces. AlertOptions keeps the workers dormant when alerting is disabled;
+        // only the geofence-specific HTTP surfaces are lifecycle-gated below.
         services.AddAlerts(configuration);
         services.AddFieldCollectionAutomations(configuration);
         services.AddNlQuery(configuration);
         services.AddStudioAiProxy(configuration);
         services.AddStac();
-        // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
-        // Set Experimental__Features__SensorThings=true to opt in.
-        if (configuration.GetValue<bool>(SensorThingsOptions.ExperimentalFeatureFlagPath, false))
+        // Preview gate: SensorThings is off by default. Set
+        // Capabilities__Experimental__serve.sensorthings__Enabled=true to opt in.
+        if (CapabilityFlagOptions.IsExperimentalEnabled(configuration, "serve.sensorthings"))
         {
             services.AddSensorThings();
         }
         services.AddStaticMap();
         services.AddTerrain();
-        services.AddScene(configuration);
-        services.AddPostgresSceneRegistry(configuration);
+        var sceneCatalogEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "scene.catalog");
+        var scene3dTilesEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "serve.3d-tiles-scene");
+        var sceneI3sEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "serve.i3s-scene");
+        var sceneBimEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "scene.bim-ingest");
+        var scenePointCloudEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "scene.pointcloud-ingest");
+        if (sceneCatalogEnabled || scene3dTilesEnabled || sceneI3sEnabled || sceneBimEnabled || scenePointCloudEnabled)
+        {
+            services.AddScene(configuration);
+            services.AddPostgresSceneRegistry(configuration);
+        }
         // Read-through local materialization cache for hosted scene assets so a
         // scene published on one node is servable from any node (#2459, ADR-0060).
-        services.AddSceneAssetHydration();
+        if (scene3dTilesEnabled || sceneI3sEnabled)
+        {
+            services.AddSceneAssetHydration();
+        }
         services.AddElevation();
-        services.AddSceneGeneration(configuration);
+        services.AddSceneGeneration(configuration, scene3dTilesEnabled, sceneBimEnabled, scenePointCloudEnabled);
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
         // Routing subsystem (#1266): selects pgRouting or the mock provider via
@@ -266,10 +281,21 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapAttachmentEndpoints();
         endpoints.MapTileJsonEndpoints();
         endpoints.MapTerrainEndpoints();
-        endpoints.MapSceneDiscoveryEndpoints();
-        endpoints.MapSceneEndpoints();
-        endpoints.MapI3sSceneServerEndpoints();
-        endpoints.MapSceneDatasetEndpoints();
+        var lifecycleConfiguration = endpoints.ServiceProvider.GetRequiredService<IConfiguration>();
+        if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "scene.catalog"))
+        {
+            endpoints.MapSceneDiscoveryEndpoints();
+            endpoints.MapSceneDatasetEndpoints();
+        }
+        if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "serve.3d-tiles-scene"))
+        {
+            endpoints.MapSceneEndpoints();
+            endpoints.MapSceneGenerationEndpoints();
+        }
+        if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "serve.i3s-scene"))
+        {
+            endpoints.MapI3sSceneServerEndpoints();
+        }
         endpoints.MapNetworkDatasetAdminEndpoints();
         endpoints.MapNetworkTopologyEditAdminEndpoints();
         Honua.Server.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpoints.MapNetworkTopologyRebuildAdminEndpoints(endpoints);
@@ -277,9 +303,14 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapElevationEndpoints();
         endpoints.MapSceneAnalysisEndpoints();
         endpoints.MapVisibilityAnalysisEndpoints();
-        endpoints.MapSceneGenerationEndpoints();
-        endpoints.MapSceneBimIngestEndpoints();
-        endpoints.MapScenePointCloudIngestEndpoints();
+        if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "scene.bim-ingest"))
+        {
+            endpoints.MapSceneBimIngestEndpoints();
+        }
+        if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "scene.pointcloud-ingest"))
+        {
+            endpoints.MapScenePointCloudIngestEndpoints();
+        }
         endpoints.MapPMTilesProxyEndpoints();
         endpoints.MapStyleEndpoints();
         endpoints.MapOgcCoveragesEndpoints();
@@ -298,7 +329,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapStacEndpoints();
         // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
         var staConfig = endpoints.ServiceProvider.GetRequiredService<IConfiguration>();
-        if (staConfig.GetValue<bool>(SensorThingsOptions.ExperimentalFeatureFlagPath, false))
+        if (CapabilityFlagOptions.IsExperimentalEnabled(staConfig, "serve.sensorthings"))
         {
             endpoints.MapSensorThingsEndpoints();
         }

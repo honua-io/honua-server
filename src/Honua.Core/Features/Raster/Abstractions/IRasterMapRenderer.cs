@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.Abstractions;
@@ -112,6 +113,13 @@ public readonly record struct MapRenderRequest
     /// indicates an unbounded lower end (e.g. <c>../end</c>).
     /// </summary>
     public DateTimeOffset? DateTimeFrom { get; init; }
+
+    /// <summary>
+    /// Canonical temporal filters for vector resources, keyed by Metadata v2 resource id.
+    /// Raster renderers continue to use <see cref="DateTime"/> and
+    /// <see cref="DateTimeFrom"/> for acquisition-time mosaic selection.
+    /// </summary>
+    public IReadOnlyDictionary<string, TemporalFilter>? TemporalFiltersByResourceId { get; init; }
 
     /// <summary>
     /// Quality settings for compressed formats (1-100).

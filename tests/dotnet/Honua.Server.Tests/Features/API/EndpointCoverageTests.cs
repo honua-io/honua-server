@@ -29,6 +29,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
         _client = _fixture.Client;
     }
 

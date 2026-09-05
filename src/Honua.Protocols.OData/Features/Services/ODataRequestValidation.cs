@@ -124,7 +124,8 @@ internal static class ODataRequestValidation
                     orderby,
                     ResolveSkipTokenDiscriminator(context),
                     out var decodedOffset,
-                    out var tokenError))
+                    out var tokenError,
+                    context.Request.Query["bbox"].ToString()))
             {
                 error = ODataUtilityService.CreateODataError(context, "InvalidQueryOption", tokenError!);
                 return false;

@@ -14,6 +14,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -427,6 +428,61 @@ public sealed class McpAuthorizationHelperTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
         tenantResolutionReached.Should().BeFalse(
             "a rejected credential must terminate before tenant resolution can observe the request");
+    }
+
+    [UnitTest]
+    public async Task ValidBearer_IsAuthenticatedBeforeTenantResolution_ThenBoundToResolvedTenant()
+    {
+        var sourcePrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "shared-subject"),
+            new Claim("iss", "https://issuer.example"),
+            new Claim("tenant_id", "tenant-a"),
+        ], OidcAuthenticationExtensions.JwtBearerScheme));
+        var authentication = new CountingAuthenticationService(AuthenticateResult.Success(
+            new AuthenticationTicket(sourcePrincipal, OidcAuthenticationExtensions.JwtBearerScheme)));
+        var oidc = new OidcAuthenticationOptions
+        {
+            Enabled = true,
+            Generic = new GenericOidcProviderOptions
+            {
+                Enabled = true,
+                Authority = "https://issuer.example",
+                ClientId = "mcp-client",
+            },
+        };
+        var serviceCollection = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IAuthenticationService>(authentication)
+            .AddSingleton<IOptions<OidcAuthenticationOptions>>(Options.Create(oidc));
+        serviceCollection.AddHonuaTenantContext(new ConfigurationBuilder().Build());
+        var services = serviceCollection.BuildServiceProvider();
+        await using var provider = services;
+        var app = new ApplicationBuilder(provider);
+        string? bindingSeenByEndpoint = null;
+        ITenantContext? tenantSeenByEndpoint = null;
+
+        app.UseMcpBearerAuthentication();
+        app.UseHonuaTenantContext();
+        app.Run(context =>
+        {
+            tenantSeenByEndpoint = context.RequestServices.GetRequiredService<ITenantContext>();
+            bindingSeenByEndpoint = McpAuthorizationHelper.ResolveSessionBindingKey(context);
+            return Task.CompletedTask;
+        });
+
+        var context = new DefaultHttpContext { RequestServices = provider };
+        context.Request.Path = "/mcp";
+        context.Request.Headers.Authorization = "Bearer validated-token";
+
+        await app.Build()(context);
+
+        authentication.AuthenticateCount.Should().Be(1);
+        tenantSeenByEndpoint.Should().NotBeNull();
+        tenantSeenByEndpoint!.TenantId.Should().Be("tenant-a");
+        tenantSeenByEndpoint.Source.Should().Be(TenantContextSource.Claim);
+        bindingSeenByEndpoint.Should().Contain("subject:https%3A%2F%2Fissuer.example:shared-subject");
+        bindingSeenByEndpoint.Should().Contain("tenant:value%3Atenant-a");
     }
 
     [UnitTest]

@@ -720,6 +720,17 @@ internal sealed partial class AzureFunctionsGitOpsDeployBackend(
         var target = ResolveTarget(spec);
         EnsureValidTarget(target);
 
+        if (string.IsNullOrWhiteSpace(spec.CurrentRevision))
+        {
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.ObservedState,
+                Message = "Rollback requires a previously observed revision, but none was captured for this operation."
+            };
+        }
+
         if (string.IsNullOrWhiteSpace(target.CurrentImage))
         {
             return new DeployObservation

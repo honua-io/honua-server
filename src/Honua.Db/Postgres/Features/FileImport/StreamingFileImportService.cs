@@ -607,15 +607,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
         catch (OperationCanceledException)
         {
-            status = "cancelled";
-            errorMessage = "Import was cancelled";
-            result = ImportResult.CreateFailure(
-                request.TableName,
-                format ?? SupportedFileFormat.GeoJson,
-                errorMessage,
-                stopwatch.Elapsed,
-                warnings);
-            return result;
+            // Preserve cancellation for UniversalImportJobService, which records the
+            // terminal Cancelled state and uses a non-cancelled token for its receipt.
+            throw;
         }
         catch (ImportGeometryTooLargeException ex)
         {

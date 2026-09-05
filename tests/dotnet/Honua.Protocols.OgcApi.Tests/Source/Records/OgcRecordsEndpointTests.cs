@@ -238,6 +238,15 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         var qFiltered = await GetRecordIdsAsync("q=Related");
         qFiltered.Should().Contain(["layer:1", "layer:2"]);
         qFiltered.Should().NotContain($"layer:{WebAppFixture.TestLayerId}");
+
+        // OGC API - Records defines q as a comma-separated OR list. Before #4152,
+        // the implementation split on whitespace and treated the whole value as one
+        // term, so a client-generated comma list returned no records.
+        var qOrFiltered = await GetRecordIdsAsync("q=Related,Test");
+        qOrFiltered.Should().Contain([
+            "layer:1",
+            "layer:2",
+            $"layer:{WebAppFixture.TestLayerId}"]);
     }
 
     [IntegrationTest]

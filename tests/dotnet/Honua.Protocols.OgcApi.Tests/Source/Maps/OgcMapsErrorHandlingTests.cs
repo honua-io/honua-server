@@ -108,14 +108,12 @@ public class OgcMapsErrorHandlingTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Render)]
     [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
-    public async Task GetCollectionMap_TransparentParameter_ReturnsBadRequest()
+    public async Task GetCollectionMap_TransparentParameter_ReturnsSuccess()
     {
         var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{TestLayerId}/map?bbox=-180,-90,180,90&transparent=true&f=png");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("transparent parameter is not currently supported");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]

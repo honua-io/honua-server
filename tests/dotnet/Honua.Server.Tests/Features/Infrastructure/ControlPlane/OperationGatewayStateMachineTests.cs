@@ -148,18 +148,18 @@ public sealed class OperationGatewayStateMachineTests
             Kind = OperationClass.Deploy,
             RequestedBy = "oauth-operator",
             ScopeGoverned = true,
-            RecognizedScopes = ["honua.mcp.update", "honua.mcp.update", "honua.mcp.read"],
+            RecognizedScopes = ["honua.mcp.publish", "honua.mcp.publish", "honua.mcp.read"],
         });
 
         routed.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
         var persisted = await store.GetAsync(routed.ProposalId!);
         persisted!.ScopeGoverned.Should().BeTrue();
-        persisted.RecognizedScopes.Should().Equal("honua.mcp.read", "honua.mcp.update");
+        persisted.RecognizedScopes.Should().Equal("honua.mcp.publish", "honua.mcp.read");
 
         var replayed = await sut.ApplyApprovedProposalAsync(routed.ProposalId!, "approver-with-broader-authority");
         replayed!.Status.Should().Be(OperationProposalStatus.Submitted);
         replayed.ScopeGoverned.Should().BeTrue();
-        replayed.RecognizedScopes.Should().Equal("honua.mcp.read", "honua.mcp.update");
+        replayed.RecognizedScopes.Should().Equal("honua.mcp.publish", "honua.mcp.read");
     }
 
     [Fact]

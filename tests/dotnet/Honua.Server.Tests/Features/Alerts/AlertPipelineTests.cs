@@ -210,13 +210,14 @@ public sealed class AlertPipelineTests
 
         _ = await sut.ProcessChangesAsync(0, 10, CancellationToken.None);
 
-        await stateStore.Received(1).UpsertManyAsync(
+        await outbox.Received(1).CommitEvaluationAsync(
             Arg.Is<IReadOnlyCollection<AlertStateSnapshot>>(states =>
                 states.Count == 2 &&
                 states.Any(state => state.RuleId == ruleOne.RuleId) &&
                 states.Any(state => state.RuleId == ruleTwo.RuleId)),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 0),
             Arg.Any<CancellationToken>());
-        await stateStore.DidNotReceive().UpsertAsync(Arg.Any<AlertStateSnapshot>(), Arg.Any<CancellationToken>());
+        await stateStore.DidNotReceive().UpsertManyAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -268,13 +269,14 @@ public sealed class AlertPipelineTests
 
         _ = await sut.SweepDwellAsync(DateTimeOffset.UtcNow, 10, CancellationToken.None);
 
-        await stateStore.Received(1).UpsertManyAsync(
+        await outbox.Received(1).CommitEvaluationAsync(
             Arg.Is<IReadOnlyCollection<AlertStateSnapshot>>(states =>
                 states.Count == 2 &&
                 states.Any(state => state.ObjectId == 100L) &&
                 states.Any(state => state.ObjectId == 101L)),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 0),
             Arg.Any<CancellationToken>());
-        await stateStore.DidNotReceive().UpsertAsync(Arg.Any<AlertStateSnapshot>(), Arg.Any<CancellationToken>());
+        await stateStore.DidNotReceive().UpsertManyAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(), Arg.Any<CancellationToken>());
     }
 
     private static AlertRuleDefinition CreateRule(AlertTriggerType triggerType = AlertTriggerType.Enter)

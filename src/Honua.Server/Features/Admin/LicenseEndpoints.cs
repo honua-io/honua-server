@@ -129,7 +129,7 @@ internal static partial class LicenseEndpoints
                 capacity);
 
             LicenseLog.LicenseUploaded(logger, response.Edition);
-            return TypedResults.Ok(ApiResponse<LicenseStatusResponse>.CreateSuccess(response));
+            return TypedResults.Ok(ApiResponse<LicenseStatusResponse>.CreateSuccess(response, result.Message));
         }
         catch (LicenseUploadRejectedException ex)
         {

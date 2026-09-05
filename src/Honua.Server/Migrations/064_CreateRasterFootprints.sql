@@ -8,8 +8,8 @@
 
 DO $$
 BEGIN
-    IF to_regclass('honua.raster_data') IS NOT NULL THEN
-        CREATE TABLE IF NOT EXISTS honua.raster_footprints (
+    IF to_regclass('$HonuaSchema$.raster_data') IS NOT NULL THEN
+        CREATE TABLE IF NOT EXISTS $HonuaSchema$.raster_footprints (
             raster_data_id BIGINT PRIMARY KEY,
             -- Valid-data footprint of the raster (convex hull of the raster envelope at import).
             -- Untyped geometry so any raster SRID is accepted; the SRID is tracked in the srid
@@ -25,13 +25,13 @@ BEGIN
             updated_at TIMESTAMPTZ,
 
             CONSTRAINT raster_footprints_raster_data_id_fk
-                FOREIGN KEY (raster_data_id) REFERENCES honua.raster_data(id) ON DELETE CASCADE
+                FOREIGN KEY (raster_data_id) REFERENCES $HonuaSchema$.raster_data(id) ON DELETE CASCADE
         );
 
         CREATE INDEX IF NOT EXISTS idx_raster_footprints_footprint
-            ON honua.raster_footprints USING GIST (footprint);
+            ON $HonuaSchema$.raster_footprints USING GIST (footprint);
 
-        COMMENT ON TABLE honua.raster_footprints IS
+        COMMENT ON TABLE $HonuaSchema$.raster_footprints IS
             'Per-raster footprint and optional seamline (cutline) for esriMosaicSeamline (#1804).';
     END IF;
 END $$;

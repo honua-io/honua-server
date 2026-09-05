@@ -1360,6 +1360,8 @@ internal static partial class FeatureStreamEndpoints
             temporalFilter = parsedTemporalFilter;
         }
 
+        var subscriberSecurity = await ResolveSubscriberSecurityAsync(
+            context, snapshot, service, layerIds, cancellationToken).ConfigureAwait(false);
         return (new StreamSubscriptionFilter(
             serviceId: serviceId,
             serviceIdIsExact: serviceIdIsExact,
@@ -1369,7 +1371,8 @@ internal static partial class FeatureStreamEndpoints
             bbox: bbox,
             attributeFilter: attributeFilter,
             temporalFilter: temporalFilter,
-            routabilityGuard: deps.RoutabilityGuard), null);
+            routabilityGuard: deps.RoutabilityGuard,
+            subscriberSecurity: subscriberSecurity), null);
     }
 
     private static int[]? ResolveControlLayerIds(FeatureStreamControlMessage control)

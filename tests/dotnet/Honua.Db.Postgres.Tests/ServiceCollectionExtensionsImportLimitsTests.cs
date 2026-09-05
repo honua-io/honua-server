@@ -30,7 +30,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddPostgreSqlServices(configuration);
+        services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
 
         services.Single(descriptor =>
                 descriptor.ServiceType == typeof(ISavedMapOperationLogRepository))
@@ -63,7 +63,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
             .Build();
 
         var services = new ServiceCollection();
-        services.AddPostgreSqlServices(configuration);
+        services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
 
         using var provider = services.BuildServiceProvider();
         var limits = provider.GetRequiredService<ImportLimits>();
@@ -103,7 +103,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
             .Build();
 
         var services = new ServiceCollection();
-        services.AddPostgreSqlServices(configuration);
+        services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
 
         using var provider = services.BuildServiceProvider();
         var limits = provider.GetRequiredService<ImportLimits>();
@@ -134,7 +134,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
             .Build();
 
         var services = new ServiceCollection();
-        services.AddPostgreSqlServices(configuration);
+        services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
 
         using var provider = services.BuildServiceProvider();
         var limits = provider.GetRequiredService<ImportLimits>();
@@ -183,7 +183,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
             .Build();
 
         var services = new ServiceCollection();
-        services.AddPostgreSqlServices(configuration);
+        services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
 
         using var provider = services.BuildServiceProvider();
         var limits = provider.GetRequiredService<ImportLimits>();
@@ -259,7 +259,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddPostgreSqlServices(configuration);
+        services.AddPostgreSqlServices(configuration, TestCoreSchemaMigrations.Manifest);
 
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();

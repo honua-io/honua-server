@@ -10,6 +10,7 @@ http_port="${HONUA_DOCS_HTTP_PORT:-18080}"
 grpc_port="${HONUA_DOCS_GRPC_PORT:-18081}"
 postgres_port="${HONUA_DOCS_POSTGRES_PORT:-15432}"
 redis_port="${HONUA_DOCS_REDIS_PORT:-16379}"
+preserve_stack="${HONUA_DOCS_PRESERVE_STACK:-0}"
 base_url="http://localhost:${http_port}"
 run_dir=$(mktemp -d "${repo_root}/.docs-validation-quickstart.XXXXXX")
 extracted="${run_dir}/quickstart.sh"
@@ -25,7 +26,11 @@ cleanup() {
   cp "${run_dir}"/*.json "${run_dir}"/map.html "${artifacts}/" 2>/dev/null || true
   "${compose[@]}" logs --no-color > "${artifacts}/compose.log" 2>&1 || true
   "${compose[@]}" ps --all > "${artifacts}/compose-ps.txt" 2>&1 || true
-  "${compose[@]}" down --volumes --remove-orphans || true
+  if [ "${preserve_stack}" = "1" ]; then
+    echo "preserving Compose project ${project_name} for subsequent journey stages"
+  else
+    "${compose[@]}" down --volumes --remove-orphans || true
+  fi
   rm -rf "${run_dir}"
   exit "${exit_code}"
 }
@@ -38,6 +43,9 @@ docker compose version >/dev/null
 mkdir -p "${artifacts}"
 
 python3 "${extractor}" "${document}" --list --output "${extracted}" | tee "${artifacts}/blocks.txt"
+
+python3 "${repo_root}/scripts/docker/test_quickstart.py"
+python3 "${repo_root}/scripts/docker/quickstart.py" --init-only
 
 # A validation run owns an isolated Compose project and always begins without its
 # containers or volumes, proving the documented bootstrap against a clean install.

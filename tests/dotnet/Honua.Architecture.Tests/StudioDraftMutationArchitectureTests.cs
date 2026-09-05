@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Honua.Architecture.Tests;
@@ -8,12 +9,7 @@ namespace Honua.Architecture.Tests;
 /// <summary>Decrement-only ratchet for the Slice 3a Studio mutation conversion.</summary>
 public sealed class StudioDraftMutationArchitectureTests
 {
-    private static readonly string[] KnownRemainingDirectMutationSites =
-    [
-        "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|CreatePublicationRequestAsync",
-        "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|ReopenVersionAsync",
-        "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|RollbackAsync",
-    ];
+    private static readonly string[] KnownRemainingDirectMutationSites = [];
 
     [ArchitectureTest]
     public void ConvertedStudioMutationSites_CannotCallLifecycleActuatorsDirectly()
@@ -33,6 +29,9 @@ public sealed class StudioDraftMutationArchitectureTests
         Assert.Contains("mutationRuntime.UpdateAsync(", endpoints, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.DeleteAsync(", endpoints, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.SaveVersionAsync(", endpoints, StringComparison.Ordinal);
+        Assert.Contains("mutationRuntime.CreatePublicationRequestAsync(", endpoints, StringComparison.Ordinal);
+        Assert.Contains("mutationRuntime.ReopenVersionAsync(", endpoints, StringComparison.Ordinal);
+        Assert.Contains("mutationRuntime.RollbackAsync(", endpoints, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.CreateAsync(", lifecycleTools, StringComparison.Ordinal);
 
         var toolBase = File.ReadAllText(Path.Join(
@@ -64,7 +63,7 @@ public sealed class StudioDraftMutationArchitectureTests
             .SelectMany(path => File.ReadLines(Path.Join(root, path.Replace('/', Path.DirectorySeparatorChar)))
                 .Where(line => line.Contains("await ", StringComparison.Ordinal))
                 .SelectMany(line => mutationMethods
-                    .Where(method => line.Contains($".{method}(", StringComparison.Ordinal))
+                    .Where(method => HasDirectMutationCall(line, method))
                     .Select(method => $"{path}|{method}")))
             .OrderBy(static site => site, StringComparer.Ordinal)
             .ToArray();
@@ -73,6 +72,28 @@ public sealed class StudioDraftMutationArchitectureTests
             KnownRemainingDirectMutationSites.OrderBy(static site => site, StringComparer.Ordinal),
             actual);
     }
+
+    [Theory]
+    [InlineData("await store.RollbackAsync(itemId);", true)]
+    [InlineData("await _lifecycle.DeleteDraftAsync(draftId);", true)]
+    [InlineData("await mutationRuntime.RollbackAsync(itemId);", false)]
+    [InlineData("await runtime.DeleteDraftAsync(draftId);", false)]
+    public void DirectMutationDetector_IsReceiverAgnosticExceptForCanonicalRuntimes(
+        string line,
+        bool expected)
+    {
+        var method = line.Contains("RollbackAsync", StringComparison.Ordinal)
+            ? "RollbackAsync"
+            : "DeleteDraftAsync";
+
+        Assert.Equal(expected, HasDirectMutationCall(line, method));
+    }
+
+    private static bool HasDirectMutationCall(string line, string method) => Regex
+        .Matches(line, $@"\b(?<receiver>[A-Za-z_][A-Za-z0-9_]*)\.{Regex.Escape(method)}\s*\(")
+        .Cast<Match>()
+        .Select(match => match.Groups["receiver"].Value)
+        .Any(receiver => receiver is not ("mutationRuntime" or "runtime"));
 
     private static string FindRepositoryRoot()
     {

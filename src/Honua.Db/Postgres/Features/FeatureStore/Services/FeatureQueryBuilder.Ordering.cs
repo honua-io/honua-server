@@ -43,6 +43,61 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
+    private static void AppendDistinctOrderByClause(
+        StringBuilder sql,
+        FeatureQuery query,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+        {
+            sql.Append(" ORDER BY attributes");
+            return;
+        }
+
+        var orderBy = query.OrderBy.Value;
+        var orderClauses = new List<string>(orderBy.Length);
+        foreach (var order in orderBy)
+        {
+            var fieldLower = order.Field.ToLowerInvariant();
+            string expression;
+            if (fieldLower is DatabaseSchema.ObjectIdColumn or DatabaseSchema.ObjectIdColumnAlt)
+            {
+                expression = DatabaseSchema.ObjectIdColumn;
+            }
+            else
+            {
+                if (!IsValidJsonAttributeKey(order.Field))
+                {
+                    throw new ArgumentException($"Invalid field name for ordering: {order.Field}");
+                }
+
+                var fieldParamIndex = paramIndex++;
+                parameters.Add(order.Field);
+                expression = $"NULLIF(attributes::jsonb ->> ${fieldParamIndex}::text, '')";
+                expression = order.FieldType switch
+                {
+                    MetadataV2FieldType.Integer => $"{expression}::integer",
+                    MetadataV2FieldType.BigInteger => $"{expression}::bigint",
+                    MetadataV2FieldType.Float => $"{expression}::real",
+                    MetadataV2FieldType.Double => $"{expression}::double precision",
+                    MetadataV2FieldType.Boolean => $"{expression}::boolean",
+                    MetadataV2FieldType.DateTime => BuildEpochAwareOrderByCast(expression, "timestamptz"),
+                    MetadataV2FieldType.Date => BuildEpochAwareOrderByCast(expression, "date"),
+                    MetadataV2FieldType.Time => $"{expression}::time",
+                    MetadataV2FieldType.Uuid => $"{expression}::uuid",
+                    _ => expression
+                };
+            }
+
+            orderClauses.Add($"{expression} {(order.Ascending ? "ASC" : "DESC")}{GetNullOrderingSuffix(order.NullOrdering)}");
+        }
+
+        // Keep ties deterministic without changing the requested primary ordering.
+        orderClauses.Add("attributes ASC");
+        sql.Append(" ORDER BY ").Append(string.Join(", ", orderClauses));
+    }
+
     // Explicit null placement requested by the protocol adapter (e.g. OData v4
     // $orderby mandates nulls first ascending / nulls last descending, the inverse of
     // the PostgreSQL defaults). NullOrdering.Default emits no qualifier so every other

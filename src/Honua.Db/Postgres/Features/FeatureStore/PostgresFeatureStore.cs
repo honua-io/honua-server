@@ -40,7 +40,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore
+internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -468,6 +468,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         CancellationToken cancellationToken = default)
     {
         query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        FeatureQuerySecurity.ValidateDateBins(query, dateBin);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var dateBinsQuery = _queryBuilder.BuildDateBinsQuery(layerId, query, dateBin, geometryStorageType);
         return await _dataAccess.ExecuteStatisticsQueryAsync(dateBinsQuery, query, layerId, cancellationToken);
@@ -480,6 +481,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         CancellationToken cancellationToken = default)
     {
         query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        FeatureQuerySecurity.ValidateBins(query, binDefinition);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var binsQuery = _queryBuilder.BuildBinsQuery(layerId, query, binDefinition, geometryStorageType);
         return await _dataAccess.ExecuteStatisticsQueryAsync(binsQuery, query, layerId, cancellationToken);
@@ -492,6 +494,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         CancellationToken cancellationToken = default)
     {
         query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        FeatureQuerySecurity.ValidateH3(query, h3Query);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var h3SqlQuery = _queryBuilder.BuildH3AggregationQuery(layerId, query, h3Query, geometryStorageType);
         return await _dataAccess.ExecuteStatisticsQueryAsync(h3SqlQuery, query, layerId, cancellationToken);
@@ -639,9 +642,18 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             var relatedFilter = query.RelatedLayerId is int relatedLayerId
                 ? await ResolveEnforcedSqlFilterAsync(relatedLayerId, cancellationToken).ConfigureAwait(false)
                 : null;
-            if (originFilter is not null || relatedFilter is not null)
+            var relatedMaskedFields = query.RelatedLayerId is int relatedLayerIdForMask
+                ? await ResolveMaskedFieldsAsync(relatedLayerIdForMask, cancellationToken).ConfigureAwait(false)
+                : ImmutableArray<string>.Empty;
+            if (originFilter is not null || relatedFilter is not null || !relatedMaskedFields.IsDefaultOrEmpty)
             {
-                return await postgresDataAccess.QueryRelatedAsync(layerId, query, originFilter, relatedFilter, cancellationToken).ConfigureAwait(false);
+                return await postgresDataAccess.QueryRelatedAsync(
+                    layerId,
+                    query,
+                    originFilter,
+                    relatedFilter,
+                    relatedMaskedFields,
+                    cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -694,6 +706,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         // plain select clause emits the distance column). Distance is only meaningful with a
         // spatial filter, so this affects a narrow slice of queries.
         if ((query.Limit.HasValue || query.Offset.HasValue) &&
+            !query.Distinct &&
             !FeatureQueryBuilder.ShouldComputeDistance(query.SpatialFilter))
         {
             return await executeOptimized(layerId, query, geometryStorageType, cancellationToken);
@@ -928,27 +941,27 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
-        // Idempotency guard: a query that already carries an enforced filter or masked-field
-        // set has been through this seam (e.g. a nested re-entrant call), so do not resolve
-        // again. Both enforced concerns are resolved together below for the unresolved case.
-        if (query.EnforcedSqlFilter != null || query.EnforcedMaskedFields != null)
+        // Resolve each concern independently. A nested caller may already carry one
+        // enforced value, but that must not suppress resolution of the other concern.
+        if (query.EnforcedSqlFilter is null)
         {
-            return query;
+            var enforcedFilter = await ResolveEnforcedSqlFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+            if (enforcedFilter is not null)
+            {
+                query = query with { EnforcedSqlFilter = enforcedFilter };
+            }
         }
 
-        var enforcedFilter = await ResolveEnforcedSqlFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var maskedFields = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
-
-        if (enforcedFilter != null)
+        if (query.EnforcedMaskedFields is null)
         {
-            query = query with { EnforcedSqlFilter = enforcedFilter };
+            var maskedFields = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
+            if (!maskedFields.IsDefaultOrEmpty)
+            {
+                query = query with { EnforcedMaskedFields = maskedFields };
+            }
         }
 
-        if (!maskedFields.IsDefaultOrEmpty)
-        {
-            query = query with { EnforcedMaskedFields = maskedFields };
-        }
-
+        FeatureQuerySecurity.Validate(query);
         return query;
     }
 

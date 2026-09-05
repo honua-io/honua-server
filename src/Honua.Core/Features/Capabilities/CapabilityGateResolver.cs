@@ -36,7 +36,7 @@ public static class CapabilityGateResolver
 {
     /// <summary>
     /// Resolves whether the given descriptor is enabled for the context, applying the
-    /// experimental feature-flag precedence.
+    /// experimental feature-flag precedence when the descriptor requires opt-in.
     /// </summary>
     /// <param name="descriptor">
     /// The capability descriptor, or <c>null</c> when no capability with the requested
@@ -52,14 +52,14 @@ public static class CapabilityGateResolver
             return new CapabilityResolution(false, CapabilityReasonCodes.NotRegistered);
         }
 
-        if (descriptor.Maturity == CapabilityMaturity.Experimental)
+        if (descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
         {
-            if (!context.ExperimentalFlags.IsExperimentalEnabled(descriptor.Id))
+            if (descriptor.RequiresOptIn && !context.ExperimentalFlags.IsExperimentalEnabled(descriptor.Id))
             {
                 return new CapabilityResolution(false, CapabilityReasonCodes.ExperimentalDisabled);
             }
 
-            // Flag-on experimental capability: entitlement/edition still applies on top,
+            // Preview or Experimental capability: entitlement/edition still applies on top,
             // so an unlicensed edition fails on edition rather than being masked by the flag.
             if (descriptor.MinimumEdition is { } minimumEdition && context.Edition < minimumEdition)
             {
@@ -67,7 +67,7 @@ public static class CapabilityGateResolver
             }
         }
 
-        // Non-experimental (or flag-on experimental with a satisfied edition): enabled.
+        // Any required opt-in and edition checks are satisfied: enabled.
         return new CapabilityResolution(true, null);
     }
 }

@@ -7,8 +7,8 @@ namespace Honua.Core.Features.Tiles.PMTiles;
 
 /// <summary>
 /// Writes a PMTiles v3 archive from tile data.
-/// Tiles are collected in memory, sorted by Hilbert curve tile ID,
-/// and written as a complete archive to the output stream.
+/// Tiles are collected and sorted in memory, then tile payloads are streamed directly to the
+/// output stream after the header and directories have been computed.
 /// </summary>
 public sealed class PMTilesWriter
 {
@@ -73,34 +73,27 @@ public sealed class PMTilesWriter
         // Sort tiles by Hilbert curve tile ID
         _tiles.Sort(static (a, b) => a.TileId.CompareTo(b.TileId));
 
-        // Phase 1: Write tile data to a buffer and build directory entries
-        using var tileDataStream = new MemoryStream();
+        // Phase 1: Calculate tile offsets and lengths without materialising the tile section.
+        // Compressed tiles are encoded once here to determine their lengths and once while
+        // streaming them below. This keeps peak memory proportional to the largest tile rather
+        // than the complete archive and avoids MemoryStream's Int32 capacity ceiling.
         var entries = new List<PMTilesEntry>(_tiles.Count);
-        var uniqueContents = new HashSet<int>();
+        ulong tileDataLength = 0;
 
         for (var i = 0; i < _tiles.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var tile = _tiles[i];
-            var tileBytes = _tileCompression != PMTilesCompression.None
-                ? PMTilesDirectory.Compress(tile.Data, _tileCompression)
-                : tile.Data;
-
-            var offset = (ulong)tileDataStream.Position;
-            tileDataStream.Write(tileBytes);
-            uniqueContents.Add(ContentHash(tile.Data));
+            var tileBytes = GetTileBytes(tile.Data);
+            var offset = tileDataLength;
+            tileDataLength = checked(tileDataLength + (ulong)tileBytes.Length);
 
             entries.Add(new PMTilesEntry(
                 TileId: tile.TileId,
                 Offset: offset,
-                Length: (uint)tileBytes.Length,
+                Length: checked((uint)tileBytes.Length),
                 RunLength: 1));
-
-            // Release the source buffer once it has been copied into the archive stream so
-            // large publish jobs do not hold every tile payload alive twice (the entry keeps
-            // the tile id for the header counts).
-            _tiles[i] = new TileEntry(tile.TileId, []);
         }
 
         // Phase 2: Build JSON metadata
@@ -122,7 +115,6 @@ public sealed class PMTilesWriter
         var leafDirLength = (ulong)leafDirBytes.Length;
 
         var tileDataOffset = leafDirOffset + leafDirLength;
-        var tileDataLength = (ulong)tileDataStream.Length;
 
         // Phase 5: Build header
         var header = new PMTilesHeader
@@ -137,7 +129,9 @@ public sealed class PMTilesWriter
             TileDataLength = tileDataLength,
             AddressedTilesCount = (ulong)_tiles.Count,
             TileEntriesCount = (ulong)entries.Count,
-            TileContentsCount = (ulong)uniqueContents.Count,
+            // Every directory entry writes one blob. Identical payloads are not deduplicated by
+            // this writer, so this is the number of blobs in the tile section, not a hash count.
+            TileContentsCount = (ulong)entries.Count,
             Clustered = true,
             InternalCompression = _internalCompression,
             TileCompression = _tileCompression,
@@ -164,8 +158,18 @@ public sealed class PMTilesWriter
         {
             await output.WriteAsync(leafDirBytes, cancellationToken).ConfigureAwait(false);
         }
-        tileDataStream.Position = 0;
-        await tileDataStream.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+        // Phase 6: stream tile blobs directly to the caller. Do not stage the complete tile
+        // section in a MemoryStream: large batch archives can exceed its 2 GiB limit.
+        for (var i = 0; i < _tiles.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var tileBytes = GetTileBytes(_tiles[i].Data);
+            await output.WriteAsync(tileBytes, cancellationToken).ConfigureAwait(false);
+
+            // Release source and any transient compressed bytes as soon as this tile is written.
+            _tiles[i] = new TileEntry(_tiles[i].TileId, []);
+        }
+
         await output.FlushAsync(cancellationToken).ConfigureAwait(false);
 
         return (long)(tileDataOffset + tileDataLength);
@@ -177,6 +181,8 @@ public sealed class PMTilesWriter
         using var writer = new Utf8JsonWriter(stream);
 
         writer.WriteStartObject();
+
+        writer.WriteString("name", string.IsNullOrWhiteSpace(metadata.Name) ? "Honua" : metadata.Name);
 
         if (metadata.Attribution is not null)
         {
@@ -190,6 +196,35 @@ public sealed class PMTilesWriter
 
         writer.WriteString("type", "overlay");
         writer.WriteString("format", "pbf");
+
+        writer.WritePropertyName("vector_layers");
+        writer.WriteStartArray();
+        foreach (var layer in metadata.VectorLayers)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("id", layer.Id);
+            if (layer.Description is not null)
+            {
+                writer.WriteString("description", layer.Description);
+            }
+            if (layer.MinZoom is { } minZoom)
+            {
+                writer.WriteNumber("minzoom", minZoom);
+            }
+            if (layer.MaxZoom is { } maxZoom)
+            {
+                writer.WriteNumber("maxzoom", maxZoom);
+            }
+            writer.WritePropertyName("fields");
+            writer.WriteStartObject();
+            foreach (var field in layer.Fields)
+            {
+                writer.WriteString(field.Key, field.Value);
+            }
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
 
         writer.WriteEndObject();
         writer.Flush();
@@ -209,12 +244,10 @@ public sealed class PMTilesWriter
         return (int)Math.Round(scaled);
     }
 
-    private static int ContentHash(byte[] data)
-    {
-        var hash = new HashCode();
-        hash.AddBytes(data);
-        return hash.ToHashCode();
-    }
+    private byte[] GetTileBytes(byte[] data)
+        => _tileCompression != PMTilesCompression.None
+            ? PMTilesDirectory.Compress(data, _tileCompression)
+            : data;
 
     private readonly record struct TileEntry(ulong TileId, byte[] Data);
 }

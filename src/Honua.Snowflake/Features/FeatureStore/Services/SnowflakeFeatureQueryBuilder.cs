@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Snowflake.Features.FeatureStore.Services;
 
@@ -189,6 +190,17 @@ internal static partial class SnowflakeFeatureQueryBuilder
 
     private static void AppendWhereClause(StringBuilder sb, FeatureQuery query, List<object> parameters)
     {
+        if (query.TextSearch is { } search)
+        {
+            var predicate = FeatureTextSearchSql.Build(search, SnowflakeIdentifier.Quote, text =>
+            {
+                var marker = "?";
+                parameters.Add(text);
+                return marker;
+            }, (column, value) => $"POSITION({value}, {column})");
+            sb.Append(" AND ").Append(predicate);
+        }
+
         // Prefer the canonical Where text. SqlFilter on FeatureQuery is produced by the shared
         // ISqlFilterTranslator pipeline, which only registers a Postgres translator today.
         // Passing a Postgres-emitted fragment through here would yield invalid Snowflake SQL, so

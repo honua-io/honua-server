@@ -1,6 +1,6 @@
 # CITE Status — Authoritative Snapshot
 
-Last reviewed: 2026-09-01
+Last reviewed: 2026-09-02
 Owner: Honua Server platform
 
 This page is the single fixed-path answer to "what is the current OGC CITE
@@ -31,12 +31,9 @@ directory — check the workflow.
 ## Current Per-Protocol Status
 
 The latest WFS 2.0 `basic` receipt is
-[run 33376911053](https://github.com/honua-io/honua-server/actions/runs/33376911053)
-on `trunk@a5fb7e4511fb08dcd17e6c2cf2bf9d52d1c3cef8`, completed
-2026-08-31. It reports 166 passed, 1 failed, and 0 skipped out of 167. The
-remaining requirement is transactional atomicity: Honua rejects multi-layer
-transactions when `rollbackOnFailure=true` because cross-layer atomicity is not
-yet guaranteed. All other rows remain backed by
+[run 33583116921](https://github.com/honua-io/honua-server/actions/runs/33583116921)
+on candidate commit `a59e204c75a1b51a433faf45d7511c10840786d7`, completed
+2026-09-02. It reports 167 passed, 0 failed, and 0 skipped. All other rows remain backed by
 [CITE Evidence Report run 33205558805](https://github.com/honua-io/honua-server/actions/runs/33205558805)
 and its `cite-conformance-evidence-13` bundle from 2026-08-28.
 
@@ -49,7 +46,7 @@ and its `cite-conformance-evidence-13` bundle from 2026-08-28.
 | KML 2.2 | `applicable` | 42 / 42 | 100% | 2026-08-28 |
 | WFS 1.0 | `basic` | 162 / 162 | 100% | 2026-08-28 |
 | WFS 1.1 | `basic` | 39 / 39 | 100% | 2026-08-28 |
-| WFS 2.0 | `basic` | 166 / 167 | 99.4% | [2026-08-31](https://github.com/honua-io/honua-server/actions/runs/33376911053) |
+| WFS 2.0 | `basic` | 167 / 167 | 100% | [2026-09-02](https://github.com/honua-io/honua-server/actions/runs/33583116921) |
 | WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | 2026-08-28 |
 | WCS 2.0 | `core` | 82 / 82 | 100% | 2026-08-28 |
 | WPS 2.0 | `basic-async` | 21 / 21 | 100% | 2026-08-28 |
@@ -57,19 +54,18 @@ and its `cite-conformance-evidence-13` bundle from 2026-08-28.
 | WMS 1.3 | `default` | 213 / 213 | 100% | 2026-08-28 |
 | WMTS 1.0 | `default` | 60 / 60 | 100% | 2026-08-28 |
 
-The WFS 2.0 transactional leg (`cite-wfs20-transactional-results`) measures the
-Transaction + LockFeature conformance classes independently from the `basic`
-leg. WMS 1.1.1 is likewise a first-class evidence leg (`cite-wms11-results`);
+The WFS 2.0 transactional leg (`cite-wfs20-transactional-results`) measures
+TransactionalWFS independently from the `basic` leg; LockFeature is not
+advertised by this server and is not part of the profile. WMS 1.1.1 is likewise a first-class evidence leg (`cite-wms11-results`);
 the runner exercises version negotiation, 1.1.1 axis order,
 `WMT_MS_Capabilities`, `application/vnd.ogc.se_xml` exceptions, `X`/`Y`
 GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 
 ### Common Re-Grading Mistakes To Avoid
 
-- **"WFS 2.0 CITE is fully compliant."** Incorrect for the current receipt.
-  The `basic` profile is 166/167 (99.4%) on run 33376911053. The remaining
-  requirement is multi-layer transaction rollback when
-  `rollbackOnFailure=true`.
+- **"WFS 2.0 CITE remains at 166/167."** Incorrect. The `basic` profile is
+  167/167 (100%) on run 33583116921; the receipt records zero failures and zero
+  skipped tests.
 - **"No CITE results in the repo, so CITE is unimplemented."** Incorrect.
   Result directories are gitignored (see `.gitignore`); they only exist as CI
   artifacts. The workflows, runners, and Docker compositions all live under
@@ -85,8 +81,16 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 
 ## Profile Scope, In One Line Each
 
-- **OGC API Features `default`** — Part 1 Core, Part 2 CRS, Part 3 Filtering on
-  the seeded fixture.
+- **OGC API Features `default`** — Part 1 Core on the seeded fixture. Part 2,
+  Part 4, and the specialized CQL2 classes are not included in the public
+  conformance declaration until an exact-candidate lane proves their complete
+  classes.
+- **OGC API building blocks** — the exact-candidate
+  `ogc-api-building-block-conformance.yml` lane runs the complete vendored CQL2,
+  MVT/TMS 2.0, Maps, and Schemathesis validator set. Its artifact is evidence
+  for the narrower Features Part 3/queryables claim; CQL2/filter probes remain
+  blocking regression coverage but do not certify complete CQL2 classes. It is
+  not folded into the official ETS totals above.
 - **OGC API Tiles `default`** — vector + raster tiles against the seeded tile
   matrix sets.
 - **GeoPackage 1.2 `applicable`** — core and feature classes for Honua's
@@ -100,8 +104,8 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
   spatial filters, response paging, and managed stored queries for the
   advertised profile. Locking, feature versioning, and spatial joins are not
   advertised by the `basic` profile and not in scope.
-- **WFS 2.0 `transactional`** — the dedicated Transaction + LockFeature
-  conformance-class leg.
+- **WFS 2.0 `transactional`** — the dedicated TransactionalWFS
+  conformance-class leg. Locking is not advertised by this server.
 - **WCS 2.0 `core`** — official ETS core profile, with preflight on
   `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`.
 - **WPS 2.0 `basic-async`** — official ETS Basic and Asynchronous conformance
@@ -112,7 +116,7 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 ## OGC API surfaces without an official CITE ETS
 
 Some OGC API standards do not (yet) have an official CITE Executable Test Suite,
-so they are not part of the 1137/1138 suite count above. They are still shipped as
+so they are not part of the 1138/1138 suite count above. They are still shipped as
 conformant protocol adapters and proven with targeted integration tests plus an
 accurate `/conformance` declaration:
 
@@ -123,7 +127,7 @@ accurate `/conformance` declaration:
   Phase 1 disclosure that POST/DELETE returned `501` no longer applies).
   MapLibre is served from canonical storage; SLD 1.0/1.1 are derived on demand.
   **Conformance status: there is no official OGC API – Styles CITE/ETS
-  executable test suite yet**, so this surface is not part of the 1137/1138 count
+  executable test suite yet**, so this surface is not part of the 1138/1138 count
   above and there is no external pass-rate to report. Honua's status is proven
   by internal integration tests that exercise every claimed conformance class —
   `GetConformance_ListsThePhase1ConformanceClasses` asserts all six classes are

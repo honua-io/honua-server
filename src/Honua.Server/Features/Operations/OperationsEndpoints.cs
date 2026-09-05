@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
@@ -158,11 +159,12 @@ internal static class OperationsEndpoints
             return NotFound(context, $"Operation '{id}' was not found.");
         }
 
-        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+        var authorization = await OperationAdminAuthorization.EvaluateAsync(
                 context,
                 context.User,
                 descriptor.Policy.SideEffectClass,
-                cancellationToken).ConfigureAwait(false))
+                cancellationToken).ConfigureAwait(false);
+        if (!authorization.IsAuthorized)
         {
             return Results.Forbid();
         }
@@ -192,7 +194,7 @@ internal static class OperationsEndpoints
                 PrincipalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId,
                 TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
                 SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
-                AuthorizationOutcome = "authorized",
+                AuthorizationOutcome = authorization.AuthorizationOutcome,
                 Roles = context.User.FindAll(ClaimTypes.Role)
                     .Select(claim => claim.Value)
                     .ToArray(),
@@ -240,7 +242,7 @@ internal static class OperationsEndpoints
         }
 
         var handle = await instanceStore.GetAsync(handleId, cancellationToken).ConfigureAwait(false);
-        if (handle is null)
+        if (handle is null || !OperationTenantAuthorization.CanAccess(context, handle.TenantId))
         {
             return NotFound(context, $"Operation handle '{handleId}' was not found.");
         }

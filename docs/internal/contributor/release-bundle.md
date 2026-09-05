@@ -14,6 +14,37 @@ registry (`release/bundle-suites.json`).
 
 ## Pieces
 
+### Production startup qualification (2026-09-04)
+
+The public server image
+`ghcr.io/honua-io/honua-server@sha256:e971442db410dc0e095a9073d70195d0841d196a303050bdb7efa189195109fc`
+(revision `a104af3c823d29f7d684545ab50af6cb0c525911`) is unusable for the
+documented Production install: after the documented PostGIS initialization
+remedy, startup aborts because the deploy and coordinated-release rollback
+descriptors lack safe approval mappers. A restart cannot repair that package.
+The corrected source registers mappers that seal the accepted workflow target,
+rollback safety classifications and tenant scope; the production validator stays
+enabled. Customers need the next published image containing this fix.
+
+Before promoting that image, run the documented topology against its exact
+published digest on fresh volumes:
+
+```bash
+python3 scripts/docker/smoke-production.py --image "$HONUA_IMAGE"
+```
+
+The check reads the Compose block from the deployment guide, generates private
+disposable credentials, isolates host ports and storage, requires readiness plus
+anonymous admin rejection, and removes only its own project. It emits a
+secret-free JSON receipt. `--initialize-postgis` applies the published
+troubleshooting remedy only to isolate the mapper regression in older recipes;
+normal candidate qualification must pass without that switch once the fresh
+database initialization fix is published. The original digest was reproduced
+with `failure=missing-safe-rollback-approval-mappers` and successful cleanup.
+
+The N-1 upgrade path remains unverified because no released baseline exists;
+this fresh-install check does not claim upgrade qualification.
+
 | File | Role |
 | --- | --- |
 | `.github/workflows/release-bundle.yml` | Orchestrator: build RC image → integration evidence → SDK cut → aggregate → gated promote |

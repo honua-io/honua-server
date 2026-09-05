@@ -152,7 +152,8 @@ internal static class GeometryServiceRequestParser
 
     /// <summary>
     /// Parses the ArcGIS geometry wrapper format: {"geometryType":"...","geometries":[...]}
-    /// Also supports legacy flat array: [{...},{...}].
+    /// Also supports legacy flat array: [{...},{...}] and Esri's documented
+    /// comma-separated point shorthand (<c>x,y</c>).
     /// </summary>
     public static (string[] GeometryJsonStrings, string? GeometryType, string? Error) ParseGeometries(
         string? raw,
@@ -172,6 +173,21 @@ internal static class GeometryServiceRequestParser
         if (string.IsNullOrWhiteSpace(raw))
         {
             return ([], null, "Parameter 'geometries' is required.");
+        }
+
+        var pointParts = raw.Split(',', StringSplitOptions.TrimEntries);
+        if (pointParts.Length == 2 &&
+            double.TryParse(pointParts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var pointX) &&
+            double.TryParse(pointParts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var pointY) &&
+            double.IsFinite(pointX) && double.IsFinite(pointY))
+        {
+            var pointJson = FormattableString.Invariant($"{{\"x\":{pointX:R},\"y\":{pointY:R}}}");
+            if (pointJson.Length > maxGeometryJsonLength)
+            {
+                return ([], "esriGeometryPoint", $"Geometry at index 0 exceeds the maximum size of {maxGeometryJsonLength} characters.");
+            }
+
+            return ([pointJson], "esriGeometryPoint", null);
         }
 
         try

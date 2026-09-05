@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Capabilities;
+using Honua.Server.Startup;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Capabilities;
@@ -29,6 +31,10 @@ internal static class CapabilityManifestServiceCollectionExtensions
         services.AddSingleton<DeploymentCapabilityProfile>();
         services.AddSingleton<DeploymentIdentity>();
         services.AddSingleton<DeploymentCapabilityRouteCatalog>();
+        // Test and custom hosts can intentionally bypass the infrastructure composition root.
+        // Keep the manifest resolvable there while preserving the canonical instance that
+        // infrastructure startup registered and used to make provider-registration decisions.
+        services.TryAddSingleton(_ => new WarehouseProviderDecisions(configuration));
         services.AddScoped<CapabilityManifestRuntimeInventory>();
         services.AddScoped<ICapabilityManifestService, CapabilityManifestService>();
         return services;

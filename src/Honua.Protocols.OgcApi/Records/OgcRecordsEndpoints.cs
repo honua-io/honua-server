@@ -531,7 +531,7 @@ internal static class OgcRecordsEndpoints
         var externalIdSet = SplitCsv(externalIds, StringComparer.OrdinalIgnoreCase);
         var terms = string.IsNullOrWhiteSpace(q)
             ? Array.Empty<string>()
-            : q.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            : q.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         foreach (var record in records)
         {
@@ -550,8 +550,12 @@ internal static class OgcRecordsEndpoints
                 continue;
             }
 
+            // OGC API - Records defines q as a comma-separated list of search terms
+            // with OR semantics. A term may itself contain whitespace; splitting on
+            // whitespace made client-generated `q=foo,bar` behave as an AND query and
+            // broke catalog clients (#4152).
             if (terms.Length > 0 &&
-                !terms.All(term => record.SearchText.Contains(term, StringComparison.OrdinalIgnoreCase)))
+                !terms.Any(term => record.SearchText.Contains(term, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }

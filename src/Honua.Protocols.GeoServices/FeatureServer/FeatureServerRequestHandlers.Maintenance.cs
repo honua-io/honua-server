@@ -316,12 +316,12 @@ internal static partial class FeatureServerEndpoints
                 "calcExpression parameter is required");
         }
 
-        // Parse calcExpression as JSON array of {field, sqlExpression}
+        // Parse calcExpression as JSON array of {field, sqlExpression} or {field, value}.
         if (!TryParseCalcExpressionEntries(calcExpression, out var expressions))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid calcExpression parameter",
-                ["calcExpression must be a valid JSON array of {field, sqlExpression} objects."]);
+                ["calcExpression must be a valid JSON array of {field, sqlExpression} or {field, value} objects."]);
         }
 
         if (expressions.Length == 0)
@@ -331,7 +331,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         // Validate each expression
-        var parsedExpressions = new List<(string Field, object? Value, bool IsFieldRef)>();
+        var parsedExpressions = new List<(string Field, object? Value, bool HasValue, string? SqlExpression)>();
         foreach (var expr in expressions)
         {
             if (string.IsNullOrWhiteSpace(expr.Field))
@@ -340,27 +340,33 @@ internal static partial class FeatureServerEndpoints
                     "Each calcExpression entry must have a 'field' property");
             }
 
-            if (string.IsNullOrWhiteSpace(expr.SqlExpression))
+            if (!expr.HasValue && string.IsNullOrWhiteSpace(expr.SqlExpression))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
-                    $"calcExpression entry for field '{expr.Field}' must have a 'sqlExpression' property");
+                    $"calcExpression entry for field '{expr.Field}' must have a 'value' or 'sqlExpression' property");
             }
 
-            if (!TryParseCalcExpression(expr.SqlExpression, out var value, out var isFieldRef, out var parseError))
+            if (expr.HasValue)
+            {
+                parsedExpressions.Add((expr.Field, expr.Value, true, null));
+            }
+            else if (!TryValidateCalcExpression(expr.SqlExpression!, out var parseError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     $"Unsupported expression for field '{expr.Field}'",
                     [parseError ?? "Expression is not supported."]);
             }
-
-            parsedExpressions.Add((expr.Field, value, isFieldRef));
+            else
+            {
+                parsedExpressions.Add((expr.Field, null, false, expr.SqlExpression));
+            }
         }
 
         // Validate that all target field names exist in the layer schema
         var validFieldNames = new HashSet<string>(
             resource.SchemaFields.Select(f => f.Name),
             StringComparer.OrdinalIgnoreCase);
-        foreach (var (field, _, _) in parsedExpressions)
+        foreach (var (field, _, _, _) in parsedExpressions)
         {
             if (!validFieldNames.Contains(field))
             {
@@ -440,16 +446,22 @@ internal static partial class FeatureServerEndpoints
                     : feature.Id
             };
 
-            foreach (var (field, value, isFieldRef) in parsedExpressions)
+            foreach (var (field, value, hasValue, sqlExpression) in parsedExpressions)
             {
-                if (isFieldRef)
+                if (hasValue)
                 {
-                    var refField = (string)value!;
-                    attributes[field] = feature.Attributes.TryGetValue(refField, out var refValue) ? refValue : null;
+                    attributes[field] = value;
                 }
                 else
                 {
-                    attributes[field] = value;
+                    if (!TryEvaluateCalcExpression(sqlExpression!, feature.Attributes, out var calculatedValue, out var expressionError))
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context,
+                            $"Unsupported expression for field '{field}'",
+                            [expressionError ?? "Expression is not supported."]);
+                    }
+
+                    attributes[field] = calculatedValue;
                 }
             }
 
@@ -752,81 +764,20 @@ internal static partial class FeatureServerEndpoints
         return Results.Json(response, FeatureServerJsonContext.Default.QueryRelationshipsResponse, contentType: "application/json");
     }
 
-    /// <summary>
-    /// Parses a calc expression value. Supports string literals ('text'), numeric literals,
-    /// NULL, and simple field references.
-    /// </summary>
-    private static bool TryParseCalcExpression(
-        string expression,
-        out object? value,
-        out bool isFieldRef,
-        out string? error)
+    private static bool TryValidateCalcExpression(string expression, out string? error)
     {
-        value = null;
-        isFieldRef = false;
-        error = null;
-
-        var trimmed = expression.Trim();
-
-        if (string.Equals(trimmed, "NULL", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        // String literal: 'text'
-        if (trimmed.Length >= 2 && trimmed[0] == '\'' && trimmed[^1] == '\'')
-        {
-            value = trimmed[1..^1];
-            return true;
-        }
-
-        // Integer literal
-        if (long.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
-        {
-            value = intValue;
-            return true;
-        }
-
-        // Decimal literal
-        if (double.TryParse(trimmed, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var doubleValue))
-        {
-            value = doubleValue;
-            return true;
-        }
-
-        // Field reference: alphanumeric + underscore, starting with letter or underscore
-        if (IsValidFieldReference(trimmed))
-        {
-            value = trimmed;
-            isFieldRef = true;
-            return true;
-        }
-
-        error = $"Expression '{trimmed}' is not supported. Use literals ('text', 42, NULL) or field references.";
-        return false;
+        var parser = new CalcSqlExpressionParser(expression, new Dictionary<string, object?>(), validationOnly: true);
+        return parser.TryParse(out _, out error);
     }
 
-    private static bool IsValidFieldReference(string name)
+    private static bool TryEvaluateCalcExpression(
+        string expression,
+        IReadOnlyDictionary<string, object?> attributes,
+        out object? value,
+        out string? error)
     {
-        if (string.IsNullOrEmpty(name))
-        {
-            return false;
-        }
-
-        if (!char.IsLetter(name[0]) && name[0] != '_')
-        {
-            return false;
-        }
-
-        for (var i = 1; i < name.Length; i++)
-        {
-            if (!char.IsLetterOrDigit(name[i]) && name[i] != '_')
-            {
-                return false;
-            }
-        }
-
-        return true;
+        var parser = new CalcSqlExpressionParser(expression, attributes);
+        return parser.TryParse(out value, out error);
     }
 
     private static bool TryParseCalcExpressionEntries(string calcExpression, out CalcExpressionEntry[] expressions)
@@ -873,10 +824,31 @@ internal static partial class FeatureServerEndpoints
                     sqlExpression = sqlExpressionElement.GetString();
                 }
 
+                if (sqlExpression is null && element.TryGetProperty("expression", out var expressionElement) &&
+                    expressionElement.ValueKind != JsonValueKind.Null)
+                {
+                    if (expressionElement.ValueKind != JsonValueKind.String)
+                    {
+                        return false;
+                    }
+
+                    sqlExpression = expressionElement.GetString();
+                }
+
+                var hasValue = element.TryGetProperty("value", out var valueElement) &&
+                               valueElement.ValueKind != JsonValueKind.Undefined;
+                object? value = null;
+                if (hasValue && !TryReadCalcValue(valueElement, out value))
+                {
+                    return false;
+                }
+
                 parsedExpressions.Add(new CalcExpressionEntry
                 {
                     Field = field,
-                    SqlExpression = sqlExpression
+                    SqlExpression = sqlExpression,
+                    HasValue = hasValue,
+                    Value = value
                 });
             }
 
@@ -896,6 +868,399 @@ internal static partial class FeatureServerEndpoints
 
         [System.Text.Json.Serialization.JsonPropertyName("sqlExpression")]
         public string? SqlExpression { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("value")]
+        public object? Value { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool HasValue { get; set; }
+    }
+
+    private static bool TryReadCalcValue(JsonElement element, out object? value)
+    {
+        value = null;
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Null:
+                return true;
+            case JsonValueKind.String:
+                value = element.GetString();
+                return true;
+            case JsonValueKind.True:
+            case JsonValueKind.False:
+                value = element.GetBoolean();
+                return true;
+            case JsonValueKind.Number:
+                if (element.TryGetInt64(out var integer))
+                {
+                    value = integer;
+                    return true;
+                }
+
+                if (element.TryGetDouble(out var number))
+                {
+                    value = number;
+                    return true;
+                }
+
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Small, parameter-free SQL scalar evaluator for Esri calculate expressions. It deliberately
+    /// supports only value-producing SQL (literals, field references, arithmetic, concatenation,
+    /// and common scalar functions), so calculate cannot become a general SQL execution surface.
+    /// </summary>
+    private sealed class CalcSqlExpressionParser
+    {
+        private readonly string _expression;
+        private readonly IReadOnlyDictionary<string, object?> _attributes;
+        private readonly bool _validationOnly;
+        private int _position;
+        private Token _current;
+
+        public CalcSqlExpressionParser(
+            string expression,
+            IReadOnlyDictionary<string, object?> attributes,
+            bool validationOnly = false)
+        {
+            _expression = expression;
+            _attributes = attributes;
+            _validationOnly = validationOnly;
+            _current = NextToken();
+        }
+
+        public bool TryParse(out object? value, out string? error)
+        {
+            value = null;
+            error = null;
+            if (!TryParseConcat(out value, out error) || _current.Kind != TokenKind.End)
+            {
+                error ??= $"Expression '{_expression.Trim()}' is not a valid SQL scalar expression.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryParseConcat(out object? value, out string? error)
+        {
+            if (!TryParseAdditive(out value, out error)) return false;
+            while (_current.Kind == TokenKind.Concat)
+            {
+                Advance();
+                if (!TryParseAdditive(out var right, out error)) return false;
+                value = $"{value ?? string.Empty}{right ?? string.Empty}";
+            }
+            return true;
+        }
+
+        private bool TryParseAdditive(out object? value, out string? error)
+        {
+            if (!TryParseMultiplicative(out value, out error)) return false;
+            while (_current.Kind is TokenKind.Plus or TokenKind.Minus)
+            {
+                var operation = _current.Kind;
+                Advance();
+                if (!TryParseMultiplicative(out var right, out error) ||
+                    !TryApplyNumeric(operation, value, right, out value, out error)) return false;
+            }
+            return true;
+        }
+
+        private bool TryParseMultiplicative(out object? value, out string? error)
+        {
+            if (!TryParseUnary(out value, out error)) return false;
+            while (_current.Kind is TokenKind.Star or TokenKind.Slash or TokenKind.Percent)
+            {
+                var operation = _current.Kind;
+                Advance();
+                if (!TryParseUnary(out var right, out error) ||
+                    !TryApplyNumeric(operation, value, right, out value, out error)) return false;
+            }
+            return true;
+        }
+
+        private bool TryParseUnary(out object? value, out string? error)
+        {
+            if (_current.Kind == TokenKind.Minus)
+            {
+                Advance();
+                if (!TryParseUnary(out var inner, out error) || !TryGetDecimal(inner, out var number))
+                {
+                    if (_validationOnly && inner is null)
+                    {
+                        value = null;
+                        error = null;
+                        return true;
+                    }
+                    value = null;
+                    error ??= "Unary minus requires a numeric value.";
+                    return false;
+                }
+                value = -number;
+                return true;
+            }
+
+            return TryParsePrimary(out value, out error);
+        }
+
+        private bool TryParsePrimary(out object? value, out string? error)
+        {
+            value = null;
+            error = null;
+            if (_current.Kind == TokenKind.Number || _current.Kind == TokenKind.String)
+            {
+                value = _current.Value;
+                Advance();
+                return true;
+            }
+
+            if (_current.Kind != TokenKind.Identifier)
+            {
+                if (_current.Kind == TokenKind.LeftParen)
+                {
+                    Advance();
+                    if (!TryParseConcat(out value, out error) || !Expect(TokenKind.RightParen, out error)) return false;
+                    return true;
+                }
+
+                error = $"Unexpected token in expression '{_expression.Trim()}'.";
+                return false;
+            }
+
+            var name = _current.Value as string ?? string.Empty;
+            Advance();
+            if (_current.Kind == TokenKind.LeftParen)
+            {
+                Advance();
+                var arguments = new List<object?>();
+                if (_current.Kind != TokenKind.RightParen)
+                {
+                    do
+                    {
+                        if (!TryParseConcat(out var argument, out error)) return false;
+                        arguments.Add(argument);
+                        if (_current.Kind != TokenKind.Comma) break;
+                        Advance();
+                    } while (true);
+                }
+
+                if (!Expect(TokenKind.RightParen, out error)) return false;
+                return TryApplyFunction(name, arguments, out value, out error);
+            }
+
+            if (name.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+            {
+                value = null;
+                return true;
+            }
+            if (name.Equals("TRUE", StringComparison.OrdinalIgnoreCase))
+            {
+                value = true;
+                return true;
+            }
+            if (name.Equals("FALSE", StringComparison.OrdinalIgnoreCase))
+            {
+                value = false;
+                return true;
+            }
+
+            // During the validation pass unknown fields are allowed; the layer schema check
+            // validates targets, while a missing source field evaluates to SQL NULL.
+            value = _attributes.TryGetValue(name, out var attribute) ? attribute : null;
+            return true;
+        }
+
+        private bool TryApplyFunction(string name, List<object?> arguments, out object? value, out string? error)
+        {
+            value = null;
+            error = null;
+            var isTextFunction = name.Equals("UPPER", StringComparison.OrdinalIgnoreCase) ||
+                                 name.Equals("LOWER", StringComparison.OrdinalIgnoreCase) ||
+                                 name.Equals("TRIM", StringComparison.OrdinalIgnoreCase);
+            var isLengthFunction = name.Equals("LENGTH", StringComparison.OrdinalIgnoreCase);
+            var isCoalesceFunction = name.Equals("COALESCE", StringComparison.OrdinalIgnoreCase) ||
+                                     name.Equals("NVL", StringComparison.OrdinalIgnoreCase);
+            var isConcatFunction = name.Equals("CONCAT", StringComparison.OrdinalIgnoreCase);
+
+            if (_validationOnly &&
+                (isTextFunction || isLengthFunction) &&
+                arguments.Count == 1 && arguments[0] is null)
+            {
+                return true;
+            }
+
+            if (isTextFunction)
+            {
+                var text = arguments.Count == 1
+                    ? Convert.ToString(arguments[0], CultureInfo.InvariantCulture)
+                    : null;
+                if (text is null)
+                {
+                    error = $"{name} requires one text argument.";
+                    return false;
+                }
+                value = name.Equals("UPPER", StringComparison.OrdinalIgnoreCase) ? text.ToUpperInvariant() :
+                    name.Equals("LOWER", StringComparison.OrdinalIgnoreCase) ? text.ToLowerInvariant() : text.Trim();
+                return true;
+            }
+
+            if (isLengthFunction)
+            {
+                var text = arguments.Count == 1
+                    ? Convert.ToString(arguments[0], CultureInfo.InvariantCulture)
+                    : null;
+                if (text is null)
+                {
+                    error = "LENGTH requires one text argument.";
+                    return false;
+                }
+                value = (long)text.Length;
+                return true;
+            }
+
+            if (isCoalesceFunction)
+            {
+                if (arguments.Count < 2)
+                {
+                    error = $"{name} requires at least two arguments.";
+                    return false;
+                }
+                value = arguments.FirstOrDefault(static argument => argument is not null);
+                return true;
+            }
+
+            if (isConcatFunction)
+            {
+                value = string.Concat(arguments.Select(static argument => argument?.ToString() ?? string.Empty));
+                return true;
+            }
+
+            error = $"Function '{name}' is not supported by calculate.";
+            return false;
+        }
+
+        private bool TryApplyNumeric(TokenKind operation, object? left, object? right, out object? value, out string? error)
+        {
+            value = null;
+            error = null;
+            if (_validationOnly)
+            {
+                value = null;
+                return true;
+            }
+
+            if (!TryGetDecimal(left, out var leftNumber) || !TryGetDecimal(right, out var rightNumber))
+            {
+                error = "Arithmetic operators require numeric values.";
+                return false;
+            }
+
+            if ((operation == TokenKind.Slash || operation == TokenKind.Percent) && rightNumber == 0)
+            {
+                error = "Division by zero is not allowed.";
+                return false;
+            }
+
+            value = operation switch
+            {
+                TokenKind.Plus => leftNumber + rightNumber,
+                TokenKind.Minus => leftNumber - rightNumber,
+                TokenKind.Star => leftNumber * rightNumber,
+                TokenKind.Slash => leftNumber / rightNumber,
+                TokenKind.Percent => leftNumber % rightNumber,
+                _ => null
+            };
+            return true;
+        }
+
+        private static bool TryGetDecimal(object? value, out decimal number)
+        {
+            number = 0;
+            return value is not null && decimal.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Number, CultureInfo.InvariantCulture, out number);
+        }
+
+        private bool Expect(TokenKind kind, out string? error)
+        {
+            if (_current.Kind == kind)
+            {
+                Advance();
+                error = null;
+                return true;
+            }
+            error = $"Expected {kind} in expression '{_expression.Trim()}'.";
+            return false;
+        }
+
+        private void Advance() => _current = NextToken();
+
+        private Token NextToken()
+        {
+            while (_position < _expression.Length && char.IsWhiteSpace(_expression[_position])) _position++;
+            if (_position >= _expression.Length) return new(TokenKind.End, null);
+            var character = _expression[_position++];
+            if (char.IsDigit(character) || character == '.')
+            {
+                var start = _position - 1;
+                while (_position < _expression.Length && (char.IsDigit(_expression[_position]) || _expression[_position] == '.')) _position++;
+                var raw = _expression[start.._position];
+                return decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var number)
+                    ? new(TokenKind.Number, number)
+                    : new(TokenKind.Invalid, raw);
+            }
+            if (char.IsLetter(character) || character == '_')
+            {
+                var start = _position - 1;
+                while (_position < _expression.Length && (char.IsLetterOrDigit(_expression[_position]) || _expression[_position] == '_')) _position++;
+                return new(TokenKind.Identifier, _expression[start.._position]);
+            }
+            if (character == '\'')
+            {
+                var builder = new System.Text.StringBuilder();
+                while (_position < _expression.Length)
+                {
+                    var next = _expression[_position++];
+                    if (next == '\'' && _position < _expression.Length && _expression[_position] == '\'')
+                    {
+                        builder.Append('\'');
+                        _position++;
+                    }
+                    else if (next == '\'')
+                    {
+                        return new(TokenKind.String, builder.ToString());
+                    }
+                    else builder.Append(next);
+                }
+                return new(TokenKind.Invalid, builder.ToString());
+            }
+
+            return character switch
+            {
+                '+' => new(TokenKind.Plus, null),
+                '-' => new(TokenKind.Minus, null),
+                '*' => new(TokenKind.Star, null),
+                '/' => new(TokenKind.Slash, null),
+                '%' => new(TokenKind.Percent, null),
+                '(' => new(TokenKind.LeftParen, null),
+                ')' => new(TokenKind.RightParen, null),
+                ',' => new(TokenKind.Comma, null),
+                '|' when _position < _expression.Length && _expression[_position] == '|' => ConsumeConcat(),
+                _ => new(TokenKind.Invalid, character.ToString())
+            };
+        }
+
+        private Token ConsumeConcat()
+        {
+            _position++;
+            return new(TokenKind.Concat, null);
+        }
+
+        private enum TokenKind { End, Invalid, Identifier, Number, String, Plus, Minus, Star, Slash, Percent, Concat, LeftParen, RightParen, Comma }
+        private readonly record struct Token(TokenKind Kind, object? Value);
     }
 
     private static async Task<IResult> HandleValidateSql(

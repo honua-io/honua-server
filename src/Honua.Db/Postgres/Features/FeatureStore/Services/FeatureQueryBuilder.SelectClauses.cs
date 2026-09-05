@@ -76,8 +76,20 @@ internal sealed partial class FeatureQueryBuilder
         else
         {
             var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
-            sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect}, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            if (query.Distinct)
+            {
+                // Distinct values are attribute rows, not features: including objectid or
+                // geometry in the DISTINCT projection would make every row unique. Keep the
+                // reader's stable three-column shape while returning a null synthetic id and
+                // geometry for the protocol formatter to suppress.
+                sql.Append(CultureInfo.InvariantCulture,
+                    $"SELECT DISTINCT 0::bigint AS {DatabaseSchema.ObjectIdColumn}, NULL AS {DatabaseSchema.GeometryColumn}, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            }
+            else
+            {
+                sql.Append(CultureInfo.InvariantCulture,
+                    $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect}, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            }
         }
     }
 
@@ -243,7 +255,10 @@ internal sealed partial class FeatureQueryBuilder
                 continue;
             }
 
-            if (!DatabaseSchema.CanUseJsonPath(fieldName) || !seenFields.Add(fieldName))
+            var isDistinctObjectId = query.Distinct &&
+                (fieldName.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase)
+                 || fieldName.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase));
+            if ((!DatabaseSchema.CanUseJsonPath(fieldName) && !isDistinctObjectId) || !seenFields.Add(fieldName))
             {
                 continue;
             }
@@ -257,8 +272,10 @@ internal sealed partial class FeatureQueryBuilder
             // has an integer-subscript form) unambiguous.
             var fieldParamIndex = paramIndex++;
             parameters.Add(fieldName);
-            projectedFields.Add(
-                $"${fieldParamIndex}::text, {DatabaseSchema.AttributesColumn} -> ${fieldParamIndex}::text");
+            var valueExpression = isDistinctObjectId
+                ? DatabaseSchema.ObjectIdColumn
+                : $"{DatabaseSchema.AttributesColumn} -> ${fieldParamIndex}::text";
+            projectedFields.Add($"${fieldParamIndex}::text, {valueExpression}");
         }
 
         if (projectedFields.Count == 0)
@@ -293,7 +310,7 @@ internal sealed partial class FeatureQueryBuilder
     /// SQL regardless of contents. Returns the bare attributes column when nothing is
     /// masked, preserving the prior byte-identical query.
     /// </summary>
-    private static string BuildMaskedAttributesColumn(
+    internal static string BuildMaskedAttributesColumn(
         HashSet<string> maskedFields,
         ref int paramIndex,
         List<object> parameters)

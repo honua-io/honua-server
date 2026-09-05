@@ -55,7 +55,7 @@ Run `GET /api/v1/admin/oidc/providers`.
 
 ## License
 
-Runtime licensing loads an offline Ed25519-signed JSON envelope from `Licensing:LicensePath`. With no configured path the server runs in Community mode; missing, malformed, unknown-key, invalid-signature, and expired files leave the server in a safe Community state. License files are bounded to 64 KiB.
+Runtime licensing validates an offline Ed25519-signed JSON envelope. Without an uploaded override, configured sources retain their precedence: a resolved `Licensing:LicenseContentSecretRef`, then `Licensing:LicenseContent`, then `Licensing:LicensePath`. With no source the server runs in Community mode; malformed, unknown-key, invalid-signature, and expired licenses leave the server in a safe Community state. License files are bounded to 64 KiB.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -69,6 +69,14 @@ Runtime licensing loads an offline Ed25519-signed JSON envelope from `Licensing:
 Validation states are `NoLicenseConfigured`, `Valid`, `MissingFile`, `Malformed`, `UnknownKey`, `InvalidSignature`, and `Expired`. Rejected uploads return `400` and do not replace the current license. Paid-feature gates return `402 Payment Required`.
 
 Run `POST /api/v1/admin/license/upload` and attach `company.honua-license.json` as the binary request body, then verify it with `GET /api/v1/admin/license/status`.
+
+### Upload persistence and restart
+
+A successful upload requires a writable `Licensing:LicensePath` directory and persists the signed envelope atomically at `<LicensePath>.uploaded`. This upload override takes precedence over secret, inline, and ordinary file sources at both bootstrap and runtime startup, including after `Licensing:AllowAdminUpload` is turned off. The configured `LicensePath` is also updated as a compatibility mirror. If only the mirror update fails, the response still reports success and identifies the mirror failure; the committed override remains authoritative. Uploads within one server process are serialized so the active snapshot and persisted license agree.
+
+Mount the containing directory on persistent storage and back up both files with the licensing configuration and trusted keys. An invalid or unreadable override produces a safe Community state; it does not reactivate an older inline or secret license. To deliberately return to configured-source precedence, stop the server, remove the `.uploaded` override, verify the desired source (including the `LicensePath` mirror if no inline/secret source exists), then restart. Coordinate changes across replicas; this mechanism does not distribute uploads to separate filesystems.
+
+Existing ordinary license files retain their previous precedence until a successful upload creates an override. Uploads made by older versions have no persisted provenance; re-upload the desired signed license after upgrading to establish the override. A rollback to an older server requires removing or updating stale inline/secret configuration to match the uploaded license, because older versions do not read `.uploaded`.
 
 ### Trusted-key rotation
 

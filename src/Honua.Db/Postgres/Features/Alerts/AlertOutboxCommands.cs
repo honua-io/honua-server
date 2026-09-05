@@ -24,10 +24,12 @@ internal static class AlertOutboxCommands
     public const string AppendEventSql = """
         INSERT INTO honua.alert_events (
             dedupe_key, rule_id, zone_id, service_id, layer_id, objectid, trigger_type,
-            generation, severity, occurred_at, payload, incident_status, incident_duration_ms, source)
+            generation, severity, occurred_at, payload, incident_status, incident_duration_ms, source,
+            source_event_id, job_id, operation_instance_id, correlation_id, audit_id, proposal_id)
         VALUES (
             @dedupe_key, @rule_id, @zone_id, @service_id, @layer_id, @objectid, @trigger_type,
-            @generation, @severity, @occurred_at, @payload::jsonb, @incident_status, @incident_duration_ms, @source)
+            @generation, @severity, @occurred_at, @payload::jsonb, @incident_status, @incident_duration_ms, @source,
+            @source_event_id, @job_id, @operation_instance_id, @correlation_id, @audit_id, @proposal_id)
         ON CONFLICT (dedupe_key) DO NOTHING
         RETURNING event_id
         """;
@@ -66,6 +68,12 @@ internal static class AlertOutboxCommands
         command.Parameters.AddWithValue("incident_status", NpgsqlDbType.Smallint, alertEvent.IncidentStatus.ToDbValue());
         command.Parameters.AddWithValue("incident_duration_ms", NpgsqlDbType.Bigint, alertEvent.IncidentDurationMs);
         command.Parameters.AddWithValue("source", NpgsqlDbType.Text, (object?)alertEvent.Source ?? DBNull.Value);
+        command.Parameters.AddWithValue("source_event_id", NpgsqlDbType.Text, (object?)alertEvent.SourceEventId ?? DBNull.Value);
+        command.Parameters.AddWithValue("job_id", NpgsqlDbType.Text, (object?)alertEvent.JobId ?? DBNull.Value);
+        command.Parameters.AddWithValue("operation_instance_id", NpgsqlDbType.Text, (object?)alertEvent.OperationInstanceId ?? DBNull.Value);
+        command.Parameters.AddWithValue("correlation_id", NpgsqlDbType.Text, (object?)alertEvent.CorrelationId ?? DBNull.Value);
+        command.Parameters.AddWithValue("audit_id", NpgsqlDbType.Text, (object?)alertEvent.AuditId ?? DBNull.Value);
+        command.Parameters.AddWithValue("proposal_id", NpgsqlDbType.Text, (object?)alertEvent.ProposalId ?? DBNull.Value);
     }
 
     /// <summary>

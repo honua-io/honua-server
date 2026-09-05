@@ -102,3 +102,12 @@ forensic blind spots in lower editions, so emission runs unconditionally and the
 sink decides durability. If an audit entitlement is later introduced, gate it in
 the shared components above (resolver + writer decorator) so the gate stays
 consistent across every protocol.
+
+### Effective tenant attribution
+
+HTTP admin mutation records include `details.tenantId` from the resolved request
+`ITenantContext`, alongside the actor, correlation, status, and method. This value
+identifies the effective target tenant even when a platform administrator acts in
+several tenants. Request headers are not used as audit attribution. If no tenant
+has been resolved, the field is explicitly `null`. The existing JSON details
+column and audit exports retain this field without a database migration.

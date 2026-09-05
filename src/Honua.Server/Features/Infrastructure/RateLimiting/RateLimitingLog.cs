@@ -8,6 +8,9 @@ internal static partial class RateLimitingLog
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to check rate limit for {KeyFamily} {KeyHash}, allowing request")]
     public static partial void RateLimitCheckFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Redis rate limit counter failed for {KeyFamily} {KeyHash}; enforcing the process-local limit")]
+    public static partial void RedisCounterFallback(ILogger logger, string keyFamily, string keyHash, Exception exception);
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Rate limit exceeded for {KeyFamily} {KeyHash}. Requests: {RequestCount}/{Limit}")]
     public static partial void RateLimitExceeded(ILogger logger, string keyFamily, string keyHash, int requestCount, int limit);
 }

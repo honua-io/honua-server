@@ -44,7 +44,13 @@ public sealed class FeatureServerApplyEditsIdempotencyReleaseTests : IAsyncLifet
         .WithTestLicense(HonuaEdition.Pro)
         .ReplaceService<IFeatureWriter>(new ReadOnlyFeatureWriter("TestReadOnly"));
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(
+            ServiceId,
+            ["Create", "Update", "Delete"]);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
@@ -135,7 +141,13 @@ public sealed class FeatureServerApplyEditsTransactionalCancellationTests : IAsy
             .ReplaceService<IFeatureWriter>(_writer);
     }
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(
+            "test",
+            ["Create", "Update", "Delete"]);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
@@ -233,7 +245,13 @@ public sealed class FeatureServerApplyEditsPostCommitExceptionTests : IAsyncLife
         .ReplaceService<IFeatureWriter>(new SuccessfulFeatureWriter())
         .ReplaceService<IPluginEditPipeline>(new ThrowingAfterHookPipeline());
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(
+            "test",
+            ["Create", "Update", "Delete"]);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
@@ -344,7 +362,13 @@ public sealed class FeatureServerApplyEditsAmbiguousWriteTests : IAsyncLifetime
         .WithTestLicense(HonuaEdition.Pro)
         .ReplaceService<IFeatureWriter>(new ThrowingFeatureWriter());
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(
+            ServiceId,
+            ["Create", "Update", "Delete"]);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 

@@ -52,7 +52,9 @@ internal sealed class CoordinatedContainerStepExecutor(
         {
             Outcome = MapOutcome(deploy.Status),
             ChildOperationId = deploy.OperationId,
-            Detail = deploy.CurrentPhase ?? "Container rollout submitted."
+            Detail = deploy.CurrentPhase ?? "Container rollout submitted.",
+            ObservedRevision = deploy.ObservedState,
+            ExpectedRevision = deploy.Deploy?.CurrentRevision
         };
     }
 
@@ -78,23 +80,45 @@ internal sealed class CoordinatedContainerStepExecutor(
         {
             Outcome = MapOutcome(deploy.Status),
             ChildOperationId = childOperationId,
-            Detail = deploy.CurrentPhase
+            Detail = deploy.CurrentPhase,
+            ObservedRevision = deploy.ObservedState,
+            ExpectedRevision = deploy.Deploy?.CurrentRevision
         };
     }
 
-    public async Task RollbackAsync(string childOperationId, CancellationToken cancellationToken = default)
-        => await deployService.RequestRollbackAsync(
+    public async Task<CoordinatedStepResult> RollbackAsync(
+        string childOperationId,
+        CancellationToken cancellationToken = default)
+    {
+        var deploy = await deployService.RequestRollbackAsync(
                 childOperationId,
                 requestedBy: null,
                 reason: "Coordinated rollback unwinding the container rollout.",
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
+        return deploy is null
+            ? new CoordinatedStepResult
+            {
+                Outcome = CoordinatedStepOutcome.Failed,
+                ChildOperationId = childOperationId,
+                Detail = "Container rollout rollback request could not be read back."
+            }
+            : new CoordinatedStepResult
+            {
+                Outcome = MapOutcome(deploy.Status),
+                ChildOperationId = childOperationId,
+                Detail = deploy.CurrentPhase,
+                ObservedRevision = deploy.ObservedState,
+                ExpectedRevision = deploy.Deploy?.CurrentRevision
+            };
+    }
+
     private static CoordinatedStepOutcome MapOutcome(WorkflowOperationStatus status) => status switch
     {
         WorkflowOperationStatus.Succeeded => CoordinatedStepOutcome.Succeeded,
-        WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired
-            or WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.RollbackRequested => CoordinatedStepOutcome.Failed,
+        WorkflowOperationStatus.RolledBack => CoordinatedStepOutcome.RolledBack,
+        WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired => CoordinatedStepOutcome.Failed,
         _ => CoordinatedStepOutcome.Pending
     };
 }
@@ -159,7 +183,8 @@ internal sealed class CoordinatedMetadataStepExecutor(
         {
             Outcome = MapOutcome(metadata.Status),
             ChildOperationId = childOperationId,
-            Detail = metadata.CurrentPhase
+            Detail = metadata.CurrentPhase,
+            ObservedRevision = metadata.MetadataRelease?.PriorRevision?.ToString(System.Globalization.CultureInfo.InvariantCulture)
         };
     }
 
@@ -196,8 +221,8 @@ internal sealed class CoordinatedMetadataStepExecutor(
     private static CoordinatedStepOutcome MapOutcome(WorkflowOperationStatus status) => status switch
     {
         WorkflowOperationStatus.Succeeded => CoordinatedStepOutcome.Succeeded,
-        WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired
-            or WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.RollbackRequested => CoordinatedStepOutcome.Failed,
+        WorkflowOperationStatus.RolledBack => CoordinatedStepOutcome.RolledBack,
+        WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired => CoordinatedStepOutcome.Failed,
         _ => CoordinatedStepOutcome.Pending
     };
 }

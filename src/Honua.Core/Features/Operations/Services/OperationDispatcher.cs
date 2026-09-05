@@ -94,7 +94,10 @@ public sealed class OperationDispatcher : IOperationInvoker
             if (context.ScopeGoverned &&
                 (context.RecognizedScopes.Count == 0 ||
                  context.RecognizedScopes.Any(scope =>
-                     !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal))))
+                     !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal)) ||
+                 !OperationScopeMapping.TryResolve(request, out var requiredOperation) ||
+                 !OperatorScopeCatalog.PermitsOperation(
+                     context.RecognizedScopes.ToHashSet(StringComparer.Ordinal), requiredOperation)))
             {
                 return new OperationHandle
                 {
@@ -104,7 +107,7 @@ public sealed class OperationDispatcher : IOperationInvoker
                     Status = OperationHandleStatus.Failed,
                     CreatedAt = createdAt,
                     UpdatedAt = _clock.GetUtcNow(),
-                    Reason = "Approved replay OAuth scope authority is missing or unrecognized.",
+                    Reason = "Approved replay operation exceeds the sealed OAuth scope authority.",
                 };
             }
 
@@ -169,6 +172,8 @@ public sealed class OperationDispatcher : IOperationInvoker
             {
                 OperationInstanceId = envelope.OperationInstanceId,
                 CorrelationId = envelope.CorrelationId,
+                AuditId = acceptanceAuditId,
+                ProposalId = context.ApprovedProposalId,
             };
             createdAt = envelope.CreatedAt;
         }
@@ -190,6 +195,8 @@ public sealed class OperationDispatcher : IOperationInvoker
             {
                 OperationInstanceId = envelope.OperationInstanceId,
                 CorrelationId = envelope.CorrelationId,
+                AuditId = envelope.AuditId,
+                ProposalId = envelope.ProposalId,
             };
             acceptanceAuditId = envelope.AuditId;
             createdAt = envelope.CreatedAt;
@@ -368,6 +375,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         {
             OperationInstanceId = operationInstanceId,
             OperationId = descriptor.OperationId,
+            TenantId = envelope.TenantId,
             CorrelationId = correlationId,
             AuditId = acceptanceAuditId,
             CreatedAt = createdAt,
@@ -637,6 +645,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             OperationInstanceId = context.OperationInstanceId
                 ?? throw new InvalidOperationException("The canonical operation instance id was not assigned."),
             OperationId = descriptor.OperationId,
+            TenantId = context.TenantId,
             CorrelationId = context.CorrelationId
                 ?? throw new InvalidOperationException("The canonical correlation id was not assigned."),
             Status = status,

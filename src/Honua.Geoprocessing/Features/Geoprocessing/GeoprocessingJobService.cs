@@ -48,6 +48,10 @@ namespace Honua.Geoprocessing;
 /// </remarks>
 internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 {
+    // Admission is evaluated before the durable TryCreateAsync call. Serialize that
+    // check-and-create window on each node so concurrent submissions cannot all observe
+    // the same active-job snapshot (#52). Redis-backed rate claims cover cross-node rate.
+    private static readonly SemaphoreSlim AdmissionSubmissionGate = new(1, 1);
     private readonly IExecutionJobStore? _jobStore;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IReadOnlyList<IJobCancellationNotifier> _cancellationNotifiers;
@@ -761,111 +765,116 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var costWeight = (double)Math.Max(plan.Steps.Count, 1);
         var priority = ResolvePriority(specParams);
 
-        var admission = await _dispatcher.EnsureAdmittedAsync(
-            principal, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
-
-        if (admission != null)
-        {
-            specParams[ExecutionAdmissionEvaluator.CostWeightParameterKey] =
-                costWeight.ToString("R", CultureInfo.InvariantCulture);
-            if (!string.IsNullOrEmpty(partitionKey))
-            {
-                specParams[ExecutionAdmissionEvaluator.PartitionKeyParameterKey] = partitionKey;
-            }
-        }
-
-        var workload = await _dispatcher.ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
-        // A custom-code job forces the custom-code runtime profile so the claim
-        // fence routes it to the custom-code Batch workload (and away from the lean
-        // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
-        var requiredRuntimeProfile = isCustomCode
-            ? CustomCodeJobContract.RuntimeProfile
-            : ResolveRequiredRuntimeProfile(plan, processCatalog);
-        // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
-        // the plan's steps, overridden by any explicit gp.resource.* request values. Projected onto
-        // the spec's batch.* params so AwsBatchComputeBackend.SubmitJob sizes vCPU/memory/timeout/
-        // retry/GPU and selects the ephemeral job-def tier per job. Instant and terraform-free.
-        var resourceProfile = ResolveResourceProfile(
-            plan,
-            specParams,
-            isCustomCode,
-            processCatalog);
-        var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile, resourceProfile);
-
-        var jobRecord = new ExecutionJobRecord
-        {
-            OperationId = jobId,
-            Status = ExecutionJobStatus.Queued,
-            Priority = priority,
-            CreatedAt = now,
-            UpdatedAt = now,
-            CurrentPhase = "Queued",
-            Audit = new OperationAuditInfo
-            {
-                IdempotencyKey = resolvedKey,
-                RequestedBy = ResolvePrincipalId(principal),
-                RequestFingerprint = requestFingerprint,
-                CustomCodeOwnerScope = ownerScope,
-                // Pin the submitter's row/field security identity (#3068). Submit time is the
-                // only moment the principal exists — the worker that later runs this job has no
-                // HttpContext — so without this capture the background read would resolve NO
-                // RLS predicate and an EMPTY field mask and hand a restricted caller
-                // unrestricted data through a job artifact. Persisted on the durable record, so
-                // it survives a restart and is available to whichever node dequeues the job.
-                SubmitterSecurityContext = resolvedSecurityContext
-            },
-            Spec = spec
-        };
-
-        var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!created)
-        {
-            var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-            if (existing != null)
-            {
-                EnsureMatchingIdempotentRequest(existing, requestFingerprint, principal);
-                EnsureSubmissionDidNotRollback(existing);
-                GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
-                return existing;
-            }
-
-            throw new InvalidOperationException("Failed to create or locate execution job.");
-        }
-
+        await AdmissionSubmissionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, plan.PlanId);
-            await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
+            var admission = await _dispatcher.EnsureAdmittedAsync(
+                principal, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
+
+            if (admission != null)
+            {
+                specParams[ExecutionAdmissionEvaluator.CostWeightParameterKey] =
+                    costWeight.ToString("R", CultureInfo.InvariantCulture);
+                if (!string.IsNullOrEmpty(partitionKey))
+                {
+                    specParams[ExecutionAdmissionEvaluator.PartitionKeyParameterKey] = partitionKey;
+                }
+            }
+
+            var workload = await _dispatcher.ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
+            // A custom-code job forces the custom-code runtime profile so the claim
+            // fence routes it to the custom-code Batch workload (and away from the lean
+            // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
+            var requiredRuntimeProfile = isCustomCode
+                ? CustomCodeJobContract.RuntimeProfile
+                : ResolveRequiredRuntimeProfile(plan, processCatalog);
+            // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
+            // the plan's steps, overridden by any explicit gp.resource.* request values. Projected onto
+            // the spec's batch.* params so AwsBatchComputeBackend.SubmitJob sizes vCPU/memory/timeout/
+            // retry/GPU and selects the ephemeral job-def tier per job. Instant and terraform-free.
+            var resourceProfile = ResolveResourceProfile(
+                plan,
+                specParams,
+                isCustomCode,
+                processCatalog);
+            var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile, resourceProfile);
+
+            var jobRecord = new ExecutionJobRecord
+            {
+                OperationId = jobId,
+                Status = ExecutionJobStatus.Queued,
+                Priority = priority,
+                CreatedAt = now,
+                UpdatedAt = now,
+                CurrentPhase = "Queued",
+                Audit = new OperationAuditInfo
+                {
+                    IdempotencyKey = resolvedKey,
+                    RequestedBy = ResolvePrincipalId(principal),
+                    RequestFingerprint = requestFingerprint,
+                    CustomCodeOwnerScope = ownerScope,
+                    // Pin the submitter's row/field security identity (#3068). Submit time is the
+                    // only moment the principal exists — the worker that later runs this job has no
+                    // HttpContext — so without this capture the background read would resolve NO
+                    // RLS predicate and an EMPTY field mask and hand a restricted caller
+                    // unrestricted data through a job artifact. Persisted on the durable record, so
+                    // it survives a restart and is available to whichever node dequeues the job.
+                    SubmitterSecurityContext = resolvedSecurityContext
+                },
+                Spec = spec
+            };
+
+            var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            await _dispatcher.MaybeEnqueueLocalAsync(jobId, jobRecord.Spec.Backend, cancellationToken)
-                .ConfigureAwait(false);
+            if (!created)
+            {
+                var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+                if (existing != null)
+                {
+                    EnsureMatchingIdempotentRequest(existing, requestFingerprint, principal);
+                    EnsureSubmissionDidNotRollback(existing);
+                    GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
+                    return existing;
+                }
 
-            jobRecord = await _dispatcher.TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
+                throw new InvalidOperationException("Failed to create or locate execution job.");
+            }
+
+            try
+            {
+                var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, plan.PlanId);
+                await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
+                    .ConfigureAwait(false);
+
+                await _dispatcher.MaybeEnqueueLocalAsync(jobId, jobRecord.Spec.Backend, cancellationToken)
+                    .ConfigureAwait(false);
+
+                jobRecord = await _dispatcher.TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                await _customCodeGate.TryRevokeTokenAsync(mintedCustomCodeToken).ConfigureAwait(false);
+
+                await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+                    jobStore,
+                    jobId,
+                    progressStore: _progressStore,
+                    progressRetention: ProgressRetention,
+                    failureMessage: "Submission failed.",
+                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
+
+                throw;
+            }
+
+            GeoprocessingServiceLog.JobSubmitted(_logger, jobId, plan.PlanId);
+
+            return jobRecord;
         }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        finally
         {
-            // Revoke the scoped callback token so a credential is never left valid
-            // for a job whose submission rolled back (the token must not outlive the
-            // job — Phase-0 invariant #5).
-            await _customCodeGate.TryRevokeTokenAsync(mintedCustomCodeToken).ConfigureAwait(false);
-
-            await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
-                jobStore,
-                jobId,
-                progressStore: _progressStore,
-                progressRetention: ProgressRetention,
-                failureMessage: "Submission failed.",
-                cancellationToken: CancellationToken.None).ConfigureAwait(false);
-
-            throw;
+            AdmissionSubmissionGate.Release();
         }
-
-        GeoprocessingServiceLog.JobSubmitted(_logger, jobId, plan.PlanId);
-
-        return jobRecord;
     }
 
     public async Task<ExecutionJobRecord> GetJobAsync(
@@ -936,7 +945,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Page the canonical store (newest first, status-filtered there), then apply
         // the adapter binding constraint and per-job ownership in the shared service so
         // no protocol surface can list jobs the caller cannot read. The store cursor is
-        // returned verbatim so the client walks the full history without dupes; a page
+        // tenant-scoped before pagination so the returned cursor cannot expose a foreign
+        // job identifier. The cursor lets the client walk history without dupes; a page
         // may carry fewer than `limit` items after post-filtering.
         var page = await jobStore.QueryAsync(
             new ExecutionJobQuery
@@ -944,6 +954,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 Kind = ExecutionJobKind.Geoprocessing,
                 Statuses = filter.Statuses,
                 RequestedBy = ownerScope,
+                ApplyTenantScope = true,
+                TenantId = _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId,
                 Cursor = filter.Cursor,
                 Limit = limit
             },
@@ -979,8 +991,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return true;
     }
 
-    private static bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
+    private bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
     {
+        // Effective request tenancy is authoritative, including an explicitly unscoped
+        // context. Apply this before admin/owner grants and reuse submission capture so
+        // token claim fallbacks cannot diverge between job creation and retrieval.
+        var tenantId = _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId;
+        if (!string.Equals(job.Audit.SubmitterSecurityContext?.TenantId, tenantId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
         if (principal.IsInRole("admin"))
         {
             return true;
@@ -1264,21 +1285,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// specific record to its submitter so one authenticated user cannot read or
     /// cancel another user's jobs. Jobs without a recorded submitter are readable
     /// only by <c>admin</c> (#2753 closed the prior any-caller read of ownerless
-    /// jobs), and the conventional <c>admin</c> role retains full visibility for
-    /// operations. Denials surface as not-found so cross-principal probing cannot
+    /// jobs), and the conventional <c>admin</c> role retains visibility within the
+    /// effective tenant. Denials surface as not-found so cross-tenant/principal probing cannot
     /// confirm that a job identifier exists.
     /// </summary>
     private void EnsureJobOwnership(ExecutionJobRecord job, ClaimsPrincipal principal)
     {
-        if (principal.IsInRole("admin"))
-        {
-            return;
-        }
-
-        var owner = job.Audit.RequestedBy;
-        var caller = ResolvePrincipalId(principal);
-        if (!string.IsNullOrWhiteSpace(owner) &&
-            string.Equals(owner, caller, StringComparison.Ordinal))
+        if (IsJobReadable(job, principal))
         {
             return;
         }
@@ -1290,6 +1303,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private static string? ResolvePrincipalId(ClaimsPrincipal principal)
         => principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? principal.FindFirst("sub")?.Value
+            ?? principal.FindFirst("api_key_id")?.Value
             ?? principal.Identity?.Name;
 
     private async Task EnsureApprovedAsync(

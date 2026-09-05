@@ -126,14 +126,14 @@ internal sealed class GeoServicesQueryParameterAdapter(
                     ? null
                     : hasObjectIdRequest
                     ? queryParams.ResultRecordCount ?? queryParams.ObjectIds!.Length
-                    : queryParams.ResultRecordCount ?? request.QueryLimits.DefaultRecordCount,
+                    : queryParams.ResultRecordCount ?? request.QueryLimits.MaxRecordCount,
                 OrderBy = orderBy,
                 OutputCrs = request.OutputSrid.HasValue
                     ? QueryCrs.Create(request.OutputSrid.Value)
                     : null,
                 Aggregation = aggregation,
                 Hints = QueryHints.Create(
-                    preferStreaming: (queryParams.ResultRecordCount ?? request.QueryLimits.DefaultRecordCount) > DefaultLimits.DefaultResultCount,
+                    preferStreaming: (queryParams.ResultRecordCount ?? request.QueryLimits.MaxRecordCount) > DefaultLimits.DefaultResultCount,
                     enableCaching: true,
                     requireExactCount: queryParams.ReturnCountOnly || queryParams.ReturnExtentOnly || queryParams.ReturnIdsOnly)
             };

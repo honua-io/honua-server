@@ -86,24 +86,6 @@ internal sealed partial class Wfs20Handler
                     "outputFormat");
             }
 
-            if (TryGetMultiQueryXmlRequest(context, out var xmlQueries))
-            {
-                return await HandleGetFeatureXmlQueriesAsync(
-                    context,
-                    xmlQueries,
-                    normalizedFormat,
-                    outputFormat,
-                    maxFeatures,
-                    offset,
-                    sortBy,
-                    bbox,
-                    resourceId,
-                    srsName,
-                    normalizedResultType,
-                    isHitsRequest,
-                    cancellationToken);
-            }
-
             var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
             var unknownTypes = GetUnknownRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (unknownTypes.Length > 0)
@@ -133,6 +115,42 @@ internal sealed partial class Wfs20Handler
                     "InvalidParameterValue",
                     requestedTypeMessage,
                     "typeNames");
+            }
+
+            if (TryGetMultiQueryXmlRequest(context, out var xmlQueries))
+            {
+                return await HandleGetFeatureXmlQueriesAsync(
+                    context,
+                    xmlQueries,
+                    normalizedFormat,
+                    outputFormat,
+                    maxFeatures,
+                    offset,
+                    sortBy,
+                    bbox,
+                    resourceId,
+                    srsName,
+                    normalizedResultType,
+                    isHitsRequest,
+                    cancellationToken);
+            }
+
+            if (TryParseMultiQueryKvp(typeNames, propertyName, filter, sortBy, srsName, out var kvpQueries))
+            {
+                return await HandleGetFeatureXmlQueriesAsync(
+                    context,
+                    kvpQueries,
+                    normalizedFormat,
+                    outputFormat,
+                    maxFeatures,
+                    offset,
+                    sortBy,
+                    bbox,
+                    resourceId,
+                    srsName,
+                    normalizedResultType,
+                    isHitsRequest,
+                    cancellationToken);
             }
 
             var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
@@ -371,6 +389,9 @@ internal sealed partial class Wfs20Handler
         var xmlQueryPropertyName = xmlQueries.Any(q => !string.IsNullOrEmpty(q.PropertyName))
             ? string.Join(";", xmlQueries.Select(q => q.PropertyName ?? string.Empty))
             : null;
+        var pagingTypeNames = xmlQueries
+            .SelectMany(query => Wfs20Utilities.ParseTypeNames(query.TypeNames))
+            .ToArray();
 
         if (planSet.TotalMatched == 0)
         {
@@ -389,7 +410,8 @@ internal sealed partial class Wfs20Handler
                 offset,
                 maxFeatures,
                 0,
-                0);
+                0,
+                pagingTypeNames);
             return isHitsRequest
                 ? CreateHitsFeatureCollectionResult(0, emptyMetadata.SchemaLocation, emptyMetadata.PagingLinks.Next, emptyMetadata.PagingLinks.Previous)
                 : CreateEmptyFeatureCollectionResult(normalizedFormat, emptyMetadata.SchemaLocation, emptyMetadata.PagingLinks.Next, emptyMetadata.PagingLinks.Previous);
@@ -410,7 +432,8 @@ internal sealed partial class Wfs20Handler
             offset,
             maxFeatures,
             planSet.TotalMatched,
-            isHitsRequest ? 0 : planSet.Plans.Sum(plan => plan.Query.Limit ?? 0));
+            isHitsRequest ? 0 : planSet.Plans.Sum(plan => plan.Query.Limit ?? 0),
+            pagingTypeNames);
 
         if (isHitsRequest)
         {
@@ -512,7 +535,8 @@ internal sealed partial class Wfs20Handler
                 plans.Add(new LayerQueryPlan(
                     featureType,
                     query with { Offset = layerOffset, Limit = layerLimit },
-                    layerMatched));
+                    layerMatched,
+                    xmlQuery.SrsName ?? fallbackSrsName));
 
                 remainingCount -= layerLimit;
             }
@@ -535,5 +559,87 @@ internal sealed partial class Wfs20Handler
 
         queries = [];
         return false;
+    }
+
+    private static bool TryParseMultiQueryKvp(
+        string? typeNames,
+        string? propertyName,
+        string? filter,
+        string? sortBy,
+        string? srsName,
+        out Wfs20XmlQueryParameters[] queries)
+    {
+        queries = [];
+        var typeNameTokens = typeNames?
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            ?? [];
+        if (typeNameTokens.Length < 2)
+        {
+            return false;
+        }
+
+        var propertyTokens = SplitKvpMultiValue(propertyName);
+        var filterTokens = SplitKvpMultiValue(filter);
+        if ((propertyTokens.Length > 1 && propertyTokens.Length != typeNameTokens.Length) ||
+            (filterTokens.Length > 1 && filterTokens.Length != typeNameTokens.Length))
+        {
+            return false;
+        }
+
+        // A normal KVP request may name multiple types with one shared filter. Only treat the
+        // request as a multi-query continuation when a per-query value is present. This is the
+        // shape emitted by the XML multi-Query paging link (#4169).
+        if (propertyTokens.Length < 2 && filterTokens.Length < 2)
+        {
+            return false;
+        }
+
+        queries = typeNameTokens
+            .Select((typeName, index) => new Wfs20XmlQueryParameters(
+                typeName,
+                propertyTokens.Length == 0 ? null : propertyTokens.Length == 1 ? propertyTokens[0] : propertyTokens[index],
+                srsName,
+                filterTokens.Length == 0 ? null : filterTokens.Length == 1 ? filterTokens[0] : filterTokens[index],
+                sortBy))
+            .ToArray();
+        return true;
+    }
+
+    private static string[] SplitKvpMultiValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        var tokens = new List<string>();
+        var depth = 0;
+        var start = 0;
+        var inTag = false;
+        var closingTag = false;
+        for (var index = 0; index < value.Length; index++)
+        {
+            switch (value[index])
+            {
+                case '<' when !inTag:
+                    inTag = true;
+                    closingTag = index + 1 < value.Length && value[index + 1] == '/';
+                    break;
+                case '>' when inTag:
+                    if (value[index - 1] != '/' && value[index - 1] != '?')
+                    {
+                        depth += closingTag ? -1 : 1;
+                    }
+                    inTag = false;
+                    break;
+                case ';' when !inTag && depth == 0:
+                    tokens.Add(value[start..index]);
+                    start = index + 1;
+                    break;
+            }
+        }
+
+        tokens.Add(value[start..]);
+        return tokens.Select(token => token.Trim()).ToArray();
     }
 }

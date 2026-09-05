@@ -139,8 +139,13 @@ internal static class EsriJsonWkbWriter
         return buffer;
     }
 
-    private static byte[] WriteLineStringFromPaths(JsonElement paths)
+    private static byte[]? WriteLineStringFromPaths(JsonElement paths)
     {
+        if (paths.ValueKind == JsonValueKind.Array && paths.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
         EnsurePathsShape(paths);
         if (paths.GetArrayLength() != 1)
         {
@@ -173,8 +178,13 @@ internal static class EsriJsonWkbWriter
         return buffer;
     }
 
-    private static byte[] WriteMultiLineString(JsonElement paths)
+    private static byte[]? WriteMultiLineString(JsonElement paths)
     {
+        if (paths.ValueKind == JsonValueKind.Array && paths.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
         EnsurePathsShape(paths);
 
         var lineBuffers = paths.EnumerateArray().Select(WriteSingleLineString).ToList();
@@ -196,15 +206,25 @@ internal static class EsriJsonWkbWriter
         return buffer;
     }
 
-    private static byte[] WriteSinglePolygon(JsonElement rings)
+    private static byte[]? WriteSinglePolygon(JsonElement rings)
     {
+        if (rings.ValueKind == JsonValueKind.Array && rings.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
         EnsureRingsShape(rings);
         // Use the same classified writer so hole-vs-shell ordering is always correct.
         return WritePolygonRingsClassified(rings);
     }
 
-    private static byte[] WriteMultiPolygon(JsonElement rings)
+    private static byte[]? WriteMultiPolygon(JsonElement rings)
     {
+        if (rings.ValueKind == JsonValueKind.Array && rings.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
         EnsureRingsShape(rings);
 
         // ArcGIS encodes all parts of a multi-part polygon in one rings[] array:

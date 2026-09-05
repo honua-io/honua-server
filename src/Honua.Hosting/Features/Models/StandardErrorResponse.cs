@@ -262,9 +262,29 @@ internal sealed class ErrorResponseFormatterOptions
     public string? WfsExceptionLocator { get; init; }
 
     /// <summary>
+    /// Explicit WCS service exception code to emit instead of inferring one from the HTTP status.
+    /// </summary>
+    public string? WcsExceptionCode { get; init; }
+
+    /// <summary>
+    /// Explicit WMTS service exception code to emit instead of inferring one from the HTTP status.
+    /// </summary>
+    public string? WmtsExceptionCode { get; init; }
+
+    /// <summary>
+    /// Explicit WMS service exception code to emit instead of inferring one from the HTTP status.
+    /// </summary>
+    public string? WmsExceptionCode { get; init; }
+
+    /// <summary>
     /// Explicit OData error code to emit instead of inferring one from the HTTP status code.
     /// </summary>
     public string? ODataErrorCode { get; init; }
+
+    /// <summary>
+    /// Machine-readable code emitted by extension-capable protocol envelopes.
+    /// </summary>
+    public string? MachineCode { get; init; }
 
     /// <summary>
     /// Explicit GeoServices body error code to emit. When set, overrides the code derived from
@@ -273,4 +293,15 @@ internal sealed class ErrorResponseFormatterOptions
     /// for expired/invalid token failures.
     /// </summary>
     public int? GeoServicesBodyCode { get; init; }
+
+    /// <summary>
+    /// Indicates whether the client may retry after the transient condition clears.
+    /// </summary>
+    public bool? Retryable { get; init; }
+
+    /// <summary>
+    /// Server-advised delay before retrying, in seconds, when known.
+    /// </summary>
+    public int? RetryAfterSeconds { get; init; }
+
 }

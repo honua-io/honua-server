@@ -53,6 +53,18 @@ internal sealed partial class FeatureQueryBuilder
 
             AppendStatisticsOrderByClause(sql, query.OrderBy, statistics, groupByFields);
 
+            if (query.Limit.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+                parameters.Add(query.Limit.Value);
+            }
+
+            if (query.Offset.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+                parameters.Add(query.Offset.Value);
+            }
+
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
         finally
@@ -120,7 +132,11 @@ internal sealed partial class FeatureQueryBuilder
         MetadataV2FieldType? fieldType = null)
     {
         var numericExpr = $"({fieldExpr})::numeric";
-        var orderedExpr = IsNumericFieldType(fieldType) ? numericExpr : fieldExpr;
+        var orderedExpr = IsNumericFieldType(fieldType)
+            ? numericExpr
+            : IsTemporalFieldType(fieldType)
+                ? BuildEpochAwareTemporalExpression(fieldExpr, fieldType!.Value)
+                : fieldExpr;
         return statisticType switch
         {
             StatisticType.Count => $"COUNT({fieldExpr})",
@@ -140,6 +156,28 @@ internal sealed partial class FeatureQueryBuilder
             or MetadataV2FieldType.BigInteger
             or MetadataV2FieldType.Float
             or MetadataV2FieldType.Double;
+    }
+
+    private static bool IsTemporalFieldType(MetadataV2FieldType? fieldType)
+        => fieldType is MetadataV2FieldType.DateTime
+            or MetadataV2FieldType.Date
+            or MetadataV2FieldType.Time;
+
+    private static string BuildEpochAwareTemporalExpression(
+        string fieldExpression,
+        MetadataV2FieldType fieldType)
+    {
+        var nullSafe = $"NULLIF(({fieldExpression})::text, '')";
+        var timestamp = $"CASE WHEN {nullSafe} ~ '^-?[0-9]+$' " +
+                        $"THEN to_timestamp({nullSafe}::double precision / 1000.0) " +
+                        $"ELSE {nullSafe}::timestamptz END";
+        return fieldType switch
+        {
+            MetadataV2FieldType.DateTime => timestamp,
+            MetadataV2FieldType.Date => $"({timestamp})::date",
+            MetadataV2FieldType.Time => $"{nullSafe}::time",
+            _ => fieldExpression
+        };
     }
 
     private static string GetFieldExpression(string fieldName)

@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -25,6 +26,20 @@ public class OgcMapsBasicTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    private async Task<string> StoreCollectionStyleAsync()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        snapshot.Index.ResourcesByStorageLayerId.TryGetValue(TestLayerId, out var resource).Should().BeTrue();
+        resource.Should().NotBeNull();
+        resource!.Metadata.Name.Should().NotBeNullOrWhiteSpace();
+
+        var catalog = _fixture.GetService<ILayerStyleCatalog>();
+        await catalog.SetMapLibreStyleAsync(
+            TestLayerId,
+            "{\"version\":8,\"sources\":{},\"layers\":[]}");
+        return resource.Metadata.Name!;
+    }
 
     [IntegrationTest]
     [Endpoint("GET /ogc/maps")]
@@ -261,9 +276,10 @@ public class OgcMapsBasicTests : IAsyncLifetime
         // on the GDAL raster-coverage path, so the styled-vector path must reject it cleanly.
         // Layer 0 is a seeded vector (Point) collection, so this exercises the Skia path.
         var queryParams = "?bbox=-180,-90,180,90&width=256&height=256&f=tiff";
+        var styleId = await StoreCollectionStyleAsync();
 
         var response = await _fixture.Client.GetAsync(
-            $"/ogc/maps/collections/{TestLayerId}/styles/default/map{queryParams}");
+            $"/ogc/maps/collections/{TestLayerId}/styles/{Uri.EscapeDataString(styleId)}/map{queryParams}");
 
         // The invariant: never return 200 with image/tiff carrying PNG bytes. A clean 4xx is required.
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -379,9 +395,10 @@ public class OgcMapsBasicTests : IAsyncLifetime
         // pipeline (ADR-0048) instead of the raster-only path that returns 501. Layer 0
         // is a seeded vector (Point) collection, so a styled request must produce a PNG.
         var queryParams = "?bbox=-180,-90,180,90&width=256&height=256&f=png";
+        var styleId = await StoreCollectionStyleAsync();
 
         var response = await _fixture.Client.GetAsync(
-            $"/ogc/maps/collections/{TestLayerId}/styles/default/map{queryParams}");
+            $"/ogc/maps/collections/{TestLayerId}/styles/{Uri.EscapeDataString(styleId)}/map{queryParams}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);

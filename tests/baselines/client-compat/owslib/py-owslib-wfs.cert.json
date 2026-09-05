@@ -5,7 +5,7 @@
   "server_version": "1.0.0+e358ef1b50961de6fe6e4fae172e544418b7fe0c",
   "server_commit": "e358ef1b50961de6fe6e4fae172e544418b7fe0c",
   "fixture_revision": "sha256:80c852414b96585cd98772d29098764946b0fb5c7404fcc9e336e35eaf6839b6",
-  "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
+  "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
   "client_lane": "py-owslib",
   "client_version": "0.36.0",
   "protocol": "wfs",

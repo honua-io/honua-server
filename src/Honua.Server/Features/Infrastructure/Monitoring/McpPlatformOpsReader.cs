@@ -167,7 +167,8 @@ internal sealed class McpPlatformOpsReader(
 
         return await SealProposalAsync(principal, OperationClass.Deploy, payload,
             string.IsNullOrWhiteSpace(argument.Reason) ? $"Propose rollback of deploy target '{targetId}' to prior revision '{selection.DesiredRevision}'." : argument.Reason,
-            Clean(argument.IdempotencyKey) ?? $"rollback:{targetId}:{selection.DesiredRevision}", cancellationToken).ConfigureAwait(false);
+            Clean(argument.IdempotencyKey) ?? $"rollback:{targetId}:{selection.DesiredRevision}", cancellationToken,
+            actionDiscriminator: "deploy.rollback").ConfigureAwait(false);
     }
 
     public async Task<McpProposeOperationOutput> ProposeFindingAsync(ClaimsPrincipal principal, McpProposeFindingArgument argument, CancellationToken cancellationToken)
@@ -179,9 +180,28 @@ internal sealed class McpPlatformOpsReader(
         var finding = evaluation.Findings
             .FirstOrDefault(candidate => string.Equals(candidate.Id, findingId, StringComparison.Ordinal));
         var action = finding?.RecommendedAction ?? throw new GeoprocessingNotFoundException($"Finding '{findingId}' was not found or has no recommended action.");
+        var candidateId = Clean(argument.CandidateId) ?? throw new GeoprocessingValidationException("'candidateId' is required.");
+        ValidateFindingCandidateBinding(action.Kind, action.ExecutionPayload, candidateId);
         if (!OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out _))
             return new McpProposeOperationOutput { Outcome = "Blocked", SupportedKinds = ResolveSupportedKinds(), Message = "evidencePostureNotActionable" };
         return await SealProposalAsync(principal, action.Kind, action.ExecutionPayload, action.Reason, findingId, cancellationToken, action.ActionDiscriminator).ConfigureAwait(false);
+    }
+
+    internal static void ValidateFindingCandidateBinding(
+        OperationClass kind,
+        string executionPayload,
+        string candidateId)
+    {
+        if (kind != OperationClass.Deploy)
+        {
+            return;
+        }
+
+        var payload = DeployExecutionPayload.Parse(executionPayload);
+        if (payload is null || !string.Equals(payload.TargetId, candidateId, StringComparison.Ordinal))
+        {
+            throw new GeoprocessingValidationException("Finding action target does not match the certified candidate.");
+        }
     }
 
     public async Task<McpProposeOperationOutput> ProposeDeployPlanAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken)

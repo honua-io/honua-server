@@ -924,7 +924,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             new ClarifyIntentTool(groundingService, jobService, NullLogger<ClarifyIntentTool>.Instance),
             new GeocodeTool(jobService, NullLogger<GeocodeTool>.Instance),
             new GeocodeAddressesTool(jobService, NullLogger<GeocodeAddressesTool>.Instance),
-            new IngestDatasetTool(jobService, NullLogger<IngestDatasetTool>.Instance),
+            new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance),
             new RouteTool(jobService, NullLogger<RouteTool>.Instance),
             new OpsHealthTool(NullLogger<OpsHealthTool>.Instance),
             new OpsFindingsTool(NullLogger<OpsFindingsTool>.Instance),

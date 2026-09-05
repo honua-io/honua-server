@@ -100,15 +100,17 @@ Adapters reshape it:
   must be a stable output identifier, not `ArtifactRef.Label` (which is
   human-readable). Adapters should bind artifacts to process definition
   output parameter names via `ArtifactRef.Metadata` or a follow-on field
-- **OGC API Processes (v1 subset)**: target all `Artifacts` in a single
-  `/jobs/{jobId}/results` JSON response using document-mode, by-value
-  transmission. The `#529` implementation returns `200 OK` with the
-  document-mode body on success (empty `{}` until the canonical process
-  declares value-typed outputs and the execution engine populates result
-  storage); failed jobs return `500`, and dismissed jobs return `410`. This
-  is the default Honua adapter behavior. A synchronous request may instead
-  select raw mode when it produces exactly one inline value; asynchronous,
-  referenced, and multi-output requests remain document mode.
+- **OGC API Processes**: catalog outputs advertise value transmission.
+  Document mode returns selected artifacts as inline qualified values from
+  `/jobs/{jobId}/results`. Raw mode returns one selected output in its native
+  media type or multiple outputs as `multipart/related`, for synchronous and
+  asynchronous execution alike. The adapter persists response negotiation
+  with the durable job and materializes canonical data, staged binary and
+  feature-stream artifacts through shared readers with bounded response sizes.
+  The canonical `honua-geoprocessing` plan process has no declared value outputs;
+  it requires document mode and retains its artifact document. Failed jobs
+  return `500`, dismissed jobs return `410`, and oversized value results return
+  `413`.
 
 ### Parameter Translation Is An Adapter Concern
 
@@ -140,10 +142,11 @@ into the canonical model:
 4. **GeoServer PPIO and process groups**: GeoServer-internal concerns with no
    relevance to Honua's architecture.
 
-5. **OGC response mode negotiation** (`document` vs `raw`): document mode is
-   the default. Raw mode is supported only for bounded synchronous execution
-   that produces exactly one inline value. Raw multipart responses and `204`
-   responses with `Link` headers remain out of scope.
+5. **OGC response mode negotiation** (`document` vs `raw`): this remains an
+   adapter concern rather than a canonical model type. Document mode is the
+   default; catalog processes support raw native or multipart value results
+   for synchronous and asynchronous execution. Reference-only `204` responses
+   with `Link` headers remain outside the catalog value-transmission contract.
 
 6. **OGC output transmission negotiation** (`value` vs `reference`): deferred.
    When successful results are populated, V1 returns them by value.

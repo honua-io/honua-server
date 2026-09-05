@@ -281,6 +281,9 @@ internal sealed record DeployOperationRealtimeEvent(
     string? TargetId,
     string? ReleaseId,
     string? CorrelationId,
+    string? OperationInstanceId,
+    string? AuditId,
+    string? ProposalId,
     DateTimeOffset OccurredAt);
 
 [JsonSerializable(typeof(AdminRealtimeStatus))]

@@ -169,6 +169,39 @@ internal static class McpTestFactory
                     draftId, changeNote, actorId, expectedGeneration, cancellationToken).ConfigureAwait(false),
                 "studio.draft.save-version");
 
+        public async Task<StudioDraftMutationReceipt<StudioPublicationRequest>> CreatePublicationRequestAsync(
+            Guid itemId,
+            Guid versionId,
+            StudioPublicationIntent? intent,
+            string? warningAcknowledgement,
+            string? actorId,
+            StudioDraftMutationContext context,
+            CancellationToken cancellationToken = default) => Receipt(
+                await lifecycle.CreatePublicationRequestAsync(
+                    itemId, versionId, intent, warningAcknowledgement, actorId, cancellationToken).ConfigureAwait(false),
+                "studio.content.create-publication-request");
+
+        public async Task<StudioDraftMutationReceipt<StudioPackageDraft>> ReopenVersionAsync(
+            Guid itemId,
+            Guid versionId,
+            string? actorId,
+            StudioDraftMutationContext context,
+            CancellationToken cancellationToken = default) => Receipt(
+                await lifecycle.ReopenVersionAsync(itemId, versionId, actorId, cancellationToken).ConfigureAwait(false),
+                "studio.content.reopen-version");
+
+        public async Task<StudioDraftMutationReceipt<StudioRollbackRequest>> RollbackAsync(
+            Guid itemId,
+            Guid targetVersionId,
+            StudioRollbackPointer target,
+            string? actorId,
+            string? reason,
+            StudioDraftMutationContext context,
+            CancellationToken cancellationToken = default) => Receipt(
+                await lifecycle.RollbackAsync(
+                    itemId, targetVersionId, target, actorId, reason, cancellationToken).ConfigureAwait(false),
+                "studio.content.rollback");
+
         private static StudioDraftMutationReceipt<T> Receipt<T>(T? value, string operationId)
         {
             var now = DateTimeOffset.UtcNow;

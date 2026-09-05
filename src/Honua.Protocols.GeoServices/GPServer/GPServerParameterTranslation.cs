@@ -302,8 +302,9 @@ internal static class GPServerParameterTranslation
         ProcessParameterValueType.WholeNumber => "GPLong",
         ProcessParameterValueType.FloatingPoint => "GPDouble",
         ProcessParameterValueType.Flag => "GPBoolean",
-        ProcessParameterValueType.Wkb => "GPDataFile",
-        ProcessParameterValueType.WkbArray => "GPMultiValue:GPDataFile",
+        // These are inline base64 WKB (or inline GeoJSON), not data-file objects.
+        ProcessParameterValueType.Wkb => "GPString",
+        ProcessParameterValueType.WkbArray => "GPMultiValue:GPString",
         ProcessParameterValueType.Srid => "GPLong",
         ProcessParameterValueType.LayerId => "GPString",
         _ => "GPString"
