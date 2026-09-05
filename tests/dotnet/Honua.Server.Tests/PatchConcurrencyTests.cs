@@ -164,7 +164,7 @@ public sealed class PatchConcurrencyTests
                 foreach (var status in new[] { 409, 412 })
                 {
                     var response = Assert.Single(endpoint.Metadata.GetOrderedMetadata<IProducesResponseTypeMetadata>(), m => m.StatusCode == status);
-                    Assert.Equal(name == "PatchItem" ? typeof(Microsoft.AspNetCore.Mvc.ProblemDetails) : typeof(Honua.Protocols.OData.Features.Models.ODataError), response.Type);
+                    Assert.Equal(name == "PatchItem" ? typeof(Microsoft.AspNetCore.Mvc.ProblemDetails) : typeof(Honua.Protocols.OData.Models.ODataError), response.Type);
                 }
             }
         }
