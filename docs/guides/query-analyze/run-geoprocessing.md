@@ -65,7 +65,7 @@ Expected (trimmed):
 - **403** — the identity authenticates but lacks `Process.Execute` or the additional `Process.ExecuteMutatingProcess` / `Process.ExecuteCustomCode` grant required by the selected execution tier.
 - **404 for a process id you saw in the full catalog** — the OGC route projects catalog processes classified as executable jobs. Protocol-only, workflow-only, and unavailable entries are described in the [reference](../../reference/geoprocessing-operations.md).
 - **400 `Invalid response mode`**: the canonical `honua-geoprocessing` plan process requires document mode because it has no declared value outputs. Catalog processes support raw results with synchronous or asynchronous execution.
-- **413 when fetching results**: the selected artifact exceeds the configured `Geoprocessing:MaxArtifactBytes` response limit.
+- **413 when fetching results**: the selected output payloads together exceed the configured `Geoprocessing:Executors:MaxArtifactBytes` response limit.
 - **Job stuck in `accepted`** — the job queue needs the durable job substrate (Redis) to be healthy; see [troubleshooting](../deploy/troubleshooting.md).
 
 ## Next steps

@@ -183,6 +183,23 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_ReferenceWithoutMediaType_PreserveNumericTextAndBinaryWkb()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/geometry.buffer/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"wkb":{"href":"https://93.184.216.34/point.wkb"},"srid":4326,"distance":{"href":"https://93.184.216.34/distance"}}}""",
+            Encoding.UTF8, "application/json");
+        using var response = await _fixture.App.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        _fixture.SubmittedPlan!.Steps.Single().Inputs["distance"].Should().Be("25.5");
+        _fixture.SubmittedPlan!.Steps.Single().Inputs["wkb"].Should().Be(PointWkbBase64);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_QualifiedAndReferencedCatalogInputs_AreNormalized()
     {
         const string geoJson = "{\"type\":\"Point\",\"coordinates\":[1,2]}";
@@ -567,6 +584,22 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             onRequest();
+            if (request.RequestUri!.AbsolutePath == "/point.wkb")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(Convert.FromBase64String("AQEAAAAAAAAAAAAAAAAAAAAAAAAA"))
+                });
+            }
+
+            if (request.RequestUri!.AbsolutePath == "/distance")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes("25.5"))
+                });
+            }
+
             request.RequestUri!.AbsoluteUri.Should().Be("https://93.184.216.34/point.geojson");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {

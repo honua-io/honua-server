@@ -952,12 +952,9 @@ internal static class ProcessEndpoints
         }
 
         var parameterNames = definition.Parameters.Select(parameter => parameter.Name).ToHashSet(StringComparer.Ordinal);
-        foreach (var inputName in request.Inputs.Keys)
+        foreach (var inputName in request.Inputs.Keys.Where(inputName => !parameterNames.Contains(inputName)))
         {
-            if (!parameterNames.Contains(inputName))
-            {
-                return new InputNormalizationResult(null, $"Unknown input '{inputName}' for process '{definition.ProcessId}'.");
-            }
+            return new InputNormalizationResult(null, $"Unknown input '{inputName}' for process '{definition.ProcessId}'.");
         }
 
         // The catalog bounds the number of references; the shared byte budget bounds
@@ -985,6 +982,7 @@ internal static class ProcessEndpoints
             var resolved = await ResolveInputReferenceAsync(
                 hrefElement.GetString()!,
                 mediaTypeHint,
+                definition.Parameters.Single(parameter => parameter.Name == input.Key),
                 httpClientFactory,
                 remainingBytes,
                 cancellationToken).ConfigureAwait(false);
@@ -1007,6 +1005,7 @@ internal static class ProcessEndpoints
     private static async Task<ResolvedInputReference> ResolveInputReferenceAsync(
         string href,
         string? mediaTypeHint,
+        ProcessParameterSpec parameter,
         IHttpClientFactory httpClientFactory,
         long maxArtifactBytes,
         CancellationToken cancellationToken)
@@ -1071,6 +1070,18 @@ internal static class ProcessEndpoints
                 return new ResolvedInputReference(default, null, "the remote value request timed out.");
             }
         }
+
+        // An absent HTTP media type uses the catalog contract. Explicit media types
+        // still win, and WKB remains binary rather than being decoded as UTF-8 text.
+        mediaType ??= parameter.AcceptsGeoJsonDataUri
+            ? "application/geo+json"
+            : parameter.ValueType switch
+            {
+                ProcessParameterValueType.Wkb => "application/wkb",
+                ProcessParameterValueType.WkbArray => "application/json",
+                _ when parameter.AcceptsRasterSource => "application/octet-stream",
+                _ => "text/plain"
+            };
 
         try
         {

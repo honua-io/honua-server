@@ -97,7 +97,28 @@ public sealed class OgcProcessesValueContractTests
             .GetProperty("schema").GetProperty("$ref").GetString().Should().Be("#/components/schemas/Exception");
     }
 
-    private static async Task<(int Status, string Body)> RenderResultAsync(string reference, string root, long maxBytes, bool raw)
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Results_MultipleOutputs_EnforcesAggregateBudget(bool raw)
+    {
+        var response = await RenderResultAsync("data:text/plain,123456", "", 10, raw,
+            "data:text/plain,abcdef");
+        response.Status.Should().Be(413);
+        response.Body.Should().NotContain("123456").And.NotContain("abcdef");
+    }
+
+    [Fact]
+    public async Task Results_RawMultipart_StreamsEveryPartWithinBudget()
+    {
+        var response = await RenderResultAsync("data:text/plain,123456", "", 12, raw: true,
+            "data:text/plain,abcdef");
+        response.Status.Should().Be(200);
+        response.Body.Should().Contain("Content-ID: <outputFeatureLayer>\r\n\r\n123456\r\n")
+            .And.Contain("Content-ID: <second>\r\n\r\nabcdef\r\n");
+    }
+
+    private static async Task<(int Status, string Body)> RenderResultAsync(string reference, string root, long maxBytes, bool raw, string? secondReference = null)
     {
         await using var services = new ServiceCollection().AddLogging()
             .Configure<GeoprocessingExecutorOptions>(options =>
@@ -116,8 +137,17 @@ public sealed class OgcProcessesValueContractTests
             UpdatedAt = DateTimeOffset.UtcNow,
             Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob, Backend = "local", WorkloadName = "transform.attribute-rename" }
         };
+        var artifacts = new List<ArtifactRef>
+        {
+            new() { ArtifactId = "stream-artifact", Kind = ArtifactKind.FeatureLayer, Label = "outputFeatureLayer", Uri = reference }
+        };
+        if (secondReference != null)
+        {
+            artifacts.Add(new ArtifactRef { ArtifactId = "second", Kind = ArtifactKind.Scalar, Label = "second", Uri = secondReference });
+        }
+
         var package = AnalysisResultPackage.CreateCompleted("stream-result:v1", new ResultSummary { Title = "stream output" },
-            [new ArtifactRef { ArtifactId = "stream-artifact", Kind = ArtifactKind.FeatureLayer, Label = "outputFeatureLayer", Uri = reference }],
+            artifacts,
             [], new ProvenanceRecord { Sources = [], ProcessDefinitions = ["transform.attribute-rename"], ExecutedAt = DateTimeOffset.UtcNow });
         var result = raw
             ? await JobEndpoints.BuildRawResultsResponseAsync(job, context, package)

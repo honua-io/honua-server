@@ -468,6 +468,7 @@ internal static class JobEndpoints
     {
         var outputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var selectedOutputNames = GetSelectedOutputNames(job);
+        var remainingBytes = GetMaxArtifactBytes(context);
         for (var index = 0; index < resultPackage.Artifacts.Count; index++)
         {
             var artifact = resultPackage.Artifacts[index];
@@ -477,7 +478,7 @@ internal static class JobEndpoints
                 continue;
             }
 
-            var materialized = await MaterializeArtifactAsync(context, artifact).ConfigureAwait(false);
+            var materialized = await MaterializeArtifactAsync(context, artifact, remainingBytes).ConfigureAwait(false);
             if (materialized.Payload == null)
             {
                 return OgcProcessesResults.Error(
@@ -486,6 +487,7 @@ internal static class JobEndpoints
                     materialized.Error ?? "The process output could not be materialized as an inline value.");
             }
 
+            remainingBytes -= materialized.Payload.LongLength;
             if (!MediaTypeHeaderValue.TryParse(materialized.MediaType, out _))
             {
                 return OgcProcessesResults.Error(
@@ -520,6 +522,7 @@ internal static class JobEndpoints
     {
         var values = new List<(string Name, byte[] Payload, string MediaType)>();
         var selectedOutputNames = GetSelectedOutputNames(job);
+        var remainingBytes = GetMaxArtifactBytes(context);
         for (var index = 0; index < resultPackage.Artifacts.Count; index++)
         {
             var artifact = resultPackage.Artifacts[index];
@@ -529,7 +532,7 @@ internal static class JobEndpoints
                 continue;
             }
 
-            var materialized = await MaterializeArtifactAsync(context, artifact).ConfigureAwait(false);
+            var materialized = await MaterializeArtifactAsync(context, artifact, remainingBytes).ConfigureAwait(false);
             if (materialized.Payload == null)
             {
                 return OgcProcessesResults.Error(
@@ -538,6 +541,7 @@ internal static class JobEndpoints
                     materialized.Error ?? "A raw process output could not be materialized.");
             }
 
+            remainingBytes -= materialized.Payload.LongLength;
             if (!MediaTypeHeaderValue.TryParse(materialized.MediaType, out _))
             {
                 return OgcProcessesResults.Error(
@@ -566,16 +570,20 @@ internal static class JobEndpoints
         }
 
         var boundary = $"honua-{Guid.NewGuid():N}";
-        using var body = new MemoryStream();
-        foreach (var value in values)
+        return Results.Stream(async body =>
         {
-            WriteUtf8(body, $"--{boundary}\r\nContent-Type: {value.MediaType}\r\nContent-ID: <{value.Name}>\r\n\r\n");
-            body.Write(value.Payload);
-            WriteUtf8(body, "\r\n");
-        }
+            foreach (var value in values)
+            {
+                await body.WriteAsync(Encoding.UTF8.GetBytes(
+                    $"--{boundary}\r\nContent-Type: {value.MediaType}\r\nContent-ID: <{value.Name}>\r\n\r\n"),
+                    context.RequestAborted).ConfigureAwait(false);
+                await body.WriteAsync(value.Payload, context.RequestAborted).ConfigureAwait(false);
+                await body.WriteAsync("\r\n"u8.ToArray(), context.RequestAborted).ConfigureAwait(false);
+            }
 
-        WriteUtf8(body, $"--{boundary}--\r\n");
-        return Results.Bytes(body.ToArray(), $"multipart/related; boundary=\"{boundary}\"");
+            await body.WriteAsync(Encoding.UTF8.GetBytes($"--{boundary}--\r\n"), context.RequestAborted)
+                .ConfigureAwait(false);
+        }, $"multipart/related; boundary=\"{boundary}\"");
     }
 
     private static async Task<IResult> DismissJob(
@@ -764,13 +772,15 @@ internal static class JobEndpoints
             .Where(outputName => !string.IsNullOrWhiteSpace(outputName))
             .ToHashSet(StringComparer.Ordinal);
 
+    private static long GetMaxArtifactBytes(HttpContext context)
+        => context.RequestServices.GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
+            ?? 50L * 1024L * 1024L;
+
     private static async Task<MaterializedArtifact> MaterializeArtifactAsync(
         HttpContext context,
-        ArtifactRef artifact)
+        ArtifactRef artifact,
+        long maxArtifactBytes)
     {
-        var maxArtifactBytes = context.RequestServices
-            .GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
-            ?? 50L * 1024L * 1024L;
         if (FeatureStreamArtifact.IsStreamReference(artifact.Uri))
         {
             return await MaterializeFeatureStreamAsync(context, artifact.Uri!, maxArtifactBytes).ConfigureAwait(false);
@@ -971,12 +981,6 @@ internal static class JobEndpoints
 
         using var document = JsonDocument.Parse(stream.ToArray());
         return document.RootElement.Clone();
-    }
-
-    private static void WriteUtf8(Stream stream, string value)
-    {
-        var bytes = Encoding.UTF8.GetBytes(value);
-        stream.Write(bytes);
     }
 
     private readonly record struct MaterializedArtifact(
