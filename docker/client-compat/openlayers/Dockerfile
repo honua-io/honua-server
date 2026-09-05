@@ -1,7 +1,7 @@
 # OpenLayers client interop lane. Uses the official Playwright image so the
 # headless Chromium matches what tests/js-browser/ expects.
 
-FROM mcr.microsoft.com/playwright:v1.59.1-noble
+FROM mcr.microsoft.com/playwright:v1.59.1-noble@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53
 
 ENV DEBIAN_FRONTEND=noninteractive \
     NODE_OPTIONS="--max-old-space-size=4096" \

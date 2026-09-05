@@ -23,23 +23,26 @@ drift.
 <!-- BEGIN GENERATED DOTNET BASE IMAGE INVENTORY -->
 | Dockerfile | Build argument | Image reference |
 | --- | --- | --- |
-| `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
+| `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c` |
 | `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:a4556ed033fa96f984bb7a8d348851cb2d36b1281dd2420070045f664fbb5f94` |
 | `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:620e765fe18186c08399f7aa978f79f04b6bbf0ee1b3b8a91e2d5c9619e59da1` |
 | `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine@sha256:379b17d7d388a2a1b5330bfc2429a01091f85e255d3bce7981d65927d786c000` |
-| `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
-| `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
-| `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:851e6e04fff95d33a02c725373dc0ac624734986f2dc9028887077347ecffa96` |
-| `docker/Dockerfile.lambda.aot.simple` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1fc6e423f543119c406d24e2e687d67c569f18f04a37a8b0005d80ad0dcee80` |
+| `docker/Dockerfile.controlplane-lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c` |
+| `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:9b37bbaf06fc653cb0e757215081139fb493658e1f864a738f6a478620c9196f` |
+| `docker/Dockerfile.lambda.aot.simple` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c` |
+| `docker/worker-customcode-dotnet/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c` |
+| `docker/worker-gdal/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c` |
 <!-- END GENERATED DOTNET BASE IMAGE INVENTORY -->
 
 ### Other pinned serving bases
 
 | Dockerfile | Stage | Image | Digest |
 | --- | --- | --- | --- |
-| `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` | `@sha256:bf907ae73209e1a72a9b92c7d0c9a2dbc34120916ee948b67c24cf7c456f937b` |
-| `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` | `@sha256:bf907ae73209e1a72a9b92c7d0c9a2dbc34120916ee948b67c24cf7c456f937b` |
-| `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:bba8173c9a05e4b686c834648d1656e0b1b53ef5539484aa738b648240ce31e1` |
+| `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` | `@sha256:b196e02c7720cb1d2e324a961892f8ba54cc9bdcd8173b9aa8d60632e56e5387` |
+| `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice` | `@sha256:b196e02c7720cb1d2e324a961892f8ba54cc9bdcd8173b9aa8d60632e56e5387` |
+| `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:9b3ad8941296d16bffb52819b30ccc4c9b54db5fafac6f93737e034ba007c618` |
 | `docker/Dockerfile.lambda(.aot)` | adapter | `public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1` | `@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4` |
 
 The Functions images were previously the only platform-published Dockerfiles
@@ -51,8 +54,8 @@ the existing platform Dockerfile pattern (`Dockerfile`,
 `docker/Dockerfile.aot`, `docker/Dockerfile.lambda{,.aot}`). Refresh cadence:
 explicit PR per published image. The generated .NET inventory also records the
 digest-pinned auxiliary `docker/Dockerfile.lambda.aot.simple`; it remains outside
-the platform publish matrix. Floating developer images such as
-`docker/Dockerfile.dev` are not security inventory pins and are not listed.
+the platform publish matrix. Developer images, including `docker/Dockerfile.dev`, are now digest-pinned
+and included in the generated inventory.
 
 ### Nightly mirror derives from these pins
 

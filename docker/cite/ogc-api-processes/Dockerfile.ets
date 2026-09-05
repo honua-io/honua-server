@@ -16,7 +16,7 @@ RUN git clone --filter=blob:none https://github.com/opengeospatial/ets-ogcapi-pr
     && sha256sum src/main/resources/org/opengis/cite/testdata/testgeotiff.tiff \
         | cut -d ' ' -f 1 > /tmp/ets-testdata.sha256
 
-FROM eclipse-temurin:17-jre@sha256:92999aea37688157a53a40bfcb187c30f317422e028045fd5fc5c548fde9e626
+FROM eclipse-temurin:17-jre@sha256:13cc28a6cc72a38ce1f00c906be3580c1a3e604b8984d694f369a96742abc93b
 
 ARG ETS_COMMIT=75abd1f37fc3aad95163fdce2e33e393b1ba5a88
 

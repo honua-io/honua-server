@@ -18,7 +18,7 @@
 #   ../../tests:/workspace/tests:ro     (the R suite + seed/config digest inputs)
 #   ./output/r-sf:/output               (where the .cert.json envelopes land)
 
-FROM rocker/geospatial:4.6.1
+FROM rocker/geospatial:4.6.1@sha256:4cee92a576e26c31546860eb252290f8f259e8236d49600d6bee695dfb96cae5
 
 # Date-pinned CRAN snapshot. Bump deliberately (and re-record the versions in
 # the header above) rather than drifting with `latest`.
