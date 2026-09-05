@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
@@ -24,6 +25,7 @@ namespace Honua.Migration;
 /// </summary>
 internal sealed partial class GeoservicesImportBackgroundService : BackgroundService
 {
+    private readonly ILicenseOperationPolicy? _licensePolicy;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDistributedImportJobManager _jobManager;
     private readonly IImportWorkerJobManager<GeoservicesImportRequest, GeoservicesImportProgress> _workerJobManager;
@@ -36,8 +38,10 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
         IServiceScopeFactory scopeFactory,
         IDistributedImportJobManager jobManager,
         ILogger<GeoservicesImportBackgroundService> logger,
-        IOptions<MigrationUrlValidationOptions>? urlValidationOptions = null)
+        IOptions<MigrationUrlValidationOptions>? urlValidationOptions = null,
+        ILicenseOperationPolicy? licensePolicy = null)
     {
+        _licensePolicy = licensePolicy;
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _jobManager = jobManager ?? throw new ArgumentNullException(nameof(jobManager));
         _workerJobManager = jobManager as IImportWorkerJobManager<GeoservicesImportRequest, GeoservicesImportProgress>
@@ -65,7 +69,8 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
         Log.JobStarted(_logger, jobId);
 
         GeoservicesImportRequest? request = null;
-        using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
+        using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, licenseCancellation);
         CancellationTokenSource? monitorCancellation = null;
         Task? monitorTask = null;
         var acknowledgeCompletion = true;
@@ -219,7 +224,8 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                     : "Import failed"
             };
 
-            await progressController.SetFinalProgressAsync(finalProgress, stoppingToken).ConfigureAwait(false);
+            await progressController.SetFinalProgressAsync(finalProgress, jobCancellation.Token).ConfigureAwait(false);
+            licenseCancellation.ThrowIfCancellationRequested();
 
             // Clean up request store
             await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken);
@@ -232,6 +238,16 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
             {
                 Log.JobFailed(_logger, jobId, result.ErrorMessage ?? "Unknown error", stopwatch.Elapsed.TotalSeconds);
             }
+        }
+        catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
+        {
+            var failed = (progressController.CurrentProgress ?? GeoservicesImportProgress.CreateInitial(jobId, request?.ServiceUrl ?? string.Empty, request?.LayerId ?? 0, request?.TableName ?? string.Empty)) with
+            {
+                Status = GeoservicesImportStatus.Failed, ErrorMessage = "license expired",
+                CompletedAt = DateTimeOffset.UtcNow, CurrentPhase = "Failed: license expired; partial import is incomplete"
+            };
+            await progressController.SetFinalProgressAsync(failed, CancellationToken.None).ConfigureAwait(false);
+            await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (jobCancellation.IsCancellationRequested)
         {

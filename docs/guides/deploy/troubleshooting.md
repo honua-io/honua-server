@@ -23,6 +23,45 @@ A single-node deployment with no Redis configured reports `Ready` — feature-ch
 | Container restart loop, log shows migration failure | Database migration failed at startup | Fix DB connectivity/permissions; check `GET /api/v1/admin/observability/migrations` once up. `HONUA_SKIP_MIGRATIONS=true` defers (does not fix) the migration |
 | Starts but logs "connection string not configured" | `ConnectionStrings__DefaultConnection` missing | Set it; migrations and data access are skipped without it |
 
+## License failure mode
+
+Declare `Licensing__Edition=Pro` or `Enterprise` on paid servers and native
+workers. A missing, invalid or expired license stops startup before serving
+requests, exits non-zero, and never falls back to Community. Community requires
+no license; `Licensing__Edition=Community` ignores license sources.
+
+These are the exact Pro startup errors (Enterprise substitutes `Enterprise` in
+both places):
+
+```text
+Honua Pro startup refused: license missing. Install a valid Pro license in the configured licensing source and restart. Community fallback is disabled.
+Honua Pro startup refused: license invalid. Install a valid Pro license in the configured licensing source and restart. Community fallback is disabled.
+Honua Pro startup refused: license expired. Install a valid Pro license in the configured licensing source and restart. Community fallback is disabled.
+```
+
+| State | Operator remedy |
+|---|---|
+| Missing | Supply the purchased tier's signed license at the configured path or secret source; check mount availability and read permissions, then restart. |
+| Invalid | Replace the malformed, untrusted, incorrectly signed or wrong-tier license with a valid license; verify trusted public-key configuration, then restart. Do not paste license contents or keys into logs or tickets. |
+| Expired at startup | Renew the authoritative license and restart. |
+| Expired while running | Reads, exports and other data operations stop. In-flight jobs are cancelled and recorded as failed with reason `license expired`; partial artifacts/downloads are removed from completion results or marked incomplete. Renew, inspect failed jobs, and submit new jobs as needed. |
+| Renewed | Restart, or wait for the running instance's one-minute re-validation interval. An accepted admin upload applies immediately. Cancelled jobs remain failed. |
+
+Admin expiry warnings and logs use the **30, 14, 7 and 1 day** schedule. Complete
+renewal, or the [backup/export procedure](backup-and-restore.md), **before expiry**.
+Existing-data reads and exports through a paid instance stop at expiry too.
+The authenticated license status/upload recovery routes and health probes remain
+reachable during runtime expiry.
+
+The selected source is `<LicensePath>.uploaded` when present, then a resolved
+secret reference, inline content, and the ordinary license file. An upload is a
+durable override: replacing only the ordinary file does not renew that override.
+Use the supported SDK's license upload operation for an enabled admin upload, or
+follow [the source-switch procedure](../../concepts/editions-and-licensing.md#renew-or-replace-a-license)
+while stopped. Verify status through the SDK's `getLicenseStatus` operation after
+renewal. Apply the same source update to every replica and worker. Environment
+variable changes require restart; file and secret contents are re-read every minute.
+
 ## Database connections
 
 | Symptom | Diagnosis | Fix |

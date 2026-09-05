@@ -10,11 +10,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Licensing;
 
-internal sealed class FileBackedLicenseService :
+internal sealed partial class FileBackedLicenseService :
     IHostedService,
     ILicenseEntitlementService,
     ILicenseStatusProvider,
     ILicenseManager,
+    ILicenseOperationPolicy,
     IDisposable
 {
     private const int MaxLicenseFileBytes = 64 * 1024;
@@ -36,11 +37,15 @@ internal sealed class FileBackedLicenseService :
         IOptions<LicenseOptions> options,
         IEd25519Verifier verifier,
         ILogger<FileBackedLicenseService> logger,
-        IEnumerable<ILicenseContentSecretResolver>? secretResolvers = null)
+        IEnumerable<ILicenseContentSecretResolver>? secretResolvers = null,
+        TimeProvider? timeProvider = null)
     {
         _options = options;
         _verifier = verifier;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _expiryTimer = _timeProvider.CreateTimer(_ => GetSnapshot(), null,
+            Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _secretResolvers = secretResolvers as IReadOnlyList<ILicenseContentSecretResolver>
             ?? secretResolvers?.ToArray()
             ?? [];
@@ -55,34 +60,47 @@ internal sealed class FileBackedLicenseService :
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         await LoadConfiguredLicenseAsync(cancellationToken).ConfigureAwait(false);
+        EnsureStartupLicense();
+        _revalidationTask = RunRevalidationAsync(_stopping.Token);
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await _stopping.CancelAsync().ConfigureAwait(false);
+        if (_revalidationTask is not null)
+        {
+            await _revalidationTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
 
-    public void Dispose() => _uploadLock.Dispose();
+    public void Dispose()
+    {
+        _stopping.Cancel();
+        _expiryTimer.Dispose();
+        _operationCancellation.Dispose();
+        foreach (var retired in _retiredCancellations)
+        {
+            retired.Dispose();
+        }
+        // StopAsync owns asynchronous shutdown. Do not dispose the semaphore while a load may hold it.
+    }
 
     public LicenseSnapshot GetSnapshot()
     {
-        var snapshot = Volatile.Read(ref _snapshot);
-        if (snapshot.ValidationState != LicenseValidationState.Valid ||
-            !snapshot.ExpiresAt.HasValue ||
-            snapshot.ExpiresAt.Value > DateTimeOffset.UtcNow)
+        lock (_runtimeLock)
         {
+            var snapshot = _snapshot;
+            if (snapshot.Edition != HonuaEdition.Community &&
+                snapshot.ValidationState == LicenseValidationState.Valid &&
+                snapshot.ExpiresAt <= _timeProvider.GetUtcNow())
+            {
+                snapshot = CreateExpiredSnapshot(snapshot);
+                _snapshot = snapshot;
+                _operationCancellation.Cancel();
+                LicenseRuntimeLog.LicenseExpired(_logger, snapshot.LicenseId, snapshot.ExpiresAt);
+            }
             return snapshot;
         }
-
-        // The license expired while the server was running. Republish an expired
-        // snapshot so entitlement checks and health reporting reflect reality without
-        // requiring a restart.
-        var expired = CreateExpiredSnapshot(snapshot);
-        if (ReferenceEquals(Interlocked.CompareExchange(ref _snapshot, expired, snapshot), snapshot))
-        {
-            LicenseRuntimeLog.LicenseExpired(_logger, snapshot.LicenseId, snapshot.ExpiresAt);
-            return expired;
-        }
-
-        // Another thread published a newer snapshot concurrently; use that one.
-        return Volatile.Read(ref _snapshot);
     }
 
     private LicenseSnapshot CreateExpiredSnapshot(LicenseSnapshot current)
@@ -96,7 +114,7 @@ internal sealed class FileBackedLicenseService :
         };
 
         return CreateSnapshot(
-            HonuaEdition.Community,
+            current.Edition,
             isValid: false,
             LicenseValidationState.Expired,
             NextSnapshotVersion(),
@@ -153,7 +171,8 @@ internal sealed class FileBackedLicenseService :
             new BouncyCastleEd25519Verifier(),
             loggerFactory.CreateLogger<FileBackedLicenseService>(),
             secretResolvers);
-        await service.StartAsync(cancellationToken).ConfigureAwait(false);
+        await service.LoadConfiguredLicenseAsync(cancellationToken).ConfigureAwait(false);
+        service.EnsureStartupLicense();
         return service.GetSnapshot();
     }
 
@@ -260,6 +279,11 @@ internal sealed class FileBackedLicenseService :
     private async Task LoadConfiguredLicenseAsync(CancellationToken cancellationToken)
     {
         var options = _options.Value;
+        if (options.Edition == HonuaEdition.Community)
+        {
+            PublishCommunity(LicenseValidationState.NoLicenseConfigured, isValid: true, payload: null, keyId: null);
+            return;
+        }
 
         // A successful admin upload is an explicit persisted override. Check it before
         // contacting a secret store, including when subsequent uploads have been disabled.
@@ -621,7 +645,7 @@ internal sealed class FileBackedLicenseService :
             return CreateInvalidResult(LicenseValidationState.Malformed, payloadError, payload, envelope.KeyId);
         }
 
-        if (payload.ExpiresAt.HasValue && payload.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (payload.ExpiresAt.HasValue && payload.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return CreateInvalidResult(LicenseValidationState.Expired, "expired", payload, envelope.KeyId);
         }
@@ -740,7 +764,7 @@ internal sealed class FileBackedLicenseService :
     {
         var snapshot = state == LicenseValidationState.Expired && payload is not null
             ? CreateSnapshot(
-                HonuaEdition.Community,
+                Enum.Parse<HonuaEdition>(payload.Edition!, ignoreCase: true),
                 isValid: false,
                 state,
                 NextSnapshotVersion(),
@@ -782,7 +806,7 @@ internal sealed class FileBackedLicenseService :
             .ToArray();
 
         var activeKeys = FeatureCatalog.All
-            .Where(feature => feature.MinimumEdition == HonuaEdition.Community)
+            .Where(feature => (isValid || edition == HonuaEdition.Community) && feature.MinimumEdition == HonuaEdition.Community)
             .Select(feature => feature.Key)
             .Concat(knownSignedEntitlements)
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -830,7 +854,47 @@ internal sealed class FileBackedLicenseService :
 
     private void PublishSnapshot(LicenseSnapshot snapshot)
     {
-        Volatile.Write(ref _snapshot, snapshot);
+        lock (_runtimeLock)
+        {
+            var expected = _options.Value.Edition ?? (_snapshot.Edition > HonuaEdition.Community
+                ? _snapshot.Edition : snapshot.Edition);
+            if (expected > HonuaEdition.Community &&
+                (snapshot.ValidationState != LicenseValidationState.Valid || snapshot.Edition < expected))
+            {
+                snapshot = snapshot with
+                {
+                    Edition = expected,
+                    IsValid = false,
+                    ValidationState = snapshot.ValidationState == LicenseValidationState.Valid
+                        ? LicenseValidationState.Malformed : snapshot.ValidationState,
+                    ActiveEntitlementKeys = Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase),
+                    Entitlements = snapshot.Entitlements.Select(item => new Entitlement
+                    {
+                        Key = item.Key, Name = item.Name, IsActive = false
+                    }).ToArray()
+                };
+            }
+            _snapshot = snapshot;
+            var blocked = snapshot.Edition > HonuaEdition.Community && !snapshot.IsValid;
+            if (blocked)
+            {
+                _operationCancellation.Cancel();
+            }
+            else if (_operationCancellation.IsCancellationRequested)
+            {
+                _retiredCancellations.Add(_operationCancellation);
+                _operationCancellation = new CancellationTokenSource();
+            }
+
+            var due = !blocked && snapshot.Edition > HonuaEdition.Community && snapshot.ExpiresAt.HasValue
+                ? snapshot.ExpiresAt.Value - _timeProvider.GetUtcNow() : Timeout.InfiniteTimeSpan;
+            if (due != Timeout.InfiniteTimeSpan)
+            {
+                due = TimeSpan.FromMilliseconds(Math.Clamp(due.TotalMilliseconds, 0, uint.MaxValue - 1));
+            }
+            _expiryTimer.Change(due, Timeout.InfiniteTimeSpan);
+            LogExpiryWarning(snapshot);
+        }
     }
 
     private long NextSnapshotVersion() => Interlocked.Increment(ref _snapshotVersion);

@@ -7,40 +7,44 @@ namespace Honua.Infrastructure.Licensing;
 
 internal static partial class LicenseRuntimeLog
 {
+    [LoggerMessage(10015, LogLevel.Warning,
+        "License expiry warning: {Days}-day threshold; expiresAt={ExpiresAt}. Renew the license or complete backup/export before expiry. Paid operations, including reads and exports, stop at expiry; in-flight jobs fail with reason 'license expired'.")]
+    public static partial void ExpiryWarning(ILogger logger, int days, DateTimeOffset expiresAt);
+
     [LoggerMessage(
         EventId = 10000,
         Level = LogLevel.Information,
-        Message = "No license path configured; running in Community mode.")]
+        Message = "No license path configured.")]
     public static partial void NoLicensePathConfigured(ILogger logger);
 
     [LoggerMessage(
         EventId = 10001,
         Level = LogLevel.Warning,
-        Message = "Configured license file is missing; running in Community mode. licensePath={LicensePath}")]
+        Message = "Configured license file is missing. licensePath={LicensePath}")]
     public static partial void LicenseFileMissing(ILogger logger, string licensePath);
 
     [LoggerMessage(
         EventId = 10002,
         Level = LogLevel.Warning,
-        Message = "License file is malformed; running in Community mode. reason={Reason}")]
+        Message = "License file is malformed. reason={Reason}")]
     public static partial void LicenseMalformed(ILogger logger, string reason);
 
     [LoggerMessage(
         EventId = 10003,
         Level = LogLevel.Warning,
-        Message = "License references an unknown signing key; running in Community mode. keyId={KeyId}")]
+        Message = "License references an unknown signing key. keyId={KeyId}")]
     public static partial void UnknownKey(ILogger logger, string keyId);
 
     [LoggerMessage(
         EventId = 10004,
         Level = LogLevel.Warning,
-        Message = "License signature validation failed; running in Community mode. keyId={KeyId}")]
+        Message = "License signature validation failed. keyId={KeyId}")]
     public static partial void InvalidSignature(ILogger logger, string keyId);
 
     [LoggerMessage(
         EventId = 10005,
         Level = LogLevel.Warning,
-        Message = "License is expired; running in Community mode. licenseId={LicenseId} expiresAt={ExpiresAt}")]
+        Message = "License is expired. licenseId={LicenseId} expiresAt={ExpiresAt}")]
     public static partial void LicenseExpired(ILogger logger, string? licenseId, DateTimeOffset? expiresAt);
 
     [LoggerMessage(
@@ -81,25 +85,25 @@ internal static partial class LicenseRuntimeLog
     [LoggerMessage(
         EventId = 10010,
         Level = LogLevel.Warning,
-        Message = "Licensing:LicenseContentSecretRef is set but no license secret resolver is registered; running in Community mode.")]
+        Message = "Licensing:LicenseContentSecretRef is set but no license secret resolver is registered.")]
     public static partial void LicenseSecretResolverUnavailable(ILogger logger);
 
     [LoggerMessage(
         EventId = 10011,
         Level = LogLevel.Warning,
-        Message = "Configured Licensing:LicenseContentSecretRef is not supported by the registered license secret resolver; running in Community mode.")]
+        Message = "Configured Licensing:LicenseContentSecretRef is not supported by the registered license secret resolver.")]
     public static partial void LicenseSecretReferenceUnsupported(ILogger logger);
 
     [LoggerMessage(
         EventId = 10012,
         Level = LogLevel.Warning,
-        Message = "License secret reference resolved to an empty value; running in Community mode.")]
+        Message = "License secret reference resolved to an empty value.")]
     public static partial void LicenseSecretResolutionEmpty(ILogger logger);
 
     [LoggerMessage(
         EventId = 10013,
         Level = LogLevel.Warning,
-        Message = "Failed to resolve license from secret reference; running in Community mode. reason={Reason}")]
+        Message = "Failed to resolve license from secret reference. reason={Reason}")]
     public static partial void LicenseSecretResolutionFailed(ILogger logger, string reason);
 
     [LoggerMessage(

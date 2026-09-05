@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Licensing.Abstractions;
 using System.Threading.Channels;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -22,6 +23,7 @@ namespace Honua.Server.Features.PrintingTools;
 /// </summary>
 internal sealed class PrintingToolsBackgroundService : BackgroundService
 {
+    private readonly ILicenseOperationPolicy? _licensePolicy;
     private readonly Channel<PrintJob> _channel;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly PrintJobCancellationTokens _cancellationTokens;
@@ -31,8 +33,10 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
         Channel<PrintJob> channel,
         IServiceScopeFactory scopeFactory,
         PrintJobCancellationTokens cancellationTokens,
-        ILogger<PrintingToolsBackgroundService> logger)
+        ILogger<PrintingToolsBackgroundService> logger,
+        ILicenseOperationPolicy? licensePolicy = null)
     {
+        _licensePolicy = licensePolicy;
         _channel = channel;
         _scopeFactory = scopeFactory;
         _cancellationTokens = cancellationTokens;
@@ -63,11 +67,29 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
 
     private async Task ProcessJobAsync(PrintJob job, CancellationToken stoppingToken)
     {
-        using var linkedCts = _cancellationTokens.CreateLinkedTokenSource(job.JobId, stoppingToken);
+        var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
+        using var licensedStopping = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, licenseCancellation);
+        using var linkedCts = _cancellationTokens.CreateLinkedTokenSource(job.JobId, licensedStopping.Token);
 
         try
         {
+            licenseCancellation.ThrowIfCancellationRequested();
             await ProcessJobCoreAsync(job, linkedCts.Token).ConfigureAwait(false);
+            licenseCancellation.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var progressStore = scope.ServiceProvider.GetRequiredService<IUniversalProgressStore>();
+            if (await progressStore.GetProgressAsync(job.JobId, CancellationToken.None) is PrintProgress progress)
+            {
+                await progressStore.SetProgressAsync(job.JobId, progress with
+                {
+                    Status = OperationStatus.Failed, ErrorMessage = "license expired",
+                    CurrentPhase = "Failed: license expired", CompletedAt = DateTimeOffset.UtcNow,
+                    DownloadUrl = null, OutputSizeBytes = 0
+                }, PrintingToolsRequestHandlers.ResultTtl, CancellationToken.None).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (linkedCts.IsCancellationRequested)
         {

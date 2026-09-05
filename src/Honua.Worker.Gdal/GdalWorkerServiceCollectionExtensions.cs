@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Infrastructure.Licensing;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -50,6 +52,12 @@ public static class GdalWorkerServiceCollectionExtensions
             ?? throw new InvalidOperationException(
                 "The GDAL worker requires a 'redis' connection string (the durable job substrate's "
                 + "coordination layer per ADR-0031 / ADR-0038).");
+
+        services.Configure<LicenseOptions>(configuration.GetSection(LicenseOptions.SectionName));
+        services.TryAddSingleton<IEd25519Verifier, BouncyCastleEd25519Verifier>();
+        services.TryAddSingleton<FileBackedLicenseService>();
+        services.TryAddSingleton<ILicenseOperationPolicy>(sp => sp.GetRequiredService<FileBackedLicenseService>());
+        services.AddHostedService(sp => sp.GetRequiredService<FileBackedLicenseService>());
 
         services.TryAddSingleton<IConnectionMultiplexer>(
             _ => ConnectionMultiplexer.Connect(redisConnectionString));

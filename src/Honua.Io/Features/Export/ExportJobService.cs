@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Honua.Core.Features.Licensing.Abstractions;
 using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -32,7 +33,8 @@ internal sealed class ExportJobService(
     IServiceScopeFactory scopeFactory,
     ILogger<ExportJobService> logger,
     IConnectionMultiplexer? redis = null,
-    TimeSpan? recoveryPollInterval = null) : IExportJobService
+    TimeSpan? recoveryPollInterval = null,
+    ILicenseOperationPolicy? licensePolicy = null) : IExportJobService
 {
     private const string ExportFailureMessage = "Export failed.";
     private const string MissingRequestFailureMessage = "Export request metadata is no longer available.";
@@ -208,6 +210,9 @@ internal sealed class ExportJobService(
             // server-generated Guid.NewGuid().ToString("N") minted in ExportEndpoints (never
             // caller-supplied), so this combine cannot silently drop Path.GetTempPath().
             var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", job.JobId);
+            var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
+            using var licensedProcessing = CancellationTokenSource.CreateLinkedTokenSource(processingToken, licenseCancellation);
+            processingToken = licensedProcessing.Token;
             Directory.CreateDirectory(scratchDir);
             var shouldRequeue = false;
 
@@ -221,12 +226,13 @@ internal sealed class ExportJobService(
             activity?.SetTag("export.layer_id", job.LayerId);
             activity?.SetTag("export.total_features", job.TotalFeatures);
 
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();
+            string? uploadedFileId = null;
             try
             {
-                await using var scope = _scopeFactory.CreateAsyncScope();
                 var streamingStore = scope.ServiceProvider.GetRequiredService<IStreamingFeatureStore>();
                 var crsRegistry = scope.ServiceProvider.GetRequiredService<ICrsRegistry>();
-                var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();
 
                 var features = streamingStore.StreamFeaturesAsync(job.LayerId, job.Query, processingToken);
                 var output = await WriteToFileAsync(job, features, scratchDir, crsRegistry, _logger, processingToken).ConfigureAwait(false);
@@ -242,11 +248,13 @@ internal sealed class ExportJobService(
                     TimeToLive = _jobRetention
                 }, processingToken).ConfigureAwait(false);
 
+                uploadedFileId = uploadResult.File?.FileId;
                 var downloadUrl = uploadResult.File is not null
                     ? await cloudStorage.GetPresignedUrlAsync(
                         uploadResult.File.FileId, _jobRetention, processingToken).ConfigureAwait(false)
                     : null;
 
+                licenseCancellation.ThrowIfCancellationRequested();
                 var completed = progress with
                 {
                     Status = OperationStatus.Completed,
@@ -258,12 +266,29 @@ internal sealed class ExportJobService(
                     CurrentPhase = "Export completed"
                 };
                 await _progressStore.SetProgressAsync(job.JobId, completed, _jobRetention, processingToken).ConfigureAwait(false);
+                licenseCancellation.ThrowIfCancellationRequested();
 
                 _jobRequests.TryRemove(job.JobId, out _);
                 await RemovePersistedJobRequestAsync(job.JobId, processingToken).ConfigureAwait(false);
                 activity?.SetTag("export.output_size_bytes", fileInfo.Length);
                 activity?.SetStatus(ActivityStatusCode.Ok);
                 ExportLog.AsyncExportCompleted(_logger, job.JobId, job.TotalFeatures, fileInfo.Length);
+            }
+            catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
+            {
+                var failed = progress with
+                {
+                    Status = OperationStatus.Failed, ErrorMessage = "license expired",
+                    CompletedAt = DateTimeOffset.UtcNow, CurrentPhase = "Failed: license expired",
+                    DownloadUrl = null, OutputSizeBytes = 0
+                };
+                await _progressStore.SetProgressAsync(job.JobId, failed, _jobRetention, CancellationToken.None).ConfigureAwait(false);
+                _jobRequests.TryRemove(job.JobId, out _);
+                await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
+                if (uploadedFileId is not null)
+                {
+                    await cloudStorage.DeleteAsync(uploadedFileId, CancellationToken.None).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException) when (leaseCoordinator?.LeaseLostToken.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
             {

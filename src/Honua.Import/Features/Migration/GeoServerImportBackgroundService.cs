@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -28,6 +29,7 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
 {
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _hostEnvironment;
+    private readonly ILicenseOperationPolicy? _licensePolicy;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly GeoServerImportJobManager _jobManager;
     private readonly IReadOnlyCollection<string>? _allowedHostSuffixes;
@@ -41,10 +43,12 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
         IServiceScopeFactory scopeFactory,
         GeoServerImportJobManager jobManager,
         ILogger<GeoServerImportBackgroundService> logger,
-        IOptions<MigrationUrlValidationOptions>? urlValidationOptions = null)
+        IOptions<MigrationUrlValidationOptions>? urlValidationOptions = null,
+        ILicenseOperationPolicy? licensePolicy = null)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _hostEnvironment = hostEnvironment ?? throw new ArgumentNullException(nameof(hostEnvironment));
+        _licensePolicy = licensePolicy;
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _jobManager = jobManager ?? throw new ArgumentNullException(nameof(jobManager));
         _allowedHostSuffixes = urlValidationOptions?.Value.ResolveAllowedServiceHostSuffixes();
@@ -70,7 +74,8 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
         Log.JobStarted(_logger, jobId);
 
         GeoServerImportRequest? request = null;
-        using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
+        using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, licenseCancellation);
         CancellationTokenSource? monitorCancellation = null;
         Task? monitorTask = null;
         var acknowledgeCompletion = true;
@@ -183,6 +188,7 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
             }
 
             var currentProgress = progressController.CurrentProgress ?? GeoServerImportProgress.CreateInitial(jobId, request.GeoServerRestUrl, request.TargetHonuaUrl);
+            licenseCancellation.ThrowIfCancellationRequested();
             var finalProgress = currentProgress with
             {
                 Status = result.Success ? GeoServerImportStatus.Completed : GeoServerImportStatus.Failed,
@@ -200,7 +206,8 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
                     : "Import failed"
             };
 
-            await progressController.SetFinalProgressAsync(finalProgress, stoppingToken).ConfigureAwait(false);
+            await progressController.SetFinalProgressAsync(finalProgress, jobCancellation.Token).ConfigureAwait(false);
+            licenseCancellation.ThrowIfCancellationRequested();
             await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
 
             if (result.Success)
@@ -211,6 +218,16 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
             {
                 Log.JobFailed(_logger, jobId, result.ErrorMessage ?? "Unknown error", stopwatch.Elapsed.TotalSeconds);
             }
+        }
+        catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
+        {
+            var failed = (progressController.CurrentProgress ?? GeoServerImportProgress.CreateInitial(jobId, request?.GeoServerRestUrl ?? string.Empty, request?.TargetHonuaUrl ?? string.Empty)) with
+            {
+                Status = GeoServerImportStatus.Failed, ErrorMessage = "license expired",
+                CompletedAt = DateTimeOffset.UtcNow, CurrentPhase = "Failed: license expired; partial import is incomplete"
+            };
+            await progressController.SetFinalProgressAsync(failed, CancellationToken.None).ConfigureAwait(false);
+            await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (jobCancellation.IsCancellationRequested)
         {

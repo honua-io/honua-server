@@ -1340,6 +1340,9 @@ app.UseGlobalExceptionHandling();
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
 
+// Paid deployments stop every data surface at expiry, including cached reads and exports.
+app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();
+
 // A configured deployment profile is a fail-closed HTTP surface allowlist backed by the
 // drift-gated feature catalog. With no profile configured this middleware is inert.
 Honua.Server.Features.Capabilities.DeploymentCapabilityProfileApplicationBuilderExtensions

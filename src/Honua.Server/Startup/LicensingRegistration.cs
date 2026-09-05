@@ -48,6 +48,8 @@ internal static class LicensingRegistration
 #endif
 
         services.AddSingleton<FileBackedLicenseService>();
+        services.AddSingleton<ILicenseOperationPolicy>(sp =>
+            sp.GetRequiredService<FileBackedLicenseService>());
         services.AddSingleton<ILicenseEntitlementService>(sp =>
             sp.GetRequiredService<FileBackedLicenseService>());
         services.AddSingleton<ILicenseStatusProvider>(sp =>
