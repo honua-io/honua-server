@@ -120,7 +120,7 @@ internal sealed class ODataAggregationHandler
         }
     }
 
-    private ArgumentException InputLimitExceeded() => new(
+    private Honua.Core.Exceptions.ValidationException InputLimitExceeded() => new(
         $"$apply exceeds the maximum input row count of {_maxInputRows}. Narrow the query with $filter or filter().");
 
     /// <summary>

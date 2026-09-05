@@ -102,7 +102,7 @@ public sealed class ODataCloudNativeRegressionTests
         var act = () => handler.ProcessAggregationAsync(41, Resource(), apply, null,
             "https://example.test", CancellationToken.None);
 
-        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*10000*");
+        await act.Should().ThrowAsync<Honua.Core.Exceptions.ValidationException>().WithMessage("*10000*");
     }
 
     [Theory]
@@ -119,7 +119,7 @@ public sealed class ODataCloudNativeRegressionTests
         var act = () => handler.ProcessAggregationAsync(41, Resource(), apply, null,
             "https://example.test", CancellationToken.None);
 
-        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*maximum input row count of 2*");
+        await act.Should().ThrowAsync<Honua.Core.Exceptions.ValidationException>().WithMessage("*maximum input row count of 2*");
         await reader.Received().QueryAsync(41, Arg.Is<FeatureQuery>(query => query.Limit == 3),
             Arg.Any<CancellationToken>());
     }

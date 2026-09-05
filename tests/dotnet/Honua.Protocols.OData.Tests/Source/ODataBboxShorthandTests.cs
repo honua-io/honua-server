@@ -137,17 +137,19 @@ public sealed class ODataBboxShorthandTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("/odata/Layers(0)/Features")]
+    [InlineData("/odata/Features(0)/$apply")]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Layers({layerId})/Features")]
-    public async Task Apply_ConfiguredInputBudget_RejectsOverflowAndAcceptsExactLimit()
+    public async Task Apply_ConfiguredInputBudget_RejectsOverflowAndAcceptsExactLimit(string path)
     {
-        var overflow = await _fixture.Client.GetAsync("/odata/Layers(0)/Features?$apply=aggregate($count%20as%20n)");
+        var overflow = await _fixture.Client.GetAsync($"{path}?$apply=aggregate($count%20as%20n)");
         overflow.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await overflow.Content.ReadAsStringAsync()).Should().Contain("maximum input row count of 2");
 
         var exact = await _fixture.Client.GetAsync(
-            "/odata/Layers(0)/Features?$apply=aggregate($count%20as%20n)&$filter=ObjectId%20lt%203");
+            $"{path}?$apply=aggregate($count%20as%20n)&$filter=ObjectId%20lt%203");
         exact.StatusCode.Should().Be(HttpStatusCode.OK, await exact.Content.ReadAsStringAsync());
         using var json = JsonDocument.Parse(await exact.Content.ReadAsStringAsync());
         json.RootElement.GetProperty("value")[0].GetProperty("n").GetInt64().Should().Be(2);
