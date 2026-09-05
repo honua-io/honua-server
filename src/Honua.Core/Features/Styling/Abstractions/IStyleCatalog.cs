@@ -136,7 +136,8 @@ public interface IStyleCatalog
     /// </summary>
     /// <param name="layerId">Integer storage-layer identifier.</param>
     /// <param name="styleId">Stable style identifier.</param>
-    /// <param name="ordinal">Zero-based reference ordinal; 0 is primary.</param>
+    /// <param name="ordinal">Zero-based reference ordinal. Setting 0 atomically promotes
+    /// this style to primary and retains the other associations in their existing order.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns><c>true</c> when the association was applied; <c>false</c> when the style or layer does not exist.</returns>
     Task<bool> AssociateLayerAsync(int layerId, string styleId, int ordinal = 0, CancellationToken cancellationToken = default);
