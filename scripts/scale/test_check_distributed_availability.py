@@ -2,6 +2,8 @@ import copy
 import hashlib
 import importlib.util
 import json
+
+import pytest
 from pathlib import Path
 
 
@@ -26,7 +28,7 @@ def comparison(root: Path) -> dict:
     cells = []
     definitions = [
         ("unequal-load", (9000, 1000), 2, 1),
-        ("reservoir-overflow", (5000, 1200), 3, 2),
+        ("reservoir-overflow", (5000, 4200), 3, 2),
         ("in-band-errors", (4000, 2000), 1, 9),
         ("rolling-replacement", (4500, 1500), 2, 3),
     ]
@@ -133,7 +135,7 @@ def comparison(root: Path) -> dict:
         )
 
     expression = "sum(failed_serving_outcomes) / sum(serving_requests)"
-    return {
+    result = {
         "schema": "honua.distributed-availability-comparison/v1",
         "status": "completed",
         "candidateIdentity": {"serverRevision": REVISION, "imageDigest": DIGEST},
@@ -156,10 +158,31 @@ def comparison(root: Path) -> dict:
         "rawArtifacts": artifacts,
         "cells": cells,
     }
+    # Synthetic individual observations exercise the validator, not a live candidate.
+    for cell in cells:
+        rows = []
+        for group in cell['ledger']['rows']:
+            for i in range(group['requests']):
+                rows.append(dict(id=f'{group["incarnation"]}-{i}', logicalReplica=group['logicalReplica'],
+                                 incarnation=group['incarnation'], protocol='FeatureServer',
+                                 at='2026-09-01T10:35:00Z' if group['incarnation'].endswith('v2') else '2026-09-01T10:15:00Z',
+                                 httpStatus=500 if i < group['httpFailures'] else 200,
+                                 inBandError=group['httpFailures'] <= i < group['httpFailures']+group['inBandFailures']))
+        raw_ledger = dict(cell=cell['id'], candidateIdentity=cell['candidateIdentity'], window=cell['window'],
+                          populationMode='all-serving-requests', samplingFailures=[], requests=rows,
+                          replacement=cell['workload'].get('replacement'))
+        raw_query = dict(candidateIdentity=cell['candidateIdentity'], window=cell['window'], query=result['query'],
+                         results=[{k:v for k,v in r.items() if k != 'rawArtifactIds'} for r in cell['queryResults']])
+        for artifact_id, document in ((cell['id']+'-ledger', raw_ledger), (cell['id']+'-query', raw_query)):
+            artifact = next(a for a in artifacts if a['id'] == artifact_id)
+            payload = json.dumps(document).encode()
+            (root / artifact['path']).write_bytes(payload)
+            artifact['sha256'] = _sha(payload)
+    return result
 
 
 def failures(value: dict, root: Path) -> list[str]:
-    return gate.evaluate(value, REVISION, root)
+    return gate.evaluate(value, REVISION, root, DIGEST)
 
 
 def test_exact_two_replica_four_cell_comparison_passes(tmp_path):
@@ -242,3 +265,37 @@ def test_tampered_raw_population_fails(tmp_path):
     value = comparison(tmp_path)
     (tmp_path / "unequal-load-ledger.json").write_text("tampered", encoding="utf-8")
     assert any("hash mismatch" in item for item in failures(value, tmp_path))
+
+
+@pytest.mark.parametrize('mutation', [
+    lambda raw: raw['requests'].pop(),
+    lambda raw: raw['requests'].append(copy.deepcopy(raw['requests'][0])),
+    lambda raw: raw['requests'][10].update(inBandError=True),
+    lambda raw: raw['requests'][10].update(at='2026-09-01T11:01:00Z'),
+    lambda raw: raw.update(samplingFailures=['lost events']),
+    lambda raw: raw.update(populationMode='retained-tail'),
+])
+def test_raw_ledger_tampering_with_recomputed_hash_fails(tmp_path, mutation):
+    value = comparison(tmp_path)
+    artifact = value['rawArtifacts'][0]
+    path = tmp_path / artifact['path']
+    raw = json.loads(path.read_text())
+    mutation(raw)
+    payload = json.dumps(raw).encode()
+    path.write_bytes(payload)
+    artifact['sha256'] = _sha(payload)
+    assert any('raw source population' in item for item in failures(value, tmp_path))
+
+
+def test_query_export_cannot_be_replaced_by_hashed_assertion(tmp_path):
+    value = comparison(tmp_path)
+    artifact = value['rawArtifacts'][1]
+    payload = b'{"value":1.0}'
+    (tmp_path / artifact['path']).write_bytes(payload)
+    artifact['sha256'] = _sha(payload)
+    assert any('raw source population' in item for item in failures(value, tmp_path))
+
+
+def test_independently_pinned_image_is_required(tmp_path):
+    value = comparison(tmp_path)
+    assert any('independently pinned' in item for item in gate.evaluate(value, REVISION, tmp_path, 'sha256:'+'c'*64))
