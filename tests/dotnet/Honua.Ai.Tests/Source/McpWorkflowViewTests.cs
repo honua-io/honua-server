@@ -496,12 +496,19 @@ public sealed class McpWorkflowViewTests
     [UnitTest]
     public async Task ToolsList_SetupMeasurements_MatchIndependentlyMeasuredWireBytes()
     {
-        var view = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
+        var response = await DispatchAsync(BuildFullSurface(),
+            """{"jsonrpc":"2.0","id":"setup-budget","method":"tools/list","params":{"view":"setup"}}""");
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.TryGetProperty("nextCursor", out var cursor);
+        cursor.ValueKind.Should().BeOneOf(JsonValueKind.Undefined, JsonValueKind.Null);
+        var wireTools = result.GetProperty("tools");
+        var view = new ToolsListView(wireTools.EnumerateArray().ToArray(), result.GetProperty("_meta"), null);
 
         // Measure the actual complete wire descriptors, without calling the projector,
         // its serializer, digest helper, budget constants, or token estimator.
         var descriptorJson = view.Tools.Select(tool => tool.GetRawText()).ToArray();
-        var aggregate = Encoding.UTF8.GetBytes("[" + string.Join(",", descriptorJson) + "]");
+        var aggregate = Encoding.UTF8.GetBytes(wireTools.GetRawText());
         var largestDescriptor = descriptorJson.Max(json => Encoding.UTF8.GetByteCount(json));
         var expectedDigest = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(aggregate));
         var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
