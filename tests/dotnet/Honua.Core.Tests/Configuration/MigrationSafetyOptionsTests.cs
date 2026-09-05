@@ -30,8 +30,9 @@ public sealed class MigrationSafetyOptionsTests
 
         var bind = () => configuration.GetSection(MigrationSafetyOptions.SectionName).Get<MigrationSafetyOptions>();
 
-        bind.Should().Throw<InvalidOperationException>()
-            .WithMessage("*ContractApplyPolicy*");
+        bind.Should().Throw<Exception>().Which.GetBaseException()
+            .Should().BeOfType<ArgumentOutOfRangeException>().Which.ParamName
+            .Should().Be(nameof(MigrationSafetyOptions.ContractApplyPolicy));
     }
 
     [Theory]

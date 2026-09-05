@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Server.Startup;
+using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using NSubstitute;
@@ -23,6 +24,44 @@ namespace Honua.Server.Tests.Startup;
 /// </summary>
 public sealed class StartupConfigurationHelpersTests
 {
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("ConnectionStrings:redis")]
+    [InlineData("Aspire:StackExchange:Redis:ConnectionString")]
+    public async Task SecuritySourceReordering_PreservesAwsResolvedSnapshot(string key)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "honua-aws-order-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "appsettings.json"), "{}");
+            File.WriteAllText(Path.Combine(directory, "appsettings.Production.json"), "{}");
+            const string reference = "aws:secretsmanager:regression/redis";
+            var resolved = "localhost:6379,password=" + Guid.NewGuid().ToString("N");
+            using var configuration = new ConfigurationManager();
+            configuration.SetBasePath(directory);
+            configuration.AddJsonFile("appsettings.json");
+            configuration.AddJsonFile("appsettings.Production.json");
+            configuration.AddInMemoryCollection(new Dictionary<string, string?> { [key] = reference });
+            var resolver = Substitute.For<IConnectionSecretResolver>();
+            resolver.CanResolve(reference).Returns(true);
+            resolver.ResolveSecretAsync(reference, Arg.Any<CancellationToken>()).Returns(resolved);
+            var environment = Substitute.For<IHostEnvironment>();
+            environment.EnvironmentName.Returns(Environments.Production);
+
+            await StartupConfigurationHelpers.ResolveRedisConnectionSecretReferenceAsync(configuration, key, resolver);
+            StartupConfigurationHelpers.AddSecurityConfiguration(configuration, environment);
+
+            string.Equals(configuration[key], resolved, StringComparison.Ordinal).Should().BeTrue();
+            await resolver.Received(1).ResolveSecretAsync(reference, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]

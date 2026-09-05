@@ -173,7 +173,7 @@ internal static class StartupConfigurationHelpers
                 continue;
             }
 
-            configuration[key] = resolved;
+            SetResolvedSecretValue(configuration, key, resolved);
         }
     }
 
@@ -183,8 +183,16 @@ internal static class StartupConfigurationHelpers
         var resolved = SecretReferenceResolver.ResolveEnvironmentReference(value, key);
         if (!string.Equals(value, resolved, StringComparison.Ordinal))
         {
-            configuration[key] = resolved;
+            SetResolvedSecretValue(configuration, key, resolved);
         }
+    }
+
+    private static void SetResolvedSecretValue(ConfigurationManager configuration, string key, string? value)
+    {
+        // Indexer writes modify provider instances only. Reordering sources rebuilds
+        // those instances and reloads the original environment/JSON references.
+        // InitialData survives rebuilding and keeps this process-lifetime snapshot last.
+        configuration.AddInMemoryCollection(new Dictionary<string, string?> { [key] = value });
     }
 
     /// <summary>
@@ -246,6 +254,17 @@ internal static class StartupConfigurationHelpers
             metadataClient,
             loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
 
+        await ResolveRedisConnectionSecretReferenceAsync(configuration, key, resolver, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task ResolveRedisConnectionSecretReferenceAsync(
+        ConfigurationManager configuration,
+        string key,
+        Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver resolver,
+        CancellationToken cancellationToken = default)
+    {
+        var value = configuration[key];
         string? resolved;
         try
         {
@@ -262,7 +281,7 @@ internal static class StartupConfigurationHelpers
 
         if (!string.Equals(value, resolved, StringComparison.Ordinal))
         {
-            configuration[key] = resolved;
+            SetResolvedSecretValue(configuration, key, resolved);
         }
     }
 
