@@ -78,6 +78,25 @@ public sealed class StudioMcpToolContractTests
             var properties = tool.Describe().OutputSchema!.Value.GetProperty("properties");
             properties.TryGetProperty("studioAuthorizationCode", out _).Should().BeTrue(
                 $"'{tool.Name}' must advertise the governed Studio denial code emitted at runtime");
+            properties.GetProperty("currentGeneration").GetProperty("type")
+                .EnumerateArray().Select(value => value.GetString()).Should().BeEquivalentTo("integer", "null");
+            properties.GetProperty("currentGeneration").GetProperty("minimum").GetInt64().Should().Be(1);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/list")]
+    public void CompositionTools_AdvertiseDashboardEligibility()
+    {
+        var tools = BuildAllTools().OfType<StudioCompositionToolBase>().Cast<IMcpTool>().ToArray();
+        tools.Should().HaveCount(11);
+        foreach (var tool in tools)
+        {
+            var descriptor = tool.Describe();
+            descriptor.InputSchema.GetProperty("properties").GetProperty("draftId")
+                .GetProperty("description").GetString().Should().Contain("dashboard");
+            descriptor.Description.Should().Contain("dashboard");
         }
     }
 

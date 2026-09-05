@@ -316,8 +316,8 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
 
     /// <summary>
     /// Gates the standard-owned <c>interactions</c>/<c>layout</c> (geospatial-mcp ADR-0030)
-    /// and <c>controls</c> (ADR-0031) blocks of a map/app composition body. All three
-    /// blocks are OPTIONAL: a body that declares none produces no diagnostics. When present
+    /// and <c>controls</c> (ADR-0031) blocks of a map/app/dashboard composition body. All three
+    /// blocks are OPTIONAL: a body that declares none is still checked for layers/widgets/view validity. When present
     /// they must satisfy the closed event/verb/control-kind sets, the component-reference
     /// grammar, in-document reference resolution, id uniqueness, the
     /// per-<c>(on.ref, on.event)</c> fan-out cap, and the layout grid/placement bounds.

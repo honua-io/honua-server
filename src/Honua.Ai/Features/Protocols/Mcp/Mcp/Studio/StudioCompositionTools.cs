@@ -44,7 +44,7 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         Title = "Add Studio layer",
         Description =
             "Add a layer to a map/app/dashboard-family Studio draft's composition, with optimistic-generation checking. "
-            + "Fails with invalid_argument if a layer with the same id already exists, or if the draft's family is not map/app.",
+            + "Fails with invalid_argument if a layer with the same id already exists, or if the draft's family is not map/app/dashboard.",
         InputSchema = StudioMcpSchemas.AddLayerArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Add Studio layer", destructive: false, idempotent: false)
@@ -440,7 +440,7 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
         Title = "Add Studio widget",
         Description =
             "Add a widget to a map/app/dashboard-family Studio draft's composition, with optimistic-generation checking. "
-            + "Fails with invalid_argument if a widget with the same id already exists, or if the draft's family is not map/app.",
+            + "Fails with invalid_argument if a widget with the same id already exists, or if the draft's family is not map/app/dashboard.",
         InputSchema = StudioMcpSchemas.AddWidgetArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Add Studio widget", destructive: false, idempotent: false)
@@ -838,7 +838,7 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
             + "are what 'control:{id}' interaction references resolve against. Fails with invalid_argument when the "
             + "kind is outside the closed vocabulary ("
             + $"{string.Join(", ", StudioInteractionVocabulary.ControlKinds)}), when a supplied sourceId does not "
-            + "resolve to a layer or datasource declared in the same document, or when the draft's family is not map/app.",
+            + "resolve to a layer or datasource declared in the same document, or when the draft's family is not map/app/dashboard.",
         InputSchema = StudioMcpSchemas.AddControlArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Re-adding the same id with the same body is idempotent; the tool never

@@ -136,9 +136,34 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         }
 
         await Mutate("update_draft", $"\"packageKey\":\"{packageKey}\",\"schemaVersion\":\"1.0\"," + "\"body\":{\"layers\":[{\"id\":\"roads\"}],\"view\":{\"center\":[-158,22],\"zoom\":7}}");
-        var malformed = await RpcAsync("update_draft", $$$"""{"draftId":"{{{draftId}}}","generation":{{{generation}}},"packageKey":"{{{packageKey}}}","schemaVersion":"1.0","body":{"interactions":{"id":"invalid"} } }""");
-        malformed.GetProperty("result").GetProperty("isError").GetBoolean().Should().BeTrue();
-        malformed.GetProperty("result").GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("invalid_argument");
+        foreach (var invalidBody in new[]
+        {
+            """{"interactions":{"id":"invalid"}}""",
+            """{"layers":"bad"}""",
+            """{"layers":[null]}""",
+            """{"layers":[{"id":"same"},{"id":"same"}]}""",
+            """{"widgets":{}}""",
+            """{"widgets":[{"id":"missing-kind"}]}""",
+            """{"view":"bad"}""",
+            """{"view":{"center":[1]}}""",
+            """{"view":{"bbox":[4,3,2,1]}}""",
+            """{"view":{"zoom":25}}""",
+            """{"view":{"pitch":86}}""",
+        })
+        {
+            var malformed = await RpcAsync("update_draft",
+                $$"""{"draftId":"{{draftId}}","generation":{{generation}},"packageKey":"{{packageKey}}","schemaVersion":"1.0","body":{{invalidBody}}}""");
+            malformed.GetProperty("result").GetProperty("isError").GetBoolean().Should().BeTrue(invalidBody);
+            malformed.GetProperty("result").GetProperty("structuredContent").GetProperty("code")
+                .GetString().Should().Be("invalid_argument", invalidBody);
+            var preserved = await CallAsync("get_draft", $$"""{"draftId":"{{draftId}}"}""");
+            preserved.GetProperty("generation").GetInt64().Should().Be(generation, invalidBody);
+            var preservedBody = preserved.GetProperty("envelope").GetProperty("body");
+            preservedBody.GetProperty("layers")[0].GetProperty("id").GetString().Should().Be("roads");
+            preservedBody.GetProperty("view").GetProperty("center").EnumerateArray()
+                .Select(value => value.GetDouble()).Should().Equal(-158, 22);
+            preservedBody.GetProperty("view").GetProperty("zoom").GetDouble().Should().Be(7);
+        }
         var unsupported = await RpcAsync("update_draft",
             $$"""{"draftId":"{{draftId}}","generation":{{generation}},"packageKey":"{{packageKey}}","schemaVersion":"1.0","format":"unsupported.dashboard.v1"}""");
         unsupported.GetProperty("result").GetProperty("structuredContent").GetProperty("code")
@@ -149,9 +174,10 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             .GetProperty("id").GetString().Should().Be("roads");
 
         await CallAsync("validate_draft", $$"""{"draftId":"{{draftId}}"}""");
+        using var saveContent = new StringContent("""{"changeNote":"dashboard fixture"}""", Encoding.UTF8, "application/json");
         using var saveResponse = await _client.PostAsync(
             $"/api/v1/studio/package-drafts/{draftId:D}/content-versions",
-            new StringContent("""{"changeNote":"dashboard fixture"}""", Encoding.UTF8, "application/json"));
+            saveContent);
         saveResponse.StatusCode.Should().Be(HttpStatusCode.Created, await saveResponse.Content.ReadAsStringAsync());
         using var savedDocument = JsonDocument.Parse(await saveResponse.Content.ReadAsStringAsync());
         var version = JsonSerializer.Deserialize(savedDocument.RootElement.GetProperty("data"),
@@ -192,8 +218,8 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             var reloaded = reloadedDocument.RootElement.GetProperty("data");
             reloaded.GetProperty("versionId").GetGuid().Should().Be(version.VersionId);
             reloaded.GetProperty("contentHash").GetString().Should().Be(expectedHash);
-            using var reopenResponse = await replicaClient.PostAsync(versionPath + "/reopen",
-                new StringContent("{}", Encoding.UTF8, "application/json"));
+            using var reopenContent = new StringContent("{}", Encoding.UTF8, "application/json");
+            using var reopenResponse = await replicaClient.PostAsync(versionPath + "/reopen", reopenContent);
             reopenResponse.StatusCode.Should().Be(HttpStatusCode.Created, await reopenResponse.Content.ReadAsStringAsync());
             using var reopenedDocument = JsonDocument.Parse(await reopenResponse.Content.ReadAsStringAsync());
             var reopened = JsonSerializer.Deserialize(reopenedDocument.RootElement.GetProperty("data"),
