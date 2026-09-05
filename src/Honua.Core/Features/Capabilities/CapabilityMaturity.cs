@@ -29,8 +29,8 @@ public enum CapabilityMaturity
     Experimental = 2,
 
     /// <summary>
-    /// Preview — implemented and available only through explicit configuration opt-in
-    /// until the release qualification gates have passed.
+    /// Preview — available for evaluation before release qualification gates have passed.
+    /// Capability-specific configuration determines whether explicit opt-in is required.
     /// </summary>
     Preview = 3,
 
