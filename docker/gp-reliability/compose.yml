@@ -54,6 +54,36 @@ services:
       ExecutionAdmission__MaxSubmissionsPerWindow: "1000"
       ExecutionAdmission__DefaultRetryAfterSeconds: "2"
       Geoprocessing__Executors__MaxArtifactBytes: ${HONUA_GP_MAX_ARTIFACT_BYTES:-52428800}
+      ControlPlane__ExecutionWorkloads__0__Parameters__batch.timeout_seconds: ${HONUA_GP_TIMEOUT_SECONDS:-3600}
+      Geoprocessing__OutputStaging__Enabled: "true"
+      Geoprocessing__OutputStaging__Provider: local
+      Geoprocessing__OutputStaging__StoreReference: qualification
+      Geoprocessing__OutputStaging__LocalRootPath: /var/lib/honua/gp-outputs
+      Geoprocessing__OutputStaging__KeyPrefix: gp/outputs
+      Geoprocessing__OutputStaging__MaxInlineArtifactBytes: "1024"
+      Geoprocessing__OutputStaging__SweepInterval: 00:00:01
+      Geoprocessing__OutputStaging__SweepGrace: 00:00:01
+      Geoprocessing__OutputStaging__OrphanRetention: 00:00:02
+    volumes:
+      - ${HONUA_GP_OBJECT_ROOT:-/tmp/honua-gp-reliability-objects}:/var/lib/honua/gp-outputs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/healthz/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+
+  server-peer:
+    image: ${HONUA_SERVER_IMAGE:?set HONUA_SERVER_IMAGE to a digest-addressed image}
+    ports:
+      - "127.0.0.1:${HONUA_GP_PEER_PORT:-18081}:8080"
+    environment: *honua-environment
+    volumes:
+      - ${HONUA_GP_OBJECT_ROOT:-/tmp/honua-gp-reliability-objects}:/var/lib/honua/gp-outputs
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,9 +101,23 @@ services:
       DOTNET_ENVIRONMENT: Development
       ConnectionStrings__Redis: redis:6379
       GdalWorker__ScratchRoot: /tmp/honua-gdal-worker
+      Geoprocessing__OutputStaging__Enabled: "true"
+      Geoprocessing__OutputStaging__Provider: local
+      Geoprocessing__OutputStaging__StoreReference: qualification
+      Geoprocessing__OutputStaging__LocalRootPath: /var/lib/honua/gp-outputs
+      Geoprocessing__OutputStaging__KeyPrefix: gp/outputs
+      Geoprocessing__OutputStaging__MaxInlineArtifactBytes: "1024"
+      Geoprocessing__OutputStaging__SweepInterval: 00:00:01
+      Geoprocessing__OutputStaging__SweepGrace: 00:00:01
+      Geoprocessing__OutputStaging__OrphanRetention: 00:00:02
+      HONUA_GP_QUALIFICATION_BARRIER_ROOT: ${HONUA_GP_QUALIFICATION_BARRIER_ROOT:-}
+      HONUA_GP_QUALIFICATION_EXECUTOR_MODE: ${HONUA_GP_QUALIFICATION_EXECUTOR_MODE:-}
     depends_on:
       redis:
         condition: service_healthy
+    volumes:
+      - ${HONUA_GP_OBJECT_ROOT:-/tmp/honua-gp-reliability-objects}:/var/lib/honua/gp-outputs
+      - ${HONUA_GP_BARRIER_ROOT:-/tmp/honua-gp-reliability-barriers}:/var/run/honua/qualification
     tmpfs:
       - /tmp:noexec,nosuid,size=256m
 
