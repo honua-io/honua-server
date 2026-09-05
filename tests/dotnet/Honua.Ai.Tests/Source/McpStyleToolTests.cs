@@ -626,6 +626,7 @@ public sealed class McpStyleToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task StylePresetExecution_RecordsTargetAndOutcome(string outcome)
     {
+        using var parent = new Activity("style-telemetry-test").Start();
         var recorded = new List<Activity>();
         using var listener = new ActivityListener
         {
@@ -633,7 +634,7 @@ public sealed class McpStyleToolTests
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
             ActivityStopped = activity =>
             {
-                if (activity.OperationName == "style.apply-preset.execute")
+                if (activity.OperationName == "style.apply-preset.execute" && activity.TraceId == parent.TraceId)
                 {
                     recorded.Add(activity);
                 }
@@ -660,7 +661,9 @@ public sealed class McpStyleToolTests
             OperationId = StylePresetOperation.OperationId,
             Parameters = new Dictionary<string, string?>
             {
-                ["serviceId"] = ServiceId, ["layerId"] = LayerIndex.ToString(), ["styleId"] = PresetStyleId,
+                ["serviceId"] = ServiceId,
+                ["layerId"] = LayerIndex.ToString(),
+                ["styleId"] = PresetStyleId,
             },
         }, context);
         if (outcome == "failed")

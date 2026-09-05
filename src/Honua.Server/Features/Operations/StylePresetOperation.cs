@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -48,24 +49,35 @@ internal static class StylePresetOperation
 // Resolve storage services only when selected, preserving protocol-only compositions.
 internal sealed class StylePresetExecutor(IServiceProvider services) : IOperationExecutor, IOperationRequestPreparer
 {
+    private static readonly ActivitySource ActivitySource = new("Honua", "1.0.0");
+
     public string OperationId => StylePresetOperation.OperationId;
 
     public async Task<OperationRequest> PrepareAsync(OperationRequest request, OperationPolicyContext context,
         CancellationToken cancellationToken = default)
     {
-        var target = await ResolveTargetAsync(request, cancellationToken).ConfigureAwait(false);
-        if (StylePresetTargetPin.HasPin(request) || !string.IsNullOrWhiteSpace(context.ApprovedProposalId))
+        using var activity = StartActivity(request, "prepare");
+        try
         {
-            target.Verify(request, required: true);
-            return request;
-        }
+            var target = await ResolveTargetAsync(request, cancellationToken).ConfigureAwait(false);
+            if (StylePresetTargetPin.HasPin(request) || !string.IsNullOrWhiteSpace(context.ApprovedProposalId))
+            {
+                target.Verify(request, required: true);
+                return request;
+            }
 
-        var parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal);
-        foreach (var (key, value) in target.Parameters())
-        {
-            parameters[key] = value;
+            var parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal);
+            foreach (var (key, value) in target.Parameters())
+            {
+                parameters[key] = value;
+            }
+            return request with { Parameters = parameters };
         }
-        return request with { Parameters = parameters };
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            RecordFailure(activity, exception);
+            throw;
+        }
     }
 
     public async Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
@@ -85,49 +97,86 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
     public async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,
         CancellationToken cancellationToken = default)
     {
-        var storageLayerId = await ResolveStorageLayerAsync(request, cancellationToken, requirePin: true).ConfigureAwait(false);
-        var catalog = services.GetRequiredService<IStyleCatalog>();
-        var graphSync = services.GetRequiredService<IMetadataV2StyleGraphSync>();
-        var styleId = Required(request, "styleId");
-        if (!await catalog.AssociateLayerAsync(storageLayerId, styleId, 0, cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException("The style or layer no longer exists; no preset association was applied.");
-        }
-
-        string? warning = null;
+        using var activity = StartActivity(request, "execute");
         try
         {
-            // The catalog commit is authoritative. As in OGC style editing, a
-            // disconnected caller must not turn post-commit reconciliation into
-            // a false failure receipt for a mutation that already happened.
-            await graphSync.SyncLayerStylesAsync(storageLayerId, CancellationToken.None).ConfigureAwait(false);
+            var storageLayerId = await ResolveStorageLayerAsync(request, cancellationToken, requirePin: true).ConfigureAwait(false);
+            activity?.SetTag("storage.layer.id", storageLayerId);
+            var catalog = services.GetRequiredService<IStyleCatalog>();
+            var graphSync = services.GetRequiredService<IMetadataV2StyleGraphSync>();
+            var styleId = Required(request, "styleId");
+            if (!await catalog.AssociateLayerAsync(storageLayerId, styleId, 0, cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("The style or layer no longer exists; no preset association was applied.");
+            }
+
+            string? warning = null;
+            try
+            {
+                // The catalog commit is authoritative. As in OGC style editing, a
+                // disconnected caller must not turn post-commit reconciliation into
+                // a false failure receipt for a mutation that already happened.
+                await graphSync.SyncLayerStylesAsync(storageLayerId, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                RecordFailure(activity, exception);
+                warning = "The style binding was applied, but metadata reconciliation is pending. Re-apply the preset to retry reconciliation.";
+                var logger = services.GetService<ILogger<StylePresetExecutor>>();
+                if (logger is not null)
+                {
+                    LayerStyleLog.StandaloneStyleGraphSyncFailed(logger, styleId, exception);
+                }
+            }
+            activity?.SetTag("operation.result", warning is null ? "applied" : "reconciliation-pending");
+            if (warning is null)
+            {
+                activity?.SetStatus(ActivityStatusCode.Ok);
+            }
+            var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
+            return new OperationHandle
+            {
+                OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
+                OperationId = OperationId,
+                CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
+                Status = OperationHandleStatus.Completed,
+                CreatedAt = now,
+                UpdatedAt = now,
+                Reason = warning,
+                Result = new OperationResultSummary
+                {
+                    Summary = "Applied layer style preset.",
+                    Details = warning is null ? new Dictionary<string, string>()
+                        : new Dictionary<string, string> { ["metadataReconciliationPending"] = bool.TrueString },
+                },
+            };
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            warning = "The style binding was applied, but metadata reconciliation is pending. Re-apply the preset to retry reconciliation.";
-            var logger = services.GetService<ILogger<StylePresetExecutor>>();
-            if (logger is not null)
+            RecordFailure(activity, exception);
+            throw;
+        }
+    }
+
+    private static Activity? StartActivity(OperationRequest request, string phase)
+    {
+        var activity = ActivitySource.StartActivity($"style.apply-preset.{phase}");
+        activity?.SetTag("operation.id", StylePresetOperation.OperationId);
+        foreach (var (parameter, tag) in new[] { ("serviceId", "service.id"), ("layerId", "layer.id"), ("styleId", "style.id") })
+        {
+            if (request.Parameters.TryGetValue(parameter, out var value))
             {
-                LayerStyleLog.StandaloneStyleGraphSyncFailed(logger, styleId, exception);
+                activity?.SetTag(tag, value);
             }
         }
-        var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
-        return new OperationHandle
-        {
-            OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
-            OperationId = OperationId,
-            CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
-            Status = OperationHandleStatus.Completed,
-            CreatedAt = now,
-            UpdatedAt = now,
-            Reason = warning,
-            Result = new OperationResultSummary
-            {
-                Summary = "Applied layer style preset.",
-                Details = warning is null ? new Dictionary<string, string>()
-                    : new Dictionary<string, string> { ["metadataReconciliationPending"] = bool.TrueString },
-            },
-        };
+        return activity;
+    }
+
+    private static void RecordFailure(Activity? activity, Exception exception)
+    {
+        activity?.SetTag("operation.result", "failed");
+        activity?.SetTag("error.type", exception.GetType().FullName);
+        activity?.SetStatus(ActivityStatusCode.Error, "Style preset operation failed.");
     }
 
     public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
@@ -173,11 +222,11 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
         }
 
         var resource = snapshot.ResolveResource(publication)!;
-        var storageLayerId = snapshot.ResolveStorageLayerId(publication)
-            ?? snapshot.ResolveStorageLayerId(resource)
+        var binding = snapshot.ResolveStorageBinding(publication);
+        var storageLayerId = binding?.StorageLayerId
             ?? throw new ArgumentException("The published layer has no storage binding.", nameof(request));
         return new StylePresetTargetPin(publication.Metadata.Id, resource.Metadata.Id,
-            publication.StorageBindingId ?? string.Empty, storageLayerId);
+            binding!.Metadata.Id, storageLayerId);
     }
 
     private static string Required(OperationRequest request, string name)
