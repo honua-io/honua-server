@@ -39,6 +39,71 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     [Endpoint("GET /ogc/processes/jobs/{jobId}")]
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task CiteStyleClient_CatalogBuffer_ExecutesQualifiedInputsAndReadsNegotiatedResults()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        var fixture = CreateFixture(redis.ConnectionString);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var descriptionResponse = await client.GetAsync("/ogc/processes/processes/geometry.buffer");
+            descriptionResponse.EnsureSuccessStatusCode();
+            using var description = JsonDocument.Parse(await descriptionResponse.Content.ReadAsStringAsync());
+            description.RootElement.GetProperty("inputs").GetProperty("geodesic")
+                .GetProperty("minOccurs").GetInt32().Should().Be(0);
+            description.RootElement.GetProperty("outputTransmission")[0].GetString().Should().Be("value");
+
+            foreach (var mode in new[] { "document", "raw" })
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post,
+                    "/ogc/processes/processes/geometry.buffer/execution");
+                request.Headers.Add("Prefer", "respond-async");
+                request.Content = new StringContent(
+                    $$"""
+                    {
+                      "inputs": {
+                        "wkb": { "value": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA", "mediaType": "application/wkb" },
+                        "srid": { "value": 4326 },
+                        "distance": { "value": 0.1 }
+                      },
+                      "outputs": { "outputFeatureLayer": { "transmissionMode": "value" } },
+                      "response": "{{mode}}"
+                    }
+                    """, Encoding.UTF8, "application/json");
+                using var submit = await client.SendAsync(request);
+                submit.StatusCode.Should().Be(HttpStatusCode.Created);
+                submit.Headers.Location.Should().NotBeNull();
+                var jobId = await ReadJobIdAsync(submit);
+                using var terminal = await PollUntilSucceededAsync(client, jobId);
+                using var resultResponse = await client.GetAsync($"/ogc/processes/jobs/{jobId}/results");
+                resultResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var result = JsonDocument.Parse(await resultResponse.Content.ReadAsStringAsync());
+                var value = mode == "raw"
+                    ? result.RootElement
+                    : result.RootElement.GetProperty("outputFeatureLayer").GetProperty("value");
+                value.GetProperty("type").GetString().Should().Be("FeatureCollection");
+                value.GetProperty("features").GetArrayLength().Should().Be(1);
+                value.GetProperty("features")[0].GetProperty("geometry").GetProperty("type")
+                    .GetString().Should().Be("Polygon");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Operation(Operations.ProcessExecution)]
+    [Operation(Operations.JobStatus)]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task CiteProfile_EchoFixture_UsesCanonicalDurableRuntimeAndReturnsDeterministicValues()
     {
         await DeleteControlPlaneKeysAsync(redis.ConnectionString);

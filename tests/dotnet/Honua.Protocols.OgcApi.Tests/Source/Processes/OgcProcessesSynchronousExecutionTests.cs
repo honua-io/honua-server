@@ -216,7 +216,7 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
                 "/ogc/processes/processes/geometry.buffer/execution");
             request.Headers.Add("Prefer", "respond-async");
             request.Content = new StringContent(
-                $$"""{"inputs":{"wkb":{{geometry}},"srid":{"value":4326},"distance":{"value":25.5}}}""",
+                $$$$"""{"inputs":{"wkb":{{{{geometry}}}},"srid":{"value":4326},"distance":{"value":25.5}}}""",
                 Encoding.UTF8, "application/json");
 
             using var response = await _fixture.App.Client.SendAsync(request);
@@ -236,7 +236,7 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
         {
             var submissions = _fixture.SubmissionCount;
             using var content = new StringContent(
-                $$"""{"inputs":{"wkb":{"href":"{{href}}"},"srid":4326,"distance":25.5}}""",
+                $$$$"""{"inputs":{"wkb":{"href":"{{{{href}}}}"},"srid":4326,"distance":25.5}}""",
                 Encoding.UTF8, "application/json");
             using var response = await _fixture.App.Client.PostAsync(
                 "/ogc/processes/processes/geometry.buffer/execution", content);
@@ -249,6 +249,28 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     {
         var catalog = _fixture.App.Services.GetRequiredService<IProcessCatalog>();
         ProcessPlanValidator.Validate(_fixture.SubmittedPlan!, catalog).Violations.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_InvalidQualifiedGeometry_IsRejectedBeforeSubmission()
+    {
+        foreach (var geometry in new[]
+        {
+            """{"value":{"type":"Point","coordinates":[1,2]},"mediaType":"text/plain"}""",
+            """{"value":null,"mediaType":"application/geo+json"}"""
+        })
+        {
+            var submissions = _fixture.SubmissionCount;
+            using var content = new StringContent(
+                $$$$"""{"inputs":{"wkb":{{{{geometry}}}},"srid":4326,"distance":25.5}}""",
+                Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.PostAsync(
+                "/ogc/processes/processes/geometry.buffer/execution", content);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _fixture.SubmissionCount.Should().Be(submissions);
+        }
     }
 
     [IntegrationTest]

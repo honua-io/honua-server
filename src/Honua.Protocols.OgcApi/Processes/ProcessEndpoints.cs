@@ -771,6 +771,21 @@ internal static class ProcessEndpoints
             var parameter = processDefinition.Parameters.FirstOrDefault(candidate =>
                 string.Equals(candidate.Name, input.Key, StringComparison.Ordinal));
             var effectiveValue = GetInlineInputValue(input.Value, out var mediaType);
+            if (effectiveValue.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                error = $"Input '{input.Key}' must not be null.";
+                return false;
+            }
+
+            if (parameter?.ValueType == ProcessParameterValueType.Wkb
+                && !string.IsNullOrWhiteSpace(mediaType)
+                && !string.Equals(GetMediaTypeEssence(mediaType), "application/wkb", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(GetMediaTypeEssence(mediaType), "application/geo+json", StringComparison.OrdinalIgnoreCase))
+            {
+                error = $"Input '{input.Key}' declares an unsupported mediaType.";
+                return false;
+            }
+
             if (parameter?.ValueType == ProcessParameterValueType.Wkb
                 && string.Equals(GetMediaTypeEssence(mediaType), "application/wkb", StringComparison.OrdinalIgnoreCase))
             {
@@ -1020,6 +1035,10 @@ internal static class ProcessEndpoints
             catch (HttpRequestException)
             {
                 return new ResolvedInputReference(default, null, "the remote value is unavailable.");
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return new ResolvedInputReference(default, null, "the remote value request timed out.");
             }
         }
 
