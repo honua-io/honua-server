@@ -126,3 +126,21 @@ Expected: `Healthy` followed by a JSON health snapshot with status fields.
 - [Scale and tune performance](scaling-and-performance.md)
 - [Troubleshoot Honua Server](troubleshooting.md)
 - [Upgrade and roll back](upgrade-and-rollback.md)
+
+
+#### Distributed comparison evidence status
+
+The comparison checker consumes individual serving-request observations and independent query
+exports. It recomputes HTTP-5xx plus HTTP-2xx in-band failure counts from the retained ledger;
+request identifiers must be unique and timestamps must fall inside the candidate window. Each
+replica/protocol in the overflow cell must exceed its own 4,096-slot capacity. Replacement
+observations must bind the old/new incarnation and ordered readiness/completion timeline.
+Both queried replicas must return the same ledger numerator, denominator and ratio, with an
+exact numeric tolerance of zero. Candidate revision, image digest and the pre-frozen query hash
+are separate required checker inputs (`--expected-revision`, `--expected-image-digest`, and
+`--expected-query-sha256`). They must come from the candidate/frozen query contract, not the receipt.
+
+The checker and its synthetic regression fixtures do not provide a distributed telemetry backend,
+a soak producer, or a passing exact-candidate comparison. Those remain necessary qualification
+work. Until the actual two-replica run and its retained observations exist, platform availability
+is unavailable and these tests must not be presented as 4/4 candidate evidence.

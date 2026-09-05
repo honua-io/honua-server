@@ -19,11 +19,11 @@ internal static class OperateSloEvaluator
     internal const string DiagnosticSource = "node-local-retained-tail(http-5xx-only)";
 
     /// <summary>
-    /// Evaluates the availability SLO against a serving-latency snapshot.
+    /// Projects a serving-latency snapshot as a node-local retained-tail diagnostic.
     /// </summary>
     /// <param name="options">The SLO configuration.</param>
     /// <param name="snapshot">The in-process serving-latency snapshot.</param>
-    /// <returns>The SLO view: configured with an evaluation, or the explicit not-configured state.</returns>
+    /// <returns>The explicit unavailable platform SLO state plus retained-tail diagnostic.</returns>
     public static OperateSloView Evaluate(OperateSloOptions options, ServingLatencySnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(options);
