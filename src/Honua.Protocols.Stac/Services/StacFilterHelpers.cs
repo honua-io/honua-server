@@ -215,14 +215,12 @@ internal static class StacFilterHelpers
     /// <summary>
     /// Parses an RFC 3339 datetime or interval into a <see cref="TemporalFilter"/> bound to the
     /// resource's temporal field.  Returns <see langword="null"/> when the resource has no
-    /// resolvable temporal field (the caller should skip the temporal filter for that layer rather
-    /// than treating this as a request error).
+    /// resolvable temporal field (the caller must exclude that layer from temporal results).
     /// </summary>
     /// <remarks>
     /// Use <see cref="IsValidDatetimeSyntax"/> to validate syntax independently of per-resource
     /// field resolution so that a syntactically invalid value can be rejected up front (400) while
-    /// a resource without a temporal field is simply not filtered rather than causing a 400 for the
-    /// entire search.
+    /// a resource without a temporal field contributes no matches to the search.
     /// </remarks>
     public static TemporalFilter? ParseDatetime(string datetime, MetadataV2Resource resource)
     {
@@ -230,8 +228,7 @@ internal static class StacFilterHelpers
         var timeField = ResolveTemporalField(resource, out var endTimeField);
         if (string.IsNullOrWhiteSpace(timeField))
         {
-            // The resource has no resolvable temporal field: the caller must skip the
-            // temporal filter for this layer (not return 400).
+            // No acquisition time is available to intersect the requested interval.
             return null;
         }
 
@@ -246,7 +243,7 @@ internal static class StacFilterHelpers
     /// <c>[start, end]</c> rather than as instants.  The fallback schema scan resolves only a
     /// single (instant) field and leaves <paramref name="endTimeField"/> null.
     /// </summary>
-    private static string? ResolveTemporalField(MetadataV2Resource resource, out string? endTimeField)
+    internal static string? ResolveTemporalField(MetadataV2Resource resource, out string? endTimeField)
     {
         endTimeField = null;
 
@@ -271,13 +268,13 @@ internal static class StacFilterHelpers
 
         foreach (var candidate in fallbackCandidates)
         {
-            var isTemporalField = resource.SchemaFields.Any(field =>
+            var temporalField = resource.SchemaFields.FirstOrDefault(field =>
                 string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase)
                 && field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time);
 
-            if (isTemporalField)
+            if (temporalField is not null)
             {
-                return candidate;
+                return temporalField.Name;
             }
         }
         return null;

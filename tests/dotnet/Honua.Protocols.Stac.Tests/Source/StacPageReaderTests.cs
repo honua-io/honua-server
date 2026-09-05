@@ -10,6 +10,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
+[Trait("Tier", "Fast")]
 public sealed class StacPageReaderTests
 {
     [Theory]

@@ -21,6 +21,7 @@ using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Stac;
 
@@ -373,6 +374,9 @@ internal static class SearchEndpoints
                     : null;
             ImmutableArray<OrderByClause>? globalOrderBy = null;
             long totalMatched = 0;
+            var omitCount = context.RequestServices.GetRequiredService<IOptions<StacOptions>>().Value.NumberMatchedPolicy
+                == StacNumberMatchedPolicy.OmitWhenExpensive;
+            var pageLimit = omitCount ? effectiveLimit + 1 : effectiveLimit;
             var remainingSkip = offset;
             var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
             // STAC item search is a union across the selected collections. A property
@@ -393,6 +397,14 @@ internal static class SearchEndpoints
                 if (hasEmptyIdFilter)
                 {
                     break;
+                }
+
+                // An unknown acquisition time cannot intersect a requested interval. Do not
+                // let the legacy display fallback turn undated rows into time-search matches.
+                if (!string.IsNullOrWhiteSpace(request.Datetime) &&
+                    StacFilterHelpers.ResolveTemporalField(target.Resource, out _) is null)
+                {
+                    continue;
                 }
 
                 var isStorageBound = !string.IsNullOrEmpty(target.Publication.StorageBindingId);
@@ -475,7 +487,7 @@ internal static class SearchEndpoints
                         continue;
                     }
 
-                    var remaining = effectiveLimit - allItems.Count;
+                    var remaining = pageLimit - allItems.Count;
                     if (remaining > 0)
                     {
                         allItems.AddRange(matchedFeatures
@@ -534,6 +546,42 @@ internal static class SearchEndpoints
                 // A feature-reader/query failure must surface as a 500: it propagates to the outer
                 // catch, which records the exception on the search.work activity and rethrows so the
                 // shared error pipeline maps it to InternalServerError.
+                if (omitCount)
+                {
+                    // Consume skipped rows in bounded pages. A count-free provider cannot tell us
+                    // how many rows precede an empty offset page in an earlier collection.
+                    var localOffset = 0;
+                    var exhausted = false;
+                    while (remainingSkip > 0)
+                    {
+                        var skipPage = await StacPageReader.ReadAsync(
+                            targetReader, storageLayerId,
+                            query with { Offset = localOffset, Limit = Math.Min(remainingSkip, StacConstants.MaxSearchLimit) },
+                            true, cancellationToken);
+                        remainingSkip -= skipPage.Items.Length;
+                        localOffset += skipPage.Items.Length;
+                        if (!skipPage.HasMoreResults || skipPage.Items.IsEmpty)
+                        {
+                            exhausted = true;
+                            break;
+                        }
+                    }
+
+                    if (!exhausted && allItems.Count < pageLimit)
+                    {
+                        var page = await StacPageReader.ReadAsync(
+                            targetReader, storageLayerId,
+                            query with { Offset = localOffset, Limit = pageLimit - allItems.Count },
+                            true, cancellationToken);
+                        allItems.AddRange(page.Items.Select(f => ApplyFieldProjection(
+                            StacMappingService.MapFeatureToItem(
+                                f, target.Resource, target.Publication, layerId, baseUrl,
+                                projection?.SelectedProperties, geometrySrid: Wgs84Srid), projection)));
+                    }
+
+                    continue;
+                }
+
                 if (remainingSkip > 0)
                 {
                     var layerCount = await targetReader.CountAsync(storageLayerId, query, cancellationToken);
@@ -549,8 +597,9 @@ internal static class SearchEndpoints
                     query = query with { Offset = remainingSkip, Limit = remaining };
                     remainingSkip = 0;
 
-                    var result = await targetReader.QueryAsync(storageLayerId, query, cancellationToken);
-                    allItems.AddRange(result.Features
+                    var result = await StacPageReader.ReadAsync(
+                        targetReader, storageLayerId, query, false, cancellationToken, layerCount);
+                    allItems.AddRange(result.Items
                         .Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
                                 f,
@@ -638,6 +687,14 @@ internal static class SearchEndpoints
                         candidate.Projection)));
             }
 
+            var hasNextPage = omitCount && globallyOrderedCandidates is null
+                ? allItems.Count > effectiveLimit
+                : totalMatched > offset + allItems.Count;
+            if (allItems.Count > effectiveLimit)
+            {
+                allItems.Count = effectiveLimit;
+            }
+
             var stacBase = $"{baseUrl}/stac";
             var linksBuilder = ImmutableArray.CreateBuilder<Link>();
             linksBuilder.Add(Link.Create(
@@ -652,7 +709,7 @@ internal static class SearchEndpoints
                 title: "STAC Catalog"));
 
             var nextOffset = offset + allItems.Count;
-            if (totalMatched > nextOffset && allItems.Count > 0)
+            if (hasNextPage && allItems.Count > 0)
             {
                 linksBuilder.Add(isPostSearch
                     ? CreatePostNextLink(stacBase, nextOffset)
@@ -668,17 +725,17 @@ internal static class SearchEndpoints
                 Features = allItems.ToImmutable(),
                 Links = linksBuilder.ToImmutable(),
                 NumberReturned = allItems.Count,
-                NumberMatched = totalMatched,
+                NumberMatched = omitCount ? null : totalMatched,
                 Context = new StacSearchContext
                 {
                     Returned = allItems.Count,
-                    Matched = totalMatched,
+                    Matched = omitCount ? null : totalMatched,
                     Limit = effectiveLimit
                 }
             };
 
             StacLog.SearchReturned(logger, allItems.Count);
-            StacTelemetry.SetResultCount(activity, allItems.Count, totalMatched);
+            StacTelemetry.SetResultCount(activity, allItems.Count, omitCount ? null : totalMatched);
             return Results.Json(response, StacJsonContext.Default.StacItemCollection, MediaTypes.GeoJson);
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
@@ -770,10 +827,7 @@ internal static class SearchEndpoints
 
         if (!string.IsNullOrWhiteSpace(request.Datetime))
         {
-            // ParseDatetime returns null when the resource has no resolvable temporal field.
-            // Syntax has already been validated up front in ExecuteSearchAsync (IsValidDatetimeSyntax),
-            // so null here means this layer simply has no temporal property — skip the filter rather
-            // than rejecting the whole request (STAC spec: datetime is a filter, not a hard requirement).
+            // Syntax is validated before selecting targets; undated targets are excluded above.
             var temporalFilter = StacFilterHelpers.ParseDatetime(request.Datetime, resource);
             if (temporalFilter is not null)
             {

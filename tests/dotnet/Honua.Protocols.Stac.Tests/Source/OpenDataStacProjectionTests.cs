@@ -6,10 +6,11 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Console.Domain;
 using Honua.Server.Features.Console.Models;
-using Honua.Server.Features.Console.Services;
+using Honua.Server.Features.Console;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
+[Trait("Tier", "Fast")]
 public sealed class OpenDataStacProjectionTests
 {
     [Theory]
