@@ -9,7 +9,10 @@ gRPC remains **supported for 2026.1**. New `Geospatial.Grpc` releases use
 Use the exact published package version certified for your server release;
 the server's existing dependency pin is described under versioning below.
 
-Add this `nuget.config` beside your consumer project:
+For a new consumer project, add this minimal `nuget.config` beside the project.
+For an existing project, merge the `github` source and `Geospatial.Grpc` mapping
+into its configuration and preserve other feeds and mappings. The `<clear />`
+in this standalone example removes inherited sources, including private feeds:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -42,6 +45,16 @@ Keep credentials out of committed configuration and logs. In GitHub Actions,
 use `GITHUB_TOKEN` with `packages: read`; the package owner must grant the
 consumer repository read access under **Manage Actions access**.
 See [GitHub NuGet authentication](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-nuget-registry).
+
+After checkout and .NET SDK setup, explicitly bind the token to NuGet in the
+consumer workflow's restore step; `packages: read` alone does not authenticate:
+
+```yaml
+- name: Restore authenticated GitHub Packages dependencies
+  env:
+    NuGetPackageSourceCredentials_github: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
+  run: dotnet restore
+```
 
 The producer attests tag-built package bytes before publishing. Verify a
 downloaded archive using
