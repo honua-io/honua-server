@@ -377,7 +377,7 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
         await fixture.InitializeAsync();
         try
         {
-        var body = """
+            var body = """
         {
             "geometries": {
                 "geometryType": "esriGeometryPoint",
@@ -390,15 +390,15 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
         }
         """;
 
-        using var content = new StringContent(body, Encoding.UTF8, "application/json");
-        var response = await fixture.Client.PostAsync(
-            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await fixture.Client.PostAsync(
+                "/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
-        response.Be200Ok();
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var point = document.RootElement.GetProperty("geometries")[0];
-        point.GetProperty("x").GetDouble().Should().BeApproximately(-100.00040583667015, 2e-9);
-        point.GetProperty("y").GetDouble().Should().BeApproximately(40.00000589472259, 2e-9);
+            response.Be200Ok();
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var point = document.RootElement.GetProperty("geometries")[0];
+            point.GetProperty("x").GetDouble().Should().BeApproximately(-100.00040583667015, 2e-9);
+            point.GetProperty("y").GetDouble().Should().BeApproximately(40.00000589472259, 2e-9);
         }
         finally
         {
