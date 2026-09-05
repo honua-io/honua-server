@@ -24,6 +24,49 @@ namespace Honua.Server.Tests.Startup;
 /// </summary>
 public sealed class StartupConfigurationHelpersTests
 {
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public void FinalSourceOrdering_ResolvesSecurityOverrideInsteadOfBaseSecret()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "honua-security-precedence-" + Guid.NewGuid().ToString("N"));
+        var baseName = "HONUA_BASE_SECRET_" + Guid.NewGuid().ToString("N");
+        var overrideName = "HONUA_OVERRIDE_SECRET_" + Guid.NewGuid().ToString("N");
+        var expected = Guid.NewGuid().ToString("N");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            Environment.SetEnvironmentVariable(baseName, Guid.NewGuid().ToString("N"));
+            Environment.SetEnvironmentVariable(overrideName, expected);
+            foreach (var (file, name) in new[] { ("appsettings.json", baseName), ("appsettings.Security.json", overrideName) })
+            {
+                File.WriteAllText(Path.Combine(directory, file),
+                    $$"""{"HONUA_ADMIN_PASSWORD":"env:{{name}}","Security:ConnectionEncryption:MasterKey":"env:{{name}}","ConnectionStrings:Redis":"env:{{name}}"}""");
+            }
+            File.WriteAllText(Path.Combine(directory, "appsettings.Production.json"), "{}");
+            using var configuration = new ConfigurationManager();
+            configuration.SetBasePath(directory);
+            configuration.AddJsonFile("appsettings.json");
+            configuration.AddJsonFile("appsettings.Production.json");
+            var environment = Substitute.For<IHostEnvironment>();
+            environment.EnvironmentName.Returns(Environments.Production);
+
+            StartupConfigurationHelpers.AddSecurityConfiguration(configuration, environment);
+            StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(configuration);
+
+            foreach (var key in new[] { "HONUA_ADMIN_PASSWORD", "Security:ConnectionEncryption:MasterKey", "ConnectionStrings:Redis" })
+            {
+                string.Equals(configuration[key], expected, StringComparison.Ordinal).Should().BeTrue(key);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(baseName, null);
+            Environment.SetEnvironmentVariable(overrideName, null);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]

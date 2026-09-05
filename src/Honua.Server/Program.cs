@@ -113,6 +113,8 @@ StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Finalize JSON precedence before any secret becomes a process-lifetime snapshot.
+StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
@@ -184,8 +186,6 @@ if (loadHostedBlazorStaticWebAssets)
     StartupConfigurationHelpers.LoadHostedBlazorStaticWebAssets(builder);
 }
 
-// Load optional security configuration without overriding environment-specific settings.
-StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 // The AWS serverless module injects these values as aws:secretsmanager: references. Validate the
 // admin credential while preserving its refreshable reference, and snapshot the encryption master
 // key before its direct consumer can mistake the reference text for key material.
