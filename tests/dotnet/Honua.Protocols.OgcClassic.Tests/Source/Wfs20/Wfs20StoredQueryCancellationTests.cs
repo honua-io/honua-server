@@ -5,6 +5,7 @@ using System.Collections;
 using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -88,7 +89,10 @@ public sealed class Wfs20StoredQueryCancellationTests
         }
         var graph = new TestMetadataV2GraphBuilder().BuildProvider();
         var handler = CreateHandler(graph);
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("stored-query-budget-" + Guid.NewGuid().ToString("N"));
         using var services = new ServiceCollection().AddLogging()
+            .AddSingleton(tenant)
             .AddSingleton(redis).AddSingleton<IMetadataV2GraphProvider>(graph).BuildServiceProvider();
         using var cancellation = new CancellationTokenSource();
         var context = new DefaultHttpContext
@@ -110,7 +114,9 @@ public sealed class Wfs20StoredQueryCancellationTests
         var parametersType = typeof(Wfs20DispatcherEndpoint).GetNestedType("WfsRequestParameters", BindingFlags.NonPublic)!;
         var parameters = Activator.CreateInstance(parametersType, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["service"] = "WFS", ["version"] = "2.0.0", ["request"] = operation,
+            ["service"] = "WFS",
+            ["version"] = "2.0.0",
+            ["request"] = operation,
             ["storedquery_id"] = "urn:test:budget"
         })!;
         var endpoint = typeof(Wfs20DispatcherEndpoint).GetMethod("Handle" + operation, BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -123,7 +129,8 @@ public sealed class Wfs20StoredQueryCancellationTests
                     [context, parameters, handler, NullLogger.Instance])!);
             }
             catch (Exception ex) { returned.SetException(ex); }
-        }) { IsBackground = true };
+        })
+        { IsBackground = true };
         thread.Start();
         try
         {
