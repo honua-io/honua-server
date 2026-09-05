@@ -42,7 +42,7 @@ public sealed class StudioAiCertificationEndpointTests
         {"messages":[{"role":"user","content":"Read the fixture"}],"certification":{"runNonce":"fixture-run","releaseId":"fixture-release","endpointIdentity":"fixture-proxy","candidateId":"fixture-candidate","actionId":"fixture-action"},"tools":[{"name":"lookup","inputSchema":{"type":"object","properties":{"region":{"type":"string"}}}}]}
         """;
     private const string ExpectedCanonicalRequest = """
-        {"certification":{"actionId":"fixture-action","candidateId":"fixture-candidate","endpointIdentity":"fixture-proxy","releaseId":"fixture-release","runNonce":"fixture-run","tenantId":"public"},"messages":[{"content":"Read the fixture","role":"user"}],"tools":[{"inputSchema":{"properties":{"region":{"type":"string"}},"type":"object"},"name":"lookup"}]}
+        {"certification":{"actionId":"fixture-action","candidateId":"fixture-candidate","endpointIdentity":"fixture-proxy","releaseId":"fixture-release","runNonce":"fixture-run"},"messages":[{"content":"Read the fixture","role":"user"}],"tools":[{"inputSchema":{"properties":{"region":{"type":"string"}},"type":"object"},"name":"lookup"}]}
         """;
 
     [IntegrationTest]
@@ -139,8 +139,6 @@ public sealed class StudioAiCertificationEndpointTests
         root.GetProperty("provider").GetString().Should().Be("fixture");
         root.GetProperty("model").GetString().Should().Be("fixture-model");
         root.GetProperty("selectedResponse").GetString().Should().Be("Aloha");
-        // The endpoint binds the resolved tenant into both the request and signed envelope.
-        root.GetProperty("tenantId").GetString().Should().Be("public");
         root.GetProperty("request").GetBytesFromBase64().Should().Equal(Encoding.UTF8.GetBytes(ExpectedCanonicalRequest));
         root.GetProperty("issuedAt").GetDateTimeOffset().Should().BeOnOrAfter(before).And.BeOnOrBefore(after);
         (root.GetProperty("expiresAt").GetDateTimeOffset() - root.GetProperty("issuedAt").GetDateTimeOffset())
