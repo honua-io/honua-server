@@ -2,7 +2,7 @@
 
 You'll run a production-shaped Honua stack on a single host: pinned image, secrets in an env file, persistent PostGIS and Redis volumes, optional Console, and TLS terminated by a reverse proxy. For the build-from-source dev stack with the profiled Console service, use the [quickstart](../../get-started/quickstart.md) instead.
 
-**Prerequisites:** Docker with Compose v2, a DNS name pointing at the host (for TLS), and outbound access to Docker Hub or GHCR.
+**Prerequisites:** Docker with Compose 2.23.1 or later, OpenSSL, a DNS name pointing at the host (for TLS), and outbound access to Docker Hub or GHCR.
 
 ## Steps
 
@@ -10,37 +10,43 @@ You'll run a production-shaped Honua stack on a single host: pinned image, secre
 
 ```bash
 mkdir -p /opt/honua && cd /opt/honua
-cat > .env <<'EOF'
+umask 077
+cat > .env <<EOF
 # Supply an immutable GHCR image reference (tag plus digest) from the release
 # manifest; floating tags such as latest are not suitable for production.
-HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:replace-with-release-digest
-POSTGRES_PASSWORD=replace-with-strong-db-password
-HONUA_ADMIN_PASSWORD=replace-with-strong-admin-password
-HONUA_MASTER_KEY=replace-with-random-string-of-32-plus-characters
+HONUA_IMAGE=${HONUA_IMAGE:?Set the immutable published image digest first}
+POSTGRES_PASSWORD=$(openssl rand -hex 32)
+HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
+HONUA_MASTER_KEY=$(openssl rand -hex 32)
+HONUA_HOST=honua.example.com
 HONUA_CORS_ORIGIN=https://app.example.com
-HONUA_STORAGE_VOLUME_NAME=honua_storage
+HONUA_STORAGE_VOLUME_NAME=honua_production_storage
 EOF
 chmod 600 .env
 ```
 
-2. Create the compose file. The server process is replaceable, while PostGIS, Redis durable-control-plane state, and local file storage live on persistent volumes. The server binds to localhost only, so the proxy is the sole public entrypoint.
+Set `HONUA_HOST` in `.env` to the DNS name your proxy serves; it is also the server's trusted hostname and public URL. Retain the private env file with your persistent volumes; regenerating it does not rotate existing database credentials.
+
+2. Create the compose file. This block matches the shipped [`docker-compose.production.yml`](../../../docker-compose.production.yml). The server process is replaceable, while PostGIS, Redis durable-control-plane state, and local file storage live on persistent volumes. The server binds to localhost only, so the proxy is the sole public entrypoint.
 
 ```bash
 cat > docker-compose.yml <<'EOF'
 services:
   honua:
-    image: ${HONUA_IMAGE}
+    image: ${HONUA_IMAGE:?Set an immutable HONUA_IMAGE from the release manifest}
     ports:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:8081:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD}"
-      HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD}
-      Security__ConnectionEncryption__MasterKey: ${HONUA_MASTER_KEY}
-      Cors__AllowedOrigins__0: ${HONUA_CORS_ORIGIN}
+      AllowedHosts: "${HONUA_HOST:?Set the public proxy hostname};localhost;127.0.0.1"
+      PUBLIC_BASE_URL: "https://${HONUA_HOST:?Set the public proxy hostname}"
+      ConnectionStrings__DefaultConnection: "${ConnectionStrings__DefaultConnection:-Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}}"
+      HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Set HONUA_ADMIN_PASSWORD}
+      Security__ConnectionEncryption__MasterKey: ${Security__ConnectionEncryption__MasterKey:-${HONUA_MASTER_KEY:?Set the connection encryption master key}}
+      Cors__AllowedOrigins__0: ${Cors__AllowedOrigins__0:-${HONUA_CORS_ORIGIN:?Set the browser origin}}
       HONUA_OBSERVABILITY: "true"
-      ConnectionStrings__Redis: "redis:6379"
+      ConnectionStrings__Redis: "${ConnectionStrings__Redis:-redis:6379}"
       Database__MigrationSafety__ContractApplyPolicy: Gate
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
@@ -73,9 +79,12 @@ services:
     environment:
       POSTGRES_DB: honua
       POSTGRES_USER: honua
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    configs:
+      - source: postgis_init
+        target: /docker-entrypoint-initdb.d/10-honua-postgis.sql
     healthcheck:
       # The PostGIS image starts a temporary postmaster while initializing a
       # fresh volume. Wait for the final postmaster (PID 1) before migrations.
@@ -102,20 +111,30 @@ volumes:
   redis_data:
   honua_storage:
     name: ${HONUA_STORAGE_VOLUME_NAME}
+
+configs:
+  postgis_init:
+    content: |
+      CREATE EXTENSION IF NOT EXISTS postgis;
+      CREATE EXTENSION IF NOT EXISTS postgis_topology;
+      CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
+      CREATE EXTENSION IF NOT EXISTS postgis_tiger_geocoder;
 EOF
 ```
 
 3. Put a TLS-terminating reverse proxy in front — Honua does not terminate TLS. Any proxy works; Caddy on the host is the shortest path (port 8080 carries HTTP/1 REST, port 8081 carries h2c gRPC for native SDK clients).
 
 ```bash
-HONUA_HOST=honua.example.com
+set -a
+. ./.env
+set +a
 printf '%s {\n  reverse_proxy 127.0.0.1:8080\n}\n' "$HONUA_HOST" | sudo tee /etc/caddy/Caddyfile && sudo systemctl reload caddy
 ```
 
 4. Start the stack. Redis is part of the production-shaped baseline because durable jobs, queued imports, workflows, operation proposals, and Console approval flows need it.
 
 ```bash
-docker compose up -d
+docker compose up -d --wait --wait-timeout 180
 ```
 
 For headless deployments, keep Redis unless every durable control-plane feature is intentionally disabled — see [Redis is optional; PostGIS is not](#redis-is-optional-postgis-is-not) for exactly what you give up. To add Console in production, use a published Console image tag that is compatible with the server ops-health contract and add this service:
@@ -175,7 +194,9 @@ If Console is enabled behind the configured edge authenticator, confirm the ops 
 
 > Open `http://127.0.0.1:5174/operate`, `http://127.0.0.1:5174/operate/health`, `http://127.0.0.1:5174/operate/copilot` in a browser.
 
-CI can run the same root-compose smoke through `scripts/ci/smoke-quickstart-console.sh`.
+The inline PostGIS config initializes the selected database before the final postmaster becomes healthy; an existing incompatible volume still fails the server preflight. Backing stores have no host port publication. Verify a candidate on fresh volumes with `python3 scripts/docker/smoke-production.py --image "$HONUA_IMAGE"` from a checkout. This check requires the corrected published Production image; the current image reported in the release notes aborts startup for missing rollback approval mappers.
+
+CI can run the separate local quickstart smoke through `scripts/ci/smoke-quickstart-console.sh`.
 Set the repository variable `HONUA_CONSOLE_IMAGE` or pass the `console_image`
 workflow-dispatch input once a compatible Console image tag is published. The
 smoke starts Redis, Honua, and Console, creates a Redis-backed operation proposal
