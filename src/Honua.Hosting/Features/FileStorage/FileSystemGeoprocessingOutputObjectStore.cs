@@ -38,6 +38,7 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
     {
         ArgumentNullException.ThrowIfNull(options);
         var value = options.Value;
+        GeoprocessingOutputStoreAttestationValidator.Validate(value);
         StoreReference = value.StoreReference;
         if (string.IsNullOrWhiteSpace(value.LocalRootPath))
         {
@@ -47,7 +48,6 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
 
         _root = Path.GetFullPath(value.LocalRootPath);
         _pendingRetention = value.SweepGrace;
-        Directory.CreateDirectory(_root);
     }
 
     public CloudStorageProvider Provider => CloudStorageProvider.Local;

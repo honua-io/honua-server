@@ -42,7 +42,7 @@ public sealed class GeoprocessingOutputArtifactSweeperTests : IDisposable
             SweepGrace = TimeSpan.Zero,
             OrphanRetention = TimeSpan.Zero,
         };
-        _store = new FileSystemGeoprocessingOutputObjectStore(Options.Create(_options));
+        _store = new FileSystemGeoprocessingOutputObjectStore(Options.Create(GeoprocessingOutputStoreTestHelper.Attest(_options)));
     }
 
     public void Dispose()

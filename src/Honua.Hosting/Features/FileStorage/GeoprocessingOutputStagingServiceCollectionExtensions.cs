@@ -38,6 +38,8 @@ public static class GeoprocessingOutputStagingServiceCollectionExtensions
             .AddOptions<GeoprocessingOutputStagingOptions>()
             .Bind(section)
             .ValidateDataAnnotations()
+            .Validate(options => !options.Enabled || GeoprocessingOutputStoreAttestationValidator.IsValid(options),
+                GeoprocessingOutputStoreAttestationValidator.FailureMessage)
             .Validate(
                 options => !options.Enabled
                     || !string.Equals(
@@ -63,6 +65,7 @@ public static class GeoprocessingOutputStagingServiceCollectionExtensions
         if (section.GetValue<bool>(nameof(GeoprocessingOutputStagingOptions.Enabled)))
         {
             services.TryAddSingleton<IGeoprocessingOutputObjectStore, FileSystemGeoprocessingOutputObjectStore>();
+            services.AddHealthChecks().AddCheck<GeoprocessingOutputStoreHealthCheck>("gp-output-store", tags: ["ready"]);
         }
 
         return services;

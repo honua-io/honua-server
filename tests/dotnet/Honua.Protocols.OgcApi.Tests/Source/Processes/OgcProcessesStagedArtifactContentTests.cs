@@ -323,7 +323,7 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
             Enabled = true,
             LocalRootPath = _storeRoot,
         };
-        var store = new FileSystemGeoprocessingOutputObjectStore(Options.Create(stagingOptions));
+        var store = new FileSystemGeoprocessingOutputObjectStore(Options.Create(GeoprocessingOutputStoreTestHelper.Attest(stagingOptions)));
 
         var objectKey = GeoprocessingOutputObjectKeys.Build(
             stagingOptions.KeyPrefix, SucceededJobId, attemptNumber: 1, "outputRaster", "result.tif");
