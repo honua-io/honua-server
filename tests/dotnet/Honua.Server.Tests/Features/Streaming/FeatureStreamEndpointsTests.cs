@@ -216,6 +216,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 if (frame.GetProperty("type").GetString() == "snapshot")
                 {
                     sawSnapshot = true;
+                    frame.GetProperty("complete").GetBoolean().Should().BeTrue();
                     frame.GetRawText().Should().NotContain("private-");
                     if (restrictRows)
                     {
@@ -228,7 +229,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             {
                 using var socket = await fixture.CreateWebSocketClient().ConnectAsync(new Uri("ws://localhost" + path), cts.Token);
                 _ = await ReceiveWebSocketJsonAsync(socket, cts.Token);
-                if (!replay)
+                if (!replay && !snapshot)
                 {
                     await PublishAsync();
                 }
@@ -237,6 +238,10 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 {
                     delivered = await ReceiveWebSocketJsonAsync(socket, cts.Token);
                     CheckSnapshot(delivered);
+                    if (snapshot && delivered.GetProperty("type").GetString() == "snapshot")
+                    {
+                        await PublishAsync();
+                    }
                 } while (delivered.GetProperty("type").GetString() != "feature-change");
             }
             else
@@ -249,7 +254,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
                 using var reader = new StreamReader(stream);
                 _ = await ReadNextSseEventAsync(reader, cts.Token);
-                if (!replay)
+                if (!replay && !snapshot)
                 {
                     await PublishAsync();
                 }
@@ -259,6 +264,10 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 {
                     frame = await ReadNextSseEventAsync(reader, cts.Token);
                     CheckSnapshot(frame.Data);
+                    if (snapshot && frame.EventName == "snapshot")
+                    {
+                        await PublishAsync();
+                    }
                 } while (frame.EventName != "feature-change");
                 delivered = frame.Data;
             }

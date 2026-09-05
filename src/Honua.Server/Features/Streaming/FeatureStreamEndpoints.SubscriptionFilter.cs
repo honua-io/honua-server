@@ -354,6 +354,13 @@ internal static partial class FeatureStreamEndpoints
         {
             foreach (var layer in ResolveServiceStreamLayers(snapshot, service))
             {
+                // Raster and other non-feature publications may reuse a numeric layer ID.
+                // They cannot supply feature events and must not contribute read policies.
+                if (layer.Resource.Type is not (MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table))
+                {
+                    continue;
+                }
+
                 if (layerIds is not null && !layerIds.Contains(layer.LayerId))
                 {
                     continue;
