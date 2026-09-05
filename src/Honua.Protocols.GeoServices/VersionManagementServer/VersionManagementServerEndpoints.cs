@@ -30,7 +30,7 @@ namespace Honua.Protocols.GeoServices.VersionManagementServer;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Branch versioning is Postgres-only and Enterprise-gated. When the active provider's
+/// Branch versioning is Postgres-only and Pro-gated. When the active provider's
 /// <see cref="IVersionManager.SupportsVersioning"/> is false (DuckDB / SQL Server / MySQL), the
 /// mutating and lifecycle operations return a 501 not-supported response; the read-only
 /// service-info / <c>versions</c> / <c>versionInfo</c> operations report an empty version set.
