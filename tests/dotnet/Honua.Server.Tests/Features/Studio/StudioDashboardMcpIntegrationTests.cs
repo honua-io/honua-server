@@ -110,6 +110,16 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         reread.GetProperty("generation").GetInt64().Should().Be(generation);
         reread.GetProperty("envelope").GetProperty("body").GetProperty("layers").GetArrayLength().Should().Be(1);
 
+        // Refreshing the generation cannot make removal of a referenced layer safe.
+        var conflictingRetry = await RpcAsync("remove_layer",
+            $$"""{"draftId":"{{draftId}}","generation":{{generation}},"layerId":"parcels"}""");
+        conflictingRetry.GetProperty("result").GetProperty("structuredContent").GetProperty("code")
+            .GetString().Should().Be("invalid_argument");
+        var afterConflict = await CallAsync("get_draft", $$"""{"draftId":"{{draftId}}"}""");
+        afterConflict.GetProperty("generation").GetInt64().Should().Be(generation);
+        afterConflict.GetProperty("envelope").GetProperty("body").GetProperty("layers")[0]
+            .GetProperty("styleRef").GetString().Should().Be("night");
+
         // A stale independent removal is retried only after checking its unchanged target.
         var staleControl = await RpcAsync("remove_control", $$"""{"draftId":"{{draftId}}","generation":1,"controlId":"scale"}""");
         staleControl.GetProperty("result").GetProperty("structuredContent").GetProperty("code")
