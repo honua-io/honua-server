@@ -59,6 +59,8 @@ public enum ContractApplyPolicy
 /// </remarks>
 public sealed record MigrationSafetyOptions
 {
+    private ContractApplyPolicy _contractApplyPolicy = ContractApplyPolicy.Gate;
+
     /// <summary>
     /// Configuration section name for binding from <c>appsettings</c>/environment.
     /// </summary>
@@ -89,7 +91,20 @@ public sealed record MigrationSafetyOptions
     /// <see cref="Core.Configuration.ContractApplyPolicy.Auto"/> to opt back into unattended apply. Fresh
     /// installs always provision fully regardless of this setting.
     /// </summary>
-    public ContractApplyPolicy ContractApplyPolicy { get; set; } = ContractApplyPolicy.Gate;
+    public ContractApplyPolicy ContractApplyPolicy
+    {
+        get => _contractApplyPolicy;
+        set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(ContractApplyPolicy),
+                    "Database:MigrationSafety:ContractApplyPolicy must be Auto or Gate.");
+            }
+
+            _contractApplyPolicy = value;
+        }
+    }
 
     /// <summary>
     /// Optional pre-migration backup command. When set, the runner executes it via the platform shell

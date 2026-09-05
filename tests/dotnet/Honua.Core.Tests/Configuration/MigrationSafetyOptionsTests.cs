@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Core.Tests.Configuration;
 
@@ -13,6 +14,42 @@ namespace Honua.Core.Tests.Configuration;
 /// </summary>
 public sealed class MigrationSafetyOptionsTests
 {
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("2")]
+    [InlineData("-1")]
+    [InlineData("2147483647")]
+    public void Bind_UndefinedPolicy_RefusesBeforeMigrationRunnerCanBeConstructed(string value)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                [$"{MigrationSafetyOptions.SectionName}:ContractApplyPolicy"] = value,
+            }).Build();
+
+        var bind = () => configuration.GetSection(MigrationSafetyOptions.SectionName).Get<MigrationSafetyOptions>();
+
+        bind.Should().Throw<Exception>().Which.GetBaseException()
+            .Should().BeOfType<ArgumentOutOfRangeException>().Which.ParamName
+            .Should().Be(nameof(MigrationSafetyOptions.ContractApplyPolicy));
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("Gate", ContractApplyPolicy.Gate)]
+    [InlineData("1", ContractApplyPolicy.Gate)]
+    [InlineData("Auto", ContractApplyPolicy.Auto)]
+    [InlineData("0", ContractApplyPolicy.Auto)]
+    public void Bind_DefinedPolicy_PreservesExplicitChoice(string value, ContractApplyPolicy expected)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["ContractApplyPolicy"] = value }).Build();
+
+        configuration.Get<MigrationSafetyOptions>()!.ContractApplyPolicy.Should().Be(expected);
+    }
+
     [UnitTest]
     public void Defaults_GateContractMigrationsClosed()
     {
