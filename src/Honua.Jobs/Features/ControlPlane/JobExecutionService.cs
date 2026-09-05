@@ -453,7 +453,7 @@ internal sealed partial class JobExecutionService(
                         result,
                         partitionLeaseId,
                         partitionLeaseOwner,
-                        CancellationToken.None)
+                        licenseCancellation)
                     .ConfigureAwait(false);
                 if (!finalized)
                 {
@@ -700,6 +700,7 @@ internal sealed partial class JobExecutionService(
         CancellationToken cancellationToken)
     {
         var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         if (job == null)
         {
             return true;
@@ -746,6 +747,7 @@ internal sealed partial class JobExecutionService(
             }
         };
 
+        cancellationToken.ThrowIfCancellationRequested();
         var finalized = partitionLeaseId is null
             ? await jobStore.TrySetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false)
             : await jobStore.TrySetIfLeaseOwnedAsync(
@@ -759,6 +761,10 @@ internal sealed partial class JobExecutionService(
             Log.TerminalStateSkipped(logger, operationId, "CAS conflict or partition lease lost on finalize");
             return false;
         }
+
+        // Expiry may race a store that commits before observing its cancellation token.
+        // The caller's expiry handler replaces that attempt's late success with failure.
+        cancellationToken.ThrowIfCancellationRequested();
 
         ControlPlaneTelemetry.RecordExecutionTransition(job, final);
 
@@ -807,7 +813,9 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
-        if (IsTerminalOrNotOwnedBy(job, workerId))
+        var lateExpiredSuccess = reason == "license expired" && job.Status == ExecutionJobStatus.Succeeded &&
+            string.Equals(job.ClaimedBy, workerId, StringComparison.Ordinal);
+        if (IsTerminalOrNotOwnedBy(job, workerId) && !lateExpiredSuccess)
         {
             Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
             return;

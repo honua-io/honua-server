@@ -627,8 +627,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
     private sealed class SerializedImportProgressWriter
     {
         private readonly IUniversalProgressStore _progressStore;
-        private readonly ILicenseOperationPolicy? _licensePolicy;
-    private readonly ILogger<UniversalImportJobService> _logger;
+        private readonly ILogger<UniversalImportJobService> _logger;
         private readonly string _jobId;
         private readonly object _gate = new();
         private Task _tail = Task.CompletedTask;

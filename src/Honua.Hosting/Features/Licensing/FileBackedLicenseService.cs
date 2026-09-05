@@ -75,14 +75,22 @@ internal sealed partial class FileBackedLicenseService :
 
     public void Dispose()
     {
-        _stopping.Cancel();
-        _expiryTimer.Dispose();
-        _operationCancellation.Dispose();
-        foreach (var retired in _retiredCancellations)
+        lock (_runtimeLock)
         {
-            retired.Dispose();
+            if (_disposed)
+            {
+                return;
+            }
+            _disposed = true;
+            _stopping.Cancel();
+            _expiryTimer.Dispose();
+            _operationCancellation.Dispose();
+            foreach (var retired in _retiredCancellations)
+            {
+                retired.Dispose();
+            }
+            // StopAsync owns asynchronous shutdown. A load may still hold the semaphore.
         }
-        // StopAsync owns asynchronous shutdown. Do not dispose the semaphore while a load may hold it.
     }
 
     public LicenseSnapshot GetSnapshot()
@@ -90,6 +98,10 @@ internal sealed partial class FileBackedLicenseService :
         lock (_runtimeLock)
         {
             var snapshot = _snapshot;
+            if (_disposed)
+            {
+                return snapshot;
+            }
             if (snapshot.Edition != HonuaEdition.Community &&
                 snapshot.ValidationState == LicenseValidationState.Valid &&
                 snapshot.ExpiresAt <= _timeProvider.GetUtcNow())
@@ -141,8 +153,7 @@ internal sealed partial class FileBackedLicenseService :
     /// The same <see cref="ILicenseContentSecretResolver"/> set that <c>AddHonuaLicensing</c> registers
     /// for the per-request license service (e.g. AWS Secrets Manager and/or Azure Key Vault). Supplying
     /// them here lets the bootstrap snapshot honor <c>Licensing:LicenseContentSecretRef</c> (e.g. a
-    /// secret-store-only Pro license); without them a secret-ref license degrades to Community at
-    /// bootstrap and a startup gate such as the Redis-cache probe stays off for the process lifetime
+    /// secret-store-only Pro license); without them a paid secret-ref-only deployment refuses startup
     /// (honua-server#1755). It is optional so hosts without a secret resolver (or built with the cloud
     /// SDK excluded) still resolve file / inline / Community licenses correctly.
     /// </param>
@@ -297,8 +308,8 @@ internal sealed partial class FileBackedLicenseService :
         // Without an uploaded override, a secret-store reference takes highest precedence:
         // the ~2KB signed envelope is fetched from a secret manager (e.g. AWS Secrets Manager) at startup so it does not
         // have to fit a serverless environment-variable size limit or be baked into the image.
-        // Resolution is fail-safe — a missing resolver / unreachable secret degrades to Community
-        // rather than crashing the host.
+        // Resolution records source failures. Strict startup validation rejects a paid
+        // deployment when no valid configured source can be loaded.
         var secretContent = await TryResolveLicenseContentSecretAsync(options, cancellationToken)
             .ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(secretContent))
@@ -437,7 +448,7 @@ internal sealed partial class FileBackedLicenseService :
     /// <summary>
     /// Validates an in-memory signed-license envelope (UTF-8 JSON, from inline config or a
     /// resolved secret) and publishes the resulting snapshot. Malformed content publishes a
-    /// safe Community snapshot rather than throwing.
+    /// failed snapshot; the startup contract rejects it on paid deployments.
     /// </summary>
     private void ApplyInlineLicenseContent(string licenseContent, LicenseOptions options)
     {
@@ -857,6 +868,10 @@ internal sealed partial class FileBackedLicenseService :
     {
         lock (_runtimeLock)
         {
+            if (_disposed)
+            {
+                return;
+            }
             var expected = _options.Value.Edition ?? (_snapshot.Edition > HonuaEdition.Community
                 ? _snapshot.Edition : snapshot.Edition);
             if (expected > HonuaEdition.Community &&
@@ -871,7 +886,9 @@ internal sealed partial class FileBackedLicenseService :
                     ActiveEntitlementKeys = Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase),
                     Entitlements = snapshot.Entitlements.Select(item => new Entitlement
                     {
-                        Key = item.Key, Name = item.Name, IsActive = false
+                        Key = item.Key,
+                        Name = item.Name,
+                        IsActive = false
                     }).ToArray()
                 };
             }

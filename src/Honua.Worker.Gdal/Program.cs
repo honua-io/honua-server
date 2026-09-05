@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Worker.Gdal;
+using Honua.Infrastructure.Licensing;
 
 // Heavyweight GDAL/ETL worker entrypoint (ADR-0038 honua-worker-etl image).
 //
@@ -11,6 +12,10 @@ using Honua.Worker.Gdal;
 // "native" (raster reproject, vector conversion, and future heavy GP families).
 // It is never reachable from public ingress.
 var builder = Host.CreateApplicationBuilder(args);
+using (var licenseLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole()))
+{
+    await FileBackedLicenseService.LoadBootstrapSnapshotAsync(builder.Configuration, licenseLoggerFactory);
+}
 
 builder.Services.AddGdalWorker(builder.Configuration);
 

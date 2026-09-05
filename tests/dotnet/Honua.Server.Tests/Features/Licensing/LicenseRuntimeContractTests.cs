@@ -27,7 +27,8 @@ public sealed class LicenseRuntimeContractTests
         var logger = new WarningLogger();
         using var service = new FileBackedLicenseService(Options.Create(new LicenseOptions
         {
-            Edition = HonuaEdition.Pro, LicenseContent = Encoding.UTF8.GetString(license.LicenseData),
+            Edition = HonuaEdition.Pro,
+            LicenseContent = Encoding.UTF8.GetString(license.LicenseData),
             TrustedKeys = new() { [LicenseTestSupport.KeyId] = license.PublicKeySetting }
         }), new BouncyCastleEd25519Verifier(), logger, timeProvider: clock);
         await service.StartAsync(CancellationToken.None);
@@ -57,13 +58,20 @@ public sealed class LicenseRuntimeContractTests
         var now = clock.GetUtcNow();
         var job = new ExecutionJobRecord
         {
-            OperationId = "synthetic-license-expiry-job", Status = ExecutionJobStatus.Provisioning,
-            CreatedAt = now, UpdatedAt = now, ClaimedBy = "test-worker", ClaimedAt = now,
-            LastHeartbeatAt = now, AttemptCount = 1,
+            OperationId = "synthetic-license-expiry-job",
+            Status = ExecutionJobStatus.Provisioning,
+            CreatedAt = now,
+            UpdatedAt = now,
+            ClaimedBy = "test-worker",
+            ClaimedAt = now,
+            LastHeartbeatAt = now,
+            AttemptCount = 1,
             Spec = new ExecutionJobSpec
             {
-                Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local", WorkloadName = "test"
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "test"
             }
         };
         var store = Substitute.For<IExecutionJobStore>();
@@ -118,7 +126,8 @@ public sealed class LicenseRuntimeContractTests
             await File.WriteAllBytesAsync(path, old.LicenseData);
             var options = new LicenseOptions
             {
-                Edition = HonuaEdition.Pro, LicensePath = path,
+                Edition = HonuaEdition.Pro,
+                LicensePath = path,
                 TrustedKeys = new() { [LicenseTestSupport.KeyId] = old.PublicKeySetting }
             };
             using var service = new FileBackedLicenseService(Options.Create(options), new BouncyCastleEd25519Verifier(),
@@ -151,7 +160,8 @@ public sealed class LicenseRuntimeContractTests
     private static FileBackedLicenseService CreateService(SignedLicenseTestFile license, TimeProvider clock)
         => new(Options.Create(new LicenseOptions
         {
-            Edition = HonuaEdition.Pro, LicenseContent = Encoding.UTF8.GetString(license.LicenseData),
+            Edition = HonuaEdition.Pro,
+            LicenseContent = Encoding.UTF8.GetString(license.LicenseData),
             TrustedKeys = new() { [LicenseTestSupport.KeyId] = license.PublicKeySetting }
         }), new BouncyCastleEd25519Verifier(), NullLogger<FileBackedLicenseService>.Instance, timeProvider: clock);
 

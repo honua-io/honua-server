@@ -54,8 +54,10 @@ public sealed partial class LicenseFailureContractTests
             var testAssembly = typeof(LicenseFailureContractTests).Assembly.Location;
             var start = new ProcessStartInfo("dotnet")
             {
-                WorkingDirectory = directory.FullName, RedirectStandardOutput = true,
-                RedirectStandardError = true, UseShellExecute = false
+                WorkingDirectory = directory.FullName,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
             };
             start.ArgumentList.Add("exec");
             start.ArgumentList.Add("--runtimeconfig");

@@ -60,7 +60,7 @@ Use the supported SDK's license upload operation for an enabled admin upload, or
 follow [the source-switch procedure](../../concepts/editions-and-licensing.md#renew-or-replace-a-license)
 while stopped. Verify status through the SDK's `getLicenseStatus` operation after
 renewal. Apply the same source update to every replica and worker. Environment
-variable changes require restart; file and secret contents are re-read every minute.
+variable changes require restart; file and secret contents are re-read every minute. The native GDAL worker supports a mounted file and inline content; mount the authoritative license file and configure its trusted public key when the API host obtains its copy from a secret store.
 
 ## Database connections
 

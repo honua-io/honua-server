@@ -30,13 +30,20 @@ public sealed partial class LicenseFailureContractTests
         var now = clock.GetUtcNow();
         var job = new ExecutionJobRecord
         {
-            OperationId = "synthetic-expiry-boundary", Status = ExecutionJobStatus.Provisioning,
-            CreatedAt = now, UpdatedAt = now, ClaimedBy = "test-worker", ClaimedAt = now,
-            LastHeartbeatAt = now, AttemptCount = 1,
+            OperationId = "synthetic-expiry-boundary",
+            Status = ExecutionJobStatus.Provisioning,
+            CreatedAt = now,
+            UpdatedAt = now,
+            ClaimedBy = "test-worker",
+            ClaimedAt = now,
+            LastHeartbeatAt = now,
+            AttemptCount = 1,
             Spec = new ExecutionJobSpec
             {
-                Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local", WorkloadName = "test"
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "test"
             }
         };
         var store = Substitute.For<IExecutionJobStore>();

@@ -24,7 +24,7 @@ public sealed class FileBackedLicenseServiceTests
     public async Task StartAsync_NoLicensePath_PublishesCommunitySnapshot()
     {
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(new LicenseOptions(), logger);
+        using var service = CreateService(new LicenseOptions(), logger);
 
         await service.StartAsync(CancellationToken.None);
 
@@ -44,7 +44,7 @@ public sealed class FileBackedLicenseServiceTests
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Join(tempDirectory.FullName, "missing.honua-license.json");
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
+        using var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
@@ -69,7 +69,7 @@ public sealed class FileBackedLicenseServiceTests
         await File.WriteAllBytesAsync(licensePath, license.LicenseData);
 
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(
+        using var service = CreateService(
             new LicenseOptions
             {
                 LicensePath = licensePath,
@@ -105,7 +105,7 @@ public sealed class FileBackedLicenseServiceTests
             entitlements: ["analytics.clustering", "staticmap.high-dpi"]);
 
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(
+        using var service = CreateService(
             new LicenseOptions
             {
                 // No LicensePath: the envelope is supplied inline (e.g. resolved from a
@@ -140,7 +140,7 @@ public sealed class FileBackedLicenseServiceTests
             entitlements: ["analytics.clustering"]);
 
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(
+        using var service = CreateService(
             new LicenseOptions
             {
                 LicensePath = licensePath, // does not exist; inline content must win
@@ -167,7 +167,7 @@ public sealed class FileBackedLicenseServiceTests
         var licensePath = Path.Join(tempDirectory.FullName, "license.honua-license.json");
         await File.WriteAllTextAsync(licensePath, "not json");
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
+        using var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
@@ -186,7 +186,7 @@ public sealed class FileBackedLicenseServiceTests
         var licensePath = Path.Join(tempDirectory.FullName, "license.honua-license.json");
         await File.WriteAllBytesAsync(licensePath, new byte[MaxLicenseFileBytes + 1]);
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
+        using var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
@@ -209,7 +209,7 @@ public sealed class FileBackedLicenseServiceTests
         var license = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, keyId: "unknown-key");
         await File.WriteAllBytesAsync(licensePath, license.LicenseData);
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
+        using var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
@@ -229,7 +229,7 @@ public sealed class FileBackedLicenseServiceTests
         var license = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, tamperSignature: true);
         await File.WriteAllBytesAsync(licensePath, license.LicenseData);
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(
+        using var service = CreateService(
             new LicenseOptions
             {
                 LicensePath = licensePath,
@@ -261,7 +261,7 @@ public sealed class FileBackedLicenseServiceTests
             entitlements: ["analytics.clustering"]);
         await File.WriteAllBytesAsync(licensePath, license.LicenseData);
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(
+        using var service = CreateService(
             new LicenseOptions
             {
                 LicensePath = licensePath,
@@ -300,7 +300,7 @@ public sealed class FileBackedLicenseServiceTests
         var resolver = new FakeLicenseSecretResolver(envelopeJson);
 
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(
+        using var service = CreateService(
             new LicenseOptions
             {
                 LicenseContentSecretRef = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:111122223333:secret:honua-demo-demo/license-pro-AbCdEf",
@@ -330,7 +330,7 @@ public sealed class FileBackedLicenseServiceTests
     public async Task StartAsync_LicenseContentSecretRef_NoResolverRegistered_RefusesStartup()
     {
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(
+        using var service = CreateService(
             new LicenseOptions
             {
                 LicenseContentSecretRef = "aws:secretsmanager:honua-demo-demo/license-pro"
@@ -354,7 +354,7 @@ public sealed class FileBackedLicenseServiceTests
             content: null,
             failure: new InvalidOperationException("secret unreachable"));
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(
+        using var service = CreateService(
             new LicenseOptions
             {
                 LicenseContentSecretRef = "aws:secretsmanager:honua-demo-demo/license-pro"
@@ -382,7 +382,7 @@ public sealed class FileBackedLicenseServiceTests
             entitlements: ["analytics.clustering"]);
         var resolver = new FakeLicenseSecretResolver("ignored");
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(
+        using var service = CreateService(
             new LicenseOptions
             {
                 LicenseContentSecretRef = "env:HONUA_LICENSE",
@@ -492,7 +492,7 @@ public sealed class FileBackedLicenseServiceTests
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
         var licensePath = Path.Join(tempDirectory.FullName, "license.honua-license.json");
         var logger = new RecordingLogger<FileBackedLicenseService>();
-        var service = CreateService(
+        using var service = CreateService(
             new LicenseOptions
             {
                 AllowAdminUpload = true,
