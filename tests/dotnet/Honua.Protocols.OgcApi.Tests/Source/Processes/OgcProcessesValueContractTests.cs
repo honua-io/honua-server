@@ -115,7 +115,29 @@ public sealed class OgcProcessesValueContractTests
             .GetProperty("schema").GetProperty("$ref").GetString().Should().Be("#/components/schemas/Exception");
     }
 
-    private static async Task<(int Status, string Body)> RenderResultAsync(string reference, string root, long maxBytes, bool raw, int artifactCount = 1)
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Results_MultipleOutputs_EnforcesAggregateBudget(bool raw)
+    {
+        var response = await RenderResultAsync("data:text/plain,123456", "", 10, raw,
+            "data:text/plain,abcdef");
+        response.Status.Should().Be(413);
+        response.Body.Should().NotContain("123456").And.NotContain("abcdef");
+    }
+
+    [Fact]
+    public async Task Results_RawMultipart_StreamsEveryPartWithinBudget()
+    {
+        var response = await RenderResultAsync("data:text/plain,123456", "", 1024, raw: true,
+            "data:text/plain,abcdef");
+        response.Status.Should().Be(200);
+        Encoding.UTF8.GetByteCount(response.Body).Should().BeLessThanOrEqualTo(1024);
+        response.Body.Should().Contain("Content-ID: <outputFeatureLayer>\r\n\r\n123456\r\n")
+            .And.Contain("Content-ID: <second>\r\n\r\nabcdef\r\n");
+    }
+
+    private static async Task<(int Status, string Body)> RenderResultAsync(string reference, string root, long maxBytes, bool raw, string? secondReference = null, int artifactCount = 1)
     {
         await using var services = new ServiceCollection().AddLogging()
             .Configure<GeoprocessingExecutorOptions>(options =>
@@ -135,12 +157,12 @@ public sealed class OgcProcessesValueContractTests
             Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob, Backend = "local", WorkloadName = "transform.attribute-rename" }
         };
         var package = AnalysisResultPackage.CreateCompleted("stream-result:v1", new ResultSummary { Title = "stream output" },
-            Enumerable.Range(0, artifactCount).Select(index => new ArtifactRef
+            Enumerable.Range(0, secondReference != null ? 2 : artifactCount).Select(index => new ArtifactRef
             {
                 ArtifactId = $"stream-artifact-{index}",
                 Kind = ArtifactKind.FeatureLayer,
-                Label = index == 0 ? "outputFeatureLayer" : $"outputFeatureLayer{index}",
-                Uri = reference
+                Label = index == 0 ? "outputFeatureLayer" : secondReference != null ? "second" : $"outputFeatureLayer{index}",
+                Uri = index == 1 && secondReference != null ? secondReference : reference
             }).ToArray(),
             [], new ProvenanceRecord { Sources = [], ProcessDefinitions = ["transform.attribute-rename"], ExecutedAt = DateTimeOffset.UtcNow });
         var result = raw

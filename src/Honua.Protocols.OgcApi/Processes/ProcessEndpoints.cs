@@ -963,12 +963,9 @@ internal static class ProcessEndpoints
         }
 
         var parameters = definition.Parameters.ToDictionary(parameter => parameter.Name, StringComparer.Ordinal);
-        foreach (var inputName in request.Inputs.Keys)
+        foreach (var inputName in request.Inputs.Keys.Where(inputName => !parameters.ContainsKey(inputName)))
         {
-            if (!parameters.ContainsKey(inputName))
-            {
-                return new InputNormalizationResult(null, $"Unknown input '{inputName}' for process '{definition.ProcessId}'.");
-            }
+            return new InputNormalizationResult(null, $"Unknown input '{inputName}' for process '{definition.ProcessId}'.");
         }
 
         foreach (var input in request.Inputs)
@@ -1046,6 +1043,7 @@ internal static class ProcessEndpoints
             var fallbackMediaType = parameter.AcceptsGeoJsonDataUri ? "application/geo+json"
                 : parameter.ValueType == ProcessParameterValueType.Wkb ? "application/wkb"
                 : parameter.ValueType == ProcessParameterValueType.WkbArray ? "application/json"
+                : parameter.AcceptsRasterSource ? "application/octet-stream"
                 : "text/plain";
             var mediaTypeHint = input.Value.TryGetProperty("type", out var typeElement)
                 && typeElement.ValueKind == JsonValueKind.String
