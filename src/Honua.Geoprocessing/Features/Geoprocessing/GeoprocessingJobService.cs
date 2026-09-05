@@ -988,8 +988,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return true;
     }
 
-    private static bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
+    private bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
     {
+        // Effective request tenancy is authoritative, including an explicitly unscoped
+        // context. Apply this before admin/owner grants and reuse submission capture so
+        // token claim fallbacks cannot diverge between job creation and retrieval.
+        var tenantId = _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId;
+        if (!string.Equals(job.Audit.SubmitterSecurityContext?.TenantId, tenantId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
         if (principal.IsInRole("admin"))
         {
             return true;
@@ -1273,21 +1282,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// specific record to its submitter so one authenticated user cannot read or
     /// cancel another user's jobs. Jobs without a recorded submitter are readable
     /// only by <c>admin</c> (#2753 closed the prior any-caller read of ownerless
-    /// jobs), and the conventional <c>admin</c> role retains full visibility for
-    /// operations. Denials surface as not-found so cross-principal probing cannot
+    /// jobs), and the conventional <c>admin</c> role retains visibility within the
+    /// effective tenant. Denials surface as not-found so cross-tenant/principal probing cannot
     /// confirm that a job identifier exists.
     /// </summary>
     private void EnsureJobOwnership(ExecutionJobRecord job, ClaimsPrincipal principal)
     {
-        if (principal.IsInRole("admin"))
-        {
-            return;
-        }
-
-        var owner = job.Audit.RequestedBy;
-        var caller = ResolvePrincipalId(principal);
-        if (!string.IsNullOrWhiteSpace(owner) &&
-            string.Equals(owner, caller, StringComparison.Ordinal))
+        if (IsJobReadable(job, principal))
         {
             return;
         }

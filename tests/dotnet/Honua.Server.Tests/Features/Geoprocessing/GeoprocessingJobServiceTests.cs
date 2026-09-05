@@ -2398,6 +2398,8 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [InlineData(false, "tenant-a", "tenant-b")]
     [InlineData(true, "tenant-a", "tenant-b")]
     [InlineData(false, null, "tenant-b")]
