@@ -1,17 +1,17 @@
 # Dashboard composition execution evidence
 
-On 2026-09-05, the Windows lane executed the dashboard composition implementation
+On 2026-09-05, the Windows lane executed the final dashboard integration fixture
 at source revision `5727260904de5cfde60d52dfc9aff614cc289d47` using the native
 Windows .NET SDK in Release mode, `-maxcpucount:4`, and Docker Desktop Postgres.
 Build outputs were redirected into isolated local directories because standard
 output directories were being removed on the host. No Linux host or WSL build
 was used. This is source-built implementation evidence, not candidate qualification.
 
-| Verification | Result |
-|---|---|
-| Studio MCP, scope authorization, and error-mapping tests | 103 passed, 0 failed, 0 skipped |
-| Studio Core tests, including the shared validator | 297 passed, 0 failed, 0 skipped |
-| Real MCP / Postgres dashboard lifecycle test | 1 passed, 0 failed, 0 skipped |
+| Verification | Tested source | Result |
+|---|---|---|
+| Studio MCP, scope authorization, and error-mapping tests | `972ba3ff5` | 103 passed, 0 failed, 0 skipped |
+| Studio Core tests, including the shared validator | `1920d4c95` | 297 passed, 0 failed, 0 skipped |
+| Real MCP / Postgres dashboard lifecycle test | `572726090` | 1 passed, 0 failed, 0 skipped |
 
 The [dashboard integration fixture](../../tests/dotnet/Honua.Server.Tests/Features/Studio/StudioDashboardMcpIntegrationTests.cs)
 creates a dashboard through MCP and exercises all eleven composition verbs.
