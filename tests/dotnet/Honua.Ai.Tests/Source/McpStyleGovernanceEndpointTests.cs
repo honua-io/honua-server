@@ -8,6 +8,8 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -21,15 +23,22 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Admin)]
 public sealed class McpStyleGovernanceEndpointTests
 {
-    [IntegrationTest]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Integration")]
+    [Trait("Tier", "Medium")]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/operations/style.apply-preset/submit")]
-    public async Task RestStyleOperation_DeniedPublishGrant_CannotBypassMcpAuthorization()
+    public async Task RestStyleOperation_EnforcesPublishGrantAndSuppliesTrustedTier(bool publishAllowed)
     {
         var jobs = Substitute.For<IGeoprocessingJobService>();
-        jobs.EnsureCallerAuthorizedAsync(Arg.Any<ClaimsPrincipal>(), OperatorResourceType.PublishedService,
+        if (!publishAllowed)
+        {
+            jobs.EnsureCallerAuthorizedAsync(Arg.Any<ClaimsPrincipal>(), OperatorResourceType.PublishedService,
                 OperatorOperation.Publish, Arg.Any<CancellationToken>())
-            .Returns(Task.FromException(new GeoprocessingAuthorizationException(requiresAuthentication: false)));
+                .Returns(Task.FromException(new GeoprocessingAuthorizationException(requiresAuthentication: false)));
+        }
         var invoker = Substitute.For<IOperationInvoker>();
         invoker.SubmitAsync(Arg.Any<OperationRequest>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>())
             .Returns(new OperationHandle
@@ -41,7 +50,11 @@ public sealed class McpStyleGovernanceEndpointTests
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
+        var license = Substitute.For<ILicenseEntitlementService>();
+        license.GetSnapshot().Returns(new LicenseSnapshot(HonuaEdition.Pro, true,
+            LicenseValidationState.Valid, null, null, null, null, [], new HashSet<string>(), 1, null));
         var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(license)
             .ReplaceService<IGeoprocessingJobService>(jobs)
             .ReplaceService<IOperationInvoker>(invoker);
         await fixture.InitializeAsync();
@@ -57,10 +70,19 @@ public sealed class McpStyleGovernanceEndpointTests
                     ["styleId"] = "restricted-preset",
                 },
             });
-            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            response.StatusCode.Should().Be(publishAllowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden);
             await jobs.Received(1).EnsureCallerAuthorizedAsync(Arg.Any<ClaimsPrincipal>(),
                 OperatorResourceType.PublishedService, OperatorOperation.Publish, Arg.Any<CancellationToken>());
-            await invoker.DidNotReceiveWithAnyArgs().SubmitAsync(default!, default!, default);
+            if (publishAllowed)
+            {
+                await invoker.Received(1).SubmitAsync(Arg.Any<OperationRequest>(),
+                    Arg.Is<OperationPolicyContext>(context => context.Tier == "pro" && context.AuthorizationOutcome == "authorized"),
+                    Arg.Any<CancellationToken>());
+            }
+            else
+            {
+                await invoker.DidNotReceiveWithAnyArgs().SubmitAsync(default!, default!, default);
+            }
         }
         finally
         {
