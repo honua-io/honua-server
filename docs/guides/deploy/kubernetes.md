@@ -1,5 +1,11 @@
 # Deploy on Kubernetes
 
+> Honua 2026.1 is GA for single-tenant deployments. Multi-tenant operation is
+> Preview/trial only for non-production evaluation. Do not use customer production
+> data. It has no GA, availability, performance, durability, SLO, or scale commitment;
+> cross-tenant disclosure remains a full-severity security defect. See
+> [Tenancy support](tenancy.md).
+
 This guide starts with one coordinated Honua replica and a persistent volume.
 That is the safe Kubernetes baseline. Horizontal scaling is a separate,
 atomic topology change: `MultiNode`, Redis, and shared cloud file storage must

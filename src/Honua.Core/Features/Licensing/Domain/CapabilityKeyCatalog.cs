@@ -46,7 +46,10 @@ public static class CapabilityKeyCatalog
     /// </summary>
     public const string ExperimentalStatus = "experimental";
 
-    /// <summary>Release-posture value marking a capability as Preview.</summary>
+    /// <summary>
+    /// Release-posture value marking a shipped capability as Preview, outside the GA
+    /// operational, SLA, and scale commitments.
+    /// </summary>
     public const string PreviewStatus = "preview";
 
     /// <summary>
@@ -57,6 +60,13 @@ public static class CapabilityKeyCatalog
     [
         new("serve.i3s-scene", "I3S Scene Serving", Categories.Serve,
             HonuaEdition.Enterprise, "Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlicensed requests return HTTP 402.", Status: ExperimentalStatus),
+    ];
+
+    /// <summary>Routed capabilities that ship as explicit opt-in Preview.</summary>
+    public static IReadOnlyList<CapabilityKeyDefinition> RoutedPreviewKeys { get; } =
+    [
+        new("admin.multi-tenancy", "Multi-Tenant Operation", Categories.ControlPlane,
+            HonuaEdition.Enterprise, "Preview/trial-only tenant lifecycle, schema routing, and usage surfaces for non-production evaluation. Honua 2026.1 GA deployments are single-tenant; do not use customer production data. There is no GA, availability, performance, durability, SLO, or scale commitment, and Preview status never lowers the security severity of cross-tenant disclosure.", Status: PreviewStatus),
     ];
 
     /// <summary>
@@ -160,7 +170,7 @@ public static class CapabilityKeyCatalog
 
         // Control plane
         new("admin.control-plane", "Admin Control Plane", Categories.ControlPlane,
-            HonuaEdition.Community, "General administrative CRUD surfaces (connections, metadata, services, tenants, users, roles, configuration) with no dedicated entitlement of their own."),
+            HonuaEdition.Community, "General administrative CRUD surfaces (connections, metadata, services, users, roles, configuration) with no dedicated entitlement of their own."),
 
         // Ops
         new("ops.health", "Health Checks", Categories.Ops,
@@ -259,8 +269,12 @@ public static class CapabilityKeyCatalog
     [
         .. CommunityKeys,
         .. RoutedExperimentalKeys,
+        .. RoutedPreviewKeys,
         .. DescriptiveKeys,
-        .. FeatureCatalog.All.Select(static feature => new CapabilityKeyDefinition(
+        .. FeatureCatalog.All
+            .Where(static feature => !RoutedPreviewKeys.Any(
+                preview => string.Equals(preview.Key, feature.Key, StringComparison.Ordinal)))
+            .Select(static feature => new CapabilityKeyDefinition(
             feature.Key,
             feature.DisplayName,
             feature.Category,

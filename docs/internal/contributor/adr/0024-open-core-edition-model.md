@@ -113,7 +113,7 @@ Everything in Pro, plus:
 | **Private Operator Copilot** | AI DevOps/operator tooling, rollout planning, delegated operations, and implementation workflows delivered through private enterprise tooling on top of the public control-plane API | Change Management / Support |
 | **Compliance** | SOC 2 / FedRAMP evidence collection; data residency controls; encryption-at-rest key rotation | Product Assurance |
 | **Federated Queries** | Cross-instance queries (Honua-to-Honua); external source proxy (Esri REST, OGC WFS) | Integrations |
-| **Multi-Tenancy** | Schema-per-tenant isolation; tenant-scoped API keys; per-tenant usage metering | Deployment Options |
+| **Multi-Tenancy (Preview/trial only)** | Non-production evaluation of schema-per-tenant isolation, tenant-scoped API keys, and usage metering; no customer production data or GA, availability, performance, durability, SLA, or SLO commitment | Deployment Options |
 | **Usage Analytics** | Dashboard — queries/sec, popular layers, slow queries, storage growth, user activity | Reporting |
 | **Plugin SDK** | Custom endpoints, pre/post-edit hooks, validators, computed fields (.NET source-gen, AOT-safe) | Integrations |
 | **Batch Geocoding** | Multi-address geocoding execution in a single request (`geocoding.batch`) over both the GeoServices `geocodeAddresses` HTTP operation and the MCP `honua_geocode_addresses` tool — the volume/enterprise geocoding workload, distinct from the Community single-address forward/reverse path (#2981) | Product Assurance |
@@ -178,7 +178,7 @@ License checks must be:
 
 - **Community** = complete feature server, single process, deploy anywhere
 - **Pro** = distributed coordination, streaming, analytics
-- **Enterprise** = governance, compliance, multi-tenancy, extensibility, and private operator tooling
+- **Enterprise** = governance, compliance, extensibility, and private operator tooling; multi-tenancy is Preview/trial only in 2026.1. GA deployments are single-tenant. Honua offers no SaaS or managed hosting service.
 
 ### EnterpriseReady Pillar Mapping
 
@@ -189,7 +189,7 @@ License checks must be:
 | RBAC | Admin key (all-or-nothing) | Admin key | Per-resource roles + RLS |
 | Change Management | Manual config | Manual config | GitOps + drift detection + private operator copilot |
 | Product Assurance | AOT, TLS, SQL playground | + Streaming, analytics, sync, AI spatial agent | + Compliance, secure connections |
-| Deployment Options | All targets, single-process | + Distributed cache | + Multi-tenant, HA/DR |
+| Deployment Options | All targets, single-process | + Distributed cache | Multi-tenancy: non-production Preview/trial only, with no HA/DR or production commitment |
 | Integrations | SDKs, MCP (REST) | + CDC, real-time, MCP (gRPC) | + Federation, plugins, Kafka/NATS |
 | Support | Community (GitHub) | Email, 48hr SLA | Dedicated Slack, 4hr SLA |
 | Reporting | Health + Prometheus | Grafana dashboards | + Usage analytics |

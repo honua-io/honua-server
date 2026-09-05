@@ -589,8 +589,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "delete-api-v1-admin-users-id",
@@ -4136,14 +4136,15 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.ListTenants_WithProLicense_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.DeploymentGlobalAdministration_PreservesAdminAuthorization",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "get-api-v1-admin-tenants-usage",
@@ -4156,8 +4157,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantUsage_ReturnsBillingUsageEnvelope"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "get-api-v1-admin-tenants-tenantid",
@@ -4170,8 +4171,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "get-api-v1-admin-tile-operations-cache-inventory",
@@ -4461,6 +4462,8 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AutonomyTracksPolicyStoreInsteadOfWorkflowStore",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LegacyProjection_MarksDisabledPreviewsUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LifecycleOnlyPreviews_RemainAvailableWithoutOptIn",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_MultiTenancyWithoutSchemaRouting_IsDisabledByConfiguration",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_MultiTenancy_ReflectsRuntimeLicenseAndAuthentication",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RegistryDerived_MatchesHandCuratedComposition",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RollbackIgnoresTargetsFromOtherEnvironments",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RollbackRequiresDurableOperationStore",
@@ -16142,8 +16145,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "post-api-v1-admin-tenants-tenantid-resume",
@@ -16156,8 +16159,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "post-api-v1-admin-tenants-tenantid-suspend",
@@ -16170,8 +16173,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "post-api-v1-admin-tile-operations-evict",
