@@ -1289,6 +1289,10 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Analytics Studio Export and Reporting" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Analytics Studio Export and Reporting" \
   `# Synthetic probe, not a real class (#2709): proves an unknown future` \
   `# Features.Protocols.* namespace still falls through to the Server Features` \
   `# Misc catch-all. --assert-route skips the class-exists check that` \
