@@ -5,10 +5,13 @@ using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 [Collection("Database")]
+[Protocol(ProtocolNames.TestQuality)]
+[Operation(Operations.Project)]
 public sealed class DatumTransformPipelineExecutionTests(PostgresFixture fixture)
 {
     [IntegrationTheory]
