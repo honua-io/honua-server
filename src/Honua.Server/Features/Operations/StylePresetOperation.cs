@@ -8,6 +8,7 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
+using Honua.Server.Features.Styling;
 
 namespace Honua.Server.Features.Operations;
 
@@ -69,9 +70,29 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
         var storageLayerId = await ResolveStorageLayerAsync(request, cancellationToken).ConfigureAwait(false);
         var catalog = services.GetRequiredService<IStyleCatalog>();
         var graphSync = services.GetRequiredService<IMetadataV2StyleGraphSync>();
-        await catalog.AssociateLayerAsync(storageLayerId, Required(request, "styleId"), 0, cancellationToken)
-            .ConfigureAwait(false);
-        await graphSync.SyncLayerStylesAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        var styleId = Required(request, "styleId");
+        if (!await catalog.AssociateLayerAsync(storageLayerId, styleId, 0, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The style or layer no longer exists; no preset association was applied.");
+        }
+
+        string? warning = null;
+        try
+        {
+            // The catalog commit is authoritative. As in OGC style editing, a
+            // disconnected caller must not turn post-commit reconciliation into
+            // a false failure receipt for a mutation that already happened.
+            await graphSync.SyncLayerStylesAsync(storageLayerId, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            warning = "The style binding was applied, but metadata reconciliation is pending. Re-apply the preset to retry reconciliation.";
+            var logger = services.GetService<ILogger<StylePresetExecutor>>();
+            if (logger is not null)
+            {
+                LayerStyleLog.StandaloneStyleGraphSyncFailed(logger, styleId, exception);
+            }
+        }
         var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
         return new OperationHandle
         {
@@ -81,7 +102,13 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
             Status = OperationHandleStatus.Completed,
             CreatedAt = now,
             UpdatedAt = now,
-            Result = new OperationResultSummary { Summary = "Applied layer style preset." },
+            Reason = warning,
+            Result = new OperationResultSummary
+            {
+                Summary = "Applied layer style preset.",
+                Details = warning is null ? new Dictionary<string, string>()
+                    : new Dictionary<string, string> { ["metadataReconciliationPending"] = bool.TrueString },
+            },
         };
     }
 

@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -144,6 +145,8 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
             AuthorizationOutcome = authorization.AuthorizationOutcome,
             TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
+            Tier = httpContext.RequestServices.GetService<ILicenseEntitlementService>()?
+                .GetSnapshot().Edition.ToString().ToLowerInvariant(),
             SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
             Roles = principal.FindAll(ClaimTypes.Role).Select(claim => claim.Value).ToArray(),
             ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
@@ -174,6 +177,8 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             StyleVersion = preset.StyleVersion,
             Applied = !argument.DryRun,
             DryRun = argument.DryRun,
+            Warning = operation.Result?.Details?.ContainsKey("metadataReconciliationPending") == true
+                ? operation.Reason : null,
         };
         return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpApplyStylePresetOutput);
     }

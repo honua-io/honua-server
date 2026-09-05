@@ -9,6 +9,8 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Server.Features.Operations;
@@ -404,6 +406,100 @@ public sealed class McpStyleToolTests
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ApplyStylePreset_PostCommitSyncFailure_ReportsAppliedWithWarning(bool cancelled)
+    {
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        catalog.AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        graphSync.SyncLayerStylesAsync(StorageLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(cancelled ? new OperationCanceledException() : new InvalidOperationException("projection failed")));
+
+        var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            catalog: catalog, graphSync: graphSync);
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+        var output = result.GetProperty("structuredContent");
+        output.GetProperty("applied").GetBoolean().Should().BeTrue();
+        output.GetProperty("warning").GetString().Should().Contain("reconciliation is pending");
+        await graphSync.Received(1).SyncLayerStylesAsync(StorageLayerId, CancellationToken.None);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ApplyStylePreset_AssociationNotApplied_DoesNotReportSuccessOrSync()
+    {
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            catalog: catalog, graphSync: graphSync);
+        response!.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue();
+        await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ApplyStylePreset_EditionPolicy_RequiresApprovalBeforeActuation()
+    {
+        var license = Substitute.For<ILicenseEntitlementService>();
+        license.GetSnapshot().Returns(new LicenseSnapshot(HonuaEdition.Pro, true,
+            LicenseValidationState.Valid, null, null, null, null, [], new HashSet<string>(), 1, null));
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            catalog: catalog, graphSync: graphSync, license: license,
+            policyOptions: new OperationPolicyOptions
+            {
+                Enabled = true,
+                DefaultDecision = PolicyDecisionKind.Allow,
+                Rules = [new OperationPolicyRule { OperationId = StylePresetOperation.OperationId,
+                    Tier = "pro", Decision = PolicyDecisionKind.RequireApproval }],
+            });
+        response!.Result!.Value.GetProperty("structuredContent").GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ApplyStylePreset_DurableStoreUnavailable_PreservesDependencyReceipt()
+    {
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            catalog: catalog, graphSync: graphSync, instanceStore: new UnavailableOperationInstanceStore());
+        var result = response!.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        var output = result.GetProperty("structuredContent");
+        output.GetProperty("code").GetString().Should().Be("unavailable");
+        output.GetProperty("missingDependency").GetString().Should().Be("redis");
+        output.GetProperty("retryable").GetBoolean().Should().BeFalse();
+        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
+    }
+
     // ---------------------------------------------------------------
     // render reflects the applied style (mock-level)
     // ---------------------------------------------------------------
@@ -457,7 +553,10 @@ public sealed class McpStyleToolTests
         PolicyDecisionKind policyDecision = PolicyDecisionKind.Allow,
         IOperationApprovalBridge? approvalBridge = null,
         bool includeApprovalRuntime = true,
-        bool includeOperationRuntime = true)
+        bool includeOperationRuntime = true,
+        ILicenseEntitlementService? license = null,
+        OperationPolicyOptions? policyOptions = null,
+        IOperationInstanceStore? instanceStore = null)
     {
         var surface = new McpDataAccessSurface(
             [
@@ -496,16 +595,20 @@ public sealed class McpStyleToolTests
             .Returns("/temp/rendered-map.png");
         services.AddSingleton(temporaryFileService);
 
+        if (license is not null)
+        {
+            services.AddSingleton(license);
+        }
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IOperationInvoker>(provider => new OperationDispatcher(
             new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
             [new StylePresetExecutor(provider)],
-            new ConfigurableOperationPolicyDecisionPoint(Options.Create(new OperationPolicyOptions
+            new ConfigurableOperationPolicyDecisionPoint(Options.Create(policyOptions ?? new OperationPolicyOptions
             {
                 Enabled = true,
                 DefaultDecision = policyDecision,
             })),
-            TimeProvider.System, approvalBridge: approvalBridge));
+            TimeProvider.System, approvalBridge: approvalBridge, instanceStore: instanceStore));
 
         if (!includeApprovalRuntime)
         {

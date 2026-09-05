@@ -21,6 +21,10 @@ returns `applied: true`. Set `dryRun: true` to validate without changing the
 layer; a completed preview returns `dryRun: true` and `applied: false`.
 Approval plans identify the service, layer, and preset and preserve preview
 intent when replayed after approval.
+If the binding commits but metadata reconciliation fails, the result keeps
+`applied: true` and includes a `warning`; re-apply the preset to retry that
+reconciliation. Policy rules receive the active license tier on both MCP and
+REST operation submissions.
 
 ## Two MCP surfaces: data-access (open) vs. operator (proprietary)
 

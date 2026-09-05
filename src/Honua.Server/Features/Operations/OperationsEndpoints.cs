@@ -6,6 +6,8 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Geoprocessing;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -171,6 +173,23 @@ internal static class OperationsEndpoints
         // Only descriptors that explicitly select the HTTP operator gate enter this
         // approval lane. All operations still pass through the dispatcher policy point;
         // ApprovalModel.None means no operator gate, not a bypass of policy decisions.
+        if (descriptor.OperationId == StylePresetOperation.OperationId)
+        {
+            // The shared operation exposes the same mutation as the hand-authored
+            // MCP tool. Check its publish grant and OAuth ceiling before a proposal
+            // can be created, so approved replay retains authorized caller intent.
+            try
+            {
+                await context.RequestServices.GetRequiredService<IGeoprocessingJobService>()
+                    .EnsureCallerAuthorizedAsync(context.User, OperatorResourceType.PublishedService,
+                        OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+            }
+            catch (GeoprocessingAuthorizationException exception)
+            {
+                return exception.RequiresAuthentication ? Results.Unauthorized() : Results.Forbid();
+            }
+        }
+
         if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
         {
             var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
@@ -186,12 +205,14 @@ internal static class OperationsEndpoints
         {
             // Surface the caller's identity AND role(s) into the policy decision point so a
             // tier/role-aware engine (Phase 4) can decide per descriptor blast-radius. The
-            // Community pass-through default ignores them. Tier is left unset here until the
-            // tenant-tier resolver lands (deferred — see PR notes).
+            // Community pass-through default ignores them. The running edition supplies
+            // the same trusted tier used by MCP operation submissions.
             var policyContext = new OperationPolicyContext
             {
                 PrincipalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId,
                 TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
+                Tier = context.RequestServices.GetService<ILicenseEntitlementService>()?
+                    .GetSnapshot().Edition.ToString().ToLowerInvariant(),
                 SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
                 AuthorizationOutcome = authorization.AuthorizationOutcome,
                 Roles = context.User.FindAll(ClaimTypes.Role)

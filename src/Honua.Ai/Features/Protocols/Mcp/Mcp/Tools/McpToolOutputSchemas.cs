@@ -945,7 +945,8 @@ internal static class McpToolOutputSchemas
             "title": { "type": ["string", "null"] },
             "styleVersion": { "type": "integer" },
             "applied": { "type": "boolean" },
-            "dryRun": { "type": "boolean", "description": "True when validation completed without changing metadata." }
+            "dryRun": { "type": "boolean", "description": "True when validation completed without changing metadata." },
+            "warning": { "type": ["string", "null"], "description": "Any follow-up needed after the style binding was applied." }
           }
         }
         """);

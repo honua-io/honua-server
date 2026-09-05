@@ -637,6 +637,9 @@ internal sealed class McpApplyStylePresetArgument
 /// </summary>
 internal sealed class McpApplyStylePresetOutput
 {
+    [JsonPropertyName("warning")]
+    public string? Warning { get; set; }
+
     [JsonPropertyName("dryRun")]
     public bool DryRun { get; set; }
 
