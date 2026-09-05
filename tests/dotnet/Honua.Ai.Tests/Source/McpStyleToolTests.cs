@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -611,6 +612,77 @@ public sealed class McpStyleToolTests
             await act.Should().ThrowAsync<ArgumentException>();
             await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
             await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
+        }
+    }
+
+    [Theory]
+    [InlineData("applied")]
+    [InlineData("reconciliation-pending")]
+    [InlineData("failed")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /operations/style.apply-preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task StylePresetExecution_RecordsTargetAndOutcome(string outcome)
+    {
+        var recorded = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "Honua",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName == "style.apply-preset.execute")
+                {
+                    recorded.Add(activity);
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>())
+            .Returns(outcome != "failed");
+        var sync = Substitute.For<IMetadataV2StyleGraphSync>();
+        if (outcome == "reconciliation-pending")
+        {
+            sync.SyncLayerStylesAsync(StorageLayerId, Arg.Any<CancellationToken>())
+                .Returns(Task.FromException(new InvalidOperationException("private failure details")));
+        }
+        using var services = new ServiceCollection()
+            .AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider())
+            .AddSingleton(catalog).AddSingleton(sync).AddSingleton(TimeProvider.System)
+            .BuildServiceProvider();
+        var executor = new StylePresetExecutor(services);
+        var context = new OperationPolicyContext();
+        var request = await executor.PrepareAsync(new OperationRequest
+        {
+            OperationId = StylePresetOperation.OperationId,
+            Parameters = new Dictionary<string, string?>
+            {
+                ["serviceId"] = ServiceId, ["layerId"] = LayerIndex.ToString(), ["styleId"] = PresetStyleId,
+            },
+        }, context);
+        if (outcome == "failed")
+        {
+            Func<Task> act = async () => { _ = await executor.SubmitAsync(request, context); };
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        }
+        else
+        {
+            (await executor.SubmitAsync(request, context)).Status.Should().Be(OperationHandleStatus.Completed);
+        }
+        var activity = recorded.Should().ContainSingle().Subject;
+        activity.GetTagItem("service.id").Should().Be(ServiceId);
+        activity.GetTagItem("layer.id").Should().Be(LayerIndex.ToString());
+        activity.GetTagItem("style.id").Should().Be(PresetStyleId);
+        activity.GetTagItem("storage.layer.id").Should().Be(StorageLayerId);
+        activity.GetTagItem("operation.result").Should().Be(outcome);
+        activity.Status.Should().Be(outcome == "applied" ? ActivityStatusCode.Ok : ActivityStatusCode.Error);
+        if (outcome != "applied")
+        {
+            activity.GetTagItem("error.type").Should().Be(typeof(InvalidOperationException).FullName);
+            activity.StatusDescription.Should().NotContain("private failure details");
         }
     }
 
