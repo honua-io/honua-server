@@ -108,7 +108,12 @@ public sealed class ApprovedReplayTenantAuthenticationTests
         await handler.InitializeAsync(new AuthenticationScheme("ApiKey", null, typeof(ApiKeyAuthenticationHandler)), context);
         var authentication = await handler.AuthenticateAsync();
         authentication.Succeeded.Should().BeTrue();
-        context.User = authentication.Principal!;
+        var transformation = new OidcClaimsTransformation(
+            Options.Create(new OidcAuthenticationOptions()),
+            NullLogger<OidcClaimsTransformation>.Instance,
+            services);
+        context.User = await transformation.TransformAsync(authentication.Principal!);
+        context.User = await transformation.TransformAsync(context.User);
         var invoked = false;
         var middleware = new TenantContextMiddleware(_ =>
         {

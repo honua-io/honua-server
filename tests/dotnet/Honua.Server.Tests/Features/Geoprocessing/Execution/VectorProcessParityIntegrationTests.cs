@@ -71,7 +71,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             using var terminal = await PollUntilTerminalAsync(client, jobId);
             terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var resultsDoc = await GetResultsAsync(client, jobId);
+            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
             var feature = DecodeOutputFeature(resultsDoc, "geometry.clip");
 
             feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
@@ -123,7 +123,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             using var terminal = await PollUntilTerminalAsync(client, jobId);
             terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var resultsDoc = await GetResultsAsync(client, jobId);
+            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
             var feature = DecodeOutputFeature(resultsDoc, "geometry.intersect");
 
             var geometry = ReadGeometry(feature.GetProperty("geometry"));
@@ -167,7 +167,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             using var terminal = await PollUntilTerminalAsync(client, jobId);
             terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var resultsDoc = await GetResultsAsync(client, jobId);
+            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
             var feature = DecodeOutputFeature(resultsDoc, "geometry.project");
 
             feature.GetProperty("properties").GetProperty("fromSrid").GetInt32().Should().Be(4326);
@@ -211,7 +211,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             using var terminal = await PollUntilTerminalAsync(client, jobId);
             terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var resultsDoc = await GetResultsAsync(client, jobId);
+            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
             var measure = DecodeScalarMeasure(resultsDoc, "geometry.area");
             measure.GetProperty("measure").GetString().Should().Be("area");
             measure.GetProperty("value").GetDouble().Should().BeApproximately(100.0, 1e-9);
@@ -263,7 +263,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             using var terminal = await PollUntilTerminalAsync(client, jobId);
             terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var resultsDoc = await GetResultsAsync(client, jobId);
+            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
             var feature = DecodeOutputFeature(resultsDoc, "geometry.union");
 
             feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
@@ -315,7 +315,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             using var terminal = await PollUntilTerminalAsync(client, jobId);
             terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var resultsDoc = await GetResultsAsync(client, jobId);
+            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
             var feature = DecodeOutputFeature(resultsDoc, "geometry.centroid");
 
             feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
@@ -376,7 +376,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             using var terminal = await PollUntilTerminalAsync(client, jobId);
             terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var resultsDoc = await GetResultsAsync(client, jobId);
+            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
             var measure = DecodeScalarMeasure(resultsDoc, "geometry.length");
             measure.GetProperty("measure").GetString().Should().Be("length");
             measure.GetProperty("value").GetDouble().Should().BeApproximately(7.0, 1e-9);
@@ -436,7 +436,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             using var terminal = await PollUntilTerminalAsync(client, jobId);
             terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var resultsDoc = await GetResultsAsync(client, jobId);
+            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
             var feature = DecodeOutputFeature(resultsDoc, "geometry.convex-hull");
 
             feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
@@ -491,7 +491,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             using var terminal = await PollUntilTerminalAsync(client, jobId);
             terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var resultsDoc = await GetResultsAsync(client, jobId);
+            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
             var collection = DecodeOutputFeatureCollection(resultsDoc, "geometry.dissolve");
             collection.GetProperty("groupCount").GetInt32().Should().Be(1);
             collection.GetProperty("inputCount").GetInt32().Should().Be(2);
@@ -555,7 +555,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             using var terminal = await PollUntilTerminalAsync(client, jobId);
             terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var resultsDoc = await GetResultsAsync(client, jobId);
+            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
             var feature = DecodeOutputFeature(resultsDoc, "geometry.simplify");
 
             feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
@@ -615,7 +615,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
             using var terminal = await PollUntilTerminalAsync(client, jobId);
             terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var resultsDoc = await GetResultsAsync(client, jobId);
+            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
             var feature = DecodeOutputFeature(resultsDoc, "geometry.snap");
 
             feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
@@ -759,27 +759,20 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         throw new TimeoutException($"Timed out waiting for job '{jobId}' to reach a terminal status.");
     }
 
-    private static async Task<JsonDocument> GetResultsAsync(HttpClient client, string jobId)
+    private static async Task<JsonDocument> GetResultsAsync(WebAppFixture fixture, HttpClient client, string jobId)
     {
         using var response = await client.GetAsync($"/ogc/processes/jobs/{jobId}/results");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var results = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var package = await fixture.GetService<IGeoprocessingResultPackageStore>().GetAsync(jobId);
+        package.Should().NotBeNull();
+        GeoprocessingResultAssertions.AssertInlineValueMatchesArtifact(results, package!, jobId);
+        return results;
     }
 
     private static JsonElement DecodeOutputFeature(JsonDocument resultsDoc, string expectedProcessId)
     {
-        var output = resultsDoc.RootElement.GetProperty("outputFeatureLayer");
-        output.GetProperty("kind").GetString().Should().Be("FeatureLayer");
-        output.GetProperty("type").GetString().Should().Be("application/geo+json");
-
-        var href = output.GetProperty("href").GetString();
-        href.Should().NotBeNull();
-        href!.Should().StartWith(DataUriPrefix);
-
-        var base64 = href[DataUriPrefix.Length..];
-        var bytes = Convert.FromBase64String(base64);
-        var doc = JsonDocument.Parse(bytes);
-        var feature = doc.RootElement.Clone();
+        var feature = resultsDoc.RootElement.GetProperty("outputFeatureLayer").Clone();
         feature.GetProperty("type").GetString().Should().Be("Feature");
         feature.GetProperty("properties").GetProperty("processId").GetString()
             .Should().Be(expectedProcessId);
@@ -788,18 +781,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
 
     private static JsonElement DecodeOutputFeatureCollection(JsonDocument resultsDoc, string expectedProcessId)
     {
-        var output = resultsDoc.RootElement.GetProperty("outputFeatureLayer");
-        output.GetProperty("kind").GetString().Should().Be("FeatureLayer");
-        output.GetProperty("type").GetString().Should().Be("application/geo+json");
-
-        var href = output.GetProperty("href").GetString();
-        href.Should().NotBeNull();
-        href!.Should().StartWith(DataUriPrefix);
-
-        var base64 = href[DataUriPrefix.Length..];
-        var bytes = Convert.FromBase64String(base64);
-        var doc = JsonDocument.Parse(bytes);
-        var collection = doc.RootElement.Clone();
+        var collection = resultsDoc.RootElement.GetProperty("outputFeatureLayer").Clone();
         collection.GetProperty("type").GetString().Should().Be("FeatureCollection");
         collection.GetProperty("processId").GetString().Should().Be(expectedProcessId);
         return collection;
@@ -810,20 +792,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
 
     private static JsonElement DecodeScalarMeasure(JsonDocument resultsDoc, string expectedProcessId)
     {
-        const string scalarPrefix = "data:application/json;base64,";
-
-        var output = resultsDoc.RootElement.GetProperty("outputScalar");
-        output.GetProperty("kind").GetString().Should().Be("Scalar");
-        output.GetProperty("type").GetString().Should().Be("application/json");
-
-        var href = output.GetProperty("href").GetString();
-        href.Should().NotBeNull();
-        href!.Should().StartWith(scalarPrefix);
-
-        var base64 = href[scalarPrefix.Length..];
-        var bytes = Convert.FromBase64String(base64);
-        var doc = JsonDocument.Parse(bytes);
-        var root = doc.RootElement.Clone();
+        var root = resultsDoc.RootElement.GetProperty("outputScalar").Clone();
         root.GetProperty("type").GetString().Should().Be("MeasureResult");
         root.GetProperty("processId").GetString().Should().Be(expectedProcessId);
         return root;

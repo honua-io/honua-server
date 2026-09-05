@@ -442,10 +442,8 @@ internal sealed class ApiKeyAuthenticationHandler(
         {
             // This binding came from the persisted server-minted grant. Preserve it
             // through OIDC's removal of untrusted issuer-supplied framework claims.
-            CanonicalSecurityActor.StampFrameworkClaim(
-                identity,
-                AdminApiKeyPermission.ApprovedOperationTenantClaim,
-                identity.FindFirst(AdminApiKeyPermission.ApprovedOperationTenantClaim)!.Value);
+            identity.FindFirst(AdminApiKeyPermission.ApprovedOperationTenantClaim)!
+                .Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
         }
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
