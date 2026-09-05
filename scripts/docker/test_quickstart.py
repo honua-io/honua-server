@@ -13,6 +13,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class QuickstartTests(unittest.TestCase):
+    def test_demo_callers_initialize_before_compose_and_use_container_credentials(self):
+        for name in ("stac-ops", "mobile-offline"):
+            source = (ROOT / f"scripts/demos/run-{name}-demo.sh").read_text()
+            self.assertTrue(source.index('quickstart.py" --init-only') < source.index("compose down"))
+            self.assertTrue('PGPASSWORD="${PGPASSWORD:-$POSTGRES_PASSWORD}"' in source)
+            self.assertTrue("honua_password" not in source)
+
     def test_existing_settings_survive_and_weak_credentials_are_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             env_file = Path(directory) / ".env"
