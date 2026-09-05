@@ -194,12 +194,12 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 EvidencePostureVocabulary.BackendKinds.DurableStore,
                 BackendId,
                 EvidencePostureVocabulary.ReasonCodes.SourceUnavailable,
-                observedAt: _alertHealth.LastPollAt,
-                lastSuccessfulAt: _alertHealth.LastPollAt,
+                observedAt: _alertHealth.BacklogObservedAt,
+                lastSuccessfulAt: _alertHealth.BacklogObservedAt,
                 maximumAge: SignalValidity);
         }
 
-        return _alertHealth.LastPollAt is { } lastPollAt
+        return _alertHealth.BacklogObservedAt is { } lastPollAt
             ? EvidencePostureFactory.Complete(
                 EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch,
                 EvidencePostureVocabulary.BackendKinds.DurableStore,

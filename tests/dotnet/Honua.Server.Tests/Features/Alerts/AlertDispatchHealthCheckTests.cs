@@ -155,6 +155,8 @@ public sealed class AlertDispatchHealthCheckTests
         public bool IsDispatcherRunning { get; init; }
         public bool IsDispatcherEnabled { get; init; }
         public DateTimeOffset? LastPollAt { get; init; }
+
+        public DateTimeOffset? BacklogObservedAt => LastPollAt;
         public AlertDispatchBacklog? LastBacklog { get; init; }
         public bool IsStoragePollFailing { get; init; }
 

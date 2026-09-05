@@ -109,6 +109,8 @@ public sealed class AlertDispatchAutonomousOperationConvergenceTests
 
         public DateTimeOffset? LastPollAt { get; private set; }
 
+        public DateTimeOffset? BacklogObservedAt => LastPollAt;
+
         public AlertDispatchBacklog? LastBacklog { get; private set; }
 
         public bool IsStoragePollFailing => false;

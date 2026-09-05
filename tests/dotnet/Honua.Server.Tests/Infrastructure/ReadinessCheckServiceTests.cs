@@ -384,7 +384,7 @@ public sealed class ReadinessCheckServiceTests
     [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithDisabledAlertDispatch_ReturnsReady()
     {
-        // A disabled dispatcher is an operating choice, never a readiness fault — even with a very
+        // A disabled dispatcher is an operating choice, never a readiness fault â€” even with a very
         // old (irrelevant) LastPollAt.
         var dispatch = new StubDispatchHealth
         {
@@ -478,6 +478,8 @@ public sealed class ReadinessCheckServiceTests
         public bool IsDispatcherRunning { get; init; }
         public bool IsDispatcherEnabled { get; init; }
         public DateTimeOffset? LastPollAt { get; init; }
+
+        public DateTimeOffset? BacklogObservedAt => LastPollAt;
         public Honua.Core.Features.Alerts.Domain.AlertDispatchBacklog? LastBacklog { get; init; }
         public bool IsStoragePollFailing { get; init; }
 

@@ -549,6 +549,8 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
 
         public DateTimeOffset? LastPollAt { get; private set; }
 
+        public DateTimeOffset? BacklogObservedAt => LastPollAt;
+
         public AlertDispatchBacklog? LastBacklog { get; private set; }
 
         public bool IsStoragePollFailing => false;

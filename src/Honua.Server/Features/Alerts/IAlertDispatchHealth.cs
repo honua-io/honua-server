@@ -20,8 +20,11 @@ internal interface IAlertDispatchHealth
     /// <summary>True when the alert pipeline is enabled by configuration.</summary>
     bool IsDispatcherEnabled { get; }
 
-    /// <summary>Timestamp of the most recent successful dispatch pass, when known.</summary>
+    /// <summary>Timestamp of the most recent dispatch attempt, including failed attempts.</summary>
     DateTimeOffset? LastPollAt { get; }
+
+    /// <summary>Timestamp of the most recent successfully collected backlog, when known.</summary>
+    DateTimeOffset? BacklogObservedAt { get; }
 
     /// <summary>Most recent backlog snapshot captured by the dispatcher, when available.</summary>
     AlertDispatchBacklog? LastBacklog { get; }
