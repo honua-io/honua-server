@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
+using Serilog.Formatting.Compact;
 using Xunit;
 
 namespace Honua.Server.Tests.Infrastructure;
@@ -33,15 +34,18 @@ public sealed class RequestLogRedactionTests
                 .MinimumLevel.Information()
                 .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
                 .ConfigureHonuaRequestDiagnostics()
-                .WriteTo.Sink(sink), writeToProviders: true)
+                .WriteTo.Sink(sink), preserveStaticLogger: true, writeToProviders: true)
             .ConfigureWebHost(web => web.UseTestServer().Configure(app =>
             {
                 app.UseSerilogRequestLogging(options =>
-                    options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms");
+                {
+                    options.Logger = app.ApplicationServices.GetRequiredService<Serilog.ILogger>();
+                    options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
+                });
                 app.Run(context =>
                 {
-                    Assert.Equal("query-marker", context.Request.Query["token"]);
-                    Assert.Equal("Bearer header-marker", context.Request.Headers.Authorization);
+                    Assert.Equal("query-marker", context.Request.Query["token"].ToString());
+                    Assert.Equal("Bearer header-marker", context.Request.Headers.Authorization.ToString());
                     return context.Response.WriteAsync("ok");
                 });
             }))
@@ -60,7 +64,13 @@ public sealed class RequestLogRedactionTests
         Assert.Contains(sink.Events, e => e.MessageTemplate.Text.StartsWith("Request starting", StringComparison.Ordinal));
         Assert.Contains(sink.Events, e => e.MessageTemplate.Text.StartsWith("Request finished", StringComparison.Ordinal));
         Assert.Contains(sink.Events, e => e.MessageTemplate.Text.StartsWith("HTTP", StringComparison.Ordinal));
-        var rendered = string.Join('\n', sink.Events.Select(e => e.RenderMessage(CultureInfo.InvariantCulture) + e.Properties));
+        var rendered = string.Join('\n', sink.Events.Select(e => e.RenderMessage(CultureInfo.InvariantCulture) + string.Join(' ', e.Properties.Values)));
+        using var json = new StringWriter(CultureInfo.InvariantCulture);
+        var formatter = new CompactJsonFormatter();
+        foreach (var entry in sink.Events)
+        {
+            formatter.Format(entry, json);
+        }
         var forwarded = string.Join('\n', provider.Messages);
         Assert.Contains("/rest/services/demo/FeatureServer/0/query", rendered, StringComparison.Ordinal);
         Assert.Contains("/rest/services/demo/FeatureServer/0/query", forwarded, StringComparison.Ordinal);
@@ -68,6 +78,7 @@ public sealed class RequestLogRedactionTests
         {
             Assert.DoesNotContain(marker, rendered, StringComparison.Ordinal);
             Assert.DoesNotContain(marker, forwarded, StringComparison.Ordinal);
+            Assert.DoesNotContain(marker, json.ToString(), StringComparison.Ordinal);
         }
     }
 
@@ -88,6 +99,7 @@ public sealed class RequestLogRedactionTests
         logger.Information("Request {Url} {CorrelationId}", $"https://example.test/query?f=json&{parameter}=synthetic-marker&count=1", "safe-correlation");
         var entry = Assert.Single(sink.Events);
         Assert.DoesNotContain("synthetic-marker", entry.RenderMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Contains("[REDACTED]", string.Join(' ', entry.Properties.Values), StringComparison.Ordinal);
         Assert.Contains("safe-correlation", entry.RenderMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
         Assert.Contains("f=json", entry.RenderMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
@@ -109,6 +121,7 @@ public sealed class RequestLogRedactionTests
             .Information("Safe request {CorrelationId}", "safe-correlation");
         var entry = Assert.Single(sink.Events);
         Assert.DoesNotContain("synthetic-marker", string.Join(' ', entry.Properties.Values), StringComparison.Ordinal);
+        Assert.Contains("[REDACTED]", string.Join(' ', entry.Properties.Values), StringComparison.Ordinal);
         Assert.Contains("safe-correlation", entry.RenderMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
