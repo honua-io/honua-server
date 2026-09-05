@@ -257,7 +257,6 @@ public sealed class OperationDispatcher : IOperationInvoker
             envelope = envelope with
             {
                 OperationId = descriptor.OperationId,
-                TenantId = context.TenantId,
                 PolicyDecision = decision.Kind,
                 UpdatedAt = _clock.GetUtcNow(),
             };
@@ -376,7 +375,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         {
             OperationInstanceId = operationInstanceId,
             OperationId = descriptor.OperationId,
-            TenantId = context.TenantId,
+            TenantId = envelope.TenantId,
             CorrelationId = correlationId,
             AuditId = acceptanceAuditId,
             CreatedAt = createdAt,
