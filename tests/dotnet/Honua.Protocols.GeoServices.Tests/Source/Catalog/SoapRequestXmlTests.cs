@@ -11,6 +11,7 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
+[Trait("Tier", "Fast")]
 public sealed class SoapRequestXmlTests
 {
     [Theory]
@@ -28,6 +29,30 @@ public sealed class SoapRequestXmlTests
         var document = await ReadAsync(xml);
 
         document.Root!.Name.LocalName.Should().Be("Envelope");
+    }
+
+    [Theory]
+    [InlineData("http://schemas.xmlsoap.org/soap/envelope/")]
+    [InlineData("http://www.w3.org/2003/05/soap-envelope")]
+    public async Task Read_ArcGisTypedPayload_AcceptsWithoutFetchingPayloadSchemas(string soapNamespace)
+    {
+        var xml = $"""
+            <soap:Envelope xmlns:soap="{soapNamespace}" xmlns:gis="http://www.esri.com/schemas/ArcGIS/10.8"
+                           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+              <soap:Body>
+                <gis:ExportImage>
+                  <gis:ImageDescription xsi:type="gis:GeoImageDescription">
+                    <gis:Extent xsi:type="gis:EnvelopeN"><gis:XMin>0</gis:XMin></gis:Extent>
+                  </gis:ImageDescription>
+                  <gis:ImageType xsi:type="gis:ImageType"><gis:ImageFormat>png</gis:ImageFormat></gis:ImageType>
+                </gis:ExportImage>
+              </soap:Body>
+            </soap:Envelope>
+            """;
+
+        var document = await ReadAsync(xml);
+
+        document.Descendants().Should().Contain(element => element.Name.LocalName == "ExportImage");
     }
 
     [Theory]

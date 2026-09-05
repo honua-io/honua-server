@@ -43,6 +43,7 @@ internal static class SoapRequestXml
             // Both adapters support one optional Header followed by one Body.
             // ArcGIS operation namespaces vary by client version, so their
             // names and typed/bounded arguments remain the adapter's contract.
+            // Skip those subtrees explicitly, including client xsi:type payloads.
             var schema = $$"""
                 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
                            targetNamespace="{{soapNamespace}}" elementFormDefault="qualified">
@@ -51,13 +52,13 @@ internal static class SoapRequestXml
                       <xs:sequence>
                         <xs:element name="Header" minOccurs="0">
                           <xs:complexType>
-                            <xs:sequence><xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded" /></xs:sequence>
+                            <xs:sequence><xs:any namespace="##other" processContents="skip" minOccurs="0" maxOccurs="unbounded" /></xs:sequence>
                             <xs:anyAttribute processContents="lax" />
                           </xs:complexType>
                         </xs:element>
                         <xs:element name="Body">
                           <xs:complexType>
-                            <xs:sequence><xs:any namespace="##other" processContents="lax" /></xs:sequence>
+                            <xs:sequence><xs:any namespace="##other" processContents="skip" /></xs:sequence>
                             <xs:anyAttribute processContents="lax" />
                           </xs:complexType>
                         </xs:element>

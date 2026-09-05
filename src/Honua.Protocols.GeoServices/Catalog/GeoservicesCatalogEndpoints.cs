@@ -4,7 +4,6 @@
 using System.Text;
 using System.Xml;
 using System.Xml.Schema;
-using Honua.Protocols.GeoServices.Soap;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
@@ -19,6 +18,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.ImageServer;
+using Honua.Protocols.GeoServices.Soap;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;

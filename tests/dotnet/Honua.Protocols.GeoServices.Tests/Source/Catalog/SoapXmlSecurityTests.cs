@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 [Protocol(TestProtocols.ImageServer)]
 public sealed class SoapXmlSecurityTests
 {
-    [Theory]
+    [IntegrationTheory]
     [InlineData("/services", "text/xml", "http://schemas.xmlsoap.org/soap/envelope/")]
     [InlineData("/services/alpha/ImageServer", "text/xml", "http://schemas.xmlsoap.org/soap/envelope/")]
     [InlineData("/services", "application/soap+xml", "http://www.w3.org/2003/05/soap-envelope")]
@@ -55,7 +55,7 @@ public sealed class SoapXmlSecurityTests
         listener.Pending().Should().BeFalse("the XML reader must never resolve an external entity");
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("/services")]
     [InlineData("/services/alpha/ImageServer")]
     [Operation(Operations.GetMetadata)]
