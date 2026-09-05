@@ -62,6 +62,8 @@ persisting an old token across deployments.
 > so paging links resolve to the external URL. Clients that resolve `@odata.nextLink`
 > relative to the request URL are unaffected.
 
+Bound $search uses a structured literal search request translated by each SQL provider (PostGIS, SQL Server, MySQL, DuckDB, Oracle, Redshift, Snowflake, and Databricks). Other providers reject $search with HTTP 400 before reading. Existing provider restrictions on combined $filter expressions still apply.
+
 ## $filter support
 
 | Category | Supported |

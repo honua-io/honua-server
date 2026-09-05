@@ -16,6 +16,26 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 public sealed class ODataFeatureProviderResolverTests
 {
     [Fact]
+    public async Task ResolveQueryReaderAsync_UnsupportedTextSearch_RejectsBeforeProviderRead()
+    {
+        var connectionId = Guid.NewGuid();
+        var provider = Substitute.For<IFeatureDataProvider>();
+        provider.ProviderName.Returns(DataProviderNames.ArcGisRest);
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+        provider.Reader.Returns(Substitute.For<IFeatureReader>());
+        var resolver = new ODataFeatureProviderResolver(
+            Substitute.For<IFeatureReader>(), Substitute.For<IFeatureWriter>(),
+            CreateRouter(connectionId, provider));
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+
+        var act = () => resolver.ResolveQueryReaderAsync(snapshot, service, resource, publication,
+            41, requireCount: false, requireTextSearch: true, CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Core.Exceptions.ValidationException>()
+            .WithMessage("*does not support OData $search*");
+        await provider.Reader.DidNotReceiveWithAnyArgs().QueryAsync(default, default, default);
+    }
+    [Fact]
     public async Task ResolveReaderAsync_SecondaryProvider_RoutesCountAndRejectsWrites()
     {
         var connectionId = Guid.NewGuid();

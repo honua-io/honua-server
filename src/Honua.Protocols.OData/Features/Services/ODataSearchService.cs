@@ -121,7 +121,7 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException("$search parameter is required.");
         }
 
-        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken, requireCount: count == true).ConfigureAwait(false);
+        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken, requireCount: count == true, requireTextSearch: true).ConfigureAwait(false);
         var resource = resolvedLayer.Resource;
         var srid = resource.ReadSrid() ?? 4326;
 
@@ -150,10 +150,25 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException(queryError);
         }
 
-        query = ODataSqlFragmentMergeHelper.Merge(query, textSearchFilter);
+        query = ReferenceEquals(resolvedLayer.Reader, _featureReader)
+            ? ODataSqlFragmentMergeHelper.Merge(query, textSearchFilter)
+            : query with
+            {
+                TextSearch = new FeatureTextSearch(
+                    resource.SchemaFields.Where(field => field.Type == MetadataV2FieldType.String)
+                        .Select(field => field.Name).Take(MaxSearchableStringFields).ToArray(),
+                    searchTerms.Select(group => (IReadOnlyList<FeatureSearchTerm>)group
+                        .Select(term => new FeatureSearchTerm(term.term, term.isNegated)).ToArray()).ToArray())
+            };
 
         // Storage handle is still int-keyed at the IFeatureReader boundary.
         var result = await resolvedLayer.Reader.QueryAsync(resolvedLayer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
+        // Some provider readers report only the current page size in TotalCount.
+        // Resolve a requested total explicitly using the same search and filter predicates.
+        var totalCount = count == true
+            ? await resolvedLayer.Reader.CountAsync(resolvedLayer.StorageLayerId,
+                query with { Limit = null, Offset = null }, cancellationToken).ConfigureAwait(false)
+            : (long?)null;
         var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
             _crsRegistry,
             srid,
@@ -225,7 +240,7 @@ internal sealed partial class ODataSearchService
         return new ODataSearchResult
         {
             Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand),
-            Count = count == true ? result.TotalCount : null,
+            Count = totalCount,
             Value = selected
         };
     }
@@ -489,7 +504,8 @@ internal sealed partial class ODataSearchService
     private async Task<ResolvedODataLayer> ResolveODataLayerAsync(
         int layerId,
         CancellationToken cancellationToken,
-        bool requireCount = false)
+        bool requireCount = false,
+        bool requireTextSearch = false)
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
@@ -523,7 +539,7 @@ internal sealed partial class ODataSearchService
 
             var reader = await _providerResolver.ResolveQueryReaderAsync(
                 snapshot, service, resource!, publication, storageLayerId.Value,
-                requireCount, cancellationToken).ConfigureAwait(false);
+                requireCount, requireTextSearch, cancellationToken).ConfigureAwait(false);
 
             return new ResolvedODataLayer(
                 reader,

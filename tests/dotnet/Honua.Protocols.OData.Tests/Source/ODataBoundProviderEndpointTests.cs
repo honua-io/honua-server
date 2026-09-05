@@ -70,6 +70,7 @@ public sealed class ODataBoundProviderEndpointTests : IAsyncLifetime
         _boundReader.QueryAsync(41, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(QueryResult<Feature>.Create(1, [feature]));
         _boundReader.GetAsync(41, 42, Arg.Any<CancellationToken>()).Returns(feature);
+        _boundReader.CountAsync(41, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(37L);
         _managedReader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(QueryResult<Feature>.Empty());
         var stream = Substitute.For<IStreamingFeatureStore>();
@@ -88,6 +89,32 @@ public sealed class ODataBoundProviderEndpointTests : IAsyncLifetime
     public Task InitializeAsync() => _fixture.InitializeAsync();
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers({layerId})/Features")]
+    public async Task Search_ConnectionBoundCount_UsesTotalInsteadOfPageSize()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/odata/Layers(4)/Features?$search=Harbor&$count=true&$top=1");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("@odata.count").GetInt64().Should().Be(37);
+        await _boundReader.Received().CountAsync(41,
+            Arg.Is<FeatureQuery>(query => query.TextSearch != null && query.SqlFilter == null
+                && query.Limit == null && query.Offset == null), Arg.Any<CancellationToken>());
+    }
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features(LayerId={layerId},ObjectId={objectId})/$ref")]
+    public async Task Reference_ConnectionBoundPublication_UsesBoundReader()
+    {
+        var response = await _fixture.Client.GetAsync("/odata/Features(LayerId=4,ObjectId=42)/$ref");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("@odata.id").GetString().Should().Contain("ObjectId=42");
+        await _boundReader.Received().GetAsync(41, 42, Arg.Any<CancellationToken>());
+        await _managedReader.DidNotReceiveWithAnyArgs().GetAsync(default, default, default);
+    }
     [IntegrationTheory]
     [InlineData("/odata/Layers(4)/Features?$search=Harbor")]
     [InlineData("/odata/Features(4)/$search?$search=Harbor")]
@@ -100,6 +127,12 @@ public sealed class ODataBoundProviderEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(path);
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         (await response.Content.ReadAsStringAsync()).Should().Contain("Harbor");
+        if (path.Contains("$search", StringComparison.Ordinal))
+        {
+            await _boundReader.Received().QueryAsync(41,
+                Arg.Is<FeatureQuery>(query => query.SqlFilter == null && query.TextSearch != null),
+                Arg.Any<CancellationToken>());
+        }
         await _managedReader.DidNotReceiveWithAnyArgs().QueryAsync(default, default, default);
         await _managedReader.DidNotReceiveWithAnyArgs().GetAsync(default, default, default);
     }
