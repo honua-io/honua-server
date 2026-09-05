@@ -48,10 +48,11 @@ public sealed class LicenseMintRoundTripTests
         snapshot.Edition.Should().Be(HonuaEdition.Pro);
         snapshot.LicenseId.Should().Be("lic-mint-pro");
         snapshot.LicensedTo.Should().Be("Mint RoundTrip Operator");
-        // Pro defaults grant every catalog feature at or below Pro and gate Enterprise features.
+        // Pro defaults grant core branch versioning and every other catalog feature at or below Pro,
+        // while Enterprise-only features such as the plugin SDK remain gated.
         snapshot.HasEntitlement(FeatureCatalog.FeatureServerEditsKey).Should().BeTrue();
         snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
-        snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeFalse();
+        snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeTrue();
         snapshot.HasEntitlement(FeatureCatalog.PluginSdkKey).Should().BeFalse();
     }
 
