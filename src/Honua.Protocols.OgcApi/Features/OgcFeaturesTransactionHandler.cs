@@ -471,7 +471,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         detail: "The resource has been modified since the provided ETag.");
                 }
 
-                expectedStateToken = FeatureStateToken.Compute(existing);
+                expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
             }
 
             var buildResult = await OgcFeatureMutationHelpers.TryBuildFeatureAsync(
@@ -700,7 +700,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             // PATCH merges a read snapshot. Always revalidate it inside the write
             // transaction so omitted properties and geometry cannot overwrite concurrent
             // changes, including requests without an explicit If-Match precondition.
-            var expectedStateToken = FeatureStateToken.Compute(existing);
+            var expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
             if (!string.IsNullOrWhiteSpace(ifMatch))
             {
                 var etag = OgcFeatureEntityTag.Compute(existing, _etagService);

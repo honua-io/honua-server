@@ -260,7 +260,7 @@ internal sealed partial class ODataBatchHandler
         list.Add(new FeatureEditPrecondition
         {
             ObjectId = objectId,
-            ExpectedStateToken = FeatureStateToken.Compute(existing)
+            ExpectedStateToken = FeatureStateToken.FromReadSnapshot(existing)
         });
     }
 

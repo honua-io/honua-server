@@ -554,16 +554,9 @@ internal sealed partial class FeatureDataAccess
             current = await ReadFeatureAsync(reader, cancellationToken).ConfigureAwait(false);
         }
 
-        var visible = current;
-        if (!precondition.MaskedFields.IsDefaultOrEmpty)
-        {
-            var masked = precondition.MaskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            visible = current with { Attributes = current.Attributes.RemoveRange(current.Attributes.Keys.Where(masked.Contains)) };
-        }
-
         if (precondition.ExpectedRowAbsent ||
             !string.Equals(
-                FeatureStateToken.Compute(visible),
+                FeatureStateToken.Compute(current),
                 precondition.ExpectedStateToken,
                 StringComparison.Ordinal))
         {

@@ -107,13 +107,34 @@ public sealed class PatchConcurrencyTests
                 barrier.Resume.TrySetResult();
             }
             using var response = await firstTask;
-            Assert.InRange((int)await ReadStatusAsync(response, protocol == "batch"), 200, 299);
+            var status = await ReadStatusAsync(response, protocol == "batch");
+            if (concurrent)
+            {
+                Assert.Equal(HttpStatusCode.Conflict, status);
+            }
+            else
+            {
+                Assert.InRange((int)status, 200, 299);
+            }
             Assert.DoesNotContain("population", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("readStateToken", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
             mask.Fields = ImmutableArray<string>.Empty;
             var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
             Assert.Equal(concurrent ? 45678L : 12345L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
-            Assert.Equal("changed name", stored.Attributes["name"]);
+            Assert.Equal(concurrent ? "original name" : "changed name", stored.Attributes["name"]);
             Assert.Equal(original.Geometry, stored.Geometry);
+            if (concurrent)
+            {
+                mask.Fields = ImmutableArray.Create("POPULATION");
+                using var retry = CreatePatch(protocol != "ogc", id, changeName: true, batch: protocol == "batch");
+                using var retriedResponse = await fixture.Client.SendAsync(retry);
+                Assert.InRange((int)await ReadStatusAsync(retriedResponse, protocol == "batch"), 200, 299);
+                Assert.DoesNotContain("population", await retriedResponse.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+                mask.Fields = ImmutableArray<string>.Empty;
+                var retried = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+                Assert.Equal("changed name", retried.Attributes["name"]);
+                Assert.Equal(45678L, Convert.ToInt64(retried.Attributes["population"], CultureInfo.InvariantCulture));
+            }
         }
         finally
         {

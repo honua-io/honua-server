@@ -303,7 +303,7 @@ internal sealed partial class ODataCrudService
             // transaction even without If-Match. Otherwise an omitted property or
             // geometry could overwrite a concurrent edit. Unconditional PUT is a replacement.
             var expectedStateToken = !replace || !string.IsNullOrWhiteSpace(ifMatch)
-                ? FeatureStateToken.Compute(existingFeatureValue)
+                ? FeatureStateToken.FromReadSnapshot(existingFeatureValue)
                 : null;
 
             // PATCH preserves omitted geometry; PUT replaces it with null unless supplied.
