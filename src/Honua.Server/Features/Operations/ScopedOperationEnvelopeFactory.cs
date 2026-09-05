@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
@@ -24,6 +25,7 @@ internal sealed class ScopedOperationEnvelopeFactory(
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var services = scope.ServiceProvider;
+        context = BindRequestTenant(context, services);
         var factory = new OperationEnvelopeFactory(
             services.GetRequiredService<IOperationInstanceStore>(),
             useVolatileAudit
@@ -42,6 +44,7 @@ internal sealed class ScopedOperationEnvelopeFactory(
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var services = scope.ServiceProvider;
+        context = BindRequestTenant(context, services);
         var factory = new OperationEnvelopeFactory(
             services.GetRequiredService<IOperationInstanceStore>(),
             useVolatileAudit
@@ -55,5 +58,18 @@ internal sealed class ScopedOperationEnvelopeFactory(
                 sourceAuditId,
                 cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private static OperationPolicyContext BindRequestTenant(OperationPolicyContext context, IServiceProvider services)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        // Replay carries its sealed context. New HTTP acceptances, including callers
+        // that pre-create an envelope, use the tenant resolved for that request.
+        if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId)) return context;
+        var request = services.GetService<IHttpContextAccessor>()?.HttpContext;
+        return request is null ? context : context with
+        {
+            TenantId = request.RequestServices.GetService<ITenantContext>()?.TenantId,
+        };
     }
 }

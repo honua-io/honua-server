@@ -26,12 +26,13 @@ public sealed class OperationEnvelopeFactory(
         var operationInstanceId = string.IsNullOrWhiteSpace(context.OperationInstanceId)
             ? string.IsNullOrWhiteSpace(context.IdempotencyKey)
                 ? $"opinst-{Guid.NewGuid():N}"
-                : DeriveIdempotentInstanceId(operationId, context.IdempotencyKey)
+                : DeriveIdempotentInstanceId(operationId, context.IdempotencyKey, context.TenantId)
             : context.OperationInstanceId;
         var envelope = new OperationHandle
         {
             OperationInstanceId = operationInstanceId,
             OperationId = operationId,
+            TenantId = context.TenantId,
             CorrelationId = string.IsNullOrWhiteSpace(context.CorrelationId)
                 ? $"corr-{Guid.NewGuid():N}"
                 : context.CorrelationId,
@@ -173,7 +174,8 @@ public sealed class OperationEnvelopeFactory(
         CancellationToken cancellationToken)
     {
         var existing = await instanceStore.GetAsync(attempted.OperationInstanceId, cancellationToken).ConfigureAwait(false);
-        if (existing is null || string.IsNullOrWhiteSpace(existing.AuditId))
+        if (existing is null || string.IsNullOrWhiteSpace(existing.AuditId) ||
+            !string.Equals(existing.TenantId, context.TenantId, StringComparison.Ordinal))
         {
             return Failure(attempted, "The idempotent invocation exists but has not completed durable acceptance.");
         }
@@ -210,9 +212,10 @@ public sealed class OperationEnvelopeFactory(
         return touched;
     }
 
-    private static string DeriveIdempotentInstanceId(string operationId, string idempotencyKey)
+    private static string DeriveIdempotentInstanceId(string operationId, string idempotencyKey, string? tenantId)
     {
-        var material = System.Text.Encoding.UTF8.GetBytes($"{operationId}:{idempotencyKey}");
+        var key = $"{operationId}:{idempotencyKey}";
+        var material = System.Text.Encoding.UTF8.GetBytes(tenantId is null ? key : $"{tenantId.Length}:{tenantId}:{key}");
         var hash = System.Security.Cryptography.SHA256.HashData(material);
         return $"opinst-{Convert.ToHexString(hash)[..32].ToLowerInvariant()}";
     }
