@@ -320,7 +320,94 @@ def _cell(
             failures.append(f"{cell_id}/{replica}: query value differs from the ledger ratio")
 
 
-def evaluate(receipt: dict[str, Any], expected_revision: str, artifact_root: Path) -> list[str]:
+def _validate_source_population(receipt, root, failures):
+    """Recompute each cell from the retained individual request ledger and query export."""
+    try:
+        artifacts = {a['id']: a for a in receipt['rawArtifacts']}
+        def source(ids, kind):
+            matches = [artifacts[i] for i in ids if artifacts[i]['kind'] == kind]
+            if len(matches) != 1:
+                raise ValueError(f'exactly one {kind} source artifact is required')
+            artifact = matches[0]
+            path = (root.resolve() / artifact['path']).resolve()
+            if path.parent != root.resolve():
+                raise ValueError('source path escapes evidence bundle')
+            payload = path.read_bytes()
+            if hashlib.sha256(payload).hexdigest() != artifact['sha256']:
+                raise ValueError('source hash mismatch')
+            return json.loads(payload)
+        for cell in receipt['cells']:
+            ledger = source(cell['ledger']['rawArtifactIds'], 'request-ledger')
+            for field in ('candidateIdentity', 'window'):
+                if ledger[field] != cell[field]:
+                    raise ValueError(f'{cell["id"]}: source {field} differs')
+            if ledger['cell'] != cell['id'] or ledger['populationMode'] != 'all-serving-requests':
+                raise ValueError('source cell or request population mode differs')
+            if ledger['samplingFailures'] != []:
+                raise ValueError('request collection failed')
+            rows = ledger['requests']
+            counts, protocols, per_replica_protocol, ids = {}, {}, {}, set()
+            start, end = (_time(cell['window'][k]) for k in ('startedAt', 'endedAt'))
+            for request in rows:
+                request_id = request['id']
+                if not isinstance(request_id, str) or not request_id or request_id in ids:
+                    raise ValueError('duplicate or missing request identity')
+                ids.add(request_id)
+                at = _time(request['at'])
+                if at is None or start is None or end is None or not start <= at < end:
+                    raise ValueError('request outside exact window')
+                protocol = request['protocol']
+                if not isinstance(protocol, str) or not protocol:
+                    raise ValueError('missing protocol')
+                status = request['httpStatus']
+                in_band = request['inBandError']
+                if isinstance(status, bool) or not isinstance(status, int) or not 100 <= status <= 599 or not isinstance(in_band, bool):
+                    raise ValueError('invalid HTTP/in-band outcome')
+                if in_band and not 200 <= status < 300:
+                    raise ValueError('in-band failures must be HTTP 2xx; failures cannot be double counted')
+                key = (request['logicalReplica'], request['incarnation'])
+                totals = counts.setdefault(key, [0, 0, 0])
+                totals[0] += 1
+                totals[1] += int(status >= 500)
+                totals[2] += int(in_band)
+                protocols[protocol] = protocols.get(protocol, 0) + 1
+                per_key = (request['logicalReplica'], protocol)
+                per_replica_protocol[per_key] = per_replica_protocol.get(per_key, 0) + 1
+            observed = [{'logicalReplica': replica, 'incarnation': incarnation, 'requests': totals[0],
+                         'httpFailures': totals[1], 'inBandFailures': totals[2]}
+                        for (replica, incarnation), totals in sorted(counts.items())]
+            declared = sorted(cell['ledger']['rows'], key=lambda row: (row['logicalReplica'], row['incarnation']))
+            if observed != declared or len(rows) != cell['ledger']['denominator']:
+                raise ValueError(f'{cell["id"]}: ledger totals differ from individual source requests')
+            if protocols != cell['workload']['requestsPerProtocol']:
+                raise ValueError('declared protocol population differs from source requests')
+            if cell['id'] == 'reservoir-overflow' and any(count <= 4096 for count in per_replica_protocol.values()):
+                raise ValueError('reservoir-overflow: every replica/protocol must overflow its own 4096-slot ring')
+            if cell['id'] == 'in-band-errors' and not any(t[1] for t in counts.values()):
+                raise ValueError('in-band-errors: HTTP 5xx failures must also be exercised')
+            if cell['id'] == 'rolling-replacement':
+                replacement = cell['workload']['replacement']
+                if ledger['replacement'] != replacement:
+                    raise ValueError('rolling replacement differs from source event timeline')
+                for request in rows:
+                    if request['logicalReplica'] != replacement['logicalReplica']:
+                        continue
+                    at = _time(request['at'])
+                    if request['incarnation'] == replacement['oldIncarnation'] and at >= _time(replacement['completedAt']):
+                        raise ValueError('old incarnation serves after replacement completes')
+                    if request['incarnation'] == replacement['newIncarnation'] and at < _time(replacement['readyAt']):
+                        raise ValueError('new incarnation serves before readiness')
+            for result in cell['queryResults']:
+                query = source(result['rawArtifactIds'], 'sli-query-result')
+                if any(query[k] != cell[k] for k in ('candidateIdentity', 'window')) or query['query'] != receipt['query']:
+                    raise ValueError('query export candidate/window/frozen query differs')
+                if query['results'] != [{k: v for k, v in r.items() if k != 'rawArtifactIds'} for r in cell['queryResults']]:
+                    raise ValueError('replica query values differ from retained query export')
+    except (KeyError, TypeError, ValueError, OSError) as exc:
+        failures.append(f'raw source population: {exc}')
+
+
+def evaluate(receipt: dict[str, Any], expected_revision: str, artifact_root: Path, expected_image_digest: str) -> list[str]:
     """Return every comparison-contract failure; an empty list is the only pass."""
     failures: list[str] = []
     if receipt.get("schema") != SCHEMA:
@@ -335,6 +422,8 @@ def evaluate(receipt: dict[str, Any], expected_revision: str, artifact_root: Pat
     if not DIGEST_PATTERN.fullmatch(str(candidate.get("imageDigest", ""))):
         failures.append("comparison candidate image digest is missing; source builds are inadmissible")
 
+    if not DIGEST_PATTERN.fullmatch(expected_image_digest) or candidate.get("imageDigest") != expected_image_digest:
+        failures.append("candidate image differs from independently pinned image digest")
     replicas = _topology(receipt.get("topology"), candidate, failures)
     tolerance = _query(receipt.get("query"), failures)
     artifacts, artifact_index = _raw_artifacts(receipt, artifact_root, failures)
@@ -363,6 +452,7 @@ def evaluate(receipt: dict[str, Any], expected_revision: str, artifact_root: Pat
                     tolerance,
                     failures,
                 )
+    _validate_source_population(receipt, artifact_root, failures)
     return failures
 
 
@@ -371,18 +461,19 @@ def main() -> int:
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--artifact-root", type=Path, required=True)
     parser.add_argument("--expected-revision", required=True)
+    parser.add_argument("--expected-image-digest", required=True)
     args = parser.parse_args()
     try:
         receipt = json.loads(args.receipt.read_text(encoding="utf-8"))
-        failures = evaluate(receipt, args.expected_revision, args.artifact_root)
-    except (OSError, json.JSONDecodeError) as exc:
+        failures = evaluate(receipt, args.expected_revision, args.artifact_root, args.expected_image_digest)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         failures = [str(exc)]
     if failures:
         print("distributed-availability: FAIL")
         for failure in failures:
             print(f"- {failure}")
         return 1
-    print("distributed-availability: PASS — exact two replicas and 4/4 ledger-equal cells")
+    print("distributed-availability: PASS â€” exact two replicas and 4/4 ledger-equal cells")
     return 0
 
 
