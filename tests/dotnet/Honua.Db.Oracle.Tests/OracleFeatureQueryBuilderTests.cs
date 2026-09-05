@@ -38,6 +38,29 @@ public class OracleFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_TextSearch_BindsLiteralTermsInProviderDialect()
+    {
+        const string term = "Harbor%_'\\";
+        var query = new FeatureQuery
+        {
+            TextSearch = new FeatureTextSearch(["name", "category"],
+                [new FeatureSearchTerm[] { new(term, false), new("closed", true) }]),
+            Limit = 2,
+            Offset = 1
+        };
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+        Assert.Contains("INSTR(", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(" OR ", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("NOT ", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain(term, result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ILIKE", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("attributes->>", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(term, result.WhereParameters[0]);
+        Assert.Equal(term, result.WhereParameters[1]);
+        Assert.Equal("closed", result.WhereParameters[2]);
+        Assert.Equal("closed", result.WhereParameters[3]);
+    }
+    [Fact]
     public void BuildSelectQuery_DefaultQuery_ProjectsKeyAndGeometryAndAttributes()
     {
         var mapping = BuildMapping();

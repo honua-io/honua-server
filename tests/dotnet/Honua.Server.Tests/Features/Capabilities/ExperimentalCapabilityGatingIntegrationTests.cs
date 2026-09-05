@@ -100,13 +100,23 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
                 experimental.GetProperty("reasonCode").GetString().Should().Be("experimental-disabled");
             }
 
-            foreach (var previewId in new[] { "alerts.geofence", "sync.offline", "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var previewId in new[] { "alerts.geofence", "sync.offline", "realtime.feature-streams", "serve.sensorthings",
+                "serve.ogc-api-edr" })
             {
                 var preview = GetCapability(root, previewId);
                 preview.GetProperty("lifecycle").GetString().Should().Be("preview");
                 preview.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
                 preview.GetProperty("available").GetBoolean().Should().BeFalse();
                 preview.GetProperty("reasonCode").GetString().Should().Be("experimental-disabled");
+            }
+
+            foreach (var previewId in new[] { "serve.geoservices-imageserver", "serve.wmts", "serve.ogc-api-coverages" })
+            {
+                var preview = GetCapability(root, previewId);
+                preview.GetProperty("lifecycle").GetString().Should().Be("preview");
+                preview.GetProperty("optInRequired").GetBoolean().Should().BeFalse();
+                preview.GetProperty("available").GetBoolean().Should().BeTrue();
+                AssertNotLifecycleDisabled(preview);
             }
 
             // In-release capabilities are unaffected by the flip — still served.
@@ -173,13 +183,15 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var document = await ReadDocumentAsync(response);
-            foreach (var id in new[] { "alerts.geofence", "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var id in new[] { "alerts.geofence", "realtime.feature-streams", "serve.sensorthings",
+                "serve.geoservices-imageserver", "serve.wmts", "serve.ogc-api-coverages", "serve.ogc-api-edr" })
             {
                 var capability = document.RootElement.GetProperty("capabilities")
                     .EnumerateArray()
                     .Single(item => item.GetProperty("id").GetString() == id);
                 capability.GetProperty("lifecycle").GetString().Should().Be("preview");
-                capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
+                capability.GetProperty("optInRequired").GetBoolean().Should().Be(
+                    id is not ("serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages"));
             }
         }
         finally
@@ -196,6 +208,10 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [InlineData("scene.pointcloud-ingest")]
     [InlineData("alerts.geofence")]
     [InlineData("sync.offline")]
+    [InlineData("serve.geoservices-imageserver")]
+    [InlineData("serve.wmts")]
+    [InlineData("serve.ogc-api-coverages")]
+    [InlineData("serve.ogc-api-edr")]
     public async Task Manifest_WhenAdoptedCapabilityIsIndividuallyOptedIn_IsRuntimeEligible(string capabilityId)
     {
         var fixture = CreateFixture(experimentalGlobalEnabled: false, perCapabilityEnabled: capabilityId);
@@ -430,6 +446,43 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var response = await client.GetAsync("/api/v1/admin/services/svc-experimental/replicas");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Theory]
+    [Trait("Tier", "Integration")]
+    [InlineData("GET", "/rest/services/0/ImageServer")]
+    [InlineData("GET", "/rest/services/preview/ImageServer")]
+    [InlineData("POST", "/services/preview/ImageServer")]
+    [InlineData("GET", "/rest/services/0/ImageServer/WCS")]
+    [InlineData("GET", "/rest/services/0/ImageServer/WMTS")]
+    [InlineData("GET", "/rest/services/preview/ImageServer/WMTS/1.0.0/WMTSCapabilities.xml")]
+    [InlineData("GET", "/rest/services/preview/MapServer/WMTS")]
+    [InlineData("GET", "/rest/services/preview/MapServer/WMTS/1.0.0/WMTSCapabilities.xml")]
+    [InlineData("GET", "/ogc/services/preview/wmts")]
+    [InlineData("GET", "/ogc/coverages")]
+    [InlineData("GET", "/edr")]
+    public async Task PreviewRasterRoutes_RetainTheirExistingAvailability(string method, string path)
+    {
+        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var request = new HttpRequestMessage(new HttpMethod(method), path);
+            using var response = await client.SendAsync(request);
+            if (path == "/edr")
+            {
+                await AssertExperimentalDisabledAsync(response);
+            }
+            else
+            {
+                await AssertNotExperimentalDisabledAsync(response);
+            }
         }
         finally
         {

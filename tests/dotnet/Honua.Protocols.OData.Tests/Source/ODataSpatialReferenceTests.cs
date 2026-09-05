@@ -40,6 +40,25 @@ public sealed class ODataSpatialReferenceTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
+    [IntegrationTheory]
+    [InlineData("", HttpStatusCode.BadRequest)]
+    [InlineData("SRID=3857;", HttpStatusCode.OK)]
+    [Operation(Operations.SpatialQuery)]
+    [Endpoint("GET /odata/Features({layerId})?$filter=geo.intersects()")]
+    public async Task Features_ProjectedGeometryLiteral_RequiresExplicitSrid(string prefix, HttpStatusCode expected)
+    {
+        var filter = $"geo.intersects(Geometry, geometry'{prefix}POLYGON((-13650000 4540000,-13600000 4540000,-13600000 4560000,-13650000 4560000,-13650000 4540000))')";
+        var response = await _fixture.Client.GetAsync(
+            $"/odata/Features({SpatialReferenceTestLayerCatalog.PointLayerId})?$filter={Uri.EscapeDataString(filter)}");
+        response.StatusCode.Should().Be(expected, await response.Content.ReadAsStringAsync());
+        if (expected == HttpStatusCode.OK)
+        {
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("value").EnumerateArray()
+                .Select(row => row.GetProperty("ObjectId").GetInt64()).Should().Contain(_pointObjectId);
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.SpatialQuery)]
     [Endpoint("GET /odata/Features({layerId})?$filter=geo.intersects()")]

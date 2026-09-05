@@ -95,6 +95,14 @@ public static class FeatureQuerySecurity
             ThrowIfFilterReferencesMaskedField(masked, query.Where, "where");
         }
 
+        if (query.TextSearch is { } textSearch)
+        {
+            foreach (var field in textSearch.Fields)
+            {
+                ThrowIfMasked(masked, field, "text search");
+            }
+        }
+
         if (query.SqlFilter is { } sqlFilter)
         {
             ThrowIfFilterReferencesMaskedField(masked, sqlFilter.Sql, "sqlFilter");

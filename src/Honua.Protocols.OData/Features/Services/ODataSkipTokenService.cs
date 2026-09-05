@@ -23,11 +23,12 @@ internal static class ODataSkipTokenService
     /// <param name="filter">The $filter query parameter (may be null).</param>
     /// <param name="orderby">The $orderby query parameter (may be null).</param>
     /// <param name="requestDiscriminator">The tenant/subject discriminator for the request context.</param>
+    /// <param name="bbox">The spatial window to bind to the cursor.</param>
     /// <returns>A Base64Url-encoded opaque cursor string.</returns>
-    public static string Encode(int offset, string? filter, string? orderby, string requestDiscriminator)
+    public static string Encode(int offset, string? filter, string? orderby, string requestDiscriminator, string? bbox = null)
     {
         ArgumentNullException.ThrowIfNull(requestDiscriminator);
-        var fingerprint = ComputeFingerprint(filter, orderby, requestDiscriminator);
+        var fingerprint = ComputeFingerprint(filter, orderby, requestDiscriminator, bbox);
         var payload = string.Create(
             CultureInfo.InvariantCulture,
             $"{offset}{Separator}{fingerprint}");
@@ -43,6 +44,7 @@ internal static class ODataSkipTokenService
     /// <param name="requestDiscriminator">The tenant/subject discriminator for fingerprint validation.</param>
     /// <param name="offset">The decoded pagination offset.</param>
     /// <param name="errorMessage">An error message if decoding fails.</param>
+    /// <param name="bbox">The spatial window for fingerprint validation.</param>
     /// <returns>true if decoding succeeded; false otherwise.</returns>
     public static bool TryDecode(
         string token,
@@ -50,7 +52,8 @@ internal static class ODataSkipTokenService
         string? orderby,
         string requestDiscriminator,
         out int offset,
-        out string? errorMessage)
+        out string? errorMessage,
+        string? bbox = null)
     {
         ArgumentNullException.ThrowIfNull(requestDiscriminator);
         offset = 0;
@@ -76,9 +79,9 @@ internal static class ODataSkipTokenService
                 return false;
             }
 
-            if (!string.IsNullOrEmpty(filter) || !string.IsNullOrEmpty(orderby))
+            if (!string.IsNullOrEmpty(filter) || !string.IsNullOrEmpty(orderby) || !string.IsNullOrEmpty(bbox))
             {
-                errorMessage = "$skiptoken is not valid for this query. The token may have been generated for a different filter or orderby clause.";
+                errorMessage = "$skiptoken is not valid for this query. The token may have been generated for a different filter, orderby clause, or bbox.";
                 return false;
             }
 
@@ -119,10 +122,10 @@ internal static class ODataSkipTokenService
             return false;
         }
 
-        var expectedFingerprint = ComputeFingerprint(filter, orderby, requestDiscriminator);
+        var expectedFingerprint = ComputeFingerprint(filter, orderby, requestDiscriminator, bbox);
         if (!string.Equals(fingerprintPart, expectedFingerprint, StringComparison.Ordinal))
         {
-            errorMessage = "$skiptoken is not valid for this request. The token may have been generated for a different filter, orderby clause, tenant, or principal.";
+            errorMessage = "$skiptoken is not valid for this request. The token may have been generated for a different filter, orderby clause, bbox, tenant, or principal.";
             return false;
         }
 
@@ -133,9 +136,13 @@ internal static class ODataSkipTokenService
     /// <summary>
     /// Computes a short hash fingerprint from the filter and orderby parameters.
     /// </summary>
-    private static string ComputeFingerprint(string? filter, string? orderby, string requestDiscriminator)
+    private static string ComputeFingerprint(string? filter, string? orderby, string requestDiscriminator, string? bbox)
     {
         var input = $"{filter ?? string.Empty}:{orderby ?? string.Empty}:{requestDiscriminator}";
+        if (!string.IsNullOrEmpty(bbox))
+        {
+            input += $":bbox:{bbox.Length}:{bbox}";
+        }
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
         return Convert.ToHexString(hashBytes)[..FingerprintLength].ToLowerInvariant();
     }

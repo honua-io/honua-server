@@ -69,6 +69,15 @@ internal static class ODataServiceCollectionExtensions
             sp.GetRequiredService<IEditParameterAdapter<ODataEditRequest>>(),
             sp.GetRequiredService<IEditProcessor>()));
         services.AddScoped<ODataCrudService>();
+        services.AddScoped(sp => new ODataSearchDependencies(
+            sp.GetRequiredService<IFeatureReader>(),
+            sp.GetRequiredService<IRelationshipStore>(),
+            sp.GetRequiredService<IStreamingFeatureStore>(),
+            sp.GetRequiredService<IGeometryService>(),
+            sp.GetRequiredService<ICrsRegistry>(),
+            sp.GetRequiredService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
+            sp.GetRequiredService<ODataFeatureProviderResolver>(),
+            sp.GetRequiredService<IOptions<ODataOptions>>()));
         services.AddScoped<ODataSearchService>();
         services.AddScoped<ODataQuerySearchService>();
         services.AddScoped<ODataValidationService>();

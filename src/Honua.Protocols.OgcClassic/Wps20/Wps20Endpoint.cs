@@ -34,6 +34,7 @@ internal static partial class Wps20Endpoint
     internal static IEndpointRouteBuilder MapWps20Endpoint(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapMethods("/wps", Methods, DispatchAsync)
+            .AddEndpointFilter(RecordErrorTelemetryAsync)
             .WithMetadata(new HeadRequestRejectedEndpointMetadata(Methods, ShouldRejectHead))
             .WithDisplayName("WPS 2.0.2 Service")
             .WithName("Wps20Service")
@@ -49,12 +50,29 @@ internal static partial class Wps20Endpoint
             .AllowAnonymous();
 
         endpoints.MapGet("/wps/conformance/results/{token}", GetConformanceResultReference)
+            .AddEndpointFilter(RecordErrorTelemetryAsync)
             .WithDisplayName("WPS conformance result reference")
             .WithName("Wps20ConformanceResult")
             .ExcludeFromDescription()
             .AllowAnonymous();
 
         return endpoints;
+    }
+
+    private static async ValueTask<object?> RecordErrorTelemetryAsync(
+        EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var result = await next(context).ConfigureAwait(false);
+        if (result is IStatusCodeHttpResult { StatusCode: >= 400 } error)
+        {
+            // WPS writes XML exceptions directly instead of using the standard
+            // error formatter. Count each failure alongside its serving request.
+            HonuaTelemetry.RecordErrorEnvelope(HonuaTelemetry.Protocols.Wps20,
+                RequestTelemetryClassifier.ResolveOperation(context.HttpContext) ?? "wps",
+                error.StatusCode.Value, isGeoServices: false, httpStatusCode: error.StatusCode.Value);
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -97,13 +115,13 @@ internal static partial class Wps20Endpoint
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.wps." + request.Operation.ToLowerInvariant());
-        activity?.SetTag(HonuaTelemetry.Tags.Protocol, "WPS-2.0.2");
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wps20);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, request.Operation);
         if (request.JobId is not null)
         {
             activity?.SetTag(HonuaTelemetry.Tags.JobId, request.JobId);
         }
-        context.Items["__honua_request_operation"] = "wps." + request.Operation.ToLowerInvariant();
+        context.Items[RequestTelemetryClassifier.OperationItemKey] = RequestTelemetryClassifier.ResolveWpsOperation(request.Operation);
         Log.OperationRequested(logger, request.Operation);
 
         try
