@@ -30,6 +30,7 @@ public sealed class WorkflowRollbackApprovalTests
         environment.EnvironmentName.Returns(Environments.Production);
         services.AddSingleton(Substitute.For<IOperationProposalStore>());
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
         using var provider = services.BuildServiceProvider();
         var mapper = provider.GetServices<IOperationApprovalRequestMapper>()
             .Should().ContainSingle(candidate => candidate.OperationId == operationId).Subject;

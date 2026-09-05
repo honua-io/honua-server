@@ -50,6 +50,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix=project) as directory:
         compose_file = Path(directory) / "compose.yml"
         compose_file.write_text(compose_text)
+        for filename, sql in re.findall(r"cat > ([\w-]+\.sql) <<'EOF'\n(.*?)\nEOF", document, re.S):
+            (Path(directory) / filename).write_text(sql + "\n")
         command = ["docker", "compose", "--project-name", project, "-f", str(compose_file)]
 
         def compose(*arguments):
