@@ -31,6 +31,52 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
 {
     [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Operation(Operations.JobResults)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task CiteStyleClient_TransformGeoJsonInputs_ReachTheCanonicalExecutor()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        var fixture = CreateFixture(redis.ConnectionString);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            const string features = """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"oldName":7}}]}""";
+            var href = "data:application/geo+json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(features));
+            foreach (var input in new[]
+            {
+                $$"""{"value":{{features}},"mediaType":"application/geo+json"}""",
+                $$"""{"href":"{{href}}","type":"application/geo+json"}"""
+            })
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post,
+                    "/ogc/processes/processes/transform.attribute-rename/execution");
+                request.Headers.Add("Prefer", "respond-async");
+                request.Content = new StringContent(
+                    $$$$"""{"inputs":{"input":{{{{input}}}},"from":"oldName","to":"newName"},"response":"raw"}""",
+                    Encoding.UTF8, "application/json");
+                using var submit = await client.SendAsync(request);
+                submit.StatusCode.Should().Be(HttpStatusCode.Created);
+                var jobId = await ReadJobIdAsync(submit);
+                using var terminal = await PollUntilSucceededAsync(client, jobId);
+                using var response = await client.GetAsync($"/ogc/processes/jobs/{jobId}/results");
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                var attributes = json.RootElement.GetProperty("features")[0].GetProperty("properties");
+                attributes.GetProperty("newName").GetInt32().Should().Be(7);
+                attributes.TryGetProperty("oldName", out _).Should().BeFalse();
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ProcessDiscovery)]
     [Operation(Operations.ProcessExecution)]
     [Operation(Operations.JobStatus)]

@@ -106,6 +106,7 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
         response.Headers.Location.Should().NotBeNull();
         response.Headers.Contains("Preference-Applied").Should().BeFalse(
             "no client preference was supplied");
+        _fixture.SubmittedMetadata.Should().NotContainKey("ogc.processes.response");
     }
 
     [IntegrationTest]
@@ -249,6 +250,38 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     {
         var catalog = _fixture.App.Services.GetRequiredService<IProcessCatalog>();
         ProcessPlanValidator.Validate(_fixture.SubmittedPlan!, catalog).Violations.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_UnknownInput_DoesNotResolveAnyReferences()
+    {
+        var requestsBefore = _fixture.ReferenceRequestCount;
+        var submissionsBefore = _fixture.SubmissionCount;
+        using var content = new StringContent(
+            """{"inputs":{"wkb":{"href":"https://93.184.216.34/point.geojson"},"srid":4326,"distance":25.5,"unknown":{"href":"https://93.184.216.34/point.geojson"}}}""",
+            Encoding.UTF8, "application/json");
+        using var response = await _fixture.App.Client.PostAsync("/ogc/processes/processes/geometry.buffer/execution", content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _fixture.ReferenceRequestCount.Should().Be(requestsBefore);
+        _fixture.SubmissionCount.Should().Be(submissionsBefore);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_ReferencedInputs_EnforcesAggregateByteLimit()
+    {
+        var payload = "{\"type\":\"FeatureCollection\",\"features\":[],\"padding\":\"" + new string('x', 700) + "\"}";
+        var href = "data:application/geo+json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(payload));
+        var body = JsonSerializer.Serialize(new { inputs = new { input = new { href }, clip = new { href } } });
+        var submissionsBefore = _fixture.SubmissionCount;
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var response = await _fixture.App.Client.PostAsync("/ogc/processes/processes/overlay.clip/execution", content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("exceeds");
+        _fixture.SubmissionCount.Should().Be(submissionsBefore);
     }
 
     [IntegrationTest]
@@ -443,6 +476,8 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
 
     public int SubmissionCount { get; private set; }
 
+    public int ReferenceRequestCount { get; private set; }
+
     public OgcProcessesSynchronousExecutionFixture()
     {
         var job = CreateJob();
@@ -494,7 +529,8 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
             services.RemoveAll<IGeoprocessingJobTerminalService>();
             services.AddSingleton(terminalService);
             services.AddHttpClient(OgcProcessInputReferenceHttpClient.Name)
-                .ConfigurePrimaryHttpMessageHandler(() => new InputReferenceHandler());
+                .ConfigurePrimaryHttpMessageHandler(() => new InputReferenceHandler(() => ReferenceRequestCount++));
+            services.Configure<GeoprocessingExecutorOptions>(options => options.MaxArtifactBytes = 1024);
         });
 
         Task<ExecutionJobRecord> RecordSubmission(
@@ -510,10 +546,11 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
 
     public Task InitializeAsync() => App.InitializeAsync();
 
-    private sealed class InputReferenceHandler : HttpMessageHandler
+    private sealed class InputReferenceHandler(Action onRequest) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            onRequest();
             request.RequestUri!.AbsoluteUri.Should().Be("https://93.184.216.34/point.geojson");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {

@@ -34,6 +34,7 @@ public sealed class OgcProcessesJobResultsTests : IClassFixture<OgcProcessesJobR
     private const string ValueJobId = "ogc-gp-value-result-job";
     private const string RawJobId = "ogc-gp-raw-result-job";
     private const string MultiRawJobId = "ogc-gp-multi-raw-result-job";
+    private const string CanonicalJobId = "ogc-gp-canonical-result-job";
 
     private readonly WebAppFixture _fixture;
 
@@ -137,6 +138,18 @@ public sealed class OgcProcessesJobResultsTests : IClassFixture<OgcProcessesJobR
         body.Should().Contain("{\"value\":42}");
         body.Should().Contain("{\"count\":1}");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task JobResults_CanonicalPlanRunner_PreservesArtifactDocument()
+    {
+        using var response = await _fixture.Client.GetAsync($"/ogc/processes/jobs/{CanonicalJobId}/results");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("outputFeatureLayer").GetProperty("href").GetString()
+            .Should().Be("https://example.test/ogc-buffer-output.geojson");
+    }
 }
 
 /// <summary>
@@ -153,6 +166,7 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
     private const string ValueJobId = "ogc-gp-value-result-job";
     private const string RawJobId = "ogc-gp-raw-result-job";
     private const string MultiRawJobId = "ogc-gp-multi-raw-result-job";
+    private const string CanonicalJobId = "ogc-gp-canonical-result-job";
 
     public WebAppFixture App { get; }
 
@@ -164,6 +178,7 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
         jobStore.GetAsync(ValueJobId, Arg.Any<CancellationToken>()).Returns(CreateValueJob(ValueJobId, "document"));
         jobStore.GetAsync(RawJobId, Arg.Any<CancellationToken>()).Returns(CreateValueJob(RawJobId, "raw"));
         jobStore.GetAsync(MultiRawJobId, Arg.Any<CancellationToken>()).Returns(CreateMultiRawJob());
+        jobStore.GetAsync(CanonicalJobId, Arg.Any<CancellationToken>()).Returns(CreateValueJob(CanonicalJobId, "document", "honua-geoprocessing"));
 
         App = new WebAppFixture()
             .ConfigureServices(services =>
@@ -235,7 +250,7 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
             }
         };
 
-    private static ExecutionJobRecord CreateValueJob(string jobId, string responseMode)
+    private static ExecutionJobRecord CreateValueJob(string jobId, string responseMode, string processId = "geometry.buffer")
         => new()
         {
             OperationId = jobId,
@@ -252,7 +267,7 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
                 Parameters = new Dictionary<string, string>
                 {
                     ["submittedVia"] = "OGC-API-Processes",
-                    ["protocolProcessId"] = "geometry.buffer",
+                    ["protocolProcessId"] = processId,
                     ["ogc.processes.response"] = responseMode,
                     [$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}0"] = "outputFeatureLayer"
                 }
@@ -484,6 +499,7 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
                 ValueJobId => CreateValueJob(ValueJobId, "document"),
                 RawJobId => CreateValueJob(RawJobId, "raw"),
                 MultiRawJobId => CreateMultiRawJob(),
+                CanonicalJobId => CreateValueJob(CanonicalJobId, "document", "honua-geoprocessing"),
                 _ => CreateSucceededJob()
             });
 
