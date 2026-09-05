@@ -486,8 +486,12 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         var responses = await Task.WhenAll(client.PostAsync(path, null), client.PostAsync(path, null));
         try
         {
-            responses.Count(response => response.StatusCode == HttpStatusCode.OK).Should().Be(1);
-            responses.Count(response => response.StatusCode == HttpStatusCode.Conflict).Should().Be(1);
+            foreach (var response in responses)
+            {
+                output.WriteLine($"Concurrent approval response: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+            }
+            responses.Select(response => response.StatusCode).Should().BeEquivalentTo(
+                new[] { HttpStatusCode.OK, HttpStatusCode.Conflict });
         }
         finally
         {
