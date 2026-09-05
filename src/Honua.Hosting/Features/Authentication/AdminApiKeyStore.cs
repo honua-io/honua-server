@@ -4,6 +4,8 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -144,7 +146,7 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             RevokedAt = existing.RevokedAt ?? now,
         };
 
-        _keys[id] = updated;
+        _ = _keys.TryUpdate(id, updated, existing);
         return Task.FromResult<AdminApiKeyRecord?>(updated);
     }
 
@@ -178,8 +180,14 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
                 LastUsedAt = now,
                 UpdatedAt = now,
             };
-            _keys[record.Id] = updated;
-            return Task.FromResult<AdminApiKeyValidationResult?>(new AdminApiKeyValidationResult(updated));
+            if (_keys.TryUpdate(record.Id, updated, record))
+            {
+                return Task.FromResult<AdminApiKeyValidationResult?>(new AdminApiKeyValidationResult(updated));
+            }
+
+            // A concurrent revoke/rotate won the update. Do not return a stale
+            // validation result; retry against the current dictionary snapshot.
+            continue;
         }
 
         return Task.FromResult<AdminApiKeyValidationResult?>(null);
@@ -195,6 +203,8 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
 
         return normalized.Length == 0 ? ["admin:*"] : normalized;
     }
+
+    internal static string GenerateForDurableStore() => GenerateKeyMaterial();
 
     private static string GenerateKeyMaterial()
     {
@@ -212,4 +222,90 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
     }
 
     private static byte[] HashKey(string keyMaterial) => SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
+}
+
+/// <summary>Redis-backed admin-key registry shared by all server instances.</summary>
+internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimeProvider? timeProvider = null) : IAdminApiKeyStore
+{
+    private const string Prefix = "honua:auth:admin-api-key:";
+    private const string IdsKey = Prefix + "ids";
+    private readonly IDatabase _database = redis.GetDatabase();
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
+    public async Task<IReadOnlyList<AdminApiKeyRecord>> ListAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var ids = await _database.SetMembersAsync(IdsKey).ConfigureAwait(false);
+        var values = ids.Length == 0 ? Array.Empty<RedisValue>() : await _database.StringGetAsync(ids.Select(id => (RedisKey)$"{Prefix}{id}").ToArray()).ConfigureAwait(false);
+        return values.Select(Read).Where(static value => value is not null).Cast<AdminApiKeyRecord>().OrderBy(key => key.CreatedAt).ToArray();
+    }
+
+    public async Task<AdminApiKeyCreateResult> CreateAsync(string name, IReadOnlyList<string> permissions, DateTimeOffset? expiresAt, string? createdBy, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var now = _timeProvider.GetUtcNow();
+        var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
+        var record = new AdminApiKeyRecord(Guid.NewGuid(), name, key[..Math.Min(12, key.Length)], SHA256.HashData(Encoding.UTF8.GetBytes(key)), permissions.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).DefaultIfEmpty("admin:*").ToArray(), now, now, expiresAt, null, null, null, createdBy);
+        await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(record), ResolveTtl(record.ExpiresAt), When.NotExists).ConfigureAwait(false);
+        await _database.SetAddAsync(IdsKey, record.Id.ToString("D")).ConfigureAwait(false);
+        return new(record, key);
+    }
+
+    public async Task<AdminApiKeyRecord?> GetAsync(Guid id, CancellationToken cancellationToken) => await ReadAsync(id, cancellationToken).ConfigureAwait(false);
+
+    public async Task<AdminApiKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var existing = await ReadAsync(id, cancellationToken).ConfigureAwait(false);
+        if (existing is null || existing.RevokedAt is not null) return null;
+        var now = _timeProvider.GetUtcNow();
+        var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
+        var updated = existing with { KeyPrefix = key[..Math.Min(12, key.Length)], KeyHash = SHA256.HashData(Encoding.UTF8.GetBytes(key)), UpdatedAt = now, RotatedAt = now, LastUsedAt = null };
+        await _database.StringSetAsync(BuildKey(id), JsonSerializer.Serialize(updated), ResolveTtl(updated.ExpiresAt)).ConfigureAwait(false);
+        return new(updated, key);
+    }
+
+    public async Task<AdminApiKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var existing = await ReadAsync(id, cancellationToken).ConfigureAwait(false);
+        if (existing is null) return null;
+        var updated = existing with { UpdatedAt = _timeProvider.GetUtcNow(), RevokedAt = existing.RevokedAt ?? _timeProvider.GetUtcNow() };
+        await _database.StringSetAsync(BuildKey(id), JsonSerializer.Serialize(updated), ResolveTtl(updated.ExpiresAt)).ConfigureAwait(false);
+        return updated;
+    }
+
+    public async Task<AdminApiKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        foreach (var record in await ListAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
+            var now = _timeProvider.GetUtcNow();
+            if (record.RevokedAt is null && (!record.ExpiresAt.HasValue || record.ExpiresAt > now) && CryptographicOperations.FixedTimeEquals(hash, record.KeyHash))
+            {
+                var updated = record with { LastUsedAt = now, UpdatedAt = now };
+                var key = BuildKey(record.Id);
+                var transaction = _database.CreateTransaction();
+                // Do not unconditionally rewrite the snapshot read by ListAsync: a concurrent
+                // revoke or rotate must win, rather than being resurrected by validation.
+                transaction.AddCondition(Condition.StringEqual(key, JsonSerializer.Serialize(record)));
+                _ = transaction.StringSetAsync(key, JsonSerializer.Serialize(updated), ResolveTtl(updated.ExpiresAt));
+                if (await transaction.ExecuteAsync().ConfigureAwait(false))
+                {
+                    return new(updated);
+                }
+            }
+        }
+        return null;
+    }
+
+    private async Task<AdminApiKeyRecord?> ReadAsync(Guid id, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Read(await _database.StringGetAsync(BuildKey(id)).ConfigureAwait(false));
+    }
+
+    private static AdminApiKeyRecord? Read(RedisValue value) => value.HasValue ? JsonSerializer.Deserialize<AdminApiKeyRecord>((string)value!) : null;
+    private static string BuildKey(Guid id) => $"{Prefix}{id:D}";
+    private static TimeSpan ResolveTtl(DateTimeOffset? expiresAt) => expiresAt is { } value && value > DateTimeOffset.UtcNow ? value - DateTimeOffset.UtcNow : TimeSpan.FromDays(3650);
 }

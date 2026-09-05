@@ -45,6 +45,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
             var localSelection = new RasterSelectionQuery
             {
@@ -82,6 +83,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
 
             var result = await store.ExportImageAsync(
@@ -104,6 +106,90 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ExportImageAsync_WithImageServerQuery_ReturnsPngInsteadOfThrowing()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertImageServerProbeRasterAsync(schemaName);
+            var store = new PostgresRasterStore(
+                new FixtureConnectionProvider(fixture.DataSource),
+                NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName);
+
+            var result = await store.ExportImageAsync(
+                    LayerId,
+                    rasterId,
+                    new RasterQuery
+                    {
+                        OutputFormat = RasterFormat.PNG,
+                        ClipRegion = new RasterClipRegion
+                        {
+                            Geometry = CreateEnvelopeWkb(-123, 37, -121, 39),
+                            Srid = 4326,
+                        },
+                        OutputSrid = 4326,
+                        OutputWidth = 64,
+                        OutputHeight = 64,
+                        ResamplingAlgorithm = ResamplingAlgorithm.Bilinear,
+                    })
+                .ConfigureAwait(false);
+
+            result.Data.Should().StartWith([0x89, 0x50, 0x4E, 0x47]);
+            result.ContentType.Should().Be("image/png");
+            result.Width.Should().Be(64);
+            result.Height.Should().Be(64);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExportImageAsync_WithDisabledGdalDrivers_ReportsUnsupportedFormat(bool mosaic)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertImageServerProbeRasterAsync(schemaName);
+            var connectionString = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+            {
+                Options = "-c postgis.gdal_enabled_drivers=DISABLE_ALL",
+            };
+            await using var dataSource = NpgsqlDataSource.Create(connectionString.ConnectionString);
+            var store = new PostgresRasterStore(
+                new FixtureConnectionProvider(dataSource),
+                NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName);
+
+            var query = new RasterQuery
+            {
+                OutputFormat = RasterFormat.PNG,
+                OutputWidth = 64,
+                OutputHeight = 64,
+            };
+            var secondRasterId = mosaic ? await InsertImageServerProbeRasterAsync(schemaName) : rasterId;
+            var export = () => mosaic
+                ? store.ExportMosaicAsync(LayerId, [rasterId, secondRasterId], RasterMergeStrategy.Newest, query)
+                : store.ExportImageAsync(LayerId, rasterId, query);
+
+            await export.Should().ThrowAsync<NotSupportedException>()
+                .WithMessage("The requested raster export format is not available on this server.");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ExportImageAsync_WithMinMaxStretch_RescalesFloatRasterTo8Bit()
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
@@ -115,6 +201,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
 
             var result = await store.ExportImageAsync(
@@ -153,6 +240,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
 
             // Raster pixels: x[0,1] holds 0 (top) and 20 (bottom); x[1,2] holds 10/30.
@@ -191,6 +279,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
 
             var result = await store.ExportImageAsync(
@@ -566,6 +655,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
             NullLogger<PostgresRasterStore>.Instance,
+            FixtureBypassDatabaseSchemaGuard.Instance,
             schemaName);
 
     private async Task CreateFootprintsTableAsync(string schemaName)
@@ -752,6 +842,7 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
 
             // Raster x[0,1] holds 0 (top) / 20 (bottom); x[1,2] holds 10 / 30.
@@ -836,6 +927,28 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
                                1, 2, 1, 10::double precision),
                            1, 1, 2, 20::double precision),
                        1, 2, 2, 30::double precision),
+                   NOW(),
+                   NOW()
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        return (long)(await command.ExecuteScalarAsync().ConfigureAwait(false))!;
+    }
+
+    private async Task<long> InsertImageServerProbeRasterAsync(string schemaName)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   'image-server-probe',
+                   ST_AddBand(
+                       ST_MakeEmptyRaster(64, 64, -123, 39, 0.03125, -0.03125, 0, 0, 4326),
+                       '8BUI'::text,
+                       7,
+                       NULL
+                   ),
                    NOW(),
                    NOW()
             RETURNING id;

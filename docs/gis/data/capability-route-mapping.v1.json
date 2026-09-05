@@ -5,6 +5,20 @@
   "description": "Ordered route (family/routePrefix|routeContains/method) to capability-key mapping rules consumed by FeatureCatalogGenerator to stamp the capability field on every feature-catalog.json entry. Rules are evaluated top-down; the first rule whose family matches (and whose optional routePrefix/routeContains/method filters all match) wins. The final rule for a family with no route filter is the catch-all default for that family.",
   "rules": [
     {
+      "family": "GeoServices REST FeatureServer",
+      "routeContains": [
+        "/queryH3"
+      ],
+      "capability": "analytics.h3"
+    },
+    {
+      "family": "OGC API Features",
+      "routeContains": [
+        "/h3"
+      ],
+      "capability": "analytics.h3"
+    },
+    {
       "family": "uncategorized",
       "routePrefix": "/services",
       "method": "POST",

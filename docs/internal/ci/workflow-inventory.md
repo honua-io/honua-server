@@ -1,11 +1,11 @@
 # CI Workflow Inventory
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (84 files). Other Honua repositories keep their own inventories;
+> repository (88 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-09-01.
+> Last updated: 2026-09-02.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -253,6 +253,7 @@ which is why both the run count and exact observed span are recorded.
 | `validated-examples-nightly.yml` | Validated examples (advisory) | daily `schedule` (10:37 UTC), `workflow_dispatch` | Executes the STAC operations, mobile/offline, and local geoprocessing shipped examples against isolated, locally built candidate stacks. Verifies the checked-in example inventory first and retains per-scenario logs for 14 days. Advisory in wave 1; the manifest records scheduled coverage without claiming an unobserved pass. |
 | `gp-buffer-canary.yml` | GP geometry.buffer Canary | six-hour `schedule` (`:17`), `workflow_dispatch` | Executes synchronous `geometry.buffer`, retains an output-digest receipt, and records the latest seven scheduled conclusions in a machine-readable burn-in streak receipt. |
 | `gp-resilience-qualification.yml` | GP Resilience Qualification | `workflow_dispatch` | Exact-digest poison, crash/output, lease, backlog, TTL, retry, quota/isolation, output-cap, and sustained-concurrency qualification with finding-preserving receipts. |
+| `gp-release-evidence.yml` | GP Release Evidence | `workflow_dispatch` | Verifies matching executed lifecycle/resilience run heads and receipt identities, then publishes a content-hashed immutable release asset containing both summaries and every scenario receipt. |
 | `flaky-detection.yml` | Flaky Test Detection | daily `schedule` (05:00 UTC), `workflow_dispatch` | Bounded, **incremental** flake hunt (ADR-0037). Each run takes a rotating window of `.github/ci-shards.json` shards (default 6), re-runs each shard's own filter under its own inner budget via `scripts/ci/run-server-test-shard.sh` (default 2 iterations), and reports per-shard flake candidates through `scripts/ci/summarize-flaky-detection.py`. The whole shard set is covered every `ceil(shards / shard_count)` days. Reports only; it never gates. |
 | `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | daily `schedule` (04:00 UTC), `workflow_dispatch` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` — `[EmulatorTest]` only. LocalStack + Azurite come from `EmulatorFixture` (Testcontainers); Postgres from a service container. Asserts `HONUA_TEST_DB_URL` before dispatch. |
 | `load-soak-nightly.yml` | Load/Soak Nightly | daily `schedule` (03:00 UTC), `workflow_dispatch` | Scheduled load/soak tests. |
@@ -263,6 +264,7 @@ which is why both the run count and exact observed span are recorded.
 | `provider-http-smoke.yml` | Provider HTTP-Stack Smoke | daily `schedule` (06:30 UTC), `workflow_dispatch` | Interface-level smoke that boots a real host per secondary provider (DuckDB in-process; MySQL and SQL Server via Testcontainers) over FeatureServer/OGC API Features/OData/tiles, plus the gated Oracle real-database lane (#2947). |
 | `cloud-integration-harness.yml` | Cloud Integration Harness | daily `schedule` (05:00 UTC), `workflow_dispatch` | Docker-backed cloud-integration tests (#2163) against emulated backends (kind, LocalStack). `Category=CloudIntegration` only; excluded from every PR run. |
 | `real-aws-certification.yml` | Real AWS Certification | weekly `schedule` (Mon 06:00 UTC), `workflow_dispatch` | `Category=RealAwsCertification` against a LIVE AWS account. Gated on a maintainer OIDC role variable, budgeted, teardown-guaranteed. |
+| `lambda-preview-certification.yml` | Lambda Preview Certification | `workflow_dispatch` | Deploys an exact GHCR Lambda AOT image to the certified AWS account, invokes and verifies it, guarantees teardown, and emits a fingerprint-only receipt containing the true ECR artifact digest for the release manifest handoff. |
 | `cross-server-consume-nightly.yml` | Cross-Server Consume Nightly | daily `schedule` (07:00 UTC), `workflow_dispatch` | Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers; best-effort commits the refreshed gap report. |
 | `client-interop-nightly.yml` | Real-Client Interop Matrix | daily `schedule` (07:00 UTC), `workflow_dispatch` | `docker/client-compat` matrix (`gdal`, `pyqgis`, `openlayers`, `cesium`, `arcgis-stub`); diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` and fails strict mode on any baseline regression. Promote to PR-blocking only after 30 consecutive nightly passes (#806). |
 | `multidim-raster-fixture.yml` | Real Multidimensional Raster Fixture | daily `schedule` (08:15 UTC), `workflow_dispatch` | Composes the pinned LocalStack/S3 object store, real NetCDF seed, native GDAL worker, and server; verifies production metadata scan, derived Zarr objects, and distinct selected-time ImageServer PNG slices. Uploads the verifier log and failure-only composition logs as nightly evidence. |
@@ -293,6 +295,7 @@ which is why both the run count and exact observed span are recorded.
 | `cite-gml32-conformance.yml` | OGC GML 3.2 CITE Conformance | weekly `schedule` (Sat 06:00 UTC), `workflow_dispatch` | |
 | `cite-gpkg12-conformance.yml` | OGC GeoPackage 1.2 CITE Conformance | weekly `schedule` (Sat 03:00 UTC), `workflow_dispatch` | |
 | `ogc-maps-conformance.yml` | OGC API Maps Conformance | weekly `schedule` (Fri 06:00 UTC), `workflow_dispatch` | |
+| `ogc-api-building-block-conformance.yml` | OGC API Building-Block Conformance | `pull_request` (base `trunk`), weekly `schedule` (Mon 07:00 UTC), `workflow_dispatch` | Builds and verifies an exact source-SHA image, then runs the vendored CQL2, MVT/TMS 2.0, Maps, and Schemathesis validators; uploads the complete evidence pack and fails on any validator failure. |
 | `cng-conformance.yml` | Cloud-Native-Geospatial Conformance | weekly `schedule` (Wed 06:00 UTC), `workflow_dispatch` | COG/GeoParquet/PMTiles-class CNG conformance. |
 | `cite-classic-conformance.yml` | Classic OGC CITE Conformance | `workflow_dispatch` | On-demand combined WMS 1.3 + WFS 2.0 classic lane. |
 | `cite-evidence-report.yml` | CITE Evidence Report | weekly `schedule` (Fri 08:00 UTC), `workflow_dispatch` | Runs the public CITE suite set and builds `artifacts/cite-evidence/` (summary JSON, badge SVG, static index, full TeamEngine HTML) with optional Pages deployment. Also asserts `docs/cite-status.md` freshness and opens/updates an issue when the reviewed snapshot is >14 days stale (#2944). |
@@ -306,6 +309,7 @@ which is why both the run count and exact observed span are recorded.
 | `deploy-platform-images.yml` | Build & Publish Platform Images | `push` (`v*` tags), weekly `schedule`, `workflow_dispatch` | Platform image deployment. |
 | `nuget-publish.yml` | Publish Honua.Core Package | `push` (`honua-core-v*`, `v*.*.*`), `workflow_dispatch` | Release-only publishing. |
 | `release-bundle.yml` | Release Bundle (Compatibility Train) | `workflow_dispatch` | Foundation-first release-train orchestrator: one Native AOT RC image, integration/conformance and Esri-SDK evidence against that exact digest, every SDK cut against the same candidate (dry-run by default), then the release-train manifest plus the honua-devops validator. |
+| `realtime-preview-qualification.yml` | Realtime Preview Qualification | `workflow_call`, `workflow_dispatch` | Verifies immutable server-candidate and SDK producer identities, then projects the SDK's live Preview receipt into a required exact-candidate qualification ledger retained for release review. |
 | `gp-lifecycle-qualification.yml` | GP Lifecycle Qualification | `workflow_dispatch` | Runs the kill/restart geoprocessing lifecycle matrix against exact digest-addressed server and GDAL worker candidates from the same source SHA, then retains per-scenario JSON receipts. |
 | `release-migration-performance.yml` | Release Migration Performance Evidence | `release`, daily `schedule`, `workflow_dispatch` | Runs the migration performance harness against the fixture-driven baseline (#1033) and uploads the website-linkable evidence artifact. |
 | `geobench-release-trigger.yml` | Trigger Geobench Release Benchmarks | `release`, `workflow_dispatch` | `repository_dispatch` to the geobench repo on every published release. |

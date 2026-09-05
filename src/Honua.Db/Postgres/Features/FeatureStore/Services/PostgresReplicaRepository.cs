@@ -73,8 +73,8 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
         ReplicaRecord record)
     {
         const string sql = """
-            INSERT INTO honua.replicas (replica_id, replica_name, service_id, sync_model, layer_ids, created_at, last_sync_time, last_sync_generation, upload_base_generation)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO honua.replicas (replica_id, replica_name, service_id, owner_id, sync_model, layer_ids, created_at, last_sync_time, last_sync_generation, upload_base_generation)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (replica_id) DO UPDATE SET
                 replica_name = EXCLUDED.replica_name,
                 sync_model = EXCLUDED.sync_model,
@@ -89,6 +89,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
         command.Parameters.AddWithValue(NpgsqlDbType.Text, record.ReplicaId);
         command.Parameters.AddWithValue(NpgsqlDbType.Text, record.ReplicaName);
         command.Parameters.AddWithValue(NpgsqlDbType.Text, record.ServiceId);
+        command.Parameters.AddWithValue(NpgsqlDbType.Text, (object?)record.OwnerId ?? DBNull.Value);
         command.Parameters.AddWithValue(NpgsqlDbType.Text, record.SyncModel);
         command.Parameters.Add(new NpgsqlParameter { Value = record.LayerIds, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Integer });
         command.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, record.CreatedAt);
@@ -135,7 +136,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
     public async Task<ReplicaRecord?> GetAsync(string replicaId, CancellationToken cancellationToken = default)
     {
         const string sql = """
-            SELECT replica_id, replica_name, service_id, sync_model, layer_ids,
+            SELECT replica_id, replica_name, service_id, owner_id, sync_model, layer_ids,
                    created_at, last_sync_time, last_sync_generation, upload_base_generation
             FROM honua.replicas
             WHERE replica_id = $1
@@ -156,19 +157,20 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
             ReplicaId = reader.GetString(0),
             ReplicaName = reader.GetString(1),
             ServiceId = reader.GetString(2),
-            SyncModel = reader.GetString(3),
-            LayerIds = (int[])reader.GetValue(4),
-            CreatedAt = reader.GetFieldValue<DateTimeOffset>(5),
-            LastSyncTime = reader.GetFieldValue<DateTimeOffset>(6),
-            LastSyncGeneration = reader.GetInt64(7),
-            UploadBaseGeneration = reader.GetInt64(8)
+            OwnerId = reader.IsDBNull(3) ? null : reader.GetString(3),
+            SyncModel = reader.GetString(4),
+            LayerIds = (int[])reader.GetValue(5),
+            CreatedAt = reader.GetFieldValue<DateTimeOffset>(6),
+            LastSyncTime = reader.GetFieldValue<DateTimeOffset>(7),
+            LastSyncGeneration = reader.GetInt64(8),
+            UploadBaseGeneration = reader.GetInt64(9)
         };
     }
 
     public async Task<IReadOnlyList<ReplicaRecord>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default)
     {
         const string sql = """
-            SELECT replica_id, replica_name, service_id, sync_model, layer_ids,
+            SELECT replica_id, replica_name, service_id, owner_id, sync_model, layer_ids,
                    created_at, last_sync_time, last_sync_generation, upload_base_generation
             FROM honua.replicas
             WHERE service_id = $1
@@ -189,12 +191,13 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
                 ReplicaId = reader.GetString(0),
                 ReplicaName = reader.GetString(1),
                 ServiceId = reader.GetString(2),
-                SyncModel = reader.GetString(3),
-                LayerIds = (int[])reader.GetValue(4),
-                CreatedAt = reader.GetFieldValue<DateTimeOffset>(5),
-                LastSyncTime = reader.GetFieldValue<DateTimeOffset>(6),
-                LastSyncGeneration = reader.GetInt64(7),
-                UploadBaseGeneration = reader.GetInt64(8)
+                OwnerId = reader.IsDBNull(3) ? null : reader.GetString(3),
+                SyncModel = reader.GetString(4),
+                LayerIds = (int[])reader.GetValue(5),
+                CreatedAt = reader.GetFieldValue<DateTimeOffset>(6),
+                LastSyncTime = reader.GetFieldValue<DateTimeOffset>(7),
+                LastSyncGeneration = reader.GetInt64(8),
+                UploadBaseGeneration = reader.GetInt64(9)
             });
         }
 

@@ -33,7 +33,7 @@ public sealed class StudioAiProxyLatencyTests
         var options = new StudioAiProxyProviderOptions
         {
             Kind = StudioAiProxyConfiguration.OpenAiKind,
-            Endpoint = "https://openrouter.ai/api/v1",
+            Endpoint = "https://localhost/api/v1",
             Model = "anthropic/claude-sonnet-4.5",
             ApiKey = "test-key",
             MaxTokens = 4096,

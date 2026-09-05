@@ -87,6 +87,12 @@
       "path": "/field-workflows/submissions/{submissionId}/assignment"
     },
     {
+      "operationId": "cancelCompatibilityImportJob",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/imports/jobs/{jobId}/cancel"
+    },
+    {
       "operationId": "cancelConsoleJob",
       "catalogOperationId": null,
       "method": "POST",
@@ -139,6 +145,12 @@
       "catalogOperationId": null,
       "method": "POST",
       "path": "/field-workflows/submissions/{submissionId}/comments"
+    },
+    {
+      "operationId": "compatibilityImportFileFromUrl",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/imports"
     },
     {
       "operationId": "completeMigrationRun",
@@ -631,6 +643,18 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/cloud-rasters/{id}"
+    },
+    {
+      "operationId": "getCompatibilityActiveImportJobs",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/imports/jobs"
+    },
+    {
+      "operationId": "getCompatibilityImportJobStatus",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/imports/jobs/{jobId}"
     },
     {
       "operationId": "getComplianceDashboard",
@@ -1753,6 +1777,12 @@
       "catalogOperationId": "admin.layer.publish",
       "method": "POST",
       "path": "/connections/{id}/layers"
+    },
+    {
+      "operationId": "publishMapPackage",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/packages"
     },
     {
       "operationId": "queryMetadataEnvironmentBindings",

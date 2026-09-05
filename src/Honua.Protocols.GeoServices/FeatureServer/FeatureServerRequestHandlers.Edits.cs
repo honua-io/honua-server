@@ -242,7 +242,13 @@ internal static partial class FeatureServerEndpoints
                 if (resolveResult.Ids.Length == 0)
                 {
                     return Results.Json(
-                        new ApplyEditsResponse { DeleteResults = [], Success = true },
+                        new ApplyEditsResponse
+                        {
+                            AddResults = [],
+                            UpdateResults = [],
+                            DeleteResults = [],
+                            Success = true
+                        },
                         FeatureServerJsonContext.Default.ApplyEditsResponse,
                         contentType: "application/json");
                 }
@@ -512,9 +518,10 @@ internal static partial class FeatureServerEndpoints
         }
 
         ServiceLayerEdits[]? layerEdits;
+        IReadOnlyDictionary<string, StringValues>? bodyValues = null;
         try
         {
-            var (request, readError, errorResult) = await TryReadServiceApplyEditsRequestAsync(context.Request, cancellationToken);
+            var (request, readValues, readError, errorResult) = await TryReadServiceApplyEditsRequestAsync(context.Request, cancellationToken);
             if (errorResult != null)
             {
                 return errorResult;
@@ -528,6 +535,7 @@ internal static partial class FeatureServerEndpoints
             }
 
             layerEdits = request;
+            bodyValues = readValues;
         }
         catch (JsonException)
         {
@@ -553,6 +561,13 @@ internal static partial class FeatureServerEndpoints
         // handler applied each array element as a separate auto-committing batch, leaving a
         // successful add committed even when a later edit for the same layer failed.
         var sharedOptions = new ApplyEditsRequest();
+        if (bodyValues is not null && !TryApplyEditOptionsFromValues(sharedOptions, bodyValues, out var bodyOptionsError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid service applyEdits request",
+                [bodyOptionsError ?? "Invalid form parameters."]);
+        }
+
         if (!TryApplyEditOptionsFromQuery(sharedOptions, context.Request.Query, out var optionsError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -568,6 +583,51 @@ internal static partial class FeatureServerEndpoints
         }
 
         sharedOptions.F = normalizedFormat;
+
+        // Service-level callers are permitted to place the edit controls in each
+        // layer object instead of the query string. Apply the first supplied value
+        // consistently to every layer; conflicting values are rejected below rather
+        // than silently dropping the body controls.
+        var bodyOptions = layerEdits.Where(static entry => entry is not null).ToArray();
+        var bodyRollback = bodyOptions.Select(static entry => entry.RollbackOnFailure).Where(static value => value.HasValue).Select(static value => value!.Value).Distinct().ToArray();
+        var bodyGlobalIds = bodyOptions.Select(static entry => entry.UseGlobalIds).Where(static value => value.HasValue).Select(static value => value!.Value).Distinct().ToArray();
+        var bodyEditMoment = bodyOptions.Select(static entry => entry.ReturnEditMoment).Where(static value => value.HasValue).Select(static value => value!.Value).Distinct().ToArray();
+        if (bodyRollback.Length > 1 || bodyGlobalIds.Length > 1 || bodyEditMoment.Length > 1)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Conflicting service applyEdits options", ["Each layer must use the same rollbackOnFailure, useGlobalIds, and returnEditMoment values."]);
+        }
+
+        if (bodyRollback is [var rollback])
+        {
+            sharedOptions.RollbackOnFailure = rollback;
+            sharedOptions.RollbackOnFailureExplicitlySet = true;
+        }
+        if (bodyGlobalIds is [var useGlobalIds])
+        {
+            sharedOptions.UseGlobalIds = useGlobalIds;
+        }
+        if (bodyEditMoment is [var returnEditMoment])
+        {
+            sharedOptions.ReturnEditMoment = returnEditMoment;
+        }
+        var bodyVersion = bodyOptions.Select(static entry => entry.GdbVersion).Where(static value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
+        if (bodyVersion.Length > 1)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Conflicting service applyEdits options", ["Each layer must use the same gdbVersion value."]);
+        }
+        if (bodyVersion is [var gdbVersion])
+        {
+            sharedOptions.GdbVersion = gdbVersion;
+        }
+
+        if (sharedOptions.Attachments is { Length: > 0 } ||
+            layerEdits.Any(static entry => HasServiceAttachmentPayload(entry.Attachments) ||
+                                           HasServiceAttachmentPayload(entry.AssetMaps)))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "attachments and assetMaps edits are not supported",
+                ["Service-level applyEdits does not accept attachment or assetMaps edits; submit them through the layer attachment endpoints."]);
+        }
 
         if (sharedOptions.UseGlobalIds)
         {
@@ -625,7 +685,7 @@ internal static partial class FeatureServerEndpoints
                 "rollbackOnFailure=true is not supported for multi-layer service applyEdits",
                 ["rollbackOnFailure=true only provides intra-layer atomicity. " +
                  "Multi-layer service-level edits cannot be rolled back atomically across layers. " +
-                 "Set rollbackOnFailure=false (or omit it) to allow partial commits, or submit each layer separately."]);
+                 "Set rollbackOnFailure=false to allow partial commits, or submit each layer separately."]);
         }
 
         var results = new ServiceLayerEditResult[orderedLayerIds.Count];
@@ -847,7 +907,7 @@ internal static partial class FeatureServerEndpoints
         return [.. first, .. second];
     }
 
-    private static async Task<(ServiceLayerEdits[]? Request, string? Error, IResult? ErrorResult)> TryReadServiceApplyEditsRequestAsync(
+    private static async Task<(ServiceLayerEdits[]? Request, IReadOnlyDictionary<string, StringValues>? BodyValues, string? Error, IResult? ErrorResult)> TryReadServiceApplyEditsRequestAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {
@@ -855,34 +915,35 @@ internal static partial class FeatureServerEndpoints
         {
             var form = await request.ReadFormAsync(cancellationToken);
             var editsJson = form["edits"].ToString();
+            var values = form.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
             if (string.IsNullOrWhiteSpace(editsJson))
             {
-                return (null, null, null);
+                return (null, values, null, null);
             }
 
-            return (JsonSerializer.Deserialize(editsJson, FeatureServerJsonContext.Default.ServiceLayerEditsArray), null, null);
+            return (JsonSerializer.Deserialize(editsJson, FeatureServerJsonContext.Default.ServiceLayerEditsArray), values, null, null);
         }
 
         if (request.ContentLength is 0)
         {
-            return (null, null, null);
+            return (null, null, null, null);
         }
 
         if (!TryValidateRequestContentType(request, out var receivedContentType))
         {
-            return (null, null, CreateUnsupportedRequestContentTypeResult(request.HttpContext, receivedContentType));
+            return (null, null, null, CreateUnsupportedRequestContentTypeResult(request.HttpContext, receivedContentType));
         }
 
         return (await JsonSerializer.DeserializeAsync(
             request.Body,
             FeatureServerJsonContext.Default.ServiceLayerEditsArray,
-            cancellationToken), null, null);
+            cancellationToken), null, null, null);
     }
 
     /// <summary>
     /// Sets default values for standalone edit endpoints (addFeatures, updateFeatures, deleteFeatures).
-    /// Per ArcGIS spec, standalone endpoints default rollbackOnFailure to true,
-    /// while applyEdits defaults to false. Only applies when not explicitly set in the request.
+    /// Per ArcGIS spec, standalone endpoints default rollbackOnFailure to true. Only applies
+    /// when not explicitly set in the request.
     /// </summary>
     private static void ApplyStandaloneEditDefaults(ApplyEditsRequest request)
     {
@@ -1048,13 +1109,16 @@ internal static partial class FeatureServerEndpoints
         IQueryCollection query,
         out string? error)
     {
-        error = null;
-        if (query.Count == 0)
-        {
-            return true;
-        }
-
         var values = ToCaseInsensitiveDictionary(query);
+        return TryApplyEditOptionsFromValues(request, values, out error);
+    }
+
+    private static bool TryApplyEditOptionsFromValues(
+        ApplyEditsRequest request,
+        IReadOnlyDictionary<string, StringValues> values,
+        out string? error)
+    {
+        error = null;
 
         if (TryGetValue(values, "rollbackOnFailure", out var rollbackQueryRaw) && !StringValues.IsNullOrEmpty(rollbackQueryRaw))
         {
@@ -1092,8 +1156,16 @@ internal static partial class FeatureServerEndpoints
             request.GdbVersion = gdbVersion;
         }
 
+        if (TryGetValue(values, "attachments", out var attachmentsRaw) && !StringValues.IsNullOrEmpty(attachmentsRaw))
+        {
+            request.Attachments = [attachmentsRaw.ToString()];
+        }
+
         return true;
     }
+
+    private static bool HasServiceAttachmentPayload(JsonElement? payload)
+        => payload is { } value && value.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined;
 
     private static bool TryApplyDeleteIdsFromQuery(
         ApplyEditsRequest request,

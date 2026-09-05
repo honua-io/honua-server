@@ -21,7 +21,10 @@ namespace Honua.Core.Features.Raster.ZarrParser;
 /// </summary>
 public sealed class ZarrMetadataExtractor : IZarrMetadataReader
 {
-    private const int MaxMetadataBytes = 64 * 1024;
+    // Consolidated metadata and CF coordinate manifests routinely exceed 64 KiB.
+    // Keep a bounded document ceiling, but do not mistake a provider's partial
+    // range response for a complete JSON document.
+    private const int MaxMetadataBytes = 16 * 1024 * 1024;
     private const int MaxVariables = 64;
 
     /// <inheritdoc />
@@ -266,16 +269,21 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
 
             var compressor = ResolveCompressorId(root);
 
-            object? fillValue = null;
-            if (root.TryGetProperty("fill_value", out var fillEl))
+            var fillValue = ResolveFillValue(root, dtype, name);
+
+            var dimensionSeparator = ".";
+            if (root.TryGetProperty("dimension_separator", out var separatorEl))
             {
-                fillValue = fillEl.ValueKind switch
+                if (separatorEl.ValueKind != JsonValueKind.String)
                 {
-                    JsonValueKind.Number => fillEl.TryGetDouble(out var d) ? d : null,
-                    JsonValueKind.String => fillEl.GetString(),
-                    JsonValueKind.Null => null,
-                    _ => null
-                };
+                    throw new InvalidDataException($"Zarr array '{name}' has a malformed dimension_separator.");
+                }
+
+                dimensionSeparator = separatorEl.GetString() ?? string.Empty;
+                if (dimensionSeparator is not ("." or "/"))
+                {
+                    throw new InvalidDataException($"Zarr array '{name}' uses unsupported dimension_separator '{dimensionSeparator}'.");
+                }
             }
 
             var dimNames = ReadDimensionNames(root, shape.Length);
@@ -298,7 +306,8 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
                 Order: order,
                 Compressor: compressor,
                 FillValue: fillValue,
-                DimensionNames: dimNames);
+                DimensionNames: dimNames,
+                ChunkKeyEncoding: new ZarrChunkKeyEncoding(dimensionSeparator, string.Empty, "0"));
         }
     }
 
@@ -450,16 +459,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
 
         var compressor = ResolveV3Codecs(root, name);
 
-        object? fillValue = null;
-        if (root.TryGetProperty("fill_value", out var fillEl))
-        {
-            fillValue = fillEl.ValueKind switch
-            {
-                JsonValueKind.Number => fillEl.TryGetDouble(out var d) ? d : null,
-                JsonValueKind.String => fillEl.GetString(),
-                _ => null
-            };
-        }
+        var fillValue = ResolveFillValue(root, dataType, name);
 
         var chunkKeyEncoding = ResolveV3ChunkKeyEncoding(root, name);
         var dimNames = ReadV3DimensionNames(root, shape.Length);
@@ -647,6 +647,69 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             fallback[i] = "dim_" + i.ToString(CultureInfo.InvariantCulture);
         }
         return fallback;
+    }
+
+    private static object? ResolveFillValue(JsonElement root, string dataType, string arrayName)
+    {
+        if (!root.TryGetProperty("fill_value", out var fillEl))
+        {
+            return null;
+        }
+
+        if (fillEl.ValueKind == JsonValueKind.Number)
+        {
+            return fillEl.TryGetDouble(out var numeric) ? numeric : null;
+        }
+
+        if (fillEl.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var text = fillEl.GetString();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        switch (text.Trim().ToLowerInvariant())
+        {
+            case "nan":
+                return double.NaN;
+            case "infinity":
+            case "+infinity":
+            case "inf":
+            case "+inf":
+                return double.PositiveInfinity;
+            case "-infinity":
+            case "-inf":
+                return double.NegativeInfinity;
+        }
+
+        // Zarr v3 may encode a floating fill as the dtype's hexadecimal bit
+        // pattern (for example 0x7fc00000 for float32 NaN).
+        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            var hex = text[2..];
+            if (dataType is "<f4" && uint.TryParse(hex, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var f4Bits))
+            {
+                return BitConverter.Int32BitsToSingle(unchecked((int)f4Bits));
+            }
+            if (dataType is "<f8" && ulong.TryParse(hex, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var f8Bits))
+            {
+                return BitConverter.Int64BitsToDouble(unchecked((long)f8Bits));
+            }
+        }
+
+        // A string is not a valid numeric fill for the binary reader. Preserve a
+        // clear scan failure for a float array rather than silently turning a
+        // malformed fill into opaque zero data.
+        if (dataType is "<f4" or "<f8")
+        {
+            throw new InvalidDataException($"Zarr array '{arrayName}' has an unsupported floating fill_value '{text}'.");
+        }
+
+        return null;
     }
 
     private static ZarrFormatVersion ResolveZarrFormat(JsonElement root, string arrayName)
@@ -1078,10 +1141,10 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         string key,
         CancellationToken cancellationToken)
     {
-        byte[] payload;
+        long objectSize;
         try
         {
-            payload = await reader.ReadRangeAsync(bucket, key, 0, MaxMetadataBytes, cancellationToken).ConfigureAwait(false);
+            objectSize = await reader.GetObjectSizeAsync(bucket, key, cancellationToken).ConfigureAwait(false);
         }
         catch (FileNotFoundException)
         {
@@ -1091,6 +1154,20 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         {
             return null;
         }
+
+        if (objectSize <= 0)
+        {
+            return null;
+        }
+        if (objectSize > MaxMetadataBytes)
+        {
+            throw new InvalidDataException(
+                $"Zarr metadata at '{key}' is {objectSize:N0} bytes, exceeding the {MaxMetadataBytes:N0} byte safety limit.");
+        }
+
+        var payload = await reader.ReadRangeAsync(
+                bucket, key, 0, checked((int)objectSize), cancellationToken)
+            .ConfigureAwait(false);
 
         if (payload.Length == 0)
         {

@@ -59,4 +59,8 @@ internal static partial class ExecutionAdmissionLog
     [LoggerMessage(8025, LogLevel.Debug,
         "Evicted idle rate bucket for principal:kind key '{RateKey}'")]
     public static partial void RateBucketEvicted(ILogger logger, string rateKey);
+
+    [LoggerMessage(8026, LogLevel.Warning,
+        "Distributed execution-admission rate limiting unavailable; using process-local fallback.")]
+    public static partial void RedisUnavailable(ILogger logger, Exception exception);
 }

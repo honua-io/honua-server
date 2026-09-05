@@ -24,7 +24,8 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader
         CancellationToken cancellationToken = default)
     {
         const string sql = """
-            SELECT generation, layer_id, objectid, operation, changed_at
+            SELECT generation, layer_id, objectid, operation, changed_at,
+                   event_id, operation_instance_id, correlation_id, audit_id, proposal_id
             FROM honua.feature_changes
             WHERE generation > @last_generation
             ORDER BY generation
@@ -47,7 +48,12 @@ internal sealed class PostgresAlertChangeReader : IAlertChangeReader
                 LayerId = reader.GetInt32(1),
                 ObjectId = reader.GetInt64(2),
                 Operation = AlertStoreConversions.ToChangeOperation(reader.GetInt16(3)),
-                ChangedAt = reader.GetFieldValue<DateTimeOffset>(4)
+                ChangedAt = reader.GetFieldValue<DateTimeOffset>(4),
+                SourceEventId = reader.IsDBNull(5) ? null : reader.GetString(5),
+                OperationInstanceId = reader.IsDBNull(6) ? null : reader.GetString(6),
+                CorrelationId = reader.IsDBNull(7) ? null : reader.GetString(7),
+                AuditId = reader.IsDBNull(8) ? null : reader.GetString(8),
+                ProposalId = reader.IsDBNull(9) ? null : reader.GetString(9)
             });
         }
 

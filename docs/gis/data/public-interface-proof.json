@@ -3246,7 +3246,7 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage plus endpoint integration tests for the OGC API - EDR surface: landing, conformance, collections list/by-id (with data_queries position+cube and parameter_names), the position (point time-series) query, and the cube (area/subset) query over registered coverage/datacube collections, returning CoverageJSON",
+          "proofMechanism": "Preview lifecycle evidence: EndpointRegistry coverage plus endpoint integration tests for the OGC API - EDR surface. Functional query gaps are explicitly deferred to release/2026.2.",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
@@ -3254,20 +3254,20 @@
             "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Edr/EdrEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
-          "status": "implemented",
-          "linkedTicket": "honua-server#1757",
+          "status": "preview",
+          "linkedTicket": "honua-server#4153",
           "versionCaptureRule": null
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "EDR position returns a CoverageJSON PointSeries with a t-axis and per-parameter NdArray ranges sampled from the canonical raster read pipeline; EDR cube returns a CoverageJSON Grid subset for a bbox; invalid coords/bbox return 400 and unknown collections return 404",
+          "proofMechanism": "Preview lifecycle evidence: EDR position and cube integration coverage remains available for the Preview surface; CRS, coordinate, and temporal-selection corrections are explicitly deferred to release/2026.2.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Edr/EdrEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
-          "status": "implemented",
-          "linkedTicket": "honua-server#1757",
+          "status": "preview",
+          "linkedTicket": "honua-server#4153",
           "versionCaptureRule": null
         }
       ]

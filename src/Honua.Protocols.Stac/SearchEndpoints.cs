@@ -21,6 +21,7 @@ using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Stac;
 
@@ -373,6 +374,9 @@ internal static class SearchEndpoints
                     : null;
             ImmutableArray<OrderByClause>? globalOrderBy = null;
             long totalMatched = 0;
+            var omitCount = context.RequestServices.GetRequiredService<IOptions<StacOptions>>().Value.NumberMatchedPolicy
+                == StacNumberMatchedPolicy.OmitWhenExpensive;
+            var pageLimit = omitCount ? effectiveLimit + 1 : effectiveLimit;
             var remainingSkip = offset;
             var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
             // STAC item search is a union across the selected collections. A property
@@ -420,6 +424,13 @@ internal static class SearchEndpoints
                 }
 
                 appliedToAnyCollection = true;
+
+                // Validate the other query parameters before excluding an undated collection.
+                // A display fallback is not an acquisition time and cannot supply a match.
+                if (!string.IsNullOrWhiteSpace(request.Datetime) && layerQueryResult.Query.TemporalFilter is null)
+                {
+                    continue;
+                }
 
                 var query = layerQueryResult.Query;
                 var projection = layerQueryResult.Projection;
@@ -475,7 +486,7 @@ internal static class SearchEndpoints
                         continue;
                     }
 
-                    var remaining = effectiveLimit - allItems.Count;
+                    var remaining = pageLimit - allItems.Count;
                     if (remaining > 0)
                     {
                         allItems.AddRange(matchedFeatures
@@ -500,7 +511,8 @@ internal static class SearchEndpoints
                 if (globallyOrderedCandidates is not null && requestedItemIds is { Length: > 0 } unboundItemIds)
                 {
                     var candidateLimit = checked(unboundItemIds.Length + 1);
-                    var result = await targetReader.QueryAsync(
+                    var result = await StacPageReader.ReadAsync(
+                        targetReader,
                         storageLayerId,
                         query with
                         {
@@ -509,14 +521,15 @@ internal static class SearchEndpoints
                             OrderBy = null,
                             OutFields = null
                         },
+                        true,
                         cancellationToken).ConfigureAwait(false);
-                    if (result.TotalCount > unboundItemIds.Length || result.Features.Length > unboundItemIds.Length)
+                    if (result.TotalCount > unboundItemIds.Length || result.Items.Length > unboundItemIds.Length || result.HasMoreResults)
                     {
                         throw new InvalidOperationException(
                             $"STAC item id candidate query exceeded the {unboundItemIds.Length}-feature safety limit.");
                     }
 
-                    var incomingCount = checked((int)Math.Max(result.TotalCount, result.Features.Length));
+                    var incomingCount = result.Items.Length;
                     if (ExceedsGlobalCandidateBudget(globallyOrderedCandidates.Count, incomingCount))
                     {
                         StacTelemetry.SetFailed(activity, "aggregate_id_candidate_limit");
@@ -526,7 +539,7 @@ internal static class SearchEndpoints
                     }
 
                     totalMatched += incomingCount;
-                    globallyOrderedCandidates.AddRange(result.Features.Select(feature =>
+                    globallyOrderedCandidates.AddRange(result.Items.Select(feature =>
                         new GlobalSearchCandidate(feature, target, projection)));
                     continue;
                 }
@@ -534,6 +547,42 @@ internal static class SearchEndpoints
                 // A feature-reader/query failure must surface as a 500: it propagates to the outer
                 // catch, which records the exception on the search.work activity and rethrows so the
                 // shared error pipeline maps it to InternalServerError.
+                if (omitCount)
+                {
+                    // Consume skipped rows in bounded pages. A count-free provider cannot tell us
+                    // how many rows precede an empty offset page in an earlier collection.
+                    var localOffset = 0;
+                    var exhausted = false;
+                    while (remainingSkip > 0)
+                    {
+                        var skipPage = await StacPageReader.ReadAsync(
+                            targetReader, storageLayerId,
+                            query with { Offset = localOffset, Limit = Math.Min(remainingSkip, StacConstants.MaxSearchLimit) },
+                            true, cancellationToken);
+                        remainingSkip -= skipPage.Items.Length;
+                        localOffset += skipPage.Items.Length;
+                        if (!skipPage.HasMoreResults || skipPage.Items.IsEmpty)
+                        {
+                            exhausted = true;
+                            break;
+                        }
+                    }
+
+                    if (!exhausted && allItems.Count < pageLimit)
+                    {
+                        var page = await StacPageReader.ReadAsync(
+                            targetReader, storageLayerId,
+                            query with { Offset = localOffset, Limit = pageLimit - allItems.Count },
+                            true, cancellationToken);
+                        allItems.AddRange(page.Items.Select(f => ApplyFieldProjection(
+                            StacMappingService.MapFeatureToItem(
+                                f, target.Resource, target.Publication, layerId, baseUrl,
+                                projection?.SelectedProperties, geometrySrid: Wgs84Srid), projection)));
+                    }
+
+                    continue;
+                }
+
                 if (remainingSkip > 0)
                 {
                     var layerCount = await targetReader.CountAsync(storageLayerId, query, cancellationToken);
@@ -549,8 +598,9 @@ internal static class SearchEndpoints
                     query = query with { Offset = remainingSkip, Limit = remaining };
                     remainingSkip = 0;
 
-                    var result = await targetReader.QueryAsync(storageLayerId, query, cancellationToken);
-                    allItems.AddRange(result.Features
+                    var result = await StacPageReader.ReadAsync(
+                        targetReader, storageLayerId, query, false, cancellationToken, layerCount);
+                    allItems.AddRange(result.Items
                         .Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
                                 f,
@@ -638,6 +688,14 @@ internal static class SearchEndpoints
                         candidate.Projection)));
             }
 
+            var hasNextPage = omitCount && globallyOrderedCandidates is null
+                ? allItems.Count > effectiveLimit
+                : totalMatched > offset + allItems.Count;
+            if (allItems.Count > effectiveLimit)
+            {
+                allItems.Count = effectiveLimit;
+            }
+
             var stacBase = $"{baseUrl}/stac";
             var linksBuilder = ImmutableArray.CreateBuilder<Link>();
             linksBuilder.Add(Link.Create(
@@ -652,7 +710,7 @@ internal static class SearchEndpoints
                 title: "STAC Catalog"));
 
             var nextOffset = offset + allItems.Count;
-            if (totalMatched > nextOffset && allItems.Count > 0)
+            if (hasNextPage && allItems.Count > 0)
             {
                 linksBuilder.Add(isPostSearch
                     ? CreatePostNextLink(stacBase, nextOffset)
@@ -668,17 +726,17 @@ internal static class SearchEndpoints
                 Features = allItems.ToImmutable(),
                 Links = linksBuilder.ToImmutable(),
                 NumberReturned = allItems.Count,
-                NumberMatched = totalMatched,
+                NumberMatched = omitCount ? null : totalMatched,
                 Context = new StacSearchContext
                 {
                     Returned = allItems.Count,
-                    Matched = totalMatched,
+                    Matched = omitCount ? null : totalMatched,
                     Limit = effectiveLimit
                 }
             };
 
             StacLog.SearchReturned(logger, allItems.Count);
-            StacTelemetry.SetResultCount(activity, allItems.Count, totalMatched);
+            StacTelemetry.SetResultCount(activity, allItems.Count, omitCount ? null : totalMatched);
             return Results.Json(response, StacJsonContext.Default.StacItemCollection, MediaTypes.GeoJson);
         }
         catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
@@ -770,10 +828,7 @@ internal static class SearchEndpoints
 
         if (!string.IsNullOrWhiteSpace(request.Datetime))
         {
-            // ParseDatetime returns null when the resource has no resolvable temporal field.
-            // Syntax has already been validated up front in ExecuteSearchAsync (IsValidDatetimeSyntax),
-            // so null here means this layer simply has no temporal property — skip the filter rather
-            // than rejecting the whole request (STAC spec: datetime is a filter, not a hard requirement).
+            // Syntax is validated before selecting targets; undated targets are excluded above.
             var temporalFilter = StacFilterHelpers.ParseDatetime(request.Datetime, resource);
             if (temporalFilter is not null)
             {
@@ -875,7 +930,7 @@ internal static class SearchEndpoints
             : (false, null, null, result.ErrorMessage, result.IsUnknownField);
     }
 
-    private static bool TryBuildSortOrder(
+    internal static bool TryBuildSortOrder(
         MetadataV2Resource resource,
         ImmutableArray<StacSortDefinition> sortby,
         out ImmutableArray<OrderByClause> orderBy,
@@ -894,25 +949,12 @@ internal static class SearchEndpoints
                 return false;
             }
 
-            if (!TryNormalizePropertyName(sort.Field, out var normalizedField))
-            {
-                error = $"Invalid sort field '{sort.Field}'.";
-                orderBy = default;
-                return false;
-            }
-
-            if (!availableFields.ContainsKey(normalizedField))
+            if (!TryResolveCanonicalSortField(resource, sort.Field, availableFields, out var normalizedField, out var fieldType))
             {
                 error = $"Unknown sort field '{sort.Field}'.";
                 orderBy = default;
                 return false;
             }
-
-            // Carry the schema field type so numeric properties sort numerically rather
-            // than lexicographically (FeatureQueryBuilder only casts when FieldType is set).
-            var fieldType = availableFields.TryGetValue(normalizedField, out var schemaField)
-                ? schemaField.Type
-                : (MetadataV2FieldType?)null;
 
             if (string.Equals(sort.Direction, "desc", StringComparison.OrdinalIgnoreCase))
             {
@@ -936,6 +978,87 @@ internal static class SearchEndpoints
         return true;
     }
 
+    /// <summary>
+    /// Resolves the STAC Item Search canonical fields to the source attribute that
+    /// produces the same value as the item mapper. The queryables documents advertise
+    /// <c>id</c> and <c>datetime</c> even when neither is a physical column; rejecting
+    /// those names here made the advertised Sort extension unusable (#4147).
+    /// </summary>
+    private static bool TryResolveCanonicalSortField(
+        MetadataV2Resource resource,
+        string requestedField,
+        Dictionary<string, MetadataV2Field> availableFields,
+        out string fieldName,
+        out MetadataV2FieldType? fieldType)
+    {
+        fieldName = string.Empty;
+        fieldType = null;
+        if (!TryNormalizePropertyName(requestedField, out var normalized))
+        {
+            return false;
+        }
+
+        if (string.Equals(normalized, "id", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var candidate in new[] { "stac_id", "item_id", "id" })
+            {
+                if (availableFields.TryGetValue(candidate, out var idField))
+                {
+                    fieldName = idField.Name;
+                    fieldType = idField.Type;
+                    return true;
+                }
+            }
+
+            var primaryId = resource.FindPrimaryIdField();
+            fieldName = primaryId?.Name ?? "objectid";
+            fieldType = primaryId?.Type ?? MetadataV2FieldType.Integer;
+            return true;
+        }
+
+        if (string.Equals(normalized, "datetime", StringComparison.OrdinalIgnoreCase))
+        {
+            var configuredTime = resource.ReadTemporalFields().StartTimeField;
+            if (!string.IsNullOrWhiteSpace(configuredTime) &&
+                availableFields.TryGetValue(configuredTime, out var configuredField))
+            {
+                fieldName = configuredField.Name;
+                fieldType = configuredField.Type;
+                return true;
+            }
+
+            foreach (var candidate in TemporalFieldDefaults.TemporalFallbackFieldNames)
+            {
+                if (availableFields.TryGetValue(candidate, out var temporalField) &&
+                    temporalField.Type is MetadataV2FieldType.Date
+                        or MetadataV2FieldType.DateTime
+                        or MetadataV2FieldType.Time)
+                {
+                    fieldName = temporalField.Name;
+                    fieldType = temporalField.Type;
+                    return true;
+                }
+            }
+
+            // Items without a source temporal value all receive the same deterministic
+            // fallback instant. Primary-key ordering is therefore the only meaningful and
+            // stable order for this otherwise valid canonical sort field.
+            var primaryId = resource.FindPrimaryIdField();
+            fieldName = primaryId?.Name ?? "objectid";
+            fieldType = primaryId?.Type ?? MetadataV2FieldType.Integer;
+            return true;
+        }
+
+        if (!availableFields.TryGetValue(normalized, out var schemaField))
+        {
+            return false;
+        }
+
+        fieldName = schemaField.Name;
+        fieldType = schemaField.Type;
+        return true;
+    }
+
     // TODO(#1035 follow-up): the V2 fields lookup is now keyed on
     // <see cref="MetadataV2Resource.SchemaFields"/>, so query parameters like
     // <c>fields=+properties.foo</c> only resolve when the V2 graph carries <c>foo</c>
@@ -944,7 +1067,7 @@ internal static class SearchEndpoints
     // and will return "Unknown fields include" until the V2 graph is rederived
     // from the v1 catalog or the fixtures are ported to publish via the V2 builder
     // directly. See task #55 (Port test fixtures off v1).
-    private static bool TryBuildFieldSelection(
+    internal static bool TryBuildFieldSelection(
         MetadataV2Resource resource,
         StacFieldsExtension fields,
         out ImmutableArray<string> outFields,
@@ -955,6 +1078,14 @@ internal static class SearchEndpoints
         var availableFields = schemaFields
             .Where(field => field.Type != MetadataV2FieldType.Geometry)
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        // `datetime` and `id` are STAC canonical properties. They are included in
+        // validation only; include-all must continue to select physical schema fields
+        // so synthetic names are never sent to a provider as requested columns.
+        var canonicalFields = new Dictionary<string, MetadataV2Field>(availableFields, StringComparer.OrdinalIgnoreCase)
+        {
+            ["datetime"] = new MetadataV2Field { Name = "datetime", Type = MetadataV2FieldType.DateTime, Nullable = true },
+            ["id"] = new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.String, Nullable = true }
+        };
 
         var includeAll = false;
         var requestedIncludes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1003,7 +1134,7 @@ internal static class SearchEndpoints
                     continue;
                 }
 
-                if (!availableFields.ContainsKey(normalized))
+                if (!canonicalFields.ContainsKey(normalized))
                 {
                     error = $"Unknown fields include '{include}'.";
                     outFields = default;
@@ -1044,7 +1175,7 @@ internal static class SearchEndpoints
                     continue;
                 }
 
-                if (!availableFields.ContainsKey(normalized))
+                if (!canonicalFields.ContainsKey(normalized))
                 {
                     error = $"Unknown fields exclude '{exclude}'.";
                     outFields = default;
@@ -1180,7 +1311,7 @@ internal static class SearchEndpoints
             ? projection.IncludedTopLevelFields.Contains(field)
             : !projection.ExcludedTopLevelFields.Contains(field);
 
-    private sealed record StacFieldProjection(
+    internal sealed record StacFieldProjection(
         IReadOnlySet<string>? SelectedProperties,
         bool IsIncludeMode,
         IReadOnlySet<string> IncludedTopLevelFields,

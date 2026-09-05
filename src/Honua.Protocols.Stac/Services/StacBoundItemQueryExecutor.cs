@@ -53,14 +53,14 @@ internal static class StacBoundItemQueryExecutor
                 OrderBy = null,
                 OutFields = null
             };
-            var result = await reader.QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
-            if (result.TotalCount > itemIds.Length || result.Features.Length > itemIds.Length)
+            var result = await StacPageReader.ReadAsync(reader, layerId, query, true, cancellationToken).ConfigureAwait(false);
+            if (result.TotalCount > itemIds.Length || result.Items.Length > itemIds.Length || result.HasMoreResults)
             {
                 throw new InvalidOperationException(
                     $"STAC item id candidate query exceeded the {itemIds.Length}-feature safety limit.");
             }
 
-            foreach (var feature in result.Features)
+            foreach (var feature in result.Items)
             {
                 candidates.TryAdd(feature.Id, feature);
             }

@@ -134,8 +134,8 @@ internal static class CanonicalSecurityActor
                 identity.IsAuthenticated && IsBearerScheme(identity.AuthenticationType)));
 
     private static bool IsBearerScheme(string? scheme) =>
-        string.Equals(scheme, OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(scheme, OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.OrdinalIgnoreCase);
+        string.Equals(scheme?.Trim(), OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(scheme?.Trim(), OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.OrdinalIgnoreCase);
 
     private static void Replace(ClaimsIdentity identity, string type, string? value)
     {

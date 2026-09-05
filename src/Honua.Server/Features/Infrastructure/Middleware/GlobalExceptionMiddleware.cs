@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Infrastructure.Backpressure;
 using Honua.Infrastructure.Models;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
@@ -133,6 +134,19 @@ internal sealed class GlobalExceptionMiddleware(
         // Add correlation ID header for traceability
         context.Response.Headers["X-Correlation-ID"] = context.TraceIdentifier;
 
+        if (exception is CapabilityUnavailableException capabilityException)
+        {
+            await ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+                    context,
+                    capabilityException.Message,
+                    capabilityException.MissingDependency,
+                    capabilityException.Remediation,
+                    capabilityException.RemediationRef)
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
+            return;
+        }
+
         // Use standardized error handling system
         var errorResponse = StandardErrorResponse.FromException(exception, _includeDebugDetails);
 
@@ -142,19 +156,28 @@ internal sealed class GlobalExceptionMiddleware(
             IncludeDebugInfo = _includeDebugDetails
         };
 
-        // Handle ServiceUnavailable with Retry-After header
-        if (exception is ServiceUnavailableException serviceEx && serviceEx.RetryAfterSeconds.HasValue)
+        // Temporary unavailability is retryable even without a delay hint. Keep
+        // metadata consistent when authentication fails before an endpoint runs.
+        if (exception is ServiceUnavailableException serviceEx)
         {
-            context.Response.Headers["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var headers = new Dictionary<string, string>
+            {
+                ["Honua-Retryable"] = "true"
+            };
+            if (serviceEx.RetryAfterSeconds.HasValue)
+            {
+                headers["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+
             options = new ErrorResponseFormatterOptions
             {
                 IncludeAdditionalDetails = options.IncludeAdditionalDetails,
                 IncludeDebugInfo = options.IncludeDebugInfo,
                 ContentType = options.ContentType,
-                AdditionalHeaders = new Dictionary<string, string>
-                {
-                    ["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                }
+                AdditionalHeaders = headers,
+                MachineCode = BackpressureMetadata.ServiceUnavailableCode,
+                Retryable = true,
+                RetryAfterSeconds = serviceEx.RetryAfterSeconds
             };
         }
 

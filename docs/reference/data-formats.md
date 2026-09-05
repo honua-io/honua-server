@@ -10,16 +10,18 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | --- | --- | --- |
 | GeoJSON | `.geojson`, `.json` | FeatureCollection, Feature, or bare geometry. |
 | Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf` (plus `.shx`/`.prj`); bare `.shp` uploads are rejected. |
-| GeoPackage | `.gpkg` | OGC SQLite-based format. |
-| GPX | `.gpx` | GPS exchange format. |
+| GeoPackage | `.gpkg` | OGC SQLite-based format. BOOLEAN, DATE and DATETIME column types are preserved on import/export. DATETIME output uses UTC timestamps ending in `Z` and retains fractional precision; timestamps without an offset are treated as UTC. GeoServices epoch-millisecond date values are converted to UTC without rounding fractional milliseconds. DATE values use `yyyy-MM-dd`; DATETIME input must include the ISO date and time components. Invalid logical or temporal values produce validation errors. Source attributes named `fid` or `geom` retain their names; generated structural columns use unused names. |
+| GPX | `.gpx` | GPS exchange format. Track segment boundaries are preserved as separate lines; singleton segments remain points, with a geometry collection for mixed tracks. Track and route elevations are preserved as Z ordinates; absent elevation remains absent, and invalid elevation rejects the import. |
 | KML / KMZ | `.kml`, `.kmz` | Keyhole Markup Language, plain or zipped. |
 | WKT | `.wkt` | Well-known text geometries. |
-| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. |
+| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. Bulk, OGC API Features and WFS CSV output share null/empty string escaping. |
 | FlatGeobuf | `.fgb` | Compact binary format. |
 | File Geodatabase | `.gdb.zip` | Zipped Esri `.gdb` directory. |
 | GeoParquet | `.parquet`, `.geoparquet` | Apache Parquet with WKB geometry encoding. |
 
 Format detection uses the extension plus content magic numbers (ZIP, SQLite, FlatGeobuf, Parquet signatures), so mislabeled files are caught early.
+
+CSV preserves quoted empty strings (`""`) and whitespace-only attribute values. Unquoted empty and missing fields represent null. Leading blank padding before a header is ignored; whitespace-only data rows after it remain present.
 
 ### Import size limits
 
@@ -81,7 +83,8 @@ Cloud-optimized HDF5 (`.h5`/`.hdf5`) and NetCDF4 multidimensional coverages are 
 | GML 3.2 | Default (`application/gml+xml; version=3.2`); the only format for the `GetFeatureById` stored query. |
 | GeoJSON | `application/geo+json`. |
 | JSON | `application/json`. |
-| CSV | `text/csv`. |
+| CSV | `text/csv` (or `csv`). Uses shared CSV escaping: null is an unquoted blank; an empty string is `""`. |
+
 
 ### OData v4 (`/odata`)
 
@@ -117,3 +120,5 @@ See the protocol pages for parameters: [vector tiles](protocols/vector-tiles.md)
 - [Import files guide](../guides/publish/import-files.md)
 - [Export data guide](../guides/query-analyze/export-data.md)
 - [Environment variables — imports and limits](configuration/environment-variables.md#imports-and-limits)
+
+New import tables retain source geometry ordinate dimensions while enforcing the requested SRID. Migration 111 enables this for GPX elevations and other dimensional input. Existing append/upsert tables keep their declared geometry constraints.

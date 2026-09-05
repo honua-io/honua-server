@@ -112,6 +112,10 @@ When the coverage's native grid exceeds the per-axis pixel limit and no scaling 
 
 ## WMTS operations
 
+WMTS is **Preview in 2026.1**, including its OGC, MapServer and ImageServer
+routes. Conformance results below describe tested behavior; the 2026-09-03
+operator ruling keeps non-security parity work deferred to release/2026.2.
+
 | Operation | Notes |
 | --- | --- |
 | `GetCapabilities` | KVP and RESTful (`.../WMTS/1.0.0/WMTSCapabilities.xml` style paths via `{**restPath}`). Advertises the reserved built-in gridsets (`WebMercatorQuad`, `WorldCRS84Quad`) plus any operator-defined custom gridsets from the `TileMatrixSets` configuration section, with per-layer links. `TopLeftCorner` follows the advertised CRS axis order (CRS84 is longitude/latitude; geographic EPSG identifiers are latitude/longitude) and preserves configured origin precision. |

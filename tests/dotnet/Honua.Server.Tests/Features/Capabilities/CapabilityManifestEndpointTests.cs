@@ -121,6 +121,34 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_LifecycleOnlyPreviews_RemainAvailableWithoutOptIn(bool fromRegistry)
+    {
+        var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry, experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            foreach (var capability in new[] { "serve.geoservices-imageserver", "serve.wmts" }
+                .Select(id => GetCapability(document.RootElement, id)))
+            {
+                capability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                capability.GetProperty("available").GetBoolean().Should().BeTrue();
+                capability.GetProperty("optInRequired").GetBoolean().Should().BeFalse();
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static WebAppFixture CreateWorkspaceScopedManifestFixture()
         => CreateManifestFixture()
             .ConfigureServices(services =>

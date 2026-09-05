@@ -14,6 +14,11 @@ and marks its unexecutable proposal/approval/actuation stages with #3411, #3430,
 #3431, and #3475. The remaining limits are called out explicitly so “runs
 itself” never means “may mutate anything unattended.”
 
+> **Customer alerting is Preview in 2026.1.** Alert zones, rules, evaluation,
+> delivery channels, and their Console Operate views require an explicit
+> `alerts.geofence` capability opt-in. The qualification lanes and operational
+> evidence described here prove the implementation; they are not a GA claim.
+
 ## The loop
 
 The loop starts with a server-computed posture instead of a dashboard-specific
@@ -212,7 +217,7 @@ restore last.
 
    ```bash
    Database__MigrationSafety__ContractApplyPolicy=Gate
-   HONUA_APPROVE_CONTRACT_MIGRATIONS=true
+   HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce printed by the migration safety error>
    Database__MigrationSafety__BackupCommand="your-backup-command"
    ```
 

@@ -23,6 +23,11 @@ public enum CoordinatedStepOutcome
     Succeeded,
 
     /// <summary>
+    /// The child lifecycle reached its terminal rolled-back state.
+    /// </summary>
+    RolledBack,
+
+    /// <summary>
     /// The step failed; the conductor must trigger the coordinated rollback.
     /// </summary>
     Failed
@@ -48,6 +53,18 @@ public sealed record CoordinatedStepResult
     /// Operator-facing detail for the step.
     /// </summary>
     public string? Detail { get; init; }
+
+    /// <summary>
+    /// Authoritative revision observed by the child lifecycle, when applicable.
+    /// </summary>
+    public string? ObservedRevision { get; init; }
+
+    /// <summary>
+    /// Prior revision captured by the child lifecycle before promotion, when available. This is
+    /// distinct from <see cref="ObservedRevision"/> so a rollback settlement can verify the provider
+    /// actually restored the captured baseline.
+    /// </summary>
+    public string? ExpectedRevision { get; init; }
 }
 
 /// <summary>
@@ -74,9 +91,10 @@ public interface ICoordinatedContainerStepExecutor
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Rolls the container rollout back through the existing deploy rollback path. Idempotent.
+    /// Rolls the container rollout back through the existing deploy rollback path and returns the
+    /// child's accepted/observed state. Idempotent.
     /// </summary>
-    Task RollbackAsync(
+    Task<CoordinatedStepResult> RollbackAsync(
         string childOperationId,
         CancellationToken cancellationToken = default);
 }

@@ -45,6 +45,32 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     }
 
     [Fact]
+    public async Task QueryPageAsync_WithSecurityPolicies_ValidatesBeforeThePagedProbe()
+    {
+        // OGC NumberMatchedPolicy=OmitWhenExpensive uses this IPagedFeatureReader
+        // path. The security seam must run before the LIMIT+1 probe can evaluate an
+        // OGC filter over a masked value (#4166, #4154).
+        var resource = CreateResource();
+        var rlsSource = Substitute.For<IRowLevelSecurityFilterSource>();
+        rlsSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(new SqlFragment("\"tenant_id\" = @p0", ["tenant-a"]));
+        var fieldMaskSource = Substitute.For<IFieldMaskSource>();
+        fieldMaskSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(["secret"]);
+        var reader = CreateReader(resource, rlsSource, fieldMaskSource, attributesColumn: "attributes");
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("\"attributes\" ->> 'secret' LIKE @p0", ["1%"]),
+            Limit = 1
+        };
+
+        var act = () => reader.QueryPageAsync(5, query, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<ArgumentException>())
+            .Which.Message.Should().Contain("secret");
+    }
+
+    [Fact]
     public void ResolveAttributeFields_WithEnforcedMask_DropsMaskedTileAttribute()
     {
         var resource = CreateResource();
@@ -171,6 +197,65 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     }
 
     [Fact]
+    public void BuildStatisticsAggregateExpression_WithDateTimeMinMax_OrdersChronologically()
+    {
+        var expression = PostgresStorageMappedFeatureReader.BuildStatisticsAggregateExpression(
+            StatisticType.Max,
+            "(\"attributes\" ->> 'created_at')",
+            MetadataV2FieldType.DateTime);
+
+        expression.Should().Contain("MAX(CASE WHEN NULLIF(((\"attributes\" ->> 'created_at'))::text, '') ~ '^-?[0-9]+$'");
+        expression.Should().Contain("to_timestamp");
+        expression.Should().Contain("::timestamptz END)");
+    }
+
+    [Fact]
+    public void BuildSourceMappedStatisticsSql_PreservesHavingOrderByAndPagination()
+    {
+        var reader = CreateReader(CreateResource());
+        var sqlBuilderType = typeof(PostgresStorageMappedFeatureReader).GetNestedType(
+            "SqlBuilder",
+            BindingFlags.NonPublic);
+        var sqlBuilder = Activator.CreateInstance(sqlBuilderType!);
+        sqlBuilder.Should().NotBeNull();
+        var query = new FeatureQuery
+        {
+            OutStatistics = [new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "objectid",
+                OutStatisticFieldName = "feature_count"
+            }],
+            GroupByFields = ["name"],
+            Having = [new HavingCondition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "objectid",
+                Operator = HavingComparisonOperator.GreaterThan,
+                Value = 0
+            }],
+            OrderBy = [new OrderByClause("feature_count", ascending: false)],
+            Limit = 10,
+            Offset = 20
+        };
+
+        typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("AppendStatisticsHaving", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [sqlBuilder, query]);
+        typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("AppendStatisticsOrderBy", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [sqlBuilder, query]);
+        typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("AppendPagination", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, [sqlBuilder, query, false]);
+
+        var sql = sqlBuilder!.ToString();
+        sql.Should().Contain("HAVING COUNT(NULLIF((\"objectid\")::text, '')::numeric) > $1");
+        sql.Should().Contain("ORDER BY COUNT(NULLIF((\"objectid\")::text, '')::numeric) DESC");
+        sql.Should().Contain("LIMIT $2 OFFSET $3");
+    }
+
+    [Fact]
     public void BuildAttributesExpressionText_WithWideOutFields_ChunksJsonbBuildObjectCalls()
     {
         var fields = Enumerable.Range(1, 51)
@@ -181,7 +266,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "BuildAttributesExpressionText",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
-            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>)],
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
             modifiers: null);
 
         method.Should().NotBeNull();
@@ -193,7 +278,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             return $"${parameters.Count}";
         }
 
-        var expression = (string)method!.Invoke(null, [fields, null, (Func<object?, string>)AddParameter])!;
+        var expression = (string)method!.Invoke(null, [fields, null, (Func<object?, string>)AddParameter, null])!;
 
         expression.Split("jsonb_build_object", StringSplitOptions.None).Length.Should().Be(3);
         expression.Should().StartWith("(");
@@ -220,7 +305,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "BuildAttributesExpressionText",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
-            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>)],
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
             modifiers: null);
 
         method.Should().NotBeNull();
@@ -232,7 +317,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             return $"${parameters.Count}";
         }
 
-        var expression = (string)method!.Invoke(null, [fields, "attributes", (Func<object?, string>)AddParameter])!;
+        var expression = (string)method!.Invoke(null, [fields, "attributes", (Func<object?, string>)AddParameter, null])!;
 
         // Numeric/boolean fields use the jsonb-preserving accessor (->) so they
         // round-trip as JSON numbers/booleans, not strings.
@@ -266,7 +351,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "BuildAttributesExpressionText",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
-            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>)],
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
             modifiers: null);
         var parameters = new List<object?>();
         string AddParameter(object? value)
@@ -278,7 +363,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         buildMethod.Should().NotBeNull();
         var expression = (string)buildMethod!.Invoke(
             null,
-            [new[] { field }, "attributes", (Func<object?, string>)AddParameter])!;
+            [new[] { field }, "attributes", (Func<object?, string>)AddParameter, null])!;
 
         expression.Should().Be("(jsonb_build_object($1::text, \"attributes\" ->> $1::text))::text");
         expression.Should().NotContain(fieldName);

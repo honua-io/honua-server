@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Npgsql;
@@ -13,14 +14,18 @@ namespace Honua.Db.Postgres.Features.Metadata;
 internal sealed class PostgresMetadataReleasePackageStore : IMetadataReleasePackageStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly IDatabaseSchemaGuard _schemaGuard;
     private readonly string _packagesTable;
 
     public PostgresMetadataReleasePackageStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
+        IDatabaseSchemaGuard schemaGuard,
         string? schemaName = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
+        ArgumentNullException.ThrowIfNull(schemaGuard);
         _connectionProvider = connectionProvider;
+        _schemaGuard = schemaGuard;
         _packagesTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_release_packages", schemaName);
     }
 
@@ -50,6 +55,7 @@ internal sealed class PostgresMetadataReleasePackageStore : IMetadataReleasePack
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await VerifySchemaFloorAsync(connection, cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@package_id", package.PackageId);
         command.Parameters.AddWithValue("@package_key", package.Metadata.Name);
@@ -90,6 +96,7 @@ internal sealed class PostgresMetadataReleasePackageStore : IMetadataReleasePack
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await VerifySchemaFloorAsync(connection, cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@package_id", packageId);
 
@@ -160,6 +167,7 @@ internal sealed class PostgresMetadataReleasePackageStore : IMetadataReleasePack
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await VerifySchemaFloorAsync(connection, cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         // These filter parameters are nullable and are wrapped in LOWER(...) inside the SQL. Npgsql infers
         // no type for an untyped DBNull, so PostgreSQL cannot resolve LOWER(@param) on a NULL and fails with
@@ -210,6 +218,12 @@ internal sealed class PostgresMetadataReleasePackageStore : IMetadataReleasePack
 
         return summaries;
     }
+
+    private Task VerifySchemaFloorAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+        => _schemaGuard.VerifyRequirementAsync(
+            connection,
+            DatabaseSchemaRequirement.MetadataV2ReleasePackages,
+            cancellationToken);
 
     private static string? NullIfBlank(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

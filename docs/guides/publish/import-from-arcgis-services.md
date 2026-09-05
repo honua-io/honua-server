@@ -80,6 +80,7 @@ Supported modes are `token`, `oauth`, and `basic` (`username` + `passwordSecretR
 
 - **`ServiceUrl is required` or URL validation errors (400)** — use the HTTPS service root ending in `FeatureServer`/`MapServer`; embedded credentials and private/loopback addresses are rejected.
 - **`Failed to connect to ArcGIS service` (502)** — the source is unreachable or timing out; raise `timeoutSeconds` on discovery or `requestTimeoutSeconds` on the import.
+- **ArcGIS authentication required/expired (401) or denied (403)** — supply or refresh source credentials; discovery preserves these statuses and does not misreport them as a connectivity failure.
 - **`Distributed import coordination is unavailable. Retry when Redis is healthy.` (503)** — queued GeoServices imports need the Redis-backed job manager; check Redis connectivity.
 - **Plaintext credential rejected on start** — queued jobs only accept `accessTokenSecretReference`/`passwordSecretReference`; store the secret and reference it.
 - **Import completed but the layer is missing** — confirm `autoPublish` was not set to `false`; otherwise publish the imported table manually ([Publish layers](publish-layers.md)).

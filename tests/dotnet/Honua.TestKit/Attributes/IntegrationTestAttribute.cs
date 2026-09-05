@@ -19,6 +19,12 @@ public sealed class IntegrationTestAttribute : FactAttribute, ITraitAttribute
 {
 }
 
+/// <summary>Marks a parameterized test as integration-tier while retaining xUnit theory discovery.</summary>
+[TraitDiscoverer("Honua.TestKit.Attributes.IntegrationTestDiscoverer", "Honua.TestKit")]
+public sealed class IntegrationTheoryAttribute : TheoryAttribute, ITraitAttribute
+{
+}
+
 public sealed class IntegrationTestDiscoverer : ITraitDiscoverer
 {
     public IEnumerable<KeyValuePair<string, string>> GetTraits(IAttributeInfo traitAttribute)

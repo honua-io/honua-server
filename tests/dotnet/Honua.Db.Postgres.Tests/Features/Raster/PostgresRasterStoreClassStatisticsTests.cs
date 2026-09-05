@@ -145,6 +145,7 @@ public sealed class PostgresRasterStoreClassStatisticsTests(PostgresFixture fixt
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
             NullLogger<PostgresRasterStore>.Instance,
+            FixtureBypassDatabaseSchemaGuard.Instance,
             schemaName);
 
     // A 2x2 two-band raster. Band1 rows = [[1,2],[3,4]], Band2 rows = [[2,4],[6,8]] so the paired

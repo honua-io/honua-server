@@ -49,7 +49,7 @@ Task-oriented guides, grouped by what you want to do. New to Honua? Start with t
 |---|---|
 | Create, update, and delete features | [Edit features](edit/edit-features.md) |
 | Manage attachments and related records | [Attachments and related records](edit/attachments-and-related-records.md) |
-| Trigger alerts and actions on data changes | [React to changes](edit/react-to-changes.md) |
+| Receive Preview change events and trigger external actions | [React to changes](edit/react-to-changes.md) |
 
 ## Secure
 

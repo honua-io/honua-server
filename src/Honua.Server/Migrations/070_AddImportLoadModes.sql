@@ -1,6 +1,8 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+-- honua:compatibility-review reason=Transactional replace promotes staging by dropping and renaming the generated live target.
+
 -- Import load-mode helpers (#ETL-load-modes). The original import path was
 -- full-replace only: honua.create_import_table unconditionally DROP+CREATEs and
 -- honua.insert_import_feature does a plain INSERT, so there was no way to add to

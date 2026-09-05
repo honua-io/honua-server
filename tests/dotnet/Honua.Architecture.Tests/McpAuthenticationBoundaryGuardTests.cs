@@ -87,8 +87,10 @@ public sealed class McpAuthenticationBoundaryGuardTests
             "schema routing must observe the tenant selected from the validated principal");
         schemaRouting.Should().BeLessThan(statusEnforcement,
             "suspended/deleted tenant enforcement must run on the routed effective tenant");
-        statusEnforcement.Should().BeLessThan(requestRateLimit,
-            "the request rate limiter partitions by the enforced tenant and authenticated actor");
+        requestRateLimit.Should().BeGreaterThan(tenantContext,
+            "the request rate limiter partitions by the validated tenant and authenticated actor");
+        requestRateLimit.Should().BeLessThan(schemaRouting,
+            "failed schema resolution must consume the configured tenant/actor rate-limit bucket");
     }
 
     [ArchitectureTest]

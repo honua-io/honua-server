@@ -78,6 +78,17 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
     [InterfaceOperation(TestProtocols.VersionManagementServer, "create")]
+    public async Task Create_IgnoresCallerSuppliedOwner()
+    {
+        var info = await CreateVersionAsync("admin.owner_is_server_identity", owner: "someone-else");
+
+        info.GetProperty("owner").GetString().Should().Be("admin");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "create")]
     public async Task Create_DuplicateVersionName_Returns409Conflict()
     {
         // First create should succeed.
@@ -541,10 +552,20 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
 
     // ---- helpers --------------------------------------------------------------------------------
 
-    private async Task<JsonElement> CreateVersionAsync(string versionName)
+    private async Task<JsonElement> CreateVersionAsync(string versionName, string? owner = null)
     {
-        var response = await PostFormAsync($"{ServiceBase}/create",
-            ("versionName", versionName), ("accessPermission", "private"), ("f", "json"));
+        var values = new List<(string Key, string Value)>
+        {
+            ("versionName", versionName),
+            ("accessPermission", "private"),
+            ("f", "json")
+        };
+        if (owner is not null)
+        {
+            values.Add(("owner", owner));
+        }
+
+        var response = await PostFormAsync($"{ServiceBase}/create", values.ToArray());
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "create should succeed; body: {0}", await response.Content.ReadAsStringAsync());
 

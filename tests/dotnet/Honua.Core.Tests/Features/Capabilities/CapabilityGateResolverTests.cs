@@ -20,10 +20,24 @@ namespace Honua.Core.Tests.Features.Capabilities;
 public sealed class CapabilityGateResolverTests
 {
     // A still-experimental capability id for the synthetic resolver descriptors below.
-    // (temporal.* was promoted to GA in #2429 and sync.offline in #2430, so neither is a
-    // valid experimental example any longer; versioning.branch remains built-experimental
-    // and gated off by default.)
+    // (temporal.* and sync.offline are no longer Experimental examples; versioning.branch
+    // remains built-experimental and gated off by default.)
     private const string ExperimentalId = "versioning.branch";
+
+    [Fact]
+    public void Resolve_LifecycleOnlyPreview_StillRequiresItsEdition()
+    {
+        var descriptor = Experimental(HonuaEdition.Enterprise) with
+        {
+            Maturity = CapabilityMaturity.Preview,
+            RequiresOptIn = false,
+        };
+
+        var result = CapabilityGateResolver.Resolve(descriptor, CapabilityGateContext.Default);
+
+        result.Enabled.Should().BeFalse();
+        result.ReasonCode.Should().Be(CapabilityReasonCodes.LicenseRequired);
+    }
 
     private static CapabilityDescriptor Experimental(HonuaEdition? minimumEdition = null) => new()
     {

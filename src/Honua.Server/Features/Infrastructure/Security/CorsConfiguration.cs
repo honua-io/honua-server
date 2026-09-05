@@ -27,7 +27,7 @@ public static class CorsConfiguration
     /// </summary>
     private static readonly string[] DefaultAllowedHeaders =
     [
-        "Content-Type", "Authorization", "X-API-Key", "X-Correlation-ID",
+        "Content-Type", "Authorization", "X-Esri-Authorization", "X-API-Key", "X-Correlation-ID",
         "X-Grpc-Web", "X-User-Agent", "Range", "If-Range",
         "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since",
         "Prefer", "X-Honua-Embed-Key"

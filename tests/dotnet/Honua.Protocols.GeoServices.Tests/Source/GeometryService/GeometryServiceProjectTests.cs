@@ -248,6 +248,228 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.Project)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_WithEsriTransformationParameter_AppliesSelectedPipeline()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": -100.0, "y": 40.0}]
+            },
+            "inSR": 4269,
+            "outSR": 4326,
+            "transformation": 108001,
+            "transformForward": true
+        }
+        """;
+
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var point = document.RootElement.GetProperty("geometries")[0];
+        point.GetProperty("x").GetDouble().Should().BeApproximately(-100.0, 1e-9);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(40.0, 1e-9);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_WithSingleWkidTransformationObject_AppliesSelectedPipeline()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": -100.0, "y": 40.0}]
+            },
+            "inSR": 4269,
+            "outSR": 4326,
+            "transformation": {"wkid": 108001}
+        }
+        """;
+
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var point = document.RootElement.GetProperty("geometries")[0];
+        point.GetProperty("x").GetDouble().Should().BeApproximately(-100.0, 1e-9);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(40.0, 1e-9);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_ProjectedSourceTransformation_ResolvesAgainstGeodeticBase()
+    {
+        // pyproj 3.7.2 EPSG:26910 -> EPSG:4326 reference: the UTM zone 10N
+        // central-meridian point (500000, 0) maps to (-123, 0).
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": 500000.0, "y": 0.0}]
+            },
+            "inSR": 26910,
+            "outSR": 4326,
+            "transformation": 108001,
+            "transformForward": true
+        }
+        """;
+
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var point = document.RootElement.GetProperty("geometries")[0];
+        point.GetProperty("x").GetDouble().Should().BeApproximately(-123.0, 1e-8);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(0.0, 1e-8);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_NonIdentityTransformationPipeline_UsesSridProjection()
+    {
+        // WKID 1241 identifies the NAD27 -> NAD83 NADCON operation. Its catalog value is
+        // a coordinate-operation pipeline rather than a target CRS, so GeometryServer must
+        // retain the ordinary SRID projection instead of passing the pipeline to the PostGIS
+        // target-CRS overload. pyproj 3.7.2 maps this CONUS point to
+        // (-100.00040583667015, 40.00000589472259).
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": -100.0, "y": 40.0}]
+            },
+            "inSR": 4267,
+            "outSR": 4269,
+            "transformation": 1241,
+            "transformForward": true
+        }
+        """;
+
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var point = document.RootElement.GetProperty("geometries")[0];
+        point.GetProperty("x").GetDouble().Should().BeApproximately(-100.00040583667015, 1e-5);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(40.00000589472259, 1e-5);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_WithUnsupportedEsriTransformation_Returns400()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": -100.0, "y": 40.0}]
+            },
+            "inSR": 4269,
+            "outSR": 4326,
+            "transformation": 999999,
+            "transformForward": true
+        }
+        """;
+
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_ReverseTransformationDirection_MatchesPyprojIdentity()
+    {
+        // pyproj 3.7.2 Transformer.from_crs(4326, 4269, always_xy=True) returns
+        // (-100, 40). WKID 108001 is the corresponding Esri null transformation.
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": -100.0, "y": 40.0}]
+            },
+            "inSR": 4326,
+            "outSR": 4269,
+            "transformation": 108001,
+            "transformForward": false
+        }
+        """;
+
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var point = document.RootElement.GetProperty("geometries")[0];
+        point.GetProperty("x").GetDouble().Should().BeApproximately(-100.0, 1e-9);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(40.0, 1e-9);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_CircularCurve_PreservesZAndM()
+    {
+        // pyproj 3.7.2 EPSG:4326 -> EPSG:3857 reference endpoints:
+        // (1,0) -> (111319.49079327357,0), (0,1) -> (0,111325.1428663851).
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [{
+                    "hasZ": true,
+                    "hasM": true,
+                    "curvePaths": [[[1,0,3,4], {"c":[[0,1,5,6],[0,0]]}]]
+                }]
+            },
+            "inSR": 4326,
+            "outSR": 3857
+        }
+        """;
+
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var output = document.RootElement.GetProperty("geometries")[0];
+        output.GetProperty("hasZ").GetBoolean().Should().BeTrue();
+        output.GetProperty("hasM").GetBoolean().Should().BeTrue();
+
+        var vertices = output.GetProperty("paths")[0].EnumerateArray().ToArray();
+        vertices.Should().OnlyContain(vertex => vertex.GetArrayLength() == 4);
+        vertices[0][0].GetDouble().Should().BeApproximately(111319.49079327357, 1e-6);
+        vertices[0][1].GetDouble().Should().BeApproximately(0.0, 1e-9);
+        vertices[0][2].GetDouble().Should().BeApproximately(3.0, 1e-9);
+        vertices[0][3].GetDouble().Should().BeApproximately(4.0, 1e-9);
+        vertices[^1][0].GetDouble().Should().BeApproximately(0.0, 1e-9);
+        vertices[^1][1].GetDouble().Should().BeApproximately(111325.1428663851, 1e-6);
+        vertices[^1][2].GetDouble().Should().BeApproximately(5.0, 1e-9);
+        vertices[^1][3].GetDouble().Should().BeApproximately(6.0, 1e-9);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_WithUnsupportedDatumTransformationWkid_Returns400()
     {
         // WKID 108001 does not connect the 4326 -> 3857 pair, so an explicit request for it

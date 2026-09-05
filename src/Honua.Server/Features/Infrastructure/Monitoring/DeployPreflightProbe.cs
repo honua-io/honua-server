@@ -4,6 +4,7 @@
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Health;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Helpers;
 using Honua.Core.Configuration;
@@ -102,8 +103,9 @@ internal sealed class DeployPreflightProbe(
                 HasUnannotatedContractScripts = plan.Successful && plan.HasUnannotatedBreakingScripts,
                 PendingScripts = plan.PendingScripts,
                 PendingContractScripts = plan.ContractScriptNames,
+                PendingScriptClassifications = plan.PendingScriptClassifications,
                 ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
-                PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage,
+                PlanError = plan.Successful ? null : plan.ErrorMessage ?? MigrationPlanUnavailableMessage,
                 BackupHook = backupHook
             };
         }
@@ -120,7 +122,7 @@ internal sealed class DeployPreflightProbe(
                 Message = GetMigrationStatusMessage(migrationState),
                 PlanAvailable = false,
                 UpgradeRequired = false,
-                PlanError = MigrationPlanUnavailableMessage
+                PlanError = "Migration planning is temporarily unavailable."
             };
         }
     }
@@ -271,6 +273,12 @@ internal sealed class DeployPreflightMigrationSnapshot
     /// Names of the pending contract-phase (breaking) scripts, whether or not annotated.
     /// </summary>
     public IReadOnlyList<string> PendingContractScripts { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Runtime classifier output for every pending script, including the exact matched rule names.
+    /// </summary>
+    public IReadOnlyList<MigrationScriptClassification> PendingScriptClassifications { get; init; }
+        = Array.Empty<MigrationScriptClassification>();
 
     public IReadOnlyList<string> ExecutedButNotDiscoveredScripts { get; init; } = Array.Empty<string>();
 

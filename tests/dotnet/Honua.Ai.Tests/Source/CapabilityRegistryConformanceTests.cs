@@ -53,14 +53,25 @@ public sealed class CapabilityRegistryConformanceTests
         "package.gitops-manifest",
         "package.map",
         "package.app",
+        "provider.redshift",
+        "provider.snowflake",
+        "provider.databricks",
         "temporal.filtering",
         "temporal.extent-discovery",
         "temporal.histogram",
         "temporal.time-series-tiles",
         "temporal.animation-api",
+        "serve.3d-tiles-scene",
+        "serve.i3s-scene",
+        "serve.ogc-api-edr",
+        "scene.catalog",
+        "scene.bim-ingest",
+        "scene.pointcloud-ingest",
         "sync.offline",
         "realtime.feature-streams",
         "serve.sensorthings",
+        "serve.geoservices-imageserver",
+        "serve.wmts",
         "alerts.geofence",
         "jobs.runner",
         "ai.spec-apply",
@@ -116,8 +127,18 @@ public sealed class CapabilityRegistryConformanceTests
         foreach (var descriptor in Registry.All)
         {
             var resolution = Registry.Resolve(descriptor.Id, context);
-            if (descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
+            if (descriptor.Id is "serve.geoservices-imageserver" or "serve.wmts")
             {
+                descriptor.Maturity.Should().Be(CapabilityMaturity.Preview);
+                descriptor.RequiresOptIn.Should().BeFalse();
+                resolution.Enabled.Should().BeTrue(
+                    $"lifecycle-only Preview capability '{descriptor.Id}' is already served");
+                resolution.ReasonCode.Should().BeNull();
+            }
+            else if (descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
+            {
+                descriptor.RequiresOptIn.Should().BeTrue(
+                    "all other Preview and Experimental capabilities retain their opt-in gate");
                 // Since the #2346 T10 flip, experimental capabilities resolve disabled in the
                 // default context (no experimental flags set) with the dedicated reason code.
                 resolution.Enabled.Should().BeFalse(
@@ -299,7 +320,7 @@ public sealed class CapabilityRegistryConformanceTests
             new ClarifyIntentTool(groundingService, jobService, NullLogger<ClarifyIntentTool>.Instance),
             new GeocodeTool(jobService, NullLogger<GeocodeTool>.Instance),
             new GeocodeAddressesTool(jobService, NullLogger<GeocodeAddressesTool>.Instance),
-            new IngestDatasetTool(jobService, NullLogger<IngestDatasetTool>.Instance),
+            new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance),
             new RouteTool(jobService, NullLogger<RouteTool>.Instance),
             new OpsHealthTool(NullLogger<OpsHealthTool>.Instance),
             new OpsFindingsTool(NullLogger<OpsFindingsTool>.Instance),

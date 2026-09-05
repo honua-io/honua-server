@@ -84,6 +84,11 @@ internal sealed record FeatureStreamEnvelope
     /// </summary>
     public required string RequestId { get; init; }
 
+    public string? OperationInstanceId { get; init; }
+    public string? CorrelationId { get; init; }
+    public string? AuditId { get; init; }
+    public string? ProposalId { get; init; }
+
     /// <summary>
     /// Server-assigned subscription identifier that matched this event.
     /// </summary>

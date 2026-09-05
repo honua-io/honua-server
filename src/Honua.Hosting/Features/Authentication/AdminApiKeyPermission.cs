@@ -67,6 +67,9 @@ internal static class AdminApiKeyPermission
     internal const string ApprovedOperationGrantPrefix = "admin:operation:";
     internal const string ApprovedOperationRole = "approved-operation";
 
+    /// <summary>Admits scoped admin keys to permission-checked policies without full-admin role bypasses.</summary>
+    internal const string ScopedAdminRole = "scoped-admin-key";
+
     /// <summary>The admin API path prefix approved-operation credentials are scoped to.</summary>
     private const string AdminApiPathPrefix = "/api/v1/admin/";
 
@@ -119,6 +122,15 @@ internal static class AdminApiKeyPermission
 
         return level;
     }
+
+    /// <summary>
+    /// Whether this principal has unrestricted administrative write authority.
+    /// Approved-operation credentials intentionally return false: their admin role
+    /// is transport-scoped to one server-issued admin request and must not bypass
+    /// feature-level write authorization.
+    /// </summary>
+    internal static bool IsFullAdminPrincipal(ClaimsPrincipal principal)
+        => ResolveAccessLevel(principal) == AdminAccessLevel.Write;
 
     /// <summary>
     /// Determines whether a principal is authorized for an admin request whose
@@ -276,6 +288,10 @@ internal static class AdminApiKeyPermission
         // Safe method: a read-only admin grant or a read-only ops grant is sufficient.
         return level == AdminAccessLevel.Read || HasOpsReadGrant(principal);
     }
+
+    /// <summary>Whether a persisted grant belongs to the shared administrative permission grammar.</summary>
+    internal static bool IsAdministrativeGrant(string? grant)
+        => ClassifyGrant(grant) != AdminAccessLevel.None;
 
     private static AdminAccessLevel ClassifyGrant(string? grant)
     {

@@ -155,12 +155,20 @@ internal static partial class WmsRequestHandlers
         var layerFilters = filterResult.Filters;
         activity?.SetTag("wms.filter_applied", layerFilters is not null);
 
-        var temporalResult = TryParseWmsLayerTemporalFilters(context, query, renderLayers);
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var temporalResult = await TryResolveWmsLayerTemporalFiltersAsync(
+            context,
+            query,
+            renderLayers,
+            featureReader,
+            logger,
+            cancellationToken).ConfigureAwait(false);
         if (temporalResult.Error != null)
         {
             return temporalResult.Error;
         }
         var layerTemporalFilters = temporalResult.Filters;
+        AppendWmsWarnings(context, temporalResult.Warnings);
         activity?.SetTag("wms.time_applied", layerTemporalFilters is not null);
 
         var effectiveTransparent = transparent && string.Equals(imageFormat, "png", StringComparison.OrdinalIgnoreCase);
@@ -189,24 +197,6 @@ internal static partial class WmsRequestHandlers
             return Results.Bytes(outsideBytes, contentType);
         }
 
-        if (TryHandleCiteWmsGetMap(
-                context,
-                service,
-                renderLayers,
-                query,
-                requestedExtent,
-                imageWidth,
-                imageHeight,
-                imageFormat,
-                contentType,
-                effectiveTransparent,
-                backgroundColor,
-                layerFilters,
-                out var citeResult))
-        {
-            return citeResult;
-        }
-
         // Resolve the source SRID per requested layer: the V2 graph carries spatial
         // metadata on the service and on each resource, and they can diverge for
         // services that aggregate resources from heterogeneous CRSes. Walk the
@@ -219,7 +209,6 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "NoApplicableCode", "Failed to allocate render surface.", StatusCodes.Status500InternalServerError);
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
         var maxFeatures = MaxFeaturesPerLayer;
         var totalFeatureCount = 0;

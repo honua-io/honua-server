@@ -24,6 +24,12 @@ public readonly record struct ReplicaRecord
     public required string ServiceId { get; init; }
 
     /// <summary>
+    /// Stable authenticated principal that created the replica. Null is retained only for
+    /// legacy rows created before replica ownership was persisted; those rows are admin-only.
+    /// </summary>
+    public string? OwnerId { get; init; }
+
+    /// <summary>
     /// Sync model: none, perLayer, or perReplica
     /// </summary>
     public required string SyncModel { get; init; }

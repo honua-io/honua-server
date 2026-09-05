@@ -93,8 +93,15 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
     public async Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
         var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
-        var properties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-        return properties.Value.ContentLength;
+        try
+        {
+            var properties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            return properties.Value.ContentLength;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            throw new FileNotFoundException($"Azure blob '{key}' was not found in container '{bucket}'.", ex);
+        }
     }
 
     /// <inheritdoc />

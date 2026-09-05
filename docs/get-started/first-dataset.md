@@ -2,7 +2,7 @@
 
 Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 
-**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python with `honua-admin`, and the `honua` CLI (`npm install --global @honua/sdk-js`).
+**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python with `honua-admin`, and Node.js with `npx`.
 
 ## 1. Create a small dataset
 
@@ -29,6 +29,8 @@ python3 -m pip install \
   "honua-sdk @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-sdk" \
   "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
 python3 - <<'PY'
+import subprocess
+
 from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
 
 with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-password") as admin:
@@ -38,7 +40,10 @@ with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-passwor
         port=5432,
         database_name="honua_dev",
         username="honua_user",
-        password="honua_password",
+        password=subprocess.check_output(
+            ["docker", "compose", "exec", "-T", "postgres", "printenv", "POSTGRES_PASSWORD"],
+            text=True,
+        ).strip(),
         ssl_mode="Prefer",
         ssl_required=False,
     ))
@@ -71,11 +76,11 @@ Record the returned `layerId` and `serviceName`. The layer is now available acro
 export HONUA_BASE_URL=http://localhost:8080
 export HONUA_API_KEY=quickstart-admin-password
 
-honua services
-honua layers default
-honua query default/0 --limit 5
-honua query default/0 --where "population > 100000" --format geojson
-honua query default/0 --count
+npx --yes @honua/sdk-js services
+npx --yes @honua/sdk-js layers default
+npx --yes @honua/sdk-js query default/0 --limit 5
+npx --yes @honua/sdk-js query default/0 --where "population > 100000" --format geojson
+npx --yes @honua/sdk-js query default/0 --count
 ```
 
 Use the actual numeric layer ID printed by the publish step. Omit `HONUA_API_KEY` after the service allows anonymous reads.
@@ -85,7 +90,7 @@ Use the actual numeric layer ID printed by the publish step. Omit `HONUA_API_KEY
 The count should be `2`. A one-row GeoJSON check should contain Honolulu or Hilo:
 
 ```bash
-honua query default/0 --limit 1 --format geojson
+npx --yes @honua/sdk-js query default/0 --limit 1 --format geojson
 ```
 
 ## Troubleshoot

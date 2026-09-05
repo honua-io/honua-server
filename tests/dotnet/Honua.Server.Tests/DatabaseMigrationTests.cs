@@ -4,6 +4,8 @@
 using System.Reflection;
 using DbUp;
 using FluentAssertions;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
+using Honua.Server.Startup;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -358,6 +360,92 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             reader.GetString(0).Should().Be("transient-custom-id");
             (await reader.ReadAsync()).Should().BeFalse();
         }
+    }
+
+    [Fact]
+    public async Task CanonicalRunner_OnFreshDatabase_JournalsBothMigrationRootsAndVerifiesPhysicalFloor()
+    {
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
+            ServerCoreSchemaMigrations.Manifest);
+
+        var result = await runner.RunMigrationsAsync(
+            _connectionString,
+            Assembly.GetAssembly(typeof(Program))!);
+
+        result.Successful.Should().BeTrue(
+            $"both numbered migration roots should apply through the canonical runner. Error: {result.ErrorMessage}");
+        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLayerStatisticsMigration);
+        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLateProvisioningMigration);
+        result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.MetadataV2SnapshotMigration);
+        result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.RasterExternalStorageMigration);
+        result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.SensorThingsMigration);
+        result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.GovernedLineageMigration);
+        result.AppliedScripts.Should().NotContain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration,
+            "the contract-gated adoption script has no work in the default schema");
+
+        var existingDatabasePlan = await runner.PlanMigrationsAsync(
+            _connectionString,
+            Assembly.GetAssembly(typeof(Program))!);
+        existingDatabasePlan.Successful.Should().BeTrue();
+        existingDatabasePlan.PendingScripts.Should().NotContain(
+            ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
+        existingDatabasePlan.HasContractScripts.Should().BeFalse(
+            "an existing default-schema deployment must not require an adoption nonce for a no-op");
+
+        var restart = await runner.RunMigrationsAsync(
+            _connectionString,
+            Assembly.GetAssembly(typeof(Program))!);
+        restart.Successful.Should().BeTrue();
+        restart.AppliedScripts.Should().BeEmpty();
+
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)::int
+            FROM public.schema_versions
+            WHERE scriptname IN (
+                'Honua.Postgres.Migrations.003_CreateRasterLayerStatistics.sql',
+                'Honua.Postgres.Migrations.005_CompleteLateRasterProvisioning.sql',
+                'Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql',
+                'Honua.Server.Migrations.055_SetRasterDataExternalStorage.sql',
+                'Honua.Server.Migrations.059_CreateSensorThings.sql',
+                'Honua.Server.Migrations.110_PreserveGovernedLineage.sql')
+            """;
+        (await command.ExecuteScalarAsync()).Should().Be(6,
+            "upgrade and restore receipts use one journal denominator for both numbered roots");
+
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var verify = () => guard.VerifyAsync(_connectionString);
+        await verify.Should().NotThrowAsync("a fully migrated restore candidate must pass the guarded DR floor");
+    }
+
+    [Fact]
+    public async Task CoreSchemaGuard_WhenRasterDataIsMissing_RejectsJournaledMigration()
+    {
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+        var result = await runner.RunMigrationsAsync(
+            _connectionString,
+            Assembly.GetAssembly(typeof(Program))!);
+        result.Successful.Should().BeTrue();
+
+        await using (var connection = new Npgsql.NpgsqlConnection(_connectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "DROP TABLE honua.raster_data CASCADE;";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var verify = () => guard.VerifyAsync(_connectionString);
+        var exception = await verify.Should().ThrowAsync<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
+        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterTablesMigration);
+        exception.Which.FailureKind.Should().Be(
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
+        exception.Which.Message.Should().Contain("required raster table(s) are absent");
+        exception.Which.Message.Should().Contain("honua.raster_data");
     }
 
     [Fact]
@@ -747,11 +835,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             await createParent.ExecuteNonQueryAsync();
         }
 
-        // The shipped migration hard-codes the honua.* schema (matching the runtime deployment).
-        // Retarget it to the isolated test schema so this round-trip stays parallel-safe and does
-        // not collide with the shared honua schema other tests use.
+        // Substitute the same configured-schema variable used by the production DbUp runner so
+        // this round-trip stays parallel-safe and does not collide with the shared honua schema.
         var migrationSql = (await ReadEmbeddedMigrationAsync("060_AddRasterSensorMetadata.sql"))
-            .Replace("honua.", $"{_schemaName}.", StringComparison.Ordinal);
+            .Replace("$HonuaSchema$", _schemaName, StringComparison.Ordinal);
         await using (var apply = connection.CreateCommand())
         {
             apply.CommandText = $"SET search_path TO {_schemaName}, public; {migrationSql}";
@@ -856,6 +943,51 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         // Assert
         result.Successful.Should().BeFalse("migration should fail with invalid connection");
         result.Error.Should().NotBeNull("error details should be provided");
+    }
+
+    [Fact]
+    public async Task CoreSchemaGuard_WhenInitialJournaledTableIsMissing_RejectsStartupPlan()
+    {
+        var isolatedConnectionString = await _postgres.CreateIsolatedDatabaseAsync(
+            nameof(CoreSchemaGuard_WhenInitialJournaledTableIsMissing_RejectsStartupPlan));
+        var databaseName = new Npgsql.NpgsqlConnectionStringBuilder(isolatedConnectionString).Database!;
+        try
+        {
+            var connectionString = isolatedConnectionString;
+            var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+            var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+
+            (await runner.RunMigrationsAsync(
+                connectionString,
+                Assembly.GetAssembly(typeof(Program))!)).Successful.Should().BeTrue();
+
+            await using (var connection = new Npgsql.NpgsqlConnection(connectionString))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = "DROP TABLE honua.layers CASCADE;";
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var failedPlan = await runner.PlanMigrationsAsync(
+                connectionString,
+                Assembly.GetAssembly(typeof(Program))!);
+            failedPlan.Successful.Should().BeFalse();
+            failedPlan.Error.Should().BeOfType<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
+            failedPlan.Error!.Message.Should().Contain("table layers");
+
+            var failedRun = await runner.RunMigrationsAsync(
+                connectionString,
+                Assembly.GetAssembly(typeof(Program))!);
+            failedRun.Successful.Should().BeFalse();
+            failedRun.Error.Should().BeOfType<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
+            failedRun.Error!.Message.Should().Contain("Honua.Server.Migrations.001_CreateHonuaSchema.sql");
+            failedRun.Error.Message.Should().Contain("table layers");
+        }
+        finally
+        {
+            await _postgres.DropDatabaseAsync(databaseName);
+        }
     }
 
     private async Task<Npgsql.NpgsqlConnection> OpenSchemaConnectionAsync()

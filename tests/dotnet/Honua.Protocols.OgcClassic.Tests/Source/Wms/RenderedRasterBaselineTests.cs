@@ -24,6 +24,8 @@ public sealed class RenderedRasterBaselineTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        // The committed raster baseline covers a static layer, without a default TIME filter.
+        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, clearTemporal: true);
         await _fixture.GetService<ILayerStyleCatalog>().SetMapLibreStyleAsync(
             WebAppFixture.TestLayerId,
             """{"version":8,"layers":[{"id":"baseline-point","type":"circle","paint":{"circle-color":"#d7191c","circle-radius":10,"circle-stroke-color":"#2c3e50","circle-stroke-width":2}}]}""");

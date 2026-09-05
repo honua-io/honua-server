@@ -19,6 +19,9 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
 {
     private const int MaxChunksPerRequest = 4096;
     private const long MaxBytesPerRequest = 256L * 1024L * 1024L; // 256 MiB
+    // DEFLATE may expand incompressible input slightly. Keep the decoded cap
+    // independent from a bounded compressed-read allowance.
+    private const long MaxCompressedChunkBytes = MaxBytesPerRequest + (1L * 1024L * 1024L);
 
     /// <inheritdoc />
     public async Task<ZarrSubsetResult> ReadSubsetAsync(
@@ -224,14 +227,7 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
         var rank = array.Shape.Length;
         var chunkPath = JoinKey(arrayPath, BuildChunkKey(chunkIndex, array.ChunkKeyEncoding));
 
-        // BH3-022: Validate the declared chunk size against the per-request cap BEFORE issuing
-        // any cloud read. The old code passed int.MaxValue/4 (~512 MB) as the read ceiling and
-        // only checked the metadata-declared size after the read had already allocated raw buffers.
-        // An attacker-controlled Zarr store can write chunk objects much larger than the declared
-        // chunk dimensions; with MaxDegreeOfParallelism=8, that yielded up to 4.3 GB of temporary
-        // allocation per request. By computing chunkBytes first and using it as the read ceiling,
-        // the network read is bounded to the expected uncompressed size (compressed data is always
-        // smaller than its uncompressed form, so this ceiling is safe for both codecs).
+        // Validate the declared decoded chunk size before issuing any cloud read.
         var chunkBytes = ComputeChunkBytes(array, elementSize);
         if (chunkBytes > MaxBytesPerRequest)
         {
@@ -243,8 +239,23 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
         byte[]? raw;
         try
         {
-            // chunkBytes <= MaxBytesPerRequest (256 MiB), so the cast to int is safe.
-            raw = await reader.ReadRangeAsync(bucket, chunkPath, 0, (int)chunkBytes, cancellationToken).ConfigureAwait(false);
+            var objectSize = await reader.GetObjectSizeAsync(bucket, chunkPath, cancellationToken).ConfigureAwait(false);
+            if (objectSize <= 0)
+            {
+                raw = null;
+            }
+            else
+            {
+                // Uncompressed chunks are bounded by their decoded size. Compressed
+                // chunks are read using the object size so incompressible DEFLATE
+                // streams are not truncated, while the larger compressed cap keeps
+                // attacker-controlled objects bounded.
+                var readLimit = array.Compressor is null ? chunkBytes : MaxCompressedChunkBytes;
+                var readLength = Math.Min(objectSize, readLimit);
+                raw = await reader.ReadRangeAsync(
+                        bucket, chunkPath, 0, checked((int)readLength), cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (FileNotFoundException)
         {

@@ -23,12 +23,16 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 ```json
 {
   "name": "ci-publisher",
-  "permissions": [],
+  "permissions": ["admin:write"],
   "expiresAt": null
 }
 ```
 
 The response's `data.key` is shown once — store it immediately. Manage the lifecycle with `POST /api/v1/admin/api-keys/{id}/rotate` (returns a new secret), `POST .../{id}/revoke`, and `GET .../{id}/effective-permissions`.
+
+An empty permissions array is normalized to `admin:*` for legacy compatibility and
+therefore grants full admin access; do not use it for CI. Grant only the operations
+the job needs, and prefer a narrower service or layer grant when available.
 
 For the focused Console read/approve client, mint a named key with:
 

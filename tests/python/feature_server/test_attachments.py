@@ -123,7 +123,8 @@ class TestAddAttachment:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/1/addAttachment",
             data={"f": "json"},
         )
-        assert response.status_code in [400, 404]
+        assert response.status_code == 200
+        assert_geoservices_error(response, body_codes={400})
 
     @pytest.mark.integration
     @pytest.mark.featureserver
@@ -206,7 +207,8 @@ class TestDeleteAttachments:
             f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/1/deleteAttachments",
             data={"f": "json"},
         )
-        assert response.status_code in [400, 404]
+        assert response.status_code == 200
+        assert_geoservices_error(response, body_codes={400})
 
 
 class TestDownloadAttachment:

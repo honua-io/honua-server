@@ -172,6 +172,18 @@ public sealed class ErrorDetails
     /// </summary>
     [JsonPropertyName("details")]
     public ErrorDetail[]? Details { get; init; }
+
+    /// <summary>
+    /// Indicates that retrying may succeed once server backpressure clears.
+    /// </summary>
+    [JsonPropertyName("retryable")]
+    public bool? Retryable { get; init; }
+
+    /// <summary>
+    /// Server-advised delay before retrying, in seconds, when known.
+    /// </summary>
+    [JsonPropertyName("retryAfterSeconds")]
+    public int? RetryAfterSeconds { get; init; }
 }
 
 /// <summary>

@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -123,10 +124,9 @@ internal static partial class WmsRequestHandlers
     internal static async Task<IResult> HandleWms(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
-        if (serviceError is not null)
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
         {
-            return serviceError;
+            return CreateWmsServiceException(context, "InvalidParameterValue", "Service ID is required.");
         }
 
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
@@ -447,52 +447,80 @@ internal static partial class WmsRequestHandlers
     }
 
     /// <summary>
-    /// Parses the optional WMS 1.3 TIME parameter into per-layer
-    /// <see cref="TemporalFilter"/>. Returns (null, null) when TIME is absent so
-    /// non-temporal layers are not regressed. The TIME value is shared across
-    /// all requested layers (WMS does not allow per-layer TIME); each layer that
-    /// is time-aware receives the same parsed bounds, and layers without temporal
-    /// configuration are rejected with InvalidDimensionValue per OGC 06-042.
-    /// CITE Autos has its own synthetic rendering path and is bypassed here so
-    /// the existing CITE conformance behavior is preserved.
+    /// Resolves the optional WMS 1.3 TIME parameter into per-layer
+    /// <see cref="TemporalFilter"/> values. WMS dimensions are per-layer: a TIME
+    /// parameter is ignored for layers that do not advertise a time dimension.
+    /// When TIME is omitted, the advertised default is applied. Instant requests
+    /// use the advertised nearest-value behavior and report that substitution in
+    /// a Warning header.
     /// </summary>
-    private static (TemporalFilter?[]? Filters, IResult? Error) TryParseWmsLayerTemporalFilters(
+    private static async Task<(TemporalFilter?[]? Filters, string[] Warnings, IResult? Error)> TryResolveWmsLayerTemporalFiltersAsync(
         HttpContext context,
         IQueryCollection query,
-        WmsLayer[] layers)
+        WmsLayer[] layers,
+        IFeatureReader featureReader,
+        ILogger logger,
+        CancellationToken cancellationToken)
     {
         var timeParam = GetQueryValue(query, "TIME");
-        if (string.IsNullOrWhiteSpace(timeParam))
-        {
-            return (null, null);
-        }
-
         var allCiteAutos = layers.Length > 0 && layers.All(layer => IsCiteLayerNamed(layer, CiteAutosLayerTitle));
 
-        if (!OgcTemporalFilterParser.TryParseRange(timeParam, out var start, out var end, out var parseError))
+        // CITE Autos uses a synthetic rendering path with its own TIME parser.
+        // Do not let the normal temporal resolver consume its values.
+        if (allCiteAutos)
         {
-            // CITE Autos uses synthetic rendering with its own TIME parser
-            // (`current`, comma-separated instants). When the *entire* request
-            // targets cite:Autos, surface the unparsed value to
-            // TryHandleCiteWmsGetMap instead of rejecting it. A mixed request
-            // (cite:Autos + a normal layer) must not silently drop TIME for
-            // the normal layer — reject those with InvalidDimensionValue
-            // since a CITE-only TIME form cannot apply to a regular layer's
-            // temporal column.
-            if (allCiteAutos)
-            {
-                return (null, null);
-            }
+            return (null, [], null);
+        }
 
-            return (null, CreateWmsServiceException(
+        var temporalSelections = new TemporalExtentHelpers.MetadataV2TemporalFieldSelection?[layers.Length];
+        var temporalRanges = new TemporalExtentHelpers.MetadataV2TemporalRange?[layers.Length];
+        var hasTemporalLayer = false;
+        for (var i = 0; i < layers.Length; i++)
+        {
+            if (!IsCiteLayerNamed(layers[i], CiteAutosLayerTitle) &&
+                TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layers[i].Resource, out var selection))
+            {
+                // Match GetCapabilities' effective gate, not just the presence of
+                // metadata. Providers that cannot resolve the advertised extent
+                // (for example, SQL Server/MySQL temporal pushdown) do not expose a
+                // TIME dimension and must therefore ignore TIME for this layer.
+                var range = await ResolveTemporalRangeSafeAsync(
+                    layers[i],
+                    featureReader,
+                    logger,
+                    cancellationToken).ConfigureAwait(false);
+                if (range is { HasExtent: true, Min: not null, Max: not null })
+                {
+                    temporalSelections[i] = selection;
+                    temporalRanges[i] = range;
+                    hasTemporalLayer = true;
+                }
+            }
+        }
+
+        // C.3.5 requires a dimension value to be ignored for an object that does
+        // not have that dimension. This also means malformed TIME cannot turn a
+        // request containing only static layers into an InvalidDimensionValue.
+        if (!hasTemporalLayer)
+        {
+            return (null, [], null);
+        }
+
+        var warnings = new List<string>();
+        DateTimeOffset? requestedStart;
+        DateTimeOffset? requestedEnd;
+
+        if (string.IsNullOrWhiteSpace(timeParam))
+        {
+            requestedStart = null;
+            requestedEnd = null;
+        }
+        else if (!OgcTemporalFilterParser.TryParseRange(timeParam, out requestedStart, out requestedEnd, out var parseError))
+        {
+            return (null, [], CreateWmsServiceException(
                 context,
                 "InvalidDimensionValue",
                 parseError ?? "Invalid TIME parameter."));
-        }
-
-        if (start is null && end is null)
-        {
-            return (null, null);
         }
 
         var temporalFilters = new TemporalFilter?[layers.Length];
@@ -511,34 +539,201 @@ internal static partial class WmsRequestHandlers
                 continue;
             }
 
-            // Match the capabilities contract: a layer is time-aware only when
-            // its Temporal extension declares a StartTimeField AND both the start
-            // and (optional) end fields resolve to Date/DateTime attributes. WMS
-            // GetCapabilities uses the same gate (TryResolveTemporalRangeV2Async
-            // returns null when EndTimeField does not resolve), so a layer whose
-            // EndTimeField is misconfigured does not advertise a <Dimension
-            // name="time"> and must not accept TIME on GetMap either.
-            if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layer.Resource, out var selection))
+            if (temporalSelections[i] is not { } selection)
             {
-                return (null, CreateWmsServiceException(
-                    context,
-                    "InvalidDimensionValue",
-                    $"Layer '{GetWmsLayerDisplayName(layer)}' does not support a TIME dimension."));
+                // TIME is a request-wide parameter, but its dimension is not.
+                // Leave this layer unfiltered when it has no advertised TIME.
+                continue;
             }
 
             var startFieldName = selection.StartFieldName;
             var startFieldType = ResolveTemporalPropertyType(layer.Resource, startFieldName);
+            var effectiveStart = requestedStart;
+            var effectiveEnd = requestedEnd;
+
+            var hasExplicitTime = !string.IsNullOrWhiteSpace(timeParam);
+            if (effectiveStart is null && effectiveEnd is null &&
+                temporalRanges[i] is { Max: DateTimeOffset defaultValue })
+            {
+                effectiveStart = defaultValue;
+                effectiveEnd = defaultValue;
+                warnings.Add(BuildWmsDefaultWarning("time", FormatWmsTimestamp(defaultValue)));
+            }
+
+            if (hasExplicitTime && effectiveStart is DateTimeOffset instant && effectiveEnd == instant)
+            {
+                var nearest = await FindNearestWmsTemporalValueAsync(
+                    featureReader,
+                    layer,
+                    startFieldName,
+                    selection.EndFieldName,
+                    startFieldType,
+                    instant,
+                    cancellationToken).ConfigureAwait(false);
+                if (nearest is DateTimeOffset nearestValue)
+                {
+                    if (nearestValue != instant)
+                    {
+                        warnings.Add(BuildWmsNearestWarning("time", FormatWmsTimestamp(nearestValue)));
+                    }
+
+                    effectiveStart = nearestValue;
+                    effectiveEnd = nearestValue;
+                }
+            }
+
             temporalFilters[i] = new TemporalFilter
             {
                 PropertyName = startFieldName,
                 PropertyType = startFieldType,
                 EndPropertyName = selection.EndFieldName,
-                Start = start,
-                End = end
+                Start = effectiveStart,
+                End = effectiveEnd
             };
         }
 
-        return (temporalFilters, null);
+        return (temporalFilters.Any(filter => filter is not null) ? temporalFilters : null, [.. warnings.Distinct(StringComparer.Ordinal)], null);
+    }
+
+    private static async Task<DateTimeOffset?> FindNearestWmsTemporalValueAsync(
+        IFeatureReader featureReader,
+        WmsLayer layer,
+        string fieldName,
+        string? endFieldName,
+        TemporalPropertyType propertyType,
+        DateTimeOffset requested,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(endFieldName) &&
+            await QueryWmsTemporalOverlapAsync(
+                featureReader,
+                layer,
+                fieldName,
+                endFieldName,
+                propertyType,
+                requested,
+                cancellationToken).ConfigureAwait(false))
+        {
+            // An instant inside a row interval is already a valid value for the
+            // advertised dimension. Do not replace it with the row's start.
+            return requested;
+        }
+
+        var before = await QueryNearestWmsTemporalValueAsync(
+            featureReader, layer, fieldName, propertyType, requested, ascending: false, cancellationToken).ConfigureAwait(false);
+        var after = await QueryNearestWmsTemporalValueAsync(
+            featureReader, layer, fieldName, propertyType, requested, ascending: true, cancellationToken).ConfigureAwait(false);
+
+        if (before is null)
+        {
+            return after;
+        }
+
+        if (after is null)
+        {
+            return before;
+        }
+
+        return requested - before.Value <= after.Value - requested ? before : after;
+    }
+
+    private static async Task<bool> QueryWmsTemporalOverlapAsync(
+        IFeatureReader featureReader,
+        WmsLayer layer,
+        string fieldName,
+        string endFieldName,
+        TemporalPropertyType propertyType,
+        DateTimeOffset requested,
+        CancellationToken cancellationToken)
+    {
+        var result = await featureReader.QueryAsync(
+            layer.StorageLayerId,
+            new FeatureQuery
+            {
+                OutFields = [fieldName],
+                TemporalFilter = new TemporalFilter
+                {
+                    PropertyName = fieldName,
+                    PropertyType = propertyType,
+                    EndPropertyName = endFieldName,
+                    Start = requested,
+                    End = requested
+                },
+                Limit = 1
+            },
+            cancellationToken).ConfigureAwait(false);
+        return result.Items.Length > 0;
+    }
+
+    private static async Task<DateTimeOffset?> QueryNearestWmsTemporalValueAsync(
+        IFeatureReader featureReader,
+        WmsLayer layer,
+        string fieldName,
+        TemporalPropertyType propertyType,
+        DateTimeOffset requested,
+        bool ascending,
+        CancellationToken cancellationToken)
+    {
+        var temporalFilter = new TemporalFilter
+        {
+            PropertyName = fieldName,
+            PropertyType = propertyType,
+            Start = ascending ? requested : null,
+            End = ascending ? null : requested
+        };
+        var query = new FeatureQuery
+        {
+            OutFields = [fieldName],
+            TemporalFilter = temporalFilter,
+            OrderBy = [new OrderByClause(fieldName, ascending, propertyType == TemporalPropertyType.Date
+                ? MetadataV2FieldType.Date
+                : MetadataV2FieldType.DateTime)],
+            Limit = 1
+        };
+
+        var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
+        if (result.Items.Length == 0 ||
+            !result.Items[0].Attributes.TryGetValue(fieldName, out var rawValue))
+        {
+            return null;
+        }
+
+        return TryConvertWmsTemporalValue(rawValue, propertyType, out var value) ? value : null;
+    }
+
+    private static bool TryConvertWmsTemporalValue(object? rawValue, TemporalPropertyType propertyType, out DateTimeOffset value)
+    {
+        switch (rawValue)
+        {
+            case DateTimeOffset dateTimeOffset:
+                value = dateTimeOffset.ToUniversalTime();
+                return true;
+            case DateTime dateTime:
+                value = new DateTimeOffset(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc));
+                return true;
+            case DateOnly dateOnly:
+                value = new DateTimeOffset(dateOnly.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+                return true;
+            case JsonElement jsonElement when jsonElement.ValueKind == JsonValueKind.String:
+                return TryConvertWmsTemporalValue(jsonElement.GetString(), propertyType, out value);
+            case string text when propertyType == TemporalPropertyType.Date &&
+                                 DateOnly.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date):
+                value = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+                return true;
+            case string text when DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed):
+                value = parsed;
+                return true;
+            case long milliseconds:
+                value = DateTimeOffset.FromUnixTimeMilliseconds(milliseconds);
+                return true;
+            case int milliseconds:
+                value = DateTimeOffset.FromUnixTimeMilliseconds(milliseconds);
+                return true;
+            default:
+                value = default;
+                return false;
+        }
     }
 
     /// <summary>
@@ -871,8 +1066,15 @@ internal static partial class WmsRequestHandlers
 
         return string.Equals(exceptionsValue, "XML", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(exceptionsValue, "text/xml", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(exceptionsValue, WmsSeXmlExceptionMimeType, StringComparison.OrdinalIgnoreCase);
+               string.Equals(exceptionsValue, WmsSeXmlExceptionMimeType, StringComparison.OrdinalIgnoreCase) ||
+               IsWmsImageExceptionFormat(exceptionsValue);
     }
+
+    private static bool IsWmsImageExceptionFormat(string? exceptionsValue)
+        => string.Equals(exceptionsValue, "application/vnd.ogc.se_inimage", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(exceptionsValue, "application/vnd.ogc.se_blank", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(exceptionsValue, "INIMAGE", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(exceptionsValue, "BLANK", StringComparison.OrdinalIgnoreCase);
 
     private static string[] GetWmsCapabilitiesMediaTypes(string version)
         => IsWms111Version(version) ? _wms111CapabilitiesMediaTypes : _wms13CapabilitiesMediaTypes;
@@ -1145,12 +1347,144 @@ internal static partial class WmsRequestHandlers
                 includeClientErrors: true);
         }
 
+        var exceptionsValue = context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS");
+        if (IsWmsImageExceptionFormat(exceptionsValue))
+        {
+            return CreateWmsImageException(context, code, message, exceptionsValue);
+        }
+
         var version = context is null ? Wms13Version : GetRequestedWmsVersion(context.Request.Query);
         var xml = BuildWmsServiceExceptionReport(code, message, version);
-        var contentType = GetWmsExceptionMimeType(context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS"), version);
-        // WMS 1.3.0 §7.3.3.4 / WMS 1.1.1 §6.10: ServiceExceptionReport MUST be returned with HTTP 200 OK.
-        // The error code and message are conveyed entirely in the XML body.
-        return Results.Content(xml, contentType, Encoding.UTF8, StatusCodes.Status200OK);
+        var contentType = GetWmsExceptionMimeType(exceptionsValue, version);
+        // WMS 1.3.0 §7.3.3.4 describes the ServiceExceptionReport payload; it does
+        // not require every failure to use HTTP 200. Preserve the caller's
+        // protocol status so access, capacity, and server failures remain
+        // observable to clients.
+        return Results.Content(xml, contentType, Encoding.UTF8, statusCode);
+    }
+
+    private static WmsImageExceptionResult CreateWmsImageException(
+        HttpContext? context,
+        string code,
+        string message,
+        string? exceptionsValue)
+    {
+        var query = context?.Request.Query;
+        var imageFormat = "png";
+        var contentType = "image/png";
+        if (query is not null && TryNormalizeWmsMapFormat(GetQueryValue(query, "FORMAT") ?? string.Empty, out var requestedFormat, out var requestedContentType))
+        {
+            imageFormat = requestedFormat;
+            contentType = requestedContentType;
+        }
+
+        var width = TryGetWmsExceptionImageDimension(query, "WIDTH");
+        var height = TryGetWmsExceptionImageDimension(query, "HEIGHT");
+        ArgumentNullException.ThrowIfNull(context);
+
+        var isInImage = string.Equals(exceptionsValue, "application/vnd.ogc.se_inimage", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(exceptionsValue, "INIMAGE", StringComparison.OrdinalIgnoreCase);
+        return new WmsImageExceptionResult(
+            width,
+            height,
+            imageFormat,
+            contentType,
+            isInImage,
+            code,
+            message);
+    }
+
+    private sealed class WmsImageExceptionResult(
+        int width,
+        int height,
+        string imageFormat,
+        string contentType,
+        bool isInImage,
+        string code,
+        string message) : IResult
+    {
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            var limiter = httpContext.RequestServices.GetService<RasterRenderCapacityLimiter>();
+            RasterRenderCapacityLimiter.Lease? lease = null;
+            if (limiter is not null)
+            {
+                lease = await limiter.TryAcquireAsync(
+                    width,
+                    height,
+                    httpContext.RequestAborted).ConfigureAwait(false);
+            }
+
+            if (lease is null)
+            {
+                await WriteXmlFailureAsync(
+                    httpContext,
+                    StatusCodes.Status503ServiceUnavailable,
+                    "NoApplicableCode",
+                    RasterRenderCapacityLimiter.CapacityExceededMessage).ConfigureAwait(false);
+                return;
+            }
+
+            await using (lease.ConfigureAwait(false))
+            {
+                using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
+                if (surface is null)
+                {
+                    await WriteXmlFailureAsync(
+                        httpContext,
+                        StatusCodes.Status500InternalServerError,
+                        "NoApplicableCode",
+                        "Failed to allocate render surface.").ConfigureAwait(false);
+                    return;
+                }
+
+                surface.Canvas.Clear(imageFormat == "png" ? SKColors.Transparent : SKColors.White);
+                if (isInImage)
+                {
+                    var textSize = Math.Max(12, Math.Min(width, height) / 12f);
+                    using var paint = new SKPaint
+                    {
+                        Color = SKColors.Red,
+                        IsAntialias = true
+                    };
+                    using var font = new SKFont(SKTypeface.Default, textSize);
+                    surface.Canvas.DrawText($"{code}: {message}", 4, Math.Min(height - 4, font.Size + 4), SKTextAlign.Left, font, paint);
+                }
+
+                var bytes = SkiaMapRenderer.EncodeSurface(surface, imageFormat);
+                httpContext.Response.StatusCode = StatusCodes.Status200OK;
+                httpContext.Response.ContentType = contentType;
+                httpContext.Response.ContentLength = bytes.Length;
+                await httpContext.Response.Body.WriteAsync(bytes, httpContext.RequestAborted).ConfigureAwait(false);
+            }
+        }
+
+        private static async Task WriteXmlFailureAsync(
+            HttpContext context,
+            int statusCode,
+            string code,
+            string message)
+        {
+            var xml = BuildWmsServiceExceptionReport(
+                code,
+                message,
+                GetRequestedWmsVersion(context.Request.Query));
+            context.Response.StatusCode = statusCode;
+            context.Response.ContentType = WmsXmlExceptionMimeType;
+            await context.Response.WriteAsync(xml, Encoding.UTF8, context.RequestAborted).ConfigureAwait(false);
+        }
+    }
+
+    private static int TryGetWmsExceptionImageDimension(IQueryCollection? query, string name)
+    {
+        if (query is not null &&
+            int.TryParse(GetQueryValue(query, name), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) &&
+            value > 0 && value <= WmsMaxImageDimension)
+        {
+            return value;
+        }
+
+        return 1;
     }
 
     private static string BuildWmsServiceExceptionReport(string code, string message, string? version)
@@ -1212,103 +1546,9 @@ internal static partial class WmsRequestHandlers
     {
         result = default!;
 
-        var serviceName = service.Metadata.Name ?? string.Empty;
-        if (!string.Equals(serviceName, CiteServiceName, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var hasTerrain = renderLayers.Any(layer => IsCiteLayerNamed(layer, CiteTerrainLayerTitle));
-        var hasLakes = renderLayers.Any(layer => IsCiteLayerNamed(layer, CiteLakesLayerTitle));
-        var hasAutos = renderLayers.Any(layer => IsCiteLayerNamed(layer, CiteAutosLayerTitle));
-        if (!hasTerrain && !hasLakes && !hasAutos)
-        {
-            return false;
-        }
-
-        // When FILTER is applied, bypass synthetic CITE rendering so the
-        // standard feature-query path applies the filter per OGC WMS 1.3.0.
-        if (layerFilters is not null)
-        {
-            for (var i = 0; i < layerFilters.Length; i++)
-            {
-                if (layerFilters[i] is not null)
-                {
-                    return false;
-                }
-            }
-        }
-
-        if (hasAutos)
-        {
-            if (!TryResolveCiteAutosTime(
-                    GetQueryValue(query, "TIME"),
-                    out var activeInstants,
-                    out var warningHeader,
-                    out var autosError))
-            {
-                result = CreateWmsServiceException(context, "InvalidDimensionValue", autosError ?? "Invalid TIME parameter.");
-                return true;
-            }
-
-            var autosBytes = RenderCiteAutosImage(
-                imageWidth,
-                imageHeight,
-                imageFormat,
-                transparent,
-                backgroundColor,
-                activeInstants);
-            result = CreateWmsImageResult(autosBytes, contentType, warningHeader);
-            return true;
-        }
-
-        if (hasTerrain)
-        {
-            if (!TryResolveCiteTerrainElevation(
-                    GetQueryValue(query, "ELEVATION"),
-                    out var terrainSelection,
-                    out var warningHeader,
-                    out var terrainError))
-            {
-                result = CreateWmsServiceException(context, "InvalidDimensionValue", terrainError ?? "Invalid ELEVATION parameter.");
-                return true;
-            }
-
-            var terrainBytes = RenderCiteTerrainImage(
-                imageWidth,
-                imageHeight,
-                imageFormat,
-                transparent,
-                backgroundColor,
-                terrainSelection);
-            result = CreateWmsImageResult(terrainBytes, contentType, warningHeader);
-            return true;
-        }
-
-        if (hasLakes)
-        {
-            if (!TryResolveCiteLakesElevation(
-                    GetQueryValue(query, "ELEVATION"),
-                    out var lakesElevation,
-                    out var warningHeader,
-                    out var lakesError))
-            {
-                result = CreateWmsServiceException(context, "InvalidDimensionValue", lakesError ?? "Invalid ELEVATION parameter.");
-                return true;
-            }
-
-            var lakesBytes = RenderCiteLakesImage(
-                imageWidth,
-                imageHeight,
-                imageFormat,
-                transparent,
-                backgroundColor,
-                requestedExtent,
-                lakesElevation);
-            result = CreateWmsImageResult(lakesBytes, contentType, warningHeader);
-            return true;
-        }
-
+        // CITE fixture rendering was intentionally removed in #34. Every WMS
+        // request must flow through the canonical feature/style renderer so
+        // certification exercises the shipped product pipeline.
         return false;
     }
 
@@ -1816,6 +2056,23 @@ internal static partial class WmsRequestHandlers
 
     private static string BuildCiteNearestWarning(string dimension, string value)
         => $"99 Nearest value used: {dimension}={value}";
+
+    private static string BuildWmsDefaultWarning(string dimension, string value)
+        => $"99 Default value used: {dimension}={value}";
+
+    private static string BuildWmsNearestWarning(string dimension, string value)
+        => $"99 Nearest value used: {dimension}={value}";
+
+    private static string FormatWmsTimestamp(DateTimeOffset value)
+        => TemporalExtentHelpers.FormatOgcTemporalValue(value);
+
+    private static void AppendWmsWarnings(HttpContext context, IEnumerable<string> warnings)
+    {
+        foreach (var warning in warnings)
+        {
+            context.Response.Headers.Append(WmsWarningHeaderName, warning);
+        }
+    }
 
     private static string FormatCiteTimestamp(DateTimeOffset value)
         => value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);

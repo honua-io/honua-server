@@ -156,7 +156,12 @@ internal sealed class ZarrCoverageService
                 Description = "Zarr variable over dimensions [" + string.Join(", ", array.DimensionNames) + "]",
                 PropertySequence = i + 1,
                 PixelType = array.DataType,
-                NoDataValue = array.FillValue as double?
+                // JSON has no representation for NaN or infinity. Keep those
+                // sentinels in the binary reader, but do not make the schema
+                // endpoint fail serialization for a valid Zarr fill value.
+                NoDataValue = array.FillValue is double fill && double.IsFinite(fill)
+                    ? fill
+                    : null
             };
         }
 
@@ -320,10 +325,14 @@ internal sealed class ZarrCoverageService
         if (georeferenced && width > 0 && height > 0)
         {
             var extent = metadata.Extent;
-            origin = ImmutableArray.Create(extent.XMin, extent.YMax);
+            origin = ImmutableArray.Create(
+                extent.XMin,
+                metadata.YAxisAscending ? extent.YMin : extent.YMax);
             resolution = ImmutableArray.Create(
                 (extent.XMax - extent.XMin) / width,
-                (extent.YMin - extent.YMax) / height);
+                metadata.YAxisAscending
+                    ? (extent.YMax - extent.YMin) / height
+                    : (extent.YMin - extent.YMax) / height);
         }
 
         return new CoverageGrid
@@ -751,12 +760,22 @@ internal sealed class ZarrCoverageService
             {
                 yAxis = name;
                 var cellHeight = (extent.YMax - extent.YMin) / array.Shape[i];
-                // Row 0 is the northernmost row (north-up convention).
-                axes.Add(new CoverageJsonAxis(
-                    name,
-                    extent.YMax - ((request.Start[i] + 0.5) * cellHeight),
-                    extent.YMax - ((request.Stop[i] - 0.5) * cellHeight),
-                    count));
+                if (metadata.YAxisAscending)
+                {
+                    axes.Add(new CoverageJsonAxis(
+                        name,
+                        extent.YMin + ((request.Start[i] + 0.5) * cellHeight),
+                        extent.YMin + ((request.Stop[i] - 0.5) * cellHeight),
+                        count));
+                }
+                else
+                {
+                    axes.Add(new CoverageJsonAxis(
+                        name,
+                        extent.YMax - ((request.Start[i] + 0.5) * cellHeight),
+                        extent.YMax - ((request.Stop[i] - 0.5) * cellHeight),
+                        count));
+                }
                 continue;
             }
 
@@ -804,8 +823,16 @@ internal sealed class ZarrCoverageService
             else if (IsYDimension(metadata, name))
             {
                 var cellHeight = (extent.YMax - extent.YMin) / array.Shape[i];
-                yMax = extent.YMax - (request.Start[i] * cellHeight);
-                yMin = extent.YMax - (request.Stop[i] * cellHeight);
+                if (metadata.YAxisAscending)
+                {
+                    yMin = extent.YMin + (request.Start[i] * cellHeight);
+                    yMax = extent.YMin + (request.Stop[i] * cellHeight);
+                }
+                else
+                {
+                    yMax = extent.YMax - (request.Start[i] * cellHeight);
+                    yMin = extent.YMax - (request.Stop[i] * cellHeight);
+                }
             }
         }
 

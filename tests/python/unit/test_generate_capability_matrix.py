@@ -164,5 +164,24 @@ class InteropEvidenceFreshnessTests(unittest.TestCase):
         self.assertNotIn("reason", not_green)
 
 
+class CustomerAlertingLifecycleTests(unittest.TestCase):
+    def test_committed_keys_and_matrix_keep_every_alerting_claim_preview(self):
+        # Operator ruling 2026-09-04 (release#268): qualification evidence is
+        # retained, but section 7.3 conditional GA is not pursued in 2026.1.
+        for name in ("capability-keys.v1.json", "capability-matrix.v1.json"):
+            with self.subTest(artifact=name):
+                artifact = MODULE.load_json(ROOT / "docs/gis/data" / name)
+                alerting = [
+                    row for row in artifact["capabilities"]
+                    if row["category"] in ("Alerts", "Channels")
+                ]
+                self.assertTrue(alerting, "customer alerting must remain represented")
+                self.assertEqual(
+                    [row["key"] for row in alerting if row.get("status") != "preview"],
+                    [],
+                    "a GA claim requires reviewed promotion receipts, not more proving tests",
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

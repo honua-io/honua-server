@@ -34,7 +34,12 @@ public sealed class OgcClassicWmsZoomGatingTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture = new();
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        // Exercise zoom gating over a static layer, independently of WMS default TIME.
+        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, clearTemporal: true);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 

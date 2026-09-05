@@ -67,10 +67,14 @@ OIDC provider configuration (`Oidc__*` — Azure AD, Google, Okta, Auth0, generi
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `Licensing__LicensePath` | — (Community mode) | Path to a signed JSON license envelope; unset runs Community mode. |
+| `Licensing__LicensePath` | unset | Ordinary signed license file and path prefix for the persisted `.uploaded` override. Community mode applies when no source is configured. |
+| `Licensing__LicenseContent` | unset | Inline signed envelope, used after any uploaded override and resolved secret. |
+| `Licensing__LicenseContentSecretRef` | unset | Secret-store reference to a signed envelope, used after any uploaded override. |
 | `Licensing__TrustedKeys__{keyId}` | — | Trusted raw Ed25519 public key (base64url) per license key id. |
-| `Licensing__AllowAdminUpload` | `false` | Allow license upload through the admin API. |
+| `Licensing__AllowAdminUpload` | `false` | Allow future admin uploads; turning it off does not undo a persisted upload. |
 | `Licensing__ExpiryWarningDays` | `30` | Days before expiry at which warnings are emitted. |
+
+After a successful upload, `<LicensePath>.uploaded` takes precedence at startup. Replacing only `LicensePath` and restarting keeps that override. Renew through the admin upload endpoint, or stop the server, remove the override, and align the configured sources before restart. See [Renew or replace a license](../../concepts/editions-and-licensing.md#renew-or-replace-a-license). Persist and back up the containing license directory.
 
 ## Caching (Redis)
 
@@ -163,8 +167,8 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 | `HONUA_SERVE_API_DOCS` (`ServeApiDocs`) | `true` in Development, else `false` | Serve the interactive API explorer at `/docs` ([details](../openapi-and-explorer.md)). |
 | `HONUA_SERVE_STAC_DEMO` (`ServeStacOpsDemo`) | `true` in Development/Test, else `false` | Serve the hosted STAC operations demo at `/samples/stac-ops/`. |
 | `HONUA_SKIP_MIGRATIONS` | `false` | Skip database migrations on startup (out-of-band migration flows own their own upgrade safety — the migration-safety settings below do not apply). |
-| `Database__MigrationSafety__ContractApplyPolicy` | `Auto` | `Gate` requires explicit approval before pending reviewed contract-phase (schema-narrowing) migrations apply on an existing database. Journal-scoped: fresh installs always provision fully. See [Deploy with Docker Compose — Upgrade & Rollback](../../guides/deploy/docker-compose.md#upgrade--rollback). |
-| `HONUA_APPROVE_CONTRACT_MIGRATIONS` | `false` | One-shot operator approval that lets gated contract-phase migrations apply under `ContractApplyPolicy=Gate`. Unset it after the upgrade. |
+| `Database__MigrationSafety__ContractApplyPolicy` | `Gate` | `Gate` requires explicit approval before pending reviewed contract-phase (schema-narrowing) migrations apply on an existing database. Journal-scoped: fresh installs always provision fully. See [Deploy with Docker Compose — Upgrade & Rollback](../../guides/deploy/docker-compose.md#upgrade--rollback). |
+| `HONUA_APPROVE_CONTRACT_MIGRATIONS` | unset | One-shot operator approval nonce printed by the migration safety error. Unset it after the upgrade. |
 | `Database__MigrationSafety__BackupCommand` | — (none) | Optional shell command run immediately before contract-phase migrations apply on an existing database (e.g. `pg_dump ...`); non-zero exit aborts the migration run. Configuration-source only — never settable via the admin API or database. |
 | `FeatureChangeEvents__Webhook__Enabled` | `false` | Enable outbound webhook delivery of feature-change events. |
 | `FeatureChangeEvents__Webhook__Url` / `FeatureChangeEvents__Webhook__Secret` | — | Webhook target URL and HMAC signing secret. |

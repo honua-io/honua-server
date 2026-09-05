@@ -365,7 +365,7 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         var pending = await store.ClaimPendingAsync(1_000, DateTimeOffset.UtcNow.AddMinutes(1));
         foreach (var item in pending)
         {
-            await store.MarkDeliveredAsync(item.DispatchId, DateTimeOffset.UtcNow);
+            await store.MarkDeliveredAsync(item.DispatchId, item.ClaimToken, DateTimeOffset.UtcNow);
         }
     }
 

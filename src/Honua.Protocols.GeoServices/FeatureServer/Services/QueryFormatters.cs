@@ -42,7 +42,8 @@ internal interface IQueryFormatter
         string[]? outFields = null,
         bool suppressObjectId = false,
         bool returnCentroid = false,
-        int? requestedOutputSrid = null);
+        int? requestedOutputSrid = null,
+        QuantizationTransform? quantizationTransform = null);
 }
 
 /// <summary>
@@ -74,7 +75,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         string[]? outFields = null,
         bool suppressObjectId = false,
         bool returnCentroid = false,
-        int? requestedOutputSrid = null)
+        int? requestedOutputSrid = null,
+        QuantizationTransform? quantizationTransform = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -87,7 +89,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         return format.ToLowerInvariant() switch
         {
             "pbf" => ValueTask.FromResult<(object response, string contentType)>(
-                _pbfFormatter.FormatAsPbf(result, resource, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields)),
+                _pbfFormatter.FormatAsPbf(result, resource, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields, quantizationTransform)),
             "geojson" => ValueTask.FromResult<(object response, string contentType)>(
                 FormatAsGeoJson(result, resource, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
             "json" => ValueTask.FromResult<(object response, string contentType)>(
@@ -1308,6 +1310,17 @@ internal sealed class StreamingQueryFormatter
         if (!objectIdWritten)
         {
             writer.WriteNumber(objectIdFieldName, GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
+        }
+
+        // The materialized GeoServices formatter exposes Esri's conventional
+        // uppercase OBJECTID alias when all fields are requested. Keep the streaming
+        // path byte-for-byte equivalent for that common default projection.
+        if (outFieldLookup is null &&
+            objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+            (feature.Attributes is null || !feature.Attributes.Keys.Any(
+                static key => key.Equals("OBJECTID", StringComparison.OrdinalIgnoreCase))))
+        {
+            writer.WriteNumber("OBJECTID", GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
         }
 
         writer.WriteEndObject(); // End attributes

@@ -48,6 +48,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
         _client = _fixture.CreateAdminClient();
     }
 

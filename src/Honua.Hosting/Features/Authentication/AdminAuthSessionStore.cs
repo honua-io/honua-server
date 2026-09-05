@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
@@ -230,10 +231,31 @@ internal sealed partial class AdminAuthSessionStore(
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Intentional: the memory-tier entry is already removed above, and the distributed
-            // entry still expires on its own TTL, so a removal failure here is non-fatal — log
-            // and continue rather than fail the caller's request.
             AdminAuthSessionLog.DistributedCacheRemoveFailed(_logger, GetKeyFamily(key), LogValueRedactor.Hash(key), ex);
+            if (keyPrefix == AuthSessionKeyPrefix)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    // A direct shared-store miss confirms idempotent revocation. Never
+                    // use the memory fallback or interpret a failed read as absence.
+                    if (await _distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false) is null)
+                    {
+                        return;
+                    }
+                }
+                catch (Exception readException) when (readException is not OutOfMemoryException)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    AdminAuthSessionLog.DistributedCacheReadFailed(
+                        _logger, GetKeyFamily(key), LogValueRedactor.Hash(key), readException);
+                }
+
+                // A local eviction cannot revoke the authoritative shared session. The caller
+                // must preserve the cookie and report failure so revocation can be retried.
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new ServiceUnavailableException("The shared admin session could not be revoked.", ex);
+            }
         }
     }
 

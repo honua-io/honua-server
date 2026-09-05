@@ -19,8 +19,8 @@ namespace Honua.Server.Tests.Features.Capabilities;
 /// Track-B integration coverage for honua-server#2347 (T11): the built-experimental
 /// capabilities the T10 flip (#2346) gated OFF the first-release surface
 /// (<c>versioning.branch</c> and — since #2958 — <c>security.mtls</c> again;
-/// <c>alerts.geofence</c>, <c>realtime.feature-streams</c>, <c>temporal.*</c>, and
-/// <c>sync.offline</c> were promoted to GA, so they are no longer experimental) must be
+/// <c>alerts.geofence</c>, <c>realtime.feature-streams</c>, and <c>sync.offline</c>
+/// are Preview and are checked in the same opt-in path) must be
 /// genuinely <b>absent</b> from every served surface end-to-end when experimental is
 /// disabled (the production default), and become present/served the moment a customer
 /// opts one in via <c>Capabilities:Experimental</c>. This closes the loop B2 (#2334) and
@@ -36,9 +36,8 @@ namespace Honua.Server.Tests.Features.Capabilities;
 ///     the gated VMS and client-certificate route groups
 ///     (<c>/rest/services/{id}/VersionManagementServer</c>,
 ///     <c>/api/v1/admin/security/client-certificates/*</c>) short-circuit with
-///     <c>404 honua:capability-experimental-disabled</c> while disabled. The now-GA
-///     temporal, alerts, streaming, and disconnected-sync replica groups are asserted to
-///     NOT short-circuit even with experimental off.
+///     <c>404 honua:capability-experimental-disabled</c> while disabled. Preview
+///     alerts are likewise asserted absent until explicitly opted in.
 ///   </description></item>
 /// </list>
 /// The Test environment turns experimental ON globally (appsettings.Test.json), which is
@@ -56,9 +55,14 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     /// <summary>The built-experimental manifest capability ids the T10 flip (#2346) gates off.</summary>
     private static readonly string[] ExperimentalCapabilityIds =
     [
+        "serve.3d-tiles-scene",
+        "serve.i3s-scene",
+        "scene.catalog",
+        "scene.bim-ingest",
+        "scene.pointcloud-ingest",
         // temporal.* promoted to GA (Implemented) in #2429 — no longer experimental-gated.
         // sync.offline promoted to GA (Implemented) in #2430 — no longer experimental-gated.
-        // alerts.geofence promoted in #2427 — not gated.
+        // alerts.geofence is Preview in 2026.1 and is asserted separately below.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
         // security.mtls was promoted to GA in #2431, then DEMOTED back to experimental in
@@ -69,7 +73,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task Manifest_WhenExperimentalDisabled_OmitsEveryExperimentalCapability()
+    public async Task Manifest_WhenLifecycleFlagsAreEmpty_ReportsEveryAdoptedCapabilityUnavailable()
     {
         // Registry-derived manifest (the production composition) with experimental OFF:
         // every built-experimental capability resolves experimental-disabled, so the
@@ -90,20 +94,19 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
 
             foreach (var experimentalId in ExperimentalCapabilityIds)
             {
-                HasCapability(root, experimentalId).Should().BeFalse(
-                    "the experimental capability {0} is gated OFF the first-release manifest by default",
-                    experimentalId);
+                var experimental = GetCapability(root, experimentalId);
+                experimental.GetProperty("lifecycle").GetString().Should().Be("experimental");
+                experimental.GetProperty("available").GetBoolean().Should().BeFalse();
+                experimental.GetProperty("reasonCode").GetString().Should().Be("experimental-disabled");
             }
 
-            foreach (var previewId in new[] { "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var previewId in new[] { "alerts.geofence", "sync.offline", "realtime.feature-streams", "serve.sensorthings" })
             {
-                var preview = root.GetProperty("capabilities")
-                    .EnumerateArray()
-                    .Single(item => item.GetProperty("id").GetString() == previewId);
+                var preview = GetCapability(root, previewId);
                 preview.GetProperty("lifecycle").GetString().Should().Be("preview");
                 preview.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
                 preview.GetProperty("available").GetBoolean().Should().BeFalse();
-                preview.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
+                preview.GetProperty("reasonCode").GetString().Should().Be("experimental-disabled");
             }
 
             // In-release capabilities are unaffected by the flip — still served.
@@ -141,14 +144,13 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var document = await ReadDocumentAsync(response);
             var root = document.RootElement;
 
-            HasCapability(root, "versioning.branch").Should().BeTrue(
-                "the opted-in experimental capability is served");
+            AssertNotLifecycleDisabled(GetCapability(root, "versioning.branch"));
 
             foreach (var stillDisabled in ExperimentalCapabilityIds.Where(
                 id => !string.Equals(id, "versioning.branch", StringComparison.Ordinal)))
             {
-                HasCapability(root, stillDisabled).Should().BeFalse(
-                    "{0} was not opted in and stays absent", stillDisabled);
+                GetCapability(root, stillDisabled).GetProperty("reasonCode").GetString()
+                    .Should().Be("experimental-disabled", "{0} was not opted in", stillDisabled);
             }
         }
         finally
@@ -159,7 +161,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task Manifest_WhenRealtimePreviewsOptedIn_DeclaresPreviewLifecycle()
+    public async Task Manifest_WhenCustomerAlertingAndRealtimePreviewsOptedIn_DeclaresPreviewLifecycle()
     {
         var fixture = CreateFixture(experimentalGlobalEnabled: true);
         await fixture.InitializeAsync();
@@ -171,7 +173,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var document = await ReadDocumentAsync(response);
-            foreach (var id in new[] { "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var id in new[] { "alerts.geofence", "realtime.feature-streams", "serve.sensorthings" })
             {
                 var capability = document.RootElement.GetProperty("capabilities")
                     .EnumerateArray()
@@ -179,6 +181,35 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
                 capability.GetProperty("lifecycle").GetString().Should().Be("preview");
                 capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
             }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData("serve.3d-tiles-scene")]
+    [InlineData("serve.i3s-scene")]
+    [InlineData("scene.catalog")]
+    [InlineData("scene.bim-ingest")]
+    [InlineData("scene.pointcloud-ingest")]
+    [InlineData("alerts.geofence")]
+    [InlineData("sync.offline")]
+    public async Task Manifest_WhenAdoptedCapabilityIsIndividuallyOptedIn_IsRuntimeEligible(string capabilityId)
+    {
+        var fixture = CreateFixture(experimentalGlobalEnabled: false, perCapabilityEnabled: capabilityId);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = await ReadDocumentAsync(response);
+            var capability = GetCapability(document.RootElement, capabilityId);
+            AssertNotLifecycleDisabled(capability);
         }
         finally
         {
@@ -239,12 +270,10 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/alerts/zones")]
-    public async Task AlertsEndpoint_AfterGaPromotion_IsNotExperimentalGated()
+    public async Task AlertsEndpoint_WhenPreviewDisabled_IsNotMapped()
     {
-        // #2427 promoted alerts.geofence Experimental -> Implemented (GA). The alerts
-        // admin group must no longer short-circuit as experimental-disabled even with the
-        // global experimental switch OFF — the request reaches the handler (subject to
-        // admin auth) instead of the 404 the T10 flip previously produced.
+        // Operator ruling 2026-09-04 keeps alerts.geofence Preview for 2026.1. The
+        // admin group must remain hidden behind the canonical explicit opt-in.
         var fixture = CreateFixture(experimentalGlobalEnabled: false);
         await fixture.InitializeAsync();
 
@@ -253,7 +282,28 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var client = fixture.CreateAdminClient();
             using var response = await client.GetAsync("/api/v1/admin/alerts/zones");
 
-            await AssertNotExperimentalDisabledAsync(response);
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
+    public async Task SharedStreamingOperations_WhenAlertsPreviewDisabled_RemainAvailable()
+    {
+        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/admin/operations/streaming/subscribers");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK,
+                "the GA streaming operations surface depends on alert-owned shared services");
         }
         finally
         {
@@ -338,8 +388,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
-    public async Task StreamingEndpoint_AfterGaPromotion_IsNotExperimentalGated()
+    [Endpoint("GET /api/v1/streaming/features/capabilities")]
+    public async Task StreamingEndpoint_WhenPreviewDisabled_Returns404ExperimentalDisabled()
     {
         // #2428 promoted realtime.feature-streams Experimental -> Implemented (GA). The
         // streaming operations admin group must no longer short-circuit as
@@ -352,9 +402,9 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         try
         {
             using var client = fixture.CreateAdminClient();
-            using var response = await client.GetAsync("/api/v1/admin/operations/streaming/subscribers");
+            using var response = await client.GetAsync("/api/v1/streaming/features/capabilities");
 
-            await AssertNotExperimentalDisabledAsync(response);
+            await AssertExperimentalDisabledAsync(response);
         }
         finally
         {
@@ -364,7 +414,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/services/{serviceId}/replicas")]
-    public async Task ReplicasEndpoint_AfterGaPromotion_IsNotExperimentalGated()
+    public async Task ReplicasEndpoint_WhenPreviewDisabled_IsNotMapped()
     {
         // #2430 promoted sync.offline Experimental -> Implemented (GA). The disconnected-sync
         // replica/conflict-review admin group must no longer short-circuit as
@@ -379,7 +429,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var client = fixture.CreateAdminClient();
             using var response = await client.GetAsync("/api/v1/admin/services/svc-experimental/replicas");
 
-            await AssertNotExperimentalDisabledAsync(response);
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
         finally
         {
@@ -394,7 +444,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         var configuration = new Dictionary<string, string?>
         {
             ["MultiTenancy:DefaultTenantId"] = "tenant-experimental",
-            // Production composition: the manifest omits experimental-disabled capabilities.
+            // Production composition: lifecycle-disabled capabilities remain visible as unavailable.
             ["Capabilities:ManifestFromRegistry"] = "true",
             // Override the Test-environment default (Experimental:Enabled=true) so the
             // disabled posture — the production default — is exercised end-to-end.
@@ -455,4 +505,18 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     private static bool HasCapability(JsonElement root, string capabilityId)
         => root.GetProperty("capabilities").EnumerateArray().Any(item =>
             string.Equals(item.GetProperty("id").GetString(), capabilityId, StringComparison.Ordinal));
+
+    private static JsonElement GetCapability(JsonElement root, string capabilityId)
+        => root.GetProperty("capabilities").EnumerateArray().Single(item =>
+            string.Equals(item.GetProperty("id").GetString(), capabilityId, StringComparison.Ordinal));
+
+    private static void AssertNotLifecycleDisabled(JsonElement capability)
+    {
+        if (capability.TryGetProperty("reasonCode", out var reasonCode))
+        {
+            reasonCode.GetString().Should().NotBe(
+                "experimental-disabled",
+                "the canonical per-capability opt-in must make the row runtime-eligible");
+        }
+    }
 }

@@ -1,16 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections;
 using System.Collections.Immutable;
+using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
-using System.Security;
 using System.Security.Claims;
-using System.Text;
+using System.Security;
 using System.Text.Json;
-using System.Xml;
+using System.Text;
 using System.Xml.Linq;
+using System.Xml;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -21,8 +21,9 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Core.Queries.Filters;
+using Honua.Core.Features.Shared.Services;
 using Honua.Core.Queries.Filters.Fes20;
+using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.GeoJson;
@@ -30,12 +31,12 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
-using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Classic.Wfs20.Models;
+using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
-using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using NetTopologySuite;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
@@ -44,8 +45,7 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 /// Core handler for WFS 2.0 operations backed by the shared catalog and feature stores.
 /// </summary>
 /// <remarks>
-/// CITE conformance: 166/167 (WFS 2.0 `basic` profile on trunk); multi-layer
-/// rollbackOnFailure=true transactions remain the failing requirement.
+/// CITE conformance: 167/167 (WFS 2.0 `basic` profile, run 33583116921).
 /// Authoritative status: <see href="../../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
 /// </remarks>
 internal sealed partial class Wfs20Handler
@@ -154,7 +154,11 @@ internal sealed partial class Wfs20Handler
                 filter,
                 resourceId,
                 srsName,
-                enforceResourceIdTypeMatch: true,
+                // A qualified RESOURCEID is scoped by its own type name. When the request
+                // selects multiple types (including the implicit all-types selection), ignore
+                // that id while building the other type's plan instead of rejecting the entire
+                // request because the prefix does not match that plan (#4168).
+                enforceResourceIdTypeMatch: featureTypes.Count == 1,
                 requireResourceIdQualifier: featureTypes.Count > 1,
                 cancellationToken: cancellationToken,
                 wfsVersion: wfsVersion);
@@ -207,7 +211,8 @@ internal sealed partial class Wfs20Handler
             plans.Add(new LayerQueryPlan(
                 featureType,
                 query with { Offset = layerOffset, Limit = layerLimit },
-                layerMatched));
+                layerMatched,
+                srsName));
 
             remainingCount -= layerLimit;
         }
@@ -752,21 +757,15 @@ internal sealed partial class Wfs20Handler
     /// explicit longitude/latitude axis order) in any of its accepted spellings.
     /// </summary>
     /// <remarks>
-    /// The original <c>Contains("CRS84")</c> substring test silently missed the
-    /// <c>CRS:84</c> spelling that <see cref="SpatialReferenceHelpers"/> accepts
-    /// everywhere else, so a client asking for <c>SRSNAME=CRS:84</c> was served
-    /// latitude/longitude ordinates under a longitude/latitude CRS. The shared
-    /// CRS parser closes that gap: CRS84 is the only CRS it maps to WGS 84 with
-    /// an EastNorth axis order, so the pair uniquely identifies it. The substring
-    /// test is retained as the first arm so the result is a strict superset of
-    /// the previous behaviour for spellings the parser does not recognise.
+    /// The shared CRS parser accepts the supported CRS84 spellings with anchored
+    /// patterns. CRS84 is the only CRS it maps to WGS 84 with an EastNorth axis
+    /// order, so the pair uniquely identifies it without accepting arbitrary
+    /// strings that merely contain <c>CRS84</c>.
     /// </remarks>
     private static bool IsCrs84Request(string? srsName)
-        => !string.IsNullOrWhiteSpace(srsName) &&
-           (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase) ||
-            (SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var definition) &&
-             definition.Srid == SpatialReference.WGS84.Wkid &&
-             definition.AxisOrder == AxisOrder.EastNorth));
+        => SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var definition) &&
+           definition.Srid == SpatialReference.WGS84.Wkid &&
+           definition.AxisOrder == AxisOrder.EastNorth;
 
     private static Parameter CreateParameter(string name, bool allowAnyValue)
     {
@@ -792,7 +791,8 @@ internal sealed partial class Wfs20Handler
         int offset,
         int pageSize,
         long totalMatched,
-        int returnedCount)
+        int returnedCount,
+        IReadOnlyList<string>? pagingTypeNames = null)
     {
         var pagingResultType = string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase)
             ? null
@@ -814,7 +814,8 @@ internal sealed partial class Wfs20Handler
                 offset,
                 pageSize,
                 totalMatched,
-                returnedCount));
+                returnedCount,
+                pagingTypeNames));
     }
 
     private static string BuildFeatureCollectionSchemaLocation(
@@ -854,7 +855,8 @@ internal sealed partial class Wfs20Handler
         int offset,
         int pageSize,
         long totalMatched,
-        int returnedCount)
+        int returnedCount,
+        IReadOnlyList<string>? pagingTypeNames = null)
     {
         if (pageSize <= 0 || selectedTypes.Count == 0)
         {
@@ -878,7 +880,8 @@ internal sealed partial class Wfs20Handler
                 srsName,
                 resultType,
                 (int)nextOffset,
-                pageSize)
+                pageSize,
+                pagingTypeNames)
             : null;
         var previous = offset > 0
             ? BuildGetFeaturePagingLink(
@@ -893,7 +896,8 @@ internal sealed partial class Wfs20Handler
                 srsName,
                 resultType,
                 Math.Max(offset - pageSize, 0),
-                pageSize)
+                pageSize,
+                pagingTypeNames)
             : null;
 
         return new PagingLinks(next, previous);
@@ -911,14 +915,18 @@ internal sealed partial class Wfs20Handler
         string? srsName,
         string? resultType,
         int offset,
-        int count)
+        int count,
+        IReadOnlyList<string>? pagingTypeNames = null)
     {
+        var typeNames = pagingTypeNames is { Count: > 0 }
+            ? pagingTypeNames
+            : selectedTypes.Select(descriptor => descriptor.LocalName).ToArray();
         var queryParts = new List<string>
         {
             $"SERVICE={Uri.EscapeDataString(Wfs20Utilities.ServiceType)}",
             $"VERSION={Uri.EscapeDataString(Wfs20Utilities.Version)}",
             $"REQUEST={Uri.EscapeDataString(Wfs20Utilities.Operations.GetFeature)}",
-            $"TYPENAMES={Uri.EscapeDataString(string.Join(',', selectedTypes.Select(descriptor => descriptor.LocalName)))}",
+            $"TYPENAMES={Uri.EscapeDataString(string.Join(',', typeNames))}",
             $"COUNT={count.ToString(CultureInfo.InvariantCulture)}",
             $"STARTINDEX={offset.ToString(CultureInfo.InvariantCulture)}"
         };
@@ -1241,7 +1249,10 @@ internal sealed partial class Wfs20Handler
     /// GML path routes through here; WFS 1.0.0/1.1.0 serialize geometry themselves
     /// and are labelled at that writer.
     /// </remarks>
-    private static string RelabelCrs84SrsName(string geometryGml, FeatureQuery query)
+    private static string RelabelCrs84SrsName(
+        string geometryGml,
+        FeatureQuery query,
+        string? requestedSrsName = null)
     {
         var outputSrid = query.OutputSrid ?? query.SpatialReferenceSrid;
         if (query.OutputAxisOrder != AxisOrder.EastNorth ||
@@ -1252,7 +1263,8 @@ internal sealed partial class Wfs20Handler
 
         return geometryGml.Replace(
             $"srsName=\"{FormatCrs(SpatialReference.WGS84.Wkid)}\"",
-            $"srsName=\"{Crs84Urn}\"",
+            $"srsName=\"{System.Security.SecurityElement.Escape(
+                IsCrs84Request(requestedSrsName) ? requestedSrsName : Crs84Urn)}\"",
             StringComparison.Ordinal);
     }
 
@@ -1308,7 +1320,7 @@ internal sealed partial class Wfs20Handler
                 FeatureNamespacePrefix,
                 XmlConvert.EncodeLocalName(geometryPropertyName),
                 FeatureNamespaceUri);
-            writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, plan.Query));
+            writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, plan.Query, plan.RequestedSrsName));
             writer.WriteEndElement();
         }
 
@@ -1802,8 +1814,10 @@ internal sealed partial class Wfs20Handler
         };
     }
 
-    private static string ConvertFieldValueToInvariantString(object? value, MetadataV2Field field)
+    private static string? ConvertFieldValueToInvariantString(object? value, MetadataV2Field field)
     {
+        if (IsNullValue(value))
+            return null;
         if (value is string text)
         {
             return field.Type switch
@@ -1957,19 +1971,7 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static string EscapeCsv(string? value)
-    {
-        var safeValue = value ?? string.Empty;
-        if (!safeValue.Contains(',') &&
-            !safeValue.Contains('"') &&
-            !safeValue.Contains('\n') &&
-            !safeValue.Contains('\r'))
-        {
-            return safeValue;
-        }
-
-        return $"\"{safeValue.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
-    }
+    private static string EscapeCsv(string? value) => CsvFieldFormatter.Escape(value);
 
     private static string XmlEscape(string value) => SecurityElement.Escape(value) ?? string.Empty;
 
@@ -2022,7 +2024,8 @@ internal sealed partial class Wfs20Handler
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,
         FeatureQuery Query,
-        long MatchedCount);
+        long MatchedCount,
+        string? RequestedSrsName = null);
 
     private readonly record struct LayerQueryPlanSet(
         ImmutableArray<LayerQueryPlan> Plans,
