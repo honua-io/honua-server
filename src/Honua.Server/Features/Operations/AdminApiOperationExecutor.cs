@@ -84,7 +84,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         {
             var issued = await _adminApiKeyStore.CreateAsync(
                 $"approved-operation:{context.ApprovedProposalId}",
-                [AdminApiKeyPermission.CreateApprovedOperationGrant(_definition.Method.Method, uri.AbsolutePath)],
+                AdminApiKeyPermission.CreateApprovedOperationGrants(_definition.Method.Method, uri.AbsolutePath, context.TenantId),
                 _clock.GetUtcNow().AddMinutes(5),
                 context.PrincipalId,
                 cancellationToken).ConfigureAwait(false);

@@ -66,6 +66,8 @@ internal static class AdminApiKeyPermission
     internal const string ApproveGrant = "admin:approve";
     internal const string ApprovedOperationGrantPrefix = "admin:operation:";
     internal const string ApprovedOperationRole = "approved-operation";
+    internal const string ApprovedOperationTenantGrantPrefix = "admin:operation:tenant:";
+    internal const string ApprovedOperationTenantClaim = "honua:approved-operation-tenant";
 
     /// <summary>Admits scoped admin keys to permission-checked policies without full-admin role bypasses.</summary>
     internal const string ScopedAdminRole = "scoped-admin-key";
@@ -193,6 +195,13 @@ internal static class AdminApiKeyPermission
         }
 
         return $"{ApprovedOperationGrantPrefix}{httpMethod.ToUpperInvariant()}:{requestPath}";
+    }
+
+    /// <summary>Creates method/path authority and a persisted, server-only tenant binding.</summary>
+    internal static string[] CreateApprovedOperationGrants(string httpMethod, string requestPath, string? tenantId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
+        return [CreateApprovedOperationGrant(httpMethod, requestPath), ApprovedOperationTenantGrantPrefix + tenantId];
     }
 
     /// <summary>Determines whether a grant belongs to the server-only approved-operation vocabulary.</summary>

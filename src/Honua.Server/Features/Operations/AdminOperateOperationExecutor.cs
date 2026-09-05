@@ -70,7 +70,7 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
                 ?? throw new InvalidOperationException("Approved operation replay requires the admin API-key store.");
             var issued = await credentialStore.CreateAsync(
                 $"approved-operation:{context.ApprovedProposalId}",
-                [AdminApiKeyPermission.CreateApprovedOperationGrant(method.Method, uri.AbsolutePath)],
+                AdminApiKeyPermission.CreateApprovedOperationGrants(method.Method, uri.AbsolutePath, context.TenantId),
                 _clock.GetUtcNow().AddMinutes(5),
                 context.PrincipalId,
                 cancellationToken).ConfigureAwait(false);
