@@ -38,7 +38,7 @@ Licensing__ExpiryWarningDays=30     # default
 ```
 
 - `Licensing__Edition` — `Community`, `Pro`, or `Enterprise`. Set it on every paid server and worker. If omitted, a configured source selects paid-license validation and a valid signed license determines the tier.
-- `Licensing__LicensePath` — path to the signed license file and the location prefix for the persisted `.uploaded` override. With no file, inline content, or secret reference configured, the server runs Community mode.
+- `Licensing__LicensePath` — path to the signed license file and the location prefix for the persisted `.uploaded` override. With no paid edition declared and no file, inline content, or secret reference configured, the server runs Community mode.
 - `Licensing__LicenseContent` — inline signed JSON envelope.
 - `Licensing__LicenseContentSecretRef` — secret-store reference to the signed envelope.
 - `Licensing__TrustedKeys__<keyId>` — trusted raw Ed25519 public key per key id (`base64url:<key>`, unprefixed Base64URL, or `base64:<key>`). The envelope's `keyId` must match a configured entry.
