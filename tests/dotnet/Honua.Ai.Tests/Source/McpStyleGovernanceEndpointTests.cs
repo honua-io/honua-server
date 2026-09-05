@@ -15,6 +15,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -50,9 +51,7 @@ public sealed class McpStyleGovernanceEndpointTests
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow,
             });
-        var license = Substitute.For<ILicenseEntitlementService>();
-        license.GetSnapshot().Returns(new LicenseSnapshot(HonuaEdition.Pro, true,
-            LicenseValidationState.Valid, null, null, null, null, [], new HashSet<string>(), 1, null));
+        var license = new TestLicenseEntitlementService(HonuaEdition.Pro);
         var fixture = new WebAppFixture()
             .ReplaceService<ILicenseEntitlementService>(license)
             .ReplaceService<IGeoprocessingJobService>(jobs)
