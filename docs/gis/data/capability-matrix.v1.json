@@ -695,7 +695,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 29,
+      "provingTestCount": 30,
       "maturity": {
         "implemented": 2
       },
@@ -1760,7 +1760,7 @@
       "entryCount": 142,
       "provingTestCount": 377,
       "maturity": {
-        "implemented": 142
+        "preview": 142
       },
       "noSurface": null,
       "cite": [],
@@ -1786,7 +1786,8 @@
       "entryCount": 45,
       "provingTestCount": 337,
       "maturity": {
-        "implemented": 45
+        "implemented": 43,
+        "preview": 2
       },
       "noSurface": null,
       "cite": [],
@@ -2393,7 +2394,7 @@
       "entryCount": 1,
       "provingTestCount": 6,
       "maturity": {
-        "implemented": 1
+        "preview": 1
       },
       "noSurface": null,
       "cite": [

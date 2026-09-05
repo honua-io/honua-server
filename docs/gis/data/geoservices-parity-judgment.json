@@ -951,7 +951,7 @@
             "/MapServer/WMTS",
             "/MapServer/WMTS/{**restPath}"
           ],
-          "notes": "Supports GetCapabilities and GetTile for the WebMercatorQuad and WorldCRS84Quad (CRS84/EPSG:4326) gridsets; GetFeatureInfo is WebMercatorQuad-only."
+          "notes": "Preview in 2026.1. Supports GetCapabilities and GetTile for the WebMercatorQuad and WorldCRS84Quad (CRS84/EPSG:4326) gridsets; GetFeatureInfo is WebMercatorQuad-only."
         },
         {
           "name": "layers (allLayersAndTables alias)",
@@ -1136,7 +1136,7 @@
           "esriPaths": [
             "/ImageServer"
           ],
-          "notes": "Layer-scoped route. Responses are cached with the ImageServerMetadata output-cache policy."
+          "notes": "ImageServer and its WMTS surface are Preview in 2026.1 under the 2026-09-03 operator ruling. Layer-scoped route. Responses are cached with the ImageServerMetadata output-cache policy."
         },
         {
           "name": "Raster Catalog Item",
@@ -1230,7 +1230,7 @@
           "esriPaths": [
             "/ImageServer/exportImage"
           ],
-          "notes": "Default response is a JSON envelope with a temporary href; f=image streams the rendered bytes inline with the format-specific media type."
+          "notes": "Preview in 2026.1. Default response is a JSON envelope with a temporary href; f=image streams the rendered bytes inline with the format-specific media type. An unavailable PostGIS output GDAL driver produces a sanitized GeoServices 501 envelope; transient database export outages produce 503."
         },
         {
           "name": "Identify",

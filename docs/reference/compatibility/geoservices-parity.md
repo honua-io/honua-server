@@ -31,7 +31,7 @@ Status vocabulary:
 
 - **Implemented** — the Esri operation exists at a compatible path and the documented behavior is supported.
 - **Partial** — the operation exists, but only a subset of documented parameters or behavior is supported.
-- **Preview** — the operation is available for opt-in evaluation but is not a GA contract in the current release. Preview is a lifecycle maturity, separate from the implementation-completeness status in the machine-readable matrix.
+- **Preview** — the operation is available for evaluation but is not a GA contract in the current release. Preview is a lifecycle maturity, separate from the implementation-completeness status in the machine-readable matrix.
 - **Stub** — the route exists and returns the spec-shaped response, but the backing data model is deferred; read-style stubs return empty/`false` results and mutation stubs return HTTP 400 rather than fabricating success.
 - **Not implemented** — the operation is not exposed.
 
@@ -41,7 +41,7 @@ Status vocabulary:
 | --- | --- | --- | --- |
 | [FeatureServer](#featureserver) | Partial | Query (7 output formats), edits, attachments, related records, domains, replication with incremental change tracking, contingent values (service operation + layer `contingentValuesDefinition`), subtype-derived layer `types`/editing templates, 3D (Z/M) queries + `hasZ`/`hasM` layer advertisement, true-curve input densification (circular-arc/Bézier `curvePaths`/`curveRings` → linear), estimates, calculate, validateSQL, append, bins/date bins/top features, generateRenderer, spatial analytics extensions (Pro) | Standalone shared-template store and utility-network/asset data models (deferred — no canonical backing), lossless true-curve storage/re-emission (input densifies, output stays linear), automated contingent-value import |
 | [MapServer](#mapserver--wms--wmts) | Partial | Export, identify, find, legend/queryLegends, query, mapLayer + allowlisted workspace (`dataLayer`) dynamicLayers, allowlisted `joinTable` dynamicLayers joins (left-outer/inner, application-side, surfaced through identify + dynamicLayer metadata), tiles with cloud-storage cache, storage-backed exportTiles (synchronous ZIP + Esri exploded-cache TPK; asynchronous Esri Compact Cache V2 / TPKX with a durable job lifecycle), generateKml, WMS 1.3/1.1.1, WMTS 1.0 (WebMercatorQuad + WorldCRS84Quad gridsets) | Esri compact/generated tile-cache *management* (seeding, expiry, quota) for the live tile cache, dynamicLayers `queryTable` (raw SQL) data sources, image/KML-image child resources |
-| [ImageServer](#imageserver) | Partial | Service metadata, exportImage, identify (including registered-Zarr point-slice reads), tile with cloud-storage cache, catalog query/item and item image/info resources, find (orientation-ranked when sensor metadata present), measure (Basic + DEM-backed height), statistics/histograms, getSamples (including registered-Zarr slice sampling), queryBoundary, computePixelLocation, project (incl. RPC image-CS warp), storage-backed exportTiles (synchronous ZIP + Esri exploded-cache TPK; asynchronous Esri Compact Cache V2 / TPKX with a durable job lifecycle), dynamic computeCacheInfo, legend, colormap resource (renderer-driven), Colormap renderingRule (explicit stops, named ColorrampName, or inline algorithmic/multipart Colorramp), raster item thumbnail, DEM-backed calculateVolume, control-point computeTiePoints, computeClassStatistics, admin raster CRUD (delete/update via admin API), WMTS 1.0 GetCapabilities/GetTile/GetFeatureInfo, WCS 2.0.1 KVP including native-CRS PNG reads of registered Zarr slices | Source-native raster item metadata XML and KML image, shadow/photogrammetric height analytics, Esri compact/generated tile-cache *management*, multi-factor camera-model find scoring, transformed registered-Zarr slice output (TIFF/JPEG, reprojection, advanced interpolation, and multi-coordinate additional-axis trims), non-allowlisted (raw sensor/orientation) mosaic inputs, automatic seamline generation/editing; ImageServer WMTS is WebMercatorQuad only |
+| [ImageServer](#imageserver) | Preview (partial parity) | Service metadata, exportImage, identify (including registered-Zarr point-slice reads), tile with cloud-storage cache, catalog query/item and item image/info resources, find (orientation-ranked when sensor metadata present), measure (Basic + DEM-backed height), statistics/histograms, getSamples (including registered-Zarr slice sampling), queryBoundary, computePixelLocation, project (incl. RPC image-CS warp), storage-backed exportTiles (synchronous ZIP + Esri exploded-cache TPK; asynchronous Esri Compact Cache V2 / TPKX with a durable job lifecycle), dynamic computeCacheInfo, legend, colormap resource (renderer-driven), Colormap renderingRule (explicit stops, named ColorrampName, or inline algorithmic/multipart Colorramp), raster item thumbnail, DEM-backed calculateVolume, control-point computeTiePoints, computeClassStatistics, admin raster CRUD (delete/update via admin API), WMTS 1.0 GetCapabilities/GetTile/GetFeatureInfo, WCS 2.0.1 KVP including native-CRS PNG reads of registered Zarr slices | Source-native raster item metadata XML and KML image, shadow/photogrammetric height analytics, Esri compact/generated tile-cache *management*, multi-factor camera-model find scoring, transformed registered-Zarr slice output (TIFF/JPEG, reprojection, advanced interpolation, and multi-coordinate additional-axis trims), non-allowlisted (raw sensor/orientation) mosaic inputs, automatic seamline generation/editing; ImageServer WMTS is WebMercatorQuad only |
 | [Geometry Service](#geometry-service) | Complete | Root metadata plus all 23 ArcGIS geometry operations | None at operation level; parameter-level caveats only |
 | GeocodeServer | Partial | Service metadata, findAddressCandidates, reverseGeocode (incl. provider-dependent `distance`/`featureTypes`), suggest, geocodeAddresses, `outFields` projection, `outSR` reprojection, `magicKey` suggest→candidate round-trip (self-issued signed token, all providers), `category` filtering (all providers, on provider-supplied address type) | `forStorage`/`matchOutOfRange` (re-deferred; no backing provider models them) — see [GeocodeServer matrix](../../internal/spikes/geocode-server-matrix.md) |
 | GPServer | Partial | PrintingTools; generic adapter over 98 seeded processes with catalog-backed task metadata, 39 additive Esri-conventional name aliases, async submitJob, synchronous `execute` for the deterministic single-geometry `geometry.*`/`conversion.geometry-format` family (inline over the canonical job runtime), job status/cancel, and durable named-result retrieval | Aliases retain canonical Honua parameters rather than adapting the same-named Esri tool's wire contract; heavyweight/layer-scoped tasks stay async-only (their `execute` returns a 400 pointing at submitJob); both routes honor `env:outSR`, `env:workspace`, and `env:overwriteOutput`, while `env:processSR` is accepted/preserved but not yet applied and other `env:*` controls return 400 — see [run geoprocessing](../../guides/query-analyze/run-geoprocessing.md) |
@@ -158,6 +158,8 @@ defined in `GeoServicesEditErrorCodes` and exercised per class by
 
 ## MapServer + WMS / WMTS
 
+WMTS is **Preview in 2026.1**, including the MapServer and OGC service aliases.
+
 Esri spec: [Map Service](https://developers.arcgis.com/rest/services-reference/enterprise/map-service/).
 
 ### Operations
@@ -177,6 +179,17 @@ Esri spec: [Map Service](https://developers.arcgis.com/rest/services-reference/e
 | queryAnalytic, image/KML-image child resources, `exts/*` | Not implemented | |
 
 ## ImageServer
+
+**2026.1 lifecycle: Preview**, including ImageServer WMTS. The operator ruling
+of 2026-09-03 keeps security, isolation and lifecycle-truth fixes in scope;
+other parity work is deferred to release/2026.2. Implementation and conformance
+evidence below do not change that lifecycle. These routes remain served; their
+manifest entries report Preview with no additional opt-in flag required.
+
+`exportImage` returns a GeoServices error envelope with code `501` when the
+configured raster provider cannot load the requested output driver. Transient
+database export outages return code `503`; provider details are not exposed.
+These envelopes retain the GeoServices HTTP 200 transport convention.
 
 Esri spec: [Image Service](https://developers.arcgis.com/rest/services-reference/enterprise/image-service/).
 Routes are layer-scoped: `{id}` in `GET /rest/services/{id}/ImageServer` is the

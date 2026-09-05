@@ -16,6 +16,20 @@
   },
   "overrides": [
     {
+      "capability": "serve.geoservices-imageserver",
+      "maturity": "preview",
+      "reasonCode": "release-deferred",
+      "reason": "ImageServer, including its WMTS surface, is Preview in 2026.1. Security, isolation and lifecycle truth remain in scope; other parity fixes are deferred to release/2026.2.",
+      "decision": "honua-release#266 / #264 operator ruling (2026-09-03)"
+    },
+    {
+      "capability": "serve.wmts",
+      "maturity": "preview",
+      "reasonCode": "release-deferred",
+      "reason": "WMTS is Preview in 2026.1. Conformance evidence does not promote the release lifecycle; non-security parity fixes are deferred to release/2026.2.",
+      "decision": "honua-release#266 / #264 operator ruling (2026-09-03)"
+    },
+    {
       "capability": "fieldops.offline-sync",
       "maturity": "preview",
       "reasonCode": "release-deferred",

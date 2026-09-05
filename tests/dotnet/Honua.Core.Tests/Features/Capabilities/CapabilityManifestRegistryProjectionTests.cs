@@ -42,12 +42,15 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "temporal.animation-api",
         "serve.3d-tiles-scene",
         "serve.i3s-scene",
+        "serve.ogc-api-edr",
         "scene.catalog",
         "scene.bim-ingest",
         "scene.pointcloud-ingest",
         "sync.offline",
         "realtime.feature-streams",
         "serve.sensorthings",
+        "serve.geoservices-imageserver",
+        "serve.wmts",
         "alerts.geofence",
         "jobs.runner",
         "ai.spec-apply",
@@ -73,6 +76,17 @@ public sealed class CapabilityManifestRegistryProjectionTests
         => !descriptor.Id.StartsWith(CapabilityRegistry.McpToolIdPrefix, StringComparison.Ordinal)
             && !descriptor.Id.StartsWith(CapabilityRegistry.McpResourceIdPrefix, StringComparison.Ordinal)
             && !descriptor.Id.StartsWith(CapabilityRegistry.DataFormatIdPrefix, StringComparison.Ordinal);
+
+    [Theory]
+    [InlineData("serve.geoservices-imageserver")]
+    [InlineData("serve.wmts")]
+    public void Registry_LifecycleOnlyPreviews_RemainEnabledWithoutOptIn(string id)
+    {
+        var descriptor = Registry.Find(id)!;
+        descriptor.Maturity.Should().Be(CapabilityMaturity.Preview);
+        descriptor.RequiresOptIn.Should().BeFalse();
+        Registry.Resolve(id, CapabilityGateContext.Default).Enabled.Should().BeTrue();
+    }
 
     [Fact]
     public void Registry_ManifestDescriptors_MatchFrozenRosterInOrder()
@@ -113,10 +127,13 @@ public sealed class CapabilityManifestRegistryProjectionTests
 
     private static readonly string[] PreviewManifestCapabilityIds =
     [
+        "serve.ogc-api-edr",
         "sync.offline",
         "alerts.geofence",
         "realtime.feature-streams",
         "serve.sensorthings",
+        "serve.geoservices-imageserver",
+        "serve.wmts",
     ];
 
     [Fact]

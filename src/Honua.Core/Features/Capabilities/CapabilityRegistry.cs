@@ -305,6 +305,10 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // SensorThings uses the same canonical opt-in gate as its route registration;
             // it must never be present at runtime while absent from capability discovery.
             ("serve.sensorthings", "realtime", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
+            // ImageServer and WMTS are Preview in 2026.1 under the 2026-09-03
+            // operator ruling (honua-release#266 / #264).
+            ("serve.geoservices-imageserver", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
+            ("serve.wmts", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             // Geofence enter/exit alerting — promoted to GA (Implemented) in #2427.
             // First Experimental->Implemented promotion; engine ships as shared,
             // un-gated GA infrastructure. Workers still self-gate on
@@ -360,6 +364,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Category = category,
                 Kind = kind,
                 Maturity = maturity,
+                RequiresOptIn = id is not ("serve.geoservices-imageserver" or "serve.wmts"),
                 EntitlementKey = entitlementKey,
                 MinimumEdition = ResolveMinimumEdition(entitlementKey),
                 PackageSchemaVersion = packageSchemaVersion,

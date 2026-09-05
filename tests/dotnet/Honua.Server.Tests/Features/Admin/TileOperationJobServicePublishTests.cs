@@ -3,6 +3,8 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.IO.Compression;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -27,6 +29,58 @@ namespace Honua.Server.Tests.Features.Admin;
 
 public sealed class TileOperationJobServicePublishTests
 {
+    [Theory]
+    [InlineData("archive", true, 7)]
+    [InlineData("publish", true, 7)]
+    [InlineData("archive", true, null)]
+    [InlineData("publish", true, null)]
+    [InlineData("archive", false, 7)]
+    [InlineData("publish", false, 7)]
+    public async Task ArchiveOrPublish_SharedStorageLayer_UsesRequestedServiceResourceMetadata(
+        string operation, bool serviceScoped, int? publicationLayerIndex)
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("other", "Other resource", fields:
+                [new MetadataV2Field { Name = "other_field", Type = MetadataV2FieldType.Integer }])
+            .AddStorageBinding("other-binding", "other", "features", storageLayerId: 7)
+            .AddService("requested-service", "requested")
+            .AddResource("requested", "Requested resource", fields:
+                [new MetadataV2Field { Name = "requested_field", Type = MetadataV2FieldType.String }])
+            .AddStorageBinding("requested-binding", "requested", "features", storageLayerId: 7)
+            .AddPublication("requested-publication", "requested-service", "requested",
+                layerIndex: publicationLayerIndex, storageBindingId: "requested-binding")
+            .Build();
+        var stub = new StubCloudStorage();
+        using var serviceProvider = BuildScope(stub, includeCloudStorage: true, graph: graph);
+        var sut = CreateSut(serviceProvider);
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = operation,
+            ServiceId = serviceScoped ? "requested" : null,
+            LayerId = 7,
+            MinZoom = 0,
+            MaxZoom = 0,
+            MaxTiles = 1
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress!.Status.Should().Be(OperationStatus.Completed, progress.ErrorMessage);
+        stub.LastUploadBytes.Should().NotBeNull();
+        var header = PMTilesHeader.ReadFrom(stub.LastUploadBytes!);
+        using var metadataBytes = new MemoryStream(stub.LastUploadBytes!,
+            checked((int)header.JsonMetadataOffset), checked((int)header.JsonMetadataLength));
+        using var decompressed = new GZipStream(metadataBytes, CompressionMode.Decompress);
+        using var metadata = await JsonDocument.ParseAsync(decompressed);
+        metadata.RootElement.GetProperty("name").GetString().Should()
+            .Be(serviceScoped ? "Requested resource" : "Other resource");
+        var fields = metadata.RootElement.GetProperty("vector_layers")[0].GetProperty("fields");
+        fields.EnumerateObject().Should().ContainSingle();
+        fields.GetProperty(serviceScoped ? "requested_field" : "other_field").GetString()
+            .Should().Be(serviceScoped ? "string" : "integer");
+    }
+
     [Fact]
     public async Task Publish_WhenStorageMissing_FailsWithMessage()
     {
@@ -49,6 +103,63 @@ public sealed class TileOperationJobServicePublishTests
         progress.Should().NotBeNull();
         progress!.Status.Should().Be(OperationStatus.Failed);
         progress.ErrorMessage.Should().Contain("Cloud storage is not configured");
+    }
+
+    [Fact]
+    public async Task Archive_MaxTiles_ReportsTruncationAndStampsActualCoverage()
+    {
+        var stub = new StubCloudStorage();
+        using var serviceProvider = BuildScope(stub, includeCloudStorage: true);
+        var sut = CreateSut(serviceProvider);
+
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "archive",
+            LayerId = 1,
+            MinZoom = 0,
+            MaxZoom = 3,
+            MaxTiles = 2
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Completed);
+        progress.Warnings.Should().ContainSingle(w => w.Contains("exceeded maxTiles=2"));
+        stub.LastUploadBytes.Should().NotBeNull();
+
+        var header = PMTilesHeader.ReadFrom(stub.LastUploadBytes!);
+        header.TileEntriesCount.Should().Be(2);
+        header.MinZoom.Should().Be(0);
+        header.MaxZoom.Should().Be(1, "the selected two tiles only reach zoom 1");
+    }
+
+    [Fact]
+    public async Task Publish_MaxTiles_ReportsTruncationAndStampsActualCoverage()
+    {
+        var stub = new StubCloudStorage();
+        using var serviceProvider = BuildScope(stub, includeCloudStorage: true);
+        var sut = CreateSut(serviceProvider);
+
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "publish",
+            LayerId = 1,
+            MinZoom = 0,
+            MaxZoom = 3,
+            MaxTiles = 2
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Completed);
+        progress.Warnings.Should().ContainSingle(w => w.Contains("exceeded maxTiles=2"));
+        progress.PublishedArtifact.Should().NotBeNull();
+        progress.PublishedArtifact!.MaxZoom.Should().Be(1);
+        PMTilesHeader.ReadFrom(stub.LastUploadBytes!).MaxZoom.Should().Be(1);
     }
 
     [Fact]
@@ -567,10 +678,11 @@ public sealed class TileOperationJobServicePublishTests
         bool includeCloudStorage,
         PMTilesPublishOptions? publishOptions = null,
         CloudStorageOptions? cloudOptions = null,
-        Action<ITileProvider>? configureTileProvider = null)
+        Action<ITileProvider>? configureTileProvider = null,
+        MetadataV2Graph? graph = null)
     {
         var services = new ServiceCollection();
-        var graph = new TestMetadataV2GraphBuilder()
+        graph ??= new TestMetadataV2GraphBuilder()
             .AddService("svc-publish-test", "publish-test")
             .AddResource("res-publish", "publish-layer")
             .AddPublication("pub-publish", "svc-publish-test", "res-publish", layerIndex: 7)
@@ -644,6 +756,8 @@ public sealed class TileOperationJobServicePublishTests
 
         public FileUploadRequest? LastUpload { get; private set; }
 
+        public byte[]? LastUploadBytes { get; private set; }
+
         public List<string> DeletedFileIds { get; } = [];
 
         public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
@@ -653,19 +767,16 @@ public sealed class TileOperationJobServicePublishTests
                 ? request.ObjectKeyOverride
                 : Guid.NewGuid().ToString("N");
 
-            // Drain content stream so the size aligns with what the writer produced.
-            long size = 0;
+            // Drain content stream so the size aligns with what the writer produced. Keep the
+            // bytes for archive-header assertions in the PMTiles regression tests.
+            using var uploadBytes = new MemoryStream();
             if (request.Content.CanSeek)
             {
-                size = request.Content.Length;
                 request.Content.Position = 0;
             }
-            else
-            {
-                using var ms = new MemoryStream();
-                request.Content.CopyTo(ms);
-                size = ms.Length;
-            }
+            request.Content.CopyTo(uploadBytes);
+            LastUploadBytes = uploadBytes.ToArray();
+            var size = LastUploadBytes.LongLength;
 
             var cloudFile = new CloudFile
             {
