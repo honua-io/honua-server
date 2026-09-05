@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.IO.Compression;
 using System.Net;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -50,7 +51,15 @@ public sealed class GdalArtifactPublisherTests : IDisposable
         var payload = Enumerable.Range(0, 32768).Select(index => (byte)((index * 31 + 7) % 256)).ToArray();
         var outputPath = Path.Join(_scratch, "result.bin");
         await File.WriteAllBytesAsync(outputPath, payload);
-        var job = GdalJobFactory.Job("raster.resample") with { AttemptCount = 1 };
+        var job = GdalJobFactory.Job("raster.resample") with
+        {
+            AttemptCount = 1,
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "gp-store-qualification",
+                SubmitterSecurityContext = new JobSecurityContext("gp-store-qualification", "public", []),
+            },
+        };
         var inner = new RecordingJobExecutionContext(job.OperationId);
         var services = new ServiceCollection();
         services.AddGeoprocessingOutputStaging(configuration);

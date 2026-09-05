@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -345,6 +346,10 @@ public sealed class OgcProcessesStagedArtifactStoreUnavailableTestsFixture : IAs
         var succeeded = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo
+            {
+                SubmitterSecurityContext = new JobSecurityContext(null, "public", []),
+            },
             Status = ExecutionJobStatus.Succeeded,
             CreatedAt = now.AddMinutes(-10),
             UpdatedAt = now,
@@ -543,6 +548,10 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
         return new ExecutionJobRecord
         {
             OperationId = jobId,
+            Audit = new OperationAuditInfo
+            {
+                SubmitterSecurityContext = new JobSecurityContext(null, "public", []),
+            },
             Status = status,
             CreatedAt = now.AddMinutes(-10),
             UpdatedAt = now,
