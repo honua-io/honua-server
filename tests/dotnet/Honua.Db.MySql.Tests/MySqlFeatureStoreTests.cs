@@ -259,7 +259,7 @@ public class MySqlFeatureStoreTests
             ParameterizedQuery query, FeatureQuery featureQuery, int layerId, CancellationToken cancellationToken)
             => Task.FromResult(ImmutableArray<IReadOnlyDictionary<string, object?>>.Empty);
 
-        public Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, CancellationToken cancellationToken)
+        public Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken)
             => Task.FromResult<byte[]?>(null);
 
         public async IAsyncEnumerable<Feature> StreamFeaturesAsync(int layerId, ParameterizedQuery query, FeatureQuery featureQuery, [EnumeratorCancellation] CancellationToken cancellationToken)

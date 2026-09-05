@@ -380,11 +380,15 @@ internal sealed class ApiKeyAuthenticationHandler(
                 return AuthenticateResult.Fail("Approved operation credential has no unambiguous tenant binding.");
             }
 
+            var tenantClaim = new Claim(AdminApiKeyPermission.ApprovedOperationTenantClaim, tenantBindings[0]);
+            // This binding comes from the persisted server-minted credential, including
+            // an explicit empty binding. Preserve it through OIDC claim sanitization.
+            tenantClaim.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
             claims =
             [
                 new Claim(ClaimTypes.Name, apiKeyName ?? "approved-operation"),
                 new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole),
-                new Claim(AdminApiKeyPermission.ApprovedOperationTenantClaim, tenantBindings[0]),
+                tenantClaim,
                 new Claim("auth_type", authenticationType),
             ];
         }
@@ -438,12 +442,6 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
 
         var identity = new ClaimsIdentity(claims, Scheme.Name);
-        if (identity.FindFirst(AdminApiKeyPermission.ApprovedOperationTenantClaim) is { } approvedTenantClaim)
-        {
-            // This binding came from the persisted server-minted grant. Preserve it
-            // through OIDC's removal of untrusted issuer-supplied framework claims.
-            approvedTenantClaim.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
-        }
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 

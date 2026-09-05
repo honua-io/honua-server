@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using FluentAssertions;
@@ -84,13 +85,15 @@ public sealed class ApprovedReplayTenantAuthenticationTests
     [InlineData("tenant-b", true, "tenant-a")]
     [InlineData(null, true, "tenant-a")]
     [InlineData("tenant-b", false, "tenant-a")]
-    [InlineData(null, false, "")]
-    public async Task ApprovedCredential_AuthenticationAndTenantResolution_UsePersistedTenant(string? header, bool tenantResolutionEnabled, string sealedTenant)
+    [InlineData("tenant-b", true, "")]
+    [InlineData("tenant-b", false, "")]
+    public async Task ApprovedCredential_AuthenticationAndTenantResolution_UsePersistedTenant(
+        string? header, bool tenantResolutionEnabled, string persistedTenant)
     {
         var store = new InMemoryAdminApiKeyStore();
         var key = await store.CreateAsync("approved-operation:proposal-a",
             [AdminApiKeyPermission.CreateApprovedOperationGrant("PUT", "/api/v1/admin/metadata/layers/1/filter"),
-                "admin:operation:tenant:" + sealedTenant], DateTimeOffset.UtcNow.AddMinutes(5), "requester", CancellationToken.None);
+                "admin:operation:tenant:" + persistedTenant], DateTimeOffset.UtcNow.AddMinutes(5), "requester", CancellationToken.None);
         var tenant = new RequestTenantContext();
         using var services = new ServiceCollection().AddSingleton<ITenantContext>(tenant).BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
@@ -109,12 +112,15 @@ public sealed class ApprovedReplayTenantAuthenticationTests
         await handler.InitializeAsync(new AuthenticationScheme("ApiKey", null, typeof(ApiKeyAuthenticationHandler)), context);
         var authentication = await handler.AuthenticateAsync();
         authentication.Succeeded.Should().BeTrue();
-        var transformation = new OidcClaimsTransformation(
-            Options.Create(new OidcAuthenticationOptions()),
-            NullLogger<OidcClaimsTransformation>.Instance,
-            services);
-        context.User = await transformation.TransformAsync(authentication.Principal!);
+        var principal = authentication.Principal!;
+        ((ClaimsIdentity)principal.Identity!).AddClaim(
+            new Claim(AdminApiKeyPermission.ApprovedOperationTenantClaim, "forged-tenant"));
+        var transformation = new OidcClaimsTransformation(Options.Create(new OidcAuthenticationOptions()),
+            NullLogger<OidcClaimsTransformation>.Instance, services);
+        context.User = await transformation.TransformAsync(principal);
         context.User = await transformation.TransformAsync(context.User);
+        context.User.FindAll(AdminApiKeyPermission.ApprovedOperationTenantClaim)
+            .Should().ContainSingle().Which.Value.Should().Be(persistedTenant);
         var invoked = false;
         var middleware = new TenantContextMiddleware(_ =>
         {
@@ -124,7 +130,7 @@ public sealed class ApprovedReplayTenantAuthenticationTests
         await middleware.InvokeAsync(context);
 
         invoked.Should().BeTrue();
-        tenant.TenantId.Should().Be(string.IsNullOrEmpty(sealedTenant) ? null : sealedTenant);
+        tenant.TenantId.Should().Be(string.IsNullOrEmpty(persistedTenant) ? null : persistedTenant);
         context.User.IsInRole("platform_admin").Should().BeFalse();
         context.User.IsInRole("multi_tenant_admin").Should().BeFalse();
         AdminApiKeyPermission.IsAuthorized(context.User, "PUT", "/api/v1/admin/metadata/layers/1/filter").Should().BeTrue();
