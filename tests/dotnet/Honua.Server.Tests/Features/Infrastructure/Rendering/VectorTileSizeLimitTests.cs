@@ -8,9 +8,16 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Rendering;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
@@ -61,6 +68,50 @@ public sealed class VectorTileSizeLimitTests
         await result.ExecuteAsync(context);
         context.Response.StatusCode.Should().Be(status);
         context.Response.Body.Length.Should().Be(bytes);
+    }
+
+    [Theory]
+    [InlineData("OgcTilesTile", "/ogc/tiles/test", 413)]
+    [InlineData("OgcTilesDatasetTile", "/ogc/tiles/test", 413)]
+    [InlineData("MvtTile", "/rest/services/test/FeatureServer/0/tiles/test", 200)]
+    [InlineData("H3MvtTile", "/rest/services/test/FeatureServer/0/h3/tiles/test", 200)]
+    public async Task CachedTile_LoweredBudget_DoesNotReplayOversizedResponse(string policy, string path, int status)
+    {
+        var limits = new LimitsOptions { Tiles = new TileLimits { MaxTileSize = 5 } };
+        var invocations = 0;
+        using var host = await new HostBuilder().ConfigureWebHost(web => web.UseTestServer()
+            .ConfigureServices(services =>
+            {
+                services.AddRouting();
+                services.AddSingleton<IOptions<LimitsOptions>>(Options.Create(limits));
+                ObservabilityServiceCollectionExtensions.ConfigureOutputCaching(services, new ConfigurationBuilder().Build());
+            })
+            .Configure(app =>
+            {
+                app.UseRouting();
+                app.UseOutputCache();
+                app.UseEndpoints(endpoints => endpoints.MapGet(path, async (HttpContext context) =>
+                {
+                    Interlocked.Increment(ref invocations);
+                    return await ExecuteAsync(context, 5, limits.Tiles.MaxTileSize);
+                }).CacheOutput(policy));
+            })).StartAsync();
+        using var client = host.GetTestClient();
+        using var first = await client.GetAsync(path);
+        (await first.Content.ReadAsByteArrayAsync()).Length.Should().Be(5);
+        using var cached = await client.GetAsync(path);
+        (await cached.Content.ReadAsByteArrayAsync()).Length.Should().Be(5);
+        invocations.Should().Be(1, "the second response must actually be served from the output cache");
+
+        limits.Tiles.MaxTileSize = 4;
+        using var rejected = await client.GetAsync(path);
+        ((int)rejected.StatusCode).Should().Be(status);
+        using var body = JsonDocument.Parse(await rejected.Content.ReadAsStringAsync());
+        var code = status == 413
+            ? body.RootElement.GetProperty("status")
+            : body.RootElement.GetProperty("error").GetProperty("code");
+        code.GetInt32().Should().Be(413);
+        invocations.Should().Be(2, "the smaller budget must invalidate the previous cache lookup");
     }
 
     private static Task<IResult> ExecuteAsync(HttpContext context, int bytes, long budget, bool providerRejects = false)
