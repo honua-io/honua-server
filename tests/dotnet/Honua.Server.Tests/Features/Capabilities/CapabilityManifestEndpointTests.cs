@@ -691,6 +691,17 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             {
                 services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore());
                 services.AddSingleton<IJobQueue>(new InMemoryJobQueue());
+                services.Configure<DurableJobSubstrateOptions>(options =>
+                {
+                    options.RedisConfigured = true;
+                    options.RedisEntitled = true;
+                    options.RedisDurabilityAttestation = new RedisDurabilityAttestation(
+                        "redis.example.internal:6379",
+                        "aof (appendonly=yes, aof_enabled=1)",
+                        "appendfsync=always",
+                        "noeviction",
+                        DateTimeOffset.UtcNow);
+                });
             });
         await fixture.InitializeAsync();
 

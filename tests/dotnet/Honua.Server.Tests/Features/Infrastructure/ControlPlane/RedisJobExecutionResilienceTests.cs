@@ -45,15 +45,28 @@ public sealed class RedisJobExecutionResilienceTests
         var hostPort = ReserveLoopbackPort();
         await using var container = new RedisBuilder("redis:7.2-alpine")
             .WithPortBinding(hostPort, 6379)
+            .WithCommand(
+                "redis-server",
+                "--appendonly",
+                "yes",
+                "--appendfsync",
+                "always",
+                "--save",
+                "",
+                "--maxmemory-policy",
+                "noeviction")
             .Build();
         await container.StartAsync();
 
         var options = ConfigurationOptions.Parse(container.GetConnectionString(), ignoreUnknown: true);
+        options.AllowAdmin = true;
         options.AbortOnConnectFail = false;
         options.ConnectRetry = Math.Max(options.ConnectRetry, 3);
         options.ReconnectRetryPolicy ??= new ExponentialRetry(5_000);
 
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(options);
+        var attestation = await RedisDurabilityAttestor.InspectAsync(multiplexer);
+        attestation.Attestation.Should().NotBeNull();
 
         var jobStore = new RedisExecutionJobStore(multiplexer, NullLogger<RedisExecutionJobStore>.Instance);
         var logStore = new RedisExecutionLogStore(multiplexer, NullLogger<RedisExecutionLogStore>.Instance);
