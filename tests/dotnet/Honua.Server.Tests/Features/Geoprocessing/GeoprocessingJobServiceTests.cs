@@ -2397,6 +2397,76 @@ public sealed class GeoprocessingJobServiceTests
         await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
+    [Theory]
+    [InlineData(false, "tenant-a", "tenant-b")]
+    [InlineData(true, "tenant-a", "tenant-b")]
+    [InlineData(false, null, "tenant-b")]
+    [InlineData(true, null, "tenant-b")]
+    [InlineData(false, "tenant-a", null)]
+    public async Task JobAccess_DifferentEffectiveTenant_DeniesEveryOperation(
+        bool admin, string? jobTenant, string? effectiveTenant)
+    {
+        var tenantContext = Substitute.For<ITenantContext>();
+        tenantContext.TenantId.Returns(effectiveTenant);
+        await using var services = new ServiceCollection().AddSingleton(tenantContext).BuildServiceProvider();
+        var principal = CreatePrincipal();
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("tenant_id", "tenant-a"));
+        if (admin)
+        {
+            ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim(ClaimTypes.Role, "admin"));
+        }
+
+        var sut = CreateTenantJobService(services, principal);
+        var foreign = CreateTenantJobRecord("foreign", jobTenant);
+        var own = CreateTenantJobRecord("own", effectiveTenant);
+        _jobStore.GetAsync(foreign.OperationId, Arg.Any<CancellationToken>()).Returns(foreign);
+        _jobStore.GetAsync(own.OperationId, Arg.Any<CancellationToken>()).Returns(own);
+        _jobStore.QueryAsync(Arg.Any<ExecutionJobQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionJobPage { Items = [foreign, own] });
+
+        Func<Task>[] denied =
+        [
+            () => sut.GetJobAsync(foreign.OperationId, principal),
+            () => sut.GetJobForTerminalAsync(foreign.OperationId, principal),
+            () => sut.GetJobResultsAsync(foreign.OperationId, principal),
+            () => sut.GetJobResultsForTerminalAsync(foreign.OperationId, principal),
+            () => sut.CancelJobAsync(foreign.OperationId, principal),
+            () => sut.CancelAbandonedJobAsync(foreign.OperationId, principal)
+        ];
+        foreach (var operation in denied)
+        {
+            await operation.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        }
+
+        var page = await sut.ListJobsAsync(new GeoprocessingJobListFilter(), principal);
+        page.Items.Should().ContainSingle().Which.Should().BeSameAs(own);
+        (await sut.GetJobAsync(own.OperationId, principal)).Should().BeSameAs(own);
+        _cancellationNotifier.DidNotReceiveWithAnyArgs().Cancel(default!);
+        _resultPackageStore.ReceivedCalls().Should().BeEmpty();
+    }
+
+    private GeoprocessingJobService CreateTenantJobService(IServiceProvider services, ClaimsPrincipal principal)
+        => new(
+            _progressStore, [_cancellationNotifier], _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(), NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions, _jobStore, _jobQueue, resultPackageStore: _resultPackageStore,
+            httpContextAccessor: new HttpContextAccessor
+            {
+                HttpContext = new DefaultHttpContext { RequestServices = services, User = principal }
+            });
+
+    private static ExecutionJobRecord CreateTenantJobRecord(string id, string? tenant)
+    {
+        var record = CreateJobRecord(id, ExecutionJobStatus.Succeeded);
+        return record with
+        {
+            Audit = record.Audit with
+            {
+                SubmitterSecurityContext = CreateSubmitterSecurityContext() with { TenantId = tenant }
+            }
+        };
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
