@@ -1542,6 +1542,7 @@ internal sealed partial class FeatureDataAccess
             // GetSafeEditOperationError and let the rest of the batch continue.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
+                Log.ApplyEditsFailed(_logger, layerId, 1, ex);
                 results.Add(CreateFailedOperationResult(ex, "Update", feature.Id));
             }
         }
