@@ -200,7 +200,7 @@ internal static class AdminApiKeyPermission
     /// <summary>Creates method/path authority and a persisted, server-only tenant binding.</summary>
     internal static string[] CreateApprovedOperationGrants(string httpMethod, string requestPath, string? tenantId)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
+        // An explicit empty binding preserves accepted single-tenant invocations.
         return [CreateApprovedOperationGrant(httpMethod, requestPath), ApprovedOperationTenantGrantPrefix + tenantId];
     }
 

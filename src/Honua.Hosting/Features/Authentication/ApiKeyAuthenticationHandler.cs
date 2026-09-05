@@ -374,7 +374,7 @@ internal sealed class ApiKeyAuthenticationHandler(
                 .Where(permission => permission.StartsWith(AdminApiKeyPermission.ApprovedOperationTenantGrantPrefix, StringComparison.Ordinal))
                 .Select(permission => permission[AdminApiKeyPermission.ApprovedOperationTenantGrantPrefix.Length..])
                 .ToArray();
-            if (tenantBindings.Length != 1 || string.IsNullOrWhiteSpace(tenantBindings[0]))
+            if (tenantBindings.Length != 1)
             {
                 return AuthenticateResult.Fail("Approved operation credential has no unambiguous tenant binding.");
             }

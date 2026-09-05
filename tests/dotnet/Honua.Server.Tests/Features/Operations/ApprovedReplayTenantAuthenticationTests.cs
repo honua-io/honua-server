@@ -20,10 +20,11 @@ namespace Honua.Server.Tests.Features.Operations;
 public sealed class ApprovedReplayTenantAuthenticationTests
 {
     [Theory]
-    [InlineData("tenant-a")]
-    [InlineData("tenant-b")]
-    [InlineData(null)]
-    public async Task ApprovedCredential_AuthenticationAndTenantResolution_UsePersistedTenant(string? header)
+    [InlineData("tenant-a", true)]
+    [InlineData("tenant-b", true)]
+    [InlineData(null, true)]
+    [InlineData("tenant-b", false)]
+    public async Task ApprovedCredential_AuthenticationAndTenantResolution_UsePersistedTenant(string? header, bool tenantResolutionEnabled)
     {
         var store = new InMemoryAdminApiKeyStore();
         var key = await store.CreateAsync("approved-operation:proposal-a",
@@ -53,7 +54,7 @@ public sealed class ApprovedReplayTenantAuthenticationTests
         {
             invoked = true;
             return Task.CompletedTask;
-        }, Options.Create(new TenantContextOptions()), NullLogger<TenantContextMiddleware>.Instance);
+        }, Options.Create(new TenantContextOptions { Enabled = tenantResolutionEnabled }), NullLogger<TenantContextMiddleware>.Instance);
         await middleware.InvokeAsync(context);
 
         invoked.Should().BeTrue();

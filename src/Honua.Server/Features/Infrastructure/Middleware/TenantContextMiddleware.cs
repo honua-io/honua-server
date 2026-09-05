@@ -44,12 +44,13 @@ internal sealed class TenantContextMiddleware(
 
         // Approved replay has already sealed its tenant. Honor the authenticated
         // credential binding even if header/claim configuration changed after approval.
-        if (isAuthenticated && principal!.IsInRole(AdminApiKeyPermission.ApprovedOperationRole) &&
+        if (isAuthenticated && principal!.Identity?.AuthenticationType == AuthenticationExtensions.ApiKeyScheme &&
+            principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole) &&
             principal.FindFirst("api_key_id") is not null)
         {
             var approvedTenant = principal.FindFirst(AdminApiKeyPermission.ApprovedOperationTenantClaim)?.Value;
             var approvedContext = context.RequestServices.GetService<ITenantContext>() as RequestTenantContext;
-            if (approvedContext is null || string.IsNullOrWhiteSpace(approvedTenant) ||
+            if (approvedContext is null || approvedTenant is null ||
                 approvedTenant.Length > _options.MaxTenantIdLength || !IsSafeTenantId(approvedTenant))
             {
                 await TenantDenialResponseWriter.WriteAsync(context, TenantDenialKind.AuthenticationRequired).ConfigureAwait(false);
@@ -57,7 +58,7 @@ internal sealed class TenantContextMiddleware(
             }
 
             approvedContext.Set(approvedTenant, TenantContextSource.Claim);
-            CanonicalSecurityActor.StampRequestBinding(principal, approvedTenant);
+            CanonicalSecurityActor.StampRequestBinding(principal, approvedContext.TenantId);
             await _next(context).ConfigureAwait(false);
             return;
         }
