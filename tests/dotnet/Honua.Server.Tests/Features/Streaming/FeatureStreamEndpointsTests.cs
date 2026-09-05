@@ -88,11 +88,43 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
-    public Task Sse_SubscriberPolicies_SnapshotHandoff_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(false, false, snapshot: true);
+    public Task Sse_SubscriberPolicies_SnapshotHandoff_HidesFields() => VerifySubscriberPoliciesAsync(false, false, restrictRows: false, snapshot: true);
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
-    public Task WebSocket_SubscriberPolicies_SnapshotHandoff_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(true, false, snapshot: true);
+    public Task WebSocket_SubscriberPolicies_SnapshotHandoff_HidesFields() => VerifySubscriberPoliciesAsync(true, false, restrictRows: false, snapshot: true);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SubscriberPolicies_RowDependentSnapshot_IsRejectedBeforeDelivery()
+    {
+        var rows = Substitute.For<IRlsPolicyStore>();
+        rows.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new RlsPolicy[]
+            {
+                new() { Role = "*", Service = "*", Layer = "*", Attribute = "NAME", ClaimType = ClaimTypes.Role }
+            });
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IRlsPolicyStore>(rows);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            foreach (var mode in new[] { "snapshot", "snapshot-then-delta" })
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/streaming/features?layers=0&mode={mode}");
+                request.Headers.Accept.ParseAdd("text/event-stream");
+                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+                (await response.Content.ReadAsStringAsync()).Should().Contain("row-level security");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 
     private static async Task VerifySubscriberPoliciesAsync(bool webSocket, bool replay, bool restrictRows = true, bool snapshot = false)
     {
@@ -100,7 +132,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         rows.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(restrictRows ? new RlsPolicy[]
             {
-                new() { Role = "*", Service = "*", Layer = "*", Attribute = "name", ClaimType = ClaimTypes.Role }
+                new() { Role = "*", Service = "*", Layer = "*", Attribute = "NAME", ClaimType = ClaimTypes.Role }
             } : Array.Empty<RlsPolicy>());
         var fields = Substitute.For<IFieldMaskPolicyStore>();
         fields.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -144,7 +176,12 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
             var anchor = await store.AppendAsync(new FeatureChangeEventRequest
             {
-                ServiceId = "test", LayerId = 0, ObjectId = 999, Operation = "update", Protocol = "rest", RequestId = "policy-anchor"
+                ServiceId = "test",
+                LayerId = 0,
+                ObjectId = 999,
+                Operation = "update",
+                Protocol = "rest",
+                RequestId = "policy-anchor"
             });
             async Task PublishAsync()
             {
@@ -152,7 +189,12 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 {
                     await publisher.PublishAsync(new FeatureChangeEventRequest
                     {
-                        ServiceId = "test", LayerId = 0, ObjectId = id, Operation = id == 101 ? "delete" : "update", Protocol = "rest", RequestId = "policy-change",
+                        ServiceId = "test",
+                        LayerId = 0,
+                        ObjectId = id,
+                        Operation = id == 101 ? "delete" : "update",
+                        Protocol = "rest",
+                        RequestId = "policy-change",
                         PropertiesJson = id == 102
                             ? """{"name":"admin","secret":"private-value","SECRET":"private-uppercase"}"""
                             : """{"name":"forbidden","secret":"private-row"}""",
@@ -174,7 +216,11 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                 if (frame.GetProperty("type").GetString() == "snapshot")
                 {
                     sawSnapshot = true;
-                    frame.GetRawText().Should().NotContain("private-").And.NotContain("forbidden");
+                    frame.GetRawText().Should().NotContain("private-");
+                    if (restrictRows)
+                    {
+                        frame.GetRawText().Should().NotContain("forbidden");
+                    }
                 }
             }
             JsonElement delivered;

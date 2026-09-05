@@ -193,7 +193,9 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
-        var expression = BuildExpression(policy, values);
+        var attribute = resource.SchemaFields.FirstOrDefault(field =>
+            string.Equals(field.Name, policy.Attribute, StringComparison.OrdinalIgnoreCase))?.Name ?? policy.Attribute;
+        var expression = BuildExpression(policy, values, attribute);
 
         var normalized = _filterExpressionService.Normalize(expression, resource);
         var translation = _filterExpressionService.Translate(normalized, resource);
@@ -208,9 +210,9 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         return (normalized, translation.SqlFilter);
     }
 
-    private static BinaryExpression BuildExpression(RlsPolicy policy, List<string> values)
+    private static BinaryExpression BuildExpression(RlsPolicy policy, List<string> values, string attribute)
     {
-        var property = new PropertyReference(policy.Attribute);
+        var property = new PropertyReference(attribute);
 
         if (values.Count == 0)
         {

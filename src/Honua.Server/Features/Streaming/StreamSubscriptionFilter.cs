@@ -99,6 +99,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     /// pipeline does not carry (honua-server#3038 review).
     /// </remarks>
     public bool HasValueDependentPredicate =>
+        _subscriberSecurity?.HasRowPredicates == true ||
         _bbox is not null || _attributeFilter is not null || _temporalFilter is not null;
 
     /// <inheritdoc />

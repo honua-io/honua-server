@@ -62,8 +62,16 @@ public sealed class StreamSubscriberSecurityTests
     private static FeatureStreamEnvelope CreateEnvelope(string region)
         => new()
         {
-            EventId = "event", Cursor = 1, Timestamp = DateTimeOffset.UtcNow, Protocol = "rest", RequestId = "request",
-            ServiceId = "svc", LayerId = 0, ObjectId = 1, FeatureId = "1", Operation = "update",
+            EventId = "event",
+            Cursor = 1,
+            Timestamp = DateTimeOffset.UtcNow,
+            Protocol = "rest",
+            RequestId = "request",
+            ServiceId = "svc",
+            LayerId = 0,
+            ObjectId = 1,
+            FeatureId = "1",
+            Operation = "update",
             Attributes = new Dictionary<string, JsonElement>
             {
                 ["region"] = JsonSerializer.SerializeToElement(region),

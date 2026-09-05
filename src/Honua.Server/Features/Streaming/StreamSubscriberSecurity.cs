@@ -14,6 +14,8 @@ internal sealed class StreamSubscriberSecurity(
     IReadOnlyDictionary<(string Service, int Layer), StreamLayerReadPolicy> exactRoutes,
     IReadOnlyDictionary<(string Service, int Layer), StreamLayerReadPolicy> namedRoutes)
 {
+    public bool HasRowPredicates { get; } = exactRoutes.Values.Any(policy => policy.Predicates.Count > 0);
+
     public bool Allows(FeatureStreamEnvelope envelope)
     {
         var policy = Resolve(envelope);
