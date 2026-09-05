@@ -12,7 +12,7 @@ using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationsToolset;
 
 [Trait("Tier", "Fast")]
 public sealed class AdminOperationRequestContractTests
