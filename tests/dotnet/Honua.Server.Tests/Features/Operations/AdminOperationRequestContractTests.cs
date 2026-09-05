@@ -52,7 +52,9 @@ public sealed class AdminOperationRequestContractTests
             ConnectionId = "11111111-1111-1111-1111-111111111111",
             Parameters = new Dictionary<string, string?>
             {
-                ["layerId"] = "1", ["serviceName"] = service, ["enabled"] = "true"
+                ["layerId"] = "1",
+                ["serviceName"] = service,
+                ["enabled"] = "true"
             }
         }, new OperationPolicyContext());
 
@@ -108,8 +110,13 @@ public sealed class AdminOperationRequestContractTests
         var executor = CreateOperate(operationId, client);
         var parameters = new Dictionary<string, string?>
         {
-            ["sourceEnvironment"] = "staging", ["packageId"] = "package-a", ["targetEnvironment"] = "production",
-            ["resourceSemanticId"] = "layer-a", ["newFieldName"] = "status", ["scope"] = "all", ["body"] = "license",
+            ["sourceEnvironment"] = "staging",
+            ["packageId"] = "package-a",
+            ["targetEnvironment"] = "production",
+            ["resourceSemanticId"] = "layer-a",
+            ["newFieldName"] = "status",
+            ["scope"] = "all",
+            ["body"] = "license",
         };
         parameters.Remove(missing);
         var result = await executor.ValidateAsync(new OperationRequest { OperationId = operationId, Parameters = parameters });
@@ -163,8 +170,10 @@ public sealed class AdminOperationRequestContractTests
             OperationId = executor.OperationId,
             Parameters = new Dictionary<string, string?>
             {
-                ["sourceEnvironment"] = "staging", ["desiredRevision"] = "2026",
-                ["targetEnvironments"] = "[\"production\"]", ["changeClasses"] = "{\"layer-a\":\"metadata\"}",
+                ["sourceEnvironment"] = "staging",
+                ["desiredRevision"] = "2026",
+                ["targetEnvironments"] = "[\"production\"]",
+                ["changeClasses"] = "{\"layer-a\":\"metadata\"}",
             },
         }, new OperationPolicyContext());
         using var body = JsonDocument.Parse(capture.Body!);
@@ -234,7 +243,8 @@ public sealed class AdminOperationRequestContractTests
             OperationId = executor.OperationId,
             Parameters = new Dictionary<string, string?>
             {
-                ["targetEnvironment"] = "production", ["releasePackageId"] = "11111111-1111-1111-1111-111111111111"
+                ["targetEnvironment"] = "production",
+                ["releasePackageId"] = "11111111-1111-1111-1111-111111111111"
             }
         });
         validation.IsValid.Should().BeTrue();
