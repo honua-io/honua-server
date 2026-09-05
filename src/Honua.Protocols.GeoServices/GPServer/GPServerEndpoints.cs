@@ -1701,9 +1701,8 @@ internal static class GPServerEndpoints
         }
 
         // Additive ArcGIS-compatible input translation: rewrite esriGeometry JSON
-        // and single-feature FeatureSet payloads into canonical base64-WKB + srid.
-        // Native string / base64-WKB inputs pass through untouched. Multi-feature
-        // FeatureSets surface a capability error rather than dropping features.
+        // and FeatureSets into the process-declared WKB or FeatureCollection shape.
+        // Collection parameters retain every feature and its attribute row.
         var collectionParameters = definition.Parameters
             .Where(parameter => parameter.AcceptsGeoJsonDataUri)
             .Select(parameter => parameter.Name)

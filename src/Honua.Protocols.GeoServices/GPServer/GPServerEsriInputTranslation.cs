@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Geoprocessing.Execution;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using NetTopologySuite.IO;
 
@@ -273,7 +274,7 @@ internal static class GPServerEsriInputTranslation
                         error = "Measured FeatureSets cannot be represented by the canonical GeoJSON input. Remove M ordinates before submission.";
                         return false;
                     }
-                    using var geoJson = JsonDocument.Parse(new GeoJsonWriter().Write(nts));
+                    using var geoJson = JsonDocument.Parse(GeoJsonArtifactCodec.CreateWriter().Write(nts));
                     geoJson.RootElement.WriteTo(writer);
                 }
                 writer.WriteEndObject();

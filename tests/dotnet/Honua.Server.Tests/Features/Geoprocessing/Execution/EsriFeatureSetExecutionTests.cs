@@ -69,8 +69,9 @@ public sealed class EsriFeatureSetExecutionTests
     public void Output_PointZAndNullAttributes_PreservesOrdinateAndFieldMetadata()
     {
         const string json = """{"type":"Feature","geometry":{"type":"Point","coordinates":[-100,40,123.5]},"properties":{"name":"point","missing":null}}""";
-        var value = GPServerEsriOutputTranslation.Translate(ArtifactKind.FeatureLayer,
-            DataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(json)), 4269);
+        var normalized = GPServerOutputReprojection.NormalizeGeoJsonWinding(
+            DataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(json)));
+        var value = GPServerEsriOutputTranslation.Translate(ArtifactKind.FeatureLayer, normalized!, 4269);
         var feature = value.GetProperty("features")[0];
         feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-100);
         feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(40);

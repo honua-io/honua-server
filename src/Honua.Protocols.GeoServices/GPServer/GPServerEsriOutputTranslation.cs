@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Geoprocessing.Execution;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -80,7 +81,7 @@ internal static class GPServerEsriOutputTranslation
             GeoServicesGeometry? esri = null;
             if (feature.TryGetProperty("geometry", out var geometry) && geometry.ValueKind == JsonValueKind.Object)
             {
-                var nts = new GeoJsonReader().Read<Geometry>(geometry.GetRawText());
+                var nts = GeoJsonArtifactCodec.CreateReader().Read<Geometry>(geometry.GetRawText());
                 var type = nts.OgcGeometryType switch
                 {
                     OgcGeometryType.Point => "esriGeometryPoint",
