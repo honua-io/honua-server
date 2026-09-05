@@ -409,7 +409,9 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             if (item.ValueKind != JsonValueKind.Object)
             {
                 diagnostics.Add(Error("studio.composition.item.object", path, "composition items must be non-null objects."));
-                valid = false;
+                // Null reference nodes can still be parsed. Preserve the existing
+                // unresolved-reference diagnostics for interactions that target them.
+                valid &= item.ValueKind == JsonValueKind.Null;
                 continue;
             }
 
