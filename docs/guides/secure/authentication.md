@@ -65,7 +65,9 @@ tenant binding are rejected. An explicit empty binding preserves an invocation
 accepted with tenant resolution disabled. The
 approver's key and identity headers are never forwarded as execution authority;
 `admin:operation:*` grants are server-reserved and cannot be requested through
-the API-key creation endpoint.
+the API-key creation endpoint. Internal replay credentials are excluded from
+public key listings and permission inspection, and cannot be rotated into a
+new plaintext credential.
 
 ### 3. Enable OIDC for browser and admin sign-in
 
