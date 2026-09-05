@@ -66,13 +66,15 @@ internal static class GPServerEsriOutputTranslation
             }
         }
         var oidName = "OBJECTID";
-        while (fields.ContainsKey(oidName))
+        while (fields.Keys.Contains(oidName, StringComparer.OrdinalIgnoreCase))
         {
             oidName = "_" + oidName;
         }
 
         var geometries = new List<GeoServicesGeometry?>(features.Length);
         string? geometryType = null;
+        var hasZ = false;
+        var hasM = false;
         foreach (var feature in features)
         {
             GeoServicesGeometry? esri = null;
@@ -92,6 +94,8 @@ internal static class GPServerEsriOutputTranslation
                     throw new ArgumentException("GP FeatureSet outputs must have a single geometry type.");
                 }
                 geometryType = type;
+                hasZ |= nts.Coordinates.Any(coordinate => !double.IsNaN(coordinate.Z));
+                hasM |= nts.Coordinates.Any(coordinate => !double.IsNaN(coordinate.M));
                 esri = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
                     new WKBWriter(ByteOrder.LittleEndian, true,
                         nts.Coordinates.Any(coordinate => !double.IsNaN(coordinate.Z)),
@@ -105,6 +109,8 @@ internal static class GPServerEsriOutputTranslation
         if (geometryType is not null)
         {
             writer.WriteString("geometryType", geometryType);
+            writer.WriteBoolean("hasZ", hasZ);
+            writer.WriteBoolean("hasM", hasM);
         }
         if (srid > 0)
         {
@@ -129,7 +135,14 @@ internal static class GPServerEsriOutputTranslation
             {
                 foreach (var property in properties.EnumerateObject())
                 {
-                    property.WriteTo(writer);
+                    if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    {
+                        writer.WriteNumber(property.Name, property.Value.GetBoolean() ? 1 : 0);
+                    }
+                    else
+                    {
+                        property.WriteTo(writer);
+                    }
                 }
             }
             writer.WriteEndObject();

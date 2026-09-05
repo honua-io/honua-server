@@ -259,6 +259,11 @@ internal static class GPServerEsriInputTranslation
                     }
                     srid ??= geometrySrid;
                     var nts = new WKBReader().Read(Convert.FromBase64String(encoded));
+                    if (nts.Coordinates.Any(coordinate => !double.IsNaN(coordinate.M)))
+                    {
+                        error = "Measured FeatureSets cannot be represented by the canonical GeoJSON input. Remove M ordinates before submission.";
+                        return false;
+                    }
                     using var geoJson = JsonDocument.Parse(new GeoJsonWriter().Write(nts));
                     geoJson.RootElement.WriteTo(writer);
                 }

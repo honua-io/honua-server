@@ -680,6 +680,7 @@ internal static class GPServerEndpoints
                 var paramName = ResolvePublishedOutputParameterName(job, artifact, index, allKinds);
                 var dataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind);
                 var value = ResolveArtifactValue(artifact, job.OperationId, index, baseUrl, outputStore);
+                var resultSrid = workingSrid;
 
                 if (envControls.OutSr is { } outSr && artifact.Kind == ArtifactKind.FeatureLayer)
                 {
@@ -687,6 +688,7 @@ internal static class GPServerEndpoints
                     if (outcome.Reprojected)
                     {
                         value = outcome.Value;
+                        resultSrid = outSr;
                     }
                     else if (outcome.CapabilityMessage is not null)
                     {
@@ -721,7 +723,7 @@ internal static class GPServerEndpoints
                 {
                     ParamName = paramName,
                     DataType = dataType,
-                    Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, envControls.OutSr ?? workingSrid)
+                    Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, resultSrid)
                 });
             }
         }
@@ -1764,6 +1766,14 @@ internal static class GPServerEndpoints
         return derivedSrid ?? 0;
     }
 
+    private static int ResolveResultSrid(ExecutionJobRecord job)
+    {
+        var parameters = job.Spec.Parameters;
+        var raw = parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerOutSr)
+            ?? parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkingSr);
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) ? srid : 0;
+    }
+
     /// <summary>
     /// Applies the <c>env:outSR</c> reprojection to a completed job's async result
     /// value, mirroring the synchronous <c>execute</c> path
@@ -1779,14 +1789,6 @@ internal static class GPServerEndpoints
     /// geometry (<see cref="ArtifactKind.FeatureLayer"/>) outputs; other output
     /// kinds are served unchanged, matching Esri <c>env:outSR</c> semantics.
     /// </summary>
-    private static int ResolveResultSrid(ExecutionJobRecord job)
-    {
-        var parameters = job.Spec.Parameters;
-        var raw = parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerOutSr)
-            ?? parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkingSr);
-        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) ? srid : 0;
-    }
-
     private static IResult? TryApplyAsyncOutSr(
         HttpContext context,
         ExecutionJobRecord job,
