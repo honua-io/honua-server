@@ -14,6 +14,7 @@ public sealed class RedisAdminApiKeyStoreConcurrencyTests
 {
     [Theory]
     [InlineData("used", true)]
+    [InlineData("permissions-reduced", true)]
     [InlineData("revoked", false)]
     [InlineData("rotated", false)]
     [InlineData("expired", false)]
@@ -25,6 +26,7 @@ public sealed class RedisAdminApiKeyStoreConcurrencyTests
         var current = change switch
         {
             "used" => original with { LastUsedAt = now.AddSeconds(-1), UpdatedAt = now.AddSeconds(-1) },
+            "permissions-reduced" => original with { Permissions = ["admin:read"] },
             "revoked" => original with { RevokedAt = now },
             "rotated" => original with { KeyHash = SHA256.HashData("rotated-key"u8), RotatedAt = now },
             "expired" => original with { ExpiresAt = now },
@@ -40,6 +42,7 @@ public sealed class RedisAdminApiKeyStoreConcurrencyTests
         {
             Assert.Equal(original.Id, result!.Record.Id);
             Assert.Equal(now, result.Record.LastUsedAt);
+            Assert.Equal(current!.Permissions, result.Record.Permissions);
         }
     }
 
