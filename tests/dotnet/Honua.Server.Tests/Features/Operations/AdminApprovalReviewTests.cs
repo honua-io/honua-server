@@ -81,6 +81,27 @@ public sealed class AdminApprovalReviewTests
         plan.ExecutionPayload.Should().Contain("vault/warehouse");
     }
 
+    [Fact]
+    public void DryRunReview_IsDistinctFromCommittingReview()
+    {
+        var definition = AdminOperateOperationCatalog.Definitions.Single(item => item.OperationId == "admin.metadata.prevalidate");
+        var descriptor = AdminOperateOperationCatalog.Descriptors.Single(item => item.OperationId == definition.OperationId);
+        var mapper = new AdminOperateOperationApprovalRequestMapper(definition);
+        var request = new OperationRequest { OperationId = definition.OperationId };
+        var context = new OperationPolicyContext { TenantId = "tenant-a", PrincipalId = "requester" };
+        var decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval };
+        var committing = mapper.Map(descriptor, request, context, decision).Plan!;
+        var preview = mapper.Map(descriptor, request with { DryRun = true }, context, decision).Plan!;
+        Review(preview).Should().Contain("dry-run").And.NotBe(Review(committing));
+    }
+
+    [Fact]
+    public void ProposalDetailModels_DoNotExposePrivateExecutionSeal()
+    {
+        typeof(Honua.Server.Features.Admin.Models.ProposalDetailResponse).GetProperty("SealedPlanHash").Should().BeNull();
+        typeof(Honua.Ai.Protocols.Mcp.Models.McpProposalResource).GetProperty("SealedPlanHash").Should().BeNull();
+    }
+
     private static OperationProposalPlan Map(string operationId, Dictionary<string, string?> parameters)
     {
         IOperationApprovalRequestMapper mapper;
