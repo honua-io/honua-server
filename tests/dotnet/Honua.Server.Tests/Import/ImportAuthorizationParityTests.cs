@@ -109,7 +109,7 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
             CancellationToken.None)).Key;
         _approvedUploadKey = (await keyStore.CreateAsync(
             $"approved-operation:import-upload-{Guid.NewGuid():N}",
-            [AdminApiKeyPermission.CreateApprovedOperationGrant("POST", "/api/v1/admin/import/upload")],
+            AdminApiKeyPermission.CreateApprovedOperationGrants("POST", "/api/v1/admin/import/upload", "public"),
             DateTimeOffset.UtcNow.AddMinutes(15),
             "import-authorization-test",
             CancellationToken.None)).Key;

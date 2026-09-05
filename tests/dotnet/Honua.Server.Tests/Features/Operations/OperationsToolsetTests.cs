@@ -515,7 +515,8 @@ public sealed class OperationsToolsetTests
         executionAuthority!.Record.Permissions.Should().Equal(
             AdminApiKeyPermission.CreateApprovedOperationGrant(
                 definition.Method.Method,
-                "/api/v1/admin/connections/connection-1/layers/7/enabled"));
+                "/api/v1/admin/connections/connection-1/layers/7/enabled"),
+            "admin:operation:tenant:requester-tenant");
         (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
             .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }
@@ -712,7 +713,8 @@ public sealed class OperationsToolsetTests
         replayUri.Should().Be("http://127.0.0.1:8080/api/v1/admin/cache/invalidate");
         replayHost.Should().Be("public.example.test");
         executionAuthority!.Record.Permissions.Should().Equal(
-            "admin:operation:POST:/api/v1/admin/cache/invalidate");
+            "admin:operation:POST:/api/v1/admin/cache/invalidate",
+            "admin:operation:tenant:requester-tenant");
         (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
             .RevokedAt.Should().NotBeNull("approved operation credentials are single-use");
     }
@@ -912,6 +914,7 @@ public sealed class OperationsToolsetTests
         var current = new DefaultHttpContext();
         current.Request.Scheme = "https";
         current.Request.Host = new HostString("localhost");
+        current.Connection.LocalPort = 8080;
         current.Request.Headers["X-API-Key"] = approver.Key;
         current.Request.Headers["X-Honua-Tenant"] = "approver-tenant";
         var accessor = Substitute.For<IHttpContextAccessor>();
@@ -947,7 +950,8 @@ public sealed class OperationsToolsetTests
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         executionAuthority.Should().NotBeNull();
         executionAuthority!.Record.Permissions.Should().Equal(
-            "admin:operation:POST:/api/v1/admin/connections");
+            "admin:operation:POST:/api/v1/admin/connections",
+            "admin:operation:tenant:requester-tenant");
         (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
             .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }

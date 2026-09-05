@@ -16,7 +16,7 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using StackExchange.Redis;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationsToolset;
 
 [Trait("Tier", "Fast")]
 public sealed class ApprovedReplayTenantAuthenticationTests
