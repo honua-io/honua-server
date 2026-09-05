@@ -245,6 +245,9 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         interleavedStore.UpdateAsync(TestLayerId, TestFeatureId, Arg.Any<Attachment>(), Arg.Any<CancellationToken>())
             .Returns(call => _attachmentStore.UpdateAsync(TestLayerId, TestFeatureId, call.Arg<Attachment>()));
 
+        interleavedStore.UpdateKeywordsAsync(TestLayerId, TestFeatureId, original.Id, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(call => _attachmentStore.UpdateKeywordsAsync(TestLayerId, TestFeatureId, original.Id, call.Arg<string?>()));
+
         var response = await AttachmentHandler.UpdateAttachmentAsync(
             new DefaultHttpContext(), TestLayerId, TestFeatureId, original.Id, null, keywords,
             interleavedStore, new AttachmentLimits(), new FileUploadSecurityOptions(),

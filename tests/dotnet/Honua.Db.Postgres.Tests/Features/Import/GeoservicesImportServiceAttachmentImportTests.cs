@@ -240,6 +240,9 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<Honua.Core.Features.Attachments.Domain.Attachment> UpdateKeywordsAsync(int layerId, long featureId, long attachmentId, string? keywords, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task<Honua.Core.Features.Attachments.Domain.Attachment> ReplaceAsync(
             int layerId,
             long featureId,

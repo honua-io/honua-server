@@ -140,6 +140,35 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         return ReadAttachment(reader);
     }
 
+    public async Task<Attachment> UpdateKeywordsAsync(
+        int layerId,
+        long featureId,
+        long attachmentId,
+        string? keywords,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $@"
+            UPDATE {_tableName}
+            SET keywords = $4
+            WHERE layer_id = $1 AND feature_id = $2 AND id = $3
+            RETURNING id, feature_id, layer_id, filename, content_type, size, created_at, storage_path, keywords";
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue(layerId);
+        command.Parameters.AddWithValue(featureId);
+        command.Parameters.AddWithValue(attachmentId);
+        command.Parameters.AddWithValue(NpgsqlTypes.NpgsqlDbType.Text, keywords ?? (object)DBNull.Value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new ResourceNotFoundException($"Attachment {attachmentId} not found for update");
+        }
+
+        return ReadAttachment(reader);
+    }
+
     public async Task<Attachment> ReplaceAsync(
         int layerId,
         long featureId,
