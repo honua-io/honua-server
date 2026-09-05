@@ -672,14 +672,24 @@ internal sealed partial class ODataBatchHandler
                         }
                         else if (updateResult.IsPreconditionFailure)
                         {
-                            var hasIfMatch = requests.Any(request => request.Id == requestId
-                                && !string.IsNullOrWhiteSpace(GetHeaderValue(request.Headers, "If-Match")));
+                            var requestHeaders = requests.First(request => request.Id == requestId).Headers;
+                            var failedCondition = !string.IsNullOrWhiteSpace(GetHeaderValue(requestHeaders, "If-Match"));
+                            var ifNoneMatch = GetHeaderValue(requestHeaders, "If-None-Match");
+                            if (!failedCondition && !string.IsNullOrWhiteSpace(ifNoneMatch))
+                            {
+                                var current = await _featureReader.GetAsync(layer.StorageLayerId, updatedFeature.Id, cancellationToken).ConfigureAwait(false);
+                                if (current.HasValue)
+                                {
+                                    _ = FeatureToBody(current.Value, layer, axisOrder, baseUrl, out var currentEtag);
+                                    failedCondition = !_etagService.IsModified(ifNoneMatch, currentEtag);
+                                }
+                            }
                             responses.Add(CreateErrorResponse(
                                 requestId,
-                                hasIfMatch ? StatusCodes.Status412PreconditionFailed : StatusCodes.Status409Conflict,
-                                hasIfMatch ? "PreconditionFailed" : "Conflict",
-                                hasIfMatch
-                                    ? "ETag does not match the current resource."
+                                failedCondition ? StatusCodes.Status412PreconditionFailed : StatusCodes.Status409Conflict,
+                                failedCondition ? "PreconditionFailed" : "Conflict",
+                                failedCondition
+                                    ? "The conditional request does not match the current resource."
                                     : "The feature changed during the update. Retry the PATCH against the current resource."));
                         }
                         else

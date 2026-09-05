@@ -371,11 +371,29 @@ internal sealed partial class ODataCrudService
             if (editResult.Result is { } updateEditResult &&
                 updateEditResult.UpdateResults.Any(static result => result.IsPreconditionFailure))
             {
-                return string.IsNullOrWhiteSpace(ifMatch)
-                    ? ODataCrudResult<Dictionary<string, object?>>.Conflict(
-                        "The feature changed during the update. Retry the PATCH against the current resource.")
-                    : ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed(
+                if (!string.IsNullOrWhiteSpace(ifMatch))
+                {
+                    return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed(
                         "ETag does not match the current resource.");
+                }
+
+                if (!string.IsNullOrWhiteSpace(ifNoneMatch))
+                {
+                    var current = await _featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
+                    if (current.HasValue)
+                    {
+                        var geometry = ODataGeometryConverter.ConvertWkbToGeometry(_geometryService, current.Value.Geometry, srid, axisOrder);
+                        var attributes = ODataAttributeSerializer.Serialize(current.Value.Attributes);
+                        var latestEtag = ComputeFeatureEtag(layerId, current.Value, geometry, attributes);
+                        if (!_etagService.IsModified(ifNoneMatch, latestEtag))
+                        {
+                            return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed("Resource has not changed.");
+                        }
+                    }
+                }
+
+                return ODataCrudResult<Dictionary<string, object?>>.Conflict(
+                    "The feature changed during the update. Retry the PATCH against the current resource.");
             }
 
             var result = await _featureReader.GetAsync(layerId, objectId, cancellationToken);

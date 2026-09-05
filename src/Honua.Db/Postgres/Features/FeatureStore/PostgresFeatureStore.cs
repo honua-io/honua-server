@@ -572,6 +572,19 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
     {
+        if (!editBatch.Preconditions.IsDefaultOrEmpty)
+        {
+            // Tokens originate from the security-filtered read snapshot. Resolve the
+            // same policy here; masked values stay inside the provider transaction.
+            var maskedFields = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
+            editBatch = editBatch with
+            {
+                Preconditions = editBatch.Preconditions
+                    .Select(precondition => precondition with { MaskedFields = maskedFields })
+                    .ToImmutableArray()
+            };
+        }
+
         return await _dataAccess.ApplyEditsAsync(layerId, editBatch, cancellationToken);
     }
 

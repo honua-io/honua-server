@@ -94,6 +94,8 @@ internal static partial class FeaturesEndpoints
             .Produces<GeoJsonFeature>(200, MediaTypes.GeoJson)
             .Produces(400)
             .Produces(404)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .AllowAnonymous();
 
         endpoints.MapDelete("/ogc/features/collections/{collectionId}/items/{featureId}", HandleDeleteFeature)
