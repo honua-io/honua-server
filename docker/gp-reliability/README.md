@@ -19,6 +19,14 @@ daemon. Receipts are written to `artifacts/gp-lifecycle` by default. A failing
 assertion is recorded as a `FINDING` and the runner exits nonzero; do not edit a
 receipt or relax an assertion to make a candidate green.
 
+The lifecycle lane also qualifies the production worker's supported cancellation and timeout
+seams. It pauses a real native GDAL child at claimed, process-started, staged-output, and
+terminal-CAS fences; cancels through OGC DELETE from the peer server; and exercises both a
+cooperative and deliberately cancellation-ignoring native executor under the submitted
+`batch.timeout_seconds` workload policy. The qualification-only barrier and object roots are
+shared between the server and worker containers and default to isolated directories below the
+receipt root.
+
 The same inputs are exposed by the **GP Lifecycle Qualification** dispatchable
 workflow. Its artifact upload uses `if: always()` so receipts survive a red run.
 
