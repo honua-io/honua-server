@@ -98,7 +98,7 @@ public sealed class OgcProcessesStagedArtifactContentTests
             .Single(item => item.GetProperty("name").GetString() == "gp-output-store");
         var evidence = entry.GetProperty("outputStoreAttestation");
         evidence.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
-            "provider", "storeReference", "configurationDigest", "persistenceClass", "backupIdentity");
+            ["provider", "storeReference", "configurationDigest", "persistenceClass", "backupIdentity"]);
         evidence.GetProperty("provider").GetString().Should().Be("local");
         evidence.GetProperty("storeReference").GetString().Should().Be("gp-outputs");
         evidence.GetProperty("configurationDigest").GetString().Should()

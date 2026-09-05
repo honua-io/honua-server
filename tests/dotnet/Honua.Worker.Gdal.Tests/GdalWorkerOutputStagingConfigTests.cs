@@ -33,7 +33,9 @@ public sealed class GdalWorkerOutputStagingConfigTests
         {
             var options = GeoprocessingOutputStoreTestHelper.Attest(new GeoprocessingOutputStagingOptions
             {
-                Enabled = true, LocalRootPath = root, MaxInlineArtifactBytes = 65536,
+                Enabled = true,
+                LocalRootPath = root,
+                MaxInlineArtifactBytes = 65536,
             });
             using var provider = BuildProvider(GeoprocessingOutputStoreTestHelper.Configuration(options));
 

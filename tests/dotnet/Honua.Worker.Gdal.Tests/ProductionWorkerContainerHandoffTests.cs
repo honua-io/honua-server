@@ -42,10 +42,12 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
         var image = Environment.GetEnvironmentVariable(ImageEnvironmentVariable)!;
         var hostOutputRoot = Path.Join(Path.GetTempPath(), $"honua-worker-container-{Guid.NewGuid():N}");
         Directory.CreateDirectory(hostOutputRoot);
-        var stagingOptions = GeoprocessingOutputStoreTestHelper.Attest(new GeoprocessingOutputStagingOptions
+        GeoprocessingOutputStoreTestHelper.Attest(new GeoprocessingOutputStagingOptions
         {
-            Enabled = true, LocalRootPath = hostOutputRoot,
-            StoreReference = "container-certification", MaxInlineArtifactBytes = 1024,
+            Enabled = true,
+            LocalRootPath = hostOutputRoot,
+            StoreReference = "container-certification",
+            MaxInlineArtifactBytes = 1024,
         });
         File.SetUnixFileMode(hostOutputRoot,
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
@@ -184,8 +186,10 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
             .WithEnvironment("Geoprocessing__OutputStaging__ConfigurationDigest",
                 GeoprocessingOutputStoreAttestation.Create(new GeoprocessingOutputStagingOptions
                 {
-                    StoreReference = "container-certification", MaxInlineArtifactBytes = 1024,
-                    PersistenceClass = "shared-persistent", BackupIdentity = "qualification-backup",
+                    StoreReference = "container-certification",
+                    MaxInlineArtifactBytes = 1024,
+                    PersistenceClass = "shared-persistent",
+                    BackupIdentity = "qualification-backup",
                     BackupStoreReferences = ["container-certification"],
                 }).ConfigurationDigest)
             .WithBindMount(hostOutputRoot, ContainerOutputRoot)

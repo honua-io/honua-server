@@ -66,6 +66,7 @@ public static class GeoprocessingOutputStagingServiceCollectionExtensions
         {
             services.TryAddSingleton<IGeoprocessingOutputObjectStore, FileSystemGeoprocessingOutputObjectStore>();
             services.TryAddSingleton<GeoprocessingOutputStoreHealthCheck>();
+            services.AddHostedService<GeoprocessingOutputStoreAttestationReporter>();
             services.AddHealthChecks().AddCheck<GeoprocessingOutputStoreHealthCheck>("gp-output-store", tags: ["ready"]);
         }
 

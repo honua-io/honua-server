@@ -2,18 +2,24 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Cryptography;
+using System.IO.Compression;
+using System.Net;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
+using Honua.TestKit;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
@@ -29,13 +35,15 @@ public sealed class GdalArtifactPublisherTests : IDisposable
 {
     private readonly string _scratch = Directory.CreateTempSubdirectory("honua-gdal-publish-tests-").FullName;
 
-    [Fact]
+    [IntegrationTest]
     public async Task PublishFileAsync_ForcedStagingOnAttestedVolume_ReplacementReadsOracleBytes()
     {
         var root = Directory.CreateDirectory(Path.Join(_scratch, "volume")).FullName;
         var options = GeoprocessingOutputStoreTestHelper.Attest(new GeoprocessingOutputStagingOptions
         {
-            Enabled = true, LocalRootPath = root, MaxInlineArtifactBytes = 1024,
+            Enabled = true,
+            LocalRootPath = root,
+            MaxInlineArtifactBytes = 1024,
         });
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(GeoprocessingOutputStoreTestHelper.Configuration(options)).Build();
@@ -60,13 +68,54 @@ public sealed class GdalArtifactPublisherTests : IDisposable
         descriptor.Content.SizeBytes.Should().Be(32768);
         descriptor.Content.MediaType.Should().Be("application/octet-stream");
         descriptor.Content.Checksum!.Value.Should().Be("611253a4531dea3d840789b4f11a1ad9c4329fbbf85ee1634f2ae601e6da6db0");
-        using var consumer = services.BuildServiceProvider();
-        var store = consumer.GetRequiredService<IGeoprocessingOutputObjectStore>();
-        descriptor.StoreReference.Should().Be(store.StoreReference);
-        await using var read = await store.OpenReadAsync(descriptor.ObjectKey);
-        using var buffer = new MemoryStream();
-        await read!.CopyToAsync(buffer);
-        buffer.ToArray().Should().Equal(payload);
+        using (var consumer = services.BuildServiceProvider())
+        {
+            var store = consumer.GetRequiredService<IGeoprocessingOutputObjectStore>();
+            descriptor.StoreReference.Should().Be(store.StoreReference);
+            await using var read = await store.OpenReadAsync(descriptor.ObjectKey);
+            using var buffer = new MemoryStream();
+            await read!.CopyToAsync(buffer);
+            buffer.ToArray().Should().Equal(payload);
+        }
+
+        // Restore the actual publisher's descriptor and bytes, not a manually
+        // constructed descriptor, and verify through the normal server read path.
+        await File.WriteAllTextAsync(Path.Join(root, "descriptor.json"), reference);
+        var backup = Path.Join(_scratch, "backup.zip");
+        ZipFile.CreateFromDirectory(root, backup);
+        options.LocalRootPath = Path.Join(_scratch, "restored");
+        ZipFile.ExtractToDirectory(backup, options.LocalRootPath);
+        Directory.Delete(root, recursive: true);
+        var restoredReference = await File.ReadAllTextAsync(Path.Join(options.LocalRootPath, "descriptor.json"));
+        restoredReference.Should().Be(reference);
+        var jobs = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobs.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(job with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ArtifactReferences = [restoredReference],
+        });
+        var app = new WebAppFixture().ConfigureServices(serverServices =>
+        {
+            serverServices.AddSingleton(jobs);
+            serverServices.AddGeoprocessingOutputStaging(new ConfigurationBuilder()
+                .AddInMemoryCollection(GeoprocessingOutputStoreTestHelper.Configuration(options)).Build());
+        });
+        try
+        {
+            await app.InitializeAsync();
+            using var response = await app.Client.GetAsync($"/api/geoprocessing/jobs/{job.OperationId}/artifacts/0/content");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var restoredBytes = await response.Content.ReadAsByteArrayAsync();
+            restoredBytes.Should().Equal(payload);
+            Convert.ToHexString(SHA256.HashData(restoredBytes)).ToLowerInvariant().Should()
+                .Be("611253a4531dea3d840789b4f11a1ad9c4329fbbf85ee1634f2ae601e6da6db0");
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/octet-stream");
+        }
+        finally
+        {
+            await app.DisposeAsync();
+        }
     }
 
     public void Dispose()

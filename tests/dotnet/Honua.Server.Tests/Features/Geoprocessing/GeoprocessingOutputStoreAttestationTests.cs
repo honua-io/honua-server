@@ -29,8 +29,10 @@ public sealed class GeoprocessingOutputStoreAttestationTests : IDisposable
     {
         var options = new GeoprocessingOutputStagingOptions
         {
-            StoreReference = "gp-outputs", PersistenceClass = "shared-persistent",
-            BackupIdentity = "qualification-backup", BackupStoreReferences = ["gp-outputs"],
+            StoreReference = "gp-outputs",
+            PersistenceClass = "shared-persistent",
+            BackupIdentity = "qualification-backup",
+            BackupStoreReferences = ["gp-outputs"],
             MaxInlineArtifactBytes = 1024,
         };
         GeoprocessingOutputStoreAttestation.Create(options).ConfigurationDigest.Should()
@@ -116,9 +118,11 @@ public sealed class GeoprocessingOutputStoreAttestationTests : IDisposable
         healthy.Status.Should().Be(HealthStatus.Healthy);
         healthy.Entries["gp-output-store"].Data.Should().BeEquivalentTo(new Dictionary<string, object>
         {
-            ["provider"] = "local", ["storeReference"] = "gp-outputs",
+            ["provider"] = "local",
+            ["storeReference"] = "gp-outputs",
             ["configurationDigest"] = options.ConfigurationDigest!,
-            ["persistenceClass"] = "shared-persistent", ["backupIdentity"] = "qualification-backup",
+            ["persistenceClass"] = "shared-persistent",
+            ["backupIdentity"] = "qualification-backup",
         });
         JsonSerializer.Serialize(healthy.Entries["gp-output-store"].Data).Should().NotContain(_root);
         var store = host.Services.GetRequiredService<IGeoprocessingOutputObjectStore>();

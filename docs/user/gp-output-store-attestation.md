@@ -59,6 +59,8 @@ the contract disappears or changes. The registered `gp-output-store` health chec
 exposes credential-free provider, store reference, configuration digest, persistence
 class and backup identity. The authenticated operator health snapshot includes
 these fields under `health.entries[].outputStoreAttestation` for that check.
+The server and headless worker also emit these five fields in the structured
+`GP output store attestation` startup log, so every host can contribute evidence.
 
 Back up the complete volume and the durable job/descriptor records. Restore them
 into an isolated recovery topology, using the original store reference and marker,
