@@ -72,6 +72,7 @@ public sealed class CapabilityRegistryConformanceTests
         "serve.sensorthings",
         "serve.geoservices-imageserver",
         "serve.wmts",
+        "serve.ogc-api-coverages",
         "alerts.geofence",
         "jobs.runner",
         "ai.spec-apply",
@@ -127,7 +128,7 @@ public sealed class CapabilityRegistryConformanceTests
         foreach (var descriptor in Registry.All)
         {
             var resolution = Registry.Resolve(descriptor.Id, context);
-            if (descriptor.Id is "serve.geoservices-imageserver" or "serve.wmts")
+            if (descriptor.Id is "serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages")
             {
                 descriptor.Maturity.Should().Be(CapabilityMaturity.Preview);
                 descriptor.RequiresOptIn.Should().BeFalse();

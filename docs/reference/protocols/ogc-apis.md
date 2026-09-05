@@ -84,6 +84,8 @@ Custom tile matrix sets are merged in from the `TileMatrixSets` configuration se
 
 ## OGC API Coverages
 
+OGC API Coverages is **Preview in 2026.1** and requires `Capabilities:Experimental:serve.ogc-api-coverages:Enabled=true`. It has no GA support commitment. Security, tenant isolation, and truthful lifecycle reporting remain required.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/ogc/coverages`, `/ogc/coverages/conformance` | Landing page, conformance. |
@@ -150,7 +152,8 @@ Read-only catalog discovery over published services and layers (record ids `laye
 
 ## OGC API - Environmental Data Retrieval (EDR) — Preview
 
-The `/edr` surface is Preview in release 2026.1. Functional CRS, temporal
+The `/edr` surface is Preview in release 2026.1 and requires
+`Capabilities:Experimental:serve.ogc-api-edr:Enabled=true`. Functional CRS, temporal
 selection, output-format, and MULTIPOINT coordinate corrections are deferred to
 release 2026.2.
 

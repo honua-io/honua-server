@@ -271,6 +271,11 @@ internal static class FeatureCatalogGenerator
             return "serve.geoservices-imageserver";
         }
 
+        if (route.StartsWith("/ogc/coverages", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serve.ogc-api-coverages";
+        }
+
         // Temporal analytics — /api/v1/temporal/* was promoted to GA (Implemented) in
         // #2429 (temporal.filtering/extent-discovery/histogram/time-series-tiles), so it is
         // no longer a flipped experimental group: its routes fall through to the in-release
