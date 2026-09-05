@@ -25,6 +25,19 @@ public sealed class GeoprocessingOutputStoreAttestationTests : IDisposable
     private readonly string _root = Directory.CreateTempSubdirectory("honua-gp-attestation-").FullName;
 
     [UnitTest]
+    public void Create_DeploymentToolDigest_MatchesIndependentPowerShellVector()
+    {
+        var options = new GeoprocessingOutputStagingOptions
+        {
+            StoreReference = "gp-outputs", PersistenceClass = "shared-persistent",
+            BackupIdentity = "qualification-backup", BackupStoreReferences = ["gp-outputs"],
+            MaxInlineArtifactBytes = 1024,
+        };
+        GeoprocessingOutputStoreAttestation.Create(options).ConfigurationDigest.Should()
+            .Be("6eb07467421c0a70d34ef40a20aeb7f0767def7ba74cddb8b0c01d62db5b6103");
+    }
+
+    [UnitTest]
     public async Task Startup_UnattestedEphemeralDirectory_FailsWithoutCreatingStore()
     {
         var missingRoot = Path.Join(_root, "ephemeral");

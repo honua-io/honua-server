@@ -74,6 +74,7 @@ public sealed class GeoprocessingOutputArtifactSweeperTests : IDisposable
     {
         var options = _options;
         options.OrphanRetention = TimeSpan.FromDays(7);
+        GeoprocessingOutputStoreTestHelper.Attest(options);
         var key = await StageObjectAsync("job-gone", attempt: 1);
         _jobStore.GetAsync("job-gone", Arg.Any<CancellationToken>()).Returns((ExecutionJobRecord?)null);
 
@@ -183,6 +184,7 @@ public sealed class GeoprocessingOutputArtifactSweeperTests : IDisposable
     {
         var options = _options;
         options.SweepGrace = TimeSpan.FromHours(1);
+        GeoprocessingOutputStoreTestHelper.Attest(options);
         var key = await StageObjectAsync("job-fresh", attempt: 1);
         _jobStore.GetAsync("job-fresh", Arg.Any<CancellationToken>()).Returns((ExecutionJobRecord?)null);
 

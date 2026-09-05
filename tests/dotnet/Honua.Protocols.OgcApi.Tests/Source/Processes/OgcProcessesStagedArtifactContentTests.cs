@@ -19,6 +19,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
@@ -82,6 +83,28 @@ public sealed class OgcProcessesStagedArtifactContentTests
         bytes.Should().Equal(Enumerable.Range(0, 32768).Select(index => (byte)((index * 31 + 7) % 256)));
         Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant().Should().Be(expectedChecksum);
         response.Content.Headers.ContentType!.MediaType.Should().Be(descriptor.Content.MediaType);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Admin)]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /api/v1/admin/observability/ops-health")]
+    public async Task OpsHealth_RestoredVolume_ExposesCredentialFreeAttestation()
+    {
+        using var response = await _fixture.App.Client.GetAsync("/api/v1/admin/observability/ops-health");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var entry = document.RootElement.GetProperty("health").GetProperty("entries").EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "gp-output-store");
+        var evidence = entry.GetProperty("outputStoreAttestation");
+        evidence.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
+            "provider", "storeReference", "configurationDigest", "persistenceClass", "backupIdentity");
+        evidence.GetProperty("provider").GetString().Should().Be("local");
+        evidence.GetProperty("storeReference").GetString().Should().Be("gp-outputs");
+        evidence.GetProperty("configurationDigest").GetString().Should()
+            .Be("6eb07467421c0a70d34ef40a20aeb7f0767def7ba74cddb8b0c01d62db5b6103");
+        evidence.GetProperty("persistenceClass").GetString().Should().Be("shared-persistent");
+        evidence.GetProperty("backupIdentity").GetString().Should().Be("qualification-backup");
     }
 
     /// <summary>
@@ -455,6 +478,8 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
             {
                 services.AddSingleton(mockJobStore);
                 services.AddSingleton<IGeoprocessingOutputObjectStore>(store);
+                services.AddGeoprocessingOutputStaging(new ConfigurationBuilder()
+                    .AddInMemoryCollection(GeoprocessingOutputStoreTestHelper.Configuration(stagingOptions)).Build());
             });
     }
 
