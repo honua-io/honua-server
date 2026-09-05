@@ -1177,7 +1177,8 @@ jobs:
           csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
           dotnet build "${csproj}" \
             --no-restore \
-            --configuration Release
+            --configuration Release \
+            /p:RunAnalyzers=false
 
       - name: Package shard-local cache payload
         id: shard-cache-package
