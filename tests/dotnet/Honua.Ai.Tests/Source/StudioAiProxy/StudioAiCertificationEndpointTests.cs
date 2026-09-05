@@ -6,7 +6,6 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
@@ -67,6 +66,9 @@ public sealed class StudioAiCertificationEndpointTests
         secrets.IsSecretReference("secret://fixture-signing-key").Returns(true);
         secrets.GetSecretOrDefaultAsync("secret://fixture-signing-key", null, Arg.Any<CancellationToken>())
             .Returns(Convert.ToBase64String(Convert.FromHexString(TestSeed)));
+        secrets.IsSecretReference("secret://fixture-provider-key").Returns(true);
+        secrets.GetSecretOrDefaultAsync("secret://fixture-provider-key", null, Arg.Any<CancellationToken>())
+            .Returns("fixture-provider-key");
         var upstream = new FixtureHttpHandler(kind);
         var bedrock = new FixtureBedrockClient();
         var factory = Substitute.For<IBedrockChatClientFactory>();
@@ -86,7 +88,7 @@ public sealed class StudioAiCertificationEndpointTests
                         ["StudioAiProxy:Providers:fixture:Kind"] = kind,
                         ["StudioAiProxy:Providers:fixture:Endpoint"] = "https://fixture.invalid/v1",
                         ["StudioAiProxy:Providers:fixture:Model"] = "fixture-model",
-                        ["StudioAiProxy:Providers:fixture:ApiKey"] = "fixture-provider-key",
+                        ["StudioAiProxy:Providers:fixture:ApiKey"] = "secret://fixture-provider-key",
                         ["StudioAiProxy:TranscriptSigning:KeyId"] = "fixture-signer",
                         ["StudioAiProxy:TranscriptSigning:PrivateKeyReference"] = "secret://fixture-signing-key",
                         ["StudioAiProxy:TranscriptSigning:LifetimeSeconds"] = "900"
@@ -145,7 +147,9 @@ public sealed class StudioAiCertificationEndpointTests
         root.GetProperty("terminalResultDigest").GetBytesFromBase64().Should().Equal(SHA256.HashData(eventBytes));
         var signedEvents = JsonSerializer.Deserialize(eventBytes, StudioAiProxyJsonContext.Default.ListStudioAiChatEvent)!;
         signedEvents.Should().BeEquivalentTo(events.Where(evt => evt.Type != StudioAiChatEventType.TranscriptProvenance),
-            options => options.WithStrictOrdering());
+            options => options.WithStrictOrdering()
+                .Using<JsonElement>(context => JsonElement.DeepEquals(context.Subject, context.Expectation).Should().BeTrue())
+                .WhenTypeIs<JsonElement>());
         signedEvents.Where(evt => evt.Type == StudioAiChatEventType.TextDelta).Select(evt => evt.Text).Should().Equal("Aloha");
         var toolStart = signedEvents.Single(evt => evt.Type == StudioAiChatEventType.ToolCallStart);
         toolStart.ToolCallId.Should().Be("call-1");
@@ -157,16 +161,20 @@ public sealed class StudioAiCertificationEndpointTests
 
         // Challenge every signed field independently, retaining the original signature.
         // This catches missing binding coverage, including prompt/events/result substitution.
-        Verify(Encoding.UTF8.GetBytes(JsonNode.Parse(bytes)!.ToJsonString()), signature).Should().BeTrue(
-            "the mutation writer must preserve the valid encoding before a binding changes");
+        RewriteBinding(root, null).Should().Equal(bytes,
+            "the mutation writer must preserve the exact valid encoding before a binding changes");
         foreach (var property in root.EnumerateObject())
         {
-            var forged = JsonNode.Parse(bytes)!.AsObject();
-            forged[property.Name] = "locally-forged-" + property.Name;
-            Verify(Encoding.UTF8.GetBytes(forged.ToJsonString()), signature).Should().BeFalse(
+            Verify(RewriteBinding(root, property.Name), signature).Should().BeFalse(
                 $"changing signed binding '{property.Name}' must invalidate provenance");
         }
     }
+
+    private static byte[] RewriteBinding(JsonElement envelope, string? changedProperty)
+        => Encoding.UTF8.GetBytes("{" + string.Join(",", envelope.EnumerateObject().Select(property =>
+            "\"" + property.Name + "\":" + (property.Name == changedProperty
+                ? "\"locally-forged-" + property.Name + "\""
+                : property.Value.GetRawText()))) + "}");
 
     private static bool Verify(byte[] bytes, byte[] signature)
     {
