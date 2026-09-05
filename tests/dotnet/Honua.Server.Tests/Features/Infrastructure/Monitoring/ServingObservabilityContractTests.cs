@@ -86,13 +86,20 @@ public sealed class ServingObservabilityContractTests
     [InlineData("GET", "DescribeProcess", 404, "wps.describeprocess")]
     [InlineData("POST", "DescribeProcess", 404, "wps.describeprocess")]
     [InlineData("GET", "Unsupported", 501, "wps.unsupported")]
-    [InlineData("POST", "Unsupported", 501, "wps.unsupported")]
+    // XML schema validation rejects unknown roots before a parsed operation is available.
+    [InlineData("POST", "Unsupported", 400, "wps")]
+    [InlineData("GET", "GetCapabilities", 503, "wps.getcapabilities")]
+    [InlineData("POST", "GetCapabilities", 503, "wps.getcapabilities")]
     public async Task WpsEndpoint_RecordsServingLatencyAndRequestDenominator(string method, string operation, int statusCode, string telemetryOperation)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
         builder.WebHost.UseTestServer();
         var catalog = Substitute.For<IProcessCatalog>();
         catalog.ListProcesses().Returns(Array.Empty<ProcessDefinition>());
+        if (statusCode == 503)
+        {
+            catalog.ListProcesses().Returns(_ => throw new GeoprocessingStoreUnavailableException());
+        }
         builder.Services.AddSingleton(catalog);
         builder.Services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
         builder.Services.AddSingleton<Wps20ConformanceEcho>();
@@ -122,7 +129,14 @@ public sealed class ServingObservabilityContractTests
         await app.StopAsync();
 
         Assert.Equal(statusCode, (int)response.StatusCode);
-        Assert.Contains(statusCode switch { 200 => "Capabilities", 404 => "NoSuchProcess", _ => "OperationNotSupported" }, xml, StringComparison.Ordinal);
+        Assert.Contains(statusCode switch
+        {
+            200 => "Capabilities",
+            400 => "InvalidParameterValue",
+            404 => "NoSuchProcess",
+            503 => "ServerBusy",
+            _ => "OperationNotSupported"
+        }, xml, StringComparison.Ordinal);
         var serving = Assert.Single(metrics.Samples, sample => sample.Name == "honua_serving_request_duration_ms");
         Assert.True(serving.Value >= 0);
         Assert.Equal("WPS-2.0.2", serving.Tags[HonuaTelemetry.Tags.Protocol]);
