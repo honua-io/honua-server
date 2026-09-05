@@ -135,6 +135,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # Runtime stage - distroless-style minimal image for maximum security
 FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime
 
+# No newer upstream digest is available. Invalidate the cached upgrade layer
+# to pick up Alpine's libexpat 2.8.4-r0 security fixes in every architecture.
+ARG RUNTIME_PACKAGE_REVISION=20260905
+
 # Security: Install runtime dependencies
 RUN apk upgrade --no-cache && \
     apk add --no-cache \

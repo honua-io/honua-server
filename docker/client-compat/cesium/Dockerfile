@@ -6,7 +6,7 @@
 # matching browser build; a drift (e.g. the lockfile bumped to 1.61.0 while this
 # stayed at 1.59.1) makes `npx playwright test` fail with
 # "browserType.launch: Executable doesn't exist at .../chromium_headless_shell-<build>".
-FROM mcr.microsoft.com/playwright:v1.61.0-noble
+FROM mcr.microsoft.com/playwright:v1.61.0-noble@sha256:57b65fdc9ceabe0ef613124c7bbe2babcf9362c4d85e382fe3b03604e84b428a
 
 ENV DEBIAN_FRONTEND=noninteractive \
     NODE_OPTIONS="--max-old-space-size=4096" \

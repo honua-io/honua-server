@@ -9,7 +9,7 @@ RUN git clone --filter=blob:none https://github.com/opengeospatial/ets-wps20.git
     && mvn --batch-mode --no-transfer-progress -DskipTests package \
     && cp "$(find target -maxdepth 1 -type f -name '*-aio.jar' -print -quit)" /tmp/ets-wps20-aio.jar
 
-FROM eclipse-temurin:17-jre@sha256:92999aea37688157a53a40bfcb187c30f317422e028045fd5fc5c548fde9e626
+FROM eclipse-temurin:17-jre@sha256:13cc28a6cc72a38ce1f00c906be3580c1a3e604b8984d694f369a96742abc93b
 
 ARG ETS_COMMIT=e2acc691440fad98d32e873a6b7237c9d759b8df
 
