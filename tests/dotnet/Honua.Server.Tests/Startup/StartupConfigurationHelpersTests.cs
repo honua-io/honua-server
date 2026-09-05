@@ -4,6 +4,8 @@
 using FluentAssertions;
 using Honua.Server.Startup;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Startup;
 
@@ -21,6 +23,53 @@ namespace Honua.Server.Tests.Startup;
 /// </summary>
 public sealed class StartupConfigurationHelpersTests
 {
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("ConnectionStrings:redis", false)]
+    [InlineData("ConnectionStrings:Redis", true)]
+    [InlineData("Aspire:StackExchange:Redis:ConnectionString", false)]
+    [InlineData("Aspire:StackExchange:Redis:ConnectionString", true)]
+    public void SecuritySourceReordering_PreservesResolvedEnvironmentReferences(string key, bool includeSecurityFile)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "honua-secret-order-" + Guid.NewGuid().ToString("N"));
+        var prefix = "HONUA_SECRET_ORDER_" + Guid.NewGuid().ToString("N") + "_";
+        var referenceName = prefix + "VALUE";
+        var configurationName = prefix + key.Replace(":", "__", StringComparison.Ordinal);
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "appsettings.json"), "{}");
+            File.WriteAllText(Path.Combine(directory, "appsettings.Production.json"), "{}");
+            if (includeSecurityFile)
+            {
+                File.WriteAllText(Path.Combine(directory, "appsettings.Security.json"), "{}");
+            }
+            var resolved = "localhost:6379,password=" + Guid.NewGuid().ToString("N");
+            Environment.SetEnvironmentVariable(referenceName, resolved);
+            Environment.SetEnvironmentVariable(configurationName, "env:" + referenceName);
+            using var configuration = new ConfigurationManager();
+            configuration.SetBasePath(directory);
+            configuration.AddJsonFile("appsettings.json");
+            configuration.AddJsonFile("appsettings.Production.json");
+            configuration.AddEnvironmentVariables(prefix);
+            var environment = Substitute.For<IHostEnvironment>();
+            environment.EnvironmentName.Returns(Environments.Production);
+
+            StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(configuration);
+            StartupConfigurationHelpers.AddSecurityConfiguration(configuration, environment);
+
+            // Boolean assertion keeps generated credentials out of failure output.
+            string.Equals(configuration[key], resolved, StringComparison.Ordinal).Should().BeTrue();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(referenceName, null);
+            Environment.SetEnvironmentVariable(configurationName, null);
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task ResolveRedisConnectionSecretReferencesAsync_PlainConnectionString_LeavesValueUnchanged()
     {
