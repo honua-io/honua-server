@@ -268,6 +268,31 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.Equal(replacementText, await reader.ReadToEndAsync());
     }
 
+    [Theory]
+    [InlineData(2, TestFeatureId)]
+    [InlineData(TestLayerId, 999)]
+    public async Task UpdateKeywordsAsync_WrongOwner_DoesNotChangeAttachment(int layerId, long featureId)
+    {
+        var original = await CreateTestAttachment();
+
+        await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
+            _attachmentStore.UpdateKeywordsAsync(layerId, featureId, original.Id, "wrong owner"));
+
+        Assert.Equal(original, await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, original.Id));
+    }
+
+    [Fact]
+    public async Task UpdateKeywordsAsync_DeletedAttachment_DoesNotRecreateRecord()
+    {
+        var original = await CreateTestAttachment();
+        Assert.True(await _attachmentStore.DeleteAsync(TestLayerId, TestFeatureId, original.Id));
+
+        await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
+            _attachmentStore.UpdateKeywordsAsync(TestLayerId, TestFeatureId, original.Id, "new keywords"));
+
+        Assert.Null(await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, original.Id));
+    }
+
     [Fact]
     public async Task UpdateAsync_NonExistentAttachment_ThrowsException()
     {
