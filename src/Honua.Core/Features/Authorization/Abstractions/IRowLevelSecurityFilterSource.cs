@@ -29,4 +29,13 @@ public interface IRowLevelSecurityFilterSource
     /// <param name="resource">The resource (layer) being queried.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<SqlFragment?> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Resolves the same schema-normalized row predicates used by REST reads for
+    /// in-memory event delivery. Every returned predicate must hold. An empty list
+    /// means no row policy applies; implementations that cannot provide predicates
+    /// refuse streaming rather than silently dropping their security constraints.
+    /// </summary>
+    Task<IReadOnlyList<FilterExpression>> ResolveExpressionsAsync(
+        MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This row policy source does not support event delivery.");
 }

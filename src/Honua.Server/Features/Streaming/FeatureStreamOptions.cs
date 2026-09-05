@@ -26,7 +26,7 @@ public sealed class FeatureStreamOptions
     public int MaxBufferPerConnection { get; set; } = 256;
 
     /// <summary>
-    /// Maximum number of concurrently connected feature-stream sessions.
+    /// Maximum concurrent feature-stream sessions per tenant, or per principal when tenancy is off.
     /// </summary>
     public int MaxConcurrentSessions { get; set; } = 256;
 

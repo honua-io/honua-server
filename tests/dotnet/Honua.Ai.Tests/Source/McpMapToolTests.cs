@@ -2,9 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -12,6 +15,9 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Queries.Filters;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Rendering;
@@ -48,6 +54,99 @@ public sealed class McpMapToolTests
     private const int StorageLayerId = 42;
 
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_DeniedResourcePolicy_DoesNotReadFeatures(bool countOnly, bool servicePolicy)
+    {
+        var policy = new AccessPolicy { AllowedRoles = ["restricted-data-reader"] };
+        var reader = Substitute.For<IFeatureReader>();
+        reader.CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(42L);
+        using var services = BuildServices(reader: reader, accessPolicy: servicePolicy ? null : policy, servicePolicy: servicePolicy ? policy : null);
+        var context = AuthenticatedContext(services);
+        var graph = await services.GetRequiredService<IMetadataV2GraphProvider>().GetCurrentAsync();
+        var layer = MapToolLayerResolver.Resolve(graph, ServiceId, LayerIndex);
+        var restDenial = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, layer.Resource, layer.Service);
+        restDenial.Should().NotBeNull("the identical REST layer access check must deny this principal");
+
+        var response = await BuildSurface().DispatchAsync(context,
+            ToolCall("gav-policy", QueryFeaturesTool.ToolName,
+                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnCountOnly":{{(countOnly ? "true" : "false")}}}"""),
+            CancellationToken.None);
+
+        response!.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue(
+            "MCP must enforce the same resource policy as REST before calling the reader");
+        await reader.DidNotReceive().CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await reader.DidNotReceive().QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_list_layers")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ListLayers_DeniedPolicy_OmitsRestrictedLayerAndCount()
+    {
+        using var services = BuildServices(accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-reader"] });
+        var response = await BuildSurface().DispatchAsync(AuthenticatedContext(services),
+            ToolCall("denied-list", ListLayersTool.ToolName, "{}"), CancellationToken.None);
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value.GetProperty("structuredContent");
+        result.GetProperty("layers").GetArrayLength().Should().Be(0);
+        result.GetProperty("totalCount").GetInt32().Should().Be(0);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_describe_layer")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task DescribeLayer_DeniedPolicy_DoesNotExposeMetadataOrReadCount(bool includeRowCount)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        using var services = BuildServices(reader: reader, accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-reader"] });
+        var response = await BuildSurface().DispatchAsync(AuthenticatedContext(services),
+            ToolCall("denied-describe", DescribeLayerTool.ToolName,
+                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"includeRowCount":{{(includeRowCount ? "true" : "false")}}}"""),
+            CancellationToken.None);
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("permission_denied");
+        await reader.DidNotReceiveWithAnyArgs().CountAsync(default, default!, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_AllowedResourceRole_ReturnsCount()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(42L);
+        using var services = BuildServices(reader: reader, accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-reader"] });
+        var context = AuthenticatedContext(services);
+        context.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, "restricted-reader")]));
+        var response = await BuildSurface().DispatchAsync(context,
+            ToolCall("allowed-count", QueryFeaturesTool.ToolName,
+                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnCountOnly":true}"""),
+            CancellationToken.None);
+        response!.Error.Should().BeNull();
+        response.Result!.Value.GetProperty("structuredContent").GetProperty("count").GetInt64().Should().Be(42);
+        await reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
 
     [UnitTest]
     [Operation(Operations.Query)]
@@ -1003,6 +1102,136 @@ public sealed class McpMapToolTests
         StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.RenderMapOutputSchema);
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_ResourceQueryGrant_UsesSelectedServiceAndLayer()
+    {
+        var resolver = Substitute.For<IPermissionResolver>();
+        resolver.AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), ServiceName,
+                "Parcels Dataset", AuthorizationOperation.Query, true, Arg.Any<CancellationToken>())
+            .Returns(PermissionDecision.Allow(new PermissionGrant
+            {
+                Service = ServiceName,
+                Layer = "Parcels Dataset",
+                Operation = "query",
+            }));
+        var reader = Substitute.For<IFeatureReader>();
+        reader.CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(42L);
+        using var services = BuildServices(reader: reader,
+            accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-reader"] }, permissionResolver: resolver);
+        var context = AuthenticatedContext(services);
+        context.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, "scoped-reader")]));
+
+        var response = await BuildSurface().DispatchAsync(context,
+            ToolCall("granted-count", QueryFeaturesTool.ToolName,
+                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnCountOnly":true}"""),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        response.Result!.Value.GetProperty("structuredContent").GetProperty("count").GetInt64().Should().Be(42);
+        await resolver.Received(1).AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), ServiceName,
+            "Parcels Dataset", AuthorizationOperation.Query, true, Arg.Any<CancellationToken>());
+        await reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(true, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    [InlineData(true, true, false)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_describe_layer")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task DescribeLayer_OperationGrants_RequireMetadataAndQueryOnlyForCount(
+        bool metadataAllowed, bool queryAllowed, bool includeRowCount)
+    {
+        var resolver = BuildOperationPermissionResolver(metadataAllowed, queryAllowed);
+        var reader = Substitute.For<IFeatureReader>();
+        reader.CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(42L);
+        using var services = BuildServices(reader: reader,
+            accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-reader"] }, permissionResolver: resolver);
+        var context = AuthenticatedContext(services);
+        context.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, "scoped-reader")]));
+
+        var response = await BuildSurface().DispatchAsync(context,
+            ToolCall("describe-grants", DescribeLayerTool.ToolName,
+                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"includeRowCount":{{includeRowCount.ToString().ToLowerInvariant()}}}"""),
+            CancellationToken.None);
+
+        var allowed = metadataAllowed && (!includeRowCount || queryAllowed);
+        response!.Error.Should().BeNull();
+        response.Result!.Value.GetProperty("isError").GetBoolean().Should().Be(!allowed);
+        if (allowed && includeRowCount)
+        {
+            response.Result.Value.GetProperty("structuredContent").GetProperty("rowCount").GetInt64().Should().Be(42);
+            await reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        }
+        else
+        {
+            await reader.DidNotReceive().CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        }
+
+        await resolver.Received(1).AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), ServiceName,
+            "Parcels Dataset", AuthorizationOperation.Metadata, true, Arg.Any<CancellationToken>());
+        await resolver.Received(metadataAllowed && includeRowCount ? 1 : 0).AuthorizeAsync(
+            Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), ServiceName,
+            "Parcels Dataset", AuthorizationOperation.Query, true, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_list_layers")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ListLayers_OperationGrants_RequireMetadata(bool metadataAllowed, bool queryAllowed)
+    {
+        var resolver = BuildOperationPermissionResolver(metadataAllowed, queryAllowed);
+        using var services = BuildServices(
+            accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-reader"] }, permissionResolver: resolver);
+        var context = AuthenticatedContext(services);
+        context.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, "scoped-reader")]));
+
+        var response = await BuildSurface().DispatchAsync(context,
+            ToolCall("list-grants", ListLayersTool.ToolName, "{}"), CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var content = response.Result!.Value.GetProperty("structuredContent");
+        content.GetProperty("totalCount").GetInt32().Should().Be(metadataAllowed ? 1 : 0);
+        content.GetProperty("layers").GetArrayLength().Should().Be(metadataAllowed ? 1 : 0);
+        await resolver.Received(1).AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), ServiceName,
+            "Parcels Dataset", AuthorizationOperation.Metadata, true, Arg.Any<CancellationToken>());
+    }
+
+    private static IPermissionResolver BuildOperationPermissionResolver(bool metadataAllowed, bool queryAllowed)
+    {
+        var resolver = Substitute.For<IPermissionResolver>();
+        resolver.AuthorizeAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), ServiceName,
+                "Parcels Dataset", Arg.Any<AuthorizationOperation>(), true, Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var operation = call.Arg<AuthorizationOperation>();
+                var allowed = operation == AuthorizationOperation.Metadata ? metadataAllowed : queryAllowed;
+                return allowed
+                    ? PermissionDecision.Allow(new PermissionGrant
+                    {
+                        Service = ServiceName,
+                        Layer = "Parcels Dataset",
+                        Operation = operation.ToString().ToLowerInvariant(),
+                    })
+                    : PermissionDecision.NoMatch();
+            });
+        return resolver;
+    }
+
     private McpDataAccessSurface BuildSurface() => new(
         [
             new ListLayersTool(_jobService, NullLogger<ListLayersTool>.Instance),
@@ -1013,7 +1242,7 @@ public sealed class McpMapToolTests
         [],
         NullLogger<McpDataAccessSurface>.Instance);
 
-    private static TestMetadataV2GraphProvider BuildGraphProvider()
+    private static TestMetadataV2GraphProvider BuildGraphProvider(AccessPolicy? accessPolicy = null, AccessPolicy? servicePolicy = null)
     {
         var spatial = new MetadataV2ResourceSpatial
         {
@@ -1026,6 +1255,7 @@ public sealed class McpMapToolTests
             .AddResource(
                 ResourceId,
                 "Parcels Dataset",
+                accessPolicy: accessPolicy,
                 spatial: spatial,
                 fields:
                 [
@@ -1034,7 +1264,7 @@ public sealed class McpMapToolTests
                     new MetadataV2Field { Name = "area_sq_m", Type = MetadataV2FieldType.Double, Nullable = true }
                 ])
             .AddStorageBinding("bind-parcels", ResourceId, "public.parcels", storageLayerId: StorageLayerId)
-            .AddService(ServiceId, ServiceName)
+            .AddService(ServiceId, ServiceName, accessPolicy: servicePolicy)
             .AddPublication("pub-parcels", ServiceId, ResourceId, layerIndex: LayerIndex, storageBindingId: "bind-parcels")
             .BuildProvider();
     }
@@ -1043,10 +1273,19 @@ public sealed class McpMapToolTests
         IFeatureReader? reader = null,
         IGeometryService? geometryService = null,
         IRasterMapRenderer? renderer = null,
-        ITemporaryFileService? temporaryFileService = null)
+        ITemporaryFileService? temporaryFileService = null,
+        AccessPolicy? accessPolicy = null,
+        AccessPolicy? servicePolicy = null,
+        IPermissionResolver? permissionResolver = null)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider());
+        services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider(accessPolicy, servicePolicy));
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
+        services.AddOptions<RbacOptions>();
+        if (permissionResolver is not null)
+        {
+            services.AddSingleton(permissionResolver);
+        }
         services.AddSingleton(reader ?? Substitute.For<IFeatureReader>());
         services.AddSingleton(geometryService ?? Substitute.For<IGeometryService>());
         services.AddSingleton(renderer ?? Substitute.For<IRasterMapRenderer>());

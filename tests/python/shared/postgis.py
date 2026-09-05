@@ -371,6 +371,9 @@ class PostGISFixture:
                         maplibre_style JSONB,
                         geoservices_drawing_info JSONB,
                         style_version INT DEFAULT 0,
+                        style_revised_at TIMESTAMPTZ,
+                        style_revised_by TEXT,
+                        style_change_summary TEXT,
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """
@@ -395,6 +398,14 @@ class PostGISFixture:
                 conn.execute(
                     "ALTER TABLE IF EXISTS honua.layers "
                     "ADD COLUMN IF NOT EXISTS storage_options JSONB NOT NULL DEFAULT '{}'::jsonb;"
+                )
+                # Style catalog reads include the revision metadata from migration
+                # 022, including when WMS/WMTS resolves a layer's default style.
+                conn.execute(
+                    "ALTER TABLE IF EXISTS honua.layers "
+                    "ADD COLUMN IF NOT EXISTS style_revised_at TIMESTAMPTZ, "
+                    "ADD COLUMN IF NOT EXISTS style_revised_by TEXT, "
+                    "ADD COLUMN IF NOT EXISTS style_change_summary TEXT;"
                 )
 
                 conn.execute(

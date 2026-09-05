@@ -2,13 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Protocols.GeoServices.FeatureServer.Models;
 
-namespace Honua.Protocols.GeoServices;
+namespace Honua.Core.Geometries;
 
 /// <summary>
-/// Converts Esri "true-curve" geometry JSON (<c>curvePaths</c> / <c>curveRings</c>) to and from a
-/// neutral internal curve model, and densifies curve segments into linear vertices so the rest of
+/// Densifies Esri "true-curve" path/ring segments into linear vertices so the rest of
 /// the pipeline can store and process curves as ordinary linear geometry (#1877).
 /// </summary>
 /// <remarks>
@@ -25,12 +23,10 @@ namespace Honua.Protocols.GeoServices;
 /// <para>
 /// <b>Storage-linearization limitation:</b> the densified vertices are what gets stored. NTS/WKB
 /// cannot represent a true curve, so once a curve is densified it cannot be losslessly re-curved on
-/// output. The round-trip this converter guarantees is at the JSON model level
-/// (<see cref="Parse"/> → <see cref="Serialize"/>), which proves the curve definition survives a
-/// parse+serialize cycle; it does NOT promise curve re-emission from stored linear geometry.
+/// output. Protocol adapters retain ownership of geometry models and JSON serialization.
 /// </para>
 /// </remarks>
-internal static class CurveGeometryConverter
+public static class CurveGeometryConverter
 {
     /// <summary>
     /// Maximum number of densified vertices generated for a single curve segment. A defensive bound
@@ -51,70 +47,16 @@ internal static class CurveGeometryConverter
     internal const int BezierSegments = 32;
 
     /// <summary>
-    /// True when the supplied geometry carries a true-curve representation
-    /// (<c>curvePaths</c> or <c>curveRings</c>).
-    /// </summary>
-    public static bool HasTrueCurves(GeoServicesGeometry geometry)
-        => geometry.CurvePaths is { Length: > 0 } || geometry.CurveRings is { Length: > 0 };
-
-    /// <summary>
-    /// Densifies a geometry's <c>curvePaths</c>/<c>curveRings</c> into linear
-    /// <see cref="GeoServicesGeometry.Paths"/>/<see cref="GeoServicesGeometry.Rings"/>, returning a new
-    /// geometry the linear pipeline can convert to WKB. Vertex Z/M ordinates are preserved on plain
-    /// vertices and linearly interpolated by curve parameter for every generated vertex.
-    /// </summary>
-    /// <exception cref="ArgumentException">
-    /// Thrown when a segment object uses an unsupported key or is malformed.
-    /// </exception>
-    public static GeoServicesGeometry Densify(GeoServicesGeometry geometry)
-    {
-        ArgumentNullException.ThrowIfNull(geometry);
-
-        if (geometry.CurvePaths is { Length: > 0 } curvePaths)
-        {
-            var paths = new double[curvePaths.Length][][];
-            for (var i = 0; i < curvePaths.Length; i++)
-            {
-                paths[i] = DensifyPart(curvePaths[i]);
-            }
-
-            return CloneWithLinear(geometry, paths: paths, rings: null);
-        }
-
-        if (geometry.CurveRings is { Length: > 0 } curveRings)
-        {
-            var rings = new double[curveRings.Length][][];
-            for (var i = 0; i < curveRings.Length; i++)
-            {
-                rings[i] = DensifyPart(curveRings[i]);
-            }
-
-            return CloneWithLinear(geometry, paths: null, rings: rings);
-        }
-
-        return geometry;
-    }
-
-    private static GeoServicesGeometry CloneWithLinear(
-        GeoServicesGeometry source,
-        double[][][]? paths,
-        double[][][]? rings)
-        => new()
-        {
-            HasZ = source.HasZ,
-            HasM = source.HasM,
-            Paths = paths,
-            Rings = rings,
-            SpatialReference = source.SpatialReference,
-        };
-
-    /// <summary>
     /// Densifies a single path/ring (array of vertices and/or curve segments) into a flat list of
     /// linear vertices. The "current position" walks forward as segments are consumed, so each curve
     /// segment is densified from the previous vertex to its declared end point.
+    /// Plain vertices retain their Z/M ordinates; generated vertices interpolate them by curve parameter.
     /// </summary>
-    private static double[][] DensifyPart(JsonElement[] part)
+    /// <exception cref="ArgumentException">A segment is malformed or unsupported.</exception>
+    public static double[][] Densify(JsonElement[] part)
     {
+        ArgumentNullException.ThrowIfNull(part);
+
         var output = new List<double[]>(part.Length);
         double[]? current = null;
 
@@ -581,25 +523,4 @@ internal static class CurveGeometryConverter
         return coords;
     }
 
-    /// <summary>
-    /// Parses true-curve geometry JSON into the neutral <see cref="GeoServicesGeometry"/> model
-    /// (curve arrays preserved as raw <see cref="JsonElement"/>). The complement of
-    /// <see cref="Serialize"/>; the pair proves the curve definition survives a parse+serialize cycle.
-    /// </summary>
-    public static GeoServicesGeometry Parse(string json)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(json);
-        return JsonSerializer.Deserialize(json, FeatureServerJsonContext.Default.GeoServicesGeometry)
-            ?? throw new ArgumentException("Invalid true-curve geometry JSON.");
-    }
-
-    /// <summary>
-    /// Serializes a curve-bearing geometry model back to GeoServices JSON, echoing the original
-    /// <c>curvePaths</c>/<c>curveRings</c> definition (the complement of <see cref="Parse"/>).
-    /// </summary>
-    public static string Serialize(GeoServicesGeometry geometry)
-    {
-        ArgumentNullException.ThrowIfNull(geometry);
-        return JsonSerializer.Serialize(geometry, FeatureServerJsonContext.Default.GeoServicesGeometry);
-    }
 }

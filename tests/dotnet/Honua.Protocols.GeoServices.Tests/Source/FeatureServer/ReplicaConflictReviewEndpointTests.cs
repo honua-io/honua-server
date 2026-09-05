@@ -39,7 +39,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete", "Sync"]);
+        _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Create", "Update", "Delete", "Sync"]);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -841,6 +842,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
         });
         await fixture.InitializeAsync();
+        fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
 
         try
         {

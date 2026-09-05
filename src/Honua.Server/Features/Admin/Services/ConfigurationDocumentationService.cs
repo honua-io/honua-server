@@ -543,7 +543,7 @@ public sealed class ConfigurationDocumentationService
                 BuildProperty("FeatureStreaming:MaxBufferPerConnection", "FeatureStreaming__MaxBufferPerConnection", "integer",
                     "Maximum queued messages per connection before a slow consumer is disconnected", 256),
                 BuildProperty("FeatureStreaming:MaxConcurrentSessions", "FeatureStreaming__MaxConcurrentSessions", "integer",
-                    "Maximum number of concurrently connected feature-stream sessions", 256),
+                    "Maximum concurrent feature-stream sessions per tenant, or per principal when tenancy is off", 256),
                 BuildProperty("FeatureStreaming:ReplayBatchSize", "FeatureStreaming__ReplayBatchSize", "integer",
                     "Number of events fetched per batch during cursor replay", 200),
                 BuildProperty("FeatureStreaming:CrossNodeSyncInterval", "FeatureStreaming__CrossNodeSyncInterval", "timespan",

@@ -2,6 +2,12 @@
 
 Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol.
 
+Layer discovery, layer descriptions, feature pages, and counts use the shared
+REST resource-access gate, including service/layer policies and per-operation
+grants. Discovery and schema descriptions require metadata access; feature queries
+and descriptions that include a row count additionally require query access.
+Discovery filters inaccessible layers before calculating pagination totals.
+
 For operations work, MCP is the agent seat in the same control loop that Console `/operate` uses. See [Operating Honua](../operate/README.md) for the observe -> diagnose -> propose -> approve model, the autonomy ladder, and the current line between shipped MCP observability tools and in-progress platform-ops tools.
 
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)). Tool calls require an authenticated identity — see [authentication](../secure/authentication.md).

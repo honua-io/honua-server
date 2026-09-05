@@ -8,15 +8,15 @@ namespace Honua.Server.Features.Streaming;
 
 /// <summary>
 /// Composite subscription filter that evaluates in cheapest-first order:
-/// layer filter, bbox filter, then attribute filter. Delete events pass
-/// all non-layer filters (subscribers should always be notified of deletes
-/// in their subscribed layers).
+/// layer filter, subscriber read policy, bbox filter, then attribute filter.
+/// Delete events bypass client value filters only after subscriber row authorization.
 /// </summary>
 internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
 {
     private static readonly IReadOnlyDictionary<string, JsonElement> EmptyProperties =
         new Dictionary<string, JsonElement>(0, StringComparer.Ordinal);
 
+    private readonly StreamSubscriberSecurity? _subscriberSecurity;
     private readonly string? _serviceId;
     private readonly string? _resolvedServiceId;
     private readonly StringComparison _serviceIdComparison;
@@ -39,6 +39,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     /// <param name="attributeFilter">Parsed filter expression (null = no attribute filter).</param>
     /// <param name="temporalFilter">Parsed temporal interval filter (null = no temporal filter).</param>
     /// <param name="routabilityGuard">Live metadata-derived routing guard for open subscriptions.</param>
+    /// <param name="subscriberSecurity">Subscriber row and field policies resolved by the shared read sources.</param>
     public StreamSubscriptionFilter(
         string? serviceId = null,
         bool serviceIdIsExact = false,
@@ -48,8 +49,10 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
         double[]? bbox = null,
         FilterExpression? attributeFilter = null,
         StreamTemporalFilter? temporalFilter = null,
-        FeatureStreamRoutabilityGuard? routabilityGuard = null)
+        FeatureStreamRoutabilityGuard? routabilityGuard = null,
+        StreamSubscriberSecurity? subscriberSecurity = null)
     {
+        _subscriberSecurity = subscriberSecurity;
         _serviceId = serviceId;
         _resolvedServiceId = resolvedServiceId;
         _hasExplicitLayerScope = hasExplicitLayerScope;
@@ -96,6 +99,7 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
     /// pipeline does not carry (honua-server#3038 review).
     /// </remarks>
     public bool HasValueDependentPredicate =>
+        _subscriberSecurity?.HasRowPredicates == true ||
         _bbox is not null || _attributeFilter is not null || _temporalFilter is not null;
 
     /// <inheritdoc />
@@ -186,8 +190,13 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
             }
         }
 
-        // Delete events pass all non-layer filters. Subscribers should always
-        // be notified when a feature in their layer is removed.
+        if (_subscriberSecurity is not null && !_subscriberSecurity.Allows(envelope))
+        {
+            return false;
+        }
+
+        // Delete events pass client filters only after subscriber row authorization.
+        // Missing before-images cannot authorize a delete under a row policy.
         bool isDelete = string.Equals(envelope.Operation, "delete", StringComparison.OrdinalIgnoreCase);
         if (isDelete)
         {
@@ -262,6 +271,9 @@ internal sealed class StreamSubscriptionFilter : IStreamSubscriptionFilter
 
         return true;
     }
+
+    internal FeatureStreamEnvelope Project(FeatureStreamEnvelope envelope)
+        => _subscriberSecurity?.Project(envelope) ?? envelope;
 
     private static bool MatchesTemporal(
         IReadOnlyDictionary<string, JsonElement> properties,

@@ -2,6 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Collections.Immutable;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using System.Security.Claims;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using NSubstitute;
 using System.Net.WebSockets;
 using System.Globalization;
 using System.Text;
@@ -47,6 +53,241 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task Sse_SubscriberPolicies_Live_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(false, false);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task Sse_SubscriberPolicies_Replay_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(false, true);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task WebSocket_SubscriberPolicies_Live_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(true, false);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task WebSocket_SubscriberPolicies_Replay_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(true, true);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task Sse_SubscriberPolicies_Live_FieldMaskOnly() => VerifySubscriberPoliciesAsync(false, false, false);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task Sse_SubscriberPolicies_Replay_FieldMaskOnly() => VerifySubscriberPoliciesAsync(false, true, false);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task WebSocket_SubscriberPolicies_Live_FieldMaskOnly() => VerifySubscriberPoliciesAsync(true, false, false);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task WebSocket_SubscriberPolicies_Replay_FieldMaskOnly() => VerifySubscriberPoliciesAsync(true, true, false);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task Sse_SubscriberPolicies_SnapshotHandoff_HidesFields() => VerifySubscriberPoliciesAsync(false, false, restrictRows: false, snapshot: true);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task WebSocket_SubscriberPolicies_SnapshotHandoff_HidesFields() => VerifySubscriberPoliciesAsync(true, false, restrictRows: false, snapshot: true);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_SubscriberPolicies_RowDependentSnapshot_IsRejectedBeforeDelivery()
+    {
+        var rows = Substitute.For<IRlsPolicyStore>();
+        rows.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new RlsPolicy[]
+            {
+                new() { Role = "*", Service = "*", Layer = "*", Attribute = "NAME", ClaimType = ClaimTypes.Role }
+            });
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IRlsPolicyStore>(rows);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            foreach (var mode in new[] { "snapshot", "snapshot-then-delta" })
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/streaming/features?layers=0&mode={mode}");
+                request.Headers.Accept.ParseAdd("text/event-stream");
+                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+                (await response.Content.ReadAsStringAsync()).Should().Contain("row-level security");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static async Task VerifySubscriberPoliciesAsync(bool webSocket, bool replay, bool restrictRows = true, bool snapshot = false)
+    {
+        var rows = Substitute.For<IRlsPolicyStore>();
+        rows.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(restrictRows ? new RlsPolicy[]
+            {
+                new() { Role = "*", Service = "*", Layer = "*", Attribute = "NAME", ClaimType = ClaimTypes.Role }
+            } : Array.Empty<RlsPolicy>());
+        var fields = Substitute.For<IFieldMaskPolicyStore>();
+        fields.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new FieldMaskPolicy[]
+            {
+                new() { Role = "*", Service = "*", Layer = "*", Attribute = "description" }
+            });
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IRlsPolicyStore>(rows)
+            .ReplaceService<IFieldMaskPolicyStore>(fields);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var writer = fixture.GetService<IFeatureWriter>();
+            foreach (var name in new[] { "admin", "forbidden" })
+            {
+                await writer.CreateAsync(0, Feature.Create(0,
+                    new NetTopologySuite.Geometries.Point(1, 1).AsBinary(),
+                    new Dictionary<string, object?> { ["name"] = name, ["description"] = "private-rest-value" }.ToImmutableDictionary()), cts.Token);
+            }
+
+            using (var restClient = fixture.CreateAdminClient())
+            using (var restResponse = await restClient.GetAsync(
+                "/rest/services/test/FeatureServer/0/query?where=1%3D1&outFields=*&returnGeometry=false&f=json", cts.Token))
+            {
+                restResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var rest = JsonDocument.Parse(await restResponse.Content.ReadAsStringAsync(cts.Token));
+                var features = rest.RootElement.GetProperty("features").EnumerateArray().ToArray();
+                features.Should().Contain(feature => feature.GetProperty("attributes").GetProperty("name").GetString() == "admin");
+                if (restrictRows)
+                {
+                    features.Should().OnlyContain(feature => feature.GetProperty("attributes").GetProperty("name").GetString() == "admin");
+                }
+
+                rest.RootElement.GetRawText().Should().NotContain("private-rest-value");
+            }
+
+            var store = fixture.GetService<IFeatureChangeEventStore>();
+            var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
+            var anchor = await store.AppendAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = "test",
+                LayerId = 0,
+                ObjectId = 999,
+                Operation = "update",
+                Protocol = "rest",
+                RequestId = "policy-anchor"
+            });
+            async Task PublishAsync()
+            {
+                foreach (var id in restrictRows ? new long[] { 100, 101, 102 } : new long[] { 102 })
+                {
+                    await publisher.PublishAsync(new FeatureChangeEventRequest
+                    {
+                        ServiceId = "test",
+                        LayerId = 0,
+                        ObjectId = id,
+                        Operation = id == 101 ? "delete" : "update",
+                        Protocol = "rest",
+                        RequestId = "policy-change",
+                        PropertiesJson = id == 102
+                            ? """{"name":"admin","description":"private-value","DESCRIPTION":"private-uppercase"}"""
+                            : """{"name":"forbidden","description":"private-row"}""",
+                        ChangedAttributes = new Dictionary<string, object?> { ["name"] = "changed", ["description"] = "private-delta", ["DESCRIPTION"] = "private-uppercase-delta" }
+                    }, cts.Token);
+                }
+            }
+
+            if (replay)
+            {
+                await PublishAsync();
+            }
+
+            var position = snapshot ? "mode=snapshot-then-delta" : $"cursor={anchor.Cursor}";
+            var path = $"/api/v1/streaming/features?layers=0&{position}&clientLabel=policy-test";
+            var sawSnapshot = false;
+            void CheckSnapshot(JsonElement frame)
+            {
+                if (frame.GetProperty("type").GetString() == "snapshot")
+                {
+                    sawSnapshot = true;
+                    frame.GetProperty("complete").GetBoolean().Should().BeTrue();
+                    frame.GetRawText().Should().NotContain("private-");
+                    if (restrictRows)
+                    {
+                        frame.GetRawText().Should().NotContain("forbidden");
+                    }
+                }
+            }
+            JsonElement delivered;
+            if (webSocket)
+            {
+                using var socket = await fixture.CreateWebSocketClient().ConnectAsync(new Uri("ws://localhost" + path), cts.Token);
+                _ = await ReceiveWebSocketJsonAsync(socket, cts.Token);
+                if (!replay && !snapshot)
+                {
+                    await PublishAsync();
+                }
+
+                do
+                {
+                    delivered = await ReceiveWebSocketJsonAsync(socket, cts.Token);
+                    CheckSnapshot(delivered);
+                    if (snapshot && delivered.GetProperty("type").GetString() == "snapshot")
+                    {
+                        await PublishAsync();
+                    }
+                } while (delivered.GetProperty("type").GetString() != "feature-change");
+            }
+            else
+            {
+                using var client = fixture.CreateAdminClient();
+                using var request = new HttpRequestMessage(HttpMethod.Get, path);
+                request.Headers.Accept.ParseAdd("text/event-stream");
+                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+                using var reader = new StreamReader(stream);
+                _ = await ReadNextSseEventAsync(reader, cts.Token);
+                if (!replay && !snapshot)
+                {
+                    await PublishAsync();
+                }
+
+                SseEvent frame;
+                do
+                {
+                    frame = await ReadNextSseEventAsync(reader, cts.Token);
+                    CheckSnapshot(frame.Data);
+                    if (snapshot && frame.EventName == "snapshot")
+                    {
+                        await PublishAsync();
+                    }
+                } while (frame.EventName != "feature-change");
+                delivered = frame.Data;
+            }
+
+            if (snapshot)
+            {
+                sawSnapshot.Should().BeTrue();
+            }
+
+            delivered.GetProperty("objectId").GetInt64().Should().Be(102, "hidden updates and deletes must not be delivered");
+            delivered.GetProperty("attributes").GetProperty("name").GetString().Should().Be("admin");
+            delivered.GetProperty("attributes").EnumerateObject().Select(p => p.Name).Should().Equal("name");
+            delivered.GetProperty("changedAttributes").EnumerateObject().Select(p => p.Name).Should().Equal("name");
+            delivered.GetRawText().Should().NotContain("private-");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 
     // ─── AC: Client can open a WebSocket connection ─────────────────────
 
@@ -1762,7 +2003,11 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         try
         {
             var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
-            using var heldSession = sessionManager.CreateSession("WebSocket", "held-session");
+            using var heldClient = fixture.CreateAdminClient();
+            using var heldRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features");
+            heldRequest.Headers.Accept.ParseAdd("text/event-stream");
+            using var heldSession = await heldClient.SendAsync(heldRequest, HttpCompletionOption.ResponseHeadersRead);
+            heldSession.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features");
             request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
@@ -1790,7 +2035,11 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         try
         {
             var sessionManager = fixture.GetService<FeatureStreamSessionManager>();
-            using var heldSession = sessionManager.CreateSession("WebSocket", "held-session");
+            using var heldClient = fixture.CreateAdminClient();
+            using var heldRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features");
+            heldRequest.Headers.Accept.ParseAdd("text/event-stream");
+            using var heldSession = await heldClient.SendAsync(heldRequest, HttpCompletionOption.ResponseHeadersRead);
+            heldSession.StatusCode.Should().Be(HttpStatusCode.OK);
 
             var wsClient = fixture.CreateWebSocketClient();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
