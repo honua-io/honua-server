@@ -53,6 +53,7 @@ internal static class TiffConstants
     // GeoKey IDs within GeoKeyDirectoryTag
     public const ushort GeoKeyProjectedCSTypeGeoKey = 3072;
     public const ushort GeoKeyGeographicTypeGeoKey = 2048;
+    public const ushort GeoKeyRasterTypeGeoKey = 1025;
 
     // TIFF field types
     public const ushort TypeByte = 1;

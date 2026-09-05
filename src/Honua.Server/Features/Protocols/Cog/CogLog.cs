@@ -68,7 +68,7 @@ internal static partial class CogLog
     [LoggerMessage(
         EventId = 7909,
         Level = LogLevel.Warning,
-        Message = "COG {RegistrationId} uses CRS SRID {Srid} which is not EPSG:3857 or EPSG:4326. Web map clients may display tiles incorrectly.")]
+        Message = "COG {RegistrationId} uses CRS SRID {Srid} which is not EPSG:3857. Direct ImageServer tile serving requires EPSG:3857 with GoogleMapsCompatible alignment.")]
     public static partial void NonWebMercatorCrs(ILogger logger, long registrationId, int srid);
 
     [LoggerMessage(
