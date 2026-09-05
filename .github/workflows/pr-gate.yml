@@ -200,11 +200,20 @@ jobs:
           # successful measurement, not a failed change.
           enable-build-cache: ${{ vars.HONUA_PR_GATE_BUILD_CACHE == 'true' && 'true' || 'false' }}
 
+      # The server boot smoke below uses the same PostGIS image as the
+      # Testcontainers-backed Governance/Drift coverage. Pull it while the
+      # existing lean build runs so the required path pays only sidecar startup
+      # and migrations, not a cold image fetch.
+      - name: Pre-pull Testcontainers PostGIS image (background)
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        run: scripts/ci/prepull-testcontainers-postgis.sh
+
       - name: Lean gate (build + fast unit/architecture smoke)
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         uses: ./.github/actions/lean-gate
         with:
           trx-prefix: pr-gate
+          prepull-postgis: 'true'
           # Per-PR only. The gate compiles the diff's reverse-dependency closure
           # plus every project its own --no-build test steps consume, and falls
           # back to the full solution whenever the diff base is untrustworthy or
@@ -236,6 +245,16 @@ jobs:
           name: raster-execution-proof
           path: tests/TestResults/raster-execution-proof.trx
           if-no-files-found: warn
+
+      - name: Await Testcontainers PostGIS pre-pull
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        env:
+          PREPULL_AWAIT_TIMEOUT_SECONDS: '120'
+        run: scripts/ci/prepull-testcontainers-postgis.sh --await
+
+      - name: Honua.Server boot + migrations smoke
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        run: timeout 175s scripts/ci/server-boot-smoke.sh
 
       # Exercise all clean and injected-rootfs fixtures here without building a
       # container. The separate serving-image workflow and release/deploy/nightly

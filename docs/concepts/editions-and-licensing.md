@@ -4,11 +4,26 @@ Honua's source is available under the [Elastic License 2.0](https://github.com/h
 
 | Edition | How it activates | Scope |
 |---|---|---|
-| Community | Default — no license file configured | Baseline platform: all protocols, publishing, one-shot file import, portal token issuance |
-| Pro | Signed license file with Pro entitlements | Adds features such as GeoServices FeatureServer editing, spatial analytics, real-time streams, Redis caching, geocoding, single-provider OIDC SSO |
-| Enterprise | Signed license file with Enterprise entitlements | Adds features such as multi-provider OIDC governance, claim-to-role mapping, branch versioning, service imports, the plugin SDK |
+| Community | Default — no license file configured | Baseline platform: documented Community protocol surfaces, publishing, one-shot file import, portal token issuance; I3S remains Enterprise |
+| Pro | Signed license file with Pro entitlements | Adds features such as GeoServices FeatureServer editing, spatial analytics, real-time streams, Redis caching, geocoding, single-provider OIDC SSO, core branch versioning (Preview) |
+| Enterprise | Signed license file with Enterprise entitlements | Adds features such as multi-provider OIDC governance, claim-to-role mapping, organisational approval/policy controls, specialised scene ingest and I3S (Experimental), service imports, the plugin SDK |
 
 Community requires no license and is unaffected by license expiry. Pro and Enterprise use the strict failure-mode contract: a missing, invalid or expired license refuses startup with a non-zero exit; no Community fallback is permitted. Declare `Licensing__Edition=Pro` or `Enterprise` so a missing source is identified as a paid deployment. Explicit `Community` ignores license sources; with no declared edition and no source the default remains Community.
+
+## Commercial boundaries for 2026.1
+
+The [2026-09-04 commercial-boundaries ruling](https://github.com/honua-io/honua-flow/blob/trunk/docs/2026.1-quality-contract.md) separates edition entitlement from release maturity:
+
+| Capability | Edition | 2026.1 boundary |
+|---|---|---|
+| Core branch versioning | Pro | Preview; existing experimental runtime opt-in still applies |
+| Organisational approval and policy controls | Enterprise | Paid governance around the core versioning/operation workflow |
+| Existing 3D Tiles serving, scene discovery, elevation, and generation from feature layers | Community | 3D remains Experimental; this does not expand the supported release surface |
+| Specialised CityGML/BIM and point-cloud ingest; I3S | Enterprise | Remain Experimental; no tier expansion without a specific commercial decision |
+| Customer-facing multitenancy | Preview/trial only | Single-tenant GA; no Honua SaaS or production multi-tenant deployment |
+| Essential secure operation and recoverability | Baseline in every edition | Authorization, isolation, audit integrity, backup/restore and recovery procedures are product obligations; advanced automation, governance and support are the paid layers |
+
+Any multi-tenant deployment is an explicitly labelled demo/trial/preview environment: no customer production data, production SLO, availability, performance or durability commitment. Cross-tenant disclosure remains a full-severity defect. Multitenancy functional, UX and performance work is deferred to 2026.2.
 
 ## License files
 

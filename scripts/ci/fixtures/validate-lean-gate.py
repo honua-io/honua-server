@@ -170,6 +170,11 @@ require(
     text=PR_GATE_TEXT,
 )
 require(
+    r"uses: \./\.github/actions/lean-gate\n(?:.*\n)*?\s+prepull-postgis: 'true'",
+    "have PR Gate enable the PostGIS pre-pull",
+    text=PR_GATE_TEXT,
+)
+require(
     r"format:\n[\s\S]*?uses: \./\.github/actions/format-check\n"
     r"\s+with:\n\s+format-scope: affected",
     "run affected-scope format in a parallel PR Gate job",
@@ -230,32 +235,30 @@ if not PREPULL_SCRIPT.is_file():
     raise AssertionError(f"lean gate must ship {PREPULL_SCRIPT.relative_to(ROOT)}")
 PREPULL_TEXT = PREPULL_SCRIPT.read_text(encoding="utf-8")
 
-# The required PR Gate must stay Testcontainers-free. The exact governance
-# assertions move to a trunk-only job, and that leaf job must feed test-all so
-# its failure reaches CI Gate and the trailing-verification brake.
-if re.search(r"- name: Run \.NET Tests \(Server Governance/Drift\)", TEXT) or (
-    "prepull-testcontainers-postgis.sh" in TEXT
-):
-    raise AssertionError("lean gate must not boot the governance Testcontainer")
-
+# The governance assertions stay on the required PR Gate path. Pin both ends
+# of the concurrency contract: start the best-effort image pull before restore
+# and build, then await it immediately before the Testcontainers-backed test.
 require(
-    r"server-governance-drift:\n"
-    r"\s+name: Server Governance/Drift\n"
-    r"\s+if: \$\{\{ github\.ref == 'refs/heads/trunk' \}\}",
-    "run Server Governance/Drift only on the trailing trunk matrix",
-    text=CI_TEXT,
+    r"steps:\n(?:\s*(?:#.*)?\n)*"
+    r"\s+- name: Pre-pull Testcontainers PostGIS image \(background\)\n"
+    r"\s+if: inputs\.prepull-postgis == 'true'\n"
+    r"\s+shell: bash\n\s+run: scripts/ci/prepull-testcontainers-postgis\.sh",
+    "start the Testcontainers PostGIS pre-pull as the first composite step",
+)
+require(
+    r"- name: Await Testcontainers PostGIS pre-pull\n"
+    r"\s+if: inputs\.prepull-postgis == 'true'\n"
+    r"\s+shell: bash\n"
+    r"\s+run: scripts/ci/prepull-testcontainers-postgis\.sh --await\n\n"
+    r"\s+- name: Run \.NET Tests \(Server Governance/Drift\)",
+    "await the PostGIS pre-pull immediately before Server Governance/Drift",
 )
 require(
     r"dotnet test tests/dotnet/Honua\.Server\.Tests/Honua\.Server\.Tests\.csproj \\\n"
     r"\s+--no-build \\\n\s+--no-restore \\\n\s+--configuration Release \\\n"
     r'\s+--filter "Category=Architecture"',
     "preserve the complete Server governance/drift assertion filter",
-    text=CI_TEXT,
-)
-require(
-    r"test-all:[\s\S]*?needs:[\s\S]*?- server-governance-drift",
-    "feed Server Governance/Drift into Test Suite Summary and CI Gate",
-    text=CI_TEXT,
+    text=TEXT,
 )
 require(
     r'FIXTURE="tests/dotnet/Honua\.TestKit/PostgresFixture\.cs"[\s\S]*?'

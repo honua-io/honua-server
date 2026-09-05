@@ -14,7 +14,7 @@ Honua serves every published layer through multiple protocols at once — the sa
 | GeoServices GeocodeServer | `/rest/services/{locatorName}/GeocodeServer` | Esri geocoding clients | Esri clients call `findAddressCandidates`-style geocoding against registered locators |
 | GeoServices VectorTileServer | `/rest/services/{serviceId}/VectorTileServer` | Esri vector-tile clients, ArcGIS SDKs | Esri clients render vector tiles (`/tile/{z}/{y}/{x}.pbf`) |
 | GeoServices NAServer **(Pro)** | `/rest/services/{serviceId}/NAServer` | Esri routing clients | Esri clients solve routes, service areas, closest facility, OD cost matrices |
-| GeoServices VersionManagementServer **(Enterprise, experimental)** | `/rest/services/{serviceId}/VersionManagementServer` | Esri branch-versioning workflows | Named gdb versions with isolated edits and reconcile/post |
+| GeoServices VersionManagementServer **(Pro, Preview; experimental opt-in)** | `/rest/services/{serviceId}/VersionManagementServer` | Esri branch-versioning workflows | Named gdb versions with isolated edits and reconcile/post |
 | Portal token issuance | `/sharing/rest/generateToken` | ArcGIS Pro, Esri SDKs | Esri clients authenticate with username/password tokens |
 | OGC API Features | `/ogc/features` | QGIS, GDAL, any OGC client | Standards-based feature access and CRUD with CQL2 filtering |
 | OGC API Maps | `/ogc/maps` | OGC map clients | Standards-based server-rendered map images |

@@ -40,6 +40,13 @@ public sealed class StudioMcpToolContractTests
     private readonly IStudioPackageValidator _validator = Substitute.For<IStudioPackageValidator>();
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
 
+    public StudioMcpToolContractTests()
+    {
+        _lifecycleService.GetCapabilities().Returns(
+            new Honua.Core.Features.Studio.Services.StudioPackageFamilyRegistry(
+                new Honua.Core.Features.Studio.Services.InMemoryStudioPackageStore()).GetCapabilities());
+    }
+
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_*")]
@@ -71,6 +78,25 @@ public sealed class StudioMcpToolContractTests
             var properties = tool.Describe().OutputSchema!.Value.GetProperty("properties");
             properties.TryGetProperty("studioAuthorizationCode", out _).Should().BeTrue(
                 $"'{tool.Name}' must advertise the governed Studio denial code emitted at runtime");
+            properties.GetProperty("currentGeneration").GetProperty("type")
+                .EnumerateArray().Select(value => value.GetString()).Should().BeEquivalentTo("integer", "null");
+            properties.GetProperty("currentGeneration").GetProperty("minimum").GetInt64().Should().Be(1);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/list")]
+    public void CompositionTools_AdvertiseDashboardEligibility()
+    {
+        var tools = BuildAllTools().OfType<StudioCompositionToolBase>().Cast<IMcpTool>().ToArray();
+        tools.Should().HaveCount(11);
+        foreach (var tool in tools)
+        {
+            var descriptor = tool.Describe();
+            descriptor.InputSchema.GetProperty("properties").GetProperty("draftId")
+                .GetProperty("description").GetString().Should().Contain("dashboard");
+            descriptor.Description.Should().Contain("dashboard");
         }
     }
 
@@ -115,7 +141,8 @@ public sealed class StudioMcpToolContractTests
     public async Task UpdateDraft_WhenGenerationIsStale_SurfacesTypedFailedPrecondition()
     {
         var draft = BuildDraft(StudioPackageFamily.Map, generation: 1);
-        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>())
+            .Returns(draft, draft with { Generation = 2 });
         _lifecycleService
             .UpdateDraftAsync(DraftId, Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<StudioPackageDraft?>(
@@ -134,7 +161,8 @@ public sealed class StudioMcpToolContractTests
 
         var act = () => tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
-        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+        var conflict = await act.Should().ThrowAsync<StudioDraftGenerationConflictException>();
+        conflict.Which.CurrentGeneration.Should().Be(2);
     }
 
     [UnitTest]

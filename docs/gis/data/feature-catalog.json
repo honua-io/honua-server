@@ -5912,7 +5912,6 @@
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.PerformanceTesting_AllEndpoints_MeetPerformanceTargets",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestInfrastructure_Quality_MeetsHighStandards",
-        "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestQualityMetrics_AllCriteria_AchievesPerfectScore",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.Health_GetLiveness_ShouldReturnHealthy",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
@@ -16999,7 +16998,10 @@
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_ClientCredentialsBearerReturns403",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_NonAdminCannotRequestCertifiedTranscript",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_NonAdminScopedApiKeyReturns403",
-        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_SameNonAdminBearerReachesProxyAndMcpDiscovery"
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_SameNonAdminBearerReachesProxyAndMcpDiscovery",
+        "Honua.Server.Tests.Features.StudioAiProxy.StudioAiCertificationEndpointTests.Anthropic_Certification_SignsTheActualEndpointResponse",
+        "Honua.Server.Tests.Features.StudioAiProxy.StudioAiCertificationEndpointTests.Bedrock_Certification_SignsTheActualEndpointResponse",
+        "Honua.Server.Tests.Features.StudioAiProxy.StudioAiCertificationEndpointTests.OpenAi_Certification_SignsTheActualEndpointResponse"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
@@ -17457,6 +17459,7 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithNoScope_IsFailClosed",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackDisabledTests.Request_WithIssuedSessionId_WhenFallbackDisabled_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackDisabledTests.Request_WithUnknownSessionId_WhenFallbackDisabled_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests.Dashboard_AllElevenCompositionVerbs_PersistExpectedValuesAndRejectStaleWrites",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_AfterToolCall_SurvivesADraftSyncReadBack",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_PreservesTheLayersStyleBindingAndSourceThroughSync",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_WhenGenerationIsStale_SurfacesFailedPreconditionLikeSiblingCompositionTools",

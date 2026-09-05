@@ -172,7 +172,7 @@ internal static partial class FeatureServerEndpoints
 
     /// <summary>
     /// Whether branch versioning is available for the current request: the active feature provider
-    /// supports it (Postgres) and the Enterprise branch-versioning entitlement is active (#1272,
+    /// supports it (Postgres) and the Pro branch-versioning entitlement is active (#1272,
     /// ADR-0051). Drives the service-metadata versioning capability flags so the advertised surface
     /// matches the runtime-registered VersionManagementServer routes.
     /// </summary>
