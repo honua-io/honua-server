@@ -12,6 +12,7 @@ export default defineConfig({
   workers: 1,
   reporter: [
     ['list'],
+    ['json', { outputFile: 'test-results/maplibre-results.json' }],
     ['./maplibre/support/cert-reporter.ts'],
   ],
   globalSetup: './maplibre/global-setup.ts',

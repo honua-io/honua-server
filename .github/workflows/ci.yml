@@ -2025,6 +2025,15 @@ jobs:
             tests/js-browser/playwright-report/
           retention-days: 14
 
+      # Startup failures happen before Playwright can produce test results.
+      - name: Upload MapLibre server startup log
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: maplibre-server-startup-log
+          path: ${{ runner.temp }}/honua-server-setup.log
+          retention-days: 14
+
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
     if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
