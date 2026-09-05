@@ -833,7 +833,7 @@
             "type": "string",
             "enum": ["document", "raw"],
             "default": "document",
-            "description": "Response mode for catalog processes. 'raw' returns the native representation for synchronous executions and from the results endpoint for asynchronous jobs. Multiple raw outputs use multipart/related. The canonical honua-geoprocessing plan process requires document mode."
+            "description": "Response mode for catalog processes. 'raw' returns the native representation for synchronous single-value executions and from the results endpoint for asynchronous jobs. Multiple raw outputs use multipart/related. The canonical honua-geoprocessing plan process requires document mode."
           }
         }
       },
