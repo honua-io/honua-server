@@ -22,7 +22,7 @@ using OpenTelemetry.Metrics;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-[Collection("Unit")]
+[Collection("HonuaTelemetry")]
 [Trait("Tier", "Fast")]
 public sealed class ServingObservabilityContractTests
 {
