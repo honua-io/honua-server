@@ -1,16 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections;
 using System.Collections.Immutable;
+using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
-using System.Security;
 using System.Security.Claims;
-using System.Text;
+using System.Security;
 using System.Text.Json;
-using System.Xml;
+using System.Text;
 using System.Xml.Linq;
+using System.Xml;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -21,8 +21,9 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Core.Queries.Filters;
+using Honua.Core.Features.Shared.Services;
 using Honua.Core.Queries.Filters.Fes20;
+using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.GeoJson;
@@ -30,12 +31,12 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
-using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Classic.Wfs20.Models;
+using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
-using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using NetTopologySuite;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
@@ -1813,8 +1814,10 @@ internal sealed partial class Wfs20Handler
         };
     }
 
-    private static string ConvertFieldValueToInvariantString(object? value, MetadataV2Field field)
+    private static string? ConvertFieldValueToInvariantString(object? value, MetadataV2Field field)
     {
+        if (IsNullValue(value))
+            return null;
         if (value is string text)
         {
             return field.Type switch
@@ -1968,19 +1971,7 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static string EscapeCsv(string? value)
-    {
-        var safeValue = value ?? string.Empty;
-        if (!safeValue.Contains(',') &&
-            !safeValue.Contains('"') &&
-            !safeValue.Contains('\n') &&
-            !safeValue.Contains('\r'))
-        {
-            return safeValue;
-        }
-
-        return $"\"{safeValue.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
-    }
+    private static string EscapeCsv(string? value) => CsvFieldFormatter.Escape(value);
 
     private static string XmlEscape(string value) => SecurityElement.Escape(value) ?? string.Empty;
 

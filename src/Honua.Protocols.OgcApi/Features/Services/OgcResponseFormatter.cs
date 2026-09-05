@@ -6,14 +6,15 @@ using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Security;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.Text.Json;
+using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Shared.Services;
 using Honua.Infrastructure.Helpers;
-using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features.Models;
+using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 
@@ -945,11 +946,11 @@ internal static class OgcResponseFormatter
         // Data rows
         foreach (var feature in features)
         {
-            var row = new List<string> { feature.Id?.ToString() ?? "" };
+            var row = new List<string?> { feature.Id?.ToString() };
             row.AddRange(fieldNames.Select(fieldName =>
                 feature.Properties?.TryGetValue(fieldName, out var fieldValue) == true
-                    ? fieldValue?.ToString() ?? ""
-                    : ""));
+                    ? fieldValue?.ToString()
+                    : null));
 
             var geometryValue = BuildCsvGeometryValue(feature.Geometry);
             row.Add(geometryValue);
@@ -960,11 +961,11 @@ internal static class OgcResponseFormatter
         return builder.ToString();
     }
 
-    private static string BuildCsvGeometryValue(SimpleGeoJsonGeometry? geometry)
+    private static string? BuildCsvGeometryValue(SimpleGeoJsonGeometry? geometry)
     {
         if (geometry == null || string.IsNullOrWhiteSpace(geometry.Type))
         {
-            return string.Empty;
+            return null;
         }
 
         if (string.IsNullOrWhiteSpace(geometry.CoordinatesJson))
@@ -1004,22 +1005,8 @@ internal static class OgcResponseFormatter
         }
     }
 
-    private static string EscapeCsvField(string field)
-    {
-        if (string.IsNullOrEmpty(field))
-        {
-            return "";
-        }
-
-        field = NeutralizePotentialSpreadsheetFormula(field);
-
-        if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
-        {
-            return $"\"{field.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
-        }
-
-        return field;
-    }
+    private static string EscapeCsvField(string? field) => CsvFieldFormatter.Escape(
+        field is null ? null : NeutralizePotentialSpreadsheetFormula(field));
 
     private static string NeutralizePotentialSpreadsheetFormula(string field)
     {
