@@ -82,10 +82,11 @@ public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
                 var value = mode == "raw"
                     ? result.RootElement
                     : result.RootElement.GetProperty("outputFeatureLayer").GetProperty("value");
-                value.GetProperty("type").GetString().Should().Be("FeatureCollection");
-                value.GetProperty("features").GetArrayLength().Should().Be(1);
-                value.GetProperty("features")[0].GetProperty("geometry").GetProperty("type")
+                value.GetProperty("type").GetString().Should().Be("Feature");
+                value.GetProperty("geometry").GetProperty("type")
                     .GetString().Should().Be("Polygon");
+                value.GetProperty("geometry").GetProperty("coordinates")[0].GetArrayLength()
+                    .Should().BeGreaterThan(4);
             }
         }
         finally

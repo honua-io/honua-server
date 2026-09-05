@@ -476,6 +476,7 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
         if (responseMode is not null)
         {
             parameters[OgcProcessesExecutionMetadata.ResponseMode] = responseMode;
+            parameters["process.output.0"] = "outputRaster";
         }
 
         return parameters;
