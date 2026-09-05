@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
