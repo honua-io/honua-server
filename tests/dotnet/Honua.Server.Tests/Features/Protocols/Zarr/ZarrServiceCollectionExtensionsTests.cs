@@ -51,7 +51,7 @@ public sealed class ZarrServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddScoped(_ => Substitute.For<IMetadataV2GraphProvider>());
-        services.AddScoped(_ => Substitute.For<ILayerAccessAuthorizer>());
+        services.AddSingleton(Substitute.For<ILayerAccessAuthorizer>());
         services.AddSingleton(Substitute.For<ITileMatrixSetRegistry>());
         services.AddZarrServices();
         return services;
