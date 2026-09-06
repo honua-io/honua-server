@@ -110,5 +110,7 @@ test dependencies were rebuilt in Release with warnings as errors and
 `-maxcpucount:4`.
 
 The full native `dotnet format Honua.sln --no-restore` run completed successfully
-on 2026-09-06. Canonical catalog/architecture compilation is in progress; no
-result is claimed until it completes.
+on 2026-09-06. The canonical catalog emitter passed and the generated feature and
+capability catalogs were refreshed. All 287 architecture tests then passed with
+zero failures or skips in 3m16s (`architecture-realtime.trx`). These local runs
+precede integration with current trunk; required head CI remains authoritative.

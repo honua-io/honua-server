@@ -30,6 +30,30 @@ Cesium lanes are re-certified automatically in CI. See the
 per-lane test-case coverage (connection, auth, discovery, schema, query, paging,
 geometry fidelity, error handling, rendering).
 
+## Realtime credentials and reconnects
+
+Protected FeatureServer and SensorThings SSE/WebSocket subscriptions revalidate
+their admitted credential every second in a fresh authentication scope. Expiry,
+issuer-observed revocation, changed identity/tenant/role claims, or validation
+failure ends the subscription. SSE sends `event: status` with
+`{"status":"error","code":"authorization-ended"}` and closes; WebSocket closes
+with code `1008` and reason `authorization-ended`. Clients must obtain a valid
+replacement credential before reconnecting. OData polling authenticates each
+request and rejects expired or revoked portal credentials with HTTP 401.
+
+The five-second qualification bound requires zero issuer expiry leeway. Portal
+tokens have no expiry leeway; OIDC deployments qualifying this bound must set
+`TokenValidation.ClockSkew` to zero (the default is five minutes). Revocation is
+observable through the configured authenticator's policy and backing store.
+
+Feature-stream clients retain their last delivered cursor and reconnect with the
+same authorized tenant scope; access policies are evaluated again before replay.
+Changing credentials does not grant access to another tenant's resources.
+SensorThings subscriptions require an explicit tenant claim for non-admin users
+and are live-only: cursor or `Last-Event-ID` resume attempts return HTTP 400.
+These local regression guarantees do not certify a release candidate; exact-image
+live issuer/SDK evidence is still required by the qualification gate.
+
 ## Known limitations
 
 Current gaps, stated as fact. Protocol-level Esri parity detail lives in
