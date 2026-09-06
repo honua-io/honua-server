@@ -89,6 +89,33 @@ fingerprint() {
   printf '%s' "$1" | sha256sum | awk '{print "sha256:" $1}'
 }
 
+# Echo enough of the create failure to diagnose it from the job log without echoing the inputs.
+# Redaction is by value, not by line shape: every value the lane put in the environment paramfile
+# plus the runtime-only cert keys is scrubbed out first, so a CLI or API message that quotes an
+# input cannot leak it, and account ids are reduced to a placeholder. Whatever survives that is the
+# AWS error code and message.
+report_create_error() {
+  local line secret
+  local -a secrets=()
+  if [[ -s "$scratch/environment.json" ]]; then
+    mapfile -t secrets < <(jq -r '.Variables // {} | .[] | select(type == "string" and length >= 4)' "$scratch/environment.json" 2>/dev/null)
+  fi
+  secrets+=("$HONUA_LAMBDA_CERT_ADMIN_KEY" "$HONUA_LAMBDA_CERT_DENIED_KEY")
+  if [[ ! -s "$scratch/create-error.log" ]]; then
+    echo "create-function error: the AWS CLI reported no diagnostics" >&2
+    return
+  fi
+  while IFS= read -r line; do
+    for secret in "${secrets[@]}"; do
+      if [[ -n "$secret" ]]; then
+        line="${line//"$secret"/[redacted]}"
+      fi
+    done
+    line="$(sed -E 's/[0-9]{12}/[account]/g' <<<"$line")"
+    printf 'create-function error: %.300s\n' "$line" >&2
+  done < <(grep -a '[^[:space:]]' "$scratch/create-error.log" | head -n 3)
+}
+
 cleanup() {
   local status=$?
   set +e
@@ -220,6 +247,20 @@ aws logs create-log-group --log-group-name "$log_group"
 log_group_created=true
 aws logs put-retention-policy --log-group-name "$log_group" --retention-in-days 1
 
+# The preparation step clones the standing certification function's configuration into these two
+# paramfiles. Assert them here rather than letting a missing or empty one surface as an opaque
+# client-side CLI error: the ephemeral function must reach the cert PostGIS over the same private
+# subnets and security group as the standing function, so an absent VPC config is never a default.
+for paramfile in environment.json vpc.json; do
+  if [[ ! -s "$scratch/$paramfile" ]]; then
+    echo "certification preparation did not produce ${paramfile}" >&2
+    exit 5
+  fi
+done
+if [[ "$(jq -r '((.SubnetIds // []) | length) > 0 and ((.SecurityGroupIds // []) | length) > 0' "$scratch/vpc.json")" != "true" ]]; then
+  echo "prepared VPC configuration has no subnets or security groups" >&2
+  exit 5
+fi
 
 create_json="$(aws lambda create-function \
   --function-name "$function_name" \
@@ -232,7 +273,8 @@ create_json="$(aws lambda create-function \
   --memory-size 1024 \
   --timeout 60 \
   --tags "honua-cert-run=${run_token}" "honua-purpose=lambda-preview-certification" 2>"$scratch/create-error.log")" || {
-  echo "Lambda create failed (configuration diagnostics suppressed)" >&2
+  echo "Lambda create failed" >&2
+  report_create_error
   exit 5
 }
 function_created=true
