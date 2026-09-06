@@ -36,8 +36,22 @@ category with the pinned production GDAL image; absent Docker/native tools fail.
   is asserted. [GDAL leaves exact center-on-edge ties unspecified](https://gdal.org/en/stable/programs/gdal_rasterize.html);
   both documented center-rule boundary cases are covered with frozen expectations.
 
-Geometry-format and calculate-field hosted proof results are pending. This local
-checkpoint does not replace exact-candidate qualification: shared runtime/image
+## Hosted managed checkpoint
+
+The native Windows Release hosted suite passed **174 tests**, zero failures/skips,
+in **55s** (`gp-managed-proofs-1.trx`), including the real geometry-format job and
+the imagery inference/georeferencing regression guards. The calculate-field
+PostGIS/HTTP proof passed **1 test**, zero failures/skips, in **36s**
+(`gp-calculate-proofs-1.trx`). Both receipts are in `proofs-gp-results`.
+
+- `conversion.geometry-format` executes all four targets against a polygon with
+  an independently specified 10-by-8 shell and 4-by-3 hole: area 68, exact rings,
+  coordinates, topology, format metadata and SRID behavior are asserted.
+- `data-management.calculate-field` reads back filtered integer and floating-point
+  arithmetic through HTTP and SQL: 23/35 and 0.875/1.25, exact JSON number types,
+  untouched excluded features, and no writes when a later expression is invalid.
+
+This local checkpoint does not replace exact-candidate qualification: shared runtime/image
 binding consumes #3848, database/restart evidence consumes #3855 where applicable,
 and heavier-operation canary coordination consumes #3857. Those shared obligations
 remain in the matrix; no lifecycle waiver or candidate receipt is claimed here.
