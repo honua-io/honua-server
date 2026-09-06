@@ -122,14 +122,20 @@ public sealed class CapabilityRegistryConformanceTests
     }
 
     [UnitTest]
-    public void Resolve_EnablesEveryRegisteredCapability_AndRejectsUnknown()
+    public void Resolve_RespectsImplementationAndOptIn_AndRejectsUnknown()
     {
         var context = CapabilityGateContext.Default;
 
         foreach (var descriptor in Registry.All)
         {
             var resolution = Registry.Resolve(descriptor.Id, context);
-            if (descriptor.Id is "serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages")
+            if (descriptor.ImplementationStatus == CapabilityImplementationStatus.KnownGap)
+            {
+                resolution.Enabled.Should().BeFalse(
+                    $"unimplemented capability '{descriptor.Id}' cannot be served");
+                resolution.ReasonCode.Should().Be(CapabilityReasonCodes.NotImplemented);
+            }
+            else if (descriptor.Id is "serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages")
             {
                 descriptor.Maturity.Should().Be(CapabilityMaturity.Preview);
                 descriptor.RequiresOptIn.Should().BeFalse();
