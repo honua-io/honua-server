@@ -265,11 +265,11 @@ internal static class OgcFeatureIdentifierResolver
     /// Resolves a set of public feature ids to their existing rows with at most two
     /// provider round trips (one <see cref="FeatureQuery.ObjectIds"/> fast-path query
     /// for canonical internal object ids plus one IN-filter query over the public id
-    /// field), instead of one <see cref="ResolveAsync"/> lookup per id. Ids that do not
+    /// field), instead of one <see cref="ResolveAsync(IFeatureReader, IQueryProcessor, MetadataV2GraphSnapshot, MetadataV2Publication, MetadataV2Resource, string, CancellationToken)"/> lookup per id. Ids that do not
     /// resolve are simply absent from the result, so callers keep per-id error
     /// semantics. Public id field types whose values cannot be matched back to input
     /// tokens by invariant comparison (uuid, boolean, temporal, json, binary, geometry)
-    /// fall back to per-id <see cref="ResolveAsync"/> calls with identical semantics.
+    /// fall back to per-id <see cref="ResolveAsync(IFeatureReader, IQueryProcessor, MetadataV2GraphSnapshot, MetadataV2Publication, MetadataV2Resource, string, CancellationToken)"/> calls with identical semantics.
     /// </summary>
     public static async Task<IReadOnlyDictionary<string, ResolvedFeature>> ResolveManyAsync(
         IFeatureReader featureReader,
