@@ -4,6 +4,7 @@
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -70,6 +71,34 @@ public sealed class GdalPolygonizeExecutorTests
             invocation.Arguments.Should().ContainInOrder("-b", "2");
             invocation.Arguments.Should().ContainInOrder("-f", "GeoJSON");
             invocation.Arguments[^1].Should().Be("value");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Polygonize_StagedEightConnectedOutputAboveInlineLimit_IsValidatedAndStaged()
+    {
+        var bytes = Encoding.UTF8.GetBytes("{\"type\":\"FeatureCollection\",\"features\":[]}" + new string(' ', 2048));
+        var runner = SucceedingGeoJson(bytes);
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        try
+        {
+            var executor = new GdalPolygonizeJobExecutor(runner, GdalJobFactory.Options(scratch, maxArtifactBytes: 1024),
+                NullLogger<GdalPolygonizeJobExecutor>.Instance);
+            var job = GdalJobFactory.Job(GdalPolygonizeJobExecutor.HandledProcessId,
+                ("source", Base64("fake-raster")), ("connectedness", "8"));
+            var inner = new RecordingJobExecutionContext(job.OperationId);
+            var store = new GdalArtifactPublisherTests.InMemoryOutputObjectStore();
+            var context = new GdalStagedOutputContext(inner, job, store,
+                new GeoprocessingOutputStagingOptions { Enabled = true, MaxInlineArtifactBytes = 1024 });
+            var result = await executor.ExecuteAsync(job, context, default);
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            runner.Invocations.Should().HaveCount(2);
+            store.Objects.Should().ContainSingle().Which.Value.Should().Equal(bytes);
+            inner.Artifacts.Should().ContainSingle();
         }
         finally
         {
