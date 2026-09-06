@@ -50,7 +50,8 @@ internal static class JobOrchestrationServiceCollectionExtensions
 
         // Job store is already registered by AddGeoprocessing; guard for idempotency.
         // Queue and log store require Redis.
-        if (!services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        if (!services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer))
+            || !services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
         {
             return services;
         }

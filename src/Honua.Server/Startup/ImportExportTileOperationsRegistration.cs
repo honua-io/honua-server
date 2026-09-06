@@ -217,11 +217,11 @@ internal static class ImportExportTileOperationsRegistration
                 TileCacheJobExecutor>());
 
         // The submission service depends on the durable execution-job store/queue,
-        // which are only present when Redis is configured (mirrors AddGeoprocessing).
-        // Gating registration on Redis keeps GetService<ITileCacheJobService>() from
+        // which are only present when Redis durability has been attested (mirrors AddGeoprocessing).
+        // Gating registration on the store keeps GetService<ITileCacheJobService>() from
         // throwing on a missing dependency in stores-less dev/test profiles; in those
         // profiles the admin endpoint simply uses the in-process channel path.
-        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        if (services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
         {
             services.TryAddSingleton<ITileCacheJobService, TileCacheJobService>();
         }
