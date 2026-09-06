@@ -88,7 +88,8 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
         {
             var action = reader.GetString(0);
             actions.Add(action);
-            reader.GetString(1).Should().Be($"ApiKey:api-key:{WebAppFixture.SharedAdminActorId}");
+            // The authenticated fixture key is seeded with this fixed principal ID.
+            reader.GetString(1).Should().Be(WebAppFixture.SharedAdminActorId);
             reader.GetString(2).Should().Be("ApiKey");
             reader.GetString(3).Should().Be("ConfigChange");
             reader.GetString(4).Should().Be("Success");
@@ -134,10 +135,12 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
             .Should().Equal(own.RuleId).And.NotContain(other.RuleId);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("tenant-a")]
+    [InlineData("tenant-b")]
     [Endpoint("GET /api/v1/admin/alerts/rules/{ruleId}")]
     [Endpoint("DELETE /api/v1/admin/alerts/rules/{ruleId}")]
-    public async Task Requests_AnonymousAndTenantScopedAdmin_DenyWithoutDisclosureOrMutation()
+    public async Task Requests_AnonymousAndTenantScopedAdmin_DenyWithoutDisclosureOrMutation(string tenantId)
     {
         var rule = await _fixture.GetService<IAlertAdminStore>().CreateRuleAsync(Rule(_service));
         using var anonymous = _fixture.CreateClient();
@@ -145,7 +148,7 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
         {
             if (client == _client)
             {
-                client.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-a");
+                client.DefaultRequestHeaders.Add("X-Honua-Tenant", tenantId);
             }
             var expected = client == anonymous ? HttpStatusCode.Unauthorized : HttpStatusCode.Forbidden;
             foreach (var path in new[] { $"/api/v1/admin/alerts/rules/{rule.RuleId}", $"/api/v1/admin/alerts/rules?serviceId={_service}", "/api/v1/admin/alerts/channels", "/api/v1/admin/observability/alerts" })
