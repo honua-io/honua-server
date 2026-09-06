@@ -523,7 +523,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 {
                     if (updateResult.IsPreconditionFailure)
                     {
-                        return await CreateConcurrentUpdateResultAsync(layerId, objectId, ifMatch, cancellationToken).ConfigureAwait(false);
+                        return CreateConcurrentUpdateResult(updateResult.PreconditionFailureFeature, ifMatch);
                     }
 
                     if (IsNotFound(updateResult))
@@ -638,13 +638,11 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
-    private async Task<IResult> CreateConcurrentUpdateResultAsync(
-        int layerId, long objectId, string? ifMatch, CancellationToken cancellationToken)
+    private IResult CreateConcurrentUpdateResult(Feature? current, string? ifMatch)
     {
         var conditionFailed = false;
         if (!string.IsNullOrWhiteSpace(ifMatch))
         {
-            var current = await _featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
             conditionFailed = !current.HasValue || !OgcFeatureEntityTag.MatchesEntityOrRepresentation(
                 ifMatch, OgcFeatureEntityTag.Compute(current.Value, _etagService), _etagService);
         }
@@ -888,7 +886,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 {
                     if (updateResult.IsPreconditionFailure)
                     {
-                        return await CreateConcurrentUpdateResultAsync(layerId, objectId, ifMatch, cancellationToken).ConfigureAwait(false);
+                        return CreateConcurrentUpdateResult(updateResult.PreconditionFailureFeature, ifMatch);
                     }
 
                     if (IsNotFound(updateResult))

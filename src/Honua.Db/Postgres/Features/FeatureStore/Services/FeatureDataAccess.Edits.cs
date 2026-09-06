@@ -23,13 +23,15 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 /// </summary>
 internal sealed class FeatureEditPreconditionFailedException : Exception
 {
-    public FeatureEditPreconditionFailedException(long objectId)
+    public FeatureEditPreconditionFailedException(long objectId, Feature currentFeature)
         : base($"Precondition failed for feature {objectId}: the stored row was modified by another writer.")
     {
         ObjectId = objectId;
+        CurrentFeature = currentFeature;
     }
 
     public long ObjectId { get; }
+    public Feature CurrentFeature { get; }
 }
 
 /// <summary>
@@ -560,7 +562,14 @@ internal sealed partial class FeatureDataAccess
                 precondition.ExpectedStateToken,
                 StringComparison.Ordinal))
         {
-            throw new FeatureEditPreconditionFailedException(objectId);
+            var masked = precondition.MaskedFields.IsDefaultOrEmpty
+                ? null
+                : precondition.MaskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var conflictFeature = masked is null ? current : current with
+            {
+                Attributes = current.Attributes.RemoveRange(current.Attributes.Keys.Where(masked.Contains))
+            };
+            throw new FeatureEditPreconditionFailedException(objectId, conflictFeature);
         }
 
         return current;
@@ -867,9 +876,9 @@ internal sealed partial class FeatureDataAccess
                             feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
                         return true;
                     }
-                    catch (FeatureEditPreconditionFailedException)
+                    catch (FeatureEditPreconditionFailedException ex)
                     {
-                        updateResults.Add(EditOperationResult.PreconditionFailed(feature.Id));
+                        updateResults.Add(EditOperationResult.PreconditionFailed(feature.Id) with { PreconditionFailureFeature = ex.CurrentFeature });
                         return false;
                     }
                     // Intentionally broad: per-operation failure in an ordered batch; sanitize via
@@ -927,9 +936,9 @@ internal sealed partial class FeatureDataAccess
                         deleteResults.Add(EditOperationResult.Failure($"Feature {objectId} not found", objectId: objectId));
                         return false;
                     }
-                    catch (FeatureEditPreconditionFailedException)
+                    catch (FeatureEditPreconditionFailedException ex)
                     {
-                        deleteResults.Add(EditOperationResult.PreconditionFailed(objectId));
+                        deleteResults.Add(EditOperationResult.PreconditionFailed(objectId) with { PreconditionFailureFeature = ex.CurrentFeature });
                         return false;
                     }
                     // Intentionally broad: per-operation failure in an ordered batch; sanitize via
@@ -1579,9 +1588,9 @@ internal sealed partial class FeatureDataAccess
                 // and misreporting any committed row as a failure.
                 throw;
             }
-            catch (FeatureEditPreconditionFailedException)
+            catch (FeatureEditPreconditionFailedException ex)
             {
-                results.Add(EditOperationResult.PreconditionFailed(feature.Id));
+                results.Add(EditOperationResult.PreconditionFailed(feature.Id) with { PreconditionFailureFeature = ex.CurrentFeature });
             }
             // Intentionally broad: per-row failure in the batch update path; sanitize via
             // GetSafeEditOperationError and let the rest of the batch continue.
@@ -1663,9 +1672,9 @@ internal sealed partial class FeatureDataAccess
                 // batch items after a client abort, mirroring the update path fix.
                 throw;
             }
-            catch (FeatureEditPreconditionFailedException)
+            catch (FeatureEditPreconditionFailedException ex)
             {
-                results.Add(EditOperationResult.PreconditionFailed(featureId));
+                results.Add(EditOperationResult.PreconditionFailed(featureId) with { PreconditionFailureFeature = ex.CurrentFeature });
             }
             // Intentionally broad: per-row failure in the batch delete path; sanitize via
             // GetSafeEditOperationError and let the rest of the batch continue.

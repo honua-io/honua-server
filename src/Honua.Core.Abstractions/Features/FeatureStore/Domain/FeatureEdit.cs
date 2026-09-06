@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
@@ -417,6 +418,14 @@ public readonly record struct EditOperationResult
     /// stored row state at write time. Protocol adapters map this to HTTP 412.
     /// </summary>
     public bool IsPreconditionFailure { get; init; }
+
+    /// <summary>
+    /// Field-masked row snapshot captured under the lock that rejected this edit.
+    /// Protocol adapters use this internal evidence to evaluate HTTP conditions
+    /// without racing a subsequent read. Null when no snapshot is available.
+    /// </summary>
+    [JsonIgnore]
+    public Feature? PreconditionFailureFeature { get; init; }
 
     /// <summary>
     /// Whether the provider could not determine if this failed operation committed before the

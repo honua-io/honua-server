@@ -373,7 +373,7 @@ internal sealed partial class ODataCrudService
             {
                 if (!string.IsNullOrWhiteSpace(ifMatch) || !string.IsNullOrWhiteSpace(ifNoneMatch))
                 {
-                    var current = await _featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
+                    var current = updateEditResult.UpdateResults.First(static result => result.IsPreconditionFailure).PreconditionFailureFeature;
                     if (!current.HasValue && !string.IsNullOrWhiteSpace(ifMatch))
                     {
                         return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed("Resource no longer exists.");

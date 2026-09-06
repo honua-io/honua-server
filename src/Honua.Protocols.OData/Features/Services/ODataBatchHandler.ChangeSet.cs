@@ -699,7 +699,7 @@ internal sealed partial class ODataBatchHandler
                             var failedCondition = false;
                             if (!string.IsNullOrWhiteSpace(ifMatch) || !string.IsNullOrWhiteSpace(ifNoneMatch))
                             {
-                                var current = await _featureReader.GetAsync(layer.StorageLayerId, updatedFeature.Id, cancellationToken).ConfigureAwait(false);
+                                var current = updateResult.PreconditionFailureFeature;
                                 failedCondition = !current.HasValue && !string.IsNullOrWhiteSpace(ifMatch);
                                 if (current.HasValue)
                                 {

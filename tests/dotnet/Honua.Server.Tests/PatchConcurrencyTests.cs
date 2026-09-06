@@ -335,6 +335,69 @@ public sealed class PatchConcurrencyTests
         finally { await fixture.DisposeAsync(); }
     }
 
+    [IntegrationTheory]
+    [InlineData("odata", false)]
+    [InlineData("ogc", false)]
+    [InlineData("batch", false)]
+    [InlineData("odata", true)]
+    [InlineData("ogc", true)]
+    [InlineData("batch", true)]
+    [Protocol(TestProtocols.ODataV4, TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Patch_ConflictStatusUsesLockedSnapshot_WhenRowChangesAgain(string protocol, bool conditionFailsAtConflict)
+    {
+        var barrier = new WriteBarrier();
+        var mask = new MutableFieldMask();
+        var fixture = CreateFixture(barrier, mask);
+        await fixture.InitializeAsync();
+        try
+        {
+            var id = await fixture.InsertFeatureAsync(0, "original name");
+            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            mask.Fields = ImmutableArray.Create("population");
+            var readUrl = protocol == "ogc" ? $"/ogc/features/collections/0/items/{id}" : $"/odata/Features(LayerId=0,ObjectId={id})";
+            using var originalRead = await fixture.Client.GetAsync(readUrl);
+            Assert.True(originalRead.IsSuccessStatusCode);
+            var originalEtag = originalRead.Headers.ETag!.ToString();
+            using var futureRequest = CreatePatch(protocol != "ogc", id, changeName: false);
+            using var futureResponse = await fixture.Client.SendAsync(futureRequest);
+            Assert.True(futureResponse.IsSuccessStatusCode);
+            using var futureRead = await fixture.Client.GetAsync(readUrl);
+            Assert.True(futureRead.IsSuccessStatusCode);
+            var futureEtag = futureRead.Headers.ETag!.ToString();
+            Assert.NotEqual(originalEtag, futureEtag);
+            await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original);
+
+            var later = conditionFailsAtConflict ? original : original with
+            {
+                Attributes = original.Attributes.SetItem("name", "third writer").SetItem("population", 98765L)
+            };
+            barrier.AfterRejectedWrite = async writer => { await writer.UpdateAsync(0, later); };
+            var condition = conditionFailsAtConflict ? originalEtag : originalEtag + ", " + futureEtag;
+            using var request = CreatePatch(protocol != "ogc", id, changeName: true, batch: protocol == "batch", ifMatch: condition);
+            var pending = fixture.Client.SendAsync(request);
+            try
+            {
+                await barrier.Reached.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                using var secondRequest = CreatePatch(protocol != "ogc", id, changeName: false);
+                using var secondResponse = await fixture.Client.SendAsync(secondRequest);
+                Assert.True(secondResponse.IsSuccessStatusCode, await secondResponse.Content.ReadAsStringAsync());
+            }
+            finally { barrier.Resume.TrySetResult(); }
+
+            using var response = await pending;
+            Assert.Equal(conditionFailsAtConflict ? HttpStatusCode.PreconditionFailed : HttpStatusCode.Conflict,
+                await ReadStatusAsync(response, protocol == "batch"));
+            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            Assert.Equal(later.Attributes["name"], stored.Attributes["name"]);
+            Assert.Equal(later.Geometry, stored.Geometry);
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
     private static WebAppFixture CreateFixture(WriteBarrier barrier, MutableFieldMask? mask = null)
     {
         return new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
@@ -501,6 +564,7 @@ public sealed class PatchConcurrencyTests
         public TaskCompletionSource Reached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Claimed;
+        public Func<IFeatureWriter, Task>? AfterRejectedWrite { get; set; }
     }
 
     private sealed class InterleavedWriter(IFeatureWriter inner, WriteBarrier barrier) : IFeatureWriter
@@ -523,7 +587,12 @@ public sealed class PatchConcurrencyTests
                 await barrier.Resume.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
             }
 
-            return await inner.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+            var result = await inner.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+            if (result.UpdateResults.Any(operation => operation.IsPreconditionFailure) && barrier.AfterRejectedWrite is { } afterRejectedWrite)
+            {
+                await afterRejectedWrite(inner);
+            }
+            return result;
         }
     }
 }
