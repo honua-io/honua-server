@@ -15,7 +15,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
-using Honua.Infrastructure.Security;
+using Honua.Infrastructure.Middleware;
 using Microsoft.AspNetCore.Mvc;
 using NetTopologySuite.IO;
 
@@ -44,12 +44,12 @@ internal static class AlertAdminEndpoints
             // Customer alerting is Preview in 2026.1 and gated off by default
             // (404 with the stable experimental-disabled reason until explicitly opted in).
             .WithCapabilityGate("alerts.geofence")
+            .AddEndpointFilter<AlertAdminIsolationFilter>()
+            .AddEndpointFilter(ExecuteAuditedMutationAsync)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Alerts")
-            .RequireAdminAuthorization()
-            .AddEndpointFilter<AlertAdminIsolationFilter>()
-            .AddEndpointFilter(ExecuteAuditedMutationAsync);
+            .RequireAdminAuthorization();
 
         group.MapGet("/zones", HandleListZones)
             .WithDisplayName("List Alert Zones")
@@ -1353,15 +1353,13 @@ internal static class AlertAdminEndpoints
         AlertAdminAuditDetails details,
         CancellationToken cancellationToken)
     {
-        var actor = ResolveActor(context);
+        var actor = AuditContextResolver.ResolveActor(context, out var actorType);
         var auditEvent = new AuditEvent
         {
             Timestamp = DateTimeOffset.UtcNow,
             EventType = AuditEventType.ConfigChange,
             Actor = actor,
-            ActorType = string.Equals(actor, AuditEvent.AnonymousActor, StringComparison.Ordinal)
-                ? AuditActorType.Anonymous
-                : AuditActorType.UserId,
+            ActorType = actorType,
             ResourceType = resourceType,
             ResourceId = resourceId,
             Action = action,
@@ -1377,11 +1375,6 @@ internal static class AlertAdminEndpoints
         }
 
         return identity;
-    }
-
-    private static string ResolveActor(HttpContext context)
-    {
-        return CanonicalSecurityActor.Resolve(context.User)?.ActorId ?? AuditEvent.AnonymousActor;
     }
 
     private static async ValueTask<object?> ExecuteAuditedMutationAsync(

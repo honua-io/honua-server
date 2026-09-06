@@ -27,11 +27,11 @@ internal static class AlertOpsAdminEndpoints
     public static void MapAlertOpsAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/alerts")
+            .AddEndpointFilter<AlertAdminIsolationFilter>()
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Alerts")
-            .RequireAdminAuthorization()
-            .AddEndpointFilter<AlertAdminIsolationFilter>();
+            .RequireAdminAuthorization();
 
         group.MapPost("/dispatch/redrive", HandleRedriveDeadLetters)
             .WithDisplayName("Redrive Alert Dead-Letters")

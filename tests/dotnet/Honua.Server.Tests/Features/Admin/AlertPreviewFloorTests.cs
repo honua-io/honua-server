@@ -49,12 +49,14 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
     public async Task Lifecycle_AllEightActions_PersistIdentityAndMutationTogether()
     {
         var start = DateTimeOffset.UtcNow;
+        var correlation = Guid.NewGuid().ToString("N");
+        _client.DefaultRequestHeaders.Add("X-Correlation-ID", correlation);
         var zoneId = await ReadIdAsync(await _client.PostAsJsonAsync("/api/v1/admin/alerts/zones", ZonePayload("original")), "zoneId");
         (await _client.PutAsJsonAsync($"/api/v1/admin/alerts/zones/{zoneId}", ZonePayload("updated"))).StatusCode.Should().Be(HttpStatusCode.OK);
         var storedZone = await _fixture.GetService<IAlertAdminStore>().GetZoneAsync(zoneId);
         storedZone!.ZoneName.Should().Be("updated");
         storedZone.GeometrySrid.Should().Be(4326);
-        var geometry = new NetTopologySuite.IO.WKBReader().Read(storedZone.Geometry);
+        var geometry = new NetTopologySuite.IO.WKBReader().Read(storedZone.Geometry!);
         geometry.Area.Should().Be(4);
         geometry.Coordinates.Select(point => (point.X, point.Y)).Should().Equal((0d, 0d), (0d, 2d), (2d, 2d), (2d, 0d), (0d, 0d));
         var ruleId = await ReadIdAsync(await _client.PostAsJsonAsync("/api/v1/admin/alerts/rules", RulePayload("original", zoneId)), "ruleId");
@@ -87,11 +89,11 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
             var action = reader.GetString(0);
             actions.Add(action);
             reader.GetString(1).Should().Be($"ApiKey:api-key:{WebAppFixture.SharedAdminActorId}");
-            reader.GetString(2).Should().Be("UserId");
+            reader.GetString(2).Should().Be("ApiKey");
             reader.GetString(3).Should().Be("ConfigChange");
             reader.GetString(4).Should().Be("Success");
             new DateTimeOffset(reader.GetDateTime(5)).Should().BeOnOrAfter(start).And.BeOnOrBefore(DateTimeOffset.UtcNow);
-            reader.GetString(6).Should().NotBeNullOrWhiteSpace();
+            reader.GetString(6).Should().Be(correlation);
             var isZone = action.StartsWith("alert_zone.", StringComparison.Ordinal);
             reader.GetString(8).Should().Be(isZone ? "alert_zone" : "alert_rule");
             reader.GetString(9).Should().Be((isZone ? zoneId : ruleId).ToString(CultureInfo.InvariantCulture));
