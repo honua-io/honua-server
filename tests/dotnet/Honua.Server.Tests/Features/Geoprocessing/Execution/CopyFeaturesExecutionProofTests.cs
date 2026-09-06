@@ -15,9 +15,6 @@ using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
 using Npgsql;
 using NSubstitute;
@@ -66,11 +63,8 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
     public async Task CopyFeatures_RealPublishedLayer_PreservesSelectedValuesZSchemaSridAndProvenance(
         string? where, string? objectIds, long[] expectedIds)
     {
-        var options = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
-        options.CurrentValue.Returns(new GeoprocessingExecutorOptions());
-        using var logs = LoggerFactory.Create(builder => builder.AddConsole());
-        var executor = new CopyFeaturesExecutor(_fixture.GetService<IServiceScopeFactory>(), options,
-            logs.CreateLogger<CopyFeaturesExecutor>());
+        var executor = _fixture.GetService<CopyFeaturesExecutor>();
+        _fixture.GetService<IEnumerable<IProcessExecutor>>().Should().Contain(executor);
         var operationId = Guid.NewGuid().ToString("N");
         var name = "Independent copy " + operationId;
         var parameters = new Dictionary<string, string> { ["protocolProcessId"] = "data-management.copy-features",

@@ -14,7 +14,8 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Shared.Models;
+using Honua.Db.Postgres.Features.FeatureStore;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -93,7 +94,7 @@ internal sealed class PostgresFeatureLayerCopyService(
                 insert.Parameters["attributes"].Value = json;
                 count += await insert.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var connectionString = new NpgsqlConnectionStringBuilder(connections.GetConnectionString())
