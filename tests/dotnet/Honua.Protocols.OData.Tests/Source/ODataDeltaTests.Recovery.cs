@@ -1,12 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Protocols.OData;
 using Honua.Protocols.OData.Services;
+using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.WebUtilities;
@@ -18,6 +21,51 @@ public sealed partial class ODataDeltaTests
     [IntegrationTest]
     [Operation(Operations.Query)]
     [InterfaceOperation(TestProtocols.ODataV4, "DeltaTracking")]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task Delta_BaselinePollAndRejectedQuery_RecordQueryTelemetry()
+    {
+        var activities = new ConcurrentQueue<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == HonuaTelemetry.ServiceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName == HonuaTelemetry.Activities.FeatureQuery
+                    && Equals(activity.GetTagItem(HonuaTelemetry.Tags.Protocol), HonuaTelemetry.Protocols.OData))
+                {
+                    activities.Enqueue(activity);
+                }
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/odata/Features(0)?$top=100");
+        request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
+        using var baselineResponse = await _fixture.Client.SendAsync(request);
+        baselineResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var baseline = JsonDocument.Parse(await baselineResponse.Content.ReadAsStringAsync());
+        var baselineActivity = activities.Should().ContainSingle().Subject;
+        baselineActivity.Status.Should().Be(ActivityStatusCode.Ok);
+        baselineActivity.GetTagItem(HonuaTelemetry.Tags.LayerId).Should().Be("0");
+        baselineActivity.GetTagItem(HonuaTelemetry.Tags.FeatureCount).Should()
+            .Be(baseline.RootElement.GetProperty("value").GetArrayLength());
+
+        activities.Clear();
+        using var poll = await _fixture.Client.GetAsync(baseline.RootElement.GetProperty("@odata.deltaLink").GetString());
+        poll.StatusCode.Should().Be(HttpStatusCode.OK);
+        activities.Should().ContainSingle().Subject.Status.Should().Be(ActivityStatusCode.Ok);
+
+        activities.Clear();
+        using var invalidRequest = new HttpRequestMessage(HttpMethod.Get, "/odata/Features(0)?$top=0");
+        invalidRequest.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
+        using var invalidResponse = await _fixture.Client.SendAsync(invalidRequest);
+        invalidResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var failedActivity = activities.Should().ContainSingle().Subject;
+        failedActivity.Status.Should().Be(ActivityStatusCode.Error);
+        failedActivity.StatusDescription.Should().Be("InvalidQueryOption");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Delta_BoundedCrossNodeClockSkew_ContinuesDurableBaseline()
     {

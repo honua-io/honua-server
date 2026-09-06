@@ -287,7 +287,8 @@ public sealed partial class ODataDeltaTests : IAsyncLifetime
         var baselineDelta = new Uri(baseline.RootElement.GetProperty("@odata.deltaLink").GetString()!).PathAndQuery;
         await using var connection = new NpgsqlConnection(_fixture.Postgres.ConnectionString);
         await connection.OpenAsync();
-        var schema = new NpgsqlCommandBuilder().QuoteIdentifier(_fixture.CurrentSchema!);
+        using var commandBuilder = new NpgsqlCommandBuilder();
+        var schema = commandBuilder.QuoteIdentifier(_fixture.CurrentSchema!);
         async Task SetNamesAsync(string name)
         {
             await using var command = new NpgsqlCommand($"UPDATE {schema}.features SET attributes = jsonb_set(attributes, '{{name}}', to_jsonb($1::text)) WHERE layer_id = 0", connection);
