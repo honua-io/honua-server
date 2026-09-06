@@ -3,6 +3,8 @@
 
 using System.Net;
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -37,6 +39,17 @@ public sealed partial class ODataDeltaTests
         }
 
         var state = new Dictionary<long, string>();
+        async Task<Dictionary<long, string>> AuthoritativeAsync()
+        {
+            var rows = new Dictionary<long, string>();
+            await using var command = new NpgsqlCommand($$"""
+                SELECT objectid, attributes->>'name' FROM {{schema}}.features
+                WHERE layer_id = 0 AND attributes->>'name' <> 'excluded' ORDER BY objectid;
+                """, connection);
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync()) { rows.Add(reader.GetInt64(0), reader.GetString(1)); }
+            return rows;
+        }
         async Task<string> FollowAsync(string link, bool baseline)
         {
             var pages = 0;
@@ -61,6 +74,17 @@ public sealed partial class ODataDeltaTests
                     else
                     {
                         state[id] = value.GetProperty("name").GetString()!;
+                        value.GetProperty("LayerId").GetInt32().Should().Be(0);
+                        var geometry = value.GetProperty("Geometry");
+                        if (id is 73001 or 73002)
+                        {
+                            geometry.GetProperty("type").GetString().Should().Be("Point");
+                            var expectedPoint = id == 73001 ? new[] { 1.0, 2.0 }
+                                : baseline ? new[] { 2.0, 3.0 } : new[] { 7.0, 11.0 };
+                            geometry.GetProperty("coordinates").EnumerateArray().Select(item => item.GetDouble())
+                                .Should().Equal(expectedPoint, "longitude/latitude ordinates are independently specified by the SQL fixture");
+                        }
+                        else { geometry.ValueKind.Should().Be(JsonValueKind.Null); }
                     }
                 }
 
@@ -84,7 +108,7 @@ public sealed partial class ODataDeltaTests
         // Change generations, not wall-clock precision, must drive delivery.
         await using (var mutate = new NpgsqlCommand($$"""
             UPDATE {{schema}}.features SET attributes = '{"name":"first-updated"}', updated_at = '2026-01-02' WHERE objectid = 73001;
-            UPDATE {{schema}}.features SET attributes = '{"name":"second-updated"}', updated_at = '2026-01-02' WHERE objectid = 73002;
+            UPDATE {{schema}}.features SET attributes = '{"name":"second-updated"}', geometry = ST_SetSRID(ST_Point(7, 11), 4326), updated_at = '2026-01-02' WHERE objectid = 73002;
             UPDATE {{schema}}.features SET attributes = '{"name":"excluded"}', updated_at = '2026-01-02' WHERE objectid = 73003;
             DELETE FROM {{schema}}.features WHERE objectid IN (73004, 73006);
             INSERT INTO {{schema}}.features(objectid, layer_id, attributes, updated_at) VALUES (73004, 0, '{"name":"recreated"}', '2026-01-02');
@@ -100,6 +124,8 @@ public sealed partial class ODataDeltaTests
             [73001] = "first-updated", [73002] = "second-updated", [73004] = "recreated", [73005] = "entered"
         };
         state.Should().BeEquivalentTo(expected, "the independently specified mutation outcome must replace the baseline");
+        StateHash(state).Should().Be(StateHash(expected));
+        StateHash(state).Should().Be(StateHash(await AuthoritativeAsync()), "the subscriber converges to an independent direct SQL query");
         _ = await FollowAsync(terminal, false);
         state.Should().BeEquivalentTo(expected, "terminal polling is idempotent");
 
@@ -116,7 +142,18 @@ public sealed partial class ODataDeltaTests
         expected[73001] = "after-restart";
         var restartedTerminal = await FollowAsync(terminal, false);
         state.Should().BeEquivalentTo(expected, "a post-restart update at the same timestamp must converge without rebasing");
+        StateHash(state).Should().Be(StateHash(expected));
+        StateHash(state).Should().Be(StateHash(await AuthoritativeAsync()));
         _ = await FollowAsync(restartedTerminal, false);
         state.Should().BeEquivalentTo(expected);
+    }
+
+    private static string StateHash(IReadOnlyDictionary<long, string> state)
+    {
+        using var bytes = new MemoryStream();
+        using var writer = new BinaryWriter(bytes, Encoding.UTF8, leaveOpen: true);
+        foreach (var item in state.OrderBy(item => item.Key)) { writer.Write(item.Key); writer.Write(item.Value); }
+        writer.Flush();
+        return Convert.ToHexString(SHA256.HashData(bytes.ToArray()));
     }
 }
