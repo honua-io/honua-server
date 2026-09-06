@@ -557,6 +557,54 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Wraps the registered <typeparamref name="TService"/> in a decorator instead of replacing it,
+    /// so a test can observe or perturb one method while every other call still reaches the real
+    /// production implementation (for example a real PostGIS feature writer). The original
+    /// registration's lifetime is preserved.
+    /// </summary>
+    /// <param name="decorate">Builds the decorator from the resolved inner service.</param>
+    public WebAppFixture DecorateService<TService>(Func<TService, TService> decorate)
+        where TService : class
+    {
+        ArgumentNullException.ThrowIfNull(decorate);
+        _serviceConfigurations.Add(services =>
+        {
+            var original = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(TService))
+                ?? throw new InvalidOperationException(
+                    $"No registration for {typeof(TService).Name} to decorate.");
+            services.Remove(original);
+            services.Add(ServiceDescriptor.Describe(
+                typeof(TService),
+                provider => decorate((TService)ResolveOriginal(provider, original)),
+                original.Lifetime));
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Materializes the service a <see cref="DecorateService{TService}"/> call displaced, covering
+    /// all three descriptor shapes (instance, factory, implementation type).
+    /// </summary>
+    private static object ResolveOriginal(IServiceProvider provider, ServiceDescriptor original)
+    {
+        if (original.ImplementationInstance is { } instance)
+        {
+            return instance;
+        }
+
+        if (original.ImplementationFactory is { } factory)
+        {
+            return factory(provider);
+        }
+
+        return ActivatorUtilities.CreateInstance(
+            provider,
+            original.ImplementationType
+                ?? throw new InvalidOperationException(
+                    $"Cannot decorate {original.ServiceType.Name}: the registration has no implementation."));
+    }
+
+    /// <summary>
     /// Replaces a request-resolved service for this fixture while reusing the shared
     /// application host. This opt-in is limited to concrete instances resolved directly
     /// from <c>HttpContext.RequestServices</c>; constructor-graph and hosted-service
