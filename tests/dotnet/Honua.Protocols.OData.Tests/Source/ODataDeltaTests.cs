@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
-public sealed class ODataDeltaTests : IAsyncLifetime
+public sealed partial class ODataDeltaTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = 0;
