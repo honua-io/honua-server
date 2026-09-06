@@ -14,6 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 public sealed partial class SensorThingsStreamEndpointsTests
 {
     [IntegrationTheory]
+    [Operation(Operations.Streaming)]
     [InlineData(false)]
     [InlineData(true)]
     [Endpoint("GET /sta/v1.1/ObservationsStream")]

@@ -21,6 +21,7 @@ namespace Honua.Server.Tests.Features.Streaming;
 public sealed partial class FeatureStreamEndpointsTests
 {
     [IntegrationTheory]
+    [Operation(Operations.Query)]
     [InlineData(false)]
     [InlineData(true)]
     [Endpoint("GET /odata/Features({layerId})")]
