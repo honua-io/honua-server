@@ -70,7 +70,10 @@ nulls and numeric attributes. A second execution selects the valid decoy layer
 and proves the same semantic oracle rejects its well-formed output. Missing
 layers and option-shaped layer names must fail without an artifact. The optional
 catalog `layerName` input selects one exact layer; omission retains OGR's default
-behavior. These inline artifact proofs do not cross a staged-output or database
+behavior. Shared plan validation rejects malformed supplied names before dispatch,
+and the worker retains the same boundary check. Planning tests cover optional
+values, Unicode names, control characters, option-shaped names and the 1024-character
+length boundary. These inline artifact proofs do not cross a staged-output or database
 boundary; #3852/#3855 are not inferred to pass from them.
 
 For local Linux hosts whose user differs from the container default 1001:1001,
