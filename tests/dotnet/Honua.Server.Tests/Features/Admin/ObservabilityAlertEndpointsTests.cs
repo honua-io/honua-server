@@ -45,9 +45,11 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
 
                 services.RemoveAll<IAlertEventQuery>();
                 services.RemoveAll<IAlertLifecycleStore>();
+                services.RemoveAll<IAlertLifecycleMutationStore>();
                 services.RemoveAll<IAuditLog>();
                 services.AddSingleton<IAlertEventQuery>(_query);
                 services.AddSingleton<IAlertLifecycleStore>(_lifecycle);
+                services.AddSingleton<IAlertLifecycleMutationStore>(new StubMutations(_lifecycle, _audit));
                 services.AddSingleton<IAuditLog>(_audit);
             });
     }
@@ -210,6 +212,21 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
         public Task<AlertEventLifecycle?> ResolveAsync(long eventId, string actor, string? note,
             DateTimeOffset resolvedAt, CancellationToken cancellationToken = default)
             => Task.FromResult(Lifecycle);
+    }
+
+    private sealed class StubMutations(StubAlertLifecycleStore lifecycle, CapturingAuditLog audit) : IAlertLifecycleMutationStore
+    {
+        public async Task<AlertEventLifecycle?> MutateAsync(long eventId, string? note,
+            DateTimeOffset? suppressUntil, AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            if (suppressUntil <= auditEvent.Timestamp)
+            {
+                throw new ArgumentException("Suppression must end in the future.", nameof(suppressUntil));
+            }
+            if (lifecycle.Lifecycle is null) { return null; }
+            await audit.RecordAsync(auditEvent, cancellationToken);
+            return lifecycle.Lifecycle;
+        }
     }
 
     private sealed class CapturingAuditLog : IAuditLog

@@ -38,7 +38,7 @@ internal sealed class PostgresAuditLog : IAuditLog
     // hash-chain construction (#350). Concurrent audit inserts briefly contend on
     // this lock so the (prev_hash -> entry_hash) chain stays linear; audit volume
     // is low (security-relevant events only) so the contention is negligible.
-    private const long HashChainAdvisoryLockKey = 0x484F4E55_41554449L; // "HONUAUDI"
+    internal const long HashChainAdvisoryLockKey = 0x484F4E55_41554449L; // "HONUAUDI"
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresAuditLog> _logger;
@@ -59,7 +59,31 @@ internal sealed class PostgresAuditLog : IAuditLog
     public async Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(auditEvent);
+        try
+        {
+            await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transaction = await lease.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            var id = await RecordInTransactionAsync(lease.Connection, transaction, auditEvent, _table, cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            return id;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            AuditLogPostgresLog.RecordFailed(_logger, auditEvent.Action, ex);
+            return null;
+        }
+    }
 
+    // Strict seam for domain mutations that must commit in the same transaction.
+    // It never catches persistence failures or commits its caller's transaction.
+    internal static async Task<string?> RecordInTransactionAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, AuditEvent auditEvent,
+        string qualifiedTable, CancellationToken cancellationToken)
+    {
         // Compute the stored (truncated) field values up front so the hash chain
         // is built over exactly what is persisted; the verifier replays the same
         // stored values, so the two hashes must agree.
@@ -73,7 +97,7 @@ internal sealed class PostgresAuditLog : IAuditLog
         var details = auditEvent.Details ?? string.Empty;
 
         var sql = $"""
-            INSERT INTO {_table} (
+            INSERT INTO {qualifiedTable} (
                 timestamp, event_type, actor, actor_type,
                 resource_type, resource_id, action, outcome,
                 correlation_id, remote_ip, user_agent, details,
@@ -87,80 +111,54 @@ internal sealed class PostgresAuditLog : IAuditLog
             RETURNING audit_id
             """;
 
-        try
+        await using (var lockCommand = new NpgsqlCommand("SELECT pg_advisory_xact_lock(@key)", connection, transaction))
         {
-            await using var connection = await _connectionProvider
-                .OpenNpgsqlConnectionAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            // Serialize chain construction so the latest entry_hash we read is the
-            // true tail of the chain. The advisory lock is transaction-scoped and
-            // released on commit/rollback.
-            await using var transaction = await connection.Connection
-                .BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-            await using (var lockCommand = new NpgsqlCommand("SELECT pg_advisory_xact_lock(@key)", connection, transaction))
-            {
-                lockCommand.Parameters.AddWithValue("@key", HashChainAdvisoryLockKey);
-                await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            string? previousHash;
-            await using (var tailCommand = new NpgsqlCommand(
-                $"SELECT entry_hash FROM {_table} ORDER BY audit_id DESC LIMIT 1", connection, transaction))
-            {
-                var tail = await tailCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                previousHash = tail is null or DBNull ? null : (string)tail;
-            }
-
-            var entryHash = AuditEntryHasher.ComputeEntryHash(
-                previousHash,
-                auditEvent.Timestamp,
-                auditEvent.EventType,
-                actor,
-                auditEvent.ActorType,
-                resourceType,
-                resourceId,
-                action,
-                auditEvent.Outcome,
-                correlationId,
-                remoteIp,
-                userAgent,
-                details);
-
-            await using (var command = new NpgsqlCommand(sql, connection, transaction))
-            {
-                command.Parameters.AddWithValue("@timestamp", auditEvent.Timestamp.UtcDateTime);
-                command.Parameters.AddWithValue("@event_type", auditEvent.EventType.ToString());
-                command.Parameters.AddWithValue("@actor", actor);
-                command.Parameters.AddWithValue("@actor_type", auditEvent.ActorType.ToString());
-                command.Parameters.AddWithValue("@resource_type", resourceType);
-                command.Parameters.AddWithValue("@resource_id", (object?)resourceId ?? DBNull.Value);
-                command.Parameters.AddWithValue("@action", action);
-                command.Parameters.AddWithValue("@outcome", auditEvent.Outcome.ToString());
-                command.Parameters.AddWithValue("@correlation_id", correlationId);
-                command.Parameters.AddWithValue("@remote_ip", (object?)remoteIp ?? DBNull.Value);
-                command.Parameters.AddWithValue("@user_agent", (object?)userAgent ?? DBNull.Value);
-                command.Parameters.AddWithValue("@details", details);
-                command.Parameters.AddWithValue("@prev_hash", (object?)previousHash ?? DBNull.Value);
-                command.Parameters.AddWithValue("@entry_hash", entryHash);
-
-                var assignedAuditId = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-                return Convert.ToString(assignedAuditId, CultureInfo.InvariantCulture);
-            }
+            lockCommand.Parameters.AddWithValue("@key", HashChainAdvisoryLockKey);
+            await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+
+        string? previousHash;
+        await using (var tailCommand = new NpgsqlCommand(
+            $"SELECT entry_hash FROM {qualifiedTable} ORDER BY audit_id DESC LIMIT 1", connection, transaction))
         {
-            // Honour cooperative cancellation; do not log, the caller is shutting down.
-            throw;
+            var tail = await tailCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            previousHash = tail is null or DBNull ? null : (string)tail;
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+
+        var entryHash = AuditEntryHasher.ComputeEntryHash(
+            previousHash,
+            auditEvent.Timestamp,
+            auditEvent.EventType,
+            actor,
+            auditEvent.ActorType,
+            resourceType,
+            resourceId,
+            action,
+            auditEvent.Outcome,
+            correlationId,
+            remoteIp,
+            userAgent,
+            details);
+
+        await using (var command = new NpgsqlCommand(sql, connection, transaction))
         {
-            // Intentionally broad: audit-write failures must NOT block the audited action; we log
-            // and continue. (The IAuditLog contract documents this best-effort policy.)
-            AuditLogPostgresLog.RecordFailed(_logger, auditEvent.Action, ex);
-            return null;
+            command.Parameters.AddWithValue("@timestamp", auditEvent.Timestamp.UtcDateTime);
+            command.Parameters.AddWithValue("@event_type", auditEvent.EventType.ToString());
+            command.Parameters.AddWithValue("@actor", actor);
+            command.Parameters.AddWithValue("@actor_type", auditEvent.ActorType.ToString());
+            command.Parameters.AddWithValue("@resource_type", resourceType);
+            command.Parameters.AddWithValue("@resource_id", (object?)resourceId ?? DBNull.Value);
+            command.Parameters.AddWithValue("@action", action);
+            command.Parameters.AddWithValue("@outcome", auditEvent.Outcome.ToString());
+            command.Parameters.AddWithValue("@correlation_id", correlationId);
+            command.Parameters.AddWithValue("@remote_ip", (object?)remoteIp ?? DBNull.Value);
+            command.Parameters.AddWithValue("@user_agent", (object?)userAgent ?? DBNull.Value);
+            command.Parameters.AddWithValue("@details", details);
+            command.Parameters.AddWithValue("@prev_hash", (object?)previousHash ?? DBNull.Value);
+            command.Parameters.AddWithValue("@entry_hash", entryHash);
+
+            var assignedAuditId = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            return Convert.ToString(assignedAuditId, CultureInfo.InvariantCulture);
         }
     }
 

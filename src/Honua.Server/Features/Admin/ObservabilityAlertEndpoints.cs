@@ -94,100 +94,27 @@ internal static class ObservabilityAlertEndpoints
     }
 
     private static Task<IResult> HandleAcknowledge(
-        long eventId,
-        ObservabilityAlertAcknowledgeRequest? body,
-        [FromServices] IAlertLifecycleStore lifecycleStore,
-        [FromServices] IAlertEventQuery query,
-        [FromServices] IAuditLog auditLog,
-        HttpContext context,
-        CancellationToken cancellationToken)
-    {
-        return PerformLifecycleAsync(
-            eventId,
-            body?.Note,
-            action: "alert.acknowledge",
-            query,
-            auditLog,
-            context,
-            (actor, note, timestamp) => lifecycleStore.AcknowledgeAsync(eventId, actor, note, timestamp, cancellationToken),
-            cancellationToken);
-    }
+        long eventId, ObservabilityAlertAcknowledgeRequest? body,
+        [FromServices] IAlertLifecycleMutationStore mutations, [FromServices] IAlertEventQuery query,
+        HttpContext context, CancellationToken cancellationToken)
+        => PerformLifecycleAsync(eventId, body?.Note, null, "alert.acknowledge", mutations, query, context, cancellationToken);
 
-    private static async Task<IResult> HandleSuppress(
-        long eventId,
-        ObservabilityAlertSuppressRequest? body,
-        [FromServices] IAlertLifecycleStore lifecycleStore,
-        [FromServices] IAlertEventQuery query,
-        [FromServices] IAuditLog auditLog,
-        HttpContext context,
-        CancellationToken cancellationToken)
-    {
-        if (body is null)
-        {
-            return BadRequest("A request body with 'suppressUntil' is required.");
-        }
-
-        var now = DateTimeOffset.UtcNow;
-        if (body.SuppressUntil <= now)
-        {
-            return BadRequest("'suppressUntil' must be in the future.");
-        }
-
-        if (body.Note is { Length: > MaxNoteLength })
-        {
-            return BadRequest($"'note' must not exceed {MaxNoteLength} characters.");
-        }
-
-        var actor = ResolveActor(context);
-        var lifecycle = await lifecycleStore.SuppressAsync(eventId, actor, body.SuppressUntil, body.Note, now, cancellationToken).ConfigureAwait(false);
-        if (lifecycle is null)
-        {
-            return NotFound(eventId);
-        }
-
-        await RecordAuditAsync(auditLog, context, actor, eventId, "alert.suppress",
-            $"{{\"suppressUntil\":\"{body.SuppressUntil.ToString("O", CultureInfo.InvariantCulture)}\"}}",
-            cancellationToken).ConfigureAwait(false);
-
-        var refreshed = await query.GetAsync(eventId, cancellationToken).ConfigureAwait(false);
-        if (refreshed is null)
-        {
-            return NotFound(eventId);
-        }
-
-        return Results.Json(
-            ObservabilityAlertEventResponseMapper.Map(refreshed),
-            ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
-    }
+    private static Task<IResult> HandleSuppress(
+        long eventId, ObservabilityAlertSuppressRequest? body,
+        [FromServices] IAlertLifecycleMutationStore mutations, [FromServices] IAlertEventQuery query,
+        HttpContext context, CancellationToken cancellationToken)
+        => body is null ? Task.FromResult(BadRequest("A request body with 'suppressUntil' is required."))
+            : PerformLifecycleAsync(eventId, body.Note, body.SuppressUntil, "alert.suppress", mutations, query, context, cancellationToken);
 
     private static Task<IResult> HandleResolve(
-        long eventId,
-        ObservabilityAlertResolveRequest? body,
-        [FromServices] IAlertLifecycleStore lifecycleStore,
-        [FromServices] IAlertEventQuery query,
-        [FromServices] IAuditLog auditLog,
-        HttpContext context,
-        CancellationToken cancellationToken)
-    {
-        return PerformLifecycleAsync(
-            eventId,
-            body?.Note,
-            action: "alert.resolve",
-            query,
-            auditLog,
-            context,
-            (actor, note, timestamp) => lifecycleStore.ResolveAsync(eventId, actor, note, timestamp, cancellationToken),
-            cancellationToken);
-    }
+        long eventId, ObservabilityAlertResolveRequest? body,
+        [FromServices] IAlertLifecycleMutationStore mutations, [FromServices] IAlertEventQuery query,
+        HttpContext context, CancellationToken cancellationToken)
+        => PerformLifecycleAsync(eventId, body?.Note, null, "alert.resolve", mutations, query, context, cancellationToken);
 
     private static async Task<IResult> PerformLifecycleAsync(
-        long eventId,
-        string? note,
-        string action,
-        IAlertEventQuery query,
-        IAuditLog auditLog,
-        HttpContext context,
-        Func<string, string?, DateTimeOffset, Task<AlertEventLifecycle?>> mutate,
+        long eventId, string? note, DateTimeOffset? suppressUntil, string action,
+        IAlertLifecycleMutationStore mutations, IAlertEventQuery query, HttpContext context,
         CancellationToken cancellationToken)
     {
         if (note is { Length: > MaxNoteLength })
@@ -195,52 +122,44 @@ internal static class ObservabilityAlertEndpoints
             return BadRequest($"'note' must not exceed {MaxNoteLength} characters.");
         }
 
-        var actor = ResolveActor(context);
-        var now = DateTimeOffset.UtcNow;
-        var lifecycle = await mutate(actor, note, now).ConfigureAwait(false);
-        if (lifecycle is null)
+        var correlation = context.TraceIdentifier;
+        if (string.IsNullOrWhiteSpace(correlation) || correlation.Length > 64)
         {
-            return NotFound(eventId);
+            return BadRequest("The correlation ID must contain between 1 and 64 characters.");
         }
 
-        await RecordAuditAsync(auditLog, context, actor, eventId, action, details: string.Empty, cancellationToken)
-            .ConfigureAwait(false);
-
-        var refreshed = await query.GetAsync(eventId, cancellationToken).ConfigureAwait(false);
-        if (refreshed is null)
-        {
-            return NotFound(eventId);
-        }
-
-        return Results.Json(
-            ObservabilityAlertEventResponseMapper.Map(refreshed),
-            ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
-    }
-
-    private static Task<string?> RecordAuditAsync(
-        IAuditLog auditLog,
-        HttpContext context,
-        string actor,
-        long eventId,
-        string action,
-        string details,
-        CancellationToken cancellationToken)
-    {
         var auditEvent = new AuditEvent
         {
             Timestamp = DateTimeOffset.UtcNow,
             EventType = AuditEventType.AdminAction,
-            Actor = actor,
+            Actor = ResolveActor(context),
             ActorType = AuditActorType.UserId,
             ResourceType = "alert_event",
             ResourceId = eventId.ToString(CultureInfo.InvariantCulture),
             Action = action,
             Outcome = AuditOutcome.Success,
-            CorrelationId = context.TraceIdentifier,
-            Details = details
+            CorrelationId = correlation
         };
+        AlertEventLifecycle? lifecycle;
+        try
+        {
+            lifecycle = await mutations.MutateAsync(eventId, note, suppressUntil, auditEvent, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AlertLifecycleRetryConflictException exception)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(StatusCodes.Status409Conflict,
+                ProblemDetailsHelpers.GetTitle(409), exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(exception.Message);
+        }
 
-        return auditLog.RecordAsync(auditEvent, cancellationToken);
+        if (lifecycle is null) { return NotFound(eventId); }
+        var refreshed = await query.GetAsync(eventId, cancellationToken).ConfigureAwait(false);
+        if (refreshed is null) { return NotFound(eventId); }
+        return Results.Json(ObservabilityAlertEventResponseMapper.Map(refreshed),
+            ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
     }
 
     internal static bool TryParseAlertFilter(IQueryCollection query, out AlertEventFilter filter, out string error)
