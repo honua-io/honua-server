@@ -1308,14 +1308,8 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
-        // The server generation cursor recorded for the replica. After an upload we record the
-        // post-apply generation as both the last-sync and upload-base cursor so a subsequent download
-        // delta excludes the client's own just-applied edits. Download/bidirectional syncs advance the
-        // last-sync cursor to the live current generation once the server-to-client delta below has been
-        // assembled, so the replica receives every change committed since its last sync exactly once.
-        // BH-012: use the post-upload generation for both upload-only AND bidirectional
-        // syncs so concurrent server edits committed after the upload are captured by
-        // the NEXT sync rather than permanently skipped.
+        // Capture the upload checkpoint separately from the acknowledged download cursor.
+        // Upload-only calls have delivered no server changes, so they cannot advance that cursor.
         long currentGen = didUpload
             ? uploadServerGen
             : await changeTracker.GetCurrentGenerationAsync(cancellationToken);
@@ -1326,8 +1320,8 @@ internal static partial class FeatureServerEndpoints
         // createReplica were never delivered. The delta is assembled with the same change-tracking engine
         // extractChanges uses. The "since" cursor is the generation the client says it already holds
         // (replicaServerGen, the serverGen from its preceding extractChanges/createReplica) when supplied,
-        // otherwise the replica's recorded last-sync generation; an upload in the same bidirectional call
-        // moves that baseline to the post-apply generation so the replica does not receive its own edits.
+        // otherwise the replica's recorded last-sync generation. Durable upload provenance excludes
+        // changes already known to this replica without skipping other clients' intervening changes.
         LayerChanges[]? downloadEdits = null;
         ReplicaInfoLayerServerGeneration[]? downloadLayerServerGens = null;
         if (isDownloadDirection)
@@ -1339,8 +1333,8 @@ internal static partial class FeatureServerEndpoints
             // server-side change including edits committed by other clients during the upload window
             // (BH5-015). A previous cap at preUploadGen permanently excluded those concurrent edits,
             // because the cursor was then advanced to uploadServerGen (BH2-012), making them
-            // undeliverable to this replica forever. Clients that do not want to reapply their own
-            // just-committed edits can filter them by objectId from the upload response (#1775).
+            // undeliverable to this replica forever. The change tracker excludes this replica's own
+            // committed edits before collapsing the remaining per-object history.
             var downloadSinceGen = acknowledgedServerGen is { } acknowledged
                 ? Math.Min(acknowledged, currentGen)
                 : replica.LastSyncGeneration;
@@ -1400,7 +1394,7 @@ internal static partial class FeatureServerEndpoints
             Success = true,
             ReplicaId = replicaId,
             SyncDirection = syncDirection,
-            ServerGen = currentGen,
+            ServerGen = updated.LastSyncGeneration,
             Edits = downloadEdits,
             LayerServerGens = downloadLayerServerGens,
             AppliedAdds = appliedAdds,

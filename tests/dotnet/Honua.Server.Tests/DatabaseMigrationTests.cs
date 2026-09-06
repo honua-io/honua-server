@@ -64,6 +64,69 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ReplicaOriginMigration_PreservesHistory_AndStampsOnlyUploadTransactions()
+    {
+        await using var connection = await OpenSchemaConnectionAsync();
+        await using (var setup = connection.CreateCommand())
+        {
+            setup.CommandText = """
+                CREATE SCHEMA honua;
+                CREATE TABLE honua.feature_changes (
+                    generation bigint PRIMARY KEY, layer_id integer NOT NULL,
+                    objectid bigint NOT NULL, operation smallint NOT NULL);
+                INSERT INTO honua.feature_changes VALUES (11, 7, 901, 1);
+                """;
+            await setup.ExecuteNonQueryAsync();
+        }
+        var assembly = typeof(Program).Assembly;
+        var resource = assembly.GetManifestResourceNames().Single(name =>
+            name.EndsWith("112_TrackReplicaUploadOrigin.sql", StringComparison.Ordinal));
+        await using var stream = assembly.GetManifestResourceStream(resource)!;
+        using var reader = new StreamReader(stream);
+        var migrationSql = await reader.ReadToEndAsync();
+        // Execute the actual embedded production migration twice, proving additive/idempotent rollout.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            await using var migration = new Npgsql.NpgsqlCommand(migrationSql, connection);
+            await migration.ExecuteNonQueryAsync();
+        }
+        await using (var transaction = await connection.BeginTransactionAsync())
+        {
+            await using var upload = new Npgsql.NpgsqlCommand("""
+                SELECT set_config('honua.origin_replica_id', 'upload-replica', true);
+                INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+                VALUES (12, 7, 902, 1);
+                """, connection, transaction);
+            await upload.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+        await using (var ordinary = new Npgsql.NpgsqlCommand("""
+            INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+            VALUES (13, 7, 903, 2);
+            """, connection))
+        {
+            await ordinary.ExecuteNonQueryAsync();
+        }
+        await using var query = new Npgsql.NpgsqlCommand("""
+            SELECT generation, layer_id, objectid, operation, origin_replica_id
+            FROM honua.feature_changes ORDER BY generation;
+            """, connection);
+        await using var rows = await query.ExecuteReaderAsync();
+        var actual = new List<(long Generation, int Layer, long ObjectId, short Operation, string? Origin)>();
+        while (await rows.ReadAsync())
+        {
+            actual.Add((rows.GetInt64(0), rows.GetInt32(1), rows.GetInt64(2), rows.GetInt16(3),
+                rows.IsDBNull(4) ? null : rows.GetString(4)));
+        }
+        actual.Should().Equal(new[]
+        {
+            (11L, 7, 901L, (short)1, (string?)null),
+            (12L, 7, 902L, (short)1, "upload-replica"),
+            (13L, 7, 903L, (short)2, (string?)null)
+        });
+    }
+
+    [Fact]
     public async Task DbUpMigrations_OnFreshDatabase_CreatesSchemaAndTables()
     {
         // Arrange

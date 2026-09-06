@@ -75,16 +75,18 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData("extractChanges", "layerChanges")]
-    [InlineData("synchronizeReplica", "edits")]
+    [InlineData("extractChanges", "layerChanges", false)]
+    [InlineData("synchronizeReplica", "edits", false)]
+    [InlineData("synchronizeReplica", "edits", true)]
     [Operation(Operations.SynchronizeReplica, Operations.ExtractChanges)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
-    public async Task UploadOnly_PreservesForeignChangesAcrossRepeatedUploads(string endpoint, string deltaProperty)
+    public async Task UploadOnly_PreservesForeignChangesAcrossRepeatedUploads(string endpoint, string deltaProperty, bool echoUploadCursor)
     {
         var replicaId = await CreateReplicaAsync("RetainForeignEdits", "0");
         await SynchronizeDownloadAsync(replicaId);
         var foreignId = await AddFeatureWithGeometryAsync("colleague-change", -100, 40);
+        long uploadCursor = 0;
         for (var index = 0; index < 2; index++)
         {
             var edits = JsonSerializer.Serialize(new[]
@@ -93,11 +95,17 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             });
             var upload = await SynchronizeUploadAsync(replicaId, edits);
             upload.GetProperty("appliedAdds").GetInt32().Should().Be(1);
+            uploadCursor = upload.GetProperty("serverGen").GetInt64();
         }
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var parameters = new Dictionary<string, string>
         {
             ["replicaID"] = replicaId, ["syncDirection"] = "download", ["f"] = "json"
-        });
+        };
+        if (echoUploadCursor)
+        {
+            parameters["replicaServerGen"] = uploadCursor.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        using var content = new FormUrlEncodedContent(parameters);
         using var response = await _fixture.Client.PostAsync($"/rest/services/test/FeatureServer/{endpoint}", content);
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
@@ -247,7 +255,7 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         uploadRoot.GetProperty("appliedAdds").GetInt32().Should().Be(1);
 
         // A subsequent extractChanges (download delta) must not return the client's own just-applied
-        // edit, because the upload advanced the replica's sync cursor past it.
+        // edit, because its durable upload origin identifies it as already known to this replica.
         var extractPayload = JsonSerializer.Serialize(new { replicaID = replicaId, f = "json" });
         using var extractContent = new StringContent(extractPayload, Encoding.UTF8, "application/json");
         var extractResponse = await _fixture.Client.PostAsync(

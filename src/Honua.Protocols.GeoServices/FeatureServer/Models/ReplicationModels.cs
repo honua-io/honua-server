@@ -497,7 +497,7 @@ public sealed class SynchronizeReplicaResponse
     public string? SyncDirection { get; set; }
 
     /// <summary>
-    /// Current server generation number after synchronization.
+    /// Acknowledged download generation. Upload-only calls retain the preceding download cursor.
     /// </summary>
     [JsonPropertyName("serverGen")]
     public long ServerGen { get; set; }

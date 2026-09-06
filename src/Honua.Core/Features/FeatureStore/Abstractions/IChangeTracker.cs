@@ -13,7 +13,7 @@ public interface IChangeTracker
 {
     /// <summary>
     /// Gets changes not already known through this replica's own uploads. Providers with
-    /// origin tracking collapse each object's history after its last upload by this replica.
+    /// origin tracking exclude this replica's upload rows before collapsing foreign history.
     /// </summary>
     /// <param name="sinceGeneration">Exclusive download watermark.</param>
     /// <param name="layerIds">Storage layers to read.</param>

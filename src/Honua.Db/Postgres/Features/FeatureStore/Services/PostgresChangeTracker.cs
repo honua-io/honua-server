@@ -107,10 +107,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                     ON matched_objects.layer_id = changes.layer_id
                    AND matched_objects.objectid = changes.objectid
                 WHERE changes.generation > $1
-                  AND ($4::text IS NULL OR changes.generation > COALESCE((
-                      SELECT MAX(own.generation) FROM honua.feature_changes own
-                      WHERE own.layer_id = changes.layer_id AND own.objectid = changes.objectid
-                        AND own.origin_replica_id = $4), 0))
+                  AND ($4::text IS NULL OR changes.origin_replica_id IS DISTINCT FROM $4)
             )
             SELECT change_id, max_gen AS generation, layer_id, objectid, public_objectid,
                    CASE

@@ -521,8 +521,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             activity?.SetStatus(ActivityStatusCode.Error, firstFailure);
         }
 
-        // The server generation produced once the uploaded edits applied. A subsequent download delta
-        // uses this as its lower bound so the replica does not receive its own edits back.
+        // The post-upload checkpoint is used for upload conflict bookkeeping. It does not acknowledge
+        // a download; durable provenance suppresses this replica's own changes in later deltas.
         var serverGeneration = await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
 
         return new ReplicaSyncUploadReport(

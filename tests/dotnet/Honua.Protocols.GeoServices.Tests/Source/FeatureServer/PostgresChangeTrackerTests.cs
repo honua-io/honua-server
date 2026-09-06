@@ -23,6 +23,79 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
 
     [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
+    public async Task ReplicaOrigins_CollapseForeignHistory_AndRemainVisibleToOtherReplicas()
+    {
+        const int layerId = 990112;
+        var tracker = _fixture.GetService<IChangeTracker>();
+        var baseline = await tracker.GetCurrentGenerationAsync();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        // These independently specified histories model A's two inserts, a later foreign update,
+        // an ordinary foreign insert, and B's insert. Transaction-local origins must not leak.
+        await using (var transaction = await connection.BeginTransactionAsync())
+        {
+            await using var command = new Npgsql.NpgsqlCommand("""
+                SELECT set_config('honua.origin_replica_id', 'replica-A', true);
+                INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+                VALUES (nextval('honua.sync_generation'), 990112, 8101, 1),
+                       (nextval('honua.sync_generation'), 990112, 8102, 1);
+                """, connection, transaction);
+            await command.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+        await using (var command = new Npgsql.NpgsqlCommand("""
+            INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+            VALUES (nextval('honua.sync_generation'), 990112, 8101, 2),
+                   (nextval('honua.sync_generation'), 990112, 8103, 1);
+            """, connection))
+        {
+            await command.ExecuteNonQueryAsync();
+        }
+        await using (var transaction = await connection.BeginTransactionAsync())
+        {
+            await using var command = new Npgsql.NpgsqlCommand("""
+                SELECT set_config('honua.origin_replica_id', 'replica-B', true);
+                INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+                VALUES (nextval('honua.sync_generation'), 990112, 8104, 1);
+                """, connection, transaction);
+            await command.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+
+        // A later partial update by A must not erase the preceding foreign update from its feed.
+        await using (var transaction = await connection.BeginTransactionAsync())
+        {
+            await using var command = new Npgsql.NpgsqlCommand("""
+                SELECT set_config('honua.origin_replica_id', 'replica-A', true);
+                INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+                VALUES (nextval('honua.sync_generation'), 990112, 8101, 2);
+                """, connection, transaction);
+            await command.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+
+        var forA = await tracker.GetChangesSinceAsync(baseline, [layerId], null, "replica-A");
+        forA.Select(change => (change.ObjectId, change.Operation)).Should().BeEquivalentTo(new[]
+        {
+            (8101L, FeatureChangeOperation.Update),
+            (8103L, FeatureChangeOperation.Insert),
+            (8104L, FeatureChangeOperation.Insert)
+        });
+        forA.Single(change => change.ObjectId == 8101).OriginReplicaId.Should().BeNull();
+        forA.Single(change => change.ObjectId == 8103).OriginReplicaId.Should().BeNull();
+        forA.Single(change => change.ObjectId == 8104).OriginReplicaId.Should().Be("replica-B");
+
+        var forB = await tracker.GetChangesSinceAsync(baseline, [layerId], null, "replica-B");
+        forB.Select(change => (change.ObjectId, change.Operation)).Should().BeEquivalentTo(new[]
+        {
+            (8101L, FeatureChangeOperation.Insert),
+            (8102L, FeatureChangeOperation.Insert),
+            (8103L, FeatureChangeOperation.Insert)
+        });
+        forB.Single(change => change.ObjectId == 8102).OriginReplicaId.Should().Be("replica-A");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
     public async Task GetCurrentGeneration_ReturnsNonNegativeValue()
     {
         var tracker = _fixture.GetService<IChangeTracker>();
