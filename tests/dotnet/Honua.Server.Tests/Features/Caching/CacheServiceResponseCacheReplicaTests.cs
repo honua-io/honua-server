@@ -122,7 +122,7 @@ public sealed class CacheServiceResponseCacheReplicaTests
         Assert.Null(await writer.GetAsync<string>(key));
     }
 
-    private sealed class SharedCache : ICacheService
+    internal sealed class SharedCache : ICacheService
     {
         private readonly ConcurrentDictionary<string, object> _values = new(StringComparer.Ordinal);
         public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
