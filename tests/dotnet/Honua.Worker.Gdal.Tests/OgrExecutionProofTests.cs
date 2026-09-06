@@ -78,7 +78,8 @@ public sealed partial class RasterExecutionProofTests
         }
         var plan = new AnalysisPlan
         {
-            PlanId = "ogr-proof", IntentId = "source-read",
+            PlanId = "ogr-proof",
+            IntentId = "source-read",
             Steps = [new AnalysisPlanStep { StepId = "s1", Kind = AnalysisPlanStepKind.Geoprocess, ProcessId = "source.ogr", Inputs = inputs }]
         };
         var (violations, _) = ProcessPlanValidator.Validate(plan, new BuiltInProcessCatalog());
