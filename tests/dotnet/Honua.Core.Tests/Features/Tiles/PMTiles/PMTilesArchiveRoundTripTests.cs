@@ -116,10 +116,22 @@ public class PMTilesArchiveRoundTripTests
             decoded.PointY.Should().Be(y);
         }
 
-        // And a coordinate that was never added must not resolve to some other tile's bytes.
-        // (A lower zoom, because every tile at `zoom` was added; an out-of-range x at `zoom`
-        // would be rejected by HilbertCurve rather than reaching the directory.)
-        reader.ReadTile(zoom - 1, 0, 0).Should().BeNull();
+        // A gap *inside* the leaf-covered id range: both coordinates are valid at this zoom and
+        // were never added (the fixture stops at x = 128 / y = 127), and both sort between two
+        // tiles that were, so the root lookup yields a leaf pointer and the miss has to be
+        // decided by the leaf directory itself. A regression that returned the neighbouring
+        // entry instead of null would fail here; a lower-zoom coordinate would not, because its
+        // id precedes every root entry and never reaches a leaf at all.
+        foreach (var (x, y) in new[] { (0, 128), (129, 1) })
+        {
+            var miss = reader.ReadTileThroughDirectories(zoom, x, y);
+            miss.ConsultedLeaf.Should().BeTrue(
+                "the miss at {0}/{1}/{2} must be decided inside a leaf directory, not by the root",
+                zoom, x, y);
+            miss.Bytes.Should().BeNull(
+                "tile {0}/{1}/{2} was never added and must not resolve to a neighbour's bytes",
+                zoom, x, y);
+        }
     }
 
     private static async Task<byte[]> WriteArchiveAsync(PMTilesWriter writer, byte minZoom, byte maxZoom)
@@ -157,30 +169,40 @@ public class PMTilesArchiveRoundTripTests
             _root = ReadDirectory(header.RootDirectoryOffset, header.RootDirectoryLength);
         }
 
-        public byte[]? ReadTile(int z, int x, int y)
+        public byte[]? ReadTile(int z, int x, int y) => ReadTileThroughDirectories(z, x, y).Bytes;
+
+        /// <summary>
+        /// Resolves a coordinate and reports whether a leaf directory had to be read, so a test
+        /// can assert that a miss was decided by the leaf rather than short-circuited by the root.
+        /// </summary>
+        public Lookup ReadTileThroughDirectories(int z, int x, int y)
         {
             var tileId = HilbertCurve.XYZToTileId(z, x, y);
 
             var entry = Find(_root, tileId);
             if (entry is null)
             {
-                return null;
+                return new Lookup(null, ConsultedLeaf: false);
             }
 
+            var consultedLeaf = false;
             if (entry.Value.RunLength == 0)
             {
                 // Root pointer into a leaf directory.
+                consultedLeaf = true;
                 var leaf = ReadDirectory(_header.LeafDirectoryOffset + entry.Value.Offset, entry.Value.Length);
                 entry = Find(leaf, tileId);
                 if (entry is null || entry.Value.RunLength == 0)
                 {
-                    return null;
+                    return new Lookup(null, consultedLeaf);
                 }
             }
 
             var offset = checked((int)(_header.TileDataOffset + entry.Value.Offset));
-            return _archive.AsSpan(offset, checked((int)entry.Value.Length)).ToArray();
+            return new Lookup(_archive.AsSpan(offset, checked((int)entry.Value.Length)).ToArray(), consultedLeaf);
         }
+
+        public readonly record struct Lookup(byte[]? Bytes, bool ConsultedLeaf);
 
         private PMTilesEntry[] ReadDirectory(ulong offset, ulong length)
         {
@@ -229,24 +251,24 @@ public class PMTilesArchiveRoundTripTests
         public static byte[] Encode(string layerName, int featureX, int featureY)
         {
             // Feature { id = 1, type = POINT(1), geometry = [MoveTo(1), zigzag(x), zigzag(y)] }
-            var feature = new MemoryStream();
+            using var feature = new MemoryStream();
             WriteVarintField(feature, fieldNumber: 1, value: 1);                 // id
             WriteVarintField(feature, fieldNumber: 3, value: 1);                 // GeomType.POINT
-            var geometry = new MemoryStream();
+            using var geometry = new MemoryStream();
             WriteVarint(geometry, (1 << 3) | 1);                                 // MoveTo, count 1
             WriteVarint(geometry, ZigZag(featureX));
             WriteVarint(geometry, ZigZag(featureY));
             WriteLengthDelimitedField(feature, fieldNumber: 4, geometry.ToArray());
 
             // Layer { name, features, extent, version }
-            var layer = new MemoryStream();
+            using var layer = new MemoryStream();
             WriteLengthDelimitedField(layer, fieldNumber: 1, Encoding.UTF8.GetBytes(layerName));
             WriteLengthDelimitedField(layer, fieldNumber: 2, feature.ToArray());
             WriteVarintField(layer, fieldNumber: 5, value: 4096);                // extent
             WriteVarintField(layer, fieldNumber: 15, value: 2);                  // version
 
             // Tile { layers }
-            var tile = new MemoryStream();
+            using var tile = new MemoryStream();
             WriteLengthDelimitedField(tile, fieldNumber: 3, layer.ToArray());
             return tile.ToArray();
         }
