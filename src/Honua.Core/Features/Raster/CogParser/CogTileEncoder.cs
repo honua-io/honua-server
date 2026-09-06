@@ -59,7 +59,7 @@ public static class CogTileEncoder
         var pngSamples = new byte[samples.Length];
         for (var offset = 0; offset < samples.Length; offset += bytesPerSample)
         {
-            var value = bytesPerSample == 1 ? samples[offset]
+            int value = bytesPerSample == 1 ? samples[offset]
                 : metadata.IsLittleEndian ? BinaryPrimitives.ReadUInt16LittleEndian(samples.AsSpan(offset))
                 : BinaryPrimitives.ReadUInt16BigEndian(samples.AsSpan(offset));
             if (metadata.PhotometricInterpretation == 0)

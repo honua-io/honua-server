@@ -47,25 +47,17 @@ public sealed class CogRegistrationTileTests
             .AddPublication("publication-b", "service-b", "resource-b", layerIndex: 2,
                 storageBindingId: "binding-b", publicationType: MetadataV2PublicationType.EsriImageLayer)
             .BuildProvider();
-        var tile = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var directory = Path.Combine(AppContext.BaseDirectory, "CogFixtures");
+        var source = await File.ReadAllBytesAsync(Path.Combine(directory, "deflate_pred1_uint8.tif"));
+        var expected = await File.ReadAllBytesAsync(Path.Combine(directory, "deflate_pred1_uint8.bin"));
         var rangeReader = Substitute.For<ICloudRangeReader>();
         rangeReader.Provider.Returns(CloudStorageProvider.AwsS3);
         rangeReader.GetObjectMetadataAsync("bucket", "bound.tif", Arg.Any<CancellationToken>())
-            .Returns(new CloudObjectMetadata { SizeBytes = 1024, ETag = "etag-1" });
-        rangeReader.ReadRangeAsync("bucket", "bound.tif", 16, tile.Length, Arg.Any<CancellationToken>()).Returns(tile);
-        rangeReader.ReadRangeAsync("bucket", "bound.tif", 16, tile.Length, "etag-1", Arg.Any<CancellationToken>()).Returns(tile);
-        var metadataReader = Substitute.For<ICogMetadataReader>();
-        metadataReader.ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "bound.tif", Arg.Any<CancellationToken>())
-            .Returns(new CogMetadata(256, 256, 3, "uint8", 3857, "JPEG", 256, 256,
-                [new CogOverviewLevel(0, 256, 256, 8, [16L], [tile.Length])],
-                new RasterExtent
-                {
-                    XMin = -20037508.342789244,
-                    YMin = -20037508.342789244,
-                    XMax = 20037508.342789244,
-                    YMax = 20037508.342789244,
-                    Srid = 3857
-                }));
+            .Returns(new CloudObjectMetadata { SizeBytes = source.Length, ETag = "etag-1" });
+        rangeReader.ReadRangeAsync("bucket", "bound.tif", Arg.Any<long>(), Arg.Any<int>(), "etag-1", Arg.Any<CancellationToken>())
+            .Returns(call => source.AsSpan((int)call.ArgAt<long>(2),
+                Math.Min(call.ArgAt<int>(3), source.Length - (int)call.ArgAt<long>(2))).ToArray());
+        var metadataReader = new Honua.Core.Features.Raster.CogParser.CogMetadataExtractor();
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.QueryRastersAsync(default, default!, default).ReturnsForAnyArgs(Array.Empty<RasterInfo>());
         var fixture = new WebAppFixture().ConfigureServices(services =>
@@ -93,12 +85,23 @@ public sealed class CogRegistrationTileTests
             });
             registration.StatusCode.Should().Be(HttpStatusCode.Created);
 
-            using var ownTile = await fixture.Client.GetAsync("/rest/services/imagery-a/ImageServer/tile/0/0/0?format=jpg");
+            using var ownTile = await fixture.Client.GetAsync("/rest/services/imagery-a/ImageServer/tile/8/0/0");
             ownTile.StatusCode.Should().Be(HttpStatusCode.OK);
-            ownTile.Content.Headers.ContentType!.MediaType.Should().Be("image/jpeg");
-            (await ownTile.Content.ReadAsByteArrayAsync()).Should().Equal(tile);
+            ownTile.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+            using var decoded = SkiaSharp.SKBitmap.Decode(await ownTile.Content.ReadAsByteArrayAsync());
+            decoded.Should().NotBeNull();
+            decoded.Width.Should().Be(128);
+            decoded.Height.Should().Be(128);
+            for (var row = 0; row < 128; row++)
+            {
+                for (var col = 0; col < 128; col++)
+                {
+                    var value = expected[row * 128 + col];
+                    decoded.GetPixel(col, row).Should().Be(new SkiaSharp.SKColor(value, value, value, 255));
+                }
+            }
 
-            using var otherTile = await fixture.Client.GetAsync("/rest/services/imagery-b/ImageServer/tile/0/0/0?format=jpg");
+            using var otherTile = await fixture.Client.GetAsync("/rest/services/imagery-b/ImageServer/tile/8/0/0");
             await otherTile.AssertGeoServicesErrorAsync(404);
         }
         finally
