@@ -96,11 +96,12 @@ internal sealed class PostgresAuditLog : IAuditLog
             // Serialize chain construction so the latest entry_hash we read is the
             // true tail of the chain. The advisory lock is transaction-scoped and
             // released on commit/rollback.
-            // An audited mutation may already own an ambient transaction. Do not
-            // start or commit a nested transaction: its caller owns the atomic commit.
-            await using var transaction = System.Transactions.Transaction.Current is null
+            // Borrow the actual explicit mutation transaction, regardless of the
+            // connection string's auto-enlistment setting. Otherwise own a local one.
+            await using var ownedTransaction = connection.Transaction is null
                 ? await connection.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
                 : null;
+            var transaction = connection.Transaction ?? ownedTransaction;
 
             await using (var lockCommand = new NpgsqlCommand("SELECT pg_advisory_xact_lock(@key)", connection, transaction))
             {
@@ -149,9 +150,9 @@ internal sealed class PostgresAuditLog : IAuditLog
                 command.Parameters.AddWithValue("@entry_hash", entryHash);
 
                 var assignedAuditId = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                if (transaction is not null)
+                if (ownedTransaction is not null)
                 {
-                    await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+                    await ownedTransaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
                 }
                 return Convert.ToString(assignedAuditId, CultureInfo.InvariantCulture);
             }

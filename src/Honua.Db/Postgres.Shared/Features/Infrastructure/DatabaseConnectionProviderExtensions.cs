@@ -21,6 +21,11 @@ internal static class DatabaseConnectionProviderExtensions
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
 
+        if (PostgresMutationTransaction.TryBorrow(connectionProvider, out var borrowed))
+        {
+            return borrowed;
+        }
+
         var dbConnection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         try
         {

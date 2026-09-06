@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
-using System.Transactions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -1382,7 +1381,7 @@ internal static class AlertAdminEndpoints
     {
         var context = invocation.HttpContext;
         if (HttpMethods.IsGet(context.Request.Method) ||
-            context.Request.Path.Value?.EndsWith("/rules/test", StringComparison.OrdinalIgnoreCase) == true)
+            context.Request.Path.Value?.TrimEnd('/').EndsWith("/rules/test", StringComparison.OrdinalIgnoreCase) == true)
         {
             return await next(invocation).ConfigureAwait(false);
         }
@@ -1393,20 +1392,12 @@ internal static class AlertAdminEndpoints
             return AuditUnavailable();
         }
 
-        // Sequential Postgres leases enlist in the same ambient transaction. The
-        // mutation and its audit row commit together, including delete operations.
-        using var transaction = new TransactionScope(TransactionScopeOption.Required,
-            new TransactionOptions { IsolationLevel = IsolationLevel.ReadCommitted },
-            TransactionScopeAsyncFlowOption.Enabled);
+        var executor = context.RequestServices.GetRequiredService<IAlertMutationExecutor>();
         try
         {
-            var result = await next(invocation).ConfigureAwait(false);
-            if (result is IStatusCodeHttpResult { StatusCode: null or < 400 })
-            {
-                transaction.Complete();
-            }
-
-            return result;
+            return await executor.ExecuteAsync(() => next(invocation),
+                static result => result is IStatusCodeHttpResult { StatusCode: null or < 400 },
+                context.RequestAborted).ConfigureAwait(false);
         }
         catch (AlertAuditUnavailableException)
         {
