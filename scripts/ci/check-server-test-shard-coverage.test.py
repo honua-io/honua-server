@@ -522,6 +522,24 @@ def test_raster_serving_shard_owns_the_raster_serving_namespaces() -> None:
         assert owners == ["Raster Serving Scene Geometry and Terrain"], (fqn, owners)
 
 
+def test_studio_dashboard_mcp_integration_has_one_server_assembly_owner() -> None:
+    """The dashboard fixture uses an MCP namespace in the server assembly."""
+    config = json.loads(
+        (REPOSITORY_ROOT / ".github" / "ci-shards.json").read_text(encoding="utf-8")
+    )
+    fqn = "Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests"
+    classes = MODULE.enumerate_test_classes()
+    assert classes[fqn]["csproj"] == KNOWN
+    assert classes[fqn]["has_tests"]
+    owners = [
+        shard["name"] for shard in config["shards"]
+        if (shard.get("csproj") or KNOWN) == classes[fqn]["csproj"]
+        and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), fqn)
+    ]
+    assert owners == ["Server Features Analytics Studio Export and Reporting"], owners
+
+
+test_studio_dashboard_mcp_integration_has_one_server_assembly_owner()
 test_clause_flattening_and_selection_pool()
 test_dead_clause_inside_a_live_or_is_flagged()
 test_whole_shard_filter_selecting_nothing_is_flagged()
