@@ -127,7 +127,12 @@ public sealed partial class FeatureStreamEndpointsTests
                 PortalTokenClientType.Referer, referer, DateTimeOffset.UtcNow + ttl), ct);
         var anchor = await fixture.GetService<IFeatureChangeEventStore>().AppendAsync(new FeatureChangeEventRequest
         {
-            ServiceId = "test", LayerId = 0, ObjectId = 73000, Operation = "update", Protocol = "rest", RequestId = "auth-anchor"
+            ServiceId = "test",
+            LayerId = 0,
+            ObjectId = 73000,
+            Operation = "update",
+            Protocol = "rest",
+            RequestId = "auth-anchor"
         }, ct);
         var credential = await IssueAsync(expire ? TimeSpan.FromSeconds(20) : TimeSpan.FromMinutes(1));
         var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
@@ -135,13 +140,23 @@ public sealed partial class FeatureStreamEndpointsTests
         {
             await publisher.PublishAsync(new FeatureChangeEventRequest
             {
-                ServiceId = "test", LayerId = 1, ObjectId = id + 100, Operation = "update", Protocol = "rest",
-                RequestId = $"tenant-b-{id}", PropertiesJson = "{\"name\":\"tenant-b-secret\"}"
+                ServiceId = "test",
+                LayerId = 1,
+                ObjectId = id + 100,
+                Operation = "update",
+                Protocol = "rest",
+                RequestId = $"tenant-b-{id}",
+                PropertiesJson = "{\"name\":\"tenant-b-secret\"}"
             }, ct);
             await publisher.PublishAsync(new FeatureChangeEventRequest
             {
-                ServiceId = "test", LayerId = 0, ObjectId = id, Operation = "update", Protocol = "rest",
-                RequestId = $"auth-proof-{id}", PropertiesJson = "{\"name\":\"credential-proof\"}"
+                ServiceId = "test",
+                LayerId = 0,
+                ObjectId = id,
+                Operation = "update",
+                Protocol = "rest",
+                RequestId = $"auth-proof-{id}",
+                PropertiesJson = "{\"name\":\"credential-proof\"}"
             }, ct);
         }
 

@@ -62,7 +62,8 @@ evaluated again before replay. A revoked credential never becomes a replacement 
 
 Every `token-expiry`, `token-revocation`, `tenant-isolation`, and `tenant-scope-change` row
 must retain an `authorization` object containing the SHA-256 issuer/configuration fingerprint,
-two distinct `tenantIds`, unique injected `mutationIds`, RFC3339 `issuedAt`/`expiresAt`, and
+two distinct `tenantIds`, distinct tenant-qualified layer/datastream `resourceIds`,
+unique injected `mutationIds`, RFC3339 `issuedAt`/`expiresAt`, and
 timestamped `observations` with raw frames or HTTP responses. Raw observations must fall
 inside the source workflow execution. Expiry/revocation rows also retain `terminatedAt`,
 `enforcementBoundMilliseconds` (at most 5000), and `terminationReason` (`authorization-ended`

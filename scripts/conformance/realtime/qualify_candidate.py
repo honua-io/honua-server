@@ -60,6 +60,11 @@ def _authorization_diagnostics(row: dict, workflow: dict) -> list[str]:
             or any(not isinstance(tenant, str) or not tenant.strip() for tenant in tenants)
             or tenants[0] == tenants[1]):
         reasons.append("authorization proof must name two distinct isolated tenants")
+    resources = proof.get("resourceIds")
+    if (not isinstance(resources, list) or len(resources) < 2
+            or any(not isinstance(item, str) or not item.strip() for item in resources)
+            or len(set(resources)) != len(resources)):
+        reasons.append("authorization proof must name distinct tenant-qualified protected resources")
     mutations = proof.get("mutationIds")
     if (not isinstance(mutations, list) or len(mutations) < 2
             or any(not isinstance(item, str) or not item.strip() for item in mutations)

@@ -63,6 +63,7 @@ def complete_evidence():
             rows[-1]["authorization"] = {
                 "issuerFingerprint": "sha256:" + "2" * 64,
                 "tenantIds": ["tenant-a", "tenant-b"],
+                "resourceIds": ["tenant-a/layers/0", "tenant-b/layers/1"],
                 "mutationIds": ["a-before", "b-after"],
                 "issuedAt": "2026-09-02T06:35:00Z",
                 "expiresAt": "2026-09-02T06:36:00Z",
@@ -115,7 +116,7 @@ class RealtimeCandidateQualificationTests(unittest.TestCase):
                 self.assertIn("does not contain", " ".join(row["reasons"]))
 
     def test_projected_green_authorization_without_raw_receipt_is_rejected(self):
-        for field in ("issuerFingerprint", "tenantIds", "mutationIds", "issuedAt", "expiresAt", "observations"):
+        for field in ("issuerFingerprint", "tenantIds", "resourceIds", "mutationIds", "issuedAt", "expiresAt", "observations"):
             with self.subTest(field=field):
                 source = complete_evidence()
                 target = next(row for row in source["rows"] if row["scenario"] == "token-expiry")
