@@ -48,7 +48,9 @@ Connection details and service list: [gRPC reference](protocols/grpc.md).
 
 ## Database migrations
 
-Schema migrations are forward-only and additive where possible. Destructive changes are staged across at least two releases (stop writing, then drop) and must ship rollback scripts. Migrations can be skipped at startup with `HONUA_SKIP_MIGRATIONS=true` (run them out of band instead).
+Schema migrations are forward-only and additive where possible. Honua does not ship per-migration rollback scripts or a schema downgrade command. Destructive changes are staged across at least two releases (stop writing, then drop); recovery from a destructive migration requires restoring a pre-migration database backup, including the migration journal. Follow [backup and restore](../guides/deploy/backup-and-restore.md) and capture a recoverable backup before applying migrations.
+
+Application rollback and database recovery are separate operations. Reverting the server image does not undo a migration. Use an older image against the migrated database only when that compatibility has been qualified; otherwise restore the matching backup before starting the compatible image. N-1 upgrade and rollback from a published 2026.1 baseline remain unverified until that baseline exists. Migrations can be skipped at startup with `HONUA_SKIP_MIGRATIONS=true` (run them out of band instead); skipping does not reverse migrations already applied.
 
 ## Related pages
 
