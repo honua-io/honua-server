@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
@@ -69,7 +70,7 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
         var name = "Independent copy " + operationId;
         var parameters = new Dictionary<string, string> { ["protocolProcessId"] = "data-management.copy-features",
             [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "data-management.copy-features" };
-        foreach (var (key, value) in new[] { ("sourceLayerId", _sourceId.ToString()), ("targetLayerName", name),
+        foreach (var (key, value) in new[] { ("sourceLayerId", _sourceId.ToString(CultureInfo.InvariantCulture)), ("targetLayerName", name),
             ("where", where), ("objectIds", objectIds) })
         {
             if (value is not null)
@@ -104,7 +105,7 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
         target.Spatial!.SpatialReference!.ResolveSrid().Should().Be(4326);
         target.Metadata.Name.Should().Be(name);
         target.Metadata.Annotations["gp.operationId"].Should().Be(operationId);
-        target.Metadata.Annotations["gp.sourceLayerId"].Should().Be(_sourceId.ToString());
+        target.Metadata.Annotations["gp.sourceLayerId"].Should().Be(_sourceId.ToString(CultureInfo.InvariantCulture));
         target.Metadata.Annotations["gp.processId"].Should().Be("data-management.copy-features");
         snapshot.Index.ResourcesByStorageLayerId[_sourceId].Should().BeEquivalentTo(_sourceResource);
         await AssertRows(targetId, expectedIds);
@@ -127,10 +128,12 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
             var expected = row.Id switch { 11 => ("alpha", 7, "retained", 12d, 34d, 56d),
                 13 => ("beta", 14, (string?)null, -20d, 40d, 80d),
                 15 => ("gamma", 21, "third", 30d, -10d, 90d), _ => throw new InvalidOperationException("Unexpected row") };
-            row.Attributes.Keys.Should().BeEquivalentTo("id", "label", "score", "note");
-            Convert.ToInt64(row.Attributes["id"]).Should().Be(row.Id);
+            row.Attributes.Keys.Should().BeEquivalentTo("id", "objectid", "label", "score", "note");
+            Convert.ToInt64(row.Attributes["id"], CultureInfo.InvariantCulture).Should().Be(row.Id);
+            // The canonical reader adds its public objectid alias to the typed id.
+            Convert.ToInt64(row.Attributes["objectid"], CultureInfo.InvariantCulture).Should().Be(row.Id);
             row.Attributes["label"].Should().Be(expected.Item1);
-            Convert.ToInt32(row.Attributes["score"]).Should().Be(expected.Item2);
+            Convert.ToInt32(row.Attributes["score"], CultureInfo.InvariantCulture).Should().Be(expected.Item2);
             row.Attributes["note"].Should().Be(expected.Item3);
             var geometry = new WKBReader().Read(row.Geometry!);
             geometry.GeometryType.Should().Be("Point");
