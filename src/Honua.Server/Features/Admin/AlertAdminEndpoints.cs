@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
+using System.Transactions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -14,6 +15,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
 using NetTopologySuite.IO;
 
@@ -45,7 +47,9 @@ internal static class AlertAdminEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Alerts")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .AddEndpointFilter<AlertAdminIsolationFilter>()
+            .AddEndpointFilter(ExecuteAuditedMutationAsync);
 
         group.MapGet("/zones", HandleListZones)
             .WithDisplayName("List Alert Zones")
@@ -123,6 +127,11 @@ internal static class AlertAdminEndpoints
         [FromServices] IAlertAdminStore store,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            return BadRequest("An explicit serviceId is required to list alert zones.");
+        }
+
         var zones = await store.ListZonesAsync(serviceId, cancellationToken).ConfigureAwait(false);
         var payload = zones.Select(MapZoneResponse).ToArray();
         return Results.Json(ApiResponse<AlertZoneResponse[]>.CreateSuccess(payload), AlertAdminJsonContext.Default.ApiResponseAlertZoneResponseArray);
@@ -217,6 +226,11 @@ internal static class AlertAdminEndpoints
         [FromServices] IAlertAdminStore store,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            return BadRequest("An explicit serviceId is required to list alert rules.");
+        }
+
         var rules = await store.ListRulesAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
         var payload = rules.Select(MapRuleResponse).ToArray();
         return Results.Json(ApiResponse<AlertRuleResponse[]>.CreateSuccess(payload), AlertAdminJsonContext.Default.ApiResponseAlertRuleResponseArray);
@@ -1330,7 +1344,7 @@ internal static class AlertAdminEndpoints
             cancellationToken);
     }
 
-    private static Task<string?> RecordAuditAsync(
+    private static async Task<string?> RecordAuditAsync(
         IAuditLog auditLog,
         HttpContext context,
         string resourceType,
@@ -1356,13 +1370,62 @@ internal static class AlertAdminEndpoints
             Details = JsonSerializer.Serialize(details, AlertAdminJsonContext.Default.AlertAdminAuditDetails)
         };
 
-        return auditLog.RecordAsync(auditEvent, cancellationToken);
+        var identity = await auditLog.RecordAsync(auditEvent, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(identity))
+        {
+            throw new AlertAuditUnavailableException();
+        }
+
+        return identity;
     }
 
     private static string ResolveActor(HttpContext context)
     {
-        return context.User?.Identity?.Name ?? AuditEvent.AnonymousActor;
+        return CanonicalSecurityActor.Resolve(context.User)?.ActorId ?? AuditEvent.AnonymousActor;
     }
+
+    private static async ValueTask<object?> ExecuteAuditedMutationAsync(
+        EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
+    {
+        var context = invocation.HttpContext;
+        if (HttpMethods.IsGet(context.Request.Method) ||
+            context.Request.Path.Value?.EndsWith("/rules/test", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return await next(invocation).ConfigureAwait(false);
+        }
+
+        var audit = context.RequestServices.GetRequiredService<IAuditLog>();
+        if (!audit.IsPersisted)
+        {
+            return AuditUnavailable();
+        }
+
+        // Sequential Postgres leases enlist in the same ambient transaction. The
+        // mutation and its audit row commit together, including delete operations.
+        using var transaction = new TransactionScope(TransactionScopeOption.Required,
+            new TransactionOptions { IsolationLevel = IsolationLevel.ReadCommitted },
+            TransactionScopeAsyncFlowOption.Enabled);
+        try
+        {
+            var result = await next(invocation).ConfigureAwait(false);
+            if (result is IStatusCodeHttpResult { StatusCode: null or < 400 })
+            {
+                transaction.Complete();
+            }
+
+            return result;
+        }
+        catch (AlertAuditUnavailableException)
+        {
+            return AuditUnavailable();
+        }
+    }
+
+    private static IResult AuditUnavailable() => ProblemDetailsHelpers.CreateAdminProblem(
+        StatusCodes.Status503ServiceUnavailable, "Service Unavailable",
+        "The alert mutation could not be committed with durable audit evidence. Retry when the audit store is available.");
+
+    private sealed class AlertAuditUnavailableException : Exception;
 
     private static IResult BadRequest(string message)
     {

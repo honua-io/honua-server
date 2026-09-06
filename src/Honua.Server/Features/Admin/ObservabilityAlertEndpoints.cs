@@ -29,7 +29,8 @@ internal static class ObservabilityAlertEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Observability", "Alerts")
-            .RequireOpsReadAuthorization();
+            .RequireOpsReadAuthorization()
+            .AddEndpointFilter<AlertAdminIsolationFilter>();
 
         group.MapGet("", HandleList)
             .WithDisplayName("List Observability Alerts")

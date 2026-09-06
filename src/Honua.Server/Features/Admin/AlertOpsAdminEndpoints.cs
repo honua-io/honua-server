@@ -30,7 +30,8 @@ internal static class AlertOpsAdminEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Alerts")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .AddEndpointFilter<AlertAdminIsolationFilter>();
 
         group.MapPost("/dispatch/redrive", HandleRedriveDeadLetters)
             .WithDisplayName("Redrive Alert Dead-Letters")
