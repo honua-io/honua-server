@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Infrastructure.Caching;
 
 namespace Honua.Server.Tests.Features.Caching;
@@ -78,6 +79,29 @@ public sealed class CacheServiceResponseCacheReplicaTests
         await reader.RemoveAsync(key);
 
         Assert.Null(await writer.GetAsync<string>(key));
+    }
+
+    [Theory]
+    [MemberData(nameof(NamespacePatterns))]
+    public async Task SetAsync_InvalidationDuringQuery_DoesNotPublishOldPayloadInCurrentGeneration(string key, string pattern)
+    {
+        var shared = new SharedCache();
+        var writer = new CacheServiceResponseCache(shared);
+        IResponseCache reader = new CacheServiceResponseCache(shared);
+        var fillKey = await reader.BindKeyAsync(key);
+        Assert.Null(await reader.GetAsync<string>(fillKey));
+
+        // The query observed old data before this edit. Another request on the
+        // same reader then observes the new namespace before the old query finishes.
+        await writer.RemoveByPatternAsync(pattern);
+        Assert.Null(await reader.GetAsync<string>(key));
+        await reader.SetAsync(fillKey, "before edit", TimeSpan.FromMinutes(5));
+
+        Assert.Null(await writer.GetAsync<string>(key));
+        Assert.Null(await reader.GetAsync<string>(key));
+        var freshKey = await reader.BindKeyAsync(key);
+        await reader.SetAsync(freshKey, "after edit", TimeSpan.FromMinutes(5));
+        Assert.Equal("after edit", await writer.GetAsync<string>(key));
     }
 
     [Fact]

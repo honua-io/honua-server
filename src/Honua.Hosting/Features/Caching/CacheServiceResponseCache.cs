@@ -11,13 +11,13 @@ namespace Honua.Infrastructure.Caching;
 internal sealed class CacheServiceResponseCache : IResponseCache
 {
     private const string KeyPrefix = "response:";
+    private const string BoundKeyPrefix = "response-bound:";
     private const string VersionPrefix = "response-version:";
     private static readonly TimeSpan VersionTtl = TimeSpan.FromDays(30);
 
-    // Write-only cache operations can reuse a namespace version: writing under an
-    // obsolete version merely produces an unreachable entry. Reads (including
-    // GetOrCreate) and removals must always resolve the shared versions so an
-    // acknowledged invalidation is visible on every warm replica immediately.
+    // Standalone writes retain the local-version optimization. Read/compute/fill
+    // callers bind their key before querying, so other requests cannot change the
+    // generation of an in-flight fill. Unbound reads always fetch shared versions.
     private static readonly TimeSpan VersionLocalCacheTtl = TimeSpan.FromSeconds(30);
     private readonly ConcurrentDictionary<string, (string Version, DateTimeOffset Expiry)> _localVersionCache
         = new(StringComparer.Ordinal);
@@ -39,6 +39,9 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     {
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
     }
+
+    public async Task<string> BindKeyAsync(string key, CancellationToken cancellationToken = default)
+        => BoundKeyPrefix + await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false);
 
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
         => await _cacheService.GetAsync<T>(await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
@@ -79,6 +82,13 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
     private async Task<string> BuildStorageKeyAsync(string key, bool allowLocalVersionCache, CancellationToken cancellationToken)
     {
+        if (key.StartsWith(BoundKeyPrefix, StringComparison.Ordinal))
+        {
+            // A bound key belongs to one read/fill operation. Never re-resolve it
+            // using a newer namespace after the query has observed its data.
+            return NormalizeKey(key[BoundKeyPrefix.Length..]);
+        }
+
         var namespaceVersions = await ResolveNamespaceVersionsAsync(key, allowLocalVersionCache, cancellationToken).ConfigureAwait(false);
         if (namespaceVersions.Count == 0)
         {

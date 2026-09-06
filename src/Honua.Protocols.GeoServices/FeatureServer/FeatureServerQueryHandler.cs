@@ -533,7 +533,8 @@ internal sealed partial class FeatureServerQueryHandler(
                     return null;
                 }
 
-                var cached = await _responseCache.GetAsync<CachedResponse>(currentCacheKey, cancellationToken);
+                cacheKey = await _responseCache.BindKeyAsync(currentCacheKey, cancellationToken);
+                var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, cancellationToken);
                 return cached == null
                     ? null
                     : ResponseCacheUtilities.CreateResultFromCachedResponse(context, cached, _etagService);
