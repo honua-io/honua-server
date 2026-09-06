@@ -246,15 +246,11 @@ assert_exact_shards() {
 }
 
 echo "Dry-running shard router cases..."
-# The serialized [Collection("Database")] mutation-concurrency family owns its
-# own shard; both classes must route there and nowhere else.
+# The serialized [Collection("Database")] write-path concurrency class owns its
+# own shard; it must route there and nowhere else.
 assert_exact_shards \
   "core-capacity-PatchConcurrencyTests" \
   "tests/dotnet/Honua.Server.Tests/PatchConcurrencyTests.cs" \
-  '["Core Mutation Concurrency"]'
-assert_exact_shards \
-  "core-capacity-SchemaMutationConcurrencyTests" \
-  "tests/dotnet/Honua.Server.Tests/SchemaMutationConcurrencyTests.cs" \
   '["Core Mutation Concurrency"]'
 assert_exact_shards \
   "core-capacity-ApiSurfaceComplianceTests" \
@@ -1276,10 +1272,6 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "GeoServices ImageServer" \
   --assert-owner \
     "Honua.Server.Tests.PatchConcurrencyTests" \
-    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core Mutation Concurrency" \
-  --assert-owner \
-    "Honua.Server.Tests.SchemaMutationConcurrencyTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Core Mutation Concurrency" \
   --assert-owner \
