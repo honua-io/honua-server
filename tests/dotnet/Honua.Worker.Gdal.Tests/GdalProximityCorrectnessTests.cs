@@ -6,6 +6,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -36,12 +38,16 @@ public sealed class GdalProximityCorrectnessTests
         """;
 
     [GdalCliFact("gdal_proximity.py")]
+    [Protocol(ProtocolNames.TestQuality)]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Distance_RealLabeledFixture_MatchesEuclideanCellOracle()
     {
         await ProveAsync(GdalProximityJobExecutor.DistanceProcessId);
     }
 
     [GdalCliFact("python3")]
+    [Protocol(ProtocolNames.TestQuality)]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Allocation_RealLabeledFixture_MatchesNearestLabelOracle()
     {
         await ProveAsync(GdalProximityJobExecutor.AllocationProcessId);
