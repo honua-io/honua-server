@@ -12,6 +12,14 @@
       "description": "General administrative CRUD surfaces (connections, metadata, services, users, roles, configuration) with no dedicated entitlement of their own. Tenant administration is Preview/trial only in 2026.1; GA is single-tenant, with no hosted service or production multi-tenant deployment. Cross-tenant isolation remains mandatory."
     },
     {
+      "key": "admin.multi-tenancy",
+      "displayName": "Multi-Tenant Operation",
+      "category": "ControlPlane",
+      "edition": "Enterprise",
+      "description": "Preview/trial-only tenant lifecycle, schema routing, and usage surfaces for non-production evaluation. Honua 2026.1 GA deployments are single-tenant; do not use customer production data. There is no GA, availability, performance, durability, SLO, or scale commitment, and Preview status never lowers the security severity of cross-tenant disclosure.",
+      "status": "preview"
+    },
+    {
       "key": "ai.agent-operations",
       "displayName": "Agent Operations (Validation Layer)",
       "category": "AI",
