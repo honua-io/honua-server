@@ -571,7 +571,7 @@ internal sealed partial class FeatureDataAccess
         return await PostgresMvtReader.ReadAsync(command, maxTileSize, cancellationToken).ConfigureAwait(false);
     }
 
-    private static DateTimeOffset? ReadTemporalValue(NpgsqlDataReader reader, int ordinal)
+    internal static DateTimeOffset? ReadTemporalValue(NpgsqlDataReader reader, int ordinal)
     {
         if (reader.IsDBNull(ordinal))
         {

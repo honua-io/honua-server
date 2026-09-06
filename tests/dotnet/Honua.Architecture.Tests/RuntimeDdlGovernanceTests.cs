@@ -29,6 +29,8 @@ public sealed partial class RuntimeDdlGovernanceTests
                 new(RuntimeDdlCategory.GeneratedImportTarget, 2, "PostgresMigrationCatalogWriter owns attempt-scoped target creation and catalog rollback."),
             ["src/Honua.Db/Postgres/Features/Geoprocessing/PostgresHonuaLayerSink.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 2, "PostgresHonuaLayerSink owns the generated job-output table transaction."),
+            ["src/Honua.Db/Postgres/Features/Geoprocessing/PostgresFeatureLayerCopyService.cs"] =
+                new(RuntimeDdlCategory.GeneratedImportTarget, 2, "PostgresFeatureLayerCopyService owns transactional creation of its unique gp_copy output table and bounded catalog/table compensation when publication fails."),
             ["src/Honua.Geocoding/Features/Geocoding/ReferenceDataImport/GeocoderReferenceDataImportService.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 3, "GeocoderReferenceDataImportService owns its replaceable reference-data target and indexes."),
             ["src/Honua.Db/Postgres/Features/Migration/PostgresOgcApiFeaturesCollectionSink.cs"] =
