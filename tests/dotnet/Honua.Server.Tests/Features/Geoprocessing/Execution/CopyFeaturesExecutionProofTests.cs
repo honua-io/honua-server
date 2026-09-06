@@ -67,12 +67,30 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [Theory]
-    [InlineData(null, null, new long[] { 11, 13, 15 })]
-    [InlineData("score >= 14", null, new long[] { 13, 15 })]
-    [InlineData("score >= 14", "11,15", new long[] { 15 })]
+    [InlineData(null, null, new long[] { 11, 13, 15 }, 4326)]
+    [InlineData(null, null, new long[] { 11, 13, 15 }, 3857)]
+    [InlineData("score >= 14", null, new long[] { 13, 15 }, 4326)]
+    [InlineData("score >= 14", "11,15", new long[] { 15 }, 4326)]
     public async Task CopyFeatures_RealPublishedLayer_PreservesSelectedValuesZSchemaSridAndProvenance(
-        string? where, string? objectIds, long[] expectedIds)
+        string? where, string? objectIds, long[] expectedIds, int advertisedSrid)
     {
+        if (advertisedSrid != 4326)
+        {
+            var store = _fixture.GetService<IMetadataV2GraphStore>();
+            var before = await store.GetCurrentAsync();
+            _sourceResource = _sourceResource with
+            {
+                Spatial = _sourceResource.Spatial! with
+                {
+                    SpatialReference = new MetadataV2SpatialReference { Srid = advertisedSrid },
+                    StorageCrs = MetadataV2SpatialReference.Wgs84
+                }
+            };
+            await store.SaveAsync(before.Graph with
+            {
+                Resources = before.Graph.Resources.Select(r => r.Metadata.Id == _sourceResource.Metadata.Id ? _sourceResource : r).ToArray()
+            }, before.Etag);
+        }
         var executor = _fixture.GetService<CopyFeaturesExecutor>();
         _fixture.GetService<IEnumerable<IProcessExecutor>>().Should().Contain(executor);
         var operationId = Guid.NewGuid().ToString("N");
@@ -117,7 +135,7 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
         targetId.Should().NotBe(_sourceId);
         root.GetProperty("sourceLayerId").GetInt32().Should().Be(_sourceId);
         root.GetProperty("featureCount").GetInt64().Should().Be(expectedIds.Length);
-        root.GetProperty("srid").GetInt32().Should().Be(4326);
+        root.GetProperty("srid").GetInt32().Should().Be(advertisedSrid);
         root.GetProperty("operationId").GetString().Should().Be(operationId);
         var snapshot = await _fixture.GetService<IMetadataV2GraphProvider>().GetCurrentAsync();
         var target = snapshot.Index.ResourcesByStorageLayerId[targetId];
@@ -125,18 +143,19 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
         target.SchemaFields.Single(f => f.Name == "score").Type.Should().Be(MetadataV2FieldType.Integer);
         target.SchemaFields.Single(f => f.Name == "label").Length.Should().Be(32);
         target.SchemaFields.Single(f => f.Name == "note").Nullable.Should().BeTrue();
-        target.Spatial!.SpatialReference!.ResolveSrid().Should().Be(4326);
+        target.Spatial!.SpatialReference!.ResolveSrid().Should().Be(advertisedSrid);
+        target.Spatial.StorageCrs!.ResolveSrid().Should().Be(advertisedSrid);
         target.Metadata.Name.Should().Be(name);
         target.Metadata.Annotations["gp.operationId"].Should().Be(operationId);
         target.Metadata.Annotations["gp.sourceLayerId"].Should().Be(_sourceId.ToString(CultureInfo.InvariantCulture));
         target.Metadata.Annotations["gp.processId"].Should().Be("data-management.copy-features");
         snapshot.Index.ResourcesByStorageLayerId[_sourceId].Should().BeEquivalentTo(_sourceResource);
-        await AssertRows(targetId, expectedIds);
+        await AssertRows(targetId, expectedIds, advertisedSrid);
         // The oracle is the literal fixture, never the copy's own output or a snapshot.
         await AssertRows(_sourceId, [11, 13, 15]);
     }
 
-    private async Task AssertRows(int layerId, long[] expectedIds)
+    private async Task AssertRows(int layerId, long[] expectedIds, int storedSrid = 4326)
     {
         var snapshot = await _fixture.GetService<IMetadataV2GraphProvider>().GetCurrentAsync();
         var resource = snapshot.Index.ResourcesByStorageLayerId[layerId];
@@ -164,8 +183,17 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
             row.Attributes["note"].Should().Be(expected.Item3);
             var geometry = new WKBReader().Read(row.Geometry!);
             geometry.GeometryType.Should().Be("Point");
-            geometry.Coordinate.X.Should().Be(expected.Item4);
-            geometry.Coordinate.Y.Should().Be(expected.Item5);
+            if (storedSrid == 3857)
+            {
+                const double radius = 6378137;
+                geometry.Coordinate.X.Should().BeApproximately(radius * expected.Item4 * Math.PI / 180, 0.001);
+                geometry.Coordinate.Y.Should().BeApproximately(radius * Math.Log(Math.Tan(Math.PI / 4 + expected.Item5 * Math.PI / 360)), 0.001);
+            }
+            else
+            {
+                geometry.Coordinate.X.Should().Be(expected.Item4);
+                geometry.Coordinate.Y.Should().Be(expected.Item5);
+            }
             geometry.Coordinate.Z.Should().Be(expected.Item6);
         }
     }

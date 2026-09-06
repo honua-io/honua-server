@@ -79,7 +79,7 @@ internal sealed class PostgresFeatureLayerCopyService(
             // Selection, permanent filters, RLS, field masking and geometry ordinates
             // remain owned by the canonical reader. No source table SQL is duplicated.
             await foreach (var feature in source.StreamFeaturesAsync(sourceLayerId,
-                query with { IncludeZ = true, IncludeM = true }, cancellationToken).ConfigureAwait(false))
+                query with { IncludeZ = true, IncludeM = true, OutputSrid = srid }, cancellationToken).ConfigureAwait(false))
             {
                 var attributes = feature.Attributes.ToDictionary(kv => kv.Key,
                     kv => kv.Value is byte[] binary ? (object)("\\x" + Convert.ToHexString(binary)) : kv.Value);
@@ -134,7 +134,7 @@ internal sealed class PostgresFeatureLayerCopyService(
             },
             StorageBindingIds = targetResource.StorageBindingIds,
             PrimaryStorageBindingId = targetResource.PrimaryStorageBindingId,
-            Spatial = resource.Spatial! with { Bbox = targetResource.Spatial?.Bbox },
+            Spatial = resource.Spatial! with { Bbox = targetResource.Spatial?.Bbox, StorageCrs = resource.Spatial!.SpatialReference },
             Relationships = [],
             Status = targetResource.Status
         };
