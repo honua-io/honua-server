@@ -36,7 +36,6 @@ internal sealed partial class ODataBatchHandler
         // above runs against a read snapshot, so a concurrent commit between that check
         // and the batch write would otherwise be silently overwritten (TOCTOU).
         var preconditionsByLayer = new Dictionary<int, List<FeatureEditPrecondition>>();
-        var initialSnapshots = new Dictionary<(int LayerId, long ObjectId), Feature>();
         var preparedFeatures = new Dictionary<(int LayerId, long ObjectId), Feature?>();
         var writeLayerIds = new HashSet<int>();
         // BH7-012: key by (layerId, normalizedMethod) so each distinct operation on the
@@ -252,11 +251,11 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             var target = (layerId.Value, objectId.Value);
-                            if (!preparedFeatures.TryGetValue(target, out var existing))
+                            var isFirstMutation = !preparedFeatures.TryGetValue(target, out var existing);
+                            if (isFirstMutation)
                             {
                                 existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
                             }
-                            if (existing.HasValue) initialSnapshots.TryAdd(target, existing.Value);
                             if (!existing.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(
@@ -342,7 +341,13 @@ internal sealed partial class ODataBatchHandler
 
                             updateList.Add((request.Id, objectId.Value, feature, requestGeometryChanged));
                             preparedFeatures[target] = feature;
-                            RegisterPrecondition(preconditionsByLayer, layerId.Value, objectId.Value, request.Headers, initialSnapshots[target], requireSnapshot: isPatch);
+                            // Only the first mutation depends on the external read snapshot.
+                            // Earlier writes hold the row lock until this atomic group commits;
+                            // later conditions were validated against their prepared results.
+                            if (isFirstMutation)
+                            {
+                                RegisterPrecondition(preconditionsByLayer, layerId.Value, objectId.Value, request.Headers, existing.Value, requireSnapshot: isPatch);
+                            }
                             writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }
@@ -361,11 +366,11 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             var target = (layerId.Value, objectId.Value);
-                            if (!preparedFeatures.TryGetValue(target, out var existing))
+                            var isFirstMutation = !preparedFeatures.TryGetValue(target, out var existing);
+                            if (isFirstMutation)
                             {
                                 existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
                             }
-                            if (existing.HasValue) initialSnapshots.TryAdd(target, existing.Value);
                             if (!existing.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(
@@ -422,7 +427,10 @@ internal sealed partial class ODataBatchHandler
 
                             deleteList.Add((request.Id, deleteValidation.Batch.Value.Deletes[0], existing.Value));
                             preparedFeatures[target] = null;
-                            RegisterPrecondition(preconditionsByLayer, layerId.Value, deleteValidation.Batch.Value.Deletes[0], request.Headers, initialSnapshots[target]);
+                            if (isFirstMutation)
+                            {
+                                RegisterPrecondition(preconditionsByLayer, layerId.Value, deleteValidation.Batch.Value.Deletes[0], request.Headers, existing.Value);
+                            }
                             writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }

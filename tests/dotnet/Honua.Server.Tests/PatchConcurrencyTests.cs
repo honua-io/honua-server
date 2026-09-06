@@ -412,6 +412,72 @@ public sealed class PatchConcurrencyTests
         finally { await fixture.DisposeAsync(); }
     }
 
+    [IntegrationTheory]
+    [InlineData("PUT", "PATCH", false, true)]
+    [InlineData("PUT", "PUT", false, true)]
+    [InlineData("PUT", "DELETE", false, true)]
+    [InlineData("PATCH", "PUT", false, false)]
+    [InlineData("PUT", "PATCH", true, false)]
+    [Protocol(TestProtocols.ODataV4)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task Batch_FirstMutationControlsSnapshotGuard(string firstMethod, string secondMethod, bool firstConditional, bool succeeds)
+    {
+        var barrier = new WriteBarrier();
+        var fixture = CreateFixture(barrier);
+        await fixture.InitializeAsync();
+        try
+        {
+            var id = await fixture.InsertFeatureAsync(0, "original name");
+            var firstHeaders = firstConditional ? """ "headers":{"If-Match":"*"},""" : string.Empty;
+            var secondBody = secondMethod == "DELETE" ? string.Empty
+                : secondMethod == "PUT" ? """, "body":{"name":"replacement","population":45678}"""
+                : """, "body":{"population":45678}""";
+            var body = $$$"""{"requests":[{"id":"first","atomicityGroup":"g","method":"{{{firstMethod}}}","url":"Features(LayerId=0,ObjectId={{{id}}})",{{{firstHeaders}}}"body":{"name":"changed name"}},{"id":"second","atomicityGroup":"g","method":"{{{secondMethod}}}","url":"Features(LayerId=0,ObjectId={{{id}}})","headers":{"If-Match":"*"}{{{secondBody}}}}]}""";
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var pending = fixture.Client.PostAsync("/odata/$batch", content);
+            try
+            {
+                var firstCompleted = await Task.WhenAny(barrier.Reached.Task, pending).WaitAsync(TimeSpan.FromSeconds(30));
+                if (firstCompleted == pending)
+                {
+                    using var earlyResponse = await pending;
+                    Assert.Fail($"Batch did not reach the write barrier: {earlyResponse.StatusCode} {await earlyResponse.Content.ReadAsStringAsync()}");
+                }
+                using var concurrentRequest = CreatePatch(true, id, changeName: false);
+                using var concurrentResponse = await fixture.Client.SendAsync(concurrentRequest);
+                Assert.True(concurrentResponse.IsSuccessStatusCode, await concurrentResponse.Content.ReadAsStringAsync());
+            }
+            finally { barrier.Resume.TrySetResult(); }
+
+            using var response = await pending;
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var responses = document.RootElement.GetProperty("responses");
+            Assert.Equal(2, responses.GetArrayLength());
+            if (succeeds)
+            {
+                foreach (var operation in responses.EnumerateArray()) Assert.InRange(operation.GetProperty("status").GetInt32(), 200, 299);
+                var stored = await fixture.GetService<IFeatureReader>().GetAsync(0, id);
+                if (secondMethod == "DELETE") Assert.Null(stored);
+                else
+                {
+                    Assert.NotNull(stored);
+                    Assert.Equal(45678L, Convert.ToInt64(stored.Value.Attributes["population"], CultureInfo.InvariantCulture));
+                    Assert.Equal(secondMethod == "PUT" ? "replacement" : "changed name", stored.Value.Attributes["name"]);
+                }
+            }
+            else
+            {
+                Assert.Contains(responses.EnumerateArray(), operation => operation.GetProperty("status").GetInt32() == 409);
+                var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+                Assert.Equal("original name", stored.Attributes["name"]);
+                Assert.Equal(12345L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
+            }
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
     private static WebAppFixture CreateFixture(WriteBarrier barrier, MutableFieldMask? mask = null)
     {
         return new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
