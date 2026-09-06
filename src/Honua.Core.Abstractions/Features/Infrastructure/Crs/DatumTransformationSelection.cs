@@ -6,17 +6,20 @@ namespace Honua.Core.Features.Infrastructure.Crs;
 /// <summary>
 /// A resolved datum (geographic/geodetic) transformation selected for a single
 /// source-to-target reprojection. Carries enough provenance to drive an
-/// authoritative PROJ pipeline through PostGIS'
-/// <c>ST_TransformPipeline(geom, '&lt;projText&gt;', toSrid)</c> function and to surface
+/// authoritative PROJ pipeline through PostGIS' 3-argument
+/// <c>ST_Transform(geom, '&lt;projText&gt;', toSrid)</c> overload and to surface
 /// the choice back to clients (matching ArcGIS' geotransformation metadata).
 /// </summary>
 /// <remarks>
 /// <para>
-/// PostGIS 3.4 and later apply coordinate operations with
-/// <c>ST_TransformPipeline</c>. The text overload of <c>ST_Transform</c>
-/// instead accepts a CRS definition and must not receive an operation pipeline.
-/// Grid-based selections still require their grid files in the database's PROJ
-/// data directory; an absent grid is not permission to substitute an operation. See
+/// PostGIS constraint: the middle argument of the text overload is the
+/// <em>source CRS</em> proj string, not a coordinate-operation pipeline. PostGIS
+/// exposes no overload that injects a <c>+proj=pipeline</c> string, so only proj
+/// strings that parse as a CRS — and the exact-identity <c>+proj=noop</c> — apply
+/// through this chokepoint on the current runtime. Selections whose
+/// <see cref="ProjPipeline"/> is a non-identity pipeline (multi-step Helmert /
+/// grid shift) cannot yet be forced this way and fall back to PROJ's default
+/// operation selection on the 2-argument path. See
 /// <c>docs/internal/evidence/datum-transformation-parity.md</c>.
 /// </para>
 /// <para>
@@ -67,8 +70,8 @@ public sealed record DatumTransformationSelection
     public int? EpsgOperationCode { get; init; }
 
     /// <summary>
-    /// The explicit PROJ pipeline string handed to PostGIS'
-    /// <c>ST_TransformPipeline</c>. When <see langword="null"/>, callers should fall back
+    /// The explicit PROJ pipeline string handed to PostGIS' 3-argument
+    /// <c>ST_Transform</c>. When <see langword="null"/>, callers should fall back
     /// to the SRID-only PostGIS pipeline (2-argument <c>ST_Transform</c>) — that
     /// situation is only valid for identity/no-shift pairs.
     /// </summary>
