@@ -34,14 +34,6 @@ public sealed partial class ODataDeltaTests : IAsyncLifetime
         // rooted and silently drop earlier arguments.
         _fixture.UseSeed(Path.Join("tests", "seed", "odata.yaml"));
         await _fixture.InitializeAsync();
-        var assembly = typeof(Program).Assembly;
-        var migration = assembly.GetManifestResourceNames().Single(name => name.EndsWith("113_AddDurableQuerySnapshots.sql", StringComparison.Ordinal));
-        await using var sql = assembly.GetManifestResourceStream(migration)!;
-        using var reader = new StreamReader(sql);
-        await using var connection = new NpgsqlConnection(_fixture.Postgres.ConnectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(await reader.ReadToEndAsync(), connection);
-        await command.ExecuteNonQueryAsync();
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();

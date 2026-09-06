@@ -436,7 +436,7 @@ internal sealed partial class ODataStreamingQueryHandler(
             if (trackChangesRequested)
             {
                 return await HandleDurableDeltaAsync(context, featureReader, resource, storageLayerId.Value,
-                    deltaDefinition, durableDelta, pagination.Limit, pagination.Offset, bbox, effectiveToken);
+                    layerValidation.Snapshot!.Etag, deltaDefinition, durableDelta, pagination.Limit, pagination.Offset, bbox, effectiveToken);
             }
 
             var requestActivity = Activity.Current;

@@ -58,7 +58,7 @@ internal sealed partial class ODataStreamingQueryHandler
 
     private async Task<IResult> HandleDurableDeltaAsync(
         HttpContext context, IFeatureReader reader, MetadataV2Resource resource, int storageLayerId,
-        ODataDeltaService.DeltaQueryState query, DurableDeltaContinuation? continuation,
+        string metadataEtag, ODataDeltaService.DeltaQueryState query, DurableDeltaContinuation? continuation,
         int pageSize, int initialOffset, string? bbox, CancellationToken cancellationToken)
     {
         var store = context.RequestServices.GetService<IQuerySnapshotStore>();
@@ -74,7 +74,7 @@ internal sealed partial class ODataStreamingQueryHandler
             return DeltaRecovery(context, "InvalidQueryOption", "Tracked queries require a positive page size and do not support $skip, $expand, bbox or Parquet.", 400);
         }
 
-        var binding = await ComputeDeltaBindingAsync(context, resource, cancellationToken).ConfigureAwait(false);
+        var binding = await ComputeDeltaBindingAsync(context, resource, metadataEtag, cancellationToken).ConfigureAwait(false);
         if (continuation is not null && !string.Equals(binding, continuation.Snapshot.Binding, StringComparison.Ordinal))
         {
             return DeltaRecovery(context, "DeltaScopeChanged", "The query authorization scope changed; obtain a tracked baseline.", 410);
@@ -134,7 +134,7 @@ internal sealed partial class ODataStreamingQueryHandler
             }
             // If an authorization policy changed while the database was being read,
             // do not publish a receipt made under mixed policy versions.
-            if (!string.Equals(binding, await ComputeDeltaBindingAsync(context, resource, cancellationToken).ConfigureAwait(false), StringComparison.Ordinal))
+            if (!string.Equals(binding, await ComputeDeltaBindingAsync(context, resource, metadataEtag, cancellationToken).ConfigureAwait(false), StringComparison.Ordinal))
             {
                 return DeltaRecovery(context, "DeltaScopeChanged", "The query authorization scope changed; retry the baseline.", 410);
             }
@@ -154,7 +154,7 @@ internal sealed partial class ODataStreamingQueryHandler
             {
                 writer.WriteString("@odata.context", $"{baseUrl}/odata/$metadata#Features/$delta");
             }
-            if (query.Count == true) { writer.WriteNumber("@odata.count", snapshot.Items.Length); }
+            if (query.Count == true) { writer.WriteNumber("@odata.count", snapshot.Changes.Length); }
             writer.WritePropertyName("value");
             writer.WriteStartArray();
             var end = Math.Min((long)offset + pageSize, snapshot.Changes.Length);
@@ -204,11 +204,12 @@ internal sealed partial class ODataStreamingQueryHandler
         return changes.ToArray();
     }
 
-    private static async Task<string> ComputeDeltaBindingAsync(HttpContext context, MetadataV2Resource resource, CancellationToken cancellationToken)
+    private static async Task<string> ComputeDeltaBindingAsync(HttpContext context, MetadataV2Resource resource, string metadataEtag, CancellationToken cancellationToken)
     {
         using var bytes = new MemoryStream();
         using var writer = new BinaryWriter(bytes, Encoding.UTF8, leaveOpen: true);
         writer.Write(context.Request.Path.ToString());
+        writer.Write(metadataEtag);
         writer.Write(context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema ?? "");
         writer.Write(context.RequestServices.GetService<ITenantContext>()?.TenantId ?? "");
         writer.Write(CanonicalSecurityActor.Resolve(context.User)?.ActorId ?? "anonymous");

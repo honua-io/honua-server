@@ -102,5 +102,21 @@ public sealed partial class ODataDeltaTests
         state.Should().BeEquivalentTo(expected, "the independently specified mutation outcome must replace the baseline");
         _ = await FollowAsync(terminal, false);
         state.Should().BeEquivalentTo(expected, "terminal polling is idempotent");
+
+        await _fixture.RestartHostAsync();
+        _ = await FollowAsync(terminal, false);
+        state.Should().BeEquivalentTo(expected, "the same durable terminal token survives a complete host and service-provider restart");
+        await using (var afterRestart = new NpgsqlCommand($$"""
+            UPDATE {{schema}}.features SET attributes = '{"name":"after-restart"}', updated_at = '2026-01-02'
+            WHERE layer_id = 0 AND objectid = 73001;
+            """, connection))
+        {
+            await afterRestart.ExecuteNonQueryAsync();
+        }
+        expected[73001] = "after-restart";
+        var restartedTerminal = await FollowAsync(terminal, false);
+        state.Should().BeEquivalentTo(expected, "a post-restart update at the same timestamp must converge without rebasing");
+        _ = await FollowAsync(restartedTerminal, false);
+        state.Should().BeEquivalentTo(expected);
     }
 }
