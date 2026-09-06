@@ -2,9 +2,9 @@
 
 ## Get started
 
-- [Quickstart: zero to a map](get-started/quickstart.md)
+- [Honua from one terminal (pre-cut guide)](get-started/one-terminal-setup.md)
 - [Windows: install published packages](get-started/windows-packages.md)
-- [One-terminal setup journey](get-started/one-terminal-setup.md)
+- [Source quickstart: zero to a map](get-started/quickstart.md)
 - [Your first dataset](get-started/first-dataset.md)
 - [Your first map](get-started/first-map.md)
 
