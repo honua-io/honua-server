@@ -112,7 +112,9 @@ public sealed class GeoEtlCatalogReconciliationTests
         workflowOnly.SupportsProcessEndpoint.Should().BeFalse();
         workflowOnly.Executable.Should().BeTrue();
 
-        var protocolOnly = nodes["conversion.geometry-format"].CapabilityFlags;
+        // conversion.geometry-format held this exemplar until #3936 gave it a real
+        // managed executor; analytics.cluster is still protocol-only.
+        var protocolOnly = nodes["analytics.cluster"].CapabilityFlags;
         protocolOnly.SupportsJob.Should().BeFalse();
         protocolOnly.SupportsSchedule.Should().BeFalse();
         protocolOnly.SupportsProcessEndpoint.Should().BeFalse();

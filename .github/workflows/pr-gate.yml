@@ -288,6 +288,12 @@ jobs:
             --logger 'trx;LogFileName=layer-execution-proof.trx' \
             --results-directory tests/TestResults
 
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release -maxcpucount:4 \
+            --filter 'Category=GeometryFormatExecutionProof|Category=CalculateFieldExecutionProof' \
+            --logger 'trx;LogFileName=protocol-tier-execution-proof.trx' \
+            --results-directory tests/TestResults
+
       - name: Upload raster execution proof
         if: always()
         uses: actions/upload-artifact@v7
@@ -302,6 +308,14 @@ jobs:
         with:
           name: layer-execution-proof
           path: tests/TestResults/layer-execution-proof.trx
+          if-no-files-found: warn
+
+      - name: Upload protocol-tier execution proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: protocol-tier-execution-proof
+          path: tests/TestResults/protocol-tier-execution-proof.trx
           if-no-files-found: warn
 
       - name: Await Testcontainers PostGIS pre-pull
