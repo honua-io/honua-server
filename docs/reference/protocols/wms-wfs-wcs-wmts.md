@@ -124,6 +124,12 @@ operator ruling keeps non-security parity work deferred to release/2026.2.
 
 > Open `https://server.example.com/ogc/services/roads/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=0&STYLE=default&TILEMATRIXSET=EPSG:3857&TILEMATRIX=12&TILEROW=1586&TILECOL=655&FORMAT=image/png` in a browser.
 
+WMTS GetTile and GetFeatureInfo ignore unknown KVP parameters, including
+unadvertised `TIME` and `ELEVATION` dimensions. Known parameters and advertised
+dimension values remain validated. This permits client extras such as QGIS's
+`SLD_VERSION` and `TRANSPARENT` on a legend tile request without rejecting the
+tile. See [WMTS 1.0 sections 7.2.2.2 and 7.3.2.2](https://docs.ogc.org/is/07-057r7/07-057r7.pdf).
+
 ## Conformance
 
 The published classic-service profiles currently pass 1137/1138 assertions in aggregate. WFS 2.0 `basic` is 166/167 because multi-layer `rollbackOnFailure=true` transactions are rejected; WMS 1.1.1/1.3 (126/126 and 213/213), WFS 1.0/1.1 (162/162 and 39/39), the separate WFS 2.0 Transactional profile (25/25), WCS 2.0 (82/82), and WMTS 1.0 (60/60) pass in full. The passing counts cover the built-in gridsets and parameters; custom-gridset and elevation-dimension behaviour is additive and CITE-neutral (re-validation pending). Authoritative status and receipt: [API standards summary](../compatibility/ogc-conformance.md) and [cite-status.md](../../cite-status.md).
