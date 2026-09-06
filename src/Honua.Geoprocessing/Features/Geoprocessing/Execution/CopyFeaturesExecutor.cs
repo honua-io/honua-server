@@ -55,7 +55,9 @@ internal sealed partial class CopyFeaturesExecutor(
             var result = await copier.CopyAsync(sourceId, name.Trim(), new FeatureQuery
             {
                 Where = inputs.TryGet("where", out var where) ? where : null,
-                ObjectIds = ids, IncludeZ = true, IncludeM = true
+                ObjectIds = ids,
+                IncludeZ = true,
+                IncludeM = true
             }, job.OperationId, options.CurrentValue.MaxArtifactBytes, cancellationToken).ConfigureAwait(false);
             await context.PublishArtifactAsync(SinkResultArtifact.Build(HandledProcessId,
                 ("sourceLayerId", sourceId), ("layerId", result.LayerId), ("featureCount", result.FeatureCount),
