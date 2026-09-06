@@ -6,6 +6,9 @@ Source reviewed: `0d0829f2d` (September 6, 2026), including the merged
 This combines a source/receipt review with focused deployment-proposal fixtures.
 The fixtures exercise the MCP adapter with explicit source envelopes and recording
 gateway seams; they are not a live deployment or candidate transcript.
+The [Windows test receipt](../../guides/operate/evidence/3302-proposal-boundary-windows.json)
+records 49 passing proposal/cache tests with no skips, including nine new
+finding-proposal cases, the tested commit and source/assembly hashes.
 
 ## Acceptance disposition
 
