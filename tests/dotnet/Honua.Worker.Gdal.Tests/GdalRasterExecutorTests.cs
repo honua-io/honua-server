@@ -11,6 +11,7 @@ using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -296,6 +297,7 @@ public sealed class GdalRasterExecutorTests
             band.GetProperty("max").GetDouble().Should().Be(100d);
             band.GetProperty("mean").GetDouble().Should().Be(50d);
             band.GetProperty("stddev").GetDouble().Should().Be(15d);
+            band.GetProperty("validCount").GetInt64().Should().Be(256);
         }
         finally
         {
@@ -307,7 +309,7 @@ public sealed class GdalRasterExecutorTests
     public async Task RasterStatistics_FiltersBands_WhenBandsParameterSupplied()
     {
         const string fakeGdalinfo =
-            """{"bands":[{"band":1,"mean":10},{"band":2,"mean":20},{"band":3,"mean":30}]}""";
+            """{"bands":[{"band":1,"mean":10,"validCount":4},{"band":2,"mean":20,"validCount":4},{"band":3,"mean":30,"validCount":4}]}""";
 
         var runner = new FakeGdalCommandRunner((_, _, _) => new GdalCommandResult
         {
@@ -381,9 +383,9 @@ public sealed class GdalRasterExecutorTests
     }
 
     [UnitTest]
-    public async Task RasterStatistics_OmitsHistFlag()
+    public async Task RasterStatistics_ReadsMetadataWithoutScanningBeforeSharedStatistics()
     {
-        const string fakeGdalinfo = """{"bands":[{"band":1,"mean":1}]}""";
+        const string fakeGdalinfo = """{"bands":[{"band":1,"mean":1,"validCount":4}]}""";
         var runner = new FakeGdalCommandRunner((_, _, _) => new GdalCommandResult
         {
             ExitCode = 0,
@@ -397,7 +399,32 @@ public sealed class GdalRasterExecutorTests
                 ("source", Base64("fake-input-raster")));
 
             await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
-            runner.Invocations.Single().Arguments.Should().NotContain("-hist");
+            runner.Invocations.Select(i => i.Tool).Should().Equal("gdalinfo", "python3");
+            runner.Invocations.Single(i => i.Tool == "gdalinfo").Arguments.Should().NotContain("-hist").And.NotContain("-stats");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [Theory]
+    [InlineData(1, "")]
+    [InlineData(0, "{}")]
+    [InlineData(0, "{\"bands\":[{\"band\":1,\"validCount\":null}]}")]
+    public async Task RasterStatistics_MissingOrInvalidExactCounts_FailsWithoutPublishing(int exitCode, string counts)
+    {
+        var runner = new FakeGdalCommandRunner((tool, _, _) => tool == "gdalinfo"
+            ? new GdalCommandResult { ExitCode = 0, StandardOutput = """{"bands":[{"band":1,"mean":2}]}""" }
+            : new GdalCommandResult { ExitCode = exitCode, StandardOutput = counts });
+        var executor = NewStatsExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job("raster.statistics", ("source", Base64("fake-input-raster")));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+            var result = await executor.ExecuteAsync(job, context, default);
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            context.Artifacts.Should().BeEmpty();
         }
         finally
         {
