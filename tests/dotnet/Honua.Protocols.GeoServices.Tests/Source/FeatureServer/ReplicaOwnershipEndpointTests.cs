@@ -280,7 +280,11 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
     /// </summary>
     private async Task<int> CountFeaturesAsync()
     {
-        var response = await _fixture.Client.GetAsync(
+        // The dev-auth bypass is disabled on this host, so the fixture's default client is
+        // unauthenticated. Count with admin credentials: this is the test's observation channel,
+        // not part of what it is proving.
+        using var admin = _fixture.CreateAdminClient();
+        var response = await admin.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
