@@ -871,7 +871,6 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
 
     private async Task<JsonElement> SynchronizeUploadAsync(string replicaId, string editsJson)
     {
-        await _fixture.GetService<IChangeTracker>().GetChangesSinceAsync(0, [0]);
         var payload = JsonSerializer.Serialize(new
         {
             replicaID = replicaId,
