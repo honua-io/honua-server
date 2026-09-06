@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
+using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.ControlPlane;
 using Honua.TestKit.Helpers;
 using Honua.ServiceDefaults;
@@ -21,6 +23,87 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Collection("ControlPlaneTransitionTelemetry")]
 public sealed class JobExecutionServiceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    public async Task ProcessJob_QualificationIgnoresOperatorCancellation_LicenseExpiryStillFailsExecution(
+        bool expireAtTerminalBarrier)
+    {
+        var root = Directory.CreateTempSubdirectory("honua-qualification-expiry-");
+        var previousRoot = Environment.GetEnvironmentVariable(ExecutionQualificationBarrier.RootEnvironmentVariable);
+        var previousMode = Environment.GetEnvironmentVariable(ExecutionQualificationBarrier.ExecutorModeEnvironmentVariable);
+        using var licenseCts = new CancellationTokenSource();
+        try
+        {
+            Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.RootEnvironmentVariable, root.FullName);
+            Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.ExecutorModeEnvironmentVariable, "ignore-cancellation");
+            var job = CreateProvisioningJob();
+            var directory = Directory.CreateDirectory(Path.Join(root.FullName, job.OperationId));
+            await File.WriteAllTextAsync(Path.Join(directory.FullName, "claimed.release"), string.Empty);
+            var store = Substitute.For<IExecutionJobStore>();
+            store.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(_ => job);
+            store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+                .Returns(call =>
+                {
+                    job = call.Arg<ExecutionJobRecord>();
+                    return true;
+                });
+            var policy = Substitute.For<ILicenseOperationPolicy>();
+            policy.OperationCancellation.Returns(licenseCts.Token);
+            var executor = Substitute.For<IJobExecutor>();
+            executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+            CancellationToken executorToken = default;
+            executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+                .Returns(async call =>
+                {
+                    executorToken = call.Arg<CancellationToken>();
+                    await call.Arg<IJobExecutionContext>().PublishArtifactAsync("partial-output", executorToken);
+                    if (!expireAtTerminalBarrier)
+                    {
+                        await licenseCts.CancelAsync();
+                    }
+                    return JobExecutionResult.Succeeded();
+                });
+            using var service = new JobExecutionService(
+                Substitute.For<IJobQueue>(), store, [executor], new ExecutionJobCancellationTokens(),
+                Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobExecutionService>.Instance, policy);
+            var execution = InvokeProcessJobAsync(service, job.OperationId, job.ClaimedBy!);
+            try
+            {
+                if (expireAtTerminalBarrier)
+                {
+                    var readyPath = Path.Join(directory.FullName,
+                        "artifact-reference-published-terminal-cas-pending.ready.json");
+                    using var waitCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    while (!File.Exists(readyPath))
+                    {
+                        await Task.Delay(10, waitCts.Token);
+                    }
+                    await licenseCts.CancelAsync();
+                }
+                await execution.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.True(executorToken.IsCancellationRequested);
+                Assert.Equal(ExecutionJobStatus.Failed, job.Status);
+                Assert.Equal("license expired", job.ErrorMessage);
+                Assert.Empty(job.ArtifactReferences);
+            }
+            finally
+            {
+                // Release even a regressed, cancellation-ignoring barrier before removing its directory.
+                await File.WriteAllTextAsync(Path.Join(directory.FullName,
+                    "artifact-reference-published-terminal-cas-pending.release"), string.Empty);
+                await execution.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.RootEnvironmentVariable, previousRoot);
+            Environment.SetEnvironmentVariable(ExecutionQualificationBarrier.ExecutorModeEnvironmentVariable, previousMode);
+            root.Delete(recursive: true);
+        }
+    }
+
     private static ExecutionJobRecord CreateProvisioningJob(
         string operationId = "job-1",
         string claimedBy = "worker-test",
