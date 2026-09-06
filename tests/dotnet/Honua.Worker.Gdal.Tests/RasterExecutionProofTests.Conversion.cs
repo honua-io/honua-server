@@ -53,21 +53,31 @@ public sealed partial class RasterExecutionProofTests
         var features = root.GetProperty("features").EnumerateArray().ToArray();
         features.Should().HaveCount(connectivity == "4" ? 3 : 2);
         features.Sum(f => new GeoJsonReader().Read<Geometry>(f.GetProperty("geometry").GetRawText()).Area).Should().Be(5);
-        foreach (var feature in features)
+        var expectedRegions = new List<(int Class, string Wkt)>
         {
-            var value = feature.GetProperty("properties").GetProperty("class_value").GetInt32();
-            value.Should().BeOneOf(1, 2);
+            (1, "POLYGON ((10 20,12 20,12 19,11 19,11 18,10 18,10 20))")
+        };
+        if (connectivity == "8")
+        {
+            expectedRegions.Add((2, "MULTIPOLYGON (((12 19,13 19,13 18,12 18,12 19)),((11 18,12 18,12 17,11 17,11 18)))"));
+        }
+        else
+        {
+            expectedRegions.Add((2, "POLYGON ((12 19,13 19,13 18,12 18,12 19))"));
+            expectedRegions.Add((2, "POLYGON ((11 18,12 18,12 17,11 17,11 18))"));
+        }
+        // Match every independently specified region exactly once. Choosing an
+        // expectation from an output coordinate could miss a duplicated region.
+        foreach (var (value, wkt) in expectedRegions)
+        {
+            var expected = new WKTReader().Read(wkt);
+            var feature = features.Should().ContainSingle(f =>
+                f.GetProperty("properties").GetProperty("class_value").GetInt32() == value
+                && new GeoJsonReader().Read<Geometry>(f.GetProperty("geometry").GetRawText()).EqualsTopologically(expected),
+                "every cell-derived region must occur exactly once").Which;
             var geometry = new GeoJsonReader().Read<Geometry>(feature.GetProperty("geometry").GetRawText());
             geometry.IsValid.Should().BeTrue();
-            geometry.Area.Should().Be(value == 1 ? 3 : connectivity == "4" ? 1 : 2);
-            var expected = value == 1
-                ? new WKTReader().Read("POLYGON ((10 20,12 20,12 19,11 19,11 18,10 18,10 20))")
-                : connectivity == "8"
-                    ? new WKTReader().Read("MULTIPOLYGON (((12 19,13 19,13 18,12 18,12 19)),((11 18,12 18,12 17,11 17,11 18)))")
-                    : geometry.EnvelopeInternal.MinX == 12
-                        ? new WKTReader().Read("POLYGON ((12 19,13 19,13 18,12 18,12 19))")
-                        : new WKTReader().Read("POLYGON ((11 18,12 18,12 17,11 17,11 18))");
-            geometry.EqualsTopologically(expected).Should().BeTrue("cell boundaries are derived from the input matrix");
+            geometry.Area.Should().Be(expected.Area);
             geometry.EnvelopeInternal.Should().Be(expected.EnvelopeInternal);
         }
     }
