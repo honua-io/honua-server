@@ -216,7 +216,8 @@ public sealed class PatchConcurrencyTests
                 ? """{"name":"replacement","population":45678,"Geometry":{"type":"Point","coordinates":[-120,35]}}"""
                 : """{"population":45678}""";
             var body = $$$"""{"requests":[{"id":"first","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{"name":"changed name"}},{"id":"second","atomicityGroup":"g","method":"{{{secondMethod}}}","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{{{secondBody}}}}]}""";
-            using var response = await fixture.Client.PostAsync("/odata/$batch", new StringContent(body, Encoding.UTF8, "application/json"));
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            using var response = await fixture.Client.PostAsync("/odata/$batch", content);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var responses = document.RootElement.GetProperty("responses");
             Assert.Equal(2, responses.GetArrayLength());
