@@ -42,7 +42,9 @@ proposal authority.
    include evidence references. No server-side model call is involved.
 3. Remediate: when a finding has a real executor, propose its action with
    `POST /api/v1/admin/observability/findings/{findingId}/propose` or call
-   `honua_propose_finding`. The governed path creates an approval proposal.
+   `honua_propose_finding`. The MCP tool creates an approval proposal only;
+   the operator REST route follows gateway policy and can directly execute an
+   auto-safe action. Keep the model workflow on the proposal-only MCP path.
 4. Learn: use the persisted ops-health history and fused operate timeline to
    understand whether the action improved health. This is operational memory,
    not model training.

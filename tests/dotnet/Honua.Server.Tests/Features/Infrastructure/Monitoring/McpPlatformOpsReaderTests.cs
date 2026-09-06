@@ -19,6 +19,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -489,6 +490,162 @@ public sealed class McpPlatformOpsReaderTests
         gateway.RouteCalls.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("stale", "unavailable")]
+    [InlineData("partial", "partial")]
+    [InlineData("unavailable", "unavailable")]
+    [InlineData("unverified", "unavailable")]
+    [InlineData("notConfigured", "notConfigured")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposeFinding_IncompleteDeploymentEvidence_BlocksBeforeProposalOrActuation(
+        string scenario, string expectedCompleteness)
+    {
+        var evaluation = DeploymentFindingFixture(scenario);
+        evaluation.Posture.Sources.Single().Completeness.Should().Be(expectedCompleteness);
+        // The diagnosis survives even when its required source cannot authorize an action.
+        evaluation.Findings.Single().Subject.TargetId.Should().Be("serving-us-west");
+        var source = Substitute.For<IOpsFindingsEvidenceSource>();
+        source.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(evaluation);
+        var gateway = FindingGateway();
+        using var services = CreateServices(gateway, findings: source);
+        var reader = CreateReader(services: services);
+
+        var result = await reader.ProposeFindingAsync(CreatePrincipal(),
+            new McpProposeFindingArgument { FindingId = "deployment-fixture", CandidateId = "serving-us-west" },
+            CancellationToken.None);
+
+        result.Outcome.Should().Be("Blocked");
+        result.Message.Should().Be("evidencePostureNotActionable");
+        result.ProposalId.Should().BeNull();
+        result.ExecutionOperationId.Should().BeNull();
+        gateway.ProposalCalls.Should().Be(0);
+        gateway.RouteCalls.Should().Be(0);
+        await services.GetRequiredService<IOperationEnvelopeFactory>().DidNotReceive()
+            .CreateAcceptedAsync(Arg.Any<string>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("scope")]
+    [InlineData("target")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposeFinding_UnauthorizedDeploymentRequest_CreatesNoProposal(string denial)
+    {
+        var source = Substitute.For<IOpsFindingsEvidenceSource>();
+        source.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(DeploymentFindingFixture("complete"));
+        var gateway = FindingGateway();
+        using var services = CreateServices(gateway, findings: source);
+        var reader = CreateReader(
+            authorization: CreateAuthorization(denial == "actor" ? AuthorizationResult.Failed() : AuthorizationResult.Success()),
+            scopeAuthorizer: new OperatorScopeAuthorizer(), services: services);
+        var principal = denial == "scope"
+            ? new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "ops-agent"),
+                new Claim(OperatorScopeCatalog.ScopeGovernedClaimType, OperatorScopeCatalog.ScopeGovernedClaimValue),
+                new Claim(OperatorScopeCatalog.ScopeClaimType, OperatorScopeCatalog.Read),
+            ], "test"))
+            : CreatePrincipal();
+
+        var act = () => reader.ProposeFindingAsync(principal,
+            new McpProposeFindingArgument
+            {
+                FindingId = "deployment-fixture",
+                CandidateId = denial == "target" ? "another-target" : "serving-us-west",
+            }, CancellationToken.None);
+
+        if (denial == "target")
+            await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingValidationException>();
+        else
+            await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingAuthorizationException>();
+        gateway.ProposalCalls.Should().Be(0);
+        gateway.RouteCalls.Should().Be(0);
+        await services.GetRequiredService<IOperationEnvelopeFactory>().DidNotReceive()
+            .CreateAcceptedAsync(Arg.Any<string>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposeFinding_CompleteDeploymentEvidence_SealsOnlyTheBoundAction()
+    {
+        var source = Substitute.For<IOpsFindingsEvidenceSource>();
+        source.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(DeploymentFindingFixture("complete"));
+        var gateway = FindingGateway();
+        using var services = CreateServices(gateway, findings: source);
+        var result = await CreateReader(services: services).ProposeFindingAsync(CreatePrincipal(),
+            new McpProposeFindingArgument { FindingId = "deployment-fixture", CandidateId = "serving-us-west" },
+            CancellationToken.None);
+
+        result.RequiresApproval.Should().BeTrue();
+        result.ProposalId.Should().Be("deployment-proposal");
+        result.ExecutionOperationId.Should().BeNull();
+        gateway.ProposalCalls.Should().Be(1);
+        gateway.RouteCalls.Should().Be(0);
+        // Authentication scheme + subject kind + absent issuer + subject ID.
+        gateway.LastRequest!.RequestedBy.Should().Be("test:subject:-:ops-agent");
+        gateway.LastRequest.IdempotencyKey.Should().Be("deployment-fixture");
+        var payload = DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload!);
+        payload!.TargetId.Should().Be("serving-us-west");
+        payload.DesiredRevision.Should().Be("rev-2");
+    }
+
+    private static RecordingGateway FindingGateway() => new(new OperationGatewayResult
+    {
+        Outcome = OperationGatewayOutcome.ProposalCreated,
+        Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"),
+        ProposalId = "deployment-proposal",
+    });
+
+    private static OpsFindingsEvaluation DeploymentFindingFixture(string scenario)
+    {
+        // Fixed, independently specified source observations, not a snapshot of runtime output.
+        var now = new DateTimeOffset(2026, 9, 6, 12, 0, 0, TimeSpan.Zero);
+        const string sourceId = EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations;
+        const string backend = EvidencePostureVocabulary.BackendKinds.DurableStore;
+        var age = TimeSpan.FromMinutes(5);
+        var envelope = scenario switch
+        {
+            "complete" => EvidencePostureFactory.Complete(sourceId, backend, "fixture-redis", now, age),
+            "stale" => EvidencePostureFactory.Complete(sourceId, backend, "fixture-redis", now.AddHours(-1), age),
+            "partial" => EvidencePostureFactory.Partial(sourceId, backend, "fixture-redis", now, age,
+                EvidencePostureVocabulary.ReasonCodes.PartialResult),
+            "unavailable" => EvidencePostureFactory.Unavailable(sourceId, backend, "fixture-redis",
+                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable),
+            "unverified" => EvidencePostureFactory.Complete(sourceId, EvidencePostureVocabulary.BackendKinds.Unverified,
+                "fixture-redis", now, age),
+            "notConfigured" => EvidencePostureFactory.NotConfigured(sourceId, backend, "fixture-redis"),
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+        };
+        return new OpsFindingsEvaluation
+        {
+            EvaluatedAt = now,
+            Posture = EvidencePostureFactory.Build(now, envelope),
+            Findings = [new OpsFinding
+            {
+                Id = "deployment-fixture",
+                Rule = OpsFindingsService.RuleDeployManualIntervention,
+                Severity = OpsFindingSeverity.Critical,
+                Title = "Deployment requires intervention",
+                Explanation = "The fixture is serving rev-1; the approved desired revision is rev-2.",
+                DetectedAt = now,
+                Subject = new OpsFindingSubject { TargetId = "serving-us-west", OperationId = "deploy-fixture" },
+                EvidenceRefs = ["workflow-operation:deploy-fixture"],
+                RecommendedAction = new OpsFindingRecommendedAction
+                {
+                    Kind = OperationClass.Deploy,
+                    Summary = "Converge deployment",
+                    Reason = "Apply the declared revision",
+                    ExecutionPayload = new DeployExecutionPayload
+                    { TargetId = "serving-us-west", CurrentRevision = "rev-1", DesiredRevision = "rev-2" }.Serialize(),
+                },
+            }],
+        };
+    }
+
     internal static McpPlatformOpsReader CreateReader(
         ControlPlaneOptions? options = null,
         IWorkflowOperationStore? store = null,
@@ -528,7 +685,8 @@ public sealed class McpPlatformOpsReaderTests
 
     internal static ServiceProvider CreateServices(
         IOperationGateway? gateway = null,
-        IOperationExecutorCatalog? catalog = null)
+        IOperationExecutorCatalog? catalog = null,
+        IOpsFindingsEvidenceSource? findings = null)
     {
         var services = new ServiceCollection();
         var envelopeFactory = Substitute.For<IOperationEnvelopeFactory>();
@@ -548,6 +706,10 @@ public sealed class McpPlatformOpsReaderTests
                 UpdatedAt = now,
             });
         services.AddSingleton(envelopeFactory);
+        if (findings is not null)
+        {
+            services.AddSingleton(findings);
+        }
         if (gateway is not null)
         {
             services.AddSingleton(gateway);

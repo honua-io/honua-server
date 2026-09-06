@@ -123,6 +123,14 @@ deployment target identifier, not the platform release ID or image digest;
 the server checks it matches the hidden Deploy action. A missing target is a
 stop condition. The deterministic REST
 equivalent is `POST /api/v1/admin/observability/findings/{findingId}/propose`.
+That operator route follows gateway policy and can execute an auto-safe action;
+it is not the model's proposal-only boundary. Use `honua_propose_finding` for
+the model workflow here. Replace both placeholders with the observed IDs:
+
+```json
+{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"honua_propose_finding","arguments":{"findingId":"<finding-id>","candidateId":"<subject.targetId>"}}}
+```
+
 Generic model-facing control tools seal proposals; they do not execute even
 when a separate server-owned policy allows direct execution. Do not use the
 removed opaque `honua_propose_operation` contract.
