@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
+using FluentAssertions;
 using Honua.Io.Export;
 using Honua.Io.Export.Writers;
 using NetTopologySuite.Geometries;

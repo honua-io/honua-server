@@ -417,7 +417,7 @@ public sealed class ShapefileExportWriterTests
             }
 
             var shpPath = Directory.GetFiles(extractedDir, "*.shp").Single();
-            var options = new NetTopologySuite.IO.Esri.ShapefileReaderOptions
+            var options = new NetTopologySuite.IO.Esri.Shapefiles.Readers.ShapefileReaderOptions
             {
                 Encoding = System.Text.Encoding.UTF8
             };

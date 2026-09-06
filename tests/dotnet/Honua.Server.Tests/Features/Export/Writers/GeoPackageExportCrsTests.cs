@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using FluentAssertions;
 using Honua.Io.Export;
 using Honua.Io.Export.Writers;
 using Microsoft.Data.Sqlite;
@@ -35,23 +36,23 @@ public sealed class GeoPackageExportCrsTests
             await using var connection = Open(path);
             await connection.OpenAsync();
 
-            (await ScalarAsync(connection, "SELECT srs_id FROM gpkg_contents WHERE table_name = 'features'"))
-                .Should().Be((long)srid, "gpkg_contents.srs_id identifies the layer's CRS");
-            (await ScalarAsync(connection, "SELECT srs_id FROM gpkg_geometry_columns WHERE table_name = 'features'"))
-                .Should().Be((long)srid, "gpkg_geometry_columns.srs_id identifies the geometry column's CRS");
+            (await ScalarLongAsync(connection, "SELECT srs_id FROM gpkg_contents WHERE table_name = 'features'"))
+                .Should().Be(srid, "gpkg_contents.srs_id identifies the layer's CRS");
+            (await ScalarLongAsync(connection, "SELECT srs_id FROM gpkg_geometry_columns WHERE table_name = 'features'"))
+                .Should().Be(srid, "gpkg_geometry_columns.srs_id identifies the geometry column's CRS");
 
-            (await ScalarAsync(connection, $"SELECT organization FROM gpkg_spatial_ref_sys WHERE srs_id = {srid}"))
+            (await ScalarStringAsync(connection, $"SELECT organization FROM gpkg_spatial_ref_sys WHERE srs_id = {srid}"))
                 .Should().Be(expectedOrganization, "the authority is parsed from the supplied srsName");
-            (await ScalarAsync(connection, $"SELECT organization_coordsys_id FROM gpkg_spatial_ref_sys WHERE srs_id = {srid}"))
-                .Should().Be((long)expectedCoordsysId);
-            (await ScalarAsync(connection, $"SELECT definition FROM gpkg_spatial_ref_sys WHERE srs_id = {srid}"))
+            (await ScalarLongAsync(connection, $"SELECT organization_coordsys_id FROM gpkg_spatial_ref_sys WHERE srs_id = {srid}"))
+                .Should().Be(expectedCoordsysId);
+            (await ScalarStringAsync(connection, $"SELECT definition FROM gpkg_spatial_ref_sys WHERE srs_id = {srid}"))
                 .Should().Be(wkt, "the CRS definition must be the WKT the caller resolved, not a placeholder");
-            (await ScalarAsync(connection, $"SELECT srs_name FROM gpkg_spatial_ref_sys WHERE srs_id = {srid}"))
+            (await ScalarStringAsync(connection, $"SELECT srs_name FROM gpkg_spatial_ref_sys WHERE srs_id = {srid}"))
                 .Should().Be(srsName);
 
             // The GeoPackage binary header carries the SRID per feature (OGC 12-128r16 §2.1.3);
             // a header that disagreed with the tables would be a file no consumer can trust.
-            var blob = (byte[])(await ScalarAsync(connection, "SELECT geom FROM features LIMIT 1"))!;
+            var blob = await ScalarBytesAsync(connection, "SELECT geom FROM features LIMIT 1");
             blob[0].Should().Be((byte)'G');
             blob[1].Should().Be((byte)'P');
             System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(blob.AsSpan(4))
@@ -76,11 +77,11 @@ public sealed class GeoPackageExportCrsTests
             await using var connection = Open(path);
             await connection.OpenAsync();
 
-            (await ScalarAsync(connection, "SELECT organization FROM gpkg_spatial_ref_sys WHERE srs_id = -1"))
+            (await ScalarStringAsync(connection, "SELECT organization FROM gpkg_spatial_ref_sys WHERE srs_id = -1"))
                 .Should().Be("NONE");
-            (await ScalarAsync(connection, "SELECT organization FROM gpkg_spatial_ref_sys WHERE srs_id = 0"))
+            (await ScalarStringAsync(connection, "SELECT organization FROM gpkg_spatial_ref_sys WHERE srs_id = 0"))
                 .Should().Be("NONE");
-            (await ScalarAsync(connection, $"SELECT definition FROM gpkg_spatial_ref_sys WHERE srs_id = 4326"))
+            (await ScalarStringAsync(connection, "SELECT definition FROM gpkg_spatial_ref_sys WHERE srs_id = 4326"))
                 .Should().Be("undefined", "an unresolvable CRS definition is recorded as undefined, not as an empty string");
         }
         finally
@@ -114,6 +115,15 @@ public sealed class GeoPackageExportCrsTests
 
     private static SqliteConnection Open(string path)
         => new(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
+
+    private static async Task<long> ScalarLongAsync(SqliteConnection connection, string sql)
+        => Convert.ToInt64(await ScalarAsync(connection, sql), System.Globalization.CultureInfo.InvariantCulture);
+
+    private static async Task<string?> ScalarStringAsync(SqliteConnection connection, string sql)
+        => await ScalarAsync(connection, sql) as string;
+
+    private static async Task<byte[]> ScalarBytesAsync(SqliteConnection connection, string sql)
+        => (byte[])(await ScalarAsync(connection, sql))!;
 
     private static async Task<object?> ScalarAsync(SqliteConnection connection, string sql)
     {
