@@ -7,10 +7,13 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
+using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -34,6 +37,16 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             services.RemoveAll<IStudioPackageStore>();
             services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), _studioSchema));
+            services.Configure<OperationPolicyOptions>(options =>
+            {
+                options.Enabled = true;
+                options.Rules.Add(new OperationPolicyRule
+                {
+                    OperationId = StudioDraftOperations.CreatePublicationRequest,
+                    Decision = PolicyDecisionKind.RequireApproval,
+                    ApprovalLane = "studio-operator",
+                });
+            });
         });
         await _fixture.InitializeAsync();
         var root = new DirectoryInfo(AppContext.BaseDirectory);
