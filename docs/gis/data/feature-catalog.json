@@ -10352,6 +10352,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDefaultServiceTests.DefaultGpService_DrivesRealExecutorToEsriFeatureSetResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SubmitJob_WithRedisBackedRuntime_CompletesAndReturnsDurableResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobResult_WithEnvOutSR_ReprojectsAsyncGeometryOutput",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobResult_WithEnvOutSR_TableRetainsWorkingSpatialReference",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobResult_WithEnvOutSR_UnknownWorkingSr_RejectsRatherThanServingUnprojected",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobResult_WithInvalidJobId_ReturnsError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.JobResult_WithResultPackage_ReturnsNamedOutput"
