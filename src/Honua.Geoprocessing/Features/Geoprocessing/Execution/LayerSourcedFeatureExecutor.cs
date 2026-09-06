@@ -157,7 +157,8 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(80, $"Encoding {ProcessId} artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = FeatureCollectionArtifact.WriteFeatureCollection(output, ProcessId);
+        var payload = FeatureCollectionArtifact.WriteFeatureCollection(output, ProcessId,
+            request.OutputSrid is { } outputSrid ? [("srid", outputSrid)] : null);
         var maxBytes = Options.CurrentValue.MaxArtifactBytes;
         if (payload.Length > maxBytes)
         {

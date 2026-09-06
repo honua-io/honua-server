@@ -194,7 +194,8 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(80, "Encoding source artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = FeatureCollectionArtifact.WriteFeatureCollection(features, _processId);
+        var payload = FeatureCollectionArtifact.WriteFeatureCollection(features, _processId,
+            request.OutputSrid is { } outputSrid ? [("srid", outputSrid)] : null);
         if (payload.Length > maxBytes)
         {
             return JobExecutionResult.Failed(
