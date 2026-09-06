@@ -9413,6 +9413,8 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithUnsupportedFormat_Returns400",
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithValidServiceId_ReturnsServiceInfo",
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithWrongHttpMethod_Returns405",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_UsesSameRbacFilteredEntriesAsRestDirectory",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerEditCapabilityAdvertisementTests.GetServiceMetadata_EditableService_AdvertisesCreateUpdateDelete",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerEditCapabilityAdvertisementTests.GetServiceMetadata_ReadOnlyService_AdvertisesQueryOnly",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.ServiceMetadata_SyncEnabled_AdvertisesSyncCapabilities",
@@ -10233,6 +10235,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_UsesSameRbacFilteredEntriesAsRestDirectory",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerClientCompatibilityTests.TypedClient_ReadsServiceAndTaskMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ServiceInfo_ReturnsGPServerMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ServiceInfo_UnknownService_ReturnsNotFound",
@@ -10985,6 +10989,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_UsesSameRbacFilteredEntriesAsRestDirectory",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Metadata_MapsGovernanceToDocumentInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Metadata_ReturnsServiceInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Metadata_SupportedImageFormatTypes_DoesNotAdvertiseGif",
@@ -11660,6 +11666,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_UsesSameRbacFilteredEntriesAsRestDirectory",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Metadata_ReturnsServiceDescriptor",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Metadata_UnknownService_ReturnsNotFound"
       ],
@@ -18362,6 +18370,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MetadataPostTests.ImageServer_ServiceInfo_Post_DeniedPrincipalsDiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MetadataPostTests.ImageServer_ServiceInfo_Post_MatchesGet"
       ],
       "proof_ledger_surface": "image-server",
@@ -19727,6 +19736,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MetadataPostTests.ImageServer_ServiceInfoByService_Post_DeniedPrincipalsDiscloseNothingAndChangeNothing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MetadataPostTests.ImageServer_ServiceInfoByService_Post_MatchesGet"
       ],
       "proof_ledger_surface": "image-server",
