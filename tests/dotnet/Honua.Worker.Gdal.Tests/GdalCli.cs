@@ -126,6 +126,13 @@ internal static class GdalCli
         return File.ReadAllBytes(demPath);
     }
 
+    /// <summary>
+    /// Runs the real <c>pdal</c> CLI, throwing on a non-zero exit. Used to author genuinely
+    /// compressed point-cloud inputs for the real-PDAL execution proof (honua-server#4401).
+    /// </summary>
+    public static Task RunPdalAsync(IReadOnlyList<string> args, string scratch)
+        => RunOrThrowAsync("pdal", args, scratch);
+
     private static async Task RunOrThrowAsync(string tool, IReadOnlyList<string> args, string scratch)
     {
         var runner = new ProcessGdalCommandRunner(
@@ -137,7 +144,7 @@ internal static class GdalCli
         if (!result.Succeeded)
         {
             throw new InvalidOperationException(
-                $"Failed to synthesize sample DEM via {tool}: exit={result.ExitCode}; stderr={result.StandardError}");
+                $"Failed to run {tool}: exit={result.ExitCode}; stderr={result.StandardError}");
         }
     }
 }
@@ -181,6 +188,65 @@ public sealed class GdalCliFactAttribute : FactAttribute, ITraitAttribute
 
         Skip = $"GDAL CLI tool '{tool}' is not available on PATH. "
             + $"Set {RequireEnvironmentVariable}=true to fail instead of skipping.";
+    }
+}
+
+/// <summary>
+/// Marks a test that shells out to the real PDAL CLI (honua-server#4401).
+/// </summary>
+/// <remarks>
+/// PDAL had never been executed by any test in this repository: a repo-wide grep for
+/// <c>PdalCliFact</c> / <c>HONUA_REQUIRE_PDAL</c> returned nothing, no workflow installed PDAL on
+/// a runner, and the only invocation anywhere was <c>pdal --version</c> inside the container
+/// handoff test. <c>pcloud.translate</c>'s GA claim therefore rested entirely on argument
+/// assertions against <c>FakeGdalCommandRunner</c>. This mirrors
+/// <see cref="GdalCliFactAttribute"/>: it skips on a dev box without PDAL, and
+/// <c>HONUA_REQUIRE_PDAL_CLI=true</c> — which the worker-image lane sets — turns a missing PDAL
+/// into a failure so the coverage cannot silently disappear.
+/// </remarks>
+[TraitDiscoverer("Honua.Worker.Gdal.Tests.PdalCliFactDiscoverer", "Honua.Worker.Gdal.Tests")]
+public sealed class PdalCliFactAttribute : FactAttribute, ITraitAttribute
+{
+    /// <summary>
+    /// Environment variable that turns "PDAL CLI missing" from a skip into a failure.
+    /// </summary>
+    public const string RequireEnvironmentVariable = "HONUA_REQUIRE_PDAL_CLI";
+
+    /// <summary>Whether the lane demands real PDAL rather than tolerating a skip.</summary>
+    public static bool RequireCli => string.Equals(
+        Environment.GetEnvironmentVariable(RequireEnvironmentVariable),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PdalCliFactAttribute"/> class.
+    /// </summary>
+    public PdalCliFactAttribute()
+    {
+        if (GdalCli.Available("pdal") || RequireCli)
+        {
+            return;
+        }
+
+        Skip = "PDAL CLI tool 'pdal' is not available on PATH. "
+            + $"Set {RequireEnvironmentVariable}=true to fail instead of skipping.";
+    }
+}
+
+/// <summary>
+/// Emits integration-test traits for <see cref="PdalCliFactAttribute"/>.
+/// </summary>
+public sealed class PdalCliFactDiscoverer : ITraitDiscoverer
+{
+    /// <inheritdoc />
+    public IEnumerable<KeyValuePair<string, string>> GetTraits(IAttributeInfo traitAttribute)
+    {
+        return
+        [
+            new KeyValuePair<string, string>("Category", "Integration"),
+            new KeyValuePair<string, string>("Category", "PDAL"),
+            new KeyValuePair<string, string>("Tier", Tiers.Integration)
+        ];
     }
 }
 
