@@ -91,6 +91,19 @@ public sealed class ExportEndpointTests : IAsyncLifetime
         entryNames.Should().Contain(".shp");
         entryNames.Should().Contain(".shx");
         entryNames.Should().Contain(".dbf");
+
+        // honua-server#4419: this assertion pointedly stopped before .prj, and the endpoint DOES
+        // resolve the CRS WKT from the registry before writing (ExportEndpoints.WriteShapefile-
+        // ResponseAsync). A shapefile shipped without its .prj is a CRS-less file, so a regression
+        // that dropped the sidecar — or a registry lookup that started returning null — would have
+        // been invisible.
+        entryNames.Should().Contain(".prj", "an exported shapefile must carry its CRS sidecar");
+        var prj = zip.Entries.Single(entry => entry.Name.EndsWith(".prj", StringComparison.OrdinalIgnoreCase));
+        using var prjReader = new StreamReader(prj.Open());
+        var prjWkt = await prjReader.ReadToEndAsync();
+        prjWkt.Should().NotBeNullOrWhiteSpace("an empty .prj declares no CRS at all");
+        prjWkt.Should().StartWith("GEOGCS", "the seeded layer is geographic WGS 84");
+        prjWkt.Should().Contain("4326");
     }
 
     [IntegrationTest]
@@ -132,6 +145,27 @@ public sealed class ExportEndpointTests : IAsyncLifetime
             cmd.CommandText = "SELECT COUNT(*) FROM features";
             var featureCount = await cmd.ExecuteScalarAsync();
             Convert.ToInt64(featureCount, System.Globalization.CultureInfo.InvariantCulture).Should().BeGreaterOrEqualTo(1);
+
+            // honua-server#4419: two COUNT(*) queries passed on a file whose every geometry blob
+            // was garbage and whose CRS was unrecorded. Assert the CRS the GeoPackage
+            // specification requires in each of its three places, and decode one geometry.
+            cmd.CommandText = "SELECT srs_id FROM gpkg_contents WHERE table_name = 'features'";
+            Convert.ToInt64(await cmd.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture)
+                .Should().Be(4326);
+            cmd.CommandText = "SELECT srs_id FROM gpkg_geometry_columns WHERE table_name = 'features'";
+            Convert.ToInt64(await cmd.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture)
+                .Should().Be(4326);
+            cmd.CommandText = "SELECT COUNT(*) FROM gpkg_spatial_ref_sys WHERE srs_id = 4326";
+            Convert.ToInt64(await cmd.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture)
+                .Should().Be(1, "the layer's CRS must be declared in gpkg_spatial_ref_sys");
+
+            cmd.CommandText = "SELECT geom FROM features WHERE geom IS NOT NULL LIMIT 1";
+            var blob = (byte[])(await cmd.ExecuteScalarAsync())!;
+            blob.Length.Should().BeGreaterThan(8);
+            blob[0].Should().Be((byte)'G', "a GeoPackage geometry blob starts with the GP magic");
+            blob[1].Should().Be((byte)'P');
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(blob.AsSpan(4))
+                .Should().Be(4326, "the blob header carries the geometry's SRID");
         }
         finally
         {
