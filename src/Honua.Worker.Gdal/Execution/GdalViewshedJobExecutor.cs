@@ -19,6 +19,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// (<c>observerX</c>, <c>observerY</c>) in the DEM's georeferenced units at
 /// <c>observerHeight</c> above the surface, and publishes the visibility GeoTIFF,
 /// optionally bounded by <c>maxDistance</c> and using a <c>targetHeight</c> offset.
+/// Visible cells are 255, hidden cells 0, and out-of-range nodata cells 127.
 /// </para>
 /// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/> is
 /// <c>{ "native" }</c>.
@@ -130,6 +131,11 @@ internal sealed partial class GdalViewshedJobExecutor(
             var args = new List<string>
             {
                 "-of", "GTiff",
+                // The GDAL default uses 0 for both hidden and out-of-range
+                // cells. Keep unevaluated cells distinct from a visibility
+                // result, and expose their validity through TIFF nodata.
+                "-a_nodata", "127",
+                "-ov", "127",
                 "-ox", observerX.ToString("R", CultureInfo.InvariantCulture),
                 "-oy", observerY.ToString("R", CultureInfo.InvariantCulture),
                 "-oz", observerHeight.ToString("R", CultureInfo.InvariantCulture),

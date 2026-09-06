@@ -53,6 +53,8 @@ public sealed class GdalViewshedExecutorTests
 
             var invocation = runner.Invocations.Single();
             invocation.Tool.Should().Be("gdal_viewshed");
+            invocation.Arguments.Should().ContainInOrder("-a_nodata", "127");
+            invocation.Arguments.Should().ContainInOrder("-ov", "127");
             invocation.Arguments.Should().ContainInOrder("-ox", "100.5");
             invocation.Arguments.Should().ContainInOrder("-oy", "200.25");
             invocation.Arguments.Should().ContainInOrder("-oz", "1.8");
