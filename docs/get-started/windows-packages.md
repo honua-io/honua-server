@@ -199,7 +199,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Startup/authentication verification failed' }
 Save this small customer script. The installed admin client registers and
 publishes the connection; `httpx` uploads the file because admin 0.1.8 has no
 file-upload wrapper. The installed data client queries the published layer.
-The fixture's expected names, values, longitude/latitude, and CRS are explicit;
+File import creates `public.imported_windows_points`, with GeoJSON attributes
+in its `properties` JSON column. Publish that physical table and declare the
+fixture's Point geometry. The expected names, values, longitude/latitude, and CRS are explicit;
 verification fails on lost rows, swapped axes, changed values, or missing geometry.
 
 ```powershell
@@ -242,19 +244,22 @@ if '--verify-only' not in sys.argv:
             username='honua', password=os.environ['POSTGRES_PASSWORD'],
             ssl_mode='Disable', ssl_required=False))
         layer = admin.publish_layer(connection.connection_id, PublishLayerRequest(
-            schema='public', table='windows_points', layer_name='windows-points',
-            service_name='windows', srid=4326))
+            schema='public', table='imported_windows_points', layer_name='windows-points',
+            service_name='windows', srid=4326, geometry_column='geometry',
+            geometry_type='Point', primary_key='id', fields_list=['id', 'properties']))
         state_path.write_text(json.dumps({'service': 'windows', 'layer': layer.layer_id}), encoding='utf-8')
 
 state = json.loads(state_path.read_text(encoding='utf-8'))
 with HonuaClient(base, api_key=key) as client:
     result = client.query_features(state['service'], state['layer'],
-        out_fields=['name', 'value'], return_geometry=True, extra_params={'outSR': 4326})
+        out_fields=['id', 'properties'], return_geometry=True, extra_params={'outSR': 4326})
 assert result['spatialReference']['wkid'] == 4326, result
+assert result['geometryType'] == 'esriGeometryPoint', result
+assert result['objectIdFieldName'] == 'id', result
 assert len(result['features']) == 2, result
 observed = {}
 for feature in result['features']:
-    attributes, geometry = feature['attributes'], feature['geometry']
+    attributes, geometry = feature['attributes']['properties'], feature['geometry']
     name = attributes['name']
     assert name not in observed and name in expected, feature
     value, lon, lat = expected[name]
@@ -286,7 +291,7 @@ directory, set `$Install = (Get-Location).Path`, define `dc` from step 1, and ru
 step 2's variable-loading and readiness blocks. `dc up -d --wait` recreates
 containers using the retained volumes and original credentials. Run
 `journey.py --verify-only` afterward. A restart or container recreation is not a
-backup restore; follow [backup and recovery](../guides/deploy/backup-recovery.md)
+backup restore; follow [backup and recovery](../guides/deploy/backup-and-restore.md)
 before storing irreplaceable data. Retain the private `.env`, database, Redis,
 file-storage backup, and exact image identity together. Never delete volumes or
 regenerate `.env` to bypass a migration or credential failure.

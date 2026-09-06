@@ -1,5 +1,9 @@
 # Deploy with Docker Compose
 
+Windows operators can use the [native PowerShell package installation](../../get-started/windows-packages.md)
+for a local customer journey with pinned registry clients and isolated storage.
+The public TLS deployment commands on this page use a Unix host shell.
+
 You'll run a production-shaped Honua stack on a single host: pinned image, secrets in an env file, persistent PostGIS and Redis volumes, optional Console, and TLS terminated by a reverse proxy. For the build-from-source dev stack with the profiled Console service, use the [quickstart](../../get-started/quickstart.md) instead.
 
 **Prerequisites:** Docker with Compose 2.23.1 or later, OpenSSL, a DNS name pointing at the host (for TLS), and outbound access to Docker Hub or GHCR.

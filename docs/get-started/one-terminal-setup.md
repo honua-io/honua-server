@@ -1,5 +1,10 @@
 # One-terminal setup journey
 
+For a native PowerShell customer install, use
+[Windows: install published packages](windows-packages.md), including an
+import/publish/query fixture and restart verification. The source validation
+journey below is a separate contributor workflow.
+
 This is the executable part of the terminal-first setup journey. It starts a
 clean local Honua candidate, publishes and verifies a layer, discovers the
 server-authored MCP setup view, and runs bounded geoprocessing. Stop after the
