@@ -872,6 +872,9 @@ if (replicaProvider != DataProviderNames.DuckDb &&
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IQuerySnapshotStore>(sp =>
+        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresQuerySnapshotStore(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
     // Temporal history store (#1166 slices 2-5): reads the uncollapsed change log with attribution.
     // Overrides the Core no-op fallback registered by AddTemporalHistory. Read-only/non-Postgres
     // providers keep the no-op store (history unsupported), matching the no-op change tracker.
@@ -1384,15 +1387,19 @@ app.UseInputValidation();
 // required mTLS surfaces can return machine-readable errors instead of TLS handshakes.
 app.UseHonuaClientCertificateAuthentication();
 
-// Add authentication and authorization middleware early to short-circuit unauthorized requests
-app.UseApiKeyAuthentication();
+// Authenticate the default scheme before hydrating additional credential types.
+app.UseAuthentication();
 
 // Bridge ArcGIS-style portal tokens (?token=, form POST token, X-Esri-Authorization,
 // Authorization: Bearer)
 // for requests that the default scheme did not authenticate. Must run after
-// UseAuthentication (inside UseApiKeyAuthentication) and before tenant resolution
+// UseAuthentication and before authorization and tenant resolution
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
+
+// Required-authentication routes must see every validated credential type. Running
+// this before the portal bridge rejects valid SensorThings subscription tokens.
+app.UseAuthorization();
 
 // Canonical governed-lineage headers are accepted only when accompanied by a
 // one-use, process-local attestation issued by an operation loopback executor.

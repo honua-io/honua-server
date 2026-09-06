@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
-public sealed class SensorThingsStreamEndpointsTests : IAsyncLifetime
+public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
     {
