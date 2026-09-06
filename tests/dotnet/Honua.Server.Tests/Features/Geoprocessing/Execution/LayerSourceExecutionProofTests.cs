@@ -13,6 +13,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Db.Postgres.Features.Geoprocessing;
 using Honua.Geoprocessing;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.ControlPlane;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit;
@@ -75,6 +76,45 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
     [IntegrationTest]
     public async Task HonuaLayerSource_RealCatalogFilterBboxAndFields_PublishesExactProjectedSelection()
     {
+        using var provider = SourceServices();
+        var executor = RemoteSourceExecutor.ForProcess("source.honua-layer", provider.GetRequiredService<IServiceScopeFactory>(),
+            ExecutorOptions(), NullLogger<RemoteSourceExecutor>.Instance);
+        using var output = await Execute(executor, "source.honua-layer", ("layerId", "0"),
+            ("where", "category = 'proof'"), ("bbox", "1000000,3000000,2000000,5000000"),
+            ("outFields", "objectid,name,category"), ("outSrid", "3857"));
+        AssertSelected(output.RootElement, fieldsRestricted: true);
+        output.RootElement.GetProperty("srid").GetInt32().Should().Be(3857);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HonuaLayerSource_AdvertisedCrsDiffersFromStorage_UsesCanonicalStoragePrecedence(bool bindingOverridesResource)
+    {
+        var store = _fixture.GetService<IMetadataV2GraphStore>();
+        var snapshot = await store.GetCurrentAsync();
+        var original = snapshot.Index.ResourcesByStorageLayerId[0];
+        var binding = snapshot.Graph.StorageBindings.Single(b => b.StorageLayerId == 0 && b.ResourceId == original.Metadata.Id);
+        var options = binding.Options.ToDictionary(kv => kv.Key, kv => kv.Value);
+        options.Remove("srid");
+        options.Remove("storageSrid");
+        if (bindingOverridesResource)
+        {
+            options["storageSrid"] = JsonSerializer.SerializeToElement(4326);
+        }
+        var changed = original with
+        {
+            Spatial = original.Spatial! with
+            {
+                SpatialReference = new MetadataV2SpatialReference { Srid = 3857 },
+                StorageCrs = new MetadataV2SpatialReference { Srid = bindingOverridesResource ? 32610 : 4326 }
+            }
+        };
+        await store.SaveAsync(snapshot.Graph with
+        {
+            Resources = snapshot.Graph.Resources.Select(r => r.Metadata.Id == original.Metadata.Id ? changed : r).ToArray(),
+            StorageBindings = snapshot.Graph.StorageBindings.Select(b => b.Metadata.Id == binding.Metadata.Id ? b with { Options = options } : b).ToArray()
+        }, snapshot.Etag);
         using var provider = SourceServices();
         var executor = RemoteSourceExecutor.ForProcess("source.honua-layer", provider.GetRequiredService<IServiceScopeFactory>(),
             ExecutorOptions(), NullLogger<RemoteSourceExecutor>.Instance);

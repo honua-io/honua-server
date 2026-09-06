@@ -74,7 +74,9 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
             {
                 throw new InvalidOperationException("Source layer does not exist.");
             }
-            query = query with { SpatialReferenceSrid = resource.Spatial?.SpatialReference?.ResolveSrid() };
+            var binding = snapshot.Graph.StorageBindings.Single(b =>
+                b.StorageLayerId == layerId && b.ResourceId == resource.Metadata.Id);
+            query = query with { SpatialReferenceSrid = FeatureStorageMapping.FromMetadata(resource, binding).StorageSrid };
         }
 
         // Per-feature WKB -> GeoJSON conversion via the shared managed NTS reader/writer.
