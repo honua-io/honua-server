@@ -258,6 +258,14 @@ jobs:
             --filter 'FullyQualifiedName~AlertLifecycleAtomicityTests' \
             --logger 'trx;LogFileName=alert-lifecycle-atomicity.trx' \
             --results-directory tests/TestResults
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
+          counters = ET.parse('tests/TestResults/alert-lifecycle-atomicity.trx').find('.//t:Counters', ns)
+          assert counters is not None, 'missing alert fault test counters'
+          total = int(counters.get('total', '0'))
+          assert total >= 6 and int(counters.get('passed', '0')) == total, 'missing, failed or skipped alert fault proof'
+          PY
 
       - name: Upload alert lifecycle fault evidence
         if: always()
