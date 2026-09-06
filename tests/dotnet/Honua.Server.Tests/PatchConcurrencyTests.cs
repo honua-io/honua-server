@@ -150,13 +150,17 @@ public sealed class PatchConcurrencyTests
     [Endpoint("PATCH /odata/Layers({layerId})/Features({objectId})")]
     [Endpoint("PATCH /odata/Features({layerId},{objectId})")]
     [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    [Endpoint("PUT /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    [Endpoint("PUT /odata/Layers({layerId})/Features({objectId})")]
+    [Endpoint("PUT /odata/Features({layerId},{objectId})")]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task PatchEndpoints_DeclareConflictAndPreconditionResponses()
     {
         var fixture = CreateFixture(new WriteBarrier());
         await fixture.InitializeAsync();
         try
         {
-            var names = new[] { "ODataUpdateFeature", "ODataUpdateLayerFeature", "ODataUpdateFeatureLegacy", "PatchItem" };
+            var names = new[] { "ODataUpdateFeature", "ODataUpdateLayerFeature", "ODataUpdateFeatureLegacy", "PatchItem", "ODataReplaceFeature", "ODataReplaceLayerFeature", "ODataReplaceFeatureLegacy", "UpdateItem" };
             var endpoints = fixture.GetService<IEnumerable<EndpointDataSource>>().SelectMany(source => source.Endpoints).ToArray();
             foreach (var name in names)
             {
@@ -164,7 +168,7 @@ public sealed class PatchConcurrencyTests
                 foreach (var status in new[] { 409, 412 })
                 {
                     var response = Assert.Single(endpoint.Metadata.GetOrderedMetadata<IProducesResponseTypeMetadata>(), m => m.StatusCode == status);
-                    Assert.Equal(name == "PatchItem" ? typeof(Microsoft.AspNetCore.Mvc.ProblemDetails) : typeof(Honua.Protocols.OData.Models.ODataError), response.Type);
+                    Assert.Equal(name is "PatchItem" or "UpdateItem" ? typeof(Microsoft.AspNetCore.Mvc.ProblemDetails) : typeof(Honua.Protocols.OData.Models.ODataError), response.Type);
                 }
             }
         }
@@ -175,16 +179,21 @@ public sealed class PatchConcurrencyTests
     }
 
     [IntegrationTheory]
-    [InlineData("odata")]
-    [InlineData("ogc")]
-    [InlineData("batch")]
+    [InlineData("odata", false)]
+    [InlineData("ogc", false)]
+    [InlineData("batch", false)]
+    [InlineData("odata", true)]
+    [InlineData("ogc", true)]
+    [InlineData("batch", true)]
     [Protocol(TestProtocols.ODataV4, TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Update)]
     [Endpoint("PATCH /odata/Features(LayerId={layerId},ObjectId={objectId})")]
     [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
     [Endpoint("POST /odata/$batch")]
-    public Task Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict(string protocol)
-        => VerifyConcurrentPatchAsync(protocol != "ogc", true, firstIsBatch: protocol == "batch", ifMatch: "*");
+    [Endpoint("PUT /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public Task Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict(string protocol, bool replace)
+        => VerifyConcurrentPatchAsync(protocol != "ogc", true, firstIsBatch: protocol == "batch", ifMatch: "*", replace: replace);
 
     [IntegrationTheory]
     [InlineData("PATCH")]
@@ -316,7 +325,7 @@ public sealed class PatchConcurrencyTests
             => Task.FromResult(Fields);
     }
 
-    private static async Task VerifyConcurrentPatchAsync(bool firstIsOData, bool otherIsOData, bool firstIsBatch = false, bool withIfNoneMatch = false, string? ifMatch = null)
+    private static async Task VerifyConcurrentPatchAsync(bool firstIsOData, bool otherIsOData, bool firstIsBatch = false, bool withIfNoneMatch = false, string? ifMatch = null, bool replace = false)
     {
         var barrier = new WriteBarrier();
         var fixture = CreateFixture(barrier);
@@ -335,7 +344,7 @@ public sealed class PatchConcurrencyTests
                 ifNoneMatch = futureRead.Headers.ETag!.ToString();
                 await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original);
             }
-            using var firstRequest = CreatePatch(firstIsOData, objectId, changeName: true, batch: firstIsBatch, ifNoneMatch: ifNoneMatch, ifMatch: ifMatch);
+            using var firstRequest = CreatePatch(firstIsOData, objectId, changeName: true, batch: firstIsBatch, ifNoneMatch: ifNoneMatch, ifMatch: ifMatch, replace: replace);
             var firstTask = fixture.Client.SendAsync(firstRequest);
             Feature committed;
             try
@@ -378,7 +387,7 @@ public sealed class PatchConcurrencyTests
         }
     }
 
-    private static HttpRequestMessage CreatePatch(bool odata, long objectId, bool changeName, bool batch = false, string? ifNoneMatch = null, string? ifMatch = null)
+    private static HttpRequestMessage CreatePatch(bool odata, long objectId, bool changeName, bool batch = false, string? ifNoneMatch = null, string? ifMatch = null, bool replace = false)
     {
         var payload = (odata, changeName) switch
         {
@@ -387,22 +396,27 @@ public sealed class PatchConcurrencyTests
             (false, true) => """{"properties":{"name":"changed name"}}""",
             _ => """{"properties":{"population":12345},"geometry":{"type":"Point","coordinates":[-120,35]}}"""
         };
+        if (replace && !odata)
+        {
+            payload = """{"type":"Feature","geometry":{"type":"Point","coordinates":[-121,36]},"properties":{"name":"changed name"}}""";
+        }
+        var method = replace ? "PUT" : "PATCH";
         if (batch)
         {
             var condition = ifNoneMatch is null ? string.Empty : ",\"If-None-Match\":" + JsonSerializer.Serialize(ifNoneMatch);
             if (ifMatch is not null) condition += ",\"If-Match\":" + JsonSerializer.Serialize(ifMatch);
-            var body = $$"""{"requests":[{"id":"patch","atomicityGroup":"changes","method":"PATCH","url":"Features(LayerId=0,ObjectId={{objectId}})","headers":{"Content-Type":"application/json"{{condition}}},"body":{{payload}}}]}""";
+            var body = $$"""{"requests":[{"id":"patch","atomicityGroup":"changes","method":"{{method}}","url":"Features(LayerId=0,ObjectId={{objectId}})","headers":{"Content-Type":"application/json"{{condition}}},"body":{{payload}}}]}""";
             return new HttpRequestMessage(HttpMethod.Post, "/odata/$batch")
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
             };
         }
 
-        var request = new HttpRequestMessage(HttpMethod.Patch, odata
+        var request = new HttpRequestMessage(replace ? HttpMethod.Put : HttpMethod.Patch, odata
             ? $"/odata/Features(LayerId=0,ObjectId={objectId})"
             : $"/ogc/features/collections/0/items/{objectId}")
         {
-            Content = new StringContent(payload, Encoding.UTF8, odata ? "application/json" : "application/merge-patch+json")
+            Content = new StringContent(payload, Encoding.UTF8, odata ? "application/json" : replace ? "application/geo+json" : "application/merge-patch+json")
         };
         if (ifNoneMatch is not null)
         {

@@ -714,7 +714,7 @@ internal sealed partial class ODataBatchHandler
                                 failedCondition ? "PreconditionFailed" : "Conflict",
                                 failedCondition
                                     ? "The conditional request does not match the current resource."
-                                    : "The feature changed during the update. Retry the PATCH against the current resource."));
+                                    : "The feature changed during the update. Read the current resource and retry the update."));
                         }
                         else
                         {

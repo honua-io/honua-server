@@ -392,7 +392,7 @@ internal sealed partial class ODataCrudService
                 }
 
                 return ODataCrudResult<Dictionary<string, object?>>.Conflict(
-                    "The feature changed during the update. Retry the PATCH against the current resource.");
+                    "The feature changed during the update. Read the current resource and retry the update.");
             }
 
             var result = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
