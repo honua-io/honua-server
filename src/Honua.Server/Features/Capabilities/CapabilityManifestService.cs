@@ -103,10 +103,9 @@ internal sealed class CapabilityManifestService(
         var operationCapabilities = await ResolveOperationCapabilitiesAsync(request.Environment, cancellationToken)
             .ConfigureAwait(false);
 
-        // #2335 (B3): the registry-derived composition resolves each descriptor through
-        // the shared gate resolver (edition/experimental precedence). All descriptors
-        // stay Implemented today, so this produces the same wire document as the legacy
-        // hand-curated composition; the gate context is the seam T10 (#2346) flips.
+        // The registry-derived composition resolves protocol capabilities through
+        // the shared edition/experimental gate. File import/export availability is
+        // appended from the same direction descriptors in both composition modes.
         var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
 
         var capabilities = options.ManifestFromRegistry
