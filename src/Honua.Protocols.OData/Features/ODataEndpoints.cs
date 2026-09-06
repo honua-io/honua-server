@@ -346,7 +346,9 @@ internal static partial class ODataEndpoints
             .WithTags("OData")
             .Produces<Dictionary<string, object?>>(200, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces<Models.ODataError>(StatusCodes.Status409Conflict, "application/json")
+            .Produces<Models.ODataError>(StatusCodes.Status412PreconditionFailed, "application/json");
         updateFeature.AllowAnonymous();
 
         var updateLayerFeature = endpoints.MapPatch("/odata/Layers({layerId:int})/Features({objectId:long})",
@@ -358,7 +360,9 @@ internal static partial class ODataEndpoints
             .WithTags("OData")
             .Produces<Dictionary<string, object?>>(200, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces<Models.ODataError>(StatusCodes.Status409Conflict, "application/json")
+            .Produces<Models.ODataError>(StatusCodes.Status412PreconditionFailed, "application/json");
         updateLayerFeature.AllowAnonymous();
 
         var legacyUpdateFeature = endpoints.MapPatch("/odata/Features({layerId:int},{objectId:long})",
@@ -370,7 +374,9 @@ internal static partial class ODataEndpoints
             .WithTags("OData")
             .Produces<Dictionary<string, object?>>(200, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces<Models.ODataError>(StatusCodes.Status409Conflict, "application/json")
+            .Produces<Models.ODataError>(StatusCodes.Status412PreconditionFailed, "application/json");
         legacyUpdateFeature.AllowAnonymous();
 
         // PUT - Replace an existing feature
@@ -383,7 +389,9 @@ internal static partial class ODataEndpoints
             .WithTags("OData")
             .Produces<Dictionary<string, object?>>(200, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces<Models.ODataError>(StatusCodes.Status409Conflict, "application/json")
+            .Produces<Models.ODataError>(StatusCodes.Status412PreconditionFailed, "application/json");
         replaceFeature.AllowAnonymous();
 
         var replaceLayerFeature = endpoints.MapPut("/odata/Layers({layerId:int})/Features({objectId:long})",
@@ -395,7 +403,9 @@ internal static partial class ODataEndpoints
             .WithTags("OData")
             .Produces<Dictionary<string, object?>>(200, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces<Models.ODataError>(StatusCodes.Status409Conflict, "application/json")
+            .Produces<Models.ODataError>(StatusCodes.Status412PreconditionFailed, "application/json");
         replaceLayerFeature.AllowAnonymous();
 
         var legacyReplaceFeature = endpoints.MapPut("/odata/Features({layerId:int},{objectId:long})",
@@ -407,7 +417,9 @@ internal static partial class ODataEndpoints
             .WithTags("OData")
             .Produces<Dictionary<string, object?>>(200, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces<Models.ODataError>(StatusCodes.Status409Conflict, "application/json")
+            .Produces<Models.ODataError>(StatusCodes.Status412PreconditionFailed, "application/json");
         legacyReplaceFeature.AllowAnonymous();
 
         // DELETE - Delete a feature

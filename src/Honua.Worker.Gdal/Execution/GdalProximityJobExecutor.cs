@@ -20,7 +20,8 @@ namespace Honua.Worker.Gdal.Execution;
 /// Distance reads a base64-encoded source GeoTIFF whose non-zero (or
 /// <c>values</c>-listed) pixels are the proximity targets, and publishes a Float32
 /// distance raster honoring the requested distance units and optional maximum
-/// distance.
+/// distance. A bundled step runs the real CLI and declares its negative nodata
+/// sentinel on the output band before publication.
 /// </para>
 /// <para>
 /// Allocation (assigning each cell the VALUE/id of its nearest source — a discrete
@@ -211,9 +212,14 @@ internal sealed partial class GdalProximityJobExecutor(
             // src/dst pair last so the output path is the final argument.
             var args = new List<string>
             {
+                Path.Join(AppContext.BaseDirectory, "Scripts", "gdal_euclidean_distance.py"),
                 "-of", "GTiff",
                 "-ot", "Float32",
                 "-distunits", distUnits,
+                // GDAL otherwise fills beyond-max-distance cells with 65535
+                // without declaring band nodata metadata. A negative sentinel
+                // cannot collide with a valid nonnegative Euclidean distance.
+                "-nodata", "-9999",
             };
             if (maxDistance.HasValue)
             {
@@ -234,7 +240,7 @@ internal sealed partial class GdalProximityJobExecutor(
 
             return await GdalToolExecution.RunAndPublishAsync(
                 runner, context, opts, logger, job.OperationId,
-                "gdal_proximity.py", args, workspace, outputPath,
+                "python3", args, workspace, outputPath,
                 GeoTiffContentType, "Proximity raster",
                 "Encoding proximity raster artifact", "Proximity completed",
                 cancellationToken).ConfigureAwait(false);

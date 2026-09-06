@@ -191,6 +191,16 @@ internal static class OgcFeatureIdentifierResolver
         return true;
     }
 
+    public static Task<ResolvedFeature?> ResolveAsync(
+        IFeatureReader featureReader,
+        IQueryProcessor queryProcessor,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        string featureId,
+        CancellationToken cancellationToken)
+        => ResolveAsync(featureReader, queryProcessor, snapshot, publication, resource, featureId, false, cancellationToken);
+
     public static async Task<ResolvedFeature?> ResolveAsync(
         IFeatureReader featureReader,
         IQueryProcessor queryProcessor,
@@ -198,6 +208,7 @@ internal static class OgcFeatureIdentifierResolver
         MetadataV2Publication publication,
         MetadataV2Resource resource,
         string featureId,
+        bool requireEditSnapshot,
         CancellationToken cancellationToken)
     {
         var idField = ResolvePublicIdField(resource);
@@ -231,7 +242,19 @@ internal static class OgcFeatureIdentifierResolver
             if (!result.Items.IsDefaultOrEmpty)
             {
                 var feature = result.Items[0];
-                return new ResolvedFeature(feature.Id, feature);
+                if (!requireEditSnapshot)
+                {
+                    return new ResolvedFeature(feature.Id, feature);
+                }
+                // Query projections may mask fields without carrying the complete
+                // row token needed by edits. Re-read through the token-aware by-ID
+                // path, retaining row security and checking the public ID did not move.
+                var current = await featureReader.GetAsync(sLayerId, feature.Id, cancellationToken).ConfigureAwait(false);
+                if (current.HasValue && string.Equals(
+                    FormatPublicId(feature, resource), FormatPublicId(current.Value, resource), StringComparison.Ordinal))
+                {
+                    return new ResolvedFeature(feature.Id, current.Value);
+                }
             }
         }
 
@@ -242,11 +265,11 @@ internal static class OgcFeatureIdentifierResolver
     /// Resolves a set of public feature ids to their existing rows with at most two
     /// provider round trips (one <see cref="FeatureQuery.ObjectIds"/> fast-path query
     /// for canonical internal object ids plus one IN-filter query over the public id
-    /// field), instead of one <see cref="ResolveAsync"/> lookup per id. Ids that do not
+    /// field), instead of one <see cref="ResolveAsync(IFeatureReader, IQueryProcessor, MetadataV2GraphSnapshot, MetadataV2Publication, MetadataV2Resource, string, CancellationToken)"/> lookup per id. Ids that do not
     /// resolve are simply absent from the result, so callers keep per-id error
     /// semantics. Public id field types whose values cannot be matched back to input
     /// tokens by invariant comparison (uuid, boolean, temporal, json, binary, geometry)
-    /// fall back to per-id <see cref="ResolveAsync"/> calls with identical semantics.
+    /// fall back to per-id <see cref="ResolveAsync(IFeatureReader, IQueryProcessor, MetadataV2GraphSnapshot, MetadataV2Publication, MetadataV2Resource, string, CancellationToken)"/> calls with identical semantics.
     /// </summary>
     public static async Task<IReadOnlyDictionary<string, ResolvedFeature>> ResolveManyAsync(
         IFeatureReader featureReader,
