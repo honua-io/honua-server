@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
@@ -37,12 +37,12 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
         await _fixture.InitializeAsync();
         _schema = _fixture.CurrentSchema!;
         await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
-        await using var command = new NpgsqlCommand($"""
-            CREATE TABLE "{_schema}".sinkproof (
+        await using var command = new NpgsqlCommand($$"""
+            CREATE TABLE "{{_schema}}".sinkproof (
                 id bigserial PRIMARY KEY, geom geometry(Geometry,4326), attributes jsonb NOT NULL,
                 CHECK ((attributes->>'value')::integer >= 0));
-            INSERT INTO "{_schema}".sinkproof (geom,attributes)
-            VALUES (ST_SetSRID(ST_MakePoint(-5,6),4326), '{{"key":"A","value":5}}');
+            INSERT INTO "{{_schema}}".sinkproof (geom,attributes)
+            VALUES (ST_SetSRID(ST_MakePoint(-5,6),4326), '{"key":"A","value":5}');
             """, connection);
         await command.ExecuteNonQueryAsync();
         var layer = await _fixture.GetService<ILayerPublishingService>().PublishLayerAsync(
