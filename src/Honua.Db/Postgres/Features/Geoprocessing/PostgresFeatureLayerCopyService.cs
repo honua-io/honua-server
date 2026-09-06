@@ -116,6 +116,7 @@ internal sealed class PostgresFeatureLayerCopyService(
         {
             var target = await publisher.PublishLayerAsync(connectionString, new LayerPublishRequest
             {
+                AllowEmptyTable = true,
                 Schema = schema,
                 Table = table,
                 LayerName = targetLayerName,

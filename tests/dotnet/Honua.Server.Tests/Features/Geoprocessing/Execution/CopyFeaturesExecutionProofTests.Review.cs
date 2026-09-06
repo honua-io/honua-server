@@ -38,7 +38,7 @@ public sealed partial class CopyFeaturesExecutionProofTests
         var reader = await _fixture.GetService<FeatureProviderQueryRouter>().ResolveReaderAsync(snapshot,
             snapshot.Index.ServicesById[publication.ServiceId], target, publication, result.LayerId, FeatureProviderReadOperation.Query);
         var rows = (await reader.QueryAsync(result.LayerId, new FeatureQuery { IncludeZ = true })).Items;
-        rows.Select(r => r.Id).Should().BeEquivalentTo(11L, 13L, 15L);
+        rows.Select(r => r.Id).Should().BeEquivalentTo(new long[] { 11, 13, 15 });
         foreach (var row in rows)
         {
             row.Attributes["label"].Should().BeNull("masked source values must never be copied");
@@ -74,7 +74,7 @@ public sealed partial class CopyFeaturesExecutionProofTests
             });
         using var cancelled = new CancellationTokenSource();
         publisher.SetLayerEnabledAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(), true, Arg.Any<CancellationToken>())
-            .Returns(_ =>
+            .Returns<PublishedLayerSummary?>(_ =>
             {
                 cancelled.Cancel();
                 throw new OperationCanceledException(cancelled.Token);

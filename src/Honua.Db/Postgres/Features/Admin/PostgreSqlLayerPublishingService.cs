@@ -193,6 +193,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 connectionString,
                 new TablePublishValidationRequest
                 {
+                    AllowEmptyTable = request.AllowEmptyTable,
                     Schema = schema,
                     Table = table,
                     LayerName = request.LayerName,
@@ -576,7 +577,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     geometryColumn!,
                     cancellationToken)
                 .ConfigureAwait(false);
-            AddGeometryHealthChecks(geometryHealth, checks);
+            AddGeometryHealthChecks(geometryHealth, checks, request.AllowEmptyTable);
         }
 
         await AddExistingLayerCheckAsync(connectionString, schema, table, checks, cancellationToken)
