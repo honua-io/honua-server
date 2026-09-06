@@ -193,21 +193,20 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
             GeometrySrid = 4326,
             Geometry = new NetTopologySuite.IO.WKTReader().Read("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))").AsBinary()
         });
-        foreach (var request in new[]
+        foreach (var createRequest in new Func<HttpRequestMessage>[]
         {
-            new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/alerts/rules") { Content = JsonContent.Create(RulePayload("new", null)) },
-            new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/rules/{existing.RuleId}") { Content = JsonContent.Create(RulePayload("changed", null)) },
-            new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/rules/{existing.RuleId}/enabled") { Content = JsonContent.Create(new { enabled = false }) },
-            new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/admin/alerts/rules/{existing.RuleId}"),
-            new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/alerts/zones") { Content = JsonContent.Create(ZonePayload("new")) },
-            new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/zones/{zone.ZoneId}") { Content = JsonContent.Create(ZonePayload("changed")) },
-            new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/admin/alerts/zones/{zone.ZoneId}")
+            () => new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/alerts/rules") { Content = JsonContent.Create(RulePayload("new", null)) },
+            () => new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/rules/{existing.RuleId}") { Content = JsonContent.Create(RulePayload("changed", null)) },
+            () => new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/rules/{existing.RuleId}/enabled") { Content = JsonContent.Create(new { enabled = false }) },
+            () => new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/admin/alerts/rules/{existing.RuleId}"),
+            () => new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/alerts/zones") { Content = JsonContent.Create(ZonePayload("new")) },
+            () => new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/zones/{zone.ZoneId}") { Content = JsonContent.Create(ZonePayload("changed")) },
+            () => new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/admin/alerts/zones/{zone.ZoneId}")
         })
         {
-            using (request)
-            {
-                (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-            }
+            using var request = createRequest();
+            using var response = await client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
             var stored = await store.GetRuleAsync(existing.RuleId);
             stored!.RuleName.Should().Be("original");
             stored.IsActive.Should().BeTrue();
