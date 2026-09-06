@@ -128,10 +128,21 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
         {
             parameters[ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0." + key] = value;
         }
-        var job = new ExecutionJobRecord { OperationId = Guid.NewGuid().ToString("N"), Status = ExecutionJobStatus.Running,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
-            Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local", WorkloadName = "geoprocessing:" + id, Parameters = parameters } };
+        var job = new ExecutionJobRecord
+        {
+            OperationId = Guid.NewGuid().ToString("N"),
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "geoprocessing:" + id,
+                Parameters = parameters
+            }
+        };
         var artifacts = new List<string>();
         var context = Substitute.For<IJobExecutionContext>();
         context.When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())).Do(c => artifacts.Add(c.ArgAt<string>(0)));

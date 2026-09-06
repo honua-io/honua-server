@@ -50,9 +50,18 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
         var layer = await _fixture.GetService<ILayerPublishingService>().PublishLayerAsync(
             new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString) { SearchPath = _schema + ",public" }.ConnectionString,
-            new LayerPublishRequest { Schema = _schema, Table = "sinkproof", LayerName = "Sink proof",
-                GeometryColumn = "geom", PrimaryKey = "id", Srid = 4326, Fields = ["id", "attributes"],
-                ServiceName = "sinkproof_" + Guid.NewGuid().ToString("N"), Enabled = true });
+            new LayerPublishRequest
+            {
+                Schema = _schema,
+                Table = "sinkproof",
+                LayerName = "Sink proof",
+                GeometryColumn = "geom",
+                PrimaryKey = "id",
+                Srid = 4326,
+                Fields = ["id", "attributes"],
+                ServiceName = "sinkproof_" + Guid.NewGuid().ToString("N"),
+                Enabled = true
+            });
         _layerId = layer.LayerId;
     }
 
@@ -106,18 +115,32 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
         options.CurrentValue.Returns(new GeoprocessingExecutorOptions());
         var executor = new HonuaLayerSinkExecutor(options, NullLogger<HonuaLayerSinkExecutor>.Instance,
             new PostgresHonuaLayerSink(_fixture.Postgres.DataSource));
-        var parameters = new Dictionary<string, string> { ["protocolProcessId"] = "sink.honua-layer",
-            [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "sink.honua-layer" };
+        var parameters = new Dictionary<string, string>
+        {
+            ["protocolProcessId"] = "sink.honua-layer",
+            [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "sink.honua-layer"
+        };
         foreach (var (key, value) in new[] { ("schema", _schema), ("layer", "sinkproof"), ("targetSrid", "4326"),
             ("loadMode", mode), ("batchId", batch), ("keyFields", "key"),
             ("input", "data:application/geo+json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(input))) })
         {
             parameters[ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0." + key] = value;
         }
-        var job = new ExecutionJobRecord { OperationId = batch, Status = ExecutionJobStatus.Running,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
-            Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local", WorkloadName = "geoprocessing:sink.honua-layer", Parameters = parameters } };
+        var job = new ExecutionJobRecord
+        {
+            OperationId = batch,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "geoprocessing:sink.honua-layer",
+                Parameters = parameters
+            }
+        };
         var artifacts = new List<string>();
         var context = Substitute.For<IJobExecutionContext>();
         context.When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())).Do(c => artifacts.Add(c.ArgAt<string>(0)));

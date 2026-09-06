@@ -54,11 +54,18 @@ public sealed class EsriSourceExecutionProofTests
         }
         var job = new ExecutionJobRecord
         {
-            OperationId = "esri-source-proof", Status = ExecutionJobStatus.Running,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
-            Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.Geoprocessing,
-                TargetKind = BatchComputeTargetKind.KubernetesJob, Backend = "local",
-                WorkloadName = "geoprocessing:source.esri-featureserver", Parameters = parameters }
+            OperationId = "esri-source-proof",
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "geoprocessing:source.esri-featureserver",
+                Parameters = parameters
+            }
         };
         var context = Substitute.For<IJobExecutionContext>();
         var artifacts = new List<string>();
@@ -107,8 +114,13 @@ public sealed class EsriSourceExecutionProofTests
                 attributes = new { OBJECTID = id, name = "station-" + id, value = id * 7 },
                 geometry = new { x = id + 0.25, y = -id - 0.5 }
             }).ToArray();
-            var body = JsonSerializer.Serialize(new { features, exceededTransferLimit = offset + features.Length < selected.Length,
-                geometryType = "esriGeometryPoint", spatialReference = new { wkid = 4326 } });
+            var body = JsonSerializer.Serialize(new
+            {
+                features,
+                exceededTransferLimit = offset + features.Length < selected.Length,
+                geometryType = "esriGeometryPoint",
+                spatialReference = new { wkid = 4326 }
+            });
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
         }
     }
