@@ -228,6 +228,21 @@ jobs:
           # format job above. The default remains inline for every other caller.
           run-format: 'false'
 
+      - name: Prove remote source execution with real HTTP and PostGIS
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        timeout-minutes: 10
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release --filter 'Category=RemoteSourceExecutionProof' \
+            --logger 'trx;LogFileName=remote-source-execution-proof.trx' --results-directory tests/TestResults
+
+      - name: Upload remote source execution proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: remote-source-execution-proof
+          path: tests/TestResults/remote-source-execution-proof.trx
+
       - name: Prove raster catalog execution with production GDAL
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         timeout-minutes: 10

@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NSubstitute;
 using Testcontainers.PostgreSql;
+using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
@@ -66,6 +67,7 @@ public sealed class PostgisSourceExecutionProofTests(WebAppFixture fixture) : IC
                 .Returns(call => realResolver.ResolveConnectionStringAsync(registered.Name, call.ArgAt<CancellationToken>(1)));
             var services = new ServiceCollection();
             services.AddSingleton(observed);
+            services.AddSingleton(new RemoteSourceProof.Secrets([password, connectionString]));
             services.AddSingleton<IDagFeatureSource>(new ExternalPostgisDagSource());
             using var provider = services.BuildServiceProvider();
             using var output = await RemoteSourceProof.Execute(provider, "source.postgis",
@@ -73,34 +75,47 @@ public sealed class PostgisSourceExecutionProofTests(WebAppFixture fixture) : IC
                 ("since", "2026-01-02T00:00:00Z"), ("watermarkField", "updated_at"), ("bbox", "0,0,10,10"), ("outSrid", "4326"));
             await observed.Received(1).ResolveConnectionStringAsync(registered.Name, Arg.Any<CancellationToken>());
             output.RootElement.GetRawText().Should().NotContain(password).And.NotContain(connectionString);
-            var features = output.RootElement.GetProperty("features").EnumerateArray()
-                .OrderBy(f => f.GetProperty("properties").GetProperty("key").GetInt32()).ToArray();
-            features.Should().HaveCount(3);
-            double[][] expected = [[1, 2, 3.25], [3, 4, -1.5], [5, 6, 9.75]];
-            string?[] names = ["Kīlauea 日本", null, "last"];
-            for (var i = 0; i < 3; i++)
-            {
-                var properties = features[i].GetProperty("properties");
-                properties.GetProperty("key").GetInt32().Should().Be(11 + i);
-                properties.GetProperty("name").GetString().Should().Be(names[i]);
-                properties.GetProperty("active").GetBoolean().Should().BeTrue();
-                properties.TryGetProperty("geom", out _).Should().BeFalse("geometry is not a scalar attribute");
-                properties.GetProperty("updated_at").GetDateTimeOffset().Should()
-                    .Be(new DateTimeOffset(2026, 1, 2 + i, 0, 0, 0, TimeSpan.Zero));
-                features[i].GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
-                features[i].GetProperty("geometry").GetProperty("coordinates").EnumerateArray().Select(v => v.GetDouble())
-                    .Should().Equal(expected[i]);
-            }
-            features[0].GetProperty("properties").GetProperty("reading").GetDecimal().Should().Be(12.5m);
-            features[1].GetProperty("properties").GetProperty("reading").ValueKind.Should().Be(JsonValueKind.Null);
-            features[2].GetProperty("properties").GetProperty("reading").GetDecimal().Should().Be(0m);
-            // Canonical GeoJSON without an explicit alternate CRS is longitude/latitude WGS84.
-            var decoded = new NetTopologySuite.IO.GeoJsonReader().Read<NetTopologySuite.Features.FeatureCollection>(output.RootElement.GetRawText());
-            decoded.Select(f => f.Geometry.SRID).Should().OnlyContain(srid => srid == 4326);
+            AssertSelectedRows(output.RootElement);
+            using var wrong = await RemoteSourceProof.Execute(provider, "source.postgis",
+                ("connectionName", registered.Name), ("table", "survey"), ("where", "true"),
+                ("since", "2026-01-02T00:00:00Z"), ("watermarkField", "updated_at"), ("bbox", "0,0,10,10"));
+            // A real, valid artifact with an ignored predicate must fail the same oracle.
+            Action assert = () => AssertSelectedRows(wrong.RootElement);
+            assert.Should().Throw<XunitException>();
+
         }
         finally
         {
             await registry.DeleteConnectionAsync(registered.ConnectionId);
         }
     }
+
+    private static void AssertSelectedRows(JsonElement output)
+    {
+        var features = output.GetProperty("features").EnumerateArray()
+            .OrderBy(f => f.GetProperty("properties").GetProperty("key").GetInt32()).ToArray();
+        features.Should().HaveCount(3);
+        double[][] expected = [[1, 2, 3.25], [3, 4, -1.5], [5, 6, 9.75]];
+        string?[] names = ["Kīlauea 日本", null, "last"];
+        for (var i = 0; i < 3; i++)
+        {
+            var properties = features[i].GetProperty("properties");
+            properties.GetProperty("key").GetInt32().Should().Be(11 + i);
+            properties.GetProperty("name").GetString().Should().Be(names[i]);
+            properties.GetProperty("active").GetBoolean().Should().BeTrue();
+            properties.TryGetProperty("geom", out _).Should().BeFalse("geometry is not a scalar attribute");
+            properties.GetProperty("updated_at").GetDateTimeOffset().Should()
+                .Be(new DateTimeOffset(2026, 1, 2 + i, 0, 0, 0, TimeSpan.Zero));
+            features[i].GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
+            features[i].GetProperty("geometry").GetProperty("coordinates").EnumerateArray().Select(v => v.GetDouble())
+                .Should().Equal(expected[i]);
+        }
+        features[0].GetProperty("properties").GetProperty("reading").GetDecimal().Should().Be(12.5m);
+        features[1].GetProperty("properties").GetProperty("reading").ValueKind.Should().Be(JsonValueKind.Null);
+        features[2].GetProperty("properties").GetProperty("reading").GetDecimal().Should().Be(0m);
+        // Canonical GeoJSON without an explicit alternate CRS is longitude/latitude WGS84.
+        var decoded = new NetTopologySuite.IO.GeoJsonReader().Read<NetTopologySuite.Features.FeatureCollection>(output.GetRawText());
+        decoded.Select(f => f.Geometry.SRID).Should().OnlyContain(srid => srid == 4326);
+    }
+
 }
