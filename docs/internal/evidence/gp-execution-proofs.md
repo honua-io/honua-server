@@ -68,3 +68,8 @@ This local checkpoint does not replace exact-candidate qualification: shared run
 binding consumes #3848, database/restart evidence consumes #3855 where applicable,
 and heavier-operation canary coordination consumes #3857. Those shared obligations
 remain in the matrix; no lifecycle waiver or candidate receipt is claimed here.
+
+Final publication integrates trunk `959a830bc03b7aebb6982719d77cd1c75b0c1428`,
+including the separately qualified realtime P0. The local receipts above precede
+that final merge; required PR CI validates the final head. Regenerating the
+capability matrix after the merge produced no semantic artifact drift.
