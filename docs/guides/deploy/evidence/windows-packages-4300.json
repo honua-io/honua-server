@@ -26,5 +26,10 @@
   "restartReadback": true,
   "recreatedContainerReadback": true,
   "cleanup": true,
+  "documentationChecks": {
+    "powershellBlocksParse": true,
+    "relativeLinksAndAnchors": true,
+    "exampleSurfaces": true
+  },
   "remaining": "Repeat on a clean Windows machine against the signed release lock's exact candidate image and compatible client pins after the cut; this receipt is not release qualification."
 }
