@@ -246,6 +246,29 @@ assert_exact_shards() {
 }
 
 echo "Dry-running shard router cases..."
+# The serialized [Collection("Database")] write-path concurrency class owns its
+# own shard; it must route there and nowhere else.
+assert_exact_shards \
+  "core-capacity-PatchConcurrencyTests" \
+  "tests/dotnet/Honua.Server.Tests/PatchConcurrencyTests.cs" \
+  '["Core Mutation Concurrency"]'
+assert_exact_shards \
+  "core-capacity-ApiSurfaceComplianceTests" \
+  "tests/dotnet/Honua.Server.Tests/Comprehensive/ApiSurfaceComplianceTests.cs" \
+  '["STAC and API Governance"]'
+assert_exact_shards \
+  "core-capacity-TestQualityValidationTests" \
+  "tests/dotnet/Honua.Server.Tests/Comprehensive/TestQualityValidationTests.cs" \
+  '["STAC and API Governance"]'
+# Whole-class capacity moves must update path routing and executable ownership.
+assert_exact_shards \
+  "core-capacity-CrsTransformationCorrectnessTests" \
+  "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs" \
+  '["Core Attachments and Records"]'
+assert_exact_shards \
+  "core-capacity-AdvancedSpatialQueryTests" \
+  "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs" \
+  '["Core Endpoints"]'
 assert_descriptor \
   "ci-shards-only" \
   ".github/ci-shards.json" \
@@ -1247,6 +1270,26 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices ImageServer" \
+  --assert-owner \
+    "Honua.Server.Tests.PatchConcurrencyTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core Mutation Concurrency" \
+  --assert-owner \
+    "Honua.Server.Tests.CrsTransformationCorrectnessTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core Attachments and Records" \
+  --assert-owner \
+    "Honua.Server.Tests.AdvancedSpatialQueryTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core Endpoints" \
+  --assert-owner \
+    "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "STAC and API Governance" \
+  --assert-owner \
+    "Honua.Server.Tests.Comprehensive.TestQualityValidationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "STAC and API Governance" \
   --assert-owner \
     "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
