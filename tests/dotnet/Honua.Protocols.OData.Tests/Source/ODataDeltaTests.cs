@@ -13,6 +13,11 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.WebUtilities;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
+using Npgsql;
+using System.Collections.Concurrent;
+using Honua.Protocols.OData;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
@@ -22,10 +27,27 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
-public sealed class ODataDeltaTests : IAsyncLifetime
+public sealed partial class ODataDeltaTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = 0;
+    private readonly ConcurrentQueue<string> _queryErrors = new();
+
+    public ODataDeltaTests()
+    {
+        _fixture.ConfigureServices(services => services.AddSingleton<ILogger<ODataStreamingQueryHandler>>(new QueryErrorLogger(_queryErrors)));
+    }
+
+    private sealed class QueryErrorLogger(ConcurrentQueue<string> errors) : ILogger<ODataStreamingQueryHandler>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (exception is not null) { errors.Enqueue(exception.ToString()); }
+        }
+    }
 
     public async Task InitializeAsync()
     {
@@ -213,13 +235,12 @@ public sealed class ODataDeltaTests : IAsyncLifetime
 
         var nextLink = document.RootElement.GetProperty("@odata.nextLink").GetString();
         nextLink.Should().NotBeNullOrWhiteSpace();
-        nextLink.Should().Contain(ODataUtilityService.TrackChangesSnapshotParameter);
+        nextLink.Should().Contain("$deltatoken=v2.");
 
         var nextQuery = QueryHelpers.ParseQuery(new Uri(nextLink!).Query);
-        var snapshotToken = nextQuery[ODataUtilityService.TrackChangesSnapshotParameter].ToString();
+        var snapshotToken = nextQuery["$deltatoken"].ToString();
         snapshotToken.Should().NotBeNullOrWhiteSpace();
-        ODataDeltaService.TryDecode(snapshotToken, out var snapshotState, out var snapshotError)
-            .Should().BeTrue(snapshotError);
+        var snapshotId = snapshotToken.Split('.')[1];
 
         string? deltaLink = null;
         var currentPathAndQuery = new Uri(nextLink!).PathAndQuery;
@@ -247,8 +268,8 @@ public sealed class ODataDeltaTests : IAsyncLifetime
         var deltaQuery = QueryHelpers.ParseQuery(new Uri(resolvedDeltaLink).Query);
         var deltaToken = deltaQuery["$deltatoken"].ToString();
         deltaToken.Should().NotBeNullOrWhiteSpace();
-        ODataDeltaService.TryDecode(deltaToken, out var finalState, out var finalError).Should().BeTrue(finalError);
-        finalState.Timestamp.Should().Be(snapshotState.Timestamp);
+        deltaToken.Split('.')[1].Should().Be(snapshotId, "every baseline page and its terminal poll refer to one durable query image");
+        deltaToken.Should().EndWith(".0.t");
     }
 
     [IntegrationTest]
@@ -256,14 +277,26 @@ public sealed class ODataDeltaTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Query_WithDeltaTokenPaging_CarriesStableUpperBoundUntilFinalDeltaLink()
     {
-        var token = ODataDeltaService.Encode(new ODataDeltaService.DeltaQueryState
+        using var baselineRequest = new HttpRequestMessage(HttpMethod.Get, $"/odata/Features({TestLayerId})?$top=100");
+        baselineRequest.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
+        using var baselineResponse = await _fixture.Client.SendAsync(baselineRequest);
+        baselineResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var baseline = JsonDocument.Parse(await baselineResponse.Content.ReadAsStringAsync());
+        var expectedIds = baseline.RootElement.GetProperty("value").EnumerateArray()
+            .Select(value => value.GetProperty("ObjectId").GetInt64()).Order().ToArray();
+        var baselineDelta = new Uri(baseline.RootElement.GetProperty("@odata.deltaLink").GetString()!).PathAndQuery;
+        await using var connection = new NpgsqlConnection(_fixture.Postgres.ConnectionString);
+        await connection.OpenAsync();
+        using var commandBuilder = new NpgsqlCommandBuilder();
+        var schema = commandBuilder.QuoteIdentifier(_fixture.CurrentSchema!);
+        async Task SetNamesAsync(string name)
         {
-            Timestamp = DateTimeOffset.UnixEpoch,
-            LayerId = TestLayerId
-        });
-
-        var response = await _fixture.Client.GetAsync(
-            $"/odata/Features({TestLayerId})?$deltatoken={token}&$top=2");
+            await using var command = new NpgsqlCommand($"UPDATE {schema}.features SET attributes = jsonb_set(attributes, '{{name}}', to_jsonb($1::text)) WHERE layer_id = 0", connection);
+            command.Parameters.AddWithValue(name);
+            await command.ExecuteNonQueryAsync();
+        }
+        await SetNamesAsync("delta-version");
+        var response = await _fixture.Client.GetAsync(baselineDelta + "&$top=2");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -272,9 +305,20 @@ public sealed class ODataDeltaTests : IAsyncLifetime
         var nextLink = document.RootElement.GetProperty("@odata.nextLink").GetString();
         nextLink.Should().NotBeNullOrWhiteSpace();
         var nextQuery = QueryHelpers.ParseQuery(new Uri(nextLink!).Query);
-        ODataDeltaService.TryDecode(nextQuery["$deltatoken"].ToString(), out var nextState, out var nextError)
-            .Should().BeTrue(nextError);
-        nextState.UpperBoundTimestamp.Should().NotBeNull();
+        var snapshotId = nextQuery["$deltatoken"].ToString().Split('.')[1];
+        var actualIds = new List<long>();
+        void AssertFrozenValues(JsonElement page)
+        {
+            foreach (var value in page.GetProperty("value").EnumerateArray())
+            {
+                value.GetProperty("name").GetString().Should().Be("delta-version");
+                actualIds.Add(value.GetProperty("ObjectId").GetInt64());
+            }
+        }
+        AssertFrozenValues(document.RootElement);
+        // Change every row after the first page. The remaining pages must retain
+        // their original values and IDs, even though a fresh read now differs.
+        await SetNamesAsync("later-version");
 
         string currentPathAndQuery = new Uri(nextLink!).PathAndQuery;
         string? deltaLink = null;
@@ -285,6 +329,7 @@ public sealed class ODataDeltaTests : IAsyncLifetime
 
             var pageContent = await pageResponse.Content.ReadAsStringAsync();
             using var pageDocument = JsonDocument.Parse(pageContent);
+            AssertFrozenValues(pageDocument.RootElement);
             if (pageDocument.RootElement.TryGetProperty("@odata.nextLink", out var pageNextLinkElement))
             {
                 currentPathAndQuery = new Uri(pageNextLinkElement.GetString()!).PathAndQuery;
@@ -299,10 +344,15 @@ public sealed class ODataDeltaTests : IAsyncLifetime
         var resolvedDeltaLink = deltaLink ?? throw new InvalidOperationException("Delta link was not captured.");
         resolvedDeltaLink.Should().NotBeNullOrWhiteSpace();
         var deltaQuery = QueryHelpers.ParseQuery(new Uri(resolvedDeltaLink).Query);
-        ODataDeltaService.TryDecode(deltaQuery["$deltatoken"].ToString(), out var finalState, out var finalError)
-            .Should().BeTrue(finalError);
-        finalState.Timestamp.Should().Be(nextState.UpperBoundTimestamp);
-        finalState.UpperBoundTimestamp.Should().BeNull();
+        deltaQuery["$deltatoken"].ToString().Split('.')[1].Should().Be(snapshotId);
+        actualIds.Should().OnlyHaveUniqueItems().And.BeEquivalentTo(expectedIds);
+
+        using var laterResponse = await _fixture.Client.GetAsync(new Uri(resolvedDeltaLink).PathAndQuery + "&$top=100");
+        laterResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var later = JsonDocument.Parse(await laterResponse.Content.ReadAsStringAsync());
+        var laterValues = later.RootElement.GetProperty("value").EnumerateArray().ToArray();
+        laterValues.Select(value => value.GetProperty("ObjectId").GetInt64()).Should().BeEquivalentTo(expectedIds);
+        laterValues.Should().OnlyContain(value => value.GetProperty("name").GetString() == "later-version");
     }
 
     [IntegrationTest]

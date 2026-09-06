@@ -154,6 +154,30 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         _postgres = new PostgresFixture();
         await _postgres.InitializeAsync();
+        await InitializeIsolatedHostAsync();
+    }
+
+    /// <summary>
+    /// Stops and recreates an isolated host while retaining its real database and
+    /// schema. Restart proofs must use custom configuration so they own the host.
+    /// </summary>
+    public async Task RestartHostAsync()
+    {
+        if (_useSharedServer || _factory is null || _postgres is null)
+        {
+            throw new InvalidOperationException("Restart requires an initialized, isolated host.");
+        }
+        _serviceScope?.Dispose();
+        _serviceScope = null;
+        Client.Dispose();
+        await _factory.DisposeAsync();
+        _factory = null;
+        await InitializeIsolatedHostAsync();
+    }
+
+    private async Task InitializeIsolatedHostAsync()
+    {
+        var postgres = _postgres ?? throw new InvalidOperationException("Postgres fixture is not initialized.");
 
         // Not disposed here by design: this factory is stored in the instance field
         // _factory and disposed once in DisposeAsync (see below), which owns its lifetime
@@ -172,14 +196,14 @@ public sealed class WebAppFixture : IAsyncLifetime
                 {
                     configBuilder.AddInMemoryCollection(
                         Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin
-                            .BuildAppConfigurationDictionary(_postgres.ConnectionString));
+                            .BuildAppConfigurationDictionary(postgres.ConnectionString));
                 });
 
                 builder.ConfigureTestServices(services =>
                 {
                     Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin.ConfigureIsolatedTestServices(
                         services,
-                        _postgres.ConnectionString,
+                        postgres.ConnectionString,
                         () => _currentSchema,
                         _serviceConfigurations);
 
@@ -199,7 +223,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
-            _currentSchema = await _postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
+            _currentSchema = await postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
             await SeedSchemaAsync(_currentSchema);
         }
         ApplyCurrentSchemaHeader(Client);
