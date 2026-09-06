@@ -157,7 +157,9 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
 
         var crossDetail = await _bob.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/replicas/{aliceReplica}");
-        crossDetail.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        crossDetail.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "principal B must not read principal A's replica by id; body was {0}",
+            await crossDetail.Content.ReadAsStringAsync());
 
         var ownDetail = await _alice.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/replicas/{aliceReplica}");
@@ -216,10 +218,14 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
     /// </summary>
     private static async Task AssertReplicaMaskedAsync(HttpResponseMessage response, string replicaId)
     {
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "a replica owned by another principal is masked rather than acknowledged");
-
         var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "a replica owned by another principal is masked rather than acknowledged; got {0} for replica {1} with body {2}",
+            response.StatusCode,
+            replicaId,
+            body.Length > 500 ? body[..500] : body);
+
         body.Should().NotContain("\"success\":true", "the request must not have been carried out");
     }
 
