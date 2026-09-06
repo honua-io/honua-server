@@ -1413,6 +1413,7 @@ jobs:
         run: |
           docker build --target native-tools -f docker/worker-gdal/Dockerfile -t honua-pdal-proof .
           echo "HONUA_PDAL_PROOF_IMAGE=$(docker image inspect --format '{{.Id}}' honua-pdal-proof)" >> "$GITHUB_ENV"
+          echo "HONUA_GDAL_PROOF_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
 
       - name: Run Worker GDAL tests
         id: run-tests
