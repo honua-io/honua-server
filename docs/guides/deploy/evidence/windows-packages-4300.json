@@ -1,10 +1,10 @@
 {
   "kind": "pre-cut-windows-published-package-rehearsal",
-  "observedAt": "2026-09-06T04:42:33.1572492Z",
+  "observedAt": "2026-09-06T04:49:03.9693032Z",
   "exactCandidateQualification": false,
   "cleanMachineQualification": false,
   "environment": "Native Windows PowerShell, Python 3.13, Docker Desktop engine 29.6.2; new installation directory, virtual environment, Compose project and volumes on an existing Windows host",
-  "documentRevision": "17ede1658",
+  "documentRevision": "bda77e187",
   "command": "scripts/docs-validation/validate-windows-packages.ps1 -WorkDirectory C:/Users/mike/honua-io",
   "exitCode": 0,
   "image": "ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9",
@@ -26,6 +26,18 @@
   "restartReadback": true,
   "recreatedContainerReadback": true,
   "cleanup": true,
+  "productionComposeSmoke": {
+    "command": "python scripts/docker/smoke-production.py --image ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9",
+    "exitCode": 0,
+    "freshVolumes": true,
+    "postgisRemedy": false,
+    "ready": true,
+    "proxyAuthenticatedAdminStatus": 200,
+    "proxyHttpsBasicStatus": 200,
+    "proxyUntrustedHostStatus": 400,
+    "untrustedForwardedHttpsStatus": 401,
+    "cleanupSucceeded": true
+  },
   "documentationChecks": {
     "powershellBlocksParse": true,
     "relativeLinksAndAnchors": true,
