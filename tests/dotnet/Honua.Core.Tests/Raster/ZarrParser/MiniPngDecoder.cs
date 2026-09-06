@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
@@ -136,27 +135,6 @@ internal static class MiniPngDecoder
         }
 
         return new DecodedImage(width, height, rgba);
-    }
-
-    /// <summary>Distinct gray levels present in an image whose pixels are all opaque gray.</summary>
-    public static IReadOnlyList<byte> GrayLevels(DecodedImage image)
-    {
-        var levels = new List<byte>(image.Width * image.Height);
-        for (var y = 0; y < image.Height; y++)
-        {
-            for (var x = 0; x < image.Width; x++)
-            {
-                var (r, g, b, _) = image.Pixel(x, y);
-                if (r != g || g != b)
-                {
-                    throw new InvalidOperationException($"Pixel ({x},{y}) is not gray: ({r},{g},{b}).");
-                }
-
-                levels.Add(r);
-            }
-        }
-
-        return levels;
     }
 
     private static int Paeth(int left, int up, int upLeft)
