@@ -12,6 +12,8 @@ deploy/job-event notifications). The customer surface remains OFF by default and
 > when the canonical `alerts.geofence` capability opt-in is also enabled.
 > Remove the setting or set it to `false` before upgrading if activation is not intended.
 
+**Retained Preview security floors (#4426):** Alert rules, zones, incidents and delivery channels are instance-wide; they have no tenant ownership model. Their HTTP administration rejects authenticated tenant claims and tenant override headers, including on channel and incident routes. Use an instance administrator without a tenant scope. List rules/zones requires an explicit nonblank `serviceId`; it never interprets an omitted scope as all services. Zone create/update/delete and rule create/update/enable/disable/delete commit atomically with `honua.audit_log`, including the authenticated actor identity and resource identity. A missing durable audit receipt returns 503 and rolls back the mutation.
+
 **Issue:** honua-server#1169 (2026.1 Preview ruling supersedes the earlier #2427 GA claim)
 **Owner (UI side):** honua-console `/operate/alerts/rules` editor (rule authoring + per-rule delivery-state)
 **Audience:** the engineer/agent implementing the honua-server side

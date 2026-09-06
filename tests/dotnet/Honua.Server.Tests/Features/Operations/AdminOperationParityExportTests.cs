@@ -142,5 +142,5 @@ public sealed class AdminOperationParityExportTests
         File.ReadAllText(RepositoryPaths.Resolve("docs", "gis", "data", fileName));
 
     private static string Serialize<T>(T value) =>
-        JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }) + "\n";
+        JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true, NewLine = "\n" }) + "\n";
 }

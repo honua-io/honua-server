@@ -257,8 +257,8 @@ require(
 require(
     r"dotnet test tests/dotnet/Honua\.Server\.Tests/Honua\.Server\.Tests\.csproj \\\n"
     r"\s+--no-build \\\n\s+--no-restore \\\n\s+--configuration Release \\\n"
-    r'\s+--filter "Category=Architecture"',
-    "preserve the complete Server governance/drift assertion filter",
+    r'\s+--filter "Category=Architecture\|FullyQualifiedName~AlertPreviewFloorTests"',
+    "preserve the complete Server governance/drift filter and retained alerting Preview floors",
     text=TEXT,
 )
 require(
