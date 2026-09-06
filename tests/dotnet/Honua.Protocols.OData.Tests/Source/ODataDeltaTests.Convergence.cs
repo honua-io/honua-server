@@ -101,7 +101,11 @@ public sealed partial class ODataDeltaTests
         var delta = await FollowAsync("/odata/Features(0)?$filter=name%20ne%20'excluded'&$top=1", true);
         state.Should().BeEquivalentTo(new Dictionary<long, string>
         {
-            [73001] = "first", [73002] = "second", [73003] = "leaving", [73004] = "recreate", [73006] = "delete"
+            [73001] = "first",
+            [73002] = "second",
+            [73003] = "leaving",
+            [73004] = "recreate",
+            [73006] = "delete"
         });
 
         // One frozen database timestamp, deliberately older than the baseline poll.
@@ -121,7 +125,10 @@ public sealed partial class ODataDeltaTests
         var terminal = await FollowAsync(delta, false);
         var expected = new Dictionary<long, string>
         {
-            [73001] = "first-updated", [73002] = "second-updated", [73004] = "recreated", [73005] = "entered"
+            [73001] = "first-updated",
+            [73002] = "second-updated",
+            [73004] = "recreated",
+            [73005] = "entered"
         };
         state.Should().BeEquivalentTo(expected, "the independently specified mutation outcome must replace the baseline");
         StateHash(state).Should().Be(StateHash(expected));
