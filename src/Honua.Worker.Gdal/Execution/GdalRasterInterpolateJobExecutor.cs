@@ -259,13 +259,12 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
                 "Invalid kriging inputs: 'model' must be one of spherical, exponential, gaussian.");
         }
 
-        if (!TryReadOptionalDouble(parameters, "nugget", requirePositive: false, out var nugget, out var nuggetError)
-            || !TryReadOptionalDouble(parameters, "sill", requirePositive: true, out var sill, out var sillError)
-            || !TryReadOptionalDouble(parameters, "range", requirePositive: true, out var range, out var rangeError))
+        if (!TryReadOptionalDouble(parameters, "nugget", requirePositive: false, out var nugget, out var tuningError)
+            || !TryReadOptionalDouble(parameters, "sill", requirePositive: true, out var sill, out tuningError)
+            || !TryReadOptionalDouble(parameters, "range", requirePositive: true, out var range, out tuningError))
         {
-            var error = nuggetError.Length > 0 ? nuggetError : sillError.Length > 0 ? sillError : rangeError;
-            Log.InvalidInputs(logger, job.OperationId, error);
-            return JobExecutionResult.Failed($"Invalid kriging inputs: {error}");
+            Log.InvalidInputs(logger, job.OperationId, tuningError);
+            return JobExecutionResult.Failed($"Invalid kriging inputs: {tuningError}");
         }
 
         if (!TryReadOutputSize(parameters, opts, out var requestedWidth, out var requestedHeight, out var sizeError))

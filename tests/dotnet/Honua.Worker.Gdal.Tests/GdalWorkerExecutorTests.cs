@@ -66,9 +66,9 @@ public sealed class GdalWorkerExecutorTests
         dispatcher.SupportedProcessIds.Should().Contain(new[] { "gdal.ogr2ogr", "gdal.gdalwarp" });
 
         // The raster analysis & terrain GP tool packs (#2141, #2239, #2240) must all be
-        // routable by the worker dispatcher, including the flagged-but-routed ids
-        // (interpolate-kriging, euclidean-allocation) that fail fast with a clear
-        // message inside the executor.
+        // routable by the worker dispatcher, including the ids served by a custom worker
+        // step rather than a stock GDAL CLI (interpolate-kriging's own solver,
+        // euclidean-allocation's Python step).
         dispatcher.SupportedProcessIds.Should().Contain(new[]
         {
             "raster.resample",

@@ -25,13 +25,16 @@ public sealed class OrdinaryKrigingTests
         new(2, 2, 100)
     ];
 
+    // The model enum is internal to the worker, so the theory travels by its catalog
+    // name — which is also the value a submission actually carries.
     [Theory]
     [Trait("Category", "Unit")]
-    [InlineData(VariogramModel.Spherical)]
-    [InlineData(VariogramModel.Exponential)]
-    [InlineData(VariogramModel.Gaussian)]
-    public void Predict_AtASampleLocation_ReproducesTheObservation(VariogramModel model)
+    [InlineData("spherical")]
+    [InlineData("exponential")]
+    [InlineData("gaussian")]
+    public void Predict_AtASampleLocation_ReproducesTheObservation(string modelName)
     {
+        OrdinaryKriging.TryParseModel(modelName, out var model).Should().BeTrue();
         var variogram = OrdinaryKriging.FitDefaults(Corners, model, nugget: null, sill: null, range: null);
         OrdinaryKriging.TrySolve(Corners, variogram, out var kriging, out var failure)
             .Should().BeTrue(failure);
@@ -153,15 +156,15 @@ public sealed class OrdinaryKrigingTests
 
     [Theory]
     [Trait("Category", "Unit")]
-    [InlineData("spherical", VariogramModel.Spherical)]
-    [InlineData("Exponential", VariogramModel.Exponential)]
-    [InlineData(" GAUSSIAN ", VariogramModel.Gaussian)]
-    [InlineData("", VariogramModel.Spherical)]
-    [InlineData(null, VariogramModel.Spherical)]
-    public void TryParseModel_AcceptsTheCatalogDomainCaseInsensitively(string? value, VariogramModel expected)
+    [InlineData("spherical", "spherical")]
+    [InlineData("Exponential", "exponential")]
+    [InlineData(" GAUSSIAN ", "gaussian")]
+    [InlineData("", "spherical")]
+    [InlineData(null, "spherical")]
+    public void TryParseModel_AcceptsTheCatalogDomainCaseInsensitively(string? value, string expected)
     {
         OrdinaryKriging.TryParseModel(value, out var model).Should().BeTrue();
-        model.Should().Be(expected);
+        OrdinaryKriging.ModelName(model).Should().Be(expected);
     }
 
     [UnitTest]
