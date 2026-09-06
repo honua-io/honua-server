@@ -30,8 +30,9 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 [Collection("Database")]
 [Trait("Category", "LayerExecutionProof")]
-[Protocol(TestProtocols.OgcApiProcesses)]
-[Operation(Operations.ProcessExecution)]
+// These contracts exercise shared executors and storage directly, without an HTTP adapter.
+[Protocol(TestProtocols.Infrastructure)]
+[Operation(Operations.ContractTesting)]
 public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureServices(_ => { });
@@ -91,7 +92,7 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
         output.RootElement.GetProperty("srid").GetInt32().Should().Be(3857);
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task HonuaLayerSource_AdvertisedCrsDiffersFromStorage_UsesCanonicalStoragePrecedence(bool bindingOverridesResource)
