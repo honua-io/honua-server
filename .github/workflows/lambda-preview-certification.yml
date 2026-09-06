@@ -86,6 +86,28 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: honua-lambda-preview-certification
 
+      - name: Install crane (pinned, checksum-verified)
+        shell: bash
+        env:
+          CRANE_VERSION: v0.22.1
+          # go-containerregistry release checksums.txt for CRANE_VERSION.
+          CRANE_SHA256_x86_64: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
+          CRANE_SHA256_arm64: 898c0cff975f898a33e8c4580bdafb0e7c02c7faa33374e946762f97c4ab7110
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) asset=x86_64; expected="$CRANE_SHA256_x86_64" ;;
+            aarch64|arm64) asset=arm64; expected="$CRANE_SHA256_arm64" ;;
+            *) echo "::error::unsupported runner architecture: $(uname -m)"; exit 1 ;;
+          esac
+          archive="$RUNNER_TEMP/go-containerregistry.tar.gz"
+          curl -fsSL --retry 5 --retry-all-errors -o "$archive" \
+            "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${asset}.tar.gz"
+          echo "${expected}  ${archive}" | sha256sum --check --status
+          tar -xzf "$archive" -C "$RUNNER_TEMP" crane
+          install -m 0755 "$RUNNER_TEMP/crane" /usr/local/bin/crane
+          crane version
+
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:

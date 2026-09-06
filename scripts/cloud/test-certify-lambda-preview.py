@@ -1,5 +1,6 @@
 """Offline execution of the complete lane with stateful AWS CLI/container/backend doubles."""
 from pathlib import Path
+import hashlib
 import json
 import os
 import subprocess
@@ -11,7 +12,7 @@ SCRIPT_PATH = ROOT / "scripts/cloud/certify-lambda-preview.sh"
 SCRIPT = SCRIPT_PATH.read_text()
 WORKFLOW = (ROOT / ".github/workflows/lambda-preview-certification.yml").read_text()
 
-# One executable, symlinked as aws/docker/dotnet/sleep. Unknown calls fail rather than succeed.
+# One executable, symlinked as aws/crane/docker/dotnet/sleep. Unknown calls fail rather than succeed.
 STUB = r'''#!/usr/bin/env python3
 import base64, fcntl, json, os, sys
 from pathlib import Path
@@ -39,15 +40,38 @@ s["calls"].append([name] + [x for x in args if not x.startswith("file://")])
 digest = "sha256:" + "b"*64
 repo = os.environ["HONUA_LAMBDA_PREVIEW_REPOSITORY"]
 manifest = {"config": {"digest": "sha256:" + "c"*64}, "layers": [{"digest":"sha256:"+"d"*64}]}
+rootfs = ["sha256:"+"1"*64, "sha256:"+"2"*64]
+child = "sha256:" + "9"*64
+index_mode = os.environ.get("STUB_INDEX", "")
 arch = "arm64" if os.environ["HONUA_LAMBDA_ARCHITECTURE"] == "arm64" else "amd64"
 if name == "sleep": emit(None)
+if name == "crane":
+    if args[0] != "copy": bad()
+    # crane uploads the manifest and its blobs verbatim, so ECR keeps the exact config blob and rootfs.
+    s["mirrored"] = args[1]
+    s["ecr"] = {"config": manifest["config"]["digest"],
+                "layers": [layer["digest"] for layer in manifest["layers"]], "rootfs": rootfs}
+    emit(None)
 if name == "docker":
-    if args[:3] == ["buildx", "imagetools", "inspect"]: emit(manifest)
+    if args[:3] == ["buildx", "imagetools", "inspect"]:
+        if index_mode and not args[-1].endswith(child):
+            children = [{"digest": child, "platform": {"os": "linux", "architecture": arch}},
+                        {"digest": "sha256:"+"8"*64, "platform": {"os": "linux", "architecture": "ppc64le"}},
+                        {"digest": "sha256:"+"7"*64, "platform": {"os": "unknown", "architecture": "unknown"}}]
+            if index_mode == "no-match":
+                children = [c for c in children if c["platform"]["architecture"] != arch]
+            if index_mode == "ambiguous":
+                children.append({"digest": "sha256:"+"6"*64, "platform": {"os": "linux", "architecture": arch}})
+            emit({"mediaType": "application/vnd.oci.image.index.v1+json", "manifests": children})
+        emit(manifest)
     if args[:2] == ["image", "inspect"]:
-        if "Architecture" in args[-1]: emit("wrong" if fail == "architecture" or fail == "ecr-platform" and "ecr" in args[2] else arch)
+        mirrored = ".dkr.ecr." in args[2]
+        if "RootFS" in args[-1]:
+            emit(["sha256:"+"0"*64] if mirrored and fail == "rootfs" else rootfs)
+        if "Architecture" in args[-1]: emit("wrong" if fail == "architecture" or fail == "ecr-platform" and mirrored else arch)
         emit("e"*40 if fail == "revision" else os.environ["HONUA_LAMBDA_SERVER_REVISION"])
     if args[0] == "run" and fail == "adapter": bad()
-    if args[0] in ("pull", "run", "tag", "push", "login"): emit(None)
+    if args[0] in ("pull", "run", "login"): emit(None)
     bad()
 if name == "dotnet":
     action, previous, candidate = args[1], args[4], args[5]
@@ -65,11 +89,16 @@ function = arg("--function-name", "")
 if service == "sts": emit("123456789012")
 if service == "ecr":
     if op == "get-login-password": emit("offline-password")
-    if op == "describe-images": emit("bad" if fail == "digest" else digest)
+    if op == "describe-images":
+        if not s["ecr"]: emit("None")
+        emit("bad" if fail == "digest" else digest)
     if op == "batch-get-image":
-        if fail == "mirror": manifest["config"]["digest"] = "sha256:"+"f"*64
-        if fail == "layers": manifest["layers"] = []
-        emit(manifest)
+        if not s["ecr"]: bad()
+        stored = {"config": {"digest": s["ecr"]["config"]},
+                  "layers": [{"digest": d} for d in s["ecr"]["layers"]]}
+        if fail == "mirror": stored["config"]["digest"] = "sha256:"+"f"*64
+        if fail == "layers": stored["layers"] = []
+        emit(stored)
     bad()
 if service == "logs":
     if op == "describe-log-groups": emit("1" if s["logs"] else "0")
@@ -177,6 +206,28 @@ emit(meta)
 '''
 
 
+# The exact GHCR manifest bytes for the Lambda AOT artifact the certification lane mirrors
+# (ghcr.io/honua-io/honua-server@sha256:0b526ccb...). Recorded verbatim so its own sha256 is the
+# source digest below; the manifest-level check re-derives that rather than trusting it.
+SOURCE_MANIFEST_DIGEST = "sha256:0b526ccb871b9a5cbd82312d5736a5bfccd1a21112e628e5c2ca5d26726f744c"
+SOURCE_MANIFEST_BYTES = "{\n  \"schemaVersion\": 2,\n  \"mediaType\": \"application/vnd.oci.image.manifest.v1+json\",\n  \"config\": {\n    \"mediaType\": \"application/vnd.oci.image.config.v1+json\",\n    \"digest\": \"sha256:a2b0f20d60115dab0c3495bf389e13e6d775ad2af7a033bcf48eda261647a5db\",\n    \"size\": 6059\n  },\n  \"layers\": [\n    {\n      \"mediaType\": \"application/vnd.oci.image.layer.v1.tar+gzip\",\n      \"digest\": \"sha256:966c395d29cb24a3faf7e04f32878fe5778819d4132daee4f47e2aaf7b9af924\",\n      \"size\": 29751109\n    },\n    {\n      \"mediaType\": \"application/vnd.oci.image.layer.v1.tar+gzip\",\n      \"digest\": \"sha256:0f33241ccad066b49bf271998eab59d2e90585fdfc5f0815b9a6122b84b77fc3\",\n      \"size\": 19182933\n    },\n    {\n      \"mediaType\": \"application/vnd.oci.image.layer.v1.tar+gzip\",\n      \"digest\": \"sha256:6f51f4d8c488469bbc7d297812604fc03b24e30647eb98e7620de299965dbf93\",\n      \"size\": 3565\n    },\n    {\n      \"mediaType\": \"application/vnd.oci.image.layer.v1.tar+gzip\",\n      \"digest\": \"sha256:2d530074b2f41088f249387531c9ed5c28772703e0318eaec1b0c666a9392bc5\",\n      \"size\": 1695995\n    },\n    {\n      \"mediaType\": \"application/vnd.oci.image.layer.v1.tar+gzip\",\n      \"digest\": \"sha256:e8fc15bb84621ebcc19ea28d0afff42af969dedbb7a6a2f2212b8acbecfe5965\",\n      \"size\": 111\n    },\n    {\n      \"mediaType\": \"application/vnd.oci.image.layer.v1.tar+gzip\",\n      \"digest\": \"sha256:fce22e166fa89f78d58a6e3525dd3a9661766784c25b79939b76812473bdad4e\",\n      \"size\": 166833620\n    },\n    {\n      \"mediaType\": \"application/vnd.oci.image.layer.v1.tar+gzip\",\n      \"digest\": \"sha256:9a26356f16529501ce89bc1e52be9d86278cc7404729c48fa65aa92313af8dc1\",\n      \"size\": 2684831\n    }\n  ]\n}"
+
+# ECR stores the same blobs under a Docker schema 2 envelope, so the manifest digest changes while
+# the config blob and every layer blob stay byte-identical.
+SCHEMA2_MEDIA_TYPES = {
+    "application/vnd.oci.image.manifest.v1+json": "application/vnd.docker.distribution.manifest.v2+json",
+    "application/vnd.oci.image.config.v1+json": "application/vnd.docker.container.image.v1+json",
+    "application/vnd.oci.image.layer.v1.tar+gzip": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+}
+
+
+def as_ecr_schema2(manifest):
+    converted = json.loads(json.dumps(manifest))
+    for node in [converted, converted["config"], *converted["layers"]]:
+        node["mediaType"] = SCHEMA2_MEDIA_TYPES[node["mediaType"]]
+    return converted
+
+
 class LambdaPreviewLaneContractTests(unittest.TestCase):
     def run_lane(self, failure="", **overrides):
         with tempfile.TemporaryDirectory() as temp:
@@ -184,15 +235,16 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
             stub = directory / "stub"
             stub.write_text(STUB)
             stub.chmod(0o755)
-            for executable in ("aws", "docker", "dotnet", "sleep"):
+            for executable in ("aws", "crane", "docker", "dotnet", "sleep"):
                 (directory / executable).symlink_to(stub)
             state_path = directory / "state.json"
             original = "123456789012.dkr.ecr.us-east-1.amazonaws.com/standing@sha256:" + "a" * 64
             state_path.write_text(json.dumps({"calls": [], "backend": [], "function": False, "logs": False,
                                              "alias": "7", "image": original, "versions": ["7"], "deleted_versions": [],
-                                             "shifted": False, "rolledback": False, "row": False}))
+                                             "shifted": False, "rolledback": False, "row": False,
+                                             "ecr": None, "mirrored": None}))
             env = {**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"], "STUB_STATE": str(state_path),
-                   "STUB_FAIL": failure, "HONUA_LAMBDA_SOURCE_IMAGE": "ghcr.io/honua-io/honua-server:nightly-lambda-aot-test-amd64",
+                   "STUB_FAIL": failure, "STUB_INDEX": "", "HONUA_LAMBDA_SOURCE_IMAGE": "ghcr.io/honua-io/honua-server:nightly-lambda-aot-test-amd64",
                    "HONUA_LAMBDA_SOURCE_DIGEST": "sha256:" + "a" * 64, "HONUA_LAMBDA_SERVER_REVISION": "a" * 40,
                    "HONUA_LAMBDA_CERT_DENIED_KEY": "offline-scoped-key", "HONUA_LAMBDA_ARCHITECTURE": "x86_64", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
                    "AWS_REGION": "us-east-1", "REALAWS_CERT_LAMBDA_FUNCTION": "honua-cert-cert-server",
@@ -230,8 +282,44 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertEqual(original, state["image"])
                 self.assertFalse(state["function"] or state["logs"] or state["row"])
 
+    def test_mirror_copies_the_exact_source_manifest_and_never_re_encodes_it(self):
+        source = "sha256:" + "a" * 64
+        result, receipt, state, _ = self.run_lane()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("ghcr.io/honua-io/honua-server@" + source, state["mirrored"])
+        self.assertEqual(source, receipt["artifact"]["sourceDigest"])
+        self.assertEqual(source, receipt["artifact"]["sourcePlatformDigest"])
+        self.assertEqual("sha256:" + "c" * 64, receipt["artifact"]["sourceConfigDigest"])
+        self.assertEqual("sha256:" + "b" * 64, receipt["artifact"]["ecrDigest"])
+        self.assertTrue(receipt["artifact"]["configDigestPreserved"])
+        self.assertTrue(receipt["artifact"]["rootfsPreserved"])
+        self.assertEqual("crane", receipt["artifact"]["mirrorTool"])
+        # A docker pull/tag/push round trip re-serialises the config and breaks byte-exactness.
+        self.assertIn("crane copy", SCRIPT)
+        self.assertNotIn("docker push", SCRIPT)
+        self.assertNotIn("docker tag", SCRIPT)
+        self.assertFalse([call for call in state["calls"] if call[:2] in (["docker", "push"], ["docker", "tag"])])
+
+    def test_multi_platform_source_mirrors_the_candidate_platform_child(self):
+        result, receipt, state, _ = self.run_lane(STUB_INDEX="index")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        child = "sha256:" + "9" * 64
+        self.assertEqual("ghcr.io/honua-io/honua-server@" + child, state["mirrored"])
+        self.assertEqual(child, receipt["artifact"]["sourcePlatformDigest"])
+        self.assertEqual("sha256:" + "a" * 64, receipt["artifact"]["sourceDigest"])
+
+    def test_source_index_without_exactly_one_candidate_child_fails_closed(self):
+        for mode in ("no-match", "ambiguous"):
+            with self.subTest(mode=mode):
+                result, receipt, state, _ = self.run_lane(STUB_INDEX=mode)
+                self.assertNotEqual(0, result.returncode)
+                self.assertNotEqual("pass", receipt.get("result"))
+                self.assertIsNone(state["mirrored"])
+                self.assertIsNone(state["ecr"])
+                self.assertFalse(state["function"] or state["logs"] or state["row"])
+
     def test_each_check_fails_closed(self):
-        for failure in ("architecture", "ecr-platform", "revision", "adapter", "digest", "mirror", "layers",
+        for failure in ("architecture", "ecr-platform", "revision", "adapter", "digest", "mirror", "layers", "rootfs",
                         "skip-config", "missing-db", "resolved-image", "health-status", "health-body", "invoke",
                         "report", "cold-start", "cold-zero", "cloudwatch", "migrations", "migration-pending", "migration-plan",
                         "query", "fixture-names", "create", "readback", "delete", "delete-remains",
@@ -299,10 +387,41 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertNotEqual("pass", receipt.get("result"))
                 self.assertEqual([], state["calls"])
 
+    def test_manifest_check_accepts_ecr_schema2_and_rejects_a_re_encoded_config(self):
+        """Manifest-level check on the real artifact: config/rootfs identity, never manifest identity."""
+        self.assertEqual(SOURCE_MANIFEST_DIGEST,
+                         "sha256:" + hashlib.sha256(SOURCE_MANIFEST_BYTES.encode()).hexdigest())
+        source = json.loads(SOURCE_MANIFEST_BYTES)
+
+        # The lane reads exactly these two facts off both manifests; keep the test bound to it.
+        for manifest_variable in ("source_manifest", "ecr_manifest"):
+            self.assertIn("jq -er '.config.digest' <<<\"$%s\"" % manifest_variable, SCRIPT)
+            self.assertIn("jq -ce '[.layers[].digest]' <<<\"$%s\"" % manifest_variable, SCRIPT)
+
+        def compared(manifest):
+            return manifest["config"]["digest"], [layer["digest"] for layer in manifest["layers"]]
+
+        mirrored = as_ecr_schema2(source)
+        self.assertEqual(compared(source), compared(mirrored))
+        # ...even though ECR's envelope is a different artifact by manifest digest, which is why the
+        # lane must not compare manifest digests.
+        self.assertNotEqual(SOURCE_MANIFEST_DIGEST,
+                            "sha256:" + hashlib.sha256(json.dumps(mirrored).encode()).hexdigest())
+
+        # A docker pull/tag/push round trip re-serialises the config blob into a new digest: the
+        # live run's exact failure mode, which must stay a failure.
+        re_encoded = as_ecr_schema2(source)
+        re_encoded["config"] = {**re_encoded["config"], "digest": "sha256:" + "f" * 64}
+        self.assertNotEqual(compared(source), compared(re_encoded))
+        rewritten_layer = as_ecr_schema2(source)
+        rewritten_layer["layers"][0] = {**rewritten_layer["layers"][0], "digest": "sha256:" + "e" * 64}
+        self.assertNotEqual(compared(source), compared(rewritten_layer))
+
     def test_workflow_uses_cert_oidc_and_shared_substrate_lock(self):
         for text in ("environment: cert", "id-token: write", "vars.REALAWS_CERT_ROLE_ARN", "group: real-aws-certification",
                      "cancel-in-progress: false", "test-certify-lambda-preview.py", "LambdaDeployDriver.csproj",
-                     "inputs.architecture", "ubuntu-24.04-arm", ".artifact.ecrDigest"):
+                     "inputs.architecture", "ubuntu-24.04-arm", ".artifact.ecrDigest",
+                     "CRANE_VERSION: v0.22.1", "sha256sum --check --status"):
             self.assertIn(text, WORKFLOW)
         self.assertNotIn("AWS_ACCESS_KEY_ID", WORKFLOW + SCRIPT)
         self.assertNotIn("AWS_SECRET_ACCESS_KEY", WORKFLOW + SCRIPT)
