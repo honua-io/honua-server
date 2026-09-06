@@ -44,9 +44,12 @@ jq -e '
   (.reused_consumers | length == 2) and .producers[0].identity == "server"
 ' "${fixture}/core.json" >/dev/null
 expected_baseline="$(jq -r '.shards | length' .github/ci-shards.json)"
+# Every shard is either one of the five producers or a reused consumer, so the
+# consumer count is derived rather than pinned: a capacity split that adds a
+# shard must not need a hand-edit here to stay honest.
 jq -e --argjson expected_baseline "${expected_baseline}" '
   ((.baseline | length) == $expected_baseline) and (.producers | length == 5) and
-  ((.reused_consumers | length) == 52) and
+  ((.reused_consumers | length) == ($expected_baseline - (.producers | length))) and
   ([.producers[].identity] | sort) == ["geoservices", "odata", "ogc-api", "ogc-classic", "server"]
 ' "${fixture}/full.json" >/dev/null
 

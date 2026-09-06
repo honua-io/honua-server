@@ -1387,15 +1387,19 @@ app.UseInputValidation();
 // required mTLS surfaces can return machine-readable errors instead of TLS handshakes.
 app.UseHonuaClientCertificateAuthentication();
 
-// Add authentication and authorization middleware early to short-circuit unauthorized requests
-app.UseApiKeyAuthentication();
+// Authenticate the default scheme before hydrating additional credential types.
+app.UseAuthentication();
 
 // Bridge ArcGIS-style portal tokens (?token=, form POST token, X-Esri-Authorization,
 // Authorization: Bearer)
 // for requests that the default scheme did not authenticate. Must run after
-// UseAuthentication (inside UseApiKeyAuthentication) and before tenant resolution
+// UseAuthentication and before authorization and tenant resolution
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
+
+// Required-authentication routes must see every validated credential type. Running
+// this before the portal bridge rejects valid SensorThings subscription tokens.
+app.UseAuthorization();
 
 // Canonical governed-lineage headers are accepted only when accompanied by a
 // one-use, process-local attestation issued by an operation loopback executor.

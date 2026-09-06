@@ -40,7 +40,7 @@ namespace Honua.Server.Tests.Features.Streaming;
 [Collection("Database")]
 [Protocol(TestProtocols.Streaming)]
 [Operation(Operations.Streaming)]
-public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
+public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro));

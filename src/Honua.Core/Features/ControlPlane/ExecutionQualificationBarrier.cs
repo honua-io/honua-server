@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Honua.Core.Features.ControlPlane;
 
@@ -83,16 +84,15 @@ public static class ExecutionQualificationBarrier
 
         WriteJsonAtomically(
             readyPath,
-            new
-            {
-                operationId = scope.OperationId,
-                workerId = scope.WorkerId,
+            ExecutionQualificationReceiptJsonContext.Default.QualificationReadyReceipt,
+            new QualificationReadyReceipt(
+                scope.OperationId,
+                scope.WorkerId,
                 barrier,
-                readyAt = DateTimeOffset.UtcNow,
-                workerProcessId = Environment.ProcessId,
+                DateTimeOffset.UtcNow,
+                Environment.ProcessId,
                 childProcessId,
-                executorIgnoresCancellation = ignoreCancellation,
-            });
+                ignoreCancellation));
 
         if (ignoreCancellation)
         {
@@ -105,16 +105,15 @@ public static class ExecutionQualificationBarrier
                 var signal = (SignalObservation)state!;
                 WriteJsonAtomically(
                     signal.Path,
-                    new
-                    {
-                        operationId = signal.OperationId,
-                        workerId = signal.WorkerId,
-                        barrier = signal.Barrier,
-                        observedAt = DateTimeOffset.UtcNow,
-                        workerProcessId = Environment.ProcessId,
-                        childProcessId = signal.ChildProcessId,
-                        tokenCancelled = true,
-                    });
+                    ExecutionQualificationReceiptJsonContext.Default.QualificationSignalObservedReceipt,
+                    new QualificationSignalObservedReceipt(
+                        signal.OperationId,
+                        signal.WorkerId,
+                        signal.Barrier,
+                        DateTimeOffset.UtcNow,
+                        Environment.ProcessId,
+                        signal.ChildProcessId,
+                        TokenCancelled: true));
             },
             new SignalObservation(
                 observedPath,
@@ -131,15 +130,14 @@ public static class ExecutionQualificationBarrier
 
         WriteJsonAtomically(
             Path.Join(operationDirectory, $"{Safe(barrier)}.released.json"),
-            new
-            {
-                operationId = scope.OperationId,
-                workerId = scope.WorkerId,
+            ExecutionQualificationReceiptJsonContext.Default.QualificationReleasedReceipt,
+            new QualificationReleasedReceipt(
+                scope.OperationId,
+                scope.WorkerId,
                 barrier,
-                releasedAt = DateTimeOffset.UtcNow,
-                workerProcessId = Environment.ProcessId,
-                childProcessId,
-            });
+                DateTimeOffset.UtcNow,
+                Environment.ProcessId,
+                childProcessId));
     }
 
     private static string Safe(string value)
@@ -147,12 +145,12 @@ public static class ExecutionQualificationBarrier
             .Replace("\\", "_", StringComparison.Ordinal)
             .Replace("..", "_", StringComparison.Ordinal);
 
-    private static void WriteJsonAtomically(string path, object value)
+    private static void WriteJsonAtomically<T>(string path, JsonTypeInfo<T> typeInfo, T value)
     {
         try
         {
             var temporary = path + $".{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(value));
+            File.WriteAllText(temporary, JsonSerializer.Serialize(value, typeInfo));
             File.Move(temporary, path, overwrite: true);
         }
         catch (IOException)

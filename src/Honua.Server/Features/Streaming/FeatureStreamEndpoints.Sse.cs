@@ -97,6 +97,12 @@ internal static partial class FeatureStreamEndpoints
             }
         }
 
+        // Seal the live boundary before announcing admission. A client may commit
+        // immediately after receiving headers; taking this cursor afterwards can
+        // discard that first queued event as an already-delivered duplicate.
+        var initialLiveCursor = cursor.HasValue ? 0
+            : await eventStore.GetCurrentCursorAsync(context.RequestAborted).ConfigureAwait(false);
+
         context.Response.ContentType = "text/event-stream";
         context.Response.Headers.CacheControl = "no-cache";
 
@@ -305,7 +311,7 @@ internal static partial class FeatureStreamEndpoints
         }
         else
         {
-            replayCursor = await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false);
+            replayCursor = initialLiveCursor;
         }
 
         // Activate drain with buffer-sized grace for replay sessions so concurrent
