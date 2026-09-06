@@ -39,7 +39,7 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
             Feature MakeFeature(string name, double x, double y) => Feature.Create(0,
                 new NetTopologySuite.IO.WKBWriter().Write(new NetTopologySuite.Geometries.Point(x, y) { SRID = 4326 }),
                 System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty.Add("name", name));
-    
+
             FeatureEditResult uploaded;
             using (ReplicaUploadOriginScope.Begin("bulk-replica"))
             {
@@ -54,7 +54,8 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
             ReplicaUploadOriginScope.Current.Should().BeNull();
             var foreign = await writer.ApplyEditsAsync(0, new FeatureEditBatch
             {
-                Creates = [MakeFeature("foreign-after-bulk", 50, 60)], RollbackOnFailure = false
+                Creates = [MakeFeature("foreign-after-bulk", 50, 60)],
+                RollbackOnFailure = false
             });
             foreign.CreatedCount.Should().Be(1);
             var ownDelta = await tracker.GetChangesSinceAsync(baseline, [0], null, "bulk-replica");
