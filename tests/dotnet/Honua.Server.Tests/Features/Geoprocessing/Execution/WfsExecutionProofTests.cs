@@ -65,7 +65,8 @@ public sealed class WfsExecutionProofTests
             var filtered = selected.ToArray();
             var features = filtered.Skip(start).Take(1).Select(r => new
             {
-                type = "Feature", id = r.Id,
+                type = "Feature",
+                id = r.Id,
                 geometry = new { type = "Point", coordinates = new[] { r.X, r.Y, r.Z } },
                 properties = new { key = r.Id, serial = 9007199254740993L + r.Id, name = r.Name, active = r.Active }
             });
