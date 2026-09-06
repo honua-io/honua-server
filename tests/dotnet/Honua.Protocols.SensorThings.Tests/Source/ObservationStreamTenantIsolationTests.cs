@@ -87,6 +87,7 @@ public sealed class ObservationStreamTenantIsolationTests
     }
 }
 
+[Protocol(TestProtocols.SensorThings)]
 public sealed class ObservationStreamRedisTenantIsolationTests : IAsyncLifetime
 {
     private readonly RedisFixture _redis = new();
@@ -95,7 +96,7 @@ public sealed class ObservationStreamRedisTenantIsolationTests : IAsyncLifetime
     public Task DisposeAsync() => _redis.DisposeAsync();
 
     [IntegrationTest]
-    [Operation(Operations.Streaming)]
+    [Operation(Operations.SecurityTesting)]
     public async Task PublishObservations_TwoNodesWithRedis_DeliversOnlyMatchingTenantAndSchema()
     {
         using var connection = await ConnectionMultiplexer.ConnectAsync(_redis.ConnectionString);
