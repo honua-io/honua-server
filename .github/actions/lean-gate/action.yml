@@ -295,7 +295,7 @@ runs:
             --no-build \
             --no-restore \
             --configuration Release \
-            --filter "Category=Architecture" \
+            --filter "Category=Architecture|FullyQualifiedName~AlertPreviewFloorTests" \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-server-governance.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults

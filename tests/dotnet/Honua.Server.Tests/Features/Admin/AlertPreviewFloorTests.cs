@@ -53,7 +53,10 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
         (await _client.PutAsJsonAsync($"/api/v1/admin/alerts/zones/{zoneId}", ZonePayload("updated"))).StatusCode.Should().Be(HttpStatusCode.OK);
         var storedZone = await _fixture.GetService<IAlertAdminStore>().GetZoneAsync(zoneId);
         storedZone!.ZoneName.Should().Be("updated");
-        storedZone.SpatialReferenceId.Should().Be(4326);
+        storedZone.GeometrySrid.Should().Be(4326);
+        var geometry = new NetTopologySuite.IO.WKBReader().Read(storedZone.Geometry);
+        geometry.Area.Should().Be(4);
+        geometry.Coordinates.Select(point => (point.X, point.Y)).Should().Equal((0d, 0d), (0d, 2d), (2d, 2d), (2d, 0d), (0d, 0d));
         var ruleId = await ReadIdAsync(await _client.PostAsJsonAsync("/api/v1/admin/alerts/rules", RulePayload("original", zoneId)), "ruleId");
         (await _client.PutAsJsonAsync($"/api/v1/admin/alerts/rules/{ruleId}", RulePayload("updated", zoneId))).StatusCode.Should().Be(HttpStatusCode.OK);
         (await _client.PutAsJsonAsync($"/api/v1/admin/alerts/rules/{ruleId}/enabled", new { enabled = false })).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -168,12 +171,21 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
         using var client = fixture.CreateAdminClient();
         var store = fixture.GetService<IAlertAdminStore>();
         var existing = await store.CreateRuleAsync(Rule(_service));
+        var zone = await store.CreateZoneAsync(new AlertZoneDefinition
+        {
+            ZoneId = 0, ServiceId = _service, ZoneName = "original", IsActive = true,
+            GeometrySrid = 4326,
+            Geometry = new NetTopologySuite.IO.WKTReader().Read("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))").AsBinary()
+        });
         foreach (var request in new[]
         {
             new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/alerts/rules") { Content = JsonContent.Create(RulePayload("new", null)) },
             new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/rules/{existing.RuleId}") { Content = JsonContent.Create(RulePayload("changed", null)) },
             new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/rules/{existing.RuleId}/enabled") { Content = JsonContent.Create(new { enabled = false }) },
-            new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/admin/alerts/rules/{existing.RuleId}")
+            new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/admin/alerts/rules/{existing.RuleId}"),
+            new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/alerts/zones") { Content = JsonContent.Create(ZonePayload("new")) },
+            new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/zones/{zone.ZoneId}") { Content = JsonContent.Create(ZonePayload("changed")) },
+            new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/admin/alerts/zones/{zone.ZoneId}")
         })
         {
             using (request)
@@ -183,6 +195,11 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
             var stored = await store.GetRuleAsync(existing.RuleId);
             stored!.RuleName.Should().Be("original");
             stored.IsActive.Should().BeTrue();
+            var storedZone = await store.GetZoneAsync(zone.ZoneId);
+            storedZone!.ZoneName.Should().Be("original");
+            storedZone.Geometry.Should().Equal(zone.Geometry!);
+            storedZone.GeometrySrid.Should().Be(4326);
+            (await store.ListZonesAsync(_service)).Select(row => row.ZoneId).Should().Equal(zone.ZoneId);
             (await store.ListRulesAsync(_service, 1)).Select(row => row.RuleId).Should().Equal(existing.RuleId);
         }
     }
@@ -202,7 +219,7 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
 
     private static AlertRuleDefinition Rule(string service) => new()
     {
-        ServiceId = service, LayerId = 1, RuleName = "original", TriggerType = AlertTriggerType.Threshold,
+        RuleId = 0, ServiceId = service, LayerId = 1, RuleName = "original", TriggerType = AlertTriggerType.Threshold,
         ConditionsJson = "{\"field\":\"speed\",\"operator\":\">\",\"value\":30}", CooldownSeconds = 60,
         Severity = AlertSeverity.Warning, EditionRequired = AlertEdition.Pro,
         Channels = ImmutableArray.Create(AlertChannelType.Webhook), IsActive = true
@@ -219,6 +236,7 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
     {
         var policy = Substitute.For<IAlertEditionPolicy>();
         policy.IsRuleAllowed(Arg.Any<AlertRuleDefinition>()).Returns(true);
+        policy.IsTriggerAllowed(Arg.Any<AlertTriggerType>()).Returns(true);
         policy.IsChannelAllowed(Arg.Any<AlertChannelType>()).Returns(true);
         policy.IsChannelConfigured(Arg.Any<AlertChannelType>()).Returns(true);
         return new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise)
