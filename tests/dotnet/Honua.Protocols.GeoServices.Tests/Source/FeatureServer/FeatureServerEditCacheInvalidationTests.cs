@@ -41,6 +41,12 @@ public sealed class FeatureServerEditCacheInvalidationTests : IAsyncLifetime
         {
             builder.UseSetting("Cache:Enabled", "true");
             builder.UseSetting("Cache:ResponseCachingEnabled", "true");
+            // ResponseCacheUtilities.ShouldCache skips authenticated requests, and the default
+            // test host authenticates every request through the dev-auth bypass — which is why no
+            // existing HTTP test could reach the exact response cache at all. Turn the bypass off
+            // so these requests are anonymous and the cache is actually on the path.
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
         });
 
     public async Task InitializeAsync()

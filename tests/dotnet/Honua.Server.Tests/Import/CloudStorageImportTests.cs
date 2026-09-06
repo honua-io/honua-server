@@ -175,6 +175,15 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain(tableName);
+
+        // honua-server#4419: the test name says ImportsData but the assertions did not check
+        // success — and UploadUrl_MultiLayerFileGdbFromS3_FailsWithoutMergingLayers in this same
+        // file proves a FAILED import also returns a payload containing the table name, so a
+        // broken shapefile import passed this test unchanged.
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(content);
+        document.RootElement.GetProperty("featureCount").GetInt64().Should().BeGreaterThan(0, content);
+        content.Should().Contain("Shapefile", "format detection is part of what this asserts");
     }
 
     [IntegrationTest]

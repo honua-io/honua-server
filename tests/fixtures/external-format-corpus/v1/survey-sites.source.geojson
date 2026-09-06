@@ -1,0 +1,14 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature",
+      "properties": { "site_id": 1, "site_name": "San Francisco", "elev_m": 16.5, "surveyed": "2026-01-15" },
+      "geometry": { "type": "Point", "coordinates": [-122.4194, 37.7749] } },
+    { "type": "Feature",
+      "properties": { "site_id": 2, "site_name": "Hawaiʻi 東京", "elev_m": -3.25, "surveyed": "2026-02-29" },
+      "geometry": { "type": "Point", "coordinates": [-157.8583, 21.3069] } },
+    { "type": "Feature",
+      "properties": { "site_id": 3, "site_name": "Ushuaia", "elev_m": 23.0, "surveyed": "2026-03-01" },
+      "geometry": { "type": "Point", "coordinates": [-68.3029, -54.8019] } }
+  ]
+}
