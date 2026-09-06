@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -24,8 +25,18 @@ public sealed class LiveStreamAuthorizationTests
         var initial = await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme);
         initial.Succeeded.Should().BeTrue();
         context.User = initial.Principal!;
+        CanonicalSecurityActor.StampRequestBinding(context.User, "tenant-a");
         (await LiveStreamAuthorizationFilter.RevalidateAsync(context, PortalTokenAuthenticationExtensions.PortalTokenScheme, CancellationToken.None))
             .Should().BeTrue();
+
+        var admitted = false;
+        await new LiveStreamAuthorizationFilter().InvokeAsync(
+            EndpointFilterInvocationContext.Create(context), _ =>
+            {
+                admitted = true;
+                return ValueTask.FromResult<object?>(Results.Empty);
+            });
+        admitted.Should().BeTrue("a framework-normalized scheme must resolve to its registered authentication handler");
 
         await issuer.RevokeAsync(token.Token, CancellationToken.None);
         (await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme)).Succeeded

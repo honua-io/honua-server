@@ -27,14 +27,19 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             return Results.Unauthorized();
         }
 
-        var scheme = context.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult?.Ticket?.AuthenticationScheme
+        var admittedScheme = context.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult?.Ticket?.AuthenticationScheme
             ?? CanonicalSecurityActor.FindStampedValue(context.User, CanonicalSecurityActor.AuthenticationSchemeClaim)
             ?? context.User.Identity.AuthenticationType;
         var schemes = context.RequestServices.GetRequiredService<IAuthenticationSchemeProvider>();
-        if (scheme is null || await schemes.GetSchemeAsync(scheme).ConfigureAwait(false) is null)
+        // Canonical actor bindings normalize names, whereas the handler registry is
+        // case-sensitive. Resolve the registered name and reject ambiguous matches.
+        var matches = (await schemes.GetAllSchemesAsync().ConfigureAwait(false))
+            .Where(candidate => string.Equals(candidate.Name, admittedScheme, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (matches.Length != 1)
         {
             return Results.Unauthorized();
         }
+        var scheme = matches[0].Name;
 
         var originalAbort = context.RequestAborted;
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(originalAbort);
@@ -150,8 +155,10 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
         principal.Claims
             // These are request binding projections added after authentication, not
             // issuer claims. The original request's resolved scope stays immutable.
-            .Where(claim => claim.Type is not CanonicalSecurityActor.CanonicalActorClaim
-                and not CanonicalSecurityActor.EffectiveTenantClaim and not CanonicalSecurityActor.ScopeCeilingClaim)
+            .Where(claim => !CanonicalSecurityActor.IsFrameworkOwnedClaim(claim)
+                || claim.Type is not (CanonicalSecurityActor.CanonicalActorClaim
+                    or CanonicalSecurityActor.EffectiveTenantClaim or CanonicalSecurityActor.ScopeCeilingClaim
+                    or CanonicalSecurityActor.AuthenticationSchemeClaim or "honua:issuer"))
             .Select(claim => (claim.Type, claim.Value, claim.Issuer)).Order();
 
     private sealed class RetainedWebSocketFeature(IHttpWebSocketFeature inner) : IHttpWebSocketFeature
