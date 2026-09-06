@@ -21,7 +21,8 @@ internal sealed class AlertAdminIsolationFilter : IEndpointFilter
         // tenant resolution is disabled or a supplied override was ignored upstream.
         if (tenant?.Source is TenantContextSource.Claim or TenantContextSource.Header ||
             context.Request.Headers.ContainsKey(TenantContextOptions.TenantHeaderName) ||
-            options.TenantClaimTypes.Any(type => context.User.HasClaim(claim => claim.Type == type)))
+            options.TenantClaimTypes.Any(type => context.User.HasClaim(claim =>
+                string.Equals(claim.Type, type, StringComparison.OrdinalIgnoreCase))))
         {
             return ValueTask.FromResult<object?>(ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status403Forbidden, "Forbidden",

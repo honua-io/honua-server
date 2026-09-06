@@ -16,18 +16,20 @@ public sealed class AlertAdminIsolationFilterTests
 {
     [Theory]
     [Trait("Tier", "Fast")]
-    [InlineData("tenant-a", true)]
-    [InlineData("tenant-b", true)]
-    [InlineData("", true)]
-    [InlineData("tenant-a", false)]
-    public async Task InvokeAsync_TenantClaim_NeverCallsInstanceStore(string tenantId, bool resolutionEnabled)
+    [InlineData("tenant-a", true, "tenant_id")]
+    [InlineData("tenant-b", true, "tenant_id")]
+    [InlineData("", true, "tenant_id")]
+    [InlineData("tenant-a", false, "tenant_id")]
+    [InlineData("tenant-a", false, "TENANT_ID")]
+    [InlineData("tenant-b", false, "TiD")]
+    public async Task InvokeAsync_TenantClaim_NeverCallsInstanceStore(string tenantId, bool resolutionEnabled, string claimType)
     {
         using var services = new ServiceCollection()
             .Configure<TenantContextOptions>(options => options.Enabled = resolutionEnabled)
             .BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
         context.User = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.NameIdentifier, "tenant-administrator"), new Claim("tenant_id", tenantId), new Claim(ClaimTypes.Role, "admin")], "Test"));
+            [new Claim(ClaimTypes.NameIdentifier, "tenant-administrator"), new Claim(claimType, tenantId), new Claim(ClaimTypes.Role, "admin")], "Test"));
         var called = false;
         var result = await new AlertAdminIsolationFilter().InvokeAsync(
             new DefaultEndpointFilterInvocationContext(context), _ => { called = true; return ValueTask.FromResult<object?>(null); });
