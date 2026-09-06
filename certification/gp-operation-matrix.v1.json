@@ -26,7 +26,7 @@
     "https://github.com/honua-io/honua-server/issues/3856",
     "https://github.com/honua-io/honua-server/issues/3857"
   ],
-  "summary": {"total": 98, "byStatus": {"proven": 79, "partially-proven": 15, "unproven": 4}},
+  "summary": { "total": 98, "byStatus": { "proven": 79, "partially-proven": 15, "unproven": 4 } },
   "operations": [
     {"processId":"geometry.buffer","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryBufferJobExecutorIntegrationTests.cs","test":"BufferProcess_CompletesAndReturnsBufferedGeometry","assertion":"OGC submit/poll/results returns a decoded polygon with the expected buffered area."}]},
     {"processId":"geometry.simplify","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometrySimplifyJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_CollapsesBelowToleranceVertex","assertion":"Decoded output drops the below-tolerance vertex while preserving the feature."}]},
