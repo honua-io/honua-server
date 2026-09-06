@@ -26,7 +26,7 @@
     "https://github.com/honua-io/honua-server/issues/3856",
     "https://github.com/honua-io/honua-server/issues/3857"
   ],
-  "summary": { "total": 98, "byStatus": { "proven": 67, "partially-proven": 27, "unproven": 4 } },
+  "summary": { "total": 98, "byStatus": { "proven": 68, "partially-proven": 26, "unproven": 4 } },
   "operations": [
     {"processId":"geometry.buffer","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryBufferJobExecutorIntegrationTests.cs","test":"BufferProcess_CompletesAndReturnsBufferedGeometry","assertion":"OGC submit/poll/results returns a decoded polygon with the expected buffered area."}]},
     {"processId":"geometry.simplify","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometrySimplifyJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_CollapsesBelowToleranceVertex","assertion":"Decoded output drops the below-tolerance vertex while preserving the feature."}]},
@@ -125,6 +125,6 @@
     {"processId":"gdal.gdalwarp","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerExecutorTests.cs","test":"RasterReproject_Succeeds_PublishesGeoTiffArtifact_AndPassesTargetSrs","assertion":"Fake-runner target SRS/artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3947","missing":"Real generic gdalwarp execution with decoded grid/pixel oracle."}},
     {"processId":"gdal.ogr2ogr","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerExecutorTests.cs","test":"VectorConvert_WithRealOgr2Ogr_ConvertsGeoJsonToCsv","assertion":"Required real-OGR CI decodes CSV and proves expected property header/value."}]},
     {"processId":"source.ogr","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerExecutorTests.cs","test":"SourceRead_Succeeds_CanonicalizesToGeoJsonArtifact","assertion":"Actual executor with fake ogr2ogr output; no real source conversion."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3948","missing":"Real non-GeoJSON OGR fixture with decoded geometry/attribute oracle."}},
-    {"processId":"pcloud.translate","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/PdalPointCloudConvertExecutorTests.cs","test":"Translate_ProjectedSourceCrs_AppliesReprojectionTo4979","assertion":"Actual executor validates fake PDAL pipeline/output bytes; no real point-cloud content."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3951","missing":"Real LAS/LAZ through PDAL with parsed point count/coordinates/CRS oracle."}}
+    {"processId":"pcloud.translate","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/PdalExecutionProofTests.cs","test":"Translate_RealLas_PreservesPointsAttributesPrecisionAndCrs","fixturePath":"tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/PointCloudProof","assertion":"Required production-pinned PDAL and real LAS: independent binary decode asserts uncompressed LAS, count, all XYZ/attributes, scale, bounds, source metadata, CRS pass-through and analytical reprojection to EPSG:4979; oracle rejects changed intensity in valid LAS."}]}
   ]
 }

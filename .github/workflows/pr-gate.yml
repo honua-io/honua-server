@@ -76,7 +76,8 @@ jobs:
     # silently un-gates trunk or leaves pull requests waiting forever.
     name: PR Gate / Build and tests
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Includes the required production PDAL toolchain build and content proof.
+    timeout-minutes: 75
     steps:
       # fetch-depth 2, not the default 1: the checked-out ref is
       # refs/pull/N/merge, whose FIRST PARENT is the current tip of `trunk`. That
@@ -237,6 +238,29 @@ jobs:
             --filter 'Category=RasterExecutionProof' \
             --logger 'trx;LogFileName=raster-execution-proof.trx' \
             --results-directory tests/TestResults
+
+      - name: Build production PDAL native tools
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        timeout-minutes: 30
+        run: |
+          docker build --target native-tools -f docker/worker-gdal/Dockerfile -t honua-pdal-proof .
+          echo "HONUA_PDAL_PROOF_IMAGE=$(docker image inspect --format '{{.Id}}' honua-pdal-proof)" >> "$GITHUB_ENV"
+          echo "HONUA_GDAL_PROOF_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Prove point-cloud execution with production PDAL
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        timeout-minutes: 10
+        run: |
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+            --configuration Release --filter 'Category=PdalExecutionProof' \
+            --logger 'trx;LogFileName=pdal-execution-proof.trx' --results-directory tests/TestResults
+
+      - name: Upload point-cloud execution proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pdal-execution-proof
+          path: tests/TestResults/pdal-execution-proof.trx
 
       - name: Upload raster execution proof
         if: always()
