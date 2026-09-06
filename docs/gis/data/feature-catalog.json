@@ -5408,6 +5408,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_SubscriberPolicies_SnapshotHandoff_HidesFields",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Sse_WhenSessionLimitReached_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_CommunityEdition_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_RealPortalCredentialExpiresOrIsRevoked_TerminatesAndReplacementResumes",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithBboxWithoutSingleLayer_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithEmptyLayersParam_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Stream_WithEmptyLegacyLayerIdsParam_ReturnsBadRequest",
@@ -6313,7 +6314,8 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataTemporalFilteringTests.ODataFilter_DateTimeLessThan_ReturnsOlderFeatures",
         "Honua.Server.Tests.Features.Protocols.OData.ODataTemporalFilteringTests.ODataFilter_DateTimeRange_ReturnsFeaturesBetweenDates",
         "Honua.Server.Tests.Features.Protocols.OData.ODataTemporalFilteringTests.ODataFilter_InvalidDateFormat_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.OData.ODataTemporalFilteringTests.ODataFilter_NullDateField_HandlesNullComparisons"
+        "Honua.Server.Tests.Features.Protocols.OData.ODataTemporalFilteringTests.ODataFilter_NullDateField_HandlesNullComparisons",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ODataPoll_RealPortalCredential_RequiresValidSameTenantReplacement"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented",
@@ -12465,7 +12467,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_Anonymous_IsDeniedBeforeHandshake",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_CollidingTenantDatastreams_OnlyDeliversOwnPersistedValues",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_RealPortalCredential_TerminatesOnExpiryOrRevocation",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_Sse_EmitsConnectedThenPushesIngestedObservation",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_UnscopedCredentialOrForeignCursor_IsRejectedBeforeHandshake",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_WebSocket_OnlyDeliversResolvedTenant",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_WithoutTransportHeader_Returns400"
       ],
