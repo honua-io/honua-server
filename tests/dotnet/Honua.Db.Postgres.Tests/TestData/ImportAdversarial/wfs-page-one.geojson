@@ -1,0 +1,12 @@
+{
+  "type": "FeatureCollection",
+  "numberMatched": 2,
+  "features": [
+    {
+      "type": "Feature",
+      "id": "page-one",
+      "geometry": { "type": "Point", "coordinates": [-157.85, 21.30] },
+      "properties": { "name": "page-one", "population": 1 }
+    }
+  ]
+}
