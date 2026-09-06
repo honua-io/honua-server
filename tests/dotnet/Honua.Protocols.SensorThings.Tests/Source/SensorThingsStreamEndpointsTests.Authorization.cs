@@ -70,7 +70,12 @@ public sealed partial class SensorThingsStreamEndpointsTests
         {
             var client = _fixture.CreateWebSocketClient();
             var configure = client.ConfigureRequest;
-            client.ConfigureRequest = request => { configure?.Invoke(request); request.Headers.Referer = referer; };
+            client.ConfigureRequest = request =>
+            {
+                configure?.Invoke(request);
+                request.Headers.Referer = referer;
+                request.Headers["X-Honua-Test-Schema"] = _fixture.CurrentSchema;
+            };
             return await client.ConnectAsync(new Uri("ws://localhost" + Path(token)), ct);
         }
         async Task InvalidateAsync()
