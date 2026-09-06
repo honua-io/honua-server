@@ -727,6 +727,12 @@ assert_descriptor \
   "targeted" \
   "false" \
   "Server Features Analytics Studio Export and Reporting"
+# MCP Studio production changes must also run the dashboard integration proof
+# compiled into Honua.Server.Tests, alongside the existing AI shard owners.
+assert_exact_shards \
+  "mcp-studio-source-includes-server-dashboard-proof" \
+  "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/StudioCompositionTools.cs" \
+  '["MCP and Sessions","Operator Eval Harness","Server Features Analytics Studio Export and Reporting"]'
 assert_excludes_shard \
   "studio-source-excludes-collaboration-child" \
   "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs" \
