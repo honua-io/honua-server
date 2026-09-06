@@ -22,7 +22,7 @@
       "path": "survey-sites.source.geojson",
       "mediaType": "application/geo+json",
       "byteLength": 690,
-      "sha256": "9f1272022d828263900a760364ed857b98d5edb2c7775971298926098b40fb1b",
+      "sha256": "1c6290d48a2942af0d2fd1551426b060306325c3e8dbfed5beb1e579e5777298",
       "facets": [
         "source/authored-by-honua",
         "geometry/point",
@@ -56,8 +56,8 @@
       "id": "survey-sites-gdb",
       "path": "survey-sites.gdb.zip",
       "mediaType": "application/zip",
-      "byteLength": 9956,
-      "sha256": "b41aeac0fde0f2c7aa64a347f07eaafecbf85705d72d4bc8345a2fe22e630898",
+      "byteLength": 9959,
+      "sha256": "839e74c1387aaf33e5cf1118fdf323f6e4e4f4948dce8b085ec0209ca7cd439d",
       "facets": [
         "writer/gdal-openfilegdb",
         "filegdb/single-feature-class",
@@ -69,7 +69,7 @@
       "path": "survey-sites-shapefile.zip",
       "mediaType": "application/zip",
       "byteLength": 1005,
-      "sha256": "8f5dc6500845393a6a90db192e1ec556e1b6943d161001c6f1f93c0dbb9a6600",
+      "sha256": "bf21968119333d1a0835a20be4e51a32b020903381edfb400522282ff25c44ad",
       "facets": [
         "writer/gdal-esri-shapefile",
         "shapefile/prj",
@@ -94,7 +94,7 @@
       "path": "survey-sites.kml",
       "mediaType": "application/vnd.google-earth.kml+xml",
       "byteLength": 1657,
-      "sha256": "2cd63c23eb6f88985c63922468db407101228c5db3bb6bb07d91568fdadee600",
+      "sha256": "a9a6160b1097992e519bed1b0ce992b946342496fd899b6991227b745d0ac11a",
       "facets": [
         "writer/gdal-kml",
         "kml/folder",
@@ -132,7 +132,7 @@
       "path": "survey-sites.fgb",
       "mediaType": "application/octet-stream",
       "byteLength": 1784,
-      "sha256": "45af6a9ca7d5b54f5a5d3045244a764af5fe939a635a7b127bd9c29a191b9c2e",
+      "sha256": "1fae429f04b2a3fcd6f65275356411166df6227685783231e3c6bd456d313e29",
       "facets": [
         "writer/gdal-flatgeobuf",
         "geometry/point",
@@ -144,7 +144,7 @@
       "path": "survey-sites.gpkg",
       "mediaType": "application/geopackage+sqlite3",
       "byteLength": 106496,
-      "sha256": "b044ea1dae0865f39c527331a97f5e3af5fe2179e358e45675c5b9c182948d5c",
+      "sha256": "4c6a5c60068fe43a927ad28a76105d2c8efb02c01e461911977d0ff981ce9e62",
       "facets": [
         "writer/gdal-gpkg",
         "gpkg/srs-4326",
@@ -157,7 +157,7 @@
       "path": "polygon-with-hole.gpkg",
       "mediaType": "application/geopackage+sqlite3",
       "byteLength": 106496,
-      "sha256": "fa338fe36dd46a8afd5cb635a0de01a327630772c526f8834def6794e3dbb93c",
+      "sha256": "a5e2df84e60d8b9aa238149bd6c26a6317ac13753c6325e6b9a7d3d8d6ec1179",
       "facets": [
         "writer/gdal-gpkg",
         "gpkg/srs-4326",
@@ -169,7 +169,7 @@
       "path": "survey-sites.gpx",
       "mediaType": "application/gpx+xml",
       "byteLength": 1225,
-      "sha256": "01894a4f6048c0cb8258f9d90231e34943ed7688711d226522521c1cd3c15491",
+      "sha256": "1dd7ef8cf3bf1691d51c12c8f5a9cbec33852ece8763be7f286db868d925110f",
       "facets": [
         "writer/gdal-gpx",
         "gpx/waypoints",
@@ -181,7 +181,7 @@
       "path": "survey-sites.csv",
       "mediaType": "text/csv",
       "byteLength": 213,
-      "sha256": "81d292748cc160d7d73e16a2d7853c0ee487c18651b53018dde918b8697569a9",
+      "sha256": "08b76b85a1ee6ed93751a31a366e5d074ed32f90aa4b63fefe3fd61c06f2643d",
       "facets": [
         "writer/gdal-csv",
         "csv/wkt-geometry",
