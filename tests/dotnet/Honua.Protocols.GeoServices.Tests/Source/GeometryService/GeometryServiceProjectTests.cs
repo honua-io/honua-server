@@ -58,8 +58,8 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
     }
 
     [IntegrationTheory]
-    [InlineData(false, 4267, 4269, -100.00041558862637, 39.999996883362)]
-    [InlineData(false, 4269, 4267, -99.99958442682077, 40.00000311609789)]
+    [InlineData(false, 4267, 4269, -100.00041558784554, 39.999996883367885)]
+    [InlineData(false, 4269, 4267, -99.99958442760155, 40.00000311609201)]
     [InlineData(true, 4267, 4269, -100.00040583667015, 40.00000589472259)]
     [InlineData(true, 4269, 4267, -99.99959418404879, 39.999994102939)]
     [Operation(Operations.Project)]

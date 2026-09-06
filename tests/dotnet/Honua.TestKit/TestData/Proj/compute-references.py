@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix="honua-proj-reference-") as temporary:
     print(f"pyproj={pyproj.__version__} PROJ={pyproj.proj_version_str}; network=OFF")
     for source, target in ((4267, 4269), (4269, 4267)):
         transform = pyproj.Transformer.from_crs(source, target, always_xy=True)
-        print("grid-free", source, target, transform.transform(-100, 40))
+        print("grid-free", source, target, transform.transform(-100, 40, 12))
 
     grid = Path(__file__).resolve().with_name("us_noaa_conus.tif")
     transform = pyproj.Transformer.from_pipeline(
@@ -28,6 +28,6 @@ with tempfile.TemporaryDirectory(prefix="honua-proj-reference-") as temporary:
         f"+step +proj=hgridshift +grids={grid} "
         "+step +proj=unitconvert +xy_in=rad +xy_out=deg"
     )
-    print("NADCON", 4267, 4269, transform.transform(-100, 40))
+    print("NADCON", 4267, 4269, transform.transform(-100, 40, 12))
     print("NADCON", 4269, 4267, transform.transform(
-        -100, 40, direction=pyproj.enums.TransformDirection.INVERSE))
+        -100, 40, 12, direction=pyproj.enums.TransformDirection.INVERSE))
