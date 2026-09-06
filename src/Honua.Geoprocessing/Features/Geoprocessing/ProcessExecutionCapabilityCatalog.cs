@@ -48,6 +48,7 @@ internal static class ProcessExecutionCapabilityCatalog
         "overlay.split",
         "data-management.append",
         "data-management.copy-features",
+        "conversion.geometry-format",
         "proximity.near",
         "proximity.near-table",
         "statistics.summarize",
@@ -101,8 +102,7 @@ internal static class ProcessExecutionCapabilityCatalog
         "analytics.cluster",
         "analytics.density",
         "data-management.delete-features",
-        "data-management.calculate-field",
-        "conversion.geometry-format");
+        "data-management.calculate-field");
 
     private static readonly FrozenSet<string> WorkflowOnlyProcessIds = IdSet(
         "source.geojson",
@@ -132,7 +132,8 @@ internal static class ProcessExecutionCapabilityCatalog
         "geometry.centroid",
         "geometry.convex-hull",
         "geometry.dissolve",
-        "geometry.snap");
+        "geometry.snap",
+        "conversion.geometry-format");
 
     /// <summary>
     /// Processes advertised for discovery that cannot execute on ANY entry point, keyed by
