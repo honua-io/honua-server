@@ -54,7 +54,9 @@ internal static class GdalJobFactory
         int? maxRasterBands = null,
         long? maxDecodedRasterBytes = null,
         int? maxZoneCount = null,
-        long? maxZoneVertices = null)
+        long? maxZoneVertices = null,
+        int? maxKrigingSamples = null,
+        long? maxKrigingCells = null)
     {
         var defaults = new GdalWorkerOptions();
         return new StaticOptionsMonitor<GdalWorkerOptions>(new GdalWorkerOptions
@@ -69,6 +71,8 @@ internal static class GdalJobFactory
             MaxDecodedRasterBytes = maxDecodedRasterBytes ?? defaults.MaxDecodedRasterBytes,
             MaxZoneCount = maxZoneCount ?? defaults.MaxZoneCount,
             MaxZoneVertices = maxZoneVertices ?? defaults.MaxZoneVertices,
+            MaxKrigingSamples = maxKrigingSamples ?? defaults.MaxKrigingSamples,
+            MaxKrigingCells = maxKrigingCells ?? defaults.MaxKrigingCells,
         });
     }
 

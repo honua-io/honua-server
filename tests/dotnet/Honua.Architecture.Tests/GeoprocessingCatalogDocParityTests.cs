@@ -31,10 +31,69 @@ public sealed class GeoprocessingCatalogDocParityTests
         processes.Should().NotContain(
             process => process.ExecutionKind == ProcessExecutionKind.Unclassified,
             "protocol adapters must not guess whether a catalog process is directly callable");
-        processes.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(79);
+        processes.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(80);
         processes.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(6);
         processes.Count(process => process.ExecutionKind == ProcessExecutionKind.WorkflowOnly).Should().Be(12);
-        processes.Count(process => process.ExecutionKind == ProcessExecutionKind.Unavailable).Should().Be(1);
+        processes.Should().NotContain(
+            process => process.ExecutionKind == ProcessExecutionKind.Unavailable,
+            "the catalog admits no advertised-but-unexecutable state: an operation is either callable "
+            + "through a declared entry point or it is not in the catalog (#4409)");
+    }
+
+    /// <summary>
+    /// Every advertised operation must declare at least one entry point, and the declared
+    /// entry points must agree with the canonical execution classification. This is the
+    /// catalog half of the entry-point contract; the advertisement half — that no surface
+    /// offers an operation on an undeclared entry point — is enforced by
+    /// <c>ProcessEntryPointAdvertisementTests</c>.
+    /// </summary>
+    [Fact]
+    public void EveryCatalogProcess_DeclaresEntryPointsMatchingItsClassification()
+    {
+        foreach (var process in new BuiltInProcessCatalog().ListProcesses())
+        {
+            var expected = process.ExecutionKind switch
+            {
+                ProcessExecutionKind.Job => ProcessEntryPoints.Job | ProcessEntryPoints.Workflow,
+                ProcessExecutionKind.ProtocolOnly => ProcessEntryPoints.Protocol,
+                ProcessExecutionKind.WorkflowOnly => ProcessEntryPoints.Workflow,
+                _ => ProcessEntryPoints.None
+            };
+
+            process.SupportedEntryPoints.Should().Be(
+                expected,
+                $"'{process.ProcessId}' is classified {process.ExecutionKind}, so its declared entry points must match");
+            process.SupportedEntryPoints.Should().NotBe(
+                ProcessEntryPoints.None,
+                $"'{process.ProcessId}' is advertised in the catalog, so it must be callable somewhere");
+        }
+    }
+
+    /// <summary>
+    /// The reference page is a generated catalog document, so it must state the entry
+    /// points per operation exactly as the catalog declares them — an operator reading the
+    /// page has to be able to tell which surface will accept the operation.
+    /// </summary>
+    [Fact]
+    public void EveryCatalogProcess_DeclaresItsEntryPointsInTheReferenceDoc()
+    {
+        var docLines = ReadDoc().Split('\n');
+
+        foreach (var process in new BuiltInProcessCatalog().ListProcesses())
+        {
+            var row = docLines.FirstOrDefault(
+                line => line.StartsWith($"| `{process.ProcessId}` |", StringComparison.Ordinal));
+            row.Should().NotBeNull(
+                $"{DocRelativePath} must carry a table row for '{process.ProcessId}'");
+
+            var declared = ProcessExecutionEligibility.DescribeEntryPoints(process);
+            var cells = row!.Split('|', StringSplitOptions.None);
+            var entryPointCell = cells[^2].Trim();
+            entryPointCell.Should().Be(
+                string.Join(", ", declared),
+                $"the Entry points column for '{process.ProcessId}' in {DocRelativePath} must match the "
+                + "catalog declaration; regenerate the page from BuiltInProcessCatalog");
+        }
     }
 
     [Fact]

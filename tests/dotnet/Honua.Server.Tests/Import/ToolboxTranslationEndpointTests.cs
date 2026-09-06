@@ -898,25 +898,25 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
-    public async Task ValidateTranslation_ProcessWhoseExecutorAlwaysFails_IsNotCertifiedExecutable()
+    public async Task ValidateTranslation_ProcessReachableOnlyThroughItsProtocol_IsNotCertifiedExecutable()
     {
-        // raster.interpolate-kriging validates cleanly ('points' is its only required input)
-        // and the submit path deliberately admits it, but no kriging backend is bundled so
-        // every job fails. A report that certifies it tells a migrating user a tool works
-        // when it can never execute (#3040 review).
+        // conversion.geometry-format validates cleanly but is reachable only through its
+        // owning synchronous protocol endpoint, and translated tools execute through the
+        // job runtime. A report that certifies it tells a migrating user a tool works when
+        // it can never execute from a toolbox (#3040 review, #4409 entry points).
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
             {
-              "toolboxName": "RasterToolbox",
+              "toolboxName": "ConversionToolbox",
               "sourceFormat": "pyt",
               "tools": [
                 {
-                  "toolName": "Kriging",
-                  "targetProcessId": "raster.interpolate-kriging",
+                  "toolName": "ConvertGeometryFormat",
+                  "targetProcessId": "conversion.geometry-format",
                   "parameterMappings": [
-                    { "sourceName": "in_points", "targetParameter": "points" },
-                    { "sourceName": "z_field", "targetParameter": "zField" }
+                    { "sourceName": "in_geometry", "targetParameter": "geometry" },
+                    { "sourceName": "out_format", "targetParameter": "targetFormat" }
                   ]
                 }
               ]
@@ -931,17 +931,14 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         tool.GetProperty("issues").EnumerateArray()
             .Select(issue => issue.GetProperty("code").GetString())
             .Should().Contain("process-not-job-executable");
-        tool.GetProperty("issues").EnumerateArray()
-            .Select(issue => issue.GetProperty("message").GetString())
-            .Should().Contain(message => message!.Contains("raster.interpolate-idw", StringComparison.Ordinal));
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_ExecutableSiblingOfUnsupportedProcess_IsCertifiedExecutable()
     {
-        // raster.interpolate-idw is the supported sibling: the unavailability list must be
-        // keyed tightly enough that its neighbour is still certified.
+        // raster.interpolate-idw is the sibling interpolation tool: the not-job-executable
+        // check must be keyed tightly enough that a job-callable neighbour is still certified.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """

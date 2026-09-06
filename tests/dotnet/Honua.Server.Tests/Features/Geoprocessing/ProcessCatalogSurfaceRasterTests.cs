@@ -551,11 +551,10 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Validator_RasterInterpolateKriging_WithPoints_PassesValidation_AsFlaggedButShapeValid()
+    public void Validator_RasterInterpolateKriging_WithPoints_PassesValidation()
     {
-        // Kriging is flagged unsupported at execution, but a shape-valid plan must
-        // still pass submit-time validation so the worker can surface the
-        // unsupported-dependency message as a job failure (not a submit rejection).
+        // 'points' is the only required input; every variogram knob has a data-derived
+        // default, so the minimal plan must be accepted.
         var plan = CreateSingleStepPlan(
             "raster.interpolate-kriging",
             new Dictionary<string, string>
@@ -566,6 +565,62 @@ public sealed class ProcessCatalogSurfaceRasterTests
         var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
 
         violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterInterpolateKriging_WithUnknownModel_ProducesViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.interpolate-kriging",
+            new Dictionary<string, string>
+            {
+                ["points"] = StubBase64,
+                ["model"] = "matern",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v => v.FieldPath == "steps[s1].inputs.model");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterInterpolateKriging_WithSillBelowNugget_ProducesViolation()
+    {
+        // 'sill' is the TOTAL sill, so a sill under the nugget is not a variogram at all.
+        var plan = CreateSingleStepPlan(
+            "raster.interpolate-kriging",
+            new Dictionary<string, string>
+            {
+                ["points"] = StubBase64,
+                ["nugget"] = "2",
+                ["sill"] = "1",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v => v.FieldPath == "steps[s1].inputs.sill");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterInterpolateKriging_WithWidthButNoHeight_ProducesViolation()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.interpolate-kriging",
+            new Dictionary<string, string>
+            {
+                ["points"] = StubBase64,
+                ["width"] = "256",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v => v.FieldPath == "steps[s1].inputs.width");
     }
 
     [UnitTest]

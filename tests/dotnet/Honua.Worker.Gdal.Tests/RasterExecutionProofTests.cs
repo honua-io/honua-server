@@ -247,6 +247,78 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         output.GetProperty("bands")[0].GetProperty("values")[12].GetDouble().Should().Be(centerValue);
     }
 
+    /// <summary>
+    /// Ordinary kriging is an EXACT interpolator: at a sample location the estimator
+    /// reproduces that sample's observed value, which is the property that separates it
+    /// from a smoother. The fixture's centre sample sits on a cell centre for an odd grid
+    /// size, so the oracle needs no reference implementation — the decoded cell must equal
+    /// the observation. The grid metadata is asserted against the same geotransform the
+    /// IDW proof pins, so both interpolators demonstrably land on one grid.
+    /// </summary>
+    [Fact]
+    public async Task InterpolateKriging_SamplePoints_ReproducesSampleValuesExactly()
+    {
+        var output = await ExecuteRaster(
+            "raster.interpolate-kriging",
+            ("points", Input("points.geojson")), ("zField", "value"), ("width", "5"), ("height", "5"));
+
+        AssertGrid(output, 5, 5, 4326, [0, 0.8, 0, 4, 0, -0.8], 1);
+        var band = output.GetProperty("bands")[0];
+        band.GetProperty("type").GetString().Should().Be("Float32");
+        // Every cell is predicted from the global sample set, so the surface declares no
+        // nodata and is fully valid — there is no hole for a caller to misread as data.
+        band.GetProperty("nodata").ValueKind.Should().Be(JsonValueKind.Null);
+        band.GetProperty("mask").EnumerateArray().Select(v => v.GetInt32()).Should().OnlyContain(v => v == 255);
+
+        // Cell (2,2) of a 5×5 grid over [0,4]² is centred on (2,2) — the centre sample.
+        var values = band.GetProperty("values").EnumerateArray().ToArray();
+        values.Should().HaveCount(25);
+        values[12].GetDouble().Should().BeApproximately(100, 1e-4, "kriging is exact at a sample location");
+    }
+
+    /// <summary>
+    /// Two samples give the ordinary-kriging system a closed-form solution:
+    /// <c>w₂ - w₁ = (γ₀₁ - γ₀₂) / γ₁₂</c> under <c>w₁ + w₂ = 1</c>. The expectations below
+    /// are computed from that closed form and the spherical semivariogram, independently of
+    /// the executor's general dual solve, and the pinned variogram removes every fitted
+    /// default from the oracle.
+    /// </summary>
+    [Fact]
+    public async Task InterpolateKriging_TwoSymmetricSamples_MatchesHandDerivedMidpointAndGridMetadata()
+    {
+        var output = await ExecuteRaster(
+            "raster.interpolate-kriging",
+            ("points", Input("points-pair.geojson")), ("zField", "value"),
+            ("model", "spherical"), ("range", "4"), ("sill", "1"), ("nugget", "0"),
+            ("width", "3"), ("height", "1"));
+
+        // The samples are collinear, so the Y extent is degenerate and is widened by a
+        // unit box: rows span [-0.5, 0.5] with the origin at the north-west corner.
+        AssertGrid(output, 3, 1, 4326, [0, 4d / 3d, 0, 0.5, 0, -1], 1);
+
+        static double Spherical(double h)
+            => h >= 4 ? 1 : (1.5 * (h / 4)) - (0.5 * Math.Pow(h / 4, 3));
+
+        static double Predict(double x)
+        {
+            var difference = (Spherical(Math.Abs(x)) - Spherical(Math.Abs(4 - x))) / Spherical(4);
+            var first = (1 - difference) / 2;
+            return (first * 10) + ((1 - first) * 30);
+        }
+
+        double[] expected = [Predict(2d / 3d), Predict(2), Predict(10d / 3d)];
+        // The midpoint of a symmetric two-sample configuration is the plain mean.
+        expected[1].Should().Be(20);
+
+        var values = output.GetProperty("bands")[0].GetProperty("values")
+            .EnumerateArray().Select(v => v.GetDouble()).ToArray();
+        values.Should().HaveCount(3);
+        for (var i = 0; i < 3; i++)
+        {
+            values[i].Should().BeApproximately(expected[i], 1e-4, $"cell {i}");
+        }
+    }
+
     [Fact]
     public async Task Histogram_UnevenDistribution_ExcludesNoDataAndPreservesEveryBucket()
     {
@@ -365,7 +437,8 @@ public sealed partial class RasterExecutionProofTests : IDisposable
             "raster.reproject" => new GdalRasterReprojectCatalogJobExecutor(_runner, options, NullLogger<GdalRasterReprojectCatalogJobExecutor>.Instance),
             "raster.mosaic" => new GdalRasterMosaicJobExecutor(_runner, options, NullLogger<GdalRasterMosaicJobExecutor>.Instance),
             "raster.resample" => new GdalRasterResampleJobExecutor(_runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
-            "raster.interpolate-idw" => new GdalRasterInterpolateJobExecutor(_runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
+            "raster.interpolate-idw" or "raster.interpolate-kriging" =>
+                new GdalRasterInterpolateJobExecutor(_runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
             "raster.histogram" => new GdalRasterStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterStatisticsJobExecutor>.Instance),
             _ => throw new ArgumentOutOfRangeException(nameof(id))
         };

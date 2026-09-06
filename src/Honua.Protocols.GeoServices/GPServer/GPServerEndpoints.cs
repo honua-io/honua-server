@@ -1521,7 +1521,7 @@ internal static class GPServerEndpoints
     /// never publishes duplicates.
     /// </para>
     /// </summary>
-    private static IEnumerable<string> BuildPublishedTaskNames(IProcessCatalog processCatalog)
+    internal static IEnumerable<string> BuildPublishedTaskNames(IProcessCatalog processCatalog)
     {
         var processes = processCatalog.ListProcesses();
         var processIds = new HashSet<string>(processes.Count, StringComparer.OrdinalIgnoreCase);

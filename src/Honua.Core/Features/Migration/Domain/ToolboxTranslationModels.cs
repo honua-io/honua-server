@@ -357,12 +357,11 @@ public static class ToolboxTranslationIssueCodes
     public const string ConditionalBranchRequirement = "conditional-branch-requirement";
 
     /// <summary>
-    /// The target process cannot complete as a job at all, whatever the parameters: either
-    /// it runs only through a synchronous protocol surface, so OGC Processes and GPServer
-    /// submission reject it, or the catalog advertises it for discoverability while its
-    /// executor fails every job in this build (<c>raster.interpolate-kriging</c>).
-    /// Translated tools execute through the canonical job runtime, so such a target is
-    /// never executable from a toolbox.
+    /// The target process cannot complete as a job at all, whatever the parameters: it does
+    /// not declare the job entry point, so it is reachable only through its owning
+    /// synchronous protocol endpoint or only as a workflow DAG node, and OGC Processes and
+    /// GPServer submission reject it. Translated tools execute through the canonical job
+    /// runtime, so such a target is never executable from a toolbox.
     /// </summary>
     public const string ProcessNotJobExecutable = "process-not-job-executable";
 }
