@@ -127,7 +127,10 @@ internal sealed class PostgresAlertLifecycleMutationStore(
 
         AlertEventLifecycle Result(DateTimeOffset timestamp) => new()
         {
-            EventId = eventId, Status = status, Note = note, UpdatedAt = timestamp,
+            EventId = eventId,
+            Status = status,
+            Note = note,
+            UpdatedAt = timestamp,
             AcknowledgedAt = status == AlertLifecycleStatus.Acknowledged ? timestamp : null,
             AcknowledgedBy = status == AlertLifecycleStatus.Acknowledged ? auditEvent.Actor : null,
             SuppressedUntil = suppressUntil,

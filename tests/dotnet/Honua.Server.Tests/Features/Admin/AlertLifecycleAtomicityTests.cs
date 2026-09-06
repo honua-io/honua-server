@@ -50,11 +50,18 @@ public sealed class AlertLifecycleAtomicityTests(ITestOutputHelper output)
         var sequence = $"audit_boundary_{suffix}";
         var eventId = (await fixture.GetService<IAlertEventStore>().TryAppendAsync(new AlertEventEnvelope
         {
-            DedupeKey = $"proof-3865-{suffix}", RuleId = 0, ServiceId = "lifecycle-proof",
-            LayerId = 0, ObjectId = 3865, TriggerType = AlertTriggerType.Threshold,
-            Generation = 1, Severity = AlertSeverity.Warning, OccurredAt = DateTimeOffset.UtcNow,
+            DedupeKey = $"proof-3865-{suffix}",
+            RuleId = 0,
+            ServiceId = "lifecycle-proof",
+            LayerId = 0,
+            ObjectId = 3865,
+            TriggerType = AlertTriggerType.Threshold,
+            Generation = 1,
+            Severity = AlertSeverity.Warning,
+            OccurredAt = DateTimeOffset.UtcNow,
             PayloadJson = "{\"independentFixtureValue\":3865}",
-            IncidentStatus = AlertIncidentStatus.Started, Source = AlertEventSources.Ops
+            IncidentStatus = AlertIncidentStatus.Started,
+            Source = AlertEventSources.Ops
         }))!.Value;
         var note = "Reviewed valve 3865: operator note with \"quotes\" and Unicode Ω";
         var until = DateTimeOffset.UtcNow.AddHours(2);
@@ -112,7 +119,9 @@ public sealed class AlertLifecycleAtomicityTests(ITestOutputHelper output)
                 json.RootElement.GetProperty("eventId").GetInt64().Should().Be(eventId);
                 json.RootElement.GetProperty("lifecycleStatus").GetString().Should().Be(action switch
                 {
-                    "acknowledge" => "acknowledged", "suppress" => "suppressed", _ => "resolved"
+                    "acknowledge" => "acknowledged",
+                    "suppress" => "suppressed",
+                    _ => "resolved"
                 });
             }
             var committed = await ReadAndAssertCommitted();
