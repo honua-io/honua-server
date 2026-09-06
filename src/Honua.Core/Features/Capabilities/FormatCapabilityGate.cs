@@ -119,6 +119,9 @@ public static class FormatCapabilityGate
 /// </summary>
 public enum FormatGateStatus
 {
+    /// <summary>The requested file-format direction has no implementation.</summary>
+    NotImplemented = 4,
+
     /// <summary>The format is registered and enabled for the context.</summary>
     Enabled = 0,
 
@@ -161,13 +164,15 @@ public readonly record struct FormatGateDecision(FormatGateStatus Status, string
     /// reject it (return a 400). An <see cref="FormatGateStatus.Unknown"/> format is
     /// <b>not</b> blocked — it is simply not registry-managed.
     /// </summary>
-    public bool IsBlocked => Status is FormatGateStatus.ExperimentalDisabled or FormatGateStatus.LicenseRequired;
+    public bool IsBlocked => Status is FormatGateStatus.ExperimentalDisabled or FormatGateStatus.LicenseRequired or FormatGateStatus.NotImplemented;
 
     internal static FormatGateDecision FromResolution(CapabilityResolution resolution)
         => resolution.Enabled
             ? new FormatGateDecision(FormatGateStatus.Enabled, null)
             : resolution.ReasonCode switch
             {
+                CapabilityReasonCodes.NotImplemented =>
+                    new FormatGateDecision(FormatGateStatus.NotImplemented, FormatCapabilityReasonCodes.NotImplemented),
                 CapabilityReasonCodes.ExperimentalDisabled =>
                     new FormatGateDecision(FormatGateStatus.ExperimentalDisabled, FormatCapabilityReasonCodes.ExperimentalDisabled),
                 CapabilityReasonCodes.LicenseRequired =>
@@ -184,6 +189,9 @@ public readonly record struct FormatGateDecision(FormatGateStatus Status, string
 /// </summary>
 public static class FormatCapabilityReasonCodes
 {
+    /// <summary>The requested file-format direction has no implementation.</summary>
+    public const string NotImplemented = "format-not-implemented";
+
     /// <summary>The requested format is not a recognised/registered data format.</summary>
     public const string Unknown = "format-unknown";
 

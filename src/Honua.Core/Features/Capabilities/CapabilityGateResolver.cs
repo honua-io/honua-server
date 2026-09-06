@@ -52,6 +52,11 @@ public static class CapabilityGateResolver
             return new CapabilityResolution(false, CapabilityReasonCodes.NotRegistered);
         }
 
+        if (descriptor.ImplementationStatus == CapabilityImplementationStatus.KnownGap)
+        {
+            return new CapabilityResolution(false, CapabilityReasonCodes.NotImplemented);
+        }
+
         if (descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
         {
             if (descriptor.RequiresOptIn && !context.ExperimentalFlags.IsExperimentalEnabled(descriptor.Id))

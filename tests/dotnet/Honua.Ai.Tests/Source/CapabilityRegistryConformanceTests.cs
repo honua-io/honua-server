@@ -279,10 +279,35 @@ public sealed class CapabilityRegistryConformanceTests
         foreach (var descriptor in Registry.All
                      .Where(d => d.Id.StartsWith(CapabilityRegistry.DataFormatIdPrefix, StringComparison.Ordinal)))
         {
-            var name = descriptor.Id[CapabilityRegistry.DataFormatIdPrefix.Length..];
+            var name = descriptor.StandardName!;
             (importFormatNames.Contains(name) || NonImportFormatNames.Contains(name)).Should().BeTrue(
                 $"format descriptor '{descriptor.Id}' must map to a SupportedFileFormat member or a known writer/codec format");
         }
+
+        var writers = Honua.Io.Export.BuiltInExportFormats.Dispatch.Values
+            .Select(format => format.ToString().ToLowerInvariant()).ToHashSet(StringComparer.Ordinal);
+        foreach (var name in importFormatNames.Concat(NonImportFormatNames))
+        {
+            AssertDirection("read", name, importFormatNames.Contains(name));
+            AssertDirection("write", name, writers.Contains(name));
+        }
+
+        Registry.All.Where(d => d.Category == "format-write" && d.ImplementationStatus == CapabilityImplementationStatus.Served)
+            .Select(d => d.StandardName).Should().BeEquivalentTo(writers);
+        Honua.Io.Export.BuiltInExportFormats.Dispatch.Values.Should()
+            .BeEquivalentTo(Enum.GetValues<Honua.Io.Export.BuiltInExportFormat>());
+    }
+
+    private static void AssertDirection(string direction, string name, bool served)
+    {
+        var descriptor = Registry.Find($"format.{direction}.{name}");
+        descriptor.Should().NotBeNull();
+        descriptor!.Maturity.Should().Be(served ? CapabilityMaturity.Implemented : CapabilityMaturity.Planned);
+        descriptor.ImplementationStatus.Should().Be(served ? CapabilityImplementationStatus.Served : CapabilityImplementationStatus.KnownGap);
+        var resolution = Registry.Resolve(descriptor.Id, CapabilityGateContext.Default);
+        resolution.Enabled.Should().Be(served);
+        resolution.ReasonCode.Should().Be(served ? null : CapabilityReasonCodes.NotImplemented);
+        FormatCapabilityGate.Evaluate($"{direction}.{name}").IsBlocked.Should().Be(!served);
     }
 
     // -----------------------------------------------------------------------

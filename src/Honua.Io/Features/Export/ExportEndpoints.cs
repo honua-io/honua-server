@@ -28,11 +28,6 @@ internal static class ExportEndpoints
 {
     private const long AsyncThreshold = 50_000;
 
-    private static readonly HashSet<string> _builtInFormats = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "csv", "shapefile", "gpkg"
-    };
-
     /// <summary>
     /// Maps the export endpoint.
     /// </summary>
@@ -70,7 +65,8 @@ internal static class ExportEndpoints
 
         // Validate format. Built-in formats (csv/shapefile/gpkg) plus any active, licensed
         // plugin-contributed output format (issue #2856, ADR-0067) are accepted.
-        var isBuiltInFormat = !string.IsNullOrEmpty(format) && _builtInFormats.Contains(format);
+        var builtInFormat = BuiltInExportFormats.Resolve(format);
+        var isBuiltInFormat = builtInFormat.HasValue;
         var pluginFormatResolved = !isBuiltInFormat
             && !string.IsNullOrEmpty(format)
             && pluginFormats.TryGetFormat(format, out _);
@@ -276,13 +272,13 @@ internal static class ExportEndpoints
                     outputSrid, logger, sw, activity);
             }
 
-            return format.ToLowerInvariant() switch
+            return builtInFormat switch
             {
-                "csv" => await WriteFeatureFormatResponseAsync(httpContext, CsvOutputFormat.Instance, features, selectedFields,
+                BuiltInExportFormat.Csv => await WriteFeatureFormatResponseAsync(httpContext, CsvOutputFormat.Instance, features, selectedFields,
                     serviceName, layerId, layerName, outputSrid, logger, sw, activity),
-                "shapefile" => await WriteShapefileResponseAsync(httpContext, features, selectedFields, layerId, layerName, geometryType, outputSrid,
+                BuiltInExportFormat.Shapefile => await WriteShapefileResponseAsync(httpContext, features, selectedFields, layerId, layerName, geometryType, outputSrid,
                     crsRegistry, serviceName, logger, sw, activity, cancellationToken),
-                "gpkg" => await WriteGeoPackageResponseAsync(httpContext, features, selectedFields, layerId, layerName, geometryType, outputSrid,
+                BuiltInExportFormat.GeoPackage => await WriteGeoPackageResponseAsync(httpContext, features, selectedFields, layerId, layerName, geometryType, outputSrid,
                     crsRegistry, serviceName, logger, sw, activity, cancellationToken),
                 _ => ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status400BadRequest,

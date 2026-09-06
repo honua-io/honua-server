@@ -385,10 +385,9 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
     private const string AppPackageSchemaVersion = "honua_app_package.v1";
 
     // -----------------------------------------------------------------------
-    // Data formats — the shared format readers/writers. The import formats mirror
-    // Honua.Core's SupportedFileFormat enum; esrijson/wkb are additional writer/
-    // codec-backed formats that are not import enum members.
-    // (canonical name, minimum edition or null)
+    // The original format.* identifiers gate shared codecs and protocol format
+    // negotiation; they do not promise file export. The read/write descriptors
+    // separately describe file import and the built-in admin file-export surface.
     // -----------------------------------------------------------------------
     private static IEnumerable<CapabilityDescriptor> BuildDataFormatDescriptors()
     {
@@ -419,8 +418,24 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Maturity = CapabilityMaturity.Implemented,
                 StandardName = name,
             };
+
+            var readable = name is not ("esrijson" or "wkb");
+            var writable = name is "csv" or "shapefile" or "geopackage";
+            yield return FileFormatDirection(name, "read", readable);
+            yield return FileFormatDirection(name, "write", writable);
         }
     }
+
+    private static CapabilityDescriptor FileFormatDirection(string name, string direction, bool served) => new()
+    {
+        Id = DataFormatIdPrefix + direction + "." + name,
+        Category = "format-" + direction,
+        Kind = CapabilityKind.DataFormat,
+        Maturity = served ? CapabilityMaturity.Implemented : CapabilityMaturity.Planned,
+        ImplementationStatus = served ? CapabilityImplementationStatus.Served : CapabilityImplementationStatus.KnownGap,
+        RequiresOptIn = false,
+        StandardName = name,
+    };
 
     private static HonuaEdition? ResolveMinimumEdition(string? entitlementKey)
         => entitlementKey is not null && EditionByEntitlementKey.TryGetValue(entitlementKey, out var edition)
