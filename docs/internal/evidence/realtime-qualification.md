@@ -54,7 +54,15 @@ the same admitted token still validates signature, expiry, issuer, and configure
 policy. External issuer revocation is observable only through the configured authenticator;
 the built-in portal-token issuer supports explicit revocation through its backing store.
 
-The qualification bound is five seconds from expiry or committed revocation. SSE ends with
+The qualification bound is five seconds from expiry or committed revocation. The
+candidate issuer configuration must use zero expiry leeway to qualify that bound.
+The built-in portal-token issuer used by the regression fixture has no expiry leeway;
+OIDC deployments must explicitly configure `TokenValidation.ClockSkew` to zero for
+this qualification (its default is five minutes). Periodic reauthentication honors
+the configured authenticator's policy, so the default OIDC skew must never be
+represented as a five-second token-expiry guarantee. The issuer/configuration
+fingerprint and observed timestamps in the receipt bind this distinction, and the
+gate rejects termination outside the declared bound. SSE ends with
 `event: status` and `{"status":"error","code":"authorization-ended"}`. WebSocket emits
 close code `1008` with reason `authorization-ended`. A client reconnects with a replacement
 credential and its last delivered cursor; subscription filters and tenant visibility are
