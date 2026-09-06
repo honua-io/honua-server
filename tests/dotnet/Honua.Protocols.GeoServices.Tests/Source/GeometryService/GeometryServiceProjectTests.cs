@@ -67,8 +67,8 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
     public async Task Project_DefaultNad27Nad83_PreservesOrdinatesAndMatchesIndependentReference(
         bool includeNadconGrid, int sourceSrid, int targetSrid, double expectedX, double expectedY)
     {
-        // Independent pyproj references with network disabled: PROJ 9.8.1 without
-        // grids (Helmert -8,159,175), and PROJ 9.5.1 with the pinned NOAA NADCON grid.
+        // Independent pyproj 3.7.2 / PROJ 9.5.1 references with network disabled:
+        // Helmert (-8,159,175) without grids, and NADCON with the pinned NOAA grid.
         // CI's external PostGIS 16 fixture includes a legacy conus grid; isolate
         // operation availability instead of assuming every base image is grid-free.
         await using var datumDatabase = new DatumGridPostgresFixture();

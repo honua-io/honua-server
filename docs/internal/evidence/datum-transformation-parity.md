@@ -79,10 +79,10 @@ selected grid operation; the helper does not substitute an approximation.
 
 The GeometryServer default NAD27/NAD83 path uses SRID-only projection.
 `GeometryServiceProjectTests` checks both directions over HTTP in isolated
-PostGIS 18 fixtures, with and without the pinned NOAA NADCON grid. The grid-free
-references come from pyproj 3.8 / PROJ 9.8.1; the grid-backed references come from
-pyproj 3.7.2 / PROJ 9.5.1 using the pinned grid, with network disabled in both
-cases. Every case asserts XY within `2e-9` degrees, preserved Z/M, geometry type,
+PostGIS 18 fixtures, with and without the pinned NOAA NADCON grid. Independent
+references come from pyproj 3.7.2 / PROJ 9.5.1 with an empty grid cache or the
+pinned grid, respectively, and network disabled in both cases. Every case
+asserts XY within `2e-9` degrees, preserved Z/M, geometry type,
 and the destination WKID. CI's external `postgis/postgis:16-3.4` database includes
 a legacy `conus` grid and selects NADCON automatically, so it cannot supply the
 grid-free fixture merely by leaving modern `.tif` grids uninstalled.
