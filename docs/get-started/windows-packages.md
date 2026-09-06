@@ -21,6 +21,8 @@ The commands pin the anonymously published **pre-cut rehearsal** image
 is fetched by `docker pull` below. The control-plane package is
 [honua-admin 0.1.8](https://pypi.org/project/honua-admin/0.1.8/); the data-plane
 package is [honua-sdk 0.1.11](https://pypi.org/project/honua-sdk/0.1.11/).
+The import step invokes Honua's `honua_ingest_dataset` MCP tool using the
+published [MCP transport client 2.1.1](https://pypi.org/project/mcp/2.1.1/).
 
 **This is not a qualified 2026.1 candidate.** At the cut, obtain the immutable
 server digest and compatible client versions from the signed customer release
@@ -170,7 +172,7 @@ needed. Do not substitute `git+https` installs or local source packages.
 python -m venv .venv
 if ($LASTEXITCODE -ne 0) { throw 'Python virtual environment creation failed' }
 $Python = Join-Path $Install '.venv\Scripts\python.exe'
-& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.8' 'honua-sdk==0.1.11'
+& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.8' 'honua-sdk==0.1.11' 'mcp==2.1.1'
 if ($LASTEXITCODE -ne 0) { throw 'Registry package installation failed' }
 & $Python -m pip freeze | Set-Content -LiteralPath installed-packages.txt -Encoding Ascii
 $values = @{}
@@ -193,10 +195,17 @@ function Wait-HonuaReady {
 Wait-HonuaReady
 @'
 import os
-import httpx
 from honua_admin import HonuaAdminClient
+from honua_sdk.errors import HonuaHttpError
 base = os.environ['HONUA_BASE_URL']
-assert httpx.get(base + '/api/v1/admin/config').status_code == 401
+try:
+    with HonuaAdminClient(base) as anonymous:
+        anonymous.get_config()
+except HonuaHttpError as error:
+    if error.status_code != 401:
+        raise RuntimeError('Expected anonymous admin denial with HTTP 401') from error
+else:
+    raise RuntimeError('Anonymous admin access was unexpectedly allowed')
 with HonuaAdminClient(base, api_key=os.environ['HONUA_ADMIN_PASSWORD']) as admin:
     admin.get_config()
 print('Ready; anonymous admin denied; authenticated admin succeeded')
@@ -206,22 +215,25 @@ if ($LASTEXITCODE -ne 0) { throw 'Startup/authentication verification failed' }
 
 ## 3. Import, publish, and query a real fixture
 
-Save this small customer script. The installed admin client registers and
-publishes the connection; `httpx` uploads the file because admin 0.1.8 has no
-file-upload wrapper. The installed data client queries the published layer.
-File import creates `public.imported_windows_points`, with GeoJSON attributes
-in its `properties` JSON column. Publish that physical table and declare the
+Save this small customer script. Honua's MCP ingest tool loads the small GeoJSON
+file through the shared import pipeline. The installed admin client registers
+and publishes the connection; the installed data client queries the layer.
+Import returns the physical table and column names, with GeoJSON attributes
+in its `properties` JSON column. Publish that returned table and declare the
 fixture's Point geometry. The expected names, values, longitude/latitude, and CRS are explicit;
 verification fails on lost rows, swapped axes, changed values, or missing geometry.
 
 ```powershell
 @'
+import asyncio
 import json
 import math
 import os
 import sys
 from pathlib import Path
-import httpx
+import httpx2
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
 from honua_admin import HonuaAdminClient, CreateSecureConnectionRequest, PublishLayerRequest
 from honua_sdk import HonuaClient
 
@@ -229,6 +241,24 @@ base = os.environ['HONUA_BASE_URL']
 key = os.environ['HONUA_ADMIN_PASSWORD']
 state_path = Path('published-layer.json')
 expected = {'west': (7, -157.875, 21.3125), 'east': (19, -155.0625, 19.6875)}
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+async def ingest_fixture():
+    async with httpx2.AsyncClient(headers={'X-API-Key': key}, timeout=120) as transport:
+        async with streamable_http_client(base + '/mcp', http_client=transport) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                call = await session.call_tool('honua_ingest_dataset', {
+                    'format': 'geojson', 'datasetName': 'windows_points',
+                    'data': Path('points.geojson').read_text(encoding='utf-8'), 'sourceSrid': 4326})
+                require(not call.is_error, 'Honua MCP ingest failed')
+                result = call.structured_content
+                require(isinstance(result, dict) and result.get('success'), 'Import did not succeed')
+                require(result['rowCount'] == 2 and not result.get('rowErrors'), 'Expected two imported rows without errors')
+                return result
 
 if '--verify-only' not in sys.argv:
     if state_path.exists():
@@ -238,46 +268,37 @@ if '--verify-only' not in sys.argv:
          'geometry': {'type': 'Point', 'coordinates': [lon, lat]}}
         for name, (value, lon, lat) in expected.items()]}
     Path('points.geojson').write_text(json.dumps(fixture), encoding='utf-8')
-    with httpx.Client(base_url=base, headers={'X-API-Key': key}, timeout=120) as upload:
-        with open('points.geojson', 'rb') as data:
-            response = upload.post('/api/v1/admin/import/upload',
-                files={'file': ('points.geojson', data, 'application/geo+json')},
-                data={'tableName': 'windows_points', 'targetSchema': 'public',
-                      'targetSrid': '4326', 'overwriteExisting': 'false'})
-        response.raise_for_status()
-        assert response.status_code == 200, 'Small fixture must complete synchronously'
-        result = response.json()
-        assert result['success'] and result['featureCount'] == 2, result
     with HonuaAdminClient(base, api_key=key) as admin:
         connection = admin.create_connection(CreateSecureConnectionRequest(
             name='windows-local', host='postgres', port=5432, database_name='honua',
             username='honua', password=os.environ['POSTGRES_PASSWORD'],
             ssl_mode='Disable', ssl_required=False))
+        result = asyncio.run(ingest_fixture())
         layer = admin.publish_layer(connection.connection_id, PublishLayerRequest(
-            schema='public', table='imported_windows_points', layer_name='windows-points',
-            service_name='windows', srid=4326, geometry_column='geometry',
-            geometry_type='Point', primary_key='id', fields_list=['id', 'properties']))
+            schema=result['schema'], table=result['table'], layer_name='windows-points',
+            service_name='windows', srid=4326, geometry_column=result['geometryColumn'],
+            geometry_type='Point', primary_key=result['primaryKey'], fields_list=['id', 'properties']))
         state_path.write_text(json.dumps({'service': 'windows', 'layer': layer.layer_id}), encoding='utf-8')
 
 state = json.loads(state_path.read_text(encoding='utf-8'))
 with HonuaClient(base, api_key=key) as client:
     result = client.query_features(state['service'], state['layer'],
         out_fields=['id', 'properties'], return_geometry=True, extra_params={'outSR': 4326})
-assert result['spatialReference']['wkid'] == 4326, result
-assert result['geometryType'] == 'esriGeometryPoint', result
-assert result['objectIdFieldName'] == 'id', result
-assert len(result['features']) == 2, result
+require(result['spatialReference']['wkid'] == 4326, 'Unexpected query CRS')
+require(result['geometryType'] == 'esriGeometryPoint', 'Expected Point metadata')
+require(result['objectIdFieldName'] == 'id', 'Unexpected object ID field')
+require(len(result['features']) == 2, 'Expected exactly two published features')
 observed = {}
 for feature in result['features']:
     attributes, geometry = feature['attributes']['properties'], feature['geometry']
     name = attributes['name']
-    assert name not in observed and name in expected, feature
+    require(name not in observed and name in expected, 'Unexpected or duplicate feature name')
     value, lon, lat = expected[name]
-    assert attributes['value'] == value, feature
-    assert math.isclose(geometry['x'], lon, abs_tol=1e-9), feature
-    assert math.isclose(geometry['y'], lat, abs_tol=1e-9), feature
+    require(attributes['value'] == value, 'Unexpected feature value')
+    require(math.isclose(geometry['x'], lon, rel_tol=0, abs_tol=1e-9), 'Unexpected longitude')
+    require(math.isclose(geometry['y'], lat, rel_tol=0, abs_tol=1e-9), 'Unexpected latitude')
     observed[name] = True
-assert set(observed) == set(expected)
+require(set(observed) == set(expected), 'Missing expected features')
 print('Verified 2 published features: names, values, XY ordinates, EPSG:4326')
 '@ | Set-Content -LiteralPath journey.py -Encoding Ascii
 & $Python journey.py
@@ -297,9 +318,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Persisted data verification failed' }
 ```
 
 To resume from a new PowerShell session, change to the saved installation
-directory, set `$Install = (Get-Location).Path`, define `dc` from step 1, and run
-step 2's variable-loading and readiness blocks. `dc up -d --wait` recreates
-containers using the retained volumes and original credentials. Run
+directory, set `$Install = (Get-Location).Path`, and define `dc` from step 1.
+**First run `dc up -d --wait --wait-timeout 180`** to recreate containers using
+the retained volumes and original credentials. Only then run step 2's
+variable-loading and readiness blocks. Run
 `journey.py --verify-only` afterward. A restart or container recreation is not a
 backup restore; follow [backup and recovery](../guides/deploy/backup-and-restore.md)
 before storing irreplaceable data. Retain the private `.env`, database, Redis,
@@ -330,8 +352,9 @@ do not send `.env`, full Compose rendering, credentials, or customer records.
   to `read:packages` with `docker login ghcr.io --username YOUR_LOGIN`, entering
   the token at the password prompt. Never paste it into this guide or `.env`.
 - **Import partially completed:** inspect the import result and discovered table
-  before retrying. The recipe refuses overwrites; use a new isolated project for
-  a new clean-room rehearsal.
+  before retrying. MCP ingest replaces its named staging dataset; use a new
+  isolated project for a new clean-room rehearsal. After successful publication,
+  the saved state makes this recipe refuse another import; use `--verify-only`.
 
 Stop this installation while retaining all data:
 
