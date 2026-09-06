@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
@@ -60,7 +61,8 @@ public sealed class AlertLifecycleAtomicityTests(ITestOutputHelper output)
         until = new DateTimeOffset(until.UtcTicks / 10 * 10, TimeSpan.Zero);
         var actionName = $"alert.{action}";
         var target = $"/api/v1/admin/observability/alerts/{eventId}/{action}";
-        output.WriteLine($"{DateTimeOffset.UtcNow:O} fixture ready; event={eventId}; action={actionName}; terminateConnection={terminateConnection}; correlation={correlation}");
+        var sourceIdentity = typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        output.WriteLine($"{DateTimeOffset.UtcNow:O} fixture ready; serverAssembly={sourceIdentity}; event={eventId}; action={actionName}; terminateConnection={terminateConnection}; correlation={correlation}");
 
         try
         {
@@ -136,7 +138,9 @@ public sealed class AlertLifecycleAtomicityTests(ITestOutputHelper output)
             request.Content = action == "suppress"
                 ? JsonContent.Create(new { note = operationNote, suppressUntil = until })
                 : JsonContent.Create(new { note = operationNote });
-            return await client.SendAsync(request);
+            var response = await client.SendAsync(request);
+            output.WriteLine($"{DateTimeOffset.UtcNow:O} HTTP {(int)response.StatusCode}; action={actionName}; correlation={correlation}; body={await response.Content.ReadAsStringAsync()}");
+            return response;
         }
 
         async Task Sql(string sql)
