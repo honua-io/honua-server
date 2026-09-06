@@ -119,7 +119,8 @@ public sealed class GeoPackageExportWriterTests
         var connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = tempPath,
-            Mode = SqliteOpenMode.ReadOnly
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
         }.ToString();
 
         await using var connection = new SqliteConnection(connectionString);
@@ -140,7 +141,8 @@ public sealed class GeoPackageExportWriterTests
         var connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = tempPath,
-            Mode = SqliteOpenMode.ReadOnly
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
         }.ToString();
 
         await using var connection = new SqliteConnection(connectionString);

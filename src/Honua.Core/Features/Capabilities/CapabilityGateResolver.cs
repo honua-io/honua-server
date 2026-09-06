@@ -16,6 +16,10 @@ namespace Honua.Core.Features.Capabilities;
 ///     <see cref="CapabilityReasonCodes.NotRegistered"/> (B1 behaviour, preserved).
 ///   </description></item>
 ///   <item><description>
+///     A declared implementation gap is always disabled with
+///     <see cref="CapabilityReasonCodes.NotImplemented"/>, regardless of opt-in or edition.
+///   </description></item>
+///   <item><description>
 ///     <see cref="CapabilityMaturity.Experimental"/> maturity → enabled only when the
 ///     per-capability or global experimental flag is on; otherwise disabled with
 ///     <see cref="CapabilityReasonCodes.ExperimentalDisabled"/> (default-off).
@@ -50,6 +54,11 @@ public static class CapabilityGateResolver
         if (descriptor is null)
         {
             return new CapabilityResolution(false, CapabilityReasonCodes.NotRegistered);
+        }
+
+        if (descriptor.ImplementationStatus == CapabilityImplementationStatus.KnownGap)
+        {
+            return new CapabilityResolution(false, CapabilityReasonCodes.NotImplemented);
         }
 
         if (descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
