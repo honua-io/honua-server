@@ -115,7 +115,7 @@ Everything in Pro, plus:
 | **Private Operator Copilot** | AI DevOps/operator tooling, rollout planning, delegated operations, and implementation workflows delivered through private enterprise tooling on top of the public control-plane API | Change Management / Support |
 | **Compliance** | SOC 2 / FedRAMP evidence collection; data residency controls; encryption-at-rest key rotation | Product Assurance |
 | **Federated Queries** | Cross-instance queries (Honua-to-Honua); external source proxy (Esri REST, OGC WFS) | Integrations |
-| **Multi-Tenancy (Preview/trial only)** | Single-tenant GA in 2026.1; no hosted service or production multi-tenant deployment; isolation remains a full-severity baseline | Deployment Options |
+| **Multi-Tenancy (Preview/trial only)** | Single-tenant GA in 2026.1; non-production evaluation of schema-per-tenant isolation, tenant-scoped API keys, and usage metering only. No hosted service, customer production data, production multi-tenant deployment, or GA, availability, performance, durability, SLA, SLO, or scale commitment. Isolation remains a full-severity baseline | Deployment Options |
 | **Usage Analytics** | Dashboard — queries/sec, popular layers, slow queries, storage growth, user activity | Reporting |
 | **Plugin SDK** | Custom endpoints, pre/post-edit hooks, validators, computed fields (.NET source-gen, AOT-safe) | Integrations |
 | **Batch Geocoding** | Multi-address geocoding execution in a single request (`geocoding.batch`) over both the GeoServices `geocodeAddresses` HTTP operation and the MCP `honua_geocode_addresses` tool — the volume/enterprise geocoding workload, distinct from the Community single-address forward/reverse path (#2981) | Product Assurance |
@@ -180,7 +180,7 @@ License checks must be:
 
 - **Community** = complete feature server, single process, deploy anywhere
 - **Pro** = distributed coordination, streaming, analytics
-- **Enterprise** = organisational governance, compliance automation, extensibility, and private operator tooling; multitenancy is Preview/trial only in 2026.1
+- **Enterprise** = organisational governance, compliance automation, extensibility, and private operator tooling; multi-tenancy is Preview/trial only in 2026.1. GA deployments are single-tenant. Honua offers no SaaS or managed hosting service.
 
 ### EnterpriseReady Pillar Mapping
 
@@ -191,7 +191,7 @@ License checks must be:
 | RBAC | Essential authorization and isolation | Same baseline | Advanced organisational policy governance |
 | Change Management | Manual config | Manual config | GitOps + drift detection + private operator copilot |
 | Product Assurance | Essential secure operation and recoverability, AOT, TLS | Same baseline; paid analytics/automation | Advanced compliance/governance |
-| Deployment Options | All targets, single-process | + Distributed cache | + Advanced HA/DR automation; multitenancy Preview/trial only |
+| Deployment Options | All targets, single-process | + Distributed cache | + Advanced HA/DR automation; multi-tenancy is non-production Preview/trial only, with no multi-tenant HA/DR or production commitment |
 | Integrations | SDKs, MCP (REST) | + CDC, real-time, MCP (gRPC) | + Federation, plugins, Kafka/NATS |
 | Support | Community (GitHub) | Email, 48hr SLA | Dedicated Slack, 4hr SLA |
 | Reporting | Health + Prometheus | Grafana dashboards | + Usage analytics |

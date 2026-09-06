@@ -47,6 +47,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "scene.bim-ingest",
         "scene.pointcloud-ingest",
         "sync.offline",
+        "admin.multi-tenancy",
         "realtime.feature-streams",
         "serve.sensorthings",
         "serve.geoservices-imageserver",
@@ -130,6 +131,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
     private static readonly string[] PreviewManifestCapabilityIds =
     [
         "serve.ogc-api-edr",
+        "admin.multi-tenancy",
         "sync.offline",
         "alerts.geofence",
         "realtime.feature-streams",

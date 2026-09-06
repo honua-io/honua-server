@@ -87,7 +87,15 @@ public static class FeatureCatalog
 
         /// <summary>High availability and disaster recovery — backup automation, failover, RTO/RPO reporting.</summary>
         public const string DisasterRecovery = "DisasterRecovery";
+
+        /// <summary>Tenant administration and other platform control-plane capabilities.</summary>
+        public const string ControlPlane = "ControlPlane";
     }
+
+    /// <summary>
+    /// Entitlement key for multi-tenant lifecycle administration and schema-per-tenant routing.
+    /// </summary>
+    public const string MultiTenancyKey = "admin.multi-tenancy";
 
     /// <summary>
     /// Entitlement key for automated PostgreSQL backups — scheduled base backups plus
@@ -565,5 +573,9 @@ public static class FeatureCatalog
             HonuaEdition.Enterprise, "Enterprise automation for Redis warm-cache recovery during regional failover. Recovery of enabled durable Redis job/workflow state remains a baseline obligation in every edition."),
         new(RecoveryReportingKey, "RTO/RPO Reporting", Categories.DisasterRecovery,
             HonuaEdition.Enterprise, "Enterprise automated RTO/RPO reporting and recovery-readiness dashboards. Documented recovery expectations and verified restores remain baseline obligations in every edition."),
+
+        // Control plane — Enterprise Preview
+        new(MultiTenancyKey, "Multi-Tenant Operation", Categories.ControlPlane,
+            HonuaEdition.Enterprise, "Preview/trial-only tenant lifecycle, schema routing, and usage surfaces for non-production evaluation. Honua 2026.1 GA deployments are single-tenant; do not use customer production data. There is no GA, availability, performance, durability, SLO, or scale commitment, and Preview status never lowers the security severity of cross-tenant disclosure."),
     ];
 }
