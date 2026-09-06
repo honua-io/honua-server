@@ -54,7 +54,9 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
         await SeedAsync("mvt-point", $"POINT({lon.ToString(CultureInfo.InvariantCulture)} {lat.ToString(CultureInfo.InvariantCulture)})");
 
         var (x, y) = TileGeometry.TileOf(lon, lat, zoom);
-        var tile = await DecodeTileAsync(zoom, x, y);
+        // The seeded fixture already holds features on this layer, so scope to the row this test
+        // inserted; the where clause itself is proven by GetTile_WithWhereClause_* below.
+        var tile = await DecodeTileAsync(zoom, x, y, "where=" + Uri.EscapeDataString("name='mvt-point'"));
 
         var layer = tile.Layer("layer");
         layer.Version.Should().Be(2, "the producer must emit vector tile spec 2.x");
@@ -83,7 +85,8 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
 
         var (x, y) = TileGeometry.TileOf(lon, lat, zoom);
 
-        var unfiltered = await DecodeTileAsync(zoom, x, y);
+        var unfiltered = await DecodeTileAsync(
+            zoom, x, y, "where=" + Uri.EscapeDataString("name LIKE 'mvt-%'"));
         NamesOf(unfiltered).Should().BeEquivalentTo(["mvt-keep", "mvt-drop"]);
 
         var filtered = await DecodeTileAsync(zoom, x, y, "where=" + Uri.EscapeDataString("name='mvt-keep'"));
@@ -114,7 +117,8 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
         // And a feature far outside the buffered envelope, which must not appear at all.
         await SeedAsync("mvt-elsewhere", $"POINT({F(bounds.MinLon - 5)} {F(midLat)})");
 
-        var tile = await DecodeTileAsync(zoom, x, y);
+        var tile = await DecodeTileAsync(
+            zoom, x, y, "where=" + Uri.EscapeDataString("name LIKE 'mvt-%'"));
 
         NamesOf(tile).Should().BeEquivalentTo(
             ["mvt-crossing"],
@@ -153,12 +157,13 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
         var wkt = TileGeometry.DenseZigZagWkt(lon, lat, sourceVertices);
         await SeedAsync("mvt-dense", wkt);
 
+        var filter = "where=" + Uri.EscapeDataString("name='mvt-dense'");
         var (detailedX, detailedY) = TileGeometry.TileOf(lon, lat, 14);
-        var detailed = await DecodeTileAsync(14, detailedX, detailedY);
-        var detailedPoints = detailed.Layer("layer").Features.Single().Points.Count();
+        var detailed = await DecodeTileAsync(14, detailedX, detailedY, filter);
+        var detailedPoints = detailed.Layer("layer").Features.Should().ContainSingle().Subject.Points.Count();
 
         var (coarseX, coarseY) = TileGeometry.TileOf(lon, lat, 8);
-        var coarse = await DecodeTileAsync(8, coarseX, coarseY);
+        var coarse = await DecodeTileAsync(8, coarseX, coarseY, filter);
         var coarseFeature = coarse.Layer("layer").Features.Should().ContainSingle(
             "simplification must not drop the feature").Subject;
         var coarsePoints = coarseFeature.Points.ToArray();

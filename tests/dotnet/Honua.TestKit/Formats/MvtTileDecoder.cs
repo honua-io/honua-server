@@ -330,7 +330,12 @@ public static class MvtTileDecoder
         }
     }
 
-    private static long ZigZag(uint value) => (value >> 1) ^ (uint)-(value & 1);
+    /// <summary>
+    /// Protobuf zig-zag decode. The intermediate XOR must be signed: doing it in <see cref="uint"/>
+    /// turns every negative ordinate into a value near 2^32, which is how a clipped geometry's
+    /// negative buffer coordinates read as ~4.29e9 instead of -256.
+    /// </summary>
+    private static long ZigZag(uint value) => ((int)(value >> 1)) ^ -(int)(value & 1);
 
     private static long ZigZag64(ulong value) => (long)(value >> 1) ^ -(long)(value & 1);
 

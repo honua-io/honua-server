@@ -88,6 +88,22 @@ public sealed class MvtTileCodecTests
         layer.Features[2].Points.Single().Y.Should().Be(4095);
     }
 
+    [Fact]
+    public void BuildThenDecode_NegativeTileCoordinates_SurviveZigZagDecoding()
+    {
+        // A clipped geometry legitimately runs into the tile's negative buffer, so the zig-zag
+        // decode must be done in signed arithmetic. Doing it unsigned turns -256 into 4294967040,
+        // which reads as "inside the tile" to any range assertion.
+        var payload = MvtTileBuilder.PointLayer("clip", [(-256, -1, "left"), (4352, 4096, "right")]);
+
+        var features = MvtTileDecoder.Decode(payload).Layer("clip").Features;
+
+        features[0].Points.Single().X.Should().Be(-256);
+        features[0].Points.Single().Y.Should().Be(-1);
+        features[1].Points.Single().X.Should().Be(4352);
+        features[1].Points.Single().Y.Should().Be(4096);
+    }
+
     [Theory]
     [InlineData(new byte[] { 0x01, 0x02, 0x03, 0x04 })]
     [InlineData(new byte[] { 0x54, 0x50, 0x4B, 0x58 })]
