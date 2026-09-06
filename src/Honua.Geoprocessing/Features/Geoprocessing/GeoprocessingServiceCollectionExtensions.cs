@@ -336,6 +336,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         // terminal SUCCEEDED state instead of being refused at dispatch.
         Register<LayerBufferAggregateExecutor>(services);
         Register<LayerFeatureProjectExecutor>(services);
+        Register<CopyFeaturesExecutor>(services);
         Register<LayerDissolveExecutor>(services);
         Register<LayerSimplifyExecutor>(services);
         // Two-layer analytics.spatial-join (#2322): resolves BOTH the target layerId and
