@@ -400,8 +400,82 @@ cancel_barrier_job() {
   write_receipt "$scenario_name" pass "" "$job" "$state"
 }
 
+# honua-server#4401: the digest below proves the results document is non-empty and stable,
+# not that it is CORRECT — a numerically wrong buffer had the same sha shape as a right one.
+# verify_buffer_semantics adds the missing half: it decodes the produced GeoJSON and checks
+# the properties a buffer of the harness's fixed input point must have.
+#
+# The input is a Point at (-122.4194, 37.7749) buffered by 500 (see $payload). The checks are
+# deliberately unit-agnostic — the harness runs against digest-pinned images whose CRS handling
+# is what is under test — so they assert shape rather than an absolute radius:
+#   * the output geometry is a Polygon, i.e. the operation transformed the input rather than
+#     echoing it back;
+#   * its ring is closed and has enough vertices to be a real buffer, not a degenerate box;
+#   * its bounding box is non-degenerate and CONTAINS the input point, so the buffer is
+#     centred on what was submitted rather than on the origin or on a stale fixture;
+#   * the bbox is near-square, which a point buffer must be and a passthrough or a
+#     wrong-CRS result is not.
+verify_buffer_semantics() {
+  local results_file="$1" geometry ring_count closed minx miny maxx maxy width height ratio
+  local input_x=-122.4194 input_y=37.7749
+
+  geometry="$(jq -c '
+    [.. | objects | select(has("type") and has("coordinates")) | select(.type=="Polygon" or .type=="MultiPolygon")] | first // empty
+  ' "${results_file}")" || return 1
+
+  if [[ -z "${geometry}" || "${geometry}" == "null" ]]; then
+    printf 'FINDING: buffer output contains no Polygon geometry'
+    return 1
+  fi
+
+  ring_count="$(jq -r '[.. | arrays | select(length==2) | select(.[0]|type=="number")] | length' <<<"${geometry}")"
+  if (( ring_count < 8 )); then
+    printf 'FINDING: buffer output has only %s vertices; not a buffered polygon' "${ring_count}"
+    return 1
+  fi
+
+  closed="$(jq -r '
+    (if .type=="Polygon" then .coordinates[0] else .coordinates[0][0] end) as $r
+    | if ($r[0] == $r[-1]) then "yes" else "no" end
+  ' <<<"${geometry}")"
+  if [[ "${closed}" != "yes" ]]; then
+    printf 'FINDING: buffer output ring is not closed'
+    return 1
+  fi
+
+  read -r minx miny maxx maxy <<<"$(jq -r '
+    [.. | arrays | select(length==2) | select(.[0]|type=="number")] as $pts
+    | [($pts | map(.[0]) | min), ($pts | map(.[1]) | min),
+       ($pts | map(.[0]) | max), ($pts | map(.[1]) | max)] | @tsv
+  ' <<<"${geometry}")"
+
+  width="$(awk -v a="${maxx}" -v b="${minx}" 'BEGIN{printf "%.12f", a-b}')"
+  height="$(awk -v a="${maxy}" -v b="${miny}" 'BEGIN{printf "%.12f", a-b}')"
+  if awk -v w="${width}" -v h="${height}" 'BEGIN{exit !(w<=0 || h<=0)}'; then
+    printf 'FINDING: buffer output bounding box is degenerate (%s x %s)' "${width}" "${height}"
+    return 1
+  fi
+
+  if awk -v x="${input_x}" -v lo="${minx}" -v hi="${maxx}" 'BEGIN{exit !(x<lo || x>hi)}'; then
+    printf 'FINDING: buffer output does not contain the input X %s (bbox %s..%s)' "${input_x}" "${minx}" "${maxx}"
+    return 1
+  fi
+  if awk -v y="${input_y}" -v lo="${miny}" -v hi="${maxy}" 'BEGIN{exit !(y<lo || y>hi)}'; then
+    printf 'FINDING: buffer output does not contain the input Y %s (bbox %s..%s)' "${input_y}" "${miny}" "${maxy}"
+    return 1
+  fi
+
+  ratio="$(awk -v w="${width}" -v h="${height}" 'BEGIN{printf "%.6f", (w>h ? w/h : h/w)}')"
+  if awk -v r="${ratio}" 'BEGIN{exit !(r > 2.0)}'; then
+    printf 'FINDING: buffer of a point produced a %sx-elongated bbox; not a point buffer' "${ratio}"
+    return 1
+  fi
+
+  return 0
+}
+
 result_digest() {
-  local tmp digest bytes
+  local tmp digest bytes semantics
   tmp="$(mktemp)"
   if ! auth_curl "${base_url}/ogc/processes/jobs/$1/results" > "${tmp}"; then
     rm -f "${tmp}"
@@ -409,7 +483,25 @@ result_digest() {
   fi
   digest="$(sha256sum "${tmp}" | cut -d' ' -f1)"
   bytes="$(wc -c < "${tmp}")"
-  jq -n --arg sha "${digest}" --argjson bytes "${bytes}" '{sha256:$sha,bytes:$bytes}' > "${scenario_state_file}"
+
+  # #4401: a sha over a non-empty document passed for a numerically wrong output. When the
+  # scenario ran the fixed geometry.buffer payload, additionally verify the output's semantics.
+  semantics=ok
+  if [[ "${HONUA_GP_VERIFY_BUFFER_SEMANTICS:-1}" == "1" && "${scenario_name:-}" != *native* ]]; then
+    if ! semantics="$(verify_buffer_semantics "${tmp}")"; then
+      jq -n --arg sha "${digest}" --argjson bytes "${bytes}" --arg semantics "${semantics}" \
+        '{sha256:$sha,bytes:$bytes,output_semantics:$semantics}' > "${scenario_state_file}"
+      rm -f "${tmp}"
+      printf '%s' "${semantics}" >&2
+      return 1
+    fi
+    semantics=verified
+  else
+    semantics=not-applicable
+  fi
+
+  jq -n --arg sha "${digest}" --argjson bytes "${bytes}" --arg semantics "${semantics}" \
+    '{sha256:$sha,bytes:$bytes,output_semantics:$semantics}' > "${scenario_state_file}"
   rm -f "${tmp}"
   printf '%s' "${digest}"
 }
