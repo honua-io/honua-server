@@ -29,7 +29,7 @@ public sealed class PdalExecutionProofTests : IDisposable
         (image!.StartsWith("sha256:", StringComparison.Ordinal) || image.Contains("@sha256:", StringComparison.Ordinal))
             .Should().BeTrue("the native proof must bind to immutable image bytes");
         var runner = new DockerGdalCommandRunner(new ProcessDockerCommandInvoker(NullLogger<ProcessDockerCommandInvoker>.Instance),
-            Options.Create(new GdalContainerExecutionOptions { Image = image }), Options.Create(new GdalHardeningOptions()),
+            Options.Create(new GdalContainerExecutionOptions { Image = image, User = Environment.GetEnvironmentVariable("HONUA_GDAL_PROOF_USER") ?? "1001:1001" }), Options.Create(new GdalHardeningOptions()),
             Options.Create(new AwsS3Options()), Options.Create(new AzureBlobOptions()), NullLogger<DockerGdalCommandRunner>.Instance);
         var input = await File.ReadAllBytesAsync(Path.Join(AppContext.BaseDirectory, "Fixtures", "PointCloudProof", fixture));
         var inputs = new List<(string, string)> { ("source", Convert.ToBase64String(input)) };
