@@ -155,11 +155,16 @@ public sealed class JobReconciliationServiceTests
                 Timeout = TimeSpan.FromSeconds(1)
             });
 
+        // The fresh record must ALSO look heartbeat-expired. With a live heartbeat the sweep
+        // skips on the heartbeat re-validation instead, and the ownership guard this test is
+        // named for is never reached — a mutation removing the claim-equality clause from
+        // IsStaleSnapshot left the test green (honua-server#4403). Expiring both makes the
+        // changed owner the only remaining reason not to act.
         var reclaimedByOther = snapshot with
         {
             ClaimedBy = "worker-2",
-            ClaimedAt = DateTimeOffset.UtcNow,
-            LastHeartbeatAt = DateTimeOffset.UtcNow
+            ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            LastHeartbeatAt = DateTimeOffset.UtcNow.AddMinutes(-5)
         };
 
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
