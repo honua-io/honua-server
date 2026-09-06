@@ -147,6 +147,7 @@ elif route == "/api/v1/admin/api-keys":
     body = {"status":401, "type":"https://honua.io/problems/admin"}
     if fail == "denial-body": body["status"] = 403
     if fail == "denial-records": body["data"] = [{"key":"leaked"}]
+    if fail == "denial-nested": body["unexpectedExtension"] = {"records":[{"key":"leaked"}]}
 elif route.endswith("/0/query"):
     if "returnCountOnly" in event["rawQueryString"]: body = {"count":9 if fail == "query" else 10}
     else: body = {"features":[{"attributes":{"name":n}} for n in ["alpha","beta","gamma","delta","epsilon","zeta","eta","theta","iota","lambda"]]}
@@ -227,7 +228,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                         "skip-config", "missing-db", "resolved-image", "health-status", "health-body", "invoke",
                         "report", "cold-start", "cold-zero", "cloudwatch", "migrations", "migration-pending", "migration-plan",
                         "query", "fixture-names", "create", "readback", "delete", "delete-remains",
-                        "denial-status", "denial-body", "denial-records", "executed-version", "weighted",
+                        "denial-status", "denial-body", "denial-records", "denial-nested", "executed-version", "weighted",
                         "function-delete", "log-delete", "version-delete", "ownership"):
             with self.subTest(failure=failure):
                 result, receipt, state, _ = self.run_lane(failure)

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -141,6 +142,8 @@ def smoke(function, expected_version=None):
             "Authorization refusal body is not the documented error")
     require(not any(key in denial for key in ("data", "features", "records", "layers", "items", "apiKeys")),
             "Authorization denial leaked records")
+    require(all(not isinstance(value, (dict, list)) for value in denial.values()),
+            "Authorization denial contains structured records")
     write_path = "/rest/services/test_service/FeatureServer/10"
     marker = "honua-certrun-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"]
     # Resolve by our unique marker during finally too, including ambiguous create responses.
@@ -285,6 +288,11 @@ def certify(directory, ephemeral, digest):
 
 
 if __name__ == "__main__":
+    def interrupted(_signum, _frame):
+        raise RuntimeError("Certification interrupted")
+
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     try:
         if sys.argv[1] == "prepare":
             prepare(Path(sys.argv[2]))
