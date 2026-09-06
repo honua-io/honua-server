@@ -186,11 +186,14 @@ public sealed class PatchConcurrencyTests
     public Task Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict(string protocol)
         => VerifyConcurrentPatchAsync(protocol != "ogc", true, firstIsBatch: protocol == "batch", ifMatch: "*");
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("PATCH")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
     [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Update)]
     [Endpoint("POST /odata/$batch")]
-    public async Task BatchPatch_SameObjectTwice_PreservesBothUpdates()
+    public async Task BatchPatch_SameObjectTwice_PreservesOperationOrder(string secondMethod)
     {
         var barrier = new WriteBarrier();
         barrier.Resume.TrySetResult();
@@ -199,14 +202,23 @@ public sealed class PatchConcurrencyTests
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "original name");
-            var body = $$$"""{"requests":[{"id":"first","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{"name":"changed name"}},{"id":"second","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{"population":45678}}]}""";
+            var secondBody = secondMethod == "PUT"
+                ? """{"name":"replacement","population":45678,"Geometry":{"type":"Point","coordinates":[-120,35]}}"""
+                : """{"population":45678}""";
+            var body = $$$"""{"requests":[{"id":"first","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{"name":"changed name"}},{"id":"second","atomicityGroup":"g","method":"{{{secondMethod}}}","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{{{secondBody}}}}]}""";
             using var response = await fixture.Client.PostAsync("/odata/$batch", new StringContent(body, Encoding.UTF8, "application/json"));
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var responses = document.RootElement.GetProperty("responses");
             Assert.Equal(2, responses.GetArrayLength());
             foreach (var result in responses.EnumerateArray()) Assert.InRange(result.GetProperty("status").GetInt32(), 200, 299);
-            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-            Assert.Equal("changed name", stored.Attributes["name"]);
+            var current = await fixture.GetService<IFeatureReader>().GetAsync(0, id);
+            if (secondMethod == "DELETE")
+            {
+                Assert.Null(current);
+                return;
+            }
+            var stored = current!.Value;
+            Assert.Equal(secondMethod == "PUT" ? "replacement" : "changed name", stored.Attributes["name"]);
             Assert.Equal(45678L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
         }
         finally { await fixture.DisposeAsync(); }

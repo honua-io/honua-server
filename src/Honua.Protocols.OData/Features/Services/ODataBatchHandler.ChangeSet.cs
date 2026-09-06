@@ -664,6 +664,13 @@ internal sealed partial class ODataBatchHandler
                         if (updateResult.IsSuccess)
                         {
                             var persistedObjectId = updateResult.ObjectId ?? updatedFeature.Id;
+                            if (result.DeleteResults.Any(deleted => deleted.IsSuccess && deleted.ObjectId == persistedObjectId))
+                            {
+                                // A later delete in this atomic group intentionally removed
+                                // the row. The earlier update succeeded without a final body.
+                                responses.Add(CreateSuccessResponse(requestId, StatusCodes.Status204NoContent, null));
+                                continue;
+                            }
                             var persistedFeature = await _featureReader.GetAsync(layer.StorageLayerId, persistedObjectId, cancellationToken).ConfigureAwait(false);
                             if (!persistedFeature.HasValue)
                             {
