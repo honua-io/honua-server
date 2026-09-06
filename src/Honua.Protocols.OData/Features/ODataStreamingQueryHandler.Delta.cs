@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -12,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Security;
+using Honua.ServiceDefaults;
 using Honua.Protocols.OData.Services;
 
 namespace Honua.Protocols.OData;
@@ -21,11 +23,15 @@ internal sealed partial class ODataStreamingQueryHandler
     private const int MaximumSnapshotRows = 10000;
     private const int MaximumSnapshotBytes = 16 * 1024 * 1024;
     private static readonly TimeSpan SnapshotRetention = TimeSpan.FromHours(24);
+    private static readonly TimeSpan SnapshotClockSkew = TimeSpan.FromMinutes(5);
 
     private sealed record DurableDeltaContinuation(ODataQuerySnapshot Snapshot, int Offset, bool Poll);
 
-    private static IResult DeltaRecovery(HttpContext context, string code, string message, int status) =>
-        ODataUtilityService.CreateODataError(context, code, message, status);
+    private static IResult DeltaRecovery(HttpContext context, string code, string message, int status)
+    {
+        Activity.Current?.SetStatus(ActivityStatusCode.Error, code);
+        return ODataUtilityService.CreateODataError(context, code, message, status);
+    }
 
     private static async Task<(DurableDeltaContinuation? Continuation, IResult? Error)> ReadDurableDeltaAsync(
         HttpContext context, string token, CancellationToken cancellationToken)
@@ -48,8 +54,8 @@ internal sealed partial class ODataStreamingQueryHandler
             return (null, DeltaRecovery(context, "DeltaTokenExpired", "Delta state is missing or expired; obtain a tracked baseline.", 410));
         }
         var snapshot = JsonSerializer.Deserialize(payload, ODataQuerySnapshotJsonContext.Default.ODataQuerySnapshot);
-        if (snapshot is null || snapshot.Id != id || snapshot.CreatedAt > DateTimeOffset.UtcNow
-            || snapshot.CreatedAt + SnapshotRetention <= DateTimeOffset.UtcNow || offset > snapshot.Changes.Length)
+        if (snapshot is null || snapshot.Id != id || snapshot.CreatedAt > DateTimeOffset.UtcNow + SnapshotClockSkew
+            || snapshot.CreatedAt + SnapshotRetention + SnapshotClockSkew <= DateTimeOffset.UtcNow || offset > snapshot.Changes.Length)
         {
             return (null, DeltaRecovery(context, "DeltaTokenExpired", "Delta state cannot be continued; obtain a tracked baseline.", 410));
         }
@@ -144,7 +150,8 @@ internal sealed partial class ODataStreamingQueryHandler
             }
             var current = items.ToArray();
             var changes = continuation is null ? current : ComputeDeltaChanges(continuation.Snapshot.Items, current, query.LayerId);
-            snapshot = new ODataQuerySnapshot(Guid.NewGuid(), DateTimeOffset.UtcNow, query, binding, pageSize, current, changes);
+            snapshot = new ODataQuerySnapshot(Guid.NewGuid(), DateTimeOffset.UtcNow, query, binding, pageSize, current, changes,
+                IsDelta: continuation is not null);
             var payload = JsonSerializer.SerializeToUtf8Bytes(snapshot, ODataQuerySnapshotJsonContext.Default.ODataQuerySnapshot);
             await store.SaveAsync(snapshot.Id, payload, snapshot.CreatedAt + SnapshotRetention, cancellationToken).ConfigureAwait(false);
         }
@@ -156,7 +163,7 @@ internal sealed partial class ODataStreamingQueryHandler
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
             if (ODataUtilityService.ShouldIncludeContext(context.Request, query.Format))
             {
-                writer.WriteString("@odata.context", $"{baseUrl}/odata/$metadata#Features/$delta");
+                writer.WriteString("@odata.context", $"{baseUrl}/odata/$metadata#Features" + (snapshot.IsDelta ? "/$delta" : ""));
             }
             if (query.Count == true) { writer.WriteNumber("@odata.count", snapshot.Changes.Length); }
             writer.WritePropertyName("value");
@@ -172,6 +179,7 @@ internal sealed partial class ODataStreamingQueryHandler
         }
         ODataUtilityService.SetODataHeaders(context);
         ODataUtilityService.ApplyTrackChangesPreference(context);
+        HonuaTelemetry.SetSuccess(Activity.Current, (int)Math.Min(pageSize, snapshot.Changes.Length - offset));
         return Results.Bytes(response.ToArray(), ODataUtilityService.GetODataContentType(context.Request, query.Format));
     }
 
@@ -250,7 +258,7 @@ internal sealed partial class ODataStreamingQueryHandler
 }
 
 internal sealed record ODataQuerySnapshot(Guid Id, DateTimeOffset CreatedAt, ODataDeltaService.DeltaQueryState Query,
-    string Binding, int PageSize, JsonElement[] Items, JsonElement[] Changes);
+    string Binding, int PageSize, JsonElement[] Items, JsonElement[] Changes, bool IsDelta = false);
 
 [JsonSerializable(typeof(ODataQuerySnapshot))]
 internal sealed partial class ODataQuerySnapshotJsonContext : JsonSerializerContext;

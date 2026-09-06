@@ -61,6 +61,8 @@ public sealed partial class ODataDeltaTests
                 using var response = await _fixture.Client.SendAsync(request);
                 response.StatusCode.Should().Be(HttpStatusCode.OK);
                 using var page = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                page.RootElement.GetProperty("@odata.context").GetString().Should()
+                    .EndWith(baseline ? "#Features" : "#Features/$delta");
                 var values = page.RootElement.GetProperty("value").EnumerateArray().ToArray();
                 values.Length.Should().BeLessThanOrEqualTo(1);
                 foreach (var value in values)

@@ -436,15 +436,17 @@ internal sealed partial class ODataStreamingQueryHandler(
                 ? ODataDeltaService.BuildDeltaFilter(filter, deltaSince.Value, deltaDefinition.UpperBoundTimestamp)
                 : filter;
 
-            if (trackChangesRequested)
-            {
-                return await HandleDurableDeltaAsync(context, featureReader, resource, storageLayerId.Value,
-                    layerValidation.Snapshot!.Etag, deltaDefinition, durableDelta, pagination.Limit, pagination.Offset, bbox, effectiveToken);
-            }
-
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
             requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, publicLayerId.ToString(CultureInfo.InvariantCulture));
+
+            if (trackChangesRequested)
+            {
+                featureActivity = HonuaTelemetry.StartFeatureActivity("query", HonuaTelemetry.Protocols.OData,
+                    publicLayerId.ToString(CultureInfo.InvariantCulture), context.TraceIdentifier);
+                return await HandleDurableDeltaAsync(context, featureReader, resource, storageLayerId.Value,
+                    layerValidation.Snapshot!.Etag, deltaDefinition, durableDelta, pagination.Limit, pagination.Offset, bbox, effectiveToken);
+            }
 
             // OData v4 allows $top=0 (a deliberately empty page, commonly paired with
             // $count=true for the total). The empty-page short-circuit lives in the

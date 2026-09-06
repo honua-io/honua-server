@@ -14,6 +14,31 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 
 public sealed partial class ODataDeltaTests
 {
+    [IntegrationTest]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task Delta_BoundedCrossNodeClockSkew_ContinuesDurableBaseline()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/odata/Features(0)?$top=100");
+        request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
+        using var baselineResponse = await _fixture.Client.SendAsync(request);
+        baselineResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var baseline = JsonDocument.Parse(await baselineResponse.Content.ReadAsStringAsync());
+        var link = new Uri(baseline.RootElement.GetProperty("@odata.deltaLink").GetString()!);
+        var token = QueryHelpers.ParseQuery(link.Query)["$deltatoken"].ToString();
+        var store = _fixture.GetService<IQuerySnapshotStore>();
+        var original = JsonSerializer.Deserialize((await store.ReadAsync(Guid.ParseExact(token.Split('.')[1], "N")))!,
+            ODataQuerySnapshotJsonContext.Default.ODataQuerySnapshot)!;
+        var ahead = original with { Id = Guid.NewGuid(), CreatedAt = DateTimeOffset.UtcNow.AddSeconds(30) };
+        await store.SaveAsync(ahead.Id, JsonSerializer.SerializeToUtf8Bytes(ahead, ODataQuerySnapshotJsonContext.Default.ODataQuerySnapshot),
+            DateTimeOffset.UtcNow.AddDays(1));
+        using var response = await _fixture.Client.GetAsync($"/odata/Features(0)?$deltatoken=v2.{ahead.Id:N}.0.t");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var page = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        page.RootElement.GetProperty("value").GetArrayLength().Should().Be(0, "clock skew must not invent changes or require rebasing");
+        page.RootElement.GetProperty("@odata.context").GetString().Should().EndWith("#Features/$delta");
+        page.RootElement.TryGetProperty("@odata.deltaLink", out _).Should().BeTrue();
+    }
+
     [IntegrationTheory]
     [InlineData("expired", HttpStatusCode.Gone, "DeltaTokenExpired")]
     [InlineData("future", HttpStatusCode.Gone, "DeltaTokenExpired")]
