@@ -9,6 +9,7 @@ using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
+using Xunit.Sdk;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -70,32 +71,41 @@ public sealed class PdalExecutionProofTests : IDisposable
                 point[1] = (2 * Math.Atan(Math.Exp(point[1] / 6378137)) - Math.PI / 2) * 180 / Math.PI;
             }
         }
-        for (var i = 0; i < 3; i++)
+        void AssertPoints(byte[] candidate)
         {
-            var point = offset + i * recordLength;
+            for (var i = 0; i < 3; i++)
+            {
+                var point = offset + i * recordLength;
+                for (var axis = 0; axis < 3; axis++)
+                {
+                    (BitConverter.ToInt32(candidate, point + 4 * axis) * scales[axis] + offsets[axis])
+                        .Should().BeApproximately(expected[i][axis], scales[axis] / 2 + 1e-9, $"point {i}, ordinate {axis}");
+                }
+                BitConverter.ToUInt16(candidate, point + 12).Should().Be(new ushort[] { 10, 60000, 123 }[i]);
+                candidate[point + 14].Should().Be(new byte[] { 9, 26, 17 }[i]);
+                candidate[point + 15].Should().Be(new byte[] { 2, 6, 9 }[i]);
+                unchecked((sbyte)candidate[point + 16]).Should().Be(new sbyte[] { -3, 0, 7 }[i]);
+                candidate[point + 17].Should().Be((byte)(i + 1));
+                BitConverter.ToUInt16(candidate, point + 18).Should().Be((ushort)(40 + i));
+                BitConverter.ToDouble(candidate, point + 20).Should().Be(123456.25 + i * .5);
+                BitConverter.ToUInt16(candidate, point + 28).Should().Be(new ushort[] { 65535, 1234, 0 }[i]);
+                BitConverter.ToUInt16(candidate, point + 30).Should().Be(new ushort[] { 0, 5678, 65535 }[i]);
+                BitConverter.ToUInt16(candidate, point + 32).Should().Be(new ushort[] { 123, 9012, 456 }[i]);
+            }
             for (var axis = 0; axis < 3; axis++)
             {
-                (BitConverter.ToInt32(output, point + 4 * axis) * scales[axis] + offsets[axis])
-                    .Should().BeApproximately(expected[i][axis], scales[axis] / 2 + 1e-9, $"point {i}, ordinate {axis}");
+                BitConverter.ToDouble(candidate, 179 + 16 * axis).Should()
+                    .BeApproximately(expected.Max(p => p[axis]), scales[axis] / 2 + 1e-9);
+                BitConverter.ToDouble(candidate, 187 + 16 * axis).Should()
+                    .BeApproximately(expected.Min(p => p[axis]), scales[axis] / 2 + 1e-9);
             }
-            BitConverter.ToUInt16(output, point + 12).Should().Be(new ushort[] { 10, 60000, 123 }[i]);
-            output[point + 14].Should().Be(new byte[] { 9, 26, 17 }[i]);
-            output[point + 15].Should().Be(new byte[] { 2, 6, 9 }[i]);
-            unchecked((sbyte)output[point + 16]).Should().Be(new sbyte[] { -3, 0, 7 }[i]);
-            output[point + 17].Should().Be((byte)(i + 1));
-            BitConverter.ToUInt16(output, point + 18).Should().Be((ushort)(40 + i));
-            BitConverter.ToDouble(output, point + 20).Should().Be(123456.25 + i * .5);
-            BitConverter.ToUInt16(output, point + 28).Should().Be(new ushort[] { 65535, 1234, 0 }[i]);
-            BitConverter.ToUInt16(output, point + 30).Should().Be(new ushort[] { 0, 5678, 65535 }[i]);
-            BitConverter.ToUInt16(output, point + 32).Should().Be(new ushort[] { 123, 9012, 456 }[i]);
         }
-        for (var axis = 0; axis < 3; axis++)
-        {
-            BitConverter.ToDouble(output, 179 + 16 * axis).Should()
-                .BeApproximately(expected.Max(p => p[axis]), scales[axis] / 2 + 1e-9);
-            BitConverter.ToDouble(output, 187 + 16 * axis).Should()
-                .BeApproximately(expected.Min(p => p[axis]), scales[axis] / 2 + 1e-9);
-        }
+        AssertPoints(output);
+        // Change only intensity: the LAS remains well-formed, with valid bounds/CRS.
+        var wrong = (byte[])output.Clone();
+        BitConverter.GetBytes((ushort)11).CopyTo(wrong, offset + 12);
+        Action rejectWrongIntensity = () => AssertPoints(wrong);
+        rejectWrongIntensity.Should().Throw<XunitException>();
         var vlr = (int)BitConverter.ToUInt16(output, 94);
         string? wkt = null;
         for (var i = 0; i < BitConverter.ToUInt32(output, 100); i++)

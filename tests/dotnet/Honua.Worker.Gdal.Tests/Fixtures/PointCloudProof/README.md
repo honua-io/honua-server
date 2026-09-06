@@ -33,3 +33,8 @@ These are pre-cut whole-catalog GA operation proofs for #3951. Candidate-bound
 lifecycle qualification consumes #3848; shared staged-output/database recovery
 qualification remains #3852/#3855 where those substrates are used. This fixture
 uses inline artifacts and makes no restart, retention or staging claim.
+
+For local Linux hosts whose user differs from the container default 1001:1001,
+set `HONUA_GDAL_PROOF_USER` to the host UID:GID before running the test. This only
+maps ownership at the test's bind-mount boundary; the production executor and
+container hardening remain in use. CI records its own host UID:GID likewise.
