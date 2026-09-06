@@ -4,6 +4,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Threading.Channels;
 using FluentAssertions;
 using Honua.Core.Features.Capabilities;
@@ -69,7 +70,9 @@ public sealed class ExportEndpointTests : IAsyncLifetime
         registry.Resolve(descriptor.Id, CapabilityGateContext.Default).Enabled.Should().BeFalse();
         var response = await _client.GetAsync($"/api/v1/admin/services/nonexistent/layers/0/export?format={format}");
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain($"Invalid export format '{format}'");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("detail").GetString().Should()
+            .Be($"Invalid export format '{format}'. Valid formats: csv, shapefile, gpkg");
     }
 
     [IntegrationTest]
@@ -142,7 +145,8 @@ public sealed class ExportEndpointTests : IAsyncLifetime
             var connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = tempPath,
-                Mode = SqliteOpenMode.ReadOnly
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
             }.ToString();
 
             await using var connection = new SqliteConnection(connectionString);

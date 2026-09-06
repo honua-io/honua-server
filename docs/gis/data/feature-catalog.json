@@ -3958,6 +3958,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_AsyncProgressPersistenceFails_DoesNotQueueHeadlessBackgroundJob",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_CsvFormat_ReturnsValidCsvWithWktGeometry",
+        "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_DeclaredWriterGap_RejectsBeforeLayerLookup",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_GeoPackageFormat_ReturnsValidGpkg",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_InvalidFormat_Returns400",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_NonExistentLayer_Returns404",
@@ -4465,6 +4466,7 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAdminWithEnvironmentAndWorkspace_ReturnsFilteredManifest",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAnonymous_ReturnsPublicTenantManifestAndNoStoreHeaders",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AutonomyTracksPolicyStoreInsteadOfWorkflowStore",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FileExportDirections_AdvertisesOnlyThreeImplementedWriters",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LegacyProjection_MarksDisabledPreviewsUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LifecycleOnlyPreviews_RemainAvailableWithoutOptIn",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_MultiTenancyWithoutSchemaRouting_IsDisabledByConfiguration",
