@@ -602,6 +602,8 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             }
         }
 
+        public CloudStorageProvider Provider => inner.Provider;
+
         public Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
         {
             lock (_attemptedDeletes)

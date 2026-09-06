@@ -812,8 +812,9 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             await response.AssertGeoServicesErrorAsync(413);
         }
 
-        // Unsupported media type on the request itself.
-        using (var unsupported = new StringContent("not multipart", Encoding.UTF8, "application/xml"))
+        // Unsupported media type on the request itself (same shape as
+        // AddAttachment_WithUnsupportedContentType_Returns415).
+        using (var unsupported = new StringContent("objectId=1", Encoding.UTF8, "text/plain"))
         {
             var response = await _fixture.Client.PostAsync(
                 $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", unsupported);
