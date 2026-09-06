@@ -6,19 +6,20 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Guardrails;
+using Honua.Core.Features.Guardrails.Abstractions;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Operations.Domain;
-using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
-using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -37,16 +38,6 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             services.RemoveAll<IStudioPackageStore>();
             services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), _studioSchema));
-            services.Configure<OperationPolicyOptions>(options =>
-            {
-                options.Enabled = true;
-                options.Rules.Add(new OperationPolicyRule
-                {
-                    OperationId = StudioDraftOperations.CreatePublicationRequest,
-                    Decision = PolicyDecisionKind.RequireApproval,
-                    ApprovalLane = "studio-operator",
-                });
-            });
         });
         await _fixture.InitializeAsync();
         var root = new DirectoryInfo(AppContext.BaseDirectory);
@@ -253,6 +244,13 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             var lifecycle = reader.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
             reader.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
                 .Should().Be(StudioPackagePersistenceMode.Durable);
+
+            // Composition is complete. Enable the operator's approval guardrail
+            // on the proposing host before submitting the immutable publication intent.
+            _fixture.Services.GetRequiredService<IOptions<GuardrailLadderOptions>>().Value
+                .Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
+            _fixture.Services.GetRequiredService<IGuardrailLadder>().Resolve(OperationClass.StudioDraftMutation)
+                .Tier.Should().Be(GuardrailTier.RequiresApproval);
             var intent = await CallAsync("propose_publication",
                 $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"/studio/dashboard-fixture","visibility":"personal"}""");
             intent.GetProperty("status").GetString().Should().Be("AwaitingApproval");
