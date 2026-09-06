@@ -4,7 +4,7 @@
     "Each entry maps a (fromSrid -> toSrid) geographic-CRS reprojection to the",
     "geotransformation ArcGIS selects by default for the listed area of use, plus",
     "the EPSG coordinate-operation code and the explicit PROJ pipeline that PostGIS",
-    "executes via ST_TransformPipeline(geom, '<projPipeline>', toSrid).",
+    "executes via 3-argument ST_Transform(geom, '<projPipeline>', toSrid).",
     "",
     "Provenance: WKID and name follow Esri's published geographic-transformation list;",
     "epsgOperationCode references the EPSG Geodetic Parameter Dataset; projPipeline is",

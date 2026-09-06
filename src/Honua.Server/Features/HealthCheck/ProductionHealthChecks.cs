@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Capabilities;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -265,6 +266,7 @@ internal sealed class RedisHealthCheck : IHealthCheck
     private readonly IConnectionMultiplexer? _redis;
     private readonly IDistributedCache _distributedCache;
     private readonly ILogger<RedisHealthCheck> _logger;
+    private readonly DurableJobSubstrateOptions _durableJobSubstrate;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RedisHealthCheck"/> class.
@@ -272,14 +274,17 @@ internal sealed class RedisHealthCheck : IHealthCheck
     /// <param name="redis">Redis connection multiplexer.</param>
     /// <param name="distributedCache">Distributed cache.</param>
     /// <param name="logger">Logger instance.</param>
+    /// <param name="durableJobSubstrate">Startup Redis durability attestation state.</param>
     public RedisHealthCheck(
         IConnectionMultiplexer? redis,
         IDistributedCache distributedCache,
-        ILogger<RedisHealthCheck> logger)
+        ILogger<RedisHealthCheck> logger,
+        IOptions<DurableJobSubstrateOptions>? durableJobSubstrate = null)
     {
         _redis = redis;
         _distributedCache = distributedCache;
         _logger = logger;
+        _durableJobSubstrate = durableJobSubstrate?.Value ?? new DurableJobSubstrateOptions();
     }
 
     /// <inheritdoc/>
@@ -296,6 +301,18 @@ internal sealed class RedisHealthCheck : IHealthCheck
                     new Dictionary<string, object>
                     {
                         ["cacheType"] = "in-memory"
+                    });
+            }
+
+            if (_durableJobSubstrate.RedisEntitled
+                && _durableJobSubstrate.RedisDurabilityAttestation is null)
+            {
+                return HealthCheckResult.Unhealthy(
+                    "Redis durability is not attested",
+                    data: new Dictionary<string, object>
+                    {
+                        ["cause"] = (_durableJobSubstrate.RedisDurabilityFailure
+                            ?? DurableJobSubstrateCause.RedisAttestationUnavailable).ToString()
                     });
             }
 
@@ -322,6 +339,15 @@ internal sealed class RedisHealthCheck : IHealthCheck
                 ["isConnected"] = _redis.IsConnected,
                 ["cacheOperationSuccess"] = retrievedValue == testValue
             };
+
+            if (_durableJobSubstrate.RedisDurabilityAttestation is { } attestation)
+            {
+                data["durabilityEndpoint"] = attestation.Endpoint;
+                data["persistenceMode"] = attestation.PersistenceMode;
+                data["acknowledgedWritePolicy"] = attestation.AcknowledgedWritePolicy;
+                data["evictionPolicy"] = attestation.EvictionPolicy;
+                data["durabilityObservedAt"] = attestation.ObservedAt;
+            }
 
             // Determine health status
             if (pingLatency.TotalMilliseconds > 1000 || !_redis.IsConnected)

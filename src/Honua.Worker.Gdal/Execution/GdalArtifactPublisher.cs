@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Raster.CogParser;
@@ -128,6 +129,13 @@ internal static partial class GdalArtifactPublisher
                     .WriteAsync(objectKey, source, mediaType, cancellationToken)
                     .ConfigureAwait(false);
             }
+
+            // The object is now readable in the shared store, but no durable artifact
+            // reference has been published yet. The live qualification lane cancels
+            // precisely here to prove the publication fence and orphan sweep.
+            await ExecutionQualificationBarrier.WaitAsync(
+                "output-bytes-written-unpublished",
+                cancellationToken).ConfigureAwait(false);
 
             descriptor = new StagedObjectRasterOutputDescriptor
             {

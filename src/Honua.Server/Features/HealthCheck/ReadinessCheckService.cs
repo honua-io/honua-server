@@ -4,6 +4,7 @@
 using Honua.Alerts;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.FileStorage;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -31,6 +32,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
     private readonly GeoprocessingOutputStoreHealthCheck? _outputStoreHealth;
     private readonly MigrationState _migrationState;
     private readonly ILogger<ReadinessCheckService> _logger;
+    private readonly DurableJobSubstrateOptions _durableJobSubstrate;
 
     public ReadinessCheckService(
         IDatabaseHealthChecker databaseHealthChecker,
@@ -41,7 +43,8 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         IAlertDispatchHealth? alertDispatchHealth = null,
         IAlertEvaluationHealth? alertEvaluationHealth = null,
         IOptions<AlertOptions>? alertOptions = null,
-        GeoprocessingOutputStoreHealthCheck? outputStoreHealth = null)
+        GeoprocessingOutputStoreHealthCheck? outputStoreHealth = null,
+        IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null)
     {
         _databaseHealthChecker = databaseHealthChecker;
         _cacheHealthChecker = cacheHealthChecker;
@@ -52,6 +55,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         _outputStoreHealth = outputStoreHealth;
         _migrationState = migrationState ?? throw new ArgumentNullException(nameof(migrationState));
         _logger = logger;
+        _durableJobSubstrate = durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions();
     }
 
     /// <summary>
@@ -64,6 +68,14 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         var currentCheckName = "Database";
         try
         {
+            if (_durableJobSubstrate.RedisEntitled
+                && _durableJobSubstrate.RedisDurabilityAttestation is null)
+            {
+                var cause = _durableJobSubstrate.RedisDurabilityFailure
+                    ?? DurableJobSubstrateCause.RedisAttestationUnavailable;
+                return ReadinessResult.NotReady($"Redis durability attestation failed ({cause})");
+            }
+
             if (_migrationState.IsFailed)
             {
                 return ReadinessResult.NotReady("Database migrations failed");

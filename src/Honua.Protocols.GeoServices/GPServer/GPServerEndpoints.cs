@@ -350,7 +350,7 @@ internal static class GPServerEndpoints
             var plan = planResult.Plan!;
             var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
             var protocolMetadata = BuildProtocolMetadata(
-                serviceId, taskName, definition, parameters, envControls, workingSrid, planResult.FeatureSchema);
+                serviceId, taskName, definition, parameters, envControls, workingSrid);
             var job = await jobService.SubmitJobAsync(
                 plan,
                 idempotencyKey: null,
@@ -481,7 +481,7 @@ internal static class GPServerEndpoints
 
             var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
             var protocolMetadata = BuildProtocolMetadata(
-                serviceId, taskName, definition, parameters, envControls, workingSrid, planResult.FeatureSchema);
+                serviceId, taskName, definition, parameters, envControls, workingSrid);
             var job = await jobService.SubmitJobAsync(
                 planResult.Plan!,
                 idempotencyKey: null,
@@ -680,15 +680,13 @@ internal static class GPServerEndpoints
                 var paramName = ResolvePublishedOutputParameterName(job, artifact, index, allKinds);
                 var dataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind);
                 var value = ResolveArtifactValue(artifact, job.OperationId, index, baseUrl, outputStore);
-                var resultSrid = workingSrid;
 
                 if (envControls.OutSr is { } outSr && artifact.Kind == ArtifactKind.FeatureLayer)
                 {
                     var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(value, workingSrid, outSr);
-                    if (outcome.Reprojected && outcome.Value is { } reprojectedValue)
+                    if (outcome.Reprojected)
                     {
-                        value = reprojectedValue;
-                        resultSrid = outSr;
+                        value = outcome.Value;
                     }
                     else if (outcome.CapabilityMessage is not null)
                     {
@@ -723,8 +721,7 @@ internal static class GPServerEndpoints
                 {
                     ParamName = paramName,
                     DataType = dataType,
-                    Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, resultSrid,
-                        job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
+                    Value = value
                 });
             }
         }
@@ -1090,8 +1087,7 @@ internal static class GPServerEndpoints
             {
                 ParamName = publishedName,
                 DataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
-                Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job),
-                    job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
+                Value = value
             };
 
             return Results.Json(response, GPServerJsonContext.Default.GPResultResponse,
@@ -1618,9 +1614,7 @@ internal static class GPServerEndpoints
                 Name = parameter.Name,
                 DisplayName = parameter.DisplayName,
                 Description = parameter.Description,
-                DataType = parameter.AcceptsGeoJsonDataUri
-                    ? "GPFeatureRecordSetLayer"
-                    : GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
+                DataType = GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
                 Direction = "esriGPParameterDirectionInput",
                 DefaultValue = parameter.DefaultValue,
                 ParameterType = parameter.Required
@@ -1684,8 +1678,7 @@ internal static class GPServerEndpoints
     private readonly record struct SubmissionPlanResult(
         AnalysisPlan? Plan,
         string? CapabilityError,
-        int? InputSpatialReference,
-        string? FeatureSchema = null);
+        int? InputSpatialReference);
 
     private static SubmissionPlanResult BuildSubmissionPlan(
         ProcessDefinition definition,
@@ -1704,56 +1697,13 @@ internal static class GPServerEndpoints
         }
 
         // Additive ArcGIS-compatible input translation: rewrite esriGeometry JSON
-        // and FeatureSets into the process-declared WKB or FeatureCollection shape.
-        // Collection parameters retain every feature and its attribute row.
-        var collectionParameters = definition.Parameters
-            .Where(parameter => parameter.AcceptsGeoJsonDataUri)
-            .Select(parameter => parameter.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var esriResult = GPServerEsriInputTranslation.Translate(inputs, collectionParameters,
-            includeDerivedSrid: definition.Parameters.Any(parameter => parameter.Name.Equals("srid", StringComparison.OrdinalIgnoreCase)));
+        // and single-feature FeatureSet payloads into canonical base64-WKB + srid.
+        // Native string / base64-WKB inputs pass through untouched. Multi-feature
+        // FeatureSets surface a capability error rather than dropping features.
+        var esriResult = GPServerEsriInputTranslation.Translate(inputs);
         if (esriResult.CapabilityMessage is not null)
         {
             return new SubmissionPlanResult(Plan: null, esriResult.CapabilityMessage, esriResult.InputSpatialReference);
-        }
-
-        string? featureSchema = null;
-        string? mergeGeometryType = null;
-        var derivedSrid = esriResult.InputSpatialReference;
-        foreach (var (key, input) in esriResult.Inputs)
-        {
-            var canonical = input;
-            if (definition.ProcessId == "source.geojson" && key.Equals("inline", StringComparison.OrdinalIgnoreCase))
-            {
-                canonical = "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(input));
-            }
-            if (!canonical.StartsWith("data:application/geo+json;base64,", StringComparison.Ordinal))
-            {
-                continue;
-            }
-            try
-            {
-                var schema = GPServerEsriOutputTranslation.DescribeInput(canonical, rawParameters.GetValueOrDefault(key));
-                var geometryType = schema.TryGetProperty("geometryType", out var shape) ? shape.GetString() : null;
-                if (definition.ProcessId == "overlay.merge" && mergeGeometryType is not null &&
-                    geometryType is not null && mergeGeometryType != geometryType)
-                {
-                    return new SubmissionPlanResult(null,
-                        "GPServer Merge inputs must have compatible geometry types to produce an Esri FeatureSet.", derivedSrid);
-                }
-                mergeGeometryType ??= geometryType;
-                derivedSrid ??= 4326;
-                if (featureSchema is null || key.Equals("input", StringComparison.OrdinalIgnoreCase))
-                {
-                    featureSchema = schema.GetRawText();
-                }
-            }
-            catch (Exception ex) when (ex is ArgumentException or FormatException or System.Text.Json.JsonException or Newtonsoft.Json.JsonException
-                or InvalidOperationException or KeyNotFoundException or GeoprocessingValidationException)
-            {
-                return new SubmissionPlanResult(null,
-                    "GPServer feature inputs must be valid homogeneous FeatureCollections with a supported geometry type.", derivedSrid);
-            }
         }
 
         var translatedInputs = GPServerParameterTranslation.TranslateInbound(esriResult.Inputs, definition);
@@ -1776,7 +1726,7 @@ internal static class GPServerEndpoints
             Outputs = definition.OutputArtifactKinds
         };
 
-        return new SubmissionPlanResult(plan, CapabilityError: null, derivedSrid, featureSchema);
+        return new SubmissionPlanResult(plan, CapabilityError: null, esriResult.InputSpatialReference);
     }
 
     /// <summary>
@@ -1806,14 +1756,6 @@ internal static class GPServerEndpoints
         }
 
         return derivedSrid ?? 0;
-    }
-
-    private static int ResolveResultSrid(ExecutionJobRecord job)
-    {
-        var parameters = job.Spec.Parameters;
-        var raw = parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerOutSr)
-            ?? parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkingSr);
-        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) ? srid : 0;
     }
 
     /// <summary>
@@ -1876,8 +1818,7 @@ internal static class GPServerEndpoints
         ProcessDefinition definition,
         IReadOnlyDictionary<string, string> rawParameters,
         EnvControls envControls,
-        int workingSrid,
-        string? featureSchema)
+        int workingSrid)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -1885,11 +1826,6 @@ internal static class GPServerEndpoints
             [GeoprocessingProtocolMetadataKeys.GPServerServiceId] = serviceId,
             [GeoprocessingProtocolMetadataKeys.GPServerTaskName] = taskName
         };
-
-        if (featureSchema is not null)
-        {
-            metadata[GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema] = featureSchema;
-        }
 
         // Persist the working (input-derived) SRID so the asynchronous
         // results/{param} handler can apply the same env:outSR reprojection the
