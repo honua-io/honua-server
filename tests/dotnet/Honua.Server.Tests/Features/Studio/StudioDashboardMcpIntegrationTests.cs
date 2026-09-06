@@ -241,7 +241,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             reader.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
                 .Should().Be(StudioPackagePersistenceMode.Durable);
             var intent = await CallAsync("propose_publication",
-                $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"/studio/dashboard-fixture","visibility":"private"}""");
+                $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"/studio/dashboard-fixture","visibility":"personal"}""");
             intent.GetProperty("status").GetString().Should().Be("AwaitingApproval");
             intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
             intent.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace();
