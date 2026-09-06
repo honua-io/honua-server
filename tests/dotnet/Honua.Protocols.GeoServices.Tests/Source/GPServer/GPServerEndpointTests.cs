@@ -897,7 +897,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             var root = doc.RootElement;
             root.GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
             root.GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
-            root.GetProperty("value").GetProperty("url").GetString().Should().Be("https://example.test/artifacts/output.geojson");
+            root.GetProperty("value").GetString().Should().Be("https://example.test/artifacts/output.geojson");
         }
         finally
         {
@@ -934,14 +934,16 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var root = doc.RootElement;
             root.TryGetProperty("error", out _).Should().BeFalse("env:outSR must be honored, not error");
-            var value = root.GetProperty("value");
-            value.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
-            var geometry = value.GetProperty("features")[0].GetProperty("geometry");
-            // Spherical Mercator formula, independently computed for longitude 1, latitude 2.
-            const double radius = 6378137;
-            geometry.GetProperty("x").GetDouble().Should().BeApproximately(radius * Math.PI / 180, 1e-6);
-            geometry.GetProperty("y").GetDouble().Should().BeApproximately(
-                radius * Math.Log(Math.Tan(Math.PI / 4 + Math.PI / 180)), 1e-6);
+            var value = root.GetProperty("value").GetString();
+            value.Should().StartWith(GeoJsonDataUriPrefix);
+
+            // The served geometry must be reprojected 4326 -> 3857 (Web Mercator
+            // magnitude), not the original WGS 84 coordinates [1, 2].
+            var base64 = value![GeoJsonDataUriPrefix.Length..];
+            using var feature = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(base64)));
+            var coords = feature.RootElement.GetProperty("geometry").GetProperty("coordinates");
+            Math.Abs(coords[0].GetDouble()).Should().BeGreaterThan(1000.0,
+                "lon 1.0 in EPSG:4326 reprojects to ~111319 in EPSG:3857");
         }
         finally
         {

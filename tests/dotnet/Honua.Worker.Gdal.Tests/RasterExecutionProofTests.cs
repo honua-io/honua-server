@@ -11,12 +11,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
 using Xunit;
+using Xunit.Sdk;
 
 namespace Honua.Worker.Gdal.Tests;
 
 /// <summary>Real production executors and pinned native GDAL, with analytical cell oracles.</summary>
 [Trait("Category", "RasterExecutionProof")]
-public sealed class RasterExecutionProofTests : IDisposable
+public sealed partial class RasterExecutionProofTests : IDisposable
 {
     private const double NoData = -9999;
     private static readonly string Image = ReadProductionImage();
@@ -24,7 +25,7 @@ public sealed class RasterExecutionProofTests : IDisposable
     private readonly string _scratch = Path.Join(AppContext.BaseDirectory, "raster-proof", Guid.NewGuid().ToString("N"));
     private readonly DockerGdalCommandRunner _runner = new(
         new PortableDockerInvoker(),
-        Options.Create(new GdalContainerExecutionOptions { Image = Image }),
+        Options.Create(new GdalContainerExecutionOptions { Image = Image, User = Environment.GetEnvironmentVariable("HONUA_GDAL_PROOF_USER") ?? "1001:1001" }),
         Options.Create(new GdalHardeningOptions()), Options.Create(new AwsS3Options()),
         Options.Create(new AzureBlobOptions()), NullLogger<DockerGdalCommandRunner>.Instance);
 
@@ -138,15 +139,17 @@ public sealed class RasterExecutionProofTests : IDisposable
     }
 
     [Theory]
-    [InlineData("nearest")]
-    [InlineData("bilinear")]
-    public async Task Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples(string resampling)
+    [InlineData("raster.reproject", "nearest")]
+    [InlineData("raster.reproject", "bilinear")]
+    [InlineData("gdal.gdalwarp", "nearest")]
+    public async Task Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples(string processId, string resampling)
     {
         var source = await Decode(await File.ReadAllBytesAsync(Fixture("grid.tif")));
         AssertGrid(source, 4, 4, 4326, [0, 1, 0, 4, 0, -1], 2);
         AssertBand(source, 0, Grid);
-        var output = await ExecuteRaster("raster.reproject", ("source", Input("grid.tif")),
-            ("targetSrid", "3857"), ("resampling", resampling));
+        var output = await ExecuteRaster(processId, ("source", Input("grid.tif")),
+            (processId == "gdal.gdalwarp" ? "targetSrs" : "targetSrid", "3857"),
+            (processId == "gdal.gdalwarp" ? "sourceSrs" : "resampling", processId == "gdal.gdalwarp" ? "EPSG:4326" : resampling));
         // Spherical Mercator EPSG:3857 uses R=6378137. GDAL's suggested square
         // pixel spans the transformed diagonal divided by the source diagonal.
         const double radius = 6378137;
@@ -166,6 +169,19 @@ public sealed class RasterExecutionProofTests : IDisposable
         }
         AssertBand(output, 0, expected, tolerance: 0.003);
         AssertBand(output, 1, expected.Select(v => v == NoData ? v : v * 10).ToArray(), tolerance: 0.03);
+    }
+
+    [Fact]
+    public async Task WarpOracle_ChangedPixelInValidGeoTiff_IsRejected()
+    {
+        var bytes = await Execute("gdal.gdalwarp", ("source", Input("grid.tif")), ("targetSrs", "EPSG:3857"));
+        Directory.CreateDirectory(_scratch);
+        await File.WriteAllBytesAsync(Path.Join(_scratch, "wrong.tif"), bytes);
+        await Run("python3", ["-c", "from osgeo import gdal; d=gdal.Open('wrong.tif',gdal.GA_Update); b=d.GetRasterBand(1); a=b.ReadAsArray(); a[0,0]=42; b.WriteArray(a); d=None"]);
+        var wrong = await Decode(await File.ReadAllBytesAsync(Path.Join(_scratch, "wrong.tif")));
+        // Grid, CRS, nodata, and TIFF structure remain valid; only a cell is wrong.
+        Action assert = () => AssertBand(wrong, 0, Grid);
+        assert.Should().Throw<XunitException>().Which.Message.Should().Contain("cell 0");
     }
 
     [Theory]
@@ -341,6 +357,8 @@ public sealed class RasterExecutionProofTests : IDisposable
         var options = GdalJobFactory.Options(_scratch);
         IProcessExecutor executor = id switch
         {
+            "gdal.gdalwarp" => new GdalRasterReprojectJobExecutor(_runner, options, NullLogger<GdalRasterReprojectJobExecutor>.Instance),
+            "source.ogr" => new GdalVectorSourceReadJobExecutor(_runner, options, NullLogger<GdalVectorSourceReadJobExecutor>.Instance),
             "raster.clip" => new GdalRasterClipJobExecutor(_runner, options, NullLogger<GdalRasterClipJobExecutor>.Instance),
             "raster.zonal-statistics" => new GdalRasterZonalStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
             "raster.spectral-index" => new GdalRasterSpectralIndexJobExecutor(_runner, options, NullLogger<GdalRasterSpectralIndexJobExecutor>.Instance),

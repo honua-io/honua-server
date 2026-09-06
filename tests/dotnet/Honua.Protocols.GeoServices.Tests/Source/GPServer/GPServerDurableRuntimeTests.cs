@@ -130,7 +130,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             var resultRoot = resultDoc.RootElement;
             resultRoot.GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
             resultRoot.GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
-            resultRoot.GetProperty("value").GetProperty("url").GetString().Should().Be("https://example.test/durable-gp-output.geojson");
+            resultRoot.GetProperty("value").GetString().Should().Be("https://example.test/durable-gp-output.geojson");
 
             var jobStore = fixture.GetService<IExecutionJobStore>();
             var durableJob = await jobStore.GetAsync(jobId!);

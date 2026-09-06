@@ -1772,6 +1772,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("source", "Source Dataset", "Source dataset as base64-encoded bytes in the source format. Multi-file datasets (Shapefile, FileGDB) are supplied as a base64-encoded ZIP archive, which the worker unpacks before opening with OGR.", ProcessParameterValueType.Text, required: true),
                 Param("sourceFormat", "Source Format", "Source OGR driver hint used to choose the input file extension when the payload is a single file. Allowed values include: GeoJSON, GML, KML, GPKG, FlatGeobuf, MapInfo File, CSV, ESRI Shapefile, OpenFileGDB. Defaults to GeoJSON. ZIP-packaged datasets are detected by content and the hint is advisory.", ProcessParameterValueType.Text, defaultValue: "GeoJSON"),
+                Param("layerName", "Source Layer", "Optional exact source layer name. Select a layer when a dataset contains multiple layers; omitted uses the OGR driver default.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer],
             RuntimeProfile = RuntimeProfiles.Native

@@ -7,7 +7,7 @@ does not always match the geographic (datum) transformation ArcGIS selects by de
 That divergence is small but real — roughly 1–2 m for NAD83↔WGS84 and larger for NAD27.
 
 To close the gap, Honua models the Esri default geotransformations as an auditable
-data table and drives PostGIS' `ST_TransformPipeline(geom, '<proj-pipeline>', toSrid)`
+data table and drives PostGIS' **3-argument** `ST_Transform(geom, '<proj-pipeline>', toSrid)`
 so the selected (Esri-parity) pipeline is used.
 
 ## How it works
@@ -26,7 +26,7 @@ so the selected (Esri-parity) pipeline is used.
     client sends no `datumTransformation`.
   - Surfaces support via `supportsQueryWithDatumTransformation` in layer metadata.
 - All output-CRS `ST_Transform` SQL call sites route through the single
-  `DatumTransformSql.BuildTransformExpression` chokepoint so the SRID-only versus explicit-operation choice
+  `DatumTransformSql.BuildTransformExpression` chokepoint so the 2-arg vs 3-arg choice
   stays consistent and cannot drift.
 
 ## Tolerance table
@@ -43,7 +43,7 @@ later (a fixture with documented provenance) without restructuring.
 | NAD83(HARN) (4152) | WGS84 (4326) | NAD_1983_HARN_To_WGS_1984_1 | — | 1580 | 1e-9 deg | EPSG 1580 is a null transformation (`+proj=noop`). Seeded under #1501; validated against the runtime in both directions. No distinct Esri WKID — ArcGIS applies no geographic transformation by default for this pair. |
 | NAD83(NSRS2007) (4759) | WGS84 (4326) | NAD_1983_NSRS2007_To_WGS_1984_1 | — | 15931 | 1e-9 deg | EPSG 15931 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
 | NAD83(2011) (6318) | WGS84 (4326) | NAD_1983_2011_To_WGS_1984_1 | — | 9774 | 1e-9 deg | EPSG 9774 null transformation (`+proj=noop`). Seeded under #1501; runtime-validated. |
-| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 5e-6 deg | Explicit NADCON requires `us_noaa_conus.tif` and uses `ST_TransformPipeline`. SRID-only projection chooses the best installed operation, which is a lower-accuracy fallback in the base image. |
+| NAD27 (4267) | NAD83 (4269) | NAD_1927_To_NAD_1983_NADCON | 1241 | 1241 | 5e-6 deg† | Grid-based (NADCON); requires `us_noaa_conus.tif`. *See the PROJ pipeline-application constraint below — a `+proj=pipeline` string cannot be forced through PostGIS' text overload, so the seeded NADCON pipeline does not apply via the 3-arg form; the 2-argument default path resolves the NADCON shift, and its accuracy depends on whether the canonical grid is provisioned. †Tolerance pins the value measured on the `docker/proj-grids` image (canonical `us_noaa_conus.tif` baked in): NAD27 (-100, 40) → NAD83 ≈ (-100.0004056, 40.0000058), a ~36 m CONUS shift; the base image's minimal `libproj-data` subset gives a lower-accuracy fallback differing at the ~1e-4 deg level. |
 
 Tolerances are conservative upper bounds for the *selection* test: they prove Honua
 applies the correct pipeline, not that PROJ and EPSG agree to sub-millimeter. Tighten
@@ -62,27 +62,29 @@ directions (`DatumTransformationParityTests.TransformPoint_Wgs84RealizationNullP
 The all-zero geocentric-translation Helmert parameters were confirmed against the runtime
 `proj.db` `helmert_transformation` table (codes 1188/1580/9774/15931).
 
-#### Applying an explicit operation (#4075)
+#### PROJ pipeline-application constraint (deferred non-null pairs)
 
-PostGIS 3.4 and later provide
-[`ST_TransformPipeline`](https://postgis.net/docs/ST_TransformPipeline.html).
-`DatumTransformSql` uses this function for non-identity selections, orienting the
-pipeline for forward or inverse execution. The text argument of `ST_Transform`
-is a CRS definition and cannot reliably execute an operation pipeline. An exact
-`+proj=noop` selection uses `ST_SetSRID` to retain all ordinates.
+The remaining Esri-default pairs that resolve to a **non-identity** operation — the
+rotation-bearing Helmert pairs (e.g. `WGS_1984_(ITRF00)_To_NAD_1983` / EPSG 108190 family,
+`NAD_1983_HARN_To_WGS_1984_2` / EPSG 1901) and the grid-based NADCON/NTv2 pairs — remain a
+**documented follow-up**, but **not** because the PROJ pipeline string is unknown. The
+blocker is a PostGIS limitation: `ST_Transform`'s text overload is
+`ST_Transform(geom, from_proj text, to_srid int)`, where the middle argument is the
+**source CRS**, not a coordinate-operation pipeline. PostGIS on the current runtime
+(PostGIS 18-3.6 / PROJ 9.6) exposes **no overload that injects a `+proj=pipeline` string**;
+a pipeline string passed there fails to parse as a CRS. Only proj strings that parse as a
+CRS apply — and `+proj=noop`, which behaves as exact identity, which is why the null pairs
+can be seeded today.
 
-`DatumTransformPipelineExecutionTests` executes an affine fixture on real PostGIS.
-Its independently calculated forward result adds `(2,-3,5)` to XYZ and its inverse
-subtracts those offsets; both retain M=7 and the target SRID. The former SQL fails
-these assertions. Grid availability remains a deployment prerequisite for a
-selected grid operation; the helper does not substitute an approximation.
-
-The GeometryServer default NAD27/NAD83 path already uses SRID-only projection on
-trunk. `GeometryServiceProjectTests` now checks both directions over HTTP against
-independent pyproj 3.8 / PROJ 9.8.1 reference values with network disabled and an
-empty grid cache, matching the base test image. It asserts XY, preserved Z/M,
-geometry type, and the destination WKID. This reference proves the base image's
-available operation, not provisioned NADCON accuracy.
+Consequently the `DatumTransformSql` 3-argument chokepoint can force the **identity** Esri
+default but cannot yet force a specific **non-identity** operation. Until a PostGIS
+pipeline-application mechanism is available (e.g. a custom `spatial_ref_sys` operation
+registration, a `cs2cs`-style sidecar, or a PostGIS overload that accepts a coordinate
+operation), those pairs continue to use PROJ's **default** operation selection on the
+2-argument path. PROJ's default already follows EPSG accuracy ranking, which matches Esri's
+default selection for these CONUS pairs (no regression versus prior behavior), and a
+client-requested WKID for a non-seeded pair returns an explicit "unsupported" error rather
+than a silent substitute.
 
 ## PROJ grid-data provisioning (#1501)
 
@@ -97,13 +99,14 @@ Runtime observations on the base test image (`postgis/postgis:18-3.6`, PROJ 9.6.
   `nad27`/`nad83` ASCII tables and a handful of `.gsb` grids. The canonical modern `.tif`
   grids the EPSG/PROJ pipelines reference (`us_noaa_conus.tif`, the `us_noaa_nadcon5_*`
   realization chain, `ca_nrc_ntv2_0.tif`, `us_noaa_g2018u0.tif` for GEOID18) are **absent**.
-- The **2-argument default** `ST_Transform(geom, 4269)` (input SRID 4267) *does* resolve a NAD27→NAD83
+- The **2-argument default** `ST_Transform(geom, 4267, 4269)` *does* resolve a NAD27→NAD83
   datum shift on the base image, but via a **lower-accuracy** bundled fallback operation —
   it differs from the canonical-grid result at the ~1e-4 deg level. So NAD27 import/query
   reprojection is not silently identity, but it is not full-accuracy NADCON either.
-- The seeded NADCON pipeline can be forced through `ST_TransformPipeline` when
-  its grid is installed. Without the grid, explicit execution fails; SRID-only
-  operation selection remains distinct.
+- The seeded NADCON `+proj=pipeline +step +proj=hgridshift ...` string still **cannot be
+  forced through PostGIS' `ST_Transform` text overload** (see the constraint above), so the
+  3-argument explicit-grid form does not apply on this runtime; the grid is exercised
+  through the **2-argument default** path PROJ selects from the available grid data.
 
 ### The `docker/proj-grids` image
 
@@ -123,6 +126,10 @@ is a deliberate follow-up. The gated `DatumGridProvisioningTests` (env `HONUA_PR
 pointed at this image via `HONUA_TEST_DB_URL`) prove the grid-gated transform resolves
 in-tolerance when the grids are present; `DatumTransformationParityTests` continue to assert
 the default-path / explicit-failure contract on the grid-less fixture.
+
+A pipeline-application mechanism that could force a *specific non-default* grid/Helmert
+operation through PostGIS (rather than relying on PROJ's default operation selection) remains
+the separate follow-up described under the PROJ pipeline-application constraint above.
 
 ## Import / reprojection path
 

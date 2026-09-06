@@ -28,6 +28,9 @@ concurrency:
 
 env:
   DOTNET_VERSION: '10.0.x'
+  # Reuse the persistent MSBuild server across this job's restore, gate build,
+  # and no-build test invocations; Roslyn shared compilation stays enabled.
+  DOTNET_CLI_USE_MSBUILD_SERVER: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
   # Staged rollout: observe first, then flip this one audited value to enforce.
