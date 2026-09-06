@@ -99,7 +99,9 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         }
         var parameters = new Dictionary<string, string>
         {
-            ["replicaID"] = replicaId, ["syncDirection"] = "download", ["f"] = "json"
+            ["replicaID"] = replicaId,
+            ["syncDirection"] = "download",
+            ["f"] = "json"
         };
         if (echoUploadCursor)
         {
