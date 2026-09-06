@@ -10,12 +10,20 @@ using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Db.Postgres.Features.Security;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NSubstitute;
 
@@ -228,9 +236,75 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
     [Endpoint("PUT /api/v1/admin/alerts/rules/{ruleId}")]
     [Endpoint("PUT /api/v1/admin/alerts/rules/{ruleId}/enabled")]
     [Endpoint("DELETE /api/v1/admin/alerts/rules/{ruleId}")]
-    public async Task Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged(string action)
+    public Task Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged(string action) =>
+        VerifyAuditRollbackAsync(action, _fixture, _client);
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("PUT /api/v1/admin/alerts/rules/{ruleId}")]
+    public async Task Review_ConnectionVariants_CommitAndRollbackWithDurableAudit(bool namedConnection)
     {
-        var store = _fixture.GetService<IAlertAdminStore>();
+        await using var fixture = CreateFixture().ConfigureServices(services =>
+        {
+            services.AddSingleton(provider => new ReviewConnectionResources(
+                provider.GetRequiredService<NpgsqlDataSource>(), namedConnection));
+            services.RemoveAll<IAdoNetDatabaseConnectionProvider>();
+            services.AddScoped<IAdoNetDatabaseConnectionProvider>(provider =>
+                provider.GetRequiredService<ReviewConnectionResources>().CreateProvider());
+        });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        await VerifyAuditRollbackAsync("alert_rule.update", fixture, client);
+
+        var store = fixture.GetService<IAlertAdminStore>();
+        var rule = (await store.ListRulesAsync(_service, 1)).Single();
+        using var response = await client.PutAsJsonAsync($"/api/v1/admin/alerts/rules/{rule.RuleId}", RulePayload("committed", null));
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        (await store.GetRuleAsync(rule.RuleId))!.RuleName.Should().Be("committed");
+        await using var connection = await fixture.GetService<NpgsqlDataSource>().OpenConnectionAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT count(*) FROM honua.audit_log
+            WHERE resource_type = 'alert_rule' AND resource_id = @rule AND action = 'alert_rule.update'
+                AND actor = @actor AND actor_type = 'ApiKey' AND outcome = 'Success'
+            """, connection);
+        command.Parameters.AddWithValue("rule", rule.RuleId.ToString(CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("actor", WebAppFixture.SharedAdminActorId);
+        (await command.ExecuteScalarAsync()).Should().Be(1L);
+        var resources = fixture.GetService<ReviewConnectionResources>();
+        resources.ObservedAmbientTransaction.Should().BeFalse();
+        if (namedConnection)
+        {
+            resources.RegistryLookups.Should().BeGreaterThan(0);
+        }
+        else
+        {
+            resources.RegistryLookups.Should().Be(0);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("/api/v1/admin/alerts/rules/test")]
+    [InlineData("/api/v1/admin/alerts/rules/test/")]
+    [Endpoint("POST /api/v1/admin/alerts/rules/test")]
+    public async Task Review_RuleTestPathVariants_DoNotRequireAuditOrPersistRules(string path)
+    {
+        var audit = Substitute.For<IAuditLog>();
+        audit.IsPersisted.Returns(false);
+        await using var fixture = CreateFixture().ReplaceService(audit);
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.PostAsJsonAsync(path, new { rule = RulePayload("draft", null) });
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        (await fixture.GetService<IAlertAdminStore>().ListRulesAsync(_service, 1)).Should().BeEmpty();
+        await audit.DidNotReceive().RecordAsync(
+            Arg.Is<AuditEvent>(row => row.ResourceType == "alert_rule" || row.ResourceType == "alert_zone"),
+            Arg.Any<CancellationToken>());
+    }
+
+    private async Task VerifyAuditRollbackAsync(string action, WebAppFixture fixture, HttpClient client)
+    {
+        var store = fixture.GetService<IAlertAdminStore>();
         var rule = await store.CreateRuleAsync(Rule(_service) with { IsActive = action != "alert_rule.enable" });
         var zone = await store.CreateZoneAsync(new AlertZoneDefinition
         {
@@ -242,11 +316,11 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
             Geometry = new NetTopologySuite.IO.WKTReader().Read("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))").AsBinary()
         });
         var correlation = Guid.NewGuid().ToString("N");
-        _client.DefaultRequestHeaders.Add("X-Correlation-ID", correlation);
+        client.DefaultRequestHeaders.Add("X-Correlation-ID", correlation);
         // Reject only this request's INSERT in the real migrated audit table.
         // No fake sink or mutation-response echo supplies the persistence oracle.
         var trigger = "alert_floor_" + correlation;
-        await using var connection = await _fixture.GetService<NpgsqlDataSource>().OpenConnectionAsync();
+        await using var connection = await fixture.GetService<NpgsqlDataSource>().OpenConnectionAsync();
         await using var install = new NpgsqlCommand($"""
             CREATE FUNCTION honua.{trigger}() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
@@ -271,7 +345,7 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
                 "alert_rule.delete" => new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/admin/alerts/rules/{rule.RuleId}"),
                 _ => new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/rules/{rule.RuleId}/enabled") { Content = JsonContent.Create(new { enabled = action == "alert_rule.enable" }) }
             };
-            var response = await _client.SendAsync(request);
+            var response = await client.SendAsync(request);
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
             var persisted = await store.GetRuleAsync(rule.RuleId);
             persisted!.RuleName.Should().Be("original");
@@ -290,6 +364,64 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
         {
             await using var cleanup = new NpgsqlCommand($"DROP TRIGGER {trigger} ON honua.audit_log; DROP FUNCTION honua.{trigger}();", connection);
             await cleanup.ExecuteNonQueryAsync();
+        }
+    }
+
+    private sealed class ReviewConnectionResources : ISecureConnectionResolver, IDisposable
+    {
+        private readonly NpgsqlDataSource _primary;
+        private readonly NpgsqlDataSource _target;
+        private readonly bool _named;
+        private readonly IConfiguration _configuration;
+        private readonly SecureConnectionDataSourceCache _cache;
+        internal bool ObservedAmbientTransaction { get; private set; }
+        internal int RegistryLookups { get; private set; }
+
+        internal ReviewConnectionResources(NpgsqlDataSource primary, bool named)
+        {
+            _primary = primary;
+            _named = named;
+            _target = NpgsqlDataSource.Create(new NpgsqlConnectionStringBuilder(primary.ConnectionString)
+            {
+                Enlist = named,
+                ApplicationName = "alert-review-target"
+            }.ConnectionString);
+            _configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Database:SecureConnection:Name"] = "alert-review-target"
+            }).Build();
+            _cache = new SecureConnectionDataSourceCache(_configuration);
+        }
+
+        internal IAdoNetDatabaseConnectionProvider CreateProvider() => _named
+            ? new SecureConnectionAwareDatabaseProvider(new TestDatabaseConnectionProvider(_primary), this,
+                _cache, _configuration, NullLogger<SecureConnectionAwareDatabaseProvider>.Instance)
+            : new TestDatabaseConnectionProvider(_target);
+
+        public async Task<string> ResolveConnectionStringAsync(string connectionName, CancellationToken cancellationToken = default)
+        {
+            RegistryLookups++;
+            if (System.Transactions.Transaction.Current is not null)
+            {
+                ObservedAmbientTransaction = true;
+            }
+            // Execute a real registry-database lookup using a distinct data source.
+            await using var connection = await _primary.OpenConnectionAsync(cancellationToken);
+            await using var command = new NpgsqlCommand("SELECT 1", connection);
+            (await command.ExecuteScalarAsync(cancellationToken)).Should().Be(1);
+            return _target.ConnectionString;
+        }
+
+        public Task<string> ResolveConnectionStringAsync(Guid connectionId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public Task<bool> TestConnectionHealthAsync(string connectionName, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
+        public Task<IReadOnlyList<string>> GetAvailableConnectionsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+        public void Dispose()
+        {
+            _cache.Dispose();
+            _target.Dispose();
         }
     }
 

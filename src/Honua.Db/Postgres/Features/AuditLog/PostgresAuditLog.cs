@@ -13,8 +13,8 @@ namespace Honua.Db.Postgres.Features.AuditLog;
 /// <summary>
 /// PostgreSQL-backed <see cref="IAuditLog"/> writing to <c>honua.audit_log</c>.
 /// Append-only by design (see migration 033): only INSERTs are issued, and
-/// transient failures are swallowed (logged) so that an audit-write hiccup
-/// never blocks the security-relevant action being audited.
+/// failures are logged and return no receipt. Callers requiring durable audit
+/// evidence must reject or roll back their mutation when no receipt is returned.
 /// </summary>
 internal sealed class PostgresAuditLog : IAuditLog
 {
