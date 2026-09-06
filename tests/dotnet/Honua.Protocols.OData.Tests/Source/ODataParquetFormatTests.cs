@@ -171,8 +171,8 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
 
     /// <summary>
     /// Asserts the emitted <c>geo</c> key names a geometry column, declares WKB encoding and
-    /// carries a CRS. A GeoParquet file without this is a plain Parquet file: an independent
-    /// consumer would not know the binary column holds geometry.
+    /// resolves to a CRS an independent consumer can use. A GeoParquet file without this is a
+    /// plain Parquet file: a consumer would not know the binary column holds geometry.
     /// </summary>
     private static void AssertGeoMetadata(string? geoMetadata)
     {
@@ -187,8 +187,21 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
 
         var column = root.GetProperty("columns").GetProperty(primaryColumn!);
         column.GetProperty("encoding").GetString().Should().Be("WKB");
-        column.TryGetProperty("crs", out _).Should().BeTrue(
-            "an independent consumer needs the CRS to place the coordinates");
+
+        // GeoParquet 1.1 makes the column `crs` member optional and defines its *absence* as
+        // the default CRS, OGC:CRS84 (longitude, latitude). GeoParquetFeatureWriter relies on
+        // that: ResolveGeoParquetCrsProjJson returns null for EPSG:4326 output, so the writer
+        // deliberately omits `crs` — the OData layer here is SRID 4326, so a missing member is
+        // the CRS declaration, not a gap. Only an explicitly emitted (non-default) CRS carries
+        // PROJJSON, and that is what has to be readable.
+        if (column.TryGetProperty("crs", out var crs))
+        {
+            crs.ValueKind.Should().Be(JsonValueKind.Object,
+                "an explicit GeoParquet 'crs' must be a PROJJSON object, not a bare string or null");
+            crs.TryGetProperty("type", out var crsType).Should().BeTrue(
+                "PROJJSON requires a 'type' member for a reader to reconstruct the CRS");
+            crsType.GetString().Should().NotBeNullOrWhiteSpace();
+        }
     }
 
     private static void AssertPoint(Geometry? geometry, double expectedX, double expectedY)
