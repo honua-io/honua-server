@@ -872,6 +872,9 @@ if (replicaProvider != DataProviderNames.DuckDb &&
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IQuerySnapshotStore>(sp =>
+        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresQuerySnapshotStore(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
     // Temporal history store (#1166 slices 2-5): reads the uncollapsed change log with attribution.
     // Overrides the Core no-op fallback registered by AddTemporalHistory. Read-only/non-Postgres
     // providers keep the no-op store (history unsupported), matching the no-op change tracker.
