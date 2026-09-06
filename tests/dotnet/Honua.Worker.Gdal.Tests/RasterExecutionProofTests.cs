@@ -359,6 +359,9 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         {
             "gdal.gdalwarp" => new GdalRasterReprojectJobExecutor(_runner, options, NullLogger<GdalRasterReprojectJobExecutor>.Instance),
             "source.ogr" => new GdalVectorSourceReadJobExecutor(_runner, options, NullLogger<GdalVectorSourceReadJobExecutor>.Instance),
+            "surface.viewshed" => new GdalViewshedJobExecutor(_runner, options, NullLogger<GdalViewshedJobExecutor>.Instance),
+            "surface.contour" => new GdalContourJobExecutor(_runner, options, NullLogger<GdalContourJobExecutor>.Instance),
+            _ when id.StartsWith("surface.", StringComparison.Ordinal) => new GdalSurfaceJobExecutor(_runner, options, NullLogger<GdalSurfaceJobExecutor>.Instance),
             "raster.clip" => new GdalRasterClipJobExecutor(_runner, options, NullLogger<GdalRasterClipJobExecutor>.Instance),
             "raster.zonal-statistics" => new GdalRasterZonalStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
             "raster.spectral-index" => new GdalRasterSpectralIndexJobExecutor(_runner, options, NullLogger<GdalRasterSpectralIndexJobExecutor>.Instance),
