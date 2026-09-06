@@ -31,9 +31,11 @@ public sealed class DatumGridPostgresFixture : IAsyncDisposable
             .WithEnvironment("PROJ_DATA", "/opt/honua-datum-proj")
             .WithEnvironment("PROJ_LIB", "/opt/honua-datum-proj")
             .WithEnvironment("PROJ_NETWORK", "OFF")
-            .WithResourceMapping(System.Text.Encoding.UTF8.GetBytes(
-                "mkdir -p /opt/honua-datum-proj\ncp /usr/share/proj/proj.db /opt/honua-datum-proj/proj.db\n"),
-                "/docker-entrypoint-initdb.d/00-honua-datum-proj.sh");
+            // Prepare this root-owned directory before the image drops to postgres.
+            .WithEntrypoint("/bin/sh", "-c")
+            .WithCommand("mkdir -p /opt/honua-datum-proj && " +
+                "cp /usr/share/proj/proj.db /opt/honua-datum-proj/proj.db && " +
+                "exec /usr/local/bin/docker-entrypoint.sh postgres");
         if (includeNadconGrid)
         {
             await using var resource = typeof(DatumGridPostgresFixture).Assembly.GetManifestResourceStream(
