@@ -80,3 +80,32 @@ For local Linux hosts whose user differs from the container default 1001:1001,
 set `HONUA_GDAL_PROOF_USER` to the host UID:GID before running the test. This only
 maps ownership at the test's bind-mount boundary; the production executor and
 container hardening remain in use.
+
+## Conversion proofs (#3941?#3943)
+
+`generate-conversion.py` creates inputs, never expected outputs. The 3?2 RGB
+GeoTIFF has red [10,20,30;40,50,255], green red+1 and blue red+2 except the
+shared 255 nodata pixel. EPSG:4326 transform is [10,.5,0,20,0,-.5]. PNG must
+preserve all channels and transparency; GTiff/COG must also preserve the CRS
+and transform. COG is checked by its layout metadata and GDAL's structural
+COG validator. PNG cannot embed a GIS CRS; the single published PNG does not
+include GDAL's temporary PAM georeferencing sidecar.
+
+The classified grid is [1,1,0;1,0,2;0,2,0], zero nodata, with unit cells at
+[10,1,0,20,0,-1]. Four-connectivity has three regions of areas 3,1,1;
+eight-connectivity has two of areas 3,2. The latter class-2 region must be a
+valid corner-touching MultiPolygon. Expected WKT comes directly from cell
+edges. The initial execution failed the validity assertion for eight-connectivity;
+normalizing with ogr2ogr -makevalid preserves class, region count and occupied
+cells without publishing the invalid intermediate.
+
+`conversion.raster-reproject` uses the existing committed two-band grid.tif
+and the analytical spherical-Mercator/inverse-sampling oracle for both nearest
+and bilinear resampling. Every cell, nodata/mask, band type, CRS and affine
+grid is checked. These cases run unconditionally in the required PR Gate's
+`Category=RasterExecutionProof` step against the production GDAL digest.
+
+Release promise: the entire built-in GP catalog is GA in 2026.1, including
+conversion output correctness. Exact-candidate execution/storage qualification
+consumes #3848 and native-worker canary coordination consumes #3857 after the
+candidate cut; local/PR head proofs do not claim to qualify an uncut digest.
