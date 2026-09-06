@@ -60,6 +60,7 @@ public sealed class AlertLifecycleAtomicityTests(ITestOutputHelper output)
         until = new DateTimeOffset(until.UtcTicks / 10 * 10, TimeSpan.Zero);
         var actionName = $"alert.{action}";
         var target = $"/api/v1/admin/observability/alerts/{eventId}/{action}";
+        output.WriteLine($"{DateTimeOffset.UtcNow:O} fixture ready; event={eventId}; action={actionName}; terminateConnection={terminateConnection}; correlation={correlation}");
 
         try
         {
@@ -87,21 +88,24 @@ public sealed class AlertLifecycleAtomicityTests(ITestOutputHelper output)
             using (var failed = await Send(failedClient, note))
             {
                 failed.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-                output.WriteLine($"fault HTTP {(int)failed.StatusCode}: {await failed.Content.ReadAsStringAsync()}");
+                output.WriteLine($"{DateTimeOffset.UtcNow:O} fault HTTP {(int)failed.StatusCode}: {await failed.Content.ReadAsStringAsync()}");
             }
             (await Scalar($"SELECT last_value FROM honua.{sequence} WHERE is_called")).Should().Be(1);
             (await Scalar($"SELECT count(*) FROM honua.alert_event_lifecycle WHERE event_id = {eventId}")).Should().Be(0);
             (await AuditCount()).Should().Be(0, "a failed mutation must have no successful domain audit");
+            output.WriteLine($"{DateTimeOffset.UtcNow:O} SQL after fault: boundary_sequence=1; lifecycle_count=0; domain_audit_count=0");
 
             await Sql($"DROP TRIGGER {function} ON honua.audit_log; DROP FUNCTION honua.{function}();");
             await fixture.RestartHostAsync();
             (await Scalar($"SELECT count(*) FROM honua.alert_event_lifecycle WHERE event_id = {eventId}")).Should().Be(0);
+            (await AuditCount()).Should().Be(0);
+            output.WriteLine($"{DateTimeOffset.UtcNow:O} host disposed and recreated; SQL lifecycle_count=0; domain_audit_count=0");
             using var client = fixture.CreateAdminClient();
             using (var success = await Send(client, note))
             {
                 success.StatusCode.Should().Be(HttpStatusCode.OK);
                 var raw = await success.Content.ReadAsStringAsync();
-                output.WriteLine($"retry HTTP 200: {raw}");
+                output.WriteLine($"{DateTimeOffset.UtcNow:O} retry HTTP 200: {raw}");
                 using var json = JsonDocument.Parse(raw);
                 json.RootElement.GetProperty("eventId").GetInt64().Should().Be(eventId);
                 json.RootElement.GetProperty("lifecycleStatus").GetString().Should().Be(action switch
@@ -165,6 +169,9 @@ public sealed class AlertLifecycleAtomicityTests(ITestOutputHelper output)
                 """, connection);
             await using var reader = await command.ExecuteReaderAsync();
             (await reader.ReadAsync()).Should().BeTrue();
+            output.WriteLine($"{DateTimeOffset.UtcNow:O} SQL committed row: " + JsonSerializer.Serialize(
+                Enumerable.Range(0, reader.FieldCount).ToDictionary(reader.GetName,
+                    ordinal => reader.IsDBNull(ordinal) ? null : reader.GetValue(ordinal))));
             reader.GetInt16(0).Should().Be(expectedStatus);
             reader.GetString(1).Should().Be(note);
             var timestamp = reader.GetFieldValue<DateTimeOffset>(2);
