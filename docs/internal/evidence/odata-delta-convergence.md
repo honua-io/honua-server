@@ -45,3 +45,12 @@ These are local server regression proofs. The immutable exact-candidate receipt
 still needs a cut image digest and pinned public SDK run, with raw pages, mutation
 commit identifiers and per-page state hashes. The release decision record reports
 the candidate as not yet cut; local results must not be relabeled candidate proof.
+
+## Local verification
+
+On 2026-09-06, the native Windows .NET 10.0.100 run passed all 18
+`ODataDeltaTests` / `ODataDeltaValueTests` cases with zero failures or skips.
+The Release build treated warnings as errors and used `-maxcpucount:4`.
+After the initial build, the corrected PostgreSQL receipt store was rebuilt and
+the focused tests reused unchanged project outputs with `BuildProjectReferences=false`.
+The result is retained locally as `proofs-3872-results/odata-delta-2.trx`.
