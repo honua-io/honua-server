@@ -27,8 +27,11 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             return Results.Unauthorized();
         }
 
-        var admittedScheme = context.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult?.Ticket?.AuthenticationScheme
-            ?? CanonicalSecurityActor.FindStampedValue(context.User, CanonicalSecurityActor.AuthenticationSchemeClaim)
+        // Authorization can synthesize a ticket named "context.User" for a
+        // principal hydrated by credential middleware. The framework-owned actor
+        // stamp retains the actual handler name in that case.
+        var admittedScheme = CanonicalSecurityActor.FindStampedValue(context.User, CanonicalSecurityActor.AuthenticationSchemeClaim)
+            ?? context.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult?.Ticket?.AuthenticationScheme
             ?? context.User.Identity.AuthenticationType;
         var schemes = context.RequestServices.GetRequiredService<IAuthenticationSchemeProvider>();
         // Canonical actor bindings normalize names, whereas the handler registry is

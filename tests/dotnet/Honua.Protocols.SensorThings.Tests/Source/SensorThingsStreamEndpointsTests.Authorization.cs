@@ -14,6 +14,27 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 public sealed partial class SensorThingsStreamEndpointsTests
 {
     [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /sta/v1.1/ObservationsStream")]
+    public async Task ObservationsStream_UnscopedCredentialOrForeignCursor_IsRejectedBeforeHandshake(bool foreignCursor)
+    {
+        var issuer = _fixture.GetService<IPortalTokenIssuer>();
+        const string referer = "https://observation-proof.example/";
+        var credential = await issuer.IssueAsync(new PortalTokenIssueRequest("scope-proof", "Scope proof",
+            foreignCursor ? "tenant-b" : null, ["reader"], PortalTokenClientType.Referer, referer,
+            DateTimeOffset.UtcNow.AddMinutes(1)), CancellationToken.None);
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"/sta/v1.1/ObservationsStream?datastreamId=1&token={credential.Token}" + (foreignCursor ? "&cursor=73001" : ""));
+        request.Headers.Referrer = new Uri(referer);
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        using var response = await _fixture.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        response.StatusCode.Should().Be(foreignCursor ? HttpStatusCode.BadRequest : HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType?.MediaType.Should().NotBe("text/event-stream");
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("tenant-a").And.NotContain("connected");
+    }
+
+    [IntegrationTheory]
     [InlineData(false, false)]
     [InlineData(false, true)]
     [InlineData(true, false)]

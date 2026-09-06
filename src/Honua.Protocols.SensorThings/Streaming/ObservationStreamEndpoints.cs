@@ -53,6 +53,18 @@ internal static class ObservationStreamEndpoints
         [FromServices] ObservationStreamSessionManager sessionManager,
         [FromServices] ObservationStreamScope scope)
     {
+        if (string.IsNullOrWhiteSpace(scope.TenantId) && !context.User.IsInRole("admin"))
+        {
+            return StandardErrorHelpers.CreateForbidden(context,
+                "Observation subscriptions require a resolved tenant scope.");
+        }
+
+        if (context.Request.Query.ContainsKey("cursor") || context.Request.Headers.ContainsKey("Last-Event-ID"))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Observation subscriptions are live-only and cannot replay a supplied cursor.");
+        }
+
         long? datastreamId = null;
         if (context.Request.Query.TryGetValue("datastreamId", out var raw) &&
             long.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))

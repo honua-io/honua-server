@@ -30,6 +30,10 @@ public sealed class LiveStreamAuthorizationTests
             .Should().BeTrue();
 
         var admitted = false;
+        context.Features.Set<IAuthenticateResultFeature>(new PolicyAuthenticationFeature
+        {
+            AuthenticateResult = AuthenticateResult.Success(new AuthenticationTicket(context.User, "context.User"))
+        });
         await new LiveStreamAuthorizationFilter().InvokeAsync(
             EndpointFilterInvocationContext.Create(context), _ =>
             {
@@ -75,6 +79,11 @@ public sealed class LiveStreamAuthorizationTests
         services.AddAuthentication(PortalTokenAuthenticationExtensions.PortalTokenScheme)
             .AddScheme<AuthenticationSchemeOptions, PortalTokenAuthenticationHandler>(PortalTokenAuthenticationExtensions.PortalTokenScheme, _ => { });
         return services.BuildServiceProvider();
+    }
+
+    private sealed class PolicyAuthenticationFeature : IAuthenticateResultFeature
+    {
+        public AuthenticateResult? AuthenticateResult { get; set; }
     }
 
     private static Task<PortalTokenIssuance> IssueAsync(IPortalTokenIssuer issuer, string tenant, string[] roles) =>
