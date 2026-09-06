@@ -899,6 +899,11 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             ResolutionAction = ReplicaConflictResolutionAction.AcceptClient,
             ResolvedBy = "abandoned-resolver",
             ResolvedAt = abandonedAt,
+            // The claim CAS requires `NOT finalized`, and that column is written as
+            // !FinalizationPending — "finalized" means "no attempt in flight". An abandoned claim
+            // is precisely an attempt still in flight, so this must be set for the row to look
+            // like the state recovery is meant to act on.
+            FinalizationPending = true,
         });
 
         // Round-trip the timestamp through the database before using it as the CAS
@@ -972,6 +977,11 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
             ResolvedBy = "first-resolver",
             ResolvedAt = firstClaimAt,
+            // The claim CAS requires `NOT finalized`, and that column is written as
+            // !FinalizationPending — "finalized" means "no attempt in flight". An abandoned claim
+            // is precisely an attempt still in flight, so this must be set for the row to look
+            // like the state recovery is meant to act on.
+            FinalizationPending = true,
         });
         var firstClaim = (await repository.GetAsync(seeded.ConflictId))!.Value.ResolvedAt!.Value;
 

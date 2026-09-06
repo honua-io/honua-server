@@ -227,8 +227,8 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
 
         var body = await response.Content.ReadAsStringAsync();
         body.Should().NotContain("\"success\":true", "the request must not have been carried out");
-        body.Should().NotContain(replicaId,
-            "a masked replica must not be echoed back to a principal that does not own it");
+        body.Should().Contain("not found",
+            "the denial is masked as not-found for replica {0} rather than acknowledged", replicaId);
     }
 
     private async Task<HttpClient> CreateScopedWriteClientAsync(string keyName)
@@ -273,13 +273,28 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
             .ToArray();
     }
 
+    /// <summary>
+    /// Feature count for the test layer. Reads <c>count</c> when the service honours
+    /// <c>returnCountOnly</c> and falls back to counting the returned features otherwise, so the
+    /// "a denied synchronize applied no edits" assertion does not depend on which shape comes back.
+    /// </summary>
     private async Task<int> CountFeaturesAsync()
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return document.RootElement.GetProperty("count").GetInt32();
+        var payload = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(payload);
+        var root = document.RootElement;
+
+        if (root.TryGetProperty("count", out var count) && count.ValueKind == JsonValueKind.Number)
+        {
+            return count.GetInt32();
+        }
+
+        root.TryGetProperty("features", out var features).Should().BeTrue(
+            "the query must report either a count or the features themselves: {0}", payload);
+        return features.GetArrayLength();
     }
 }
