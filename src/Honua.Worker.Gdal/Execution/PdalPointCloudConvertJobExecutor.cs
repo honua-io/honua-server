@@ -226,13 +226,13 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
 
             // Output is EPSG:4979 degrees, so the source's own scale (metres, for a projected
             // source) would be meaningless here. Pin a scale fine enough for geographic
-            // coordinates — 1e-7 degrees is ~1 cm — and let the writer recentre the integer
-            // range on the data with an automatic offset so the int32 point records cannot
-            // overflow; a forwarded projected offset would.
+            // coordinates — 1e-7 degrees is ~1 cm. Zero offsets fit the complete
+            // longitude/latitude range in signed Int32 at this scale (180 / 1e-7 = 1.8e9 <
+            // 2^31-1); a forwarded projected offset in metres would not.
             args.Add("--writers.las.scale_x=0.0000001");
             args.Add("--writers.las.scale_y=0.0000001");
-            args.Add("--writers.las.offset_x=auto");
-            args.Add("--writers.las.offset_y=auto");
+            args.Add("--writers.las.offset_x=0");
+            args.Add("--writers.las.offset_y=0");
             // honua-server#4401's scale/offset forwarding is not lost by dropping the former
             // `else` branch: `--writers.las.forward=all` below is a superset of `scale,offset`
             // and now applies on BOTH paths, so a "decompress only" conversion still keeps the
