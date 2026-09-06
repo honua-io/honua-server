@@ -144,7 +144,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var textAttachment = seededGroup.AttachmentInfos.Single(attachment => attachment.Name == "test1.txt");
         var urlResponse = await _fixture.Client.GetAsync(ToRelativeUri(textAttachment.Url!));
         urlResponse.BeSuccessful();
-        (await urlResponse.Content.ReadAsByteArrayAsync()).Should().Equal(AttachmentTestData.SeededTextFileBytes);
+        (await urlResponse.Content.ReadAsByteArrayAsync()).Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
 
         var emptyGroup = result.AttachmentGroups.Single(group => group.ParentObjectId == 999);
         emptyGroup.AttachmentInfos.Should().BeEmpty();
@@ -664,7 +664,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         // #4404: `NotBeEmpty` passed for a truncated or wrong object. The seeded content is
         // known exactly (AttachmentTestData), so assert it exactly.
         var bytes = await response.Content.ReadAsByteArrayAsync();
-        bytes.Should().Equal(AttachmentTestData.SeededTextFileBytes);
+        bytes.Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
     }
 
     [IntegrationTest]
