@@ -16,7 +16,7 @@ namespace Honua.Worker.Gdal.Tests;
 
 /// <summary>Real production executors and pinned native GDAL, with analytical cell oracles.</summary>
 [Trait("Category", "RasterExecutionProof")]
-public sealed class RasterExecutionProofTests : IDisposable
+public sealed partial class RasterExecutionProofTests : IDisposable
 {
     private const double NoData = -9999;
     private static readonly string Image = ReadProductionImage();
@@ -138,14 +138,16 @@ public sealed class RasterExecutionProofTests : IDisposable
     }
 
     [Theory]
-    [InlineData("nearest")]
-    [InlineData("bilinear")]
-    public async Task Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples(string resampling)
+    [InlineData("nearest", "raster.reproject")]
+    [InlineData("bilinear", "raster.reproject")]
+    [InlineData("nearest", "conversion.raster-reproject")]
+    [InlineData("bilinear", "conversion.raster-reproject")]
+    public async Task Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples(string resampling, string processId)
     {
         var source = await Decode(await File.ReadAllBytesAsync(Fixture("grid.tif")));
         AssertGrid(source, 4, 4, 4326, [0, 1, 0, 4, 0, -1], 2);
         AssertBand(source, 0, Grid);
-        var output = await ExecuteRaster("raster.reproject", ("source", Input("grid.tif")),
+        var output = await ExecuteRaster(processId, ("source", Input("grid.tif")),
             ("targetSrid", "3857"), ("resampling", resampling));
         // Spherical Mercator EPSG:3857 uses R=6378137. GDAL's suggested square
         // pixel spans the transformed diagonal divided by the source diagonal.
@@ -344,7 +346,9 @@ public sealed class RasterExecutionProofTests : IDisposable
             "raster.clip" => new GdalRasterClipJobExecutor(_runner, options, NullLogger<GdalRasterClipJobExecutor>.Instance),
             "raster.zonal-statistics" => new GdalRasterZonalStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
             "raster.spectral-index" => new GdalRasterSpectralIndexJobExecutor(_runner, options, NullLogger<GdalRasterSpectralIndexJobExecutor>.Instance),
-            "raster.reproject" => new GdalRasterReprojectCatalogJobExecutor(_runner, options, NullLogger<GdalRasterReprojectCatalogJobExecutor>.Instance),
+            "raster.reproject" or "conversion.raster-reproject" => new GdalRasterReprojectCatalogJobExecutor(_runner, options, NullLogger<GdalRasterReprojectCatalogJobExecutor>.Instance),
+            "conversion.raster-format" => new GdalRasterFormatConvertJobExecutor(_runner, options, NullLogger<GdalRasterFormatConvertJobExecutor>.Instance),
+            "conversion.polygonize" => new GdalPolygonizeJobExecutor(_runner, options, NullLogger<GdalPolygonizeJobExecutor>.Instance),
             "raster.mosaic" => new GdalRasterMosaicJobExecutor(_runner, options, NullLogger<GdalRasterMosaicJobExecutor>.Instance),
             "raster.resample" => new GdalRasterResampleJobExecutor(_runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
             "raster.interpolate-idw" => new GdalRasterInterpolateJobExecutor(_runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
