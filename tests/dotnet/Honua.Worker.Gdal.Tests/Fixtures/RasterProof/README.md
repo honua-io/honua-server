@@ -80,3 +80,28 @@ For local Linux hosts whose user differs from the container default 1001:1001,
 set `HONUA_GDAL_PROOF_USER` to the host UID:GID before running the test. This only
 maps ownership at the test's bind-mount boundary; the production executor and
 container hardening remain in use.
+
+## `rasterize-parcels.geojson`
+
+Hand-written source for the `conversion.rasterize` proofs (#3938). Four features
+in EPSG:4326 with a numeric `dn` attribute:
+
+| feature | `dn` | extent |
+| --- | ---: | --- |
+| `west` | 7 | x[0, 3] y[0, 3] |
+| `east` | 3 | x[3, 5] y[0, 2] |
+| `sliver-below-centre` | 9 | x[0.6, 2.4] y[2.6, 2.9] |
+| `sliver-over-centre` | 8 | x[0.6, 2.4] y[2.4, 2.9] |
+
+The layer envelope is x[0, 5] y[0, 3], so a 5x3 `width`/`height` request produces
+1x1 cells whose centres sit at x 0.5/1.5/2.5/3.5/4.5 and y 2.5/1.5/0.5. No centre
+lands on any polygon edge on that grid, so gdal_rasterize's documented
+burn-the-pixel-whose-centre-is-inside rule fixes every expected cell without a
+scanline tie-break — the expectations in `RasterExecutionProofTests.Rasterize.cs`
+are applied by hand from the ordinates above, not captured from a run.
+
+The two slivers differ only in their lower edge (2.6 versus 2.4) and straddle the
+row of centres at y = 2.5, which is what makes the sub-pixel edge assertion
+meaningful: the 2.4 sliver claims exactly the centre (1.5, 2.5) and the 2.6 sliver
+claims no centre at all, so `dn = 9` must appear nowhere in the output. Their
+x range likewise excludes the centres at 0.5 and 2.5 by 0.1 units.
