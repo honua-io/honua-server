@@ -391,6 +391,8 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
     // -----------------------------------------------------------------------
     private static IEnumerable<CapabilityDescriptor> BuildDataFormatDescriptors()
     {
+        var importFormats = Enum.GetValues<Honua.Core.Features.FileImport.Domain.SupportedFileFormat>()
+            .Select(format => format.ToString().ToLowerInvariant()).ToHashSet(StringComparer.Ordinal);
         string[] formats =
         [
             "geojson",
@@ -419,7 +421,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 StandardName = name,
             };
 
-            var readable = name is not ("esrijson" or "wkb");
+            var readable = importFormats.Contains(name);
             var writable = name is "csv" or "shapefile" or "geopackage";
             yield return FileFormatDirection(name, "read", readable);
             yield return FileFormatDirection(name, "write", writable);
