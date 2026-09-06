@@ -103,3 +103,4 @@ remain valuable evidence but are deliberately not required to ship realtime as P
 2026.1 and cannot be submitted as aliases for a Preview-floor row.
 
 The subsequent native Windows focused FeatureServer/OData authorization run passed all 13 tests with zero failures or skips in 4m08s (ealtime-auth-6.trx). This run includes actual portal expiry/revocation, OData tenant concealment and resume, first-event cursor capture, and the cancellation/denial regression. Production and test dependencies were rebuilt in Release with warnings as errors and -maxcpucount:4.
+`nThe full native `dotnet format Honua.sln --no-restore` run completed successfully on 2026-09-06. Canonical catalog/architecture compilation is in progress; no result is claimed until it completes.
