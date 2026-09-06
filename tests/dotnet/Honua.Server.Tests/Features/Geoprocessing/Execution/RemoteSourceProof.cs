@@ -37,12 +37,17 @@ internal static class RemoteSourceProof
         }
         var job = new ExecutionJobRecord
         {
-            OperationId = "remote-source-proof", Status = ExecutionJobStatus.Running,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            OperationId = "remote-source-proof",
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Spec = new ExecutionJobSpec
             {
-                Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local", WorkloadName = "geoprocessing:proof", Parameters = parameters
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "geoprocessing:proof",
+                Parameters = parameters
             }
         };
         var artifacts = new List<string>();
