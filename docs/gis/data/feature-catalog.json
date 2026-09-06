@@ -13470,6 +13470,7 @@
         "Honua.Server.Tests.PatchConcurrencyTests.ODataPatch_ConcurrentDisjointPatch_PreservesCommittedPropertiesAndGeometry",
         "Honua.Server.Tests.PatchConcurrencyTests.ODataPatch_IfNoneMatchBecomesFalse_ReturnsPreconditionFailed",
         "Honua.Server.Tests.PatchConcurrencyTests.PatchEndpoints_DeclareConflictAndPreconditionResponses",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_ConflictStatusUsesLockedSnapshot_WhenRowChangesAgain",
         "Honua.Server.Tests.PatchConcurrencyTests.Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict",
         "Honua.Server.Tests.PatchConcurrencyTests.Patch_MaskedAttribute_PreservesStoredValueWithoutExposingIt"
       ],
@@ -13533,6 +13534,7 @@
         "Honua.Server.Tests.PatchConcurrencyTests.OgcPatch_ExplicitMaskedRemoval_RespectsMergePatchSemantics",
         "Honua.Server.Tests.PatchConcurrencyTests.OgcPatch_PublicIdentifierAndMaskedField_UsesCompleteSnapshot",
         "Honua.Server.Tests.PatchConcurrencyTests.PatchEndpoints_DeclareConflictAndPreconditionResponses",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_ConflictStatusUsesLockedSnapshot_WhenRowChangesAgain",
         "Honua.Server.Tests.PatchConcurrencyTests.Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict",
         "Honua.Server.Tests.PatchConcurrencyTests.Patch_MaskedAttribute_PreservesStoredValueWithoutExposingIt"
       ],
@@ -17539,6 +17541,7 @@
         "Honua.Server.Tests.PatchConcurrencyTests.BatchPatch_SameObjectTwice_PreservesOperationOrder",
         "Honua.Server.Tests.PatchConcurrencyTests.ODataBatchPatch_ConcurrentDisjointPatch_PreservesCommittedPropertiesAndGeometry",
         "Honua.Server.Tests.PatchConcurrencyTests.ODataPatch_IfNoneMatchBecomesFalse_ReturnsPreconditionFailed",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_ConflictStatusUsesLockedSnapshot_WhenRowChangesAgain",
         "Honua.Server.Tests.PatchConcurrencyTests.Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict",
         "Honua.Server.Tests.PatchConcurrencyTests.Patch_MaskedAttribute_PreservesStoredValueWithoutExposingIt"
       ],
