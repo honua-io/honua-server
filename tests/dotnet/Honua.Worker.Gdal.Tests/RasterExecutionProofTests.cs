@@ -251,6 +251,94 @@ public sealed class RasterExecutionProofTests : IDisposable
         actual.Sum().Should().Be(11);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task Reclassify_SingleValuesRangesGapsAndNoData_MatchesEveryClass(bool useDefault, bool overrideNoData)
+    {
+        var inputs = new List<(string, string)>
+        {
+            ("source", Input("reclassify.tif")),
+            ("remap", "-2:7;0..2:10;2:20;2..5:30;6..10:40;-9999:99"),
+            ("dataType", "Int16")
+        };
+        if (useDefault)
+        {
+            inputs.Add(("defaultValue", "-7"));
+        }
+        if (overrideNoData)
+        {
+            inputs.Add(("noData", "-1234"));
+        }
+        var output = await ExecuteRaster("raster.reclassify", inputs.ToArray());
+        AssertGrid(output, 4, 3, 4326, [10, 0.25, 0, 20, 0, -0.5], 1);
+        // Ranges are [lo, hi); the first matching entry wins at the overlap 2.
+        // Source nodata is masked even when explicitly listed in the remap.
+        var nodata = overrideNoData ? -1234 : NoData;
+        AssertBand(output, 0, [7, 10, 10, 20, 30, 30, useDefault ? -7 : 5,
+            40, 40, useDefault ? -7 : 10, nodata, useDefault ? -7 : 11], "Int16", nodata);
+    }
+
+    [Theory]
+    [InlineData("A + 2*B", false)]
+    [InlineData("A/B", false)]
+    [InlineData("A/B", true)]
+    public async Task MapAlgebra_AlignedSources_MatchesArithmeticAndInvalidCellMask(string expression, bool overrideNoData)
+    {
+        var inputs = new List<(string, string)>
+        {
+            ("sources", Input("algebra-a.tif") + "|" + Input("algebra-b.tif")),
+            ("expression", expression), ("dataType", "Float64")
+        };
+        if (overrideNoData)
+        {
+            inputs.Add(("noData", "-1234"));
+        }
+        var output = await ExecuteRaster("raster.map-algebra", inputs.ToArray());
+        AssertGrid(output, 4, 2, 4326, [10, 0.25, 0, 20, 0, -0.5], 1);
+        var n = overrideNoData ? -1234 : NoData;
+        // A={2,4,0,n,6,-2,8,0}; B={1,0,0,2,n,-4,2,5}.
+        // A/B includes both nonzero/zero and zero/zero; neither is valid data.
+        double[] expected = expression == "A/B" ? [2, n, n, n, n, 0.5, 4, 0] : [4, 4, 0, n, n, -10, 12, 10];
+        AssertBand(output, 0, expected, "Float64", n);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Statistics_TwoBandsWithDifferentNoData_MatchesHandDerivedPopulationMoments(bool secondBandOnly)
+    {
+        var inputs = new List<(string, string)> { ("source", Input("statistics.tif")) };
+        if (secondBandOnly)
+        {
+            inputs.Add(("bands", "2"));
+        }
+        using var json = JsonDocument.Parse(await Execute("raster.statistics", inputs.ToArray()));
+        json.RootElement.GetProperty("kind").GetString().Should().Be("raster.statistics");
+        var bands = json.RootElement.GetProperty("bands");
+        bands.GetArrayLength().Should().Be(secondBandOnly ? 1 : 2);
+        if (!secondBandOnly)
+        {
+            // {0,1,2,3,4}: n=5, sum=10, sum of squared deviations=10.
+            AssertStatistics(bands[0], 1, 5, 0, 4, 2, Math.Sqrt(2));
+        }
+        // {-5,5,15,25}: n=4, sum=40, sum of squared deviations=500.
+        AssertStatistics(bands[secondBandOnly ? 0 : 1], 2, 4, -5, 25, 10, Math.Sqrt(125));
+    }
+
+    private static void AssertStatistics(JsonElement band, int index, long count, double min, double max, double mean, double stddev)
+    {
+        band.GetProperty("band").GetInt32().Should().Be(index);
+        band.GetProperty("type").GetString().Should().Be("Float32");
+        band.GetProperty("validCount").GetInt64().Should().Be(count);
+        band.GetProperty("noDataValue").GetDouble().Should().Be(NoData);
+        band.GetProperty("min").GetDouble().Should().Be(min);
+        band.GetProperty("max").GetDouble().Should().Be(max);
+        band.GetProperty("mean").GetDouble().Should().BeApproximately(mean, 1e-12);
+        band.GetProperty("stddev").GetDouble().Should().BeApproximately(stddev, 1e-12);
+    }
+
     private static double Sample(double x, double y, string mode)
     {
         var centerX = Math.Clamp((int)Math.Floor(x + 0.5), 0, 3);
@@ -349,6 +437,9 @@ public sealed class RasterExecutionProofTests : IDisposable
             "raster.resample" => new GdalRasterResampleJobExecutor(_runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
             "raster.interpolate-idw" => new GdalRasterInterpolateJobExecutor(_runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
             "raster.histogram" => new GdalRasterStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterStatisticsJobExecutor>.Instance),
+            "raster.statistics" => new GdalRasterStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterStatisticsJobExecutor>.Instance),
+            "raster.reclassify" => new GdalRasterReclassifyJobExecutor(_runner, options, NullLogger<GdalRasterReclassifyJobExecutor>.Instance),
+            "raster.map-algebra" => new GdalRasterMapAlgebraJobExecutor(_runner, options, NullLogger<GdalRasterMapAlgebraJobExecutor>.Instance),
             _ => throw new ArgumentOutOfRangeException(nameof(id))
         };
         var job = GdalJobFactory.Job(id, inputs);
