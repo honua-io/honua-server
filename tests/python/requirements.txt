@@ -23,6 +23,13 @@ shapely>=2.0.0
 geopandas>=0.14.0
 pyproj>=3.6.0
 
+# Parquet reader backing the GeoParquet interop lane
+# (feature_server/test_geoparquet_interop.py). GeoPandas only declares pyarrow under
+# its `all` extra, so Parquet support is NOT installed transitively -- the lane sets
+# HONUA_REQUIRE_GEOPARQUET_INTEROP=1 and a missing pyarrow is then a collection error,
+# not a skip. Declare it explicitly (honua-server#4396).
+pyarrow>=14.0.0
+
 # Canonical OGC client used by the py-owslib certification lane (#3392). The
 # lane itself runs in its own container, which pins exact versions in
 # docker/client-compat/owslib/requirements.txt; this entry keeps the package

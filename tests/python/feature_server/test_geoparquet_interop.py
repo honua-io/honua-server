@@ -31,8 +31,10 @@ import os
 import httpx
 import pytest
 
-# The GeoParquet reader stack is declared in tests/python/requirements.txt
-# (geopandas / pyproj / shapely) plus pyarrow (transitive via geopandas).
+# The GeoParquet reader stack is declared in tests/python/requirements.txt:
+# geopandas / pyproj / shapely, plus an explicit pyarrow. GeoPandas lists pyarrow only under
+# its `all` extra, so Parquet support is not installed transitively and pyarrow has to be a
+# first-class requirement of this suite.
 #
 # honua-server#4396: importorskip alone made a lane that failed to install the reader stack
 # report green with zero executed cells. A lane that is *supposed* to run this evidence sets
