@@ -550,6 +550,8 @@ def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
         ("AdvancedSpatialQueryTests", "Core Endpoints"),
         ("Comprehensive.ApiSurfaceComplianceTests", "STAC and API Governance"),
         ("Comprehensive.TestQualityValidationTests", "STAC and API Governance"),
+        ("PatchConcurrencyTests", "Core Mutation Concurrency"),
+        ("SchemaMutationConcurrencyTests", "Core Mutation Concurrency"),
     ):
         fqn = f"Honua.Server.Tests.{name}"
         assert classes[fqn]["csproj"] == KNOWN
