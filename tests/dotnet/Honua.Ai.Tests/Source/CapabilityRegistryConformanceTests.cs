@@ -95,11 +95,6 @@ public sealed class CapabilityRegistryConformanceTests
         "operate.status",
     ];
 
-    // Format descriptors that intentionally exist beyond the SupportedFileFormat
-    // import enum: writer/codec-backed formats (EsriJsonWkbWriter, WKT/WKB codecs).
-    private static readonly HashSet<string> NonImportFormatNames =
-        new(StringComparer.Ordinal) { "esrijson", "wkb" };
-
     [UnitTest]
     public void Registry_IsNotEmpty()
     {
@@ -281,18 +276,18 @@ public sealed class CapabilityRegistryConformanceTests
         var importFormatNames = Enum.GetValues<SupportedFileFormat>()
             .Select(f => f.ToString().ToLowerInvariant())
             .ToHashSet(StringComparer.Ordinal);
+        var writers = Honua.Io.Export.BuiltInExportFormats.Dispatch.Values
+            .Select(format => format.ToString().ToLowerInvariant()).ToHashSet(StringComparer.Ordinal);
 
         foreach (var descriptor in Registry.All
                      .Where(d => d.Id.StartsWith(CapabilityRegistry.DataFormatIdPrefix, StringComparison.Ordinal)))
         {
             var name = descriptor.StandardName!;
-            (importFormatNames.Contains(name) || NonImportFormatNames.Contains(name)).Should().BeTrue(
-                $"format descriptor '{descriptor.Id}' must map to a SupportedFileFormat member or a known writer/codec format");
+            (importFormatNames.Contains(name) || writers.Contains(name)).Should().BeTrue(
+                $"format descriptor '{descriptor.Id}' must map to an import format or a built-in export writer");
         }
 
-        var writers = Honua.Io.Export.BuiltInExportFormats.Dispatch.Values
-            .Select(format => format.ToString().ToLowerInvariant()).ToHashSet(StringComparer.Ordinal);
-        foreach (var name in importFormatNames.Concat(NonImportFormatNames))
+        foreach (var name in importFormatNames.Union(writers))
         {
             AssertDirection("read", name, importFormatNames.Contains(name));
             AssertDirection("write", name, writers.Contains(name));
