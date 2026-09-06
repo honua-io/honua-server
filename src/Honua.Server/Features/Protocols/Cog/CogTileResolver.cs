@@ -141,18 +141,9 @@ internal sealed class CogTileResolver : ICogTileResolver
             metadata.BitsPerSample,
             metadata.Predictor,
             metadata.IsLittleEndian);
-        var decodedLimit = TileDecompressor.DefaultMaxDecompressedBytes;
-        if (metadata.Compression != "JPEG")
-        {
-            var sampleBytes = (long)metadata.TileWidth * metadata.TileHeight * metadata.BandCount
-                * (metadata.BitsPerSample / 8);
-            if (sampleBytes <= 0 || sampleBytes > decodedLimit)
-            {
-                return null;
-            }
-            decodedLimit = (int)sampleBytes;
-        }
-        var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout, decodedLimit);
+        // The decoder's 128 MiB ceiling also accommodates codecs whose frame size is
+        // unknown (ZSTD reports a window bound). Encoders require the exact sample length.
+        var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout);
 
         if (format == RasterFormat.PNG && contentType == "application/octet-stream")
         {
@@ -161,6 +152,19 @@ internal sealed class CogTileResolver : ICogTileResolver
             {
                 decompressedData = png;
                 contentType = "image/png";
+            }
+        }
+        else if (format is RasterFormat.TIFF or RasterFormat.COG && contentType == "application/octet-stream")
+        {
+            var bounds = TileMath.GetTileBounds(col, row, level);
+            var tiff = CogTiffTileEncoder.Encode(decompressedData, metadata, new RasterExtent
+            {
+                XMin = bounds.XMin, YMin = bounds.YMin, XMax = bounds.XMax, YMax = bounds.YMax, Srid = 3857
+            });
+            if (tiff is not null)
+            {
+                decompressedData = tiff;
+                contentType = "image/tiff";
             }
         }
 

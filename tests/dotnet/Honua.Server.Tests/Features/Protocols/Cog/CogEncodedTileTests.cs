@@ -83,6 +83,25 @@ public sealed class CogEncodedTileTests
                 && Math.Abs(m.Extent.XMin + 20037508.342789244) < 1e-7
                 && Math.Abs(m.Extent.YMax - 20037508.342789244) < 1e-7),
             null, Arg.Any<CancellationToken>());
+
+        foreach (var format in new[] { RasterFormat.TIFF, RasterFormat.COG })
+        {
+            var tiff = await resolver.GetTileAsync(registration, 8, 0, 0, format);
+            tiff.Should().NotBeNull();
+            tiff!.Value.ContentType.Should().Be("image/tiff");
+            tiff.Value.Data[..8].Should().Equal(73, 73, 42, 0, 8, 0, 0, 0);
+            tiff.Value.Data[^expected.Length..].Should().Equal(expected);
+            // The output is independently covered at tag/value level by CogTiffTileEncoderTests.
+            var outputMetadata = await new CogMetadataExtractor().ReadMetadataAsync(
+                new CogPinnedRangeReader(new FixtureReader(tiff.Value.Data), "fixture-v1"), "fixtures", "output");
+            outputMetadata.Width.Should().Be(128);
+            outputMetadata.Height.Should().Be(128);
+            outputMetadata.BitsPerSample.Should().Be(bits);
+            outputMetadata.BandCount.Should().Be(bands);
+            outputMetadata.Srid.Should().Be(3857);
+            outputMetadata.Extent.XMin.Should().BeApproximately(-20037508.342789244, 1e-7);
+            outputMetadata.Extent.YMax.Should().BeApproximately(20037508.342789244, 1e-7);
+        }
     }
 
     [Theory]
@@ -93,7 +112,8 @@ public sealed class CogEncodedTileTests
         // Independent numeric fixture: 0, 258, 65535 (nodata), 4096.
         byte[] samples = littleEndian ? [0, 0, 2, 1, 255, 255, 0, 16] : [0, 0, 1, 2, 255, 255, 16, 0];
         var metadata = new CogMetadata(2, 2, 1, "uint16", 3857, "NONE", 2, 2, [],
-            new RasterExtent(), BitsPerSample: 16, IsLittleEndian: littleEndian, NoData: "65535");
+            new RasterExtent { XMin = 0, YMin = 0, XMax = 2, YMax = 2 },
+            BitsPerSample: 16, IsLittleEndian: littleEndian, NoData: "65535");
         var png = CogTileEncoder.EncodePng(samples, metadata);
         png.Should().NotBeNull();
         var chunks = ReadPngChunks(png!);
@@ -104,7 +124,8 @@ public sealed class CogEncodedTileTests
     [Fact]
     public void EncodePng_TruncatedSamples_RejectsMalformedTile()
     {
-        var metadata = new CogMetadata(2, 2, 1, "uint8", 3857, "NONE", 2, 2, [], new RasterExtent());
+        var metadata = new CogMetadata(2, 2, 1, "uint8", 3857, "NONE", 2, 2, [],
+            new RasterExtent { XMin = 0, YMin = 0, XMax = 2, YMax = 2 });
         var act = () => CogTileEncoder.EncodePng([1, 2, 3], metadata);
         act.Should().Throw<InvalidDataException>();
         CogTileEncoder.EncodePng([1, 2, 3, 4], metadata with { PlanarConfiguration = 2 }).Should().BeNull();
