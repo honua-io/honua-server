@@ -111,7 +111,7 @@ internal sealed partial class StreamingFileImportService
                 created_at TIMESTAMPTZ DEFAULT NOW());
             """, connection, transaction);
         await command.ExecuteNonQueryAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        await transaction.CommitSafelyAsync(cancellationToken);
     }
 
     private static async Task CreateTableAsync(
