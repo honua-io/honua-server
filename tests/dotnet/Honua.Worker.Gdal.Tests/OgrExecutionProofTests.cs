@@ -3,19 +3,54 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Worker.Gdal.Execution;
+using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.IO;
 using Xunit;
+using Xunit.Sdk;
 
 namespace Honua.Worker.Gdal.Tests;
 
 public sealed partial class RasterExecutionProofTests
 {
-    [Fact]
-    public async Task Ogr_MultilayerGeoPackage_SelectsLayerAndPreservesGeometryAndAttributes()
+    [Theory]
+    [InlineData("survey", true)]
+    [InlineData("decoy", false)]
+    public async Task Ogr_MultilayerGeoPackage_SelectsLayerAndPreservesGeometryAndAttributes(string layerName, bool matchesOracle)
     {
         using var output = JsonDocument.Parse(await Execute("source.ogr", ("source", Input("survey.gpkg")),
-            ("sourceFormat", "GPKG"), ("layerName", "survey")));
-        var root = output.RootElement;
+            ("sourceFormat", "GPKG"), ("layerName", layerName)));
+        if (matchesOracle)
+        {
+            AssertSurvey(output.RootElement);
+        }
+        else
+        {
+            // A real, valid GeoJSON from the wrong layer must fail the same semantic oracle.
+            Action assert = () => AssertSurvey(output.RootElement);
+            assert.Should().Throw<XunitException>();
+        }
+    }
+
+    [Theory]
+    [InlineData("missing-layer")]
+    [InlineData("-sql")]
+    [InlineData(" ")]
+    public async Task Ogr_InvalidOrMissingLayer_FailsWithoutPublishingAnotherLayer(string layerName)
+    {
+        var job = GdalJobFactory.Job("source.ogr", ("source", Input("survey.gpkg")),
+            ("sourceFormat", "GPKG"), ("layerName", layerName));
+        var context = new RecordingJobExecutionContext(job.OperationId);
+        var executor = new GdalVectorSourceReadJobExecutor(_runner, GdalJobFactory.Options(_scratch),
+            NullLogger<GdalVectorSourceReadJobExecutor>.Instance);
+        var result = await executor.ExecuteAsync(job, context, CancellationToken.None);
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        context.Artifacts.Should().BeEmpty();
+    }
+
+    private static void AssertSurvey(JsonElement root)
+    {
         root.GetProperty("type").GetString().Should().Be("FeatureCollection");
         root.GetProperty("name").GetString().Should().Be("survey");
         root.GetProperty("crs").GetProperty("properties").GetProperty("name").GetString()

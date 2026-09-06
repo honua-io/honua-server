@@ -48,3 +48,27 @@ The shared matrix keeps that dependency. #3855 covers transactional
 database/restart proof; these fixtures use inline inputs and inline output
 artifacts and do not cross a Postgres data or transaction boundary, so that cell
 is not applicable here. No database-restart success is inferred from this suite.
+
+## Generic warp and OGR source proofs
+
+`Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples`
+also executes the distinct `gdal.gdalwarp` production executor with its `targetSrs`
+contract and GDAL's default nearest-neighbor resampling. Both input bands, the
+nodata hole, target EPSG:3857, affine grid and every decoded pixel use the same
+independent Mercator oracle described above. `WarpOracle_ChangedPixelInValidGeoTiff_IsRejected`
+changes one output pixel through GDAL while keeping a valid GeoTIFF and demonstrates
+that the value assertion rejects it. This is the heavier-operation correctness
+fixture for #3947 / #3857; the required PR Gate retains the execution TRX. The
+seven real scheduled intervals and exact-candidate identity remain #3857's bill.
+
+`Ogr_MultilayerGeoPackage_SelectsLayerAndPreservesGeometryAndAttributes` drives
+`source.ogr` through real OGR with `survey.gpkg`, generated from the explicit
+source literals in `generate-ogr.py`. It selects the `survey` layer rather than
+the first, `decoy`, layer; checks four features, Point/LineString/Polygon/null
+geometry, every XYZ ordinate, WGS84 longitude/latitude CRS, Unicode names,
+nulls and numeric attributes. A second execution selects the valid decoy layer
+and proves the same semantic oracle rejects its well-formed output. Missing
+layers and option-shaped layer names must fail without an artifact. The optional
+catalog `layerName` input selects one exact layer; omission retains OGR's default
+behavior. These inline artifact proofs do not cross a staged-output or database
+boundary; #3852/#3855 are not inferred to pass from them.
