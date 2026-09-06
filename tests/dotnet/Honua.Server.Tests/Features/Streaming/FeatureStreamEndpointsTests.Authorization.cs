@@ -7,8 +7,13 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Events;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -22,26 +27,48 @@ public sealed partial class FeatureStreamEndpointsTests
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_RealPortalCredentialExpiresOrIsRevoked_TerminatesAndReplacementResumes(bool webSocket, bool expire)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var ct = timeout.Token;
-        var issuer = _fixture.GetService<IPortalTokenIssuer>();
-        const string referer = "https://stream-proof.example/";
-        async Task<PortalTokenIssuance> IssueAsync(TimeSpan ttl) => await issuer.IssueAsync(
-            new PortalTokenIssueRequest("stream-proof", "Stream proof", null, ["admin"],
-                PortalTokenClientType.Referer, referer, DateTimeOffset.UtcNow + ttl), ct);
-        var credential = await IssueAsync(expire ? TimeSpan.FromSeconds(5) : TimeSpan.FromMinutes(1));
-        var publisher = _fixture.GetService<IFeatureChangeEventPublisher>();
-        async Task PublishAsync(long id) => await publisher.PublishAsync(new FeatureChangeEventRequest
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
         {
-            ServiceId = "test", LayerId = 0, ObjectId = id, Operation = "update", Protocol = "rest",
-            RequestId = $"auth-proof-{id}", PropertiesJson = "{\"name\":\"credential-proof\"}"
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+        await fixture.InitializeAsync();
+        fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with { Tenant = "tenant-a" });
+        fixture.MutateV2ResourceObjectMetadata(1, metadata => metadata with { Tenant = "tenant-b" });
+        fixture.UpdateV2ResourceMetadata(0, accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] });
+        fixture.UpdateV2ResourceMetadata(1, accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var ct = timeout.Token;
+        var issuer = fixture.GetService<IPortalTokenIssuer>();
+        const string referer = "https://stream-proof.example/";
+        async Task<PortalTokenIssuance> IssueAsync(TimeSpan ttl, string? tenant = "tenant-a") => await issuer.IssueAsync(
+            new PortalTokenIssueRequest("stream-proof", "Stream proof", tenant, ["reader"],
+                PortalTokenClientType.Referer, referer, DateTimeOffset.UtcNow + ttl), ct);
+        var anchor = await fixture.GetService<IFeatureChangeEventStore>().AppendAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = "test", LayerId = 0, ObjectId = 73000, Operation = "update", Protocol = "rest", RequestId = "auth-anchor"
         }, ct);
+        var credential = await IssueAsync(expire ? TimeSpan.FromSeconds(20) : TimeSpan.FromMinutes(1));
+        var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
+        async Task PublishAsync(long id)
+        {
+            await publisher.PublishAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = "test", LayerId = 1, ObjectId = id + 100, Operation = "update", Protocol = "rest",
+                RequestId = $"tenant-b-{id}", PropertiesJson = "{\"name\":\"tenant-b-secret\"}"
+            }, ct);
+            await publisher.PublishAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = "test", LayerId = 0, ObjectId = id, Operation = "update", Protocol = "rest",
+                RequestId = $"auth-proof-{id}", PropertiesJson = "{\"name\":\"credential-proof\"}"
+            }, ct);
+        }
 
         string Path(string token, long? cursor = null) =>
             $"/api/v1/streaming/features?serviceId=test&layers=0&token={token}" + (cursor.HasValue ? $"&cursor={cursor}" : "");
         async Task<WebSocket> ConnectAsync(string token, long? cursor = null)
         {
-            var client = _fixture.CreateWebSocketClient();
+            var client = fixture.CreateWebSocketClient();
             var configure = client.ConfigureRequest;
             client.ConfigureRequest = request => { configure?.Invoke(request); request.Headers.Referer = referer; };
             return await client.ConnectAsync(new Uri("ws://localhost" + Path(token, cursor)), ct);
@@ -50,17 +77,17 @@ public sealed partial class FeatureStreamEndpointsTests
         long lastCursor;
         if (webSocket)
         {
-            using var socket = await ConnectAsync(credential.Token);
+            using var socket = await ConnectAsync(credential.Token, anchor.Cursor);
             _ = await ReceiveWebSocketJsonAsync(socket, ct);
             await PublishAsync(73001);
             JsonElement frame;
-            do { frame = await ReceiveWebSocketJsonAsync(socket, ct); }
+            do { frame = await ReceiveWebSocketJsonAsync(socket, ct); frame.GetRawText().Should().NotContain("tenant-b-secret"); }
             while (frame.GetProperty("type").GetString() != "feature-change");
             frame.GetProperty("objectId").GetInt64().Should().Be(73001);
             lastCursor = frame.GetProperty("cursor").GetInt64();
             if (!expire) { await issuer.RevokeAsync(credential.Token, ct); }
             using var bound = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            bound.CancelAfter(expire ? TimeSpan.FromSeconds(8) : TimeSpan.FromSeconds(4));
+            bound.CancelAfter(expire ? credential.ExpiresAt - DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(5));
             var buffer = new byte[8192];
             WebSocketReceiveResult terminal;
             do
@@ -76,22 +103,22 @@ public sealed partial class FeatureStreamEndpointsTests
         }
         else
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, Path(credential.Token));
+            using var request = new HttpRequestMessage(HttpMethod.Get, Path(credential.Token, anchor.Cursor));
             request.Headers.Referrer = new Uri(referer);
             request.Headers.Accept.ParseAdd("text/event-stream");
-            using var response = await _fixture.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var response = await fixture.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var stream = await response.Content.ReadAsStreamAsync(ct);
             using var reader = new StreamReader(stream);
             _ = await ReadNextSseEventAsync(reader, ct);
             await PublishAsync(73001);
             SseEvent frame;
-            do { frame = await ReadNextSseEventAsync(reader, ct); } while (frame.EventName != "feature-change");
+            do { frame = await ReadNextSseEventAsync(reader, ct); frame.Data.GetRawText().Should().NotContain("tenant-b-secret"); } while (frame.EventName != "feature-change");
             frame.Data.GetProperty("objectId").GetInt64().Should().Be(73001);
             lastCursor = frame.Data.GetProperty("cursor").GetInt64();
             if (!expire) { await issuer.RevokeAsync(credential.Token, ct); }
             using var bound = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            bound.CancelAfter(expire ? TimeSpan.FromSeconds(8) : TimeSpan.FromSeconds(4));
+            bound.CancelAfter(expire ? credential.ExpiresAt - DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(5));
             do
             {
                 frame = await ReadNextSseEventAsync(reader, bound.Token);
@@ -113,7 +140,18 @@ public sealed partial class FeatureStreamEndpointsTests
         using var rejected = new HttpRequestMessage(HttpMethod.Get, Path(credential.Token, lastCursor));
         rejected.Headers.Referrer = new Uri(referer);
         rejected.Headers.Accept.ParseAdd("text/event-stream");
-        using var denied = await _fixture.Client.SendAsync(rejected, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var denied = await fixture.Client.SendAsync(rejected, HttpCompletionOption.ResponseHeadersRead, ct);
         denied.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        foreach (var tenant in new string?[] { "tenant-b", null })
+        {
+            var changed = await IssueAsync(TimeSpan.FromMinutes(1), tenant);
+            using var incompatible = new HttpRequestMessage(HttpMethod.Get, Path(changed.Token, lastCursor));
+            incompatible.Headers.Referrer = new Uri(referer);
+            incompatible.Headers.Accept.ParseAdd("text/event-stream");
+            using var hidden = await fixture.Client.SendAsync(incompatible, HttpCompletionOption.ResponseHeadersRead, ct);
+            hidden.StatusCode.Should().Be(HttpStatusCode.BadRequest, "a tenant-scoped layer cannot be resolved from another or unscoped tenant");
+            (await hidden.Content.ReadAsStringAsync(ct)).Should().NotContain("credential-proof").And.NotContain("tenant-b-secret");
+        }
     }
 }

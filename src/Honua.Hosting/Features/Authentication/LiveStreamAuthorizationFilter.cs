@@ -28,7 +28,7 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
         }
 
         var scheme = context.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult?.Ticket?.AuthenticationScheme
-            ?? context.User.FindFirst(CanonicalSecurityActor.AuthenticationSchemeClaim)?.Value
+            ?? CanonicalSecurityActor.FindStampedValue(context.User, CanonicalSecurityActor.AuthenticationSchemeClaim)
             ?? context.User.Identity.AuthenticationType;
         var schemes = context.RequestServices.GetRequiredService<IAuthenticationSchemeProvider>();
         if (scheme is null || await schemes.GetSchemeAsync(scheme).ConfigureAwait(false) is null)
