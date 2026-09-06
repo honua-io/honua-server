@@ -65,8 +65,28 @@ The verification is therefore blob identity, never envelope identity:
 - When the pinned source is a multi-platform index, the lane resolves the one
   `linux/<candidate architecture>` child and mirrors that manifest. Zero or more than one
   matching child fails the run (exit 3) rather than guessing.
-- The copy runs on every attempt, so a tag written by an earlier re-encoding mirror can
-  never be accepted by a later run.
+- A tag written by an earlier re-encoding mirror can never be accepted by a later run.
+
+The certification repository is **tag-immutable**, so a rerun for the same candidate cannot
+overwrite the tag a previous attempt wrote — the manifest `PUT` is rejected with `TAG_INVALID`.
+The lane therefore decides what to do with an existing tag before it pushes, and records the
+decision in `artifact.mirrorOutcome`:
+
+| Tag state | `mirrorOutcome` | Action |
+| --- | --- | --- |
+| Absent | `pushed` | `crane copy`, as before. |
+| Present, exact source artifact | `skipped-existing` | No push. The verification below still runs in full against what ECR holds. |
+| Present, anything else | `replaced-stale` | `aws ecr batch-delete-image` on that tag, then `crane copy`. |
+
+"Exact source artifact" is blob identity — the stored config blob digest and layer blob digests,
+or a manifest digest equal to the source's — never envelope identity, for the reason above.
+The ECR copy is a mirror whose source of truth is the GHCR pin, so a tag holding anything else is
+a stale mirror artifact and is replaced rather than trusted; the delete is confined to the
+`honua-cert-cert-lambda-preview` repository and a `candidate-*` tag, and refuses anything outside
+that namespace (exit 95). A `DescribeImages` failure that is not `ImageNotFoundException` fails the
+run (exit 3) rather than being read as an absent tag, and a stale tag that could not be removed
+fails the run (exit 4) rather than being left for the verification to accept. Bootstrap must permit
+`ecr:DescribeImages` and `ecr:BatchDeleteImage` on that repository.
 
 ## Live proof
 
@@ -104,6 +124,8 @@ alias, so requests do not depend on public ingress or redirect behavior.
   (equal to `artifact.sourceDigest` unless the pin named an index).
 - `artifact.sourceConfigDigest`, `artifact.sourceRootfsFingerprint`, `artifact.mirrorTool`,
   `artifact.configDigestPreserved` and `artifact.rootfsPreserved`: the byte-exactness proof.
+- `artifact.mirrorOutcome`: `pushed`, `skipped-existing` or `replaced-stale` — what the mirror step
+  did about the immutable candidate tag.
 - `verification.coldStartInitDurationMs`: observed first-invoke REPORT value.
 - `serving.result`, `serving.candidateDigest` (digest only), and `serving.candidateVersion`.
 - `serving.deployed`, `.baseline`, `.candidate`, `.rollback`: migration assertions;
@@ -133,7 +155,9 @@ dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.cspro
 The self-test runs the full shell/Python lane with stateful AWS CLI, container and
 deploy-driver doubles. It covers pass on both architectures, every assertion,
 missing inputs, URL guards, lost shift/publish responses, rollback failure and
-teardown failure. The separately built driver compiles the unchanged production
+teardown failure. The doubles model ECR tag immutability — a second `crane copy` to an
+occupied tag is rejected — so the absent / same-digest / different-digest rerun cases and
+their fail-closed variants are exercised end to end. The separately built driver compiles the unchanged production
 backend/client. Actual AWS IAM, VPC/PostGIS connectivity, fixture bootstrap,
 cold-start behavior and serving across real published versions still require the
 credentialed workflow run.
