@@ -29,6 +29,9 @@ internal sealed partial class ODataStreamingQueryHandler
 
     private static IResult DeltaRecovery(HttpContext context, string code, string message, int status)
     {
+        // Status descriptions are intentionally stripped when exception-detail export
+        // is disabled. Retain only the bounded protocol code as structured telemetry.
+        Activity.Current?.SetTag("odata.error_code", code);
         Activity.Current?.SetStatus(ActivityStatusCode.Error, code);
         return ODataUtilityService.CreateODataError(context, code, message, status);
     }
