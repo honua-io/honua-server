@@ -156,14 +156,16 @@ public sealed partial class CopyFeaturesExecutionProofTests
             after.Index.ServicesById[publication.ServiceId], target, publication, result.LayerId, FeatureProviderReadOperation.Query);
         var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(target, result.LayerId, reader, CancellationToken.None);
         range.Should().NotBeNull();
-        range!.Value.Min.Should().Be(expectedCount == 0 || maskTime ? null : new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero));
-        range.Value.Max.Should().Be(expectedCount == 0 || maskTime ? null : new DateTimeOffset(2026, 1, objectIds is null ? 5 : 3, 0, 0, 0, TimeSpan.Zero));
+        var resolved = range!.Value;
+        resolved.Min.Should().Be(expectedCount == 0 || maskTime ? null : new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero));
+        resolved.Max.Should().Be(expectedCount == 0 || maskTime ? null : new DateTimeOffset(2026, 1, objectIds is null ? 5 : 3, 0, 0, 0, TimeSpan.Zero));
         _masks.ResolveAsync(Arg.Is<MetadataV2Resource>(r => r.Metadata.Id == target.Metadata.Id), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("observed"));
         var redactedRange = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(target, result.LayerId, reader, CancellationToken.None);
         redactedRange.Should().NotBeNull();
-        redactedRange!.Value.Min.Should().BeNull("a masked temporal field must not disclose its lower bound");
-        redactedRange.Value.Max.Should().BeNull("a masked temporal field must not disclose its upper bound");
+        var resolvedRedacted = redactedRange!.Value;
+        resolvedRedacted.Min.Should().BeNull("a masked temporal field must not disclose its lower bound");
+        resolvedRedacted.Max.Should().BeNull("a masked temporal field must not disclose its upper bound");
         after.Index.ResourcesByStorageLayerId[_sourceId].Temporal.Should().BeEquivalentTo(temporal.Temporal);
     }
 
