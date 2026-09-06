@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -275,9 +276,12 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 receipt["sink"] = new JsonObject
                 {
                     ["rowId"] = reader.GetInt64(0),
-                    ["x"] = reader.GetDouble(1), ["y"] = reader.GetDouble(2),
-                    ["srid"] = reader.GetInt32(3), ["dimensions"] = reader.GetInt32(4),
-                    ["logicalId"] = reader.GetString(5), ["idempotencyKey"] = reader.GetString(6)
+                    ["x"] = reader.GetDouble(1),
+                    ["y"] = reader.GetDouble(2),
+                    ["srid"] = reader.GetInt32(3),
+                    ["dimensions"] = reader.GetInt32(4),
+                    ["logicalId"] = reader.GetString(5),
+                    ["idempotencyKey"] = reader.GetString(6)
                 };
                 (await reader.ReadAsync()).Should().BeFalse();
             }
@@ -327,8 +331,12 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             finally
             {
                 receipt["completedAt"] = DateTimeOffset.UtcNow.ToString("O");
-                var directory = Environment.GetEnvironmentVariable("HONUA_SERVER_TEST_RESULTS_DIR")
-                    ?? Path.Join(AppContext.BaseDirectory, "TestResults");
+                var directory = Environment.GetEnvironmentVariable("HONUA_SERVER_TEST_RESULTS_DIR");
+                if (string.IsNullOrWhiteSpace(directory))
+                {
+                    directory = RepositoryPaths.Resolve("tests", "TestResults");
+                }
+
                 Directory.CreateDirectory(directory);
                 var path = Path.Join(directory, $"{operationId}.json");
                 var json = receipt.ToJsonString();
@@ -392,6 +400,8 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(15));
             terminal.Status.Should().Be(ExecutionJobStatus.Failed);
             executor.InvocationCount.Should().Be(retryPolicy.MaxAttempts);
+            executor.Attempts.Select(attempt => attempt.AttemptCount).Should().Equal(1, 2, 3);
+            executor.Attempts.Should().OnlyContain(attempt => !string.IsNullOrWhiteSpace(attempt.ClaimedBy));
             callback.InvocationCount.Should().Be(1);
 
             var final = await harness.JobStore.GetAsync(operationId);
@@ -453,6 +463,14 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 "Cancelled during retry backoff");
             cancelled.State.Should().Be(ExecutionJobCancellationState.Cancelled);
             await harness.Queue.RemoveAsync(operationId);
+
+            // Observe beyond the scheduled retry so an incorrectly resurrected job
+            // cannot pass merely because cancellation initially looked terminal.
+            var remainingBackoff = backoff.NextRetryAt!.Value - DateTimeOffset.UtcNow;
+            if (remainingBackoff > TimeSpan.Zero)
+            {
+                await Task.Delay(remainingBackoff + TimeSpan.FromMilliseconds(250));
+            }
 
             var final = await WaitForJobAsync(
                 harness.JobStore,
@@ -683,6 +701,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
     private sealed class FailingExecutor(int failures) : IJobExecutor
     {
         public int InvocationCount => Volatile.Read(ref _invocationCount);
+        public ConcurrentQueue<ExecutionJobRecord> Attempts { get; } = new();
         public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
         private int _invocationCount;
 
@@ -691,6 +710,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             IJobExecutionContext context,
             CancellationToken cancellationToken)
         {
+            Attempts.Enqueue(job);
             var invocation = Interlocked.Increment(ref _invocationCount);
             return Task.FromResult(invocation <= failures
                 ? JobExecutionResult.Failed($"transient failure {invocation}")
