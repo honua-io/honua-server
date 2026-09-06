@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 
@@ -168,6 +169,7 @@ public readonly record struct EditFeature
     /// Preserves omitted masked fields when an adapter has already materialized a partial update.
     /// This retains partial-update intent even when the materialized payload uses replacement mode.
     /// </summary>
+    [JsonIgnore]
     public bool PreserveOmittedMaskedAttributes { get; init; }
 
     /// <summary>
