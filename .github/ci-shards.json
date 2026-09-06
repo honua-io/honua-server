@@ -226,7 +226,8 @@
         "Core and Cloud Contracts",
         "Core Endpoints",
         "Core Attachments and Records",
-        "STAC and API Governance"
+        "STAC and API Governance",
+        "Core Mutation Concurrency"
       ]
     }
   ],
@@ -285,13 +286,13 @@
       "dispatch_rank": 16.7,
       "artifact_suffix": "core-cloud-contracts",
       "log_name": "server-tests-core-cloud-contracts",
-      "_comment": "September 2026 capacity rebalance (run 34025905230): move CrsTransformationCorrectnessTests to Core Attachments and Records and AdvancedSpatialQueryTests to Core Endpoints. Preserve the Core/Cloud catch-all and the 26-minute budget; the Core partition guards lossless ownership. ApiSurfaceComplianceTests and TestQualityValidationTests move to STAC and API Governance to retain headroom for all 40 PatchConcurrencyTests cases, censored in both timeout attempts.",
+      "_comment": "September 2026 capacity rebalance (runs 34025905230 and 34028070097). #4354 added PatchConcurrencyTests to the serialized [Collection(\"Database\")], whose 40 cases run one at a time at ~15.3s each — about 10.2 minutes appended to whichever shard owns them — and the shard went from a passing 17.4m (run 34022872366) to exit 124 at the 26m cap with the class still running. PatchConcurrencyTests and its sibling SchemaMutationConcurrencyTests move to Core Mutation Concurrency; CrsTransformationCorrectnessTests moves to Core Attachments and Records, AdvancedSpatialQueryTests to Core Endpoints, and ApiSurfaceComplianceTests plus TestQualityValidationTests to STAC and API Governance so the remainder keeps headroom under the runner contention seen in the failing runs. The catch-all and the 26-minute budget are unchanged; the Core partition guards lossless ownership.",
       "timeout_minutes": 36,
       "test_timeout_minutes": 26,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "(((((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))&FullyQualifiedName!~Honua.Server.Tests.CrsTransformationCorrectnessTests)&FullyQualifiedName!~Honua.Server.Tests.AdvancedSpatialQueryTests)&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests)&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.TestQualityValidationTests",
+      "filter": "(((((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))&FullyQualifiedName!~Honua.Server.Tests.CrsTransformationCorrectnessTests)&FullyQualifiedName!~Honua.Server.Tests.AdvancedSpatialQueryTests)&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests)&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.TestQualityValidationTests&FullyQualifiedName!~Honua.Server.Tests.PatchConcurrencyTests&FullyQualifiedName!~Honua.Server.Tests.SchemaMutationConcurrencyTests",
       "paths": [
         "src/Honua.Core/Features/Metadata/",
         "src/Honua.Core/Features/Publishing/",
@@ -748,6 +749,24 @@
         "src/Honua.Hosting/Features/Services/"
       ],
       "_comment": "Round-2 offline TRX split (#3770): pagination/spatial half of the 30.1m-p90 parent."
+    },
+    {
+      "name": "Core Mutation Concurrency",
+      "shard_name": "Core Mutation Concurrency",
+      "dispatch_rank": 13.7,
+      "artifact_suffix": "core-mutation-concurrency",
+      "log_name": "server-tests-core-mutation-concurrency",
+      "_comment": "September 2026 capacity split of Core and Cloud Contracts (runs 34025905230, 34028070097). Both classes here carry [Collection(\"Database\")], the one collection still declared DisableParallelization, so their cases execute strictly one at a time and add their full duration to any shard that owns them. Measured on run 34025905230: PatchConcurrencyTests completed 15 of its 40 cases in 229s of wall time (~15.3s per case, ~10.2m for the whole class) and was still running when the 26m cap fired; SchemaMutationConcurrencyTests contributed 48s on the last passing run (34022872366). Isolating the serial mutation-concurrency family follows the shard_budget_policy preference for an evidence-driven split over a cap increase, and leaves room for the rest of the class family to grow.",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.PatchConcurrencyTests|FullyQualifiedName~Honua.Server.Tests.SchemaMutationConcurrencyTests",
+      "paths": [
+        "tests/dotnet/Honua.Server.Tests/PatchConcurrencyTests.cs",
+        "tests/dotnet/Honua.Server.Tests/SchemaMutationConcurrencyTests.cs"
+      ]
     },
     {
       "name": "OData Mutations and Batch",
