@@ -249,6 +249,24 @@ jobs:
           path: tests/TestResults/raster-execution-proof.trx
           if-no-files-found: warn
 
+      - name: Prove alert lifecycle and domain audit atomicity
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        timeout-minutes: 10
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release --no-restore -maxcpucount:4 \
+            --filter 'FullyQualifiedName~AlertLifecycleAtomicityTests' \
+            --logger 'trx;LogFileName=alert-lifecycle-atomicity.trx' \
+            --results-directory tests/TestResults
+
+      - name: Upload alert lifecycle fault evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: alert-lifecycle-atomicity
+          path: tests/TestResults/alert-lifecycle-atomicity.trx
+          if-no-files-found: warn
+
       - name: Await Testcontainers PostGIS pre-pull
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         env:

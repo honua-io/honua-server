@@ -88,6 +88,20 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
 - **OpenUSD/Omniverse export is a preview manifest only** (Pro-gated): no USD
   geometry conversion, USDZ packaging, or Nucleus publishing.
 
+## Alert lifecycle retries
+
+The authenticated Admin API commits an alert acknowledgement, suppression or
+resolution together with its successful domain audit record. A persistence
+failure returns an error and leaves both changes uncommitted.
+
+For `POST /api/v1/admin/observability/alerts/{eventId}/{action}`, retain the same
+`X-Correlation-ID` (1-64 characters) when retrying the same operator action.
+The actor, event, action and correlation identify one operation. An identical
+note and suppression expiry do not create another transition or audit record;
+different details with that identity return 409. Use a new correlation ID for
+a new intentional action. A retry returns the event's current lifecycle view,
+so it does not overwrite a later operator action with the earlier state.
+
 Each release re-validates this page via the
 [release checklist](../../internal/contributor/RELEASE_CHECKLIST.md), which requires
 refreshed supported/partial status, tested client versions, and certification
