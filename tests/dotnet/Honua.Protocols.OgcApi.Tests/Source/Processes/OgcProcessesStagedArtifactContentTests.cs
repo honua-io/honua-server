@@ -72,9 +72,11 @@ public sealed class OgcProcessesStagedArtifactContentTests
         response.Headers.ETag.Should().NotBeNull();
 
         // #4400: pin the fact that this payload is NOT a GeoTIFF, so nobody can later read the
-        // image/tiff content type above as evidence that a raster was produced.
-        payload.Should().NotStartWith([(byte)'I', (byte)'I', 0x2A, 0x00]);
-        payload.Should().NotStartWith([(byte)'M', (byte)'M', 0x00, 0x2A]);
+        // image/tiff content type above as evidence that a raster was produced. Both TIFF byte
+        // orders are checked: II*\0 (little-endian) and MM\0* (big-endian).
+        var prefix = payload.Take(4).ToArray();
+        prefix.Should().NotEqual([(byte)'I', (byte)'I', (byte)0x2A, (byte)0x00]);
+        prefix.Should().NotEqual([(byte)'M', (byte)'M', (byte)0x00, (byte)0x2A]);
     }
 
     [IntegrationTest]
