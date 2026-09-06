@@ -42,13 +42,19 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = GeoprocessingServiceSeeder.ServiceName;
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("geometry.buffer", false)]
+    [InlineData("Clip", false)]
+    [InlineData("Clip", true)]
+    [InlineData("Merge", false)]
+    [InlineData("canonical-geojson", false)]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
-    public async Task DefaultGpService_DrivesGeometryBufferToTerminalResult()
+    public async Task DefaultGpService_DrivesRealExecutorToEsriFeatureSetResult(string taskName, bool disjoint)
     {
+        var routeTask = taskName == "canonical-geojson" ? "Clip" : taskName;
         await DeleteControlPlaneKeysAsync(redis.ConnectionString);
 
         // A graph containing a service of exactly the seeded shape (name, GPServer
@@ -127,39 +133,128 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
         {
             using var client = fixture.CreateAdminClient();
             client.Timeout = TimeSpan.FromSeconds(30);
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            var inputs = new Dictionary<string, string>
             {
                 ["f"] = "json",
                 ["wkb"] = PointWkbBase64,
                 ["srid"] = "4326",
                 ["distance"] = "25.5"
-            });
+            };
+            if (taskName == "Clip")
+            {
+                inputs = new Dictionary<string, string>
+                {
+                    ["f"] = "json",
+                    ["input"] = """
+                        {"geometryType":"esriGeometryPolygon","spatialReference":{"wkid":4326},"features":[
+                          {"attributes":{"name":"kept","amount":12},"geometry":{"rings":[[[0,0],[0,4],[4,4],[4,0],[0,0]]]}},
+                          {"attributes":{"name":"outside","amount":99},"geometry":{"rings":[[[10,10],[10,12],[12,12],[12,10],[10,10]]]}}
+                        ]}
+                        """,
+                    ["clip"] = """
+                        {"geometryType":"esriGeometryPolygon","spatialReference":{"wkid":4326},"features":[
+                          {"attributes":{},"geometry":{"rings":[[[2,-1],[2,5],[6,5],[6,-1],[2,-1]]]}}
+                        ]}
+                        """
+                };
+            }
+            if (disjoint)
+            {
+                inputs["clip"] = inputs["clip"].Replace("[[2,-1],[2,5],[6,5],[6,-1],[2,-1]]",
+                    "[[20,20],[20,24],[24,24],[24,20],[20,20]]", StringComparison.Ordinal);
+            }
+            if (taskName == "Merge")
+            {
+                inputs = new Dictionary<string, string>
+                {
+                    ["input"] = """{"features":[{"attributes":{"name":"point"},"geometry":{"x":1,"y":2}}]}""",
+                    ["merge"] = """{"features":[{"attributes":{"name":"polygon"},"geometry":{"rings":[[[0,0],[0,4],[4,4],[4,0],[0,0]]]}}]}"""
+                };
+            }
+            if (taskName == "canonical-geojson")
+            {
+                inputs = new Dictionary<string, string>
+                {
+                    // source.geojson is workflow-only. Exercise the canonical representation with
+                    // executable Clip: this known point lies strictly inside the known mask.
+                    ["input"] = "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+                        """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-100,40,12]},"properties":{"name":"canonical"}}]}""")),
+                    ["clip"] = "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+                        """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[-101,39],[-101,41],[-99,41],[-99,39],[-101,39]]]},"properties":{}}]}"""))
+                };
+            }
+            using var content = new FormUrlEncodedContent(inputs);
 
             using var submit = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
+                $"/rest/services/{ServiceId}/GPServer/{routeTask}/submitJob",
                 content);
 
             submit.StatusCode.Should().Be(HttpStatusCode.OK,
                 "the seeded default GP service must resolve through the GPServer facade out of the box");
             using var submitDoc = JsonDocument.Parse(await submit.Content.ReadAsStringAsync());
+            if (taskName == "Merge")
+            {
+                submitDoc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+                submitDoc.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+                    .Should().Contain(detail => detail.GetString()!.Contains("compatible geometry types", StringComparison.Ordinal));
+                submitDoc.RootElement.TryGetProperty("jobId", out _).Should().BeFalse();
+                return;
+            }
+            submitDoc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+                "the real task submission must succeed: {0}", submitDoc.RootElement.GetRawText());
             var jobId = submitDoc.RootElement.GetProperty("jobId").GetString();
             jobId.Should().NotBeNullOrWhiteSpace();
             submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
 
-            var terminal = await PollUntilSucceededAsync(client, jobId!);
+            using var terminal = await PollUntilSucceededAsync(client, routeTask, jobId!);
             terminal.RootElement.GetProperty("results").GetProperty("outputFeatureLayer")
                 .GetProperty("paramUrl").GetString()
                 .Should().Be("results/outputFeatureLayer");
 
             using var result = await client.GetAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/{jobId}/results/outputFeatureLayer?f=json");
+                $"/rest/services/{ServiceId}/GPServer/{routeTask}/jobs/{jobId}/results/outputFeatureLayer?f=json");
 
             result.StatusCode.Should().Be(HttpStatusCode.OK);
             using var resultDoc = JsonDocument.Parse(await result.Content.ReadAsStringAsync());
             var resultRoot = resultDoc.RootElement;
             resultRoot.GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
             resultRoot.GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
-            resultRoot.GetProperty("value").GetString().Should().StartWith("data:application/geo+json;base64,");
+            var value = resultRoot.GetProperty("value");
+            value.GetProperty("geometryType").GetString().Should().Be(
+                taskName == "canonical-geojson" ? "esriGeometryPoint" : "esriGeometryPolygon");
+            value.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+            if (disjoint)
+            {
+                value.GetProperty("features").GetArrayLength().Should().Be(0);
+                value.GetProperty("fields").EnumerateArray().Should().Contain(field =>
+                    field.GetProperty("name").GetString() == "name" && field.GetProperty("type").GetString() == "esriFieldTypeString");
+                value.GetProperty("fields").EnumerateArray().Should().Contain(field =>
+                    field.GetProperty("name").GetString() == "amount" && field.GetProperty("type").GetString() == "esriFieldTypeDouble");
+                return;
+            }
+            var feature = value.GetProperty("features").EnumerateArray().Single();
+            if (taskName == "canonical-geojson")
+            {
+                feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-100);
+                feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(40);
+                feature.GetProperty("geometry").GetProperty("z").GetDouble().Should().Be(12);
+                feature.GetProperty("attributes").GetProperty("name").GetString().Should().Be("canonical");
+                return;
+            }
+            var ring = feature.GetProperty("geometry").GetProperty("rings")[0].EnumerateArray()
+                .Select(position => (X: position[0].GetDouble(), Y: position[1].GetDouble())).ToArray();
+            if (taskName == "Clip")
+            {
+                feature.GetProperty("attributes").GetProperty("name").GetString().Should().Be("kept");
+                feature.GetProperty("attributes").GetProperty("amount").GetInt32().Should().Be(12);
+                ring.Distinct().Should().BeEquivalentTo(new[] { (2d, 0d), (2d, 4d), (4d, 4d), (4d, 0d) });
+                var twiceArea = ring.Zip(ring.Skip(1), (a, b) => a.X * b.Y - b.X * a.Y).Sum();
+                Math.Abs(twiceArea / 2).Should().Be(8, "the intersection is a 2 by 4 rectangle");
+            }
+            else
+            {
+                ring.Should().OnlyContain(point => Math.Abs(Math.Sqrt(point.X * point.X + point.Y * point.Y) - 25.5) < 1e-6);
+            }
         }
         finally
         {
@@ -168,13 +263,13 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
         }
     }
 
-    private static async Task<JsonDocument> PollUntilSucceededAsync(HttpClient client, string jobId)
+    private static async Task<JsonDocument> PollUntilSucceededAsync(HttpClient client, string taskName, string jobId)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
         while (DateTimeOffset.UtcNow < deadline)
         {
             using var response = await client.GetAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/{jobId}?f=json");
+                $"/rest/services/{ServiceId}/GPServer/{taskName}/jobs/{jobId}?f=json");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             var body = await response.Content.ReadAsStringAsync();

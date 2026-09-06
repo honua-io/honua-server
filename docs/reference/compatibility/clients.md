@@ -85,8 +85,11 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
 - **OGC API Coverages is MVP-scoped**: GeoTIFF/PNG retrieval with bbox/CRS/scale
   parameters; `datetime`, `subset`, CoverageJSON, NetCDF, and tiled coverage
   delivery are not implemented.
-- **OData v4 delta tracking is timestamp-based** (MVP-level) and `PUT` is not
-  supported.
+- **OData v4 delta tracking uses durable authorized query snapshots.** Clients
+  apply key-preserving `@removed` entries for deletes and filter exits. Legacy
+  timestamp tokens require a new baseline after typed 410 recovery. Tracking
+  requires PostgreSQL snapshot storage, expires after 24 hours, and has bounded
+  query shapes and capacity; see [OData change tracking](../protocols/odata.md#change-tracking).
 - **GeoServices GPServer synchronous `execute` is limited to deterministic
   single-geometry tasks** (the `geometry.*` family and `conversion.geometry-format`,
   run inline over the canonical job runtime); heavyweight/layer-scoped tasks stay
