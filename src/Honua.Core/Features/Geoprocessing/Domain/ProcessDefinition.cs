@@ -91,6 +91,15 @@ public sealed record ProcessDefinition
     public ProcessExecutionModes SupportedExecutionModes { get; init; } = ProcessExecutionModes.None;
 
     /// <summary>
+    /// The entry points through which callers may reach this operation. This is the
+    /// per-operation GA statement: the catalog stays GA as a whole, and GA is defined
+    /// per entry point, so every advertisement surface must project an operation ONLY on
+    /// the entry points declared here. Fail-closed: an operation that declares
+    /// <see cref="ProcessEntryPoints.None"/> is advertised nowhere.
+    /// </summary>
+    public ProcessEntryPoints SupportedEntryPoints { get; init; } = ProcessEntryPoints.None;
+
+    /// <summary>
     /// Optional deployment configuration or runtime capability required before this
     /// process can execute, expressed as a stable operator-facing key.
     /// </summary>
@@ -120,6 +129,37 @@ public enum ProcessExecutionKind
 
     /// <summary>Advertised for inspection but not callable in this build.</summary>
     Unavailable
+}
+
+/// <summary>
+/// Caller-facing entry points a process may be reached through. An operation can
+/// declare more than one: a job-callable process is also composable as a workflow DAG
+/// node, because a workflow step compiles into the same analysis plan the job runtime
+/// executes.
+/// </summary>
+[Flags]
+public enum ProcessEntryPoints
+{
+    /// <summary>No callable entry point. Consumers must advertise nothing.</summary>
+    None = 0,
+
+    /// <summary>
+    /// The shared geoprocessing job runtime, projected by OGC API Processes, WPS 2.0,
+    /// the GPServer adapter and the MCP process tools.
+    /// </summary>
+    Job = 1,
+
+    /// <summary>
+    /// The operation's owning synchronous protocol endpoint (FeatureServer edit and
+    /// maintenance routes, the spatial-analytics routes). Never a process job.
+    /// </summary>
+    Protocol = 2,
+
+    /// <summary>
+    /// Composition inside a workflow DAG, projected as a workflow node by the process
+    /// catalog node provider.
+    /// </summary>
+    Workflow = 4
 }
 
 /// <summary>Execution modes supported by a process's canonical surface.</summary>

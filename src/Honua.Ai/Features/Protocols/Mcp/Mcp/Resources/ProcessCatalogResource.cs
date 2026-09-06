@@ -104,6 +104,7 @@ internal sealed class ProcessCatalogResource : IMcpResource
             .ToList(),
         RuntimeProfile = process.RuntimeProfile,
         ExecutionKind = process.ExecutionKind.ToString(),
+        EntryPoints = ProcessExecutionEligibility.DescribeEntryPoints(process),
         SupportedExecutionModes = Enum.GetValues<ProcessExecutionModes>()
             .Where(mode => mode != ProcessExecutionModes.None
                 && (process.SupportedExecutionModes & mode) != 0)

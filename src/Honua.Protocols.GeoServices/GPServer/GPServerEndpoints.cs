@@ -256,12 +256,10 @@ internal static class GPServerEndpoints
 
         var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
         var definition = ResolveTaskDefinition(processCatalog, taskName);
-        // Keep metadata consistent with the service task list: explicitly unavailable
-        // processes are discoverable so clients can inspect the published limitation.
-        // Execution routes retain their independent IsJobCallable guards.
-        if (definition == null ||
-            (!GPServerExecutionPolicy.IsJobCallable(definition) &&
-             definition.ExecutionKind != ProcessExecutionKind.Unavailable))
+        // Keep metadata consistent with the service task list: GPServer is a JOB entry
+        // point, so it describes exactly the operations that declare that entry point
+        // (#4409). Execution routes retain their independent IsJobCallable guards.
+        if (definition == null || !GPServerExecutionPolicy.IsJobCallable(definition))
         {
             GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
             return SetSpanErrorAndReturn(
@@ -1534,13 +1532,12 @@ internal static class GPServerEndpoints
 
         foreach (var process in processes)
         {
-            // Unavailable processes remain discoverable so the GPServer catalog can
-            // truthfully describe a known tool and its limitation. Invocation still
-            // fails closed at the shared submit boundary because the process is not
-            // job-callable. Other non-job surfaces (protocol/workflow-only) stay out
-            // of the GP task list because they have a different owning execution path.
-            if (!GPServerExecutionPolicy.IsJobCallable(process)
-                && process.ExecutionKind != ProcessExecutionKind.Unavailable)
+            // GPServer is a JOB entry point: it lists exactly the operations whose
+            // catalog declaration includes that entry point. Protocol-only and
+            // workflow-only operations stay out because they are reached through a
+            // different entry point, and nothing is advertised here that cannot be
+            // submitted here (#4409).
+            if (!GPServerExecutionPolicy.IsJobCallable(process))
             {
                 continue;
             }

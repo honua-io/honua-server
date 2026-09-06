@@ -79,6 +79,7 @@ internal static class ProcessExecutionCapabilityCatalog
         "raster.zonal-statistics",
         "raster.resample",
         "raster.interpolate-idw",
+        "raster.interpolate-kriging",
         "raster.mosaic",
         "raster.map-algebra",
         "raster.spectral-index",
@@ -133,13 +134,21 @@ internal static class ProcessExecutionCapabilityCatalog
         "geometry.dissolve",
         "geometry.snap");
 
+    /// <summary>
+    /// Processes advertised for discovery that cannot execute on ANY entry point, keyed by
+    /// process id with the canonical operator-facing reason.
+    ///
+    /// <para>
+    /// This set is EMPTY and must stay empty: the 2026-09-06 catalog entry-point ruling
+    /// admits no third state between "implemented" and "not advertised" — an operation is
+    /// either callable on a declared entry point or it is absent from the catalog. The
+    /// machinery is retained because <see cref="Classify"/> is exhaustive and fail-closed,
+    /// so a future addition that lands here is refused by the gate instead of quietly
+    /// becoming an advertised dead end (#4409).
+    /// </para>
+    /// </summary>
     internal static readonly FrozenDictionary<string, string> UnavailableReasons =
-        new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["raster.interpolate-kriging"] =
-                "No kriging-capable numerical backend is bundled in this build. "
-                + "Use 'raster.interpolate-idw' for inverse-distance-weighted interpolation."
-        }.ToFrozenDictionary(StringComparer.Ordinal);
+        FrozenDictionary<string, string>.Empty;
 
     /// <summary>Stamps one raw built-in definition with its required canonical classification.</summary>
     public static ProcessDefinition Classify(ProcessDefinition definition)
@@ -164,6 +173,17 @@ internal static class ProcessExecutionCapabilityCatalog
                 : WorkflowOnlyProcessIds.Contains(processId)
                     ? ProcessExecutionKind.WorkflowOnly
                     : ProcessExecutionKind.Unavailable;
+
+        var entryPoints = kind switch
+        {
+            // A job process is reachable through the shared job runtime AND as a workflow
+            // DAG node: WorkflowPackageService compiles a process node into the same
+            // analysis-plan step the job runtime dispatches.
+            ProcessExecutionKind.Job => ProcessEntryPoints.Job | ProcessEntryPoints.Workflow,
+            ProcessExecutionKind.ProtocolOnly => ProcessEntryPoints.Protocol,
+            ProcessExecutionKind.WorkflowOnly => ProcessEntryPoints.Workflow,
+            _ => ProcessEntryPoints.None
+        };
 
         var modes = kind switch
         {
@@ -198,6 +218,7 @@ internal static class ProcessExecutionCapabilityCatalog
         {
             ExecutionKind = kind,
             SupportedExecutionModes = modes,
+            SupportedEntryPoints = entryPoints,
             ConfigurationDependency = configurationDependency,
             ExecutionCapabilityReason = reason
         };
@@ -206,6 +227,14 @@ internal static class ProcessExecutionCapabilityCatalog
     /// <summary>Whether the process may be submitted through OGC API Processes.</summary>
     public static bool IsOgcCallable(ProcessDefinition definition)
         => ProcessExecutionEligibility.IsJobCallable(definition);
+
+    /// <summary>
+    /// Whether the process is composable as a workflow DAG node. Job and workflow-only
+    /// processes both compile into an analysis-plan step; protocol-only processes have no
+    /// dispatcher executor and must not be offered to a graph author.
+    /// </summary>
+    public static bool IsWorkflowComposable(ProcessDefinition definition)
+        => ProcessExecutionEligibility.Declares(definition, ProcessEntryPoints.Workflow);
 
     private static FrozenSet<string> IdSet(params string[] processIds)
         => processIds.ToFrozenSet(StringComparer.Ordinal);

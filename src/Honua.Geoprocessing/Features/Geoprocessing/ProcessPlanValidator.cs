@@ -61,6 +61,9 @@ internal static partial class ProcessPlanValidator
     private static readonly HashSet<string> RasterMosaicOperatorValues =
         new(ProcessValueDomains.RasterMosaicOperator, StringComparer.OrdinalIgnoreCase);
 
+    private static readonly HashSet<string> KrigingVariogramModels =
+        new(ProcessValueDomains.KrigingVariogramModel, StringComparer.OrdinalIgnoreCase);
+
     private static readonly HashSet<string> RasterFormatValues =
         new(ProcessValueDomains.RasterFormat, StringComparer.OrdinalIgnoreCase);
 
@@ -339,10 +342,7 @@ internal static partial class ProcessPlanValidator
                 ValidateRasterInterpolateIdwSemantics(step, violations);
                 break;
             case "raster.interpolate-kriging":
-                // Kriging remains shape-validated here so diagnostic tooling can
-                // describe malformed inputs. The catalog capability layer classifies
-                // it as Unavailable and the direct-submit validator rejects execution
-                // with the canonical operator-facing reason.
+                ValidateRasterInterpolateKrigingSemantics(step, violations);
                 break;
             case "raster.mosaic":
                 ValidateRasterMosaicSemantics(step, violations);
@@ -352,8 +352,8 @@ internal static partial class ProcessPlanValidator
                 // whether a backend is actually configured is a deployment concern the
                 // static validator cannot see, so an unconfigured deployment surfaces
                 // the clear "no cloud inference backend is configured" message as a
-                // job failure at execution. Unlike unavailable kriging, imagery is a
-                // configuration-dependent Job capability and remains directly callable.
+                // job failure at execution. Imagery is a configuration-dependent Job
+                // capability and remains directly callable.
                 ValidateImageryClassifySemantics(step, violations);
                 break;
             case "raster.map-algebra":
@@ -1304,6 +1304,44 @@ internal static partial class ProcessPlanValidator
         // gdal_grid -outsize requires BOTH dimensions; reject a half-specified grid up
         // front so submit-time validation matches the executor (which fails the job for
         // the same XOR), mirroring ValidateConversionRasterizeSemantics.
+        var hasWidth = step.Inputs.TryGetValue("width", out var width) && !string.IsNullOrWhiteSpace(width);
+        var hasHeight = step.Inputs.TryGetValue("height", out var height) && !string.IsNullOrWhiteSpace(height);
+        if (hasWidth ^ hasHeight)
+        {
+            AddRangeViolationIfNew(step, "width", "supply both 'width' and 'height' together to set the output grid size", violations);
+        }
+    }
+
+    private static void ValidateRasterInterpolateKrigingSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'points' is a declared-required base64 input enforced by the base
+        // type-validator. Range-check the variogram knobs so a plan accepted here is
+        // accepted by the worker's kriging solver rather than failing at execution.
+        RequireNonNegativeFiniteDouble(step, "nugget", violations);
+        RequirePositiveFiniteDouble(step, "sill", violations);
+        RequirePositiveFiniteDouble(step, "range", violations);
+        RequireIntAtLeast(step, "width", 1, violations);
+        RequireIntAtLeast(step, "height", 1, violations);
+
+        if (step.Inputs.TryGetValue("model", out var modelRaw)
+            && !string.IsNullOrWhiteSpace(modelRaw)
+            && !KrigingVariogramModels.Contains(modelRaw.Trim()))
+        {
+            AddEnumViolation(step, "model", modelRaw, "spherical, exponential, gaussian", violations);
+        }
+
+        // The sill is the TOTAL sill, so a sill below the nugget is not a variogram.
+        if (TryReadOptionalFinite(step, "nugget", out var nugget)
+            && TryReadOptionalFinite(step, "sill", out var sill)
+            && sill < nugget)
+        {
+            AddRangeViolationIfNew(step, "sill", "'sill' is the total sill and must be greater than or equal to 'nugget'", violations);
+        }
+
+        // The worker grids the point extent into width×height cells and needs both;
+        // reject a half-specified grid up front, mirroring the IDW path.
         var hasWidth = step.Inputs.TryGetValue("width", out var width) && !string.IsNullOrWhiteSpace(width);
         var hasHeight = step.Inputs.TryGetValue("height", out var height) && !string.IsNullOrWhiteSpace(height);
         if (hasWidth ^ hasHeight)
@@ -2627,6 +2665,20 @@ internal static partial class ProcessPlanValidator
     // Range checks emit one violation per field, even when multiple bounds or
     // type checks would each report the same parameter. Keeps error payloads
     // small enough for user-facing surfaces without hiding any offending field.
+    /// <summary>
+    /// Reads an optional finite numeric input, returning <see langword="false"/> when the
+    /// caller omitted it or it is not a finite number — the range checks above already
+    /// report a malformed value, so cross-parameter rules simply skip it.
+    /// </summary>
+    private static bool TryReadOptionalFinite(AnalysisPlanStep step, string parameter, out double value)
+    {
+        value = 0d;
+        return step.Inputs.TryGetValue(parameter, out var raw)
+            && !string.IsNullOrWhiteSpace(raw)
+            && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+            && double.IsFinite(value);
+    }
+
     private static void AddRangeViolationIfNew(
         AnalysisPlanStep step,
         string parameter,
