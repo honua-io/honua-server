@@ -105,8 +105,12 @@ jobs:
             "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${asset}.tar.gz"
           echo "${expected}  ${archive}" | sha256sum --check --status
           tar -xzf "$archive" -C "$RUNNER_TEMP" crane
-          install -m 0755 "$RUNNER_TEMP/crane" /usr/local/bin/crane
-          crane version
+          # Runner steps are unprivileged and /usr/local/bin is root-owned, so stage the binary
+          # under RUNNER_TEMP and put that directory on PATH for the steps that mirror the manifest.
+          mkdir -p "$RUNNER_TEMP/bin"
+          install -m 0755 "$RUNNER_TEMP/crane" "$RUNNER_TEMP/bin/crane"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/crane" version
 
       - name: Log in to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
