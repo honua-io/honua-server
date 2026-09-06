@@ -57,10 +57,12 @@ public sealed partial class ODataDeltaTests
             while (true)
             {
                 (++pages).Should().BeLessThan(20, "paging must terminate without unbounded duplicates");
-                using var request = new HttpRequestMessage(HttpMethod.Get, Uri.TryCreate(link, UriKind.Absolute, out var uri) ? uri.PathAndQuery : link);
+                // A root-relative URL is also an absolute file URI on Unix;
+                // preserve its query string instead of converting it to a file path.
+                using var request = new HttpRequestMessage(HttpMethod.Get, link.StartsWith('/') ? link : new Uri(link).PathAndQuery);
                 if (baseline) { request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes"); }
                 using var response = await _fixture.Client.SendAsync(request);
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                response.StatusCode.Should().Be(HttpStatusCode.OK, "request {0} must succeed", request.RequestUri);
                 using var page = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
                 page.RootElement.GetProperty("@odata.context").GetString().Should()
                     .EndWith(baseline ? "#Features" : "#Features/$delta");
