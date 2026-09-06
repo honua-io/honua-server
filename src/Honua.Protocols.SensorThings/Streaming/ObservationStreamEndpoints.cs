@@ -6,6 +6,7 @@ using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
@@ -53,7 +54,9 @@ internal static class ObservationStreamEndpoints
         [FromServices] ObservationStreamSessionManager sessionManager,
         [FromServices] ObservationStreamScope scope)
     {
-        if (string.IsNullOrWhiteSpace(scope.TenantId) && !context.User.IsInRole("admin"))
+        var tenant = context.RequestServices.GetService<ITenantContext>();
+        if (!context.User.IsInRole("admin") && (string.IsNullOrWhiteSpace(scope.TenantId)
+            || tenant?.Source != TenantContextSource.Claim))
         {
             return StandardErrorHelpers.CreateForbidden(context,
                 "Observation subscriptions require a resolved tenant scope.");

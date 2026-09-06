@@ -9,12 +9,44 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using System.Security.Claims;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
 public sealed class LiveStreamAuthorizationTests
 {
+    [UnitTest]
+    public async Task Filter_EndpointDenialCancelsPendingCheck_DoesNotStartAnSseResponse()
+    {
+        var authentication = Substitute.For<IAuthenticationService>();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        authentication.AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<string>()).Returns(async call =>
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, call.ArgAt<HttpContext>(0).RequestAborted);
+            return AuthenticateResult.NoResult();
+        });
+        var registrations = new ServiceCollection();
+        registrations.AddLogging();
+        registrations.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PortalTokenAuthenticationHandler>(
+            PortalTokenAuthenticationExtensions.PortalTokenScheme, _ => { });
+        registrations.AddSingleton(authentication);
+        await using var services = registrations.BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "denied")],
+            PortalTokenAuthenticationExtensions.PortalTokenScheme));
+        using var output = new MemoryStream();
+        context.Response.Body = output;
+        var result = await new LiveStreamAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(context), async _ =>
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        });
+        ((IStatusCodeHttpResult)result!).StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        output.Length.Should().Be(0, "normal cancellation must not overwrite a typed denial with a terminal stream frame");
+    }
+
     [UnitTest]
     public async Task Revalidate_RevokedRealToken_DoesNotReuseCachedRequestAuthentication()
     {

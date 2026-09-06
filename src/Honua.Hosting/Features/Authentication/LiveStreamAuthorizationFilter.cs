@@ -110,7 +110,12 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
                 {
                     using var deadline = CancellationTokenSource.CreateLinkedTokenSource(monitorStop.Token);
                     deadline.CancelAfter(RevalidationInterval);
-                    if (await RevalidateAsync(context, scheme, deadline.Token).ConfigureAwait(false))
+                    var authorized = await RevalidateAsync(context, scheme, deadline.Token).ConfigureAwait(false);
+                    // Endpoint completion cancels an in-flight check too. That is
+                    // normal shutdown, not a reason to append an SSE frame to a
+                    // pending typed HTTP denial before its IResult executes.
+                    monitorStop.Token.ThrowIfCancellationRequested();
+                    if (authorized)
                     {
                         continue;
                     }
