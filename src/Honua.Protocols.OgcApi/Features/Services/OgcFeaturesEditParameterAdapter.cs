@@ -49,6 +49,8 @@ internal readonly record struct OgcFeaturesEditRequest
 
     public string? IfMatch { get; init; }
 
+    public bool ClearAllProperties { get; init; }
+
     /// <summary>
     /// Canonical <see cref="FeatureStateToken"/> computed from the snapshot the handler
     /// validated the If-Match precondition against. When set (single-feature Replace,
@@ -94,7 +96,7 @@ internal sealed class OgcFeaturesEditParameterAdapter(
                 OgcFeaturesEditOperation.Replace => UnifiedEditRequest.WithUpdates(
                     ImmutableArray.Create(ToUpdateEditFeature(protocolRequest.ObjectId, protocolRequest.Feature))),
                 OgcFeaturesEditOperation.Patch => UnifiedEditRequest.WithUpdates(
-                    ImmutableArray.Create(ToUpdateEditFeature(protocolRequest.ObjectId, protocolRequest.Feature, preserveOmittedMaskedAttributes: true))),
+                    ImmutableArray.Create(ToUpdateEditFeature(protocolRequest.ObjectId, protocolRequest.Feature, preserveOmittedMaskedAttributes: !protocolRequest.ClearAllProperties))),
                 OgcFeaturesEditOperation.Delete => UnifiedEditRequest.WithDeletes(
                     ImmutableArray.Create(protocolRequest.ObjectId ?? throw new InvalidOperationException("Object ID is required for delete operations."))),
                 OgcFeaturesEditOperation.Batch => CreateBatchEditRequest(protocolRequest.BatchOperations),
@@ -200,7 +202,8 @@ internal sealed class OgcFeaturesEditParameterAdapter(
             value.Attributes,
             EditUpdateMode.Replace) with
         {
-            PreserveOmittedMaskedAttributes = preserveOmittedMaskedAttributes
+            PreserveOmittedMaskedAttributes = preserveOmittedMaskedAttributes,
+            ExplicitAttributeRemovals = value.ExplicitAttributeRemovals
         };
     }
 }

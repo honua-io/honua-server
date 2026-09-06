@@ -575,6 +575,10 @@ internal sealed partial class FeatureDataAccess
 
         var masked = maskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var supplied = update.Attributes.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!update.ExplicitAttributeRemovals.IsDefaultOrEmpty)
+        {
+            supplied.UnionWith(update.ExplicitAttributeRemovals);
+        }
         var attributes = update.Attributes.ToBuilder();
         foreach (var (name, value) in current.Attributes)
         {

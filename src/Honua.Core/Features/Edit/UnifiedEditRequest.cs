@@ -173,6 +173,13 @@ public readonly record struct EditFeature
     public bool PreserveOmittedMaskedAttributes { get; init; }
 
     /// <summary>
+    /// Attribute names explicitly removed by a materialized partial update.
+    /// These fields must not be restored from the masked read snapshot.
+    /// </summary>
+    [JsonIgnore]
+    public ImmutableArray<string> ExplicitAttributeRemovals { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="EditFeature"/> struct with default values.
     /// </summary>
     public EditFeature()
@@ -184,6 +191,7 @@ public readonly record struct EditFeature
         Constraints = null;
         UpdateMode = EditUpdateMode.Replace;
         PreserveOmittedMaskedAttributes = false;
+        ExplicitAttributeRemovals = ImmutableArray<string>.Empty;
         Metadata = null;
     }
 

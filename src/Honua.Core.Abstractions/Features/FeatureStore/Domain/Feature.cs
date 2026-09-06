@@ -50,6 +50,13 @@ public readonly record struct Feature
     public bool PreserveOmittedMaskedAttributes { get; init; }
 
     /// <summary>
+    /// Attribute names explicitly removed by a materialized partial update.
+    /// These fields must not be restored from the masked read snapshot.
+    /// </summary>
+    [JsonIgnore]
+    public ImmutableArray<string> ExplicitAttributeRemovals { get; init; }
+
+    /// <summary>
     /// Creates a new feature with the specified properties
     /// </summary>
     /// <param name="id">Feature identifier</param>

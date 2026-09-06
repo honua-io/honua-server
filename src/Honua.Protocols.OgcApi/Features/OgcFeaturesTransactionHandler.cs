@@ -854,7 +854,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var feature = Feature.Create(
                 objectId,
                 geometryValidation.Geometry,
-                attributesResult.Value!);
+                attributesResult.Value!) with
+            {
+                ExplicitAttributeRemovals = patchRequest.Properties?
+                    .Where(property => property.Value is null)
+                    .Select(property => property.Key)
+                    .ToImmutableArray() ?? ImmutableArray<string>.Empty
+            };
 
             try
             {
@@ -872,6 +878,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         Feature = feature,
                         ObjectId = objectId,
                         IfMatch = ifMatch,
+                        ClearAllProperties = patchRequest.HasProperties && patchRequest.Properties is null,
                         ExpectedStateToken = expectedStateToken
                     },
                     cancellationToken,

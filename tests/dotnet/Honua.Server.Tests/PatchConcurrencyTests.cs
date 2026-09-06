@@ -298,6 +298,43 @@ public sealed class PatchConcurrencyTests
         finally { await fixture.DisposeAsync(); }
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Protocol(TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task OgcPatch_ExplicitMaskedRemoval_RespectsMergePatchSemantics(bool clearAll)
+    {
+        var barrier = new WriteBarrier();
+        barrier.Resume.TrySetResult();
+        var mask = new MutableFieldMask();
+        var fixture = CreateFixture(barrier, mask);
+        await fixture.InitializeAsync();
+        try
+        {
+            var id = await fixture.InsertFeatureAsync(0, "original name");
+            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original with { Attributes = original.Attributes.SetItem("population", 12345L) });
+            mask.Fields = ImmutableArray.Create("population");
+            var payload = clearAll ? """{"properties":null}""" : """{"properties":{"population":null}}""";
+            using var request = new HttpRequestMessage(HttpMethod.Patch, $"/ogc/features/collections/0/items/{id}")
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/merge-patch+json")
+            };
+            using var response = await fixture.Client.SendAsync(request);
+            Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+            Assert.DoesNotContain("population", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+            mask.Fields = ImmutableArray<string>.Empty;
+            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            Assert.False(stored.Attributes.ContainsKey("population"));
+            if (clearAll) Assert.False(stored.Attributes.ContainsKey("name"));
+            else Assert.Equal("original name", stored.Attributes["name"]);
+            Assert.Equal(original.Geometry, stored.Geometry);
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
     private static WebAppFixture CreateFixture(WriteBarrier barrier, MutableFieldMask? mask = null)
     {
         return new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
