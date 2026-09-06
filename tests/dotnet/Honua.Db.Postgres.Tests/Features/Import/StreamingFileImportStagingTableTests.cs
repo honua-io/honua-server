@@ -331,6 +331,80 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         }
     }
 
+    [IntegrationTest]
+    public async Task ImportFileAsync_ExistingTarget_WithOverwriteFalse_DoesNotReplaceLiveRows()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var seed = connection.CreateCommand();
+            // Independent SQL fixture: neither the importer nor its output defines the oracle.
+            seed.CommandText = $$"""
+                SELECT honua.ensure_import_table('{{schema}}', 'imported_overwrite_guard', 4326);
+                INSERT INTO "{{schema}}".imported_overwrite_guard (id, geometry, properties, created_at)
+                VALUES (41, ST_SetSRID(ST_MakePoint(1, 2), 4326), '{"name":"a","nullable":null}', '2026-01-02T03:04:05Z'),
+                       (42, ST_SetSRID(ST_MakePoint(3, 4), 4326), '{"name":"b","nullable":null}', '2026-01-02T03:04:05Z');
+                COMMENT ON TABLE "{{schema}}".imported_overwrite_guard IS 'live target metadata';
+                """;
+            await seed.ExecuteNonQueryAsync();
+            seed.CommandText = $"SELECT '\"{schema}\".imported_overwrite_guard'::regclass::oid";
+            var originalOid = (uint)(await seed.ExecuteScalarAsync())!;
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+
+            await using var replacement = File.OpenRead(Path.Combine(
+                AppContext.BaseDirectory, "TestData", "ImportAdversarial", "overwrite-existing-false.geojson"));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = replacement,
+                FileName = "overwrite-existing-false.geojson",
+                TableName = "overwrite_guard",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                OverwriteExisting = false,
+            });
+
+            result.Success.Should().BeFalse("non-overwrite must reject an existing target without appending or replacing");
+            result.FeatureCount.Should().Be(0);
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT id, ST_X(geometry), ST_Y(geometry), ST_SRID(geometry), ST_NDims(geometry),
+                       properties->>'name', properties->'nullable' = 'null'::jsonb, created_at,
+                       tableoid, obj_description(tableoid, 'pg_class')
+                FROM "{schema}".imported_overwrite_guard ORDER BY id;
+                """;
+            await using var reader = await command.ExecuteReaderAsync();
+            foreach (var (id, x, y, name) in new[] { (41, 1d, 2d, "a"), (42, 3d, 4d, "b") })
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetInt32(0).Should().Be(id);
+                reader.GetDouble(1).Should().Be(x);
+                reader.GetDouble(2).Should().Be(y);
+                reader.GetInt32(3).Should().Be(4326);
+                reader.GetInt32(4).Should().Be(2);
+                reader.GetString(5).Should().Be(name);
+                reader.GetBoolean(6).Should().BeTrue();
+                reader.GetDateTime(7).Should().Be(new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc));
+                reader.GetFieldValue<uint>(8).Should().Be(originalOid);
+                reader.GetString(9).Should().Be("live target metadata");
+            }
+
+            (await reader.ReadAsync()).Should().BeFalse("the incoming row must not be appended");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private sealed class GateStream(byte[] bytes) : MemoryStream(bytes, writable: false)
     {
         private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
