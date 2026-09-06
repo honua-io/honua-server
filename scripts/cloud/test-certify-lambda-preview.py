@@ -125,14 +125,28 @@ if op == "get-function":
                  "HONUA_ADMIN_PASSWORD": "aws:secretsmanager:offline-admin", "HONUA_SKIP_MIGRATIONS": "false"}
     if fail == "skip-config": variables["HONUA_SKIP_MIGRATIONS"] = "true"
     if fail == "missing-db": variables.pop("ConnectionStrings__DefaultConnection")
+    vpc = {"SubnetIds": [], "SecurityGroupIds": []} if fail == "missing-vpc" else {"SubnetIds":["subnet-cert"], "SecurityGroupIds":["sg-cert"]}
     emit({"Configuration": {"RevisionId": "rev", "Description": "honua-cert-run=123-1" if arg("--qualifier") == "8" else "standing", "PackageType": "Image", "Architectures": [os.environ["HONUA_LAMBDA_ARCHITECTURE"]],
-         "Environment": {"Variables": variables}, "VpcConfig": {"SubnetIds":["subnet-cert"], "SecurityGroupIds":["sg-cert"]}},
+         "Environment": {"Variables": variables}, "VpcConfig": vpc},
          "Code": {"ResolvedImageUri": image}})
 if op == "create-function":
     env = json.loads(Path(arg("--environment")[7:]).read_text())
     assert env["Variables"]["HONUA_SKIP_MIGRATIONS"] == "false"
     assert arg("--vpc-config").startswith("file://")
+    # Load the paramfile the way the CLI would. Asserting only the argument shape cannot tell a
+    # written VPC config from an argument naming a file the lane never produced, which is the
+    # difference between reaching the cert PostGIS and a client-side create failure.
+    vpc = json.loads(Path(arg("--vpc-config")[7:]).read_text())
+    assert vpc["SubnetIds"] and vpc["SecurityGroupIds"]
+    s["vpc"] = vpc
     assert arg("--architectures") == os.environ["HONUA_LAMBDA_ARCHITECTURE"]
+    if fail == "create-error":
+        # A service error that quotes the lane's own inputs back at it, as Lambda validation does.
+        path.write_text(json.dumps(s))
+        print("An error occurred (InvalidParameterValueException) when calling the CreateFunction "
+              "operation: The role arn:aws:iam::123456789012:role/cert cannot reach "
+              + env["Variables"]["ConnectionStrings__DefaultConnection"], file=sys.stderr)
+        sys.exit(254)
     s["function"] = True
     emit({"FunctionArn":"arn:offline:ephemeral"})
 if op == "list-tags": emit({"honua-cert-run": "wrong" if fail == "ownership" else "123-1"})
@@ -242,7 +256,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
             state_path.write_text(json.dumps({"calls": [], "backend": [], "function": False, "logs": False,
                                              "alias": "7", "image": original, "versions": ["7"], "deleted_versions": [],
                                              "shifted": False, "rolledback": False, "row": False,
-                                             "ecr": None, "mirrored": None}))
+                                             "ecr": None, "mirrored": None, "vpc": None}))
             env = {**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"], "STUB_STATE": str(state_path),
                    "STUB_FAIL": failure, "STUB_INDEX": "", "HONUA_LAMBDA_SOURCE_IMAGE": "ghcr.io/honua-io/honua-server:nightly-lambda-aot-test-amd64",
                    "HONUA_LAMBDA_SOURCE_DIGEST": "sha256:" + "a" * 64, "HONUA_LAMBDA_SERVER_REVISION": "a" * 40,
@@ -335,6 +349,40 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 if failure not in ("log-delete", "ownership"):
                     self.assertFalse(state["logs"], failure)
                 self.assertFalse(state["row"], failure)
+
+    def test_create_receives_the_standing_functions_vpc_configuration(self):
+        """The ephemeral function reaches the cert PostGIS over the standing private networking."""
+        result, _, state, _ = self.run_lane()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual({"SubnetIds": ["subnet-cert"], "SecurityGroupIds": ["sg-cert"]}, state["vpc"])
+
+    def test_missing_standing_vpc_configuration_fails_closed_before_create(self):
+        result, receipt, state, _ = self.run_lane("missing-vpc")
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotEqual("pass", receipt.get("result"))
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        self.assertIsNone(state["vpc"])
+        self.assertFalse(state["function"] or state["logs"] or state["row"])
+        # Preparation refuses first; the deploy step re-asserts the same fact at the point of use,
+        # so an empty paramfile can never reach the CLI as an opaque argument error.
+        self.assertIn('if [[ ! -s "$scratch/$paramfile" ]]; then', SCRIPT)
+        self.assertIn("""((.SubnetIds // []) | length) > 0 and ((.SecurityGroupIds // []) | length) > 0""", SCRIPT)
+
+    def test_create_failure_reports_a_redacted_aws_error(self):
+        result, receipt, state, _ = self.run_lane("create-error")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        summary = "\n".join(line for line in result.stderr.splitlines()
+                            if line.startswith("create-function error:"))
+        # The error code and operation are what make the next failure diagnosable from the job log.
+        self.assertIn("InvalidParameterValueException", summary)
+        self.assertIn("CreateFunction", summary)
+        # The inputs the message quoted back are not: neither the environment value nor the account.
+        self.assertNotIn("aws:secretsmanager:offline-db", summary)
+        self.assertIn("[redacted]", summary)
+        self.assertNotIn("123456789012", summary)
+        self.assertIn("[account]", summary)
+        self.assertFalse(state["function"] or state["logs"] or state["row"])
 
     def test_failure_after_shift_rolls_back_and_cleans_candidate(self):
         for failure in ("candidate-query", "backend-shift", "rollback-query", "backend-rollback"):
