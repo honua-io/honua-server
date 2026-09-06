@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -20,6 +21,8 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 [Protocol(TestProtocols.GeoservicesCatalog)]
 public sealed class GeoservicesSoapCatalogDiscoveryTests
 {
+    private static readonly string[] _publishedTypes = ["FeatureServer", "MapServer", "GPServer", "VectorTileServer"];
+
     private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
 
     [IntegrationTest]
@@ -27,6 +30,10 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptions")]
     [Endpoint("GET /rest/services")]
     [Endpoint("POST /services")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer")]
     public async Task PostSoapCatalog_UsesSameRbacFilteredEntriesAsRestDirectory()
     {
         var publicPolicy = ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymous: true);
@@ -50,6 +57,10 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services")]
     [Endpoint("POST /services")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer")]
     public async Task PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus()
     {
         var protectedPolicy = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["catalog-reader"]);
@@ -59,11 +70,20 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
             alphaLayerMetadata: protectedPolicy,
             betaLayerMetadata: protectedPolicy));
 
+        var provider = factory.Services.GetRequiredService<IMetadataV2GraphProvider>();
+        var before = await provider.GetCurrentAsync();
+        using var reader = ServiceRbacTestFixture.CreateClient(factory, "catalog-reader");
+        await AssertCatalogParityAsync(reader, [ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.BetaService]);
+
         using var anonymous = factory.CreateClient();
         await AssertDeniedParityAsync(anonymous, HttpStatusCode.Unauthorized);
 
         using var wrongRole = ServiceRbacTestFixture.CreateClient(factory, "other-role");
         await AssertDeniedParityAsync(wrongRole, HttpStatusCode.Forbidden);
+
+        (await provider.GetCurrentAsync()).Should().BeEquivalentTo(before,
+            "denied catalog and metadata requests must leave the seeded graph unchanged");
+        await AssertCatalogParityAsync(reader, [ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.BetaService]);
     }
 
     [IntegrationTest]
@@ -150,11 +170,41 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         soapEntries.Should().Equal(restEntries);
         soapEntries.Select(entry => entry.Name).Distinct(StringComparer.Ordinal)
             .Should().BeEquivalentTo(expectedNames);
+        soapEntries.Select(entry => (entry.Name, entry.Type)).Should().BeEquivalentTo(
+            expectedNames.SelectMany(name => _publishedTypes
+                .Select(type => (name, type))),
+            "both catalogs must enumerate every published non-raster service in this fixture");
 
         foreach (var entry in soapEntries)
         {
             using var handoff = await client.GetAsync(new Uri(entry.Url).PathAndQuery);
-            handoff.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
+            var body = await handoff.Content.ReadAsStringAsync();
+            handoff.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var payload = JsonDocument.Parse(body);
+            var root = payload.RootElement;
+            root.TryGetProperty("error", out _).Should().BeFalse(body);
+
+            var nameProperty = entry.Type switch
+            {
+                "FeatureServer" => "serviceName",
+                "MapServer" => "mapName",
+                "VectorTileServer" => "name",
+                "GPServer" => "serviceDescription",
+                _ => throw new InvalidOperationException($"No metadata result assertion for {entry.Type}")
+            };
+            ServiceRbacTestFixture.GetPropertyCaseInsensitive(root, nameProperty).GetString()
+                .Should().Be(entry.Type == "GPServer" ? $"Geoprocessing service for {entry.Name}" : entry.Name);
+
+            if (entry.Type is "FeatureServer" or "MapServer")
+            {
+                var layer = ServiceRbacTestFixture.GetPropertyCaseInsensitive(root, "layers")
+                    .EnumerateArray().Should().ContainSingle().Subject;
+                var isAlpha = entry.Name == ServiceRbacTestFixture.AlphaService;
+                ServiceRbacTestFixture.GetPropertyCaseInsensitive(layer, "id").GetInt32()
+                    .Should().Be(isAlpha ? ServiceRbacTestFixture.AlphaLayerId : ServiceRbacTestFixture.BetaLayerId);
+                ServiceRbacTestFixture.GetPropertyCaseInsensitive(layer, "name").GetString()
+                    .Should().Be(isAlpha ? "Alpha Layer" : "Beta Layer");
+            }
 
             if (entry.Type == "FeatureServer")
             {
@@ -178,6 +228,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         var restError = ServiceRbacTestFixture.GetPropertyCaseInsensitive(restPayload.RootElement, "error");
         var restErrorCode = ServiceRbacTestFixture.GetPropertyCaseInsensitive(restError, "code").GetInt32();
         restErrorCode.Should().Be(expectedStatus == HttpStatusCode.Unauthorized ? 499 : 403);
+        restPayload.RootElement.EnumerateObject().Select(property => property.Name).Should().Equal("error");
 
         using var soapResponse = await PostSoapAsync(client);
         var soapBody = await soapResponse.Content.ReadAsStringAsync();
@@ -185,6 +236,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         soapResponse.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         XDocument.Parse(soapBody).Descendants()
             .Should().ContainSingle(element => element.Name.LocalName == "Fault");
+        ReadSoapEntries(XDocument.Parse(soapBody)).Should().BeEmpty();
 
         using var folderResponse = await PostSoapAsync(
             client,
@@ -193,6 +245,29 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         folderResponse.StatusCode.Should().Be(expectedStatus, folderBody);
         XDocument.Parse(folderBody).Descendants()
             .Should().ContainSingle(element => element.Name.LocalName == "Fault");
+        ReadSoapEntries(XDocument.Parse(folderBody)).Should().BeEmpty();
+
+        foreach (var body in new[] { restBody, soapBody, folderBody })
+        {
+            body.Should().NotContain("Alpha Layer").And.NotContain("Beta Layer")
+                .And.NotContain("/rest/services/alpha/").And.NotContain("/rest/services/beta/");
+        }
+
+        foreach (var service in new[] { ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.BetaService })
+        {
+            foreach (var protocol in _publishedTypes)
+            {
+                using var handoff = await client.GetAsync($"/rest/services/{service}/{protocol}?f=json");
+                var body = await handoff.Content.ReadAsStringAsync();
+                handoff.StatusCode.Should().Be(HttpStatusCode.OK, body);
+                using var payload = JsonDocument.Parse(body);
+                payload.RootElement.EnumerateObject().Select(property => property.Name).Should().Equal("error");
+                ServiceRbacTestFixture.GetPropertyCaseInsensitive(
+                        ServiceRbacTestFixture.GetPropertyCaseInsensitive(payload.RootElement, "error"), "code")
+                    .GetInt32().Should().Be(expectedStatus == HttpStatusCode.Unauthorized ? 499 : 403);
+                body.Should().NotContain("Alpha Layer").And.NotContain("Beta Layer");
+            }
+        }
     }
 
     private static async Task<HttpResponseMessage> PostSoapAsync(

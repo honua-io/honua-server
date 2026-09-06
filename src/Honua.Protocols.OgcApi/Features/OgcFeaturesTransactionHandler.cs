@@ -407,6 +407,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 publication,
                 resource,
                 featureId,
+                requireEditSnapshot: true,
                 cancellationToken).ConfigureAwait(false);
             if (!resolvedFeature.HasValue)
             {
@@ -471,7 +472,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         detail: "The resource has been modified since the provided ETag.");
                 }
 
-                expectedStateToken = FeatureStateToken.Compute(existing);
+                expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
             }
 
             var buildResult = await OgcFeatureMutationHelpers.TryBuildFeatureAsync(
@@ -522,10 +523,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 {
                     if (updateResult.IsPreconditionFailure)
                     {
-                        return Results.Problem(
-                            statusCode: 412,
-                            title: "Precondition Failed",
-                            detail: "The resource has been modified since the provided ETag.");
+                        return CreateConcurrentUpdateResult(updateResult.PreconditionFailureFeature, ifMatch);
                     }
 
                     if (IsNotFound(updateResult))
@@ -640,6 +638,25 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
+    private IResult CreateConcurrentUpdateResult(Feature? current, string? ifMatch)
+    {
+        var conditionFailed = false;
+        if (!string.IsNullOrWhiteSpace(ifMatch))
+        {
+            conditionFailed = !current.HasValue || !OgcFeatureEntityTag.MatchesEntityOrRepresentation(
+                ifMatch, OgcFeatureEntityTag.Compute(current.Value, _etagService), _etagService);
+        }
+        return !conditionFailed
+            ? Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Conflict",
+                detail: "The feature changed during the update. Read the current resource and retry the update.")
+            : Results.Problem(
+                statusCode: StatusCodes.Status412PreconditionFailed,
+                title: "Precondition Failed",
+                detail: "The resource has been modified since the provided ETag.");
+    }
+
     /// <summary>
     /// Handles partial feature updates with merge semantics and optimistic concurrency control.
     /// </summary>
@@ -686,6 +703,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 publication,
                 resource,
                 featureId,
+                requireEditSnapshot: true,
                 cancellationToken).ConfigureAwait(false);
             if (!resolvedFeature.HasValue)
             {
@@ -697,11 +715,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var existing = resolvedFeature.Value.Feature;
             var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, resource);
 
-            // Fast-path 412 against the read snapshot; the canonical state token from the
-            // same snapshot is re-validated by the feature writer inside the write
-            // transaction so a concurrent commit between this check and the write cannot
-            // be silently overwritten (TOCTOU).
-            string? expectedStateToken = null;
+            // PATCH merges a read snapshot. Always revalidate it inside the write
+            // transaction so omitted properties and geometry cannot overwrite concurrent
+            // changes, including requests without an explicit If-Match precondition.
+            var expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
             if (!string.IsNullOrWhiteSpace(ifMatch))
             {
                 var etag = OgcFeatureEntityTag.Compute(existing, _etagService);
@@ -712,8 +729,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         title: "Precondition Failed",
                         detail: "The resource has been modified since the provided ETag.");
                 }
-
-                expectedStateToken = FeatureStateToken.Compute(existing);
             }
 
             var contentTypeError = OgcFeaturePayloadReader.ValidatePatchContentType(context);
@@ -837,7 +852,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var feature = Feature.Create(
                 objectId,
                 geometryValidation.Geometry,
-                attributesResult.Value!);
+                attributesResult.Value!) with
+            {
+                ExplicitAttributeRemovals = patchRequest.Properties?
+                    .Where(property => property.Value is null)
+                    .Select(property => property.Key)
+                    .ToImmutableArray() ?? ImmutableArray<string>.Empty
+            };
 
             try
             {
@@ -855,6 +876,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         Feature = feature,
                         ObjectId = objectId,
                         IfMatch = ifMatch,
+                        ClearAllProperties = patchRequest.HasProperties && patchRequest.Properties is null,
                         ExpectedStateToken = expectedStateToken
                     },
                     cancellationToken,
@@ -864,10 +886,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 {
                     if (updateResult.IsPreconditionFailure)
                     {
-                        return Results.Problem(
-                            statusCode: 412,
-                            title: "Precondition Failed",
-                            detail: "The resource has been modified since the provided ETag.");
+                        return CreateConcurrentUpdateResult(updateResult.PreconditionFailureFeature, ifMatch);
                     }
 
                     if (IsNotFound(updateResult))

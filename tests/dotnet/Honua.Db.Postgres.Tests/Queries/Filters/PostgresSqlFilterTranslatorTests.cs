@@ -19,6 +19,39 @@ public class PostgresSqlFilterTranslatorTests
         _resource = CreateResource();
     }
 
+    [Theory]
+    [InlineData("name", MetadataV2FieldType.String)]
+    [InlineData("id", MetadataV2FieldType.String)]
+    [InlineData("id", MetadataV2FieldType.BigInteger)]
+    [InlineData("external_id", MetadataV2FieldType.BigInteger)]
+    public void Translate_PublicIdAlongsideObjectId_UsesAttributes(string publicId, MetadataV2FieldType type)
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields =
+            [
+                Field("objectid", MetadataV2FieldType.BigInteger, nullable: false),
+                Field(publicId, type, nullable: false, semanticRoles: ["id.primary"])
+            ]
+        };
+        var translator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
+
+        var result = translator.Translate(new PropertyReference(publicId), resource);
+
+        result.Sql.Should().Contain($"\"attributes\" ->> '{publicId}'");
+        result.Sql.Should().NotContain("\"objectid\"");
+    }
+
+    [Fact]
+    public void Translate_LegacyIntegerIdWithoutSeparateObjectId_RetainsPhysicalAlias()
+    {
+        var translator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
+
+        var result = translator.Translate(new PropertyReference("id"), _resource);
+
+        result.Sql.Should().Be("\"objectid\"");
+    }
+
     [Fact]
     public void Translate_UnknownPropertyInIsNull_ThrowsUnknownFilterFieldException()
     {
