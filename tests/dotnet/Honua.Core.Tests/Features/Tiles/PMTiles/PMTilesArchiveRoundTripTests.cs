@@ -116,6 +116,15 @@ public class PMTilesArchiveRoundTripTests
             decoded.PointY.Should().Be(y);
         }
 
+        // The lookup this replaced could not have caught that: a lower-zoom id precedes every
+        // root entry (HilbertCurve offsets each zoom by the cumulative count of all zooms below
+        // it), so the root search short-circuits and no leaf is ever read. Kept as the pinned
+        // reason the coordinates below are the ones that carry the regression.
+        var shortCircuited = reader.ReadTileThroughDirectories(zoom - 1, 0, 0);
+        shortCircuited.Bytes.Should().BeNull();
+        shortCircuited.ConsultedLeaf.Should().BeFalse(
+            "a lower-zoom lookup is decided by the root directory alone");
+
         // A gap *inside* the leaf-covered id range: both coordinates are valid at this zoom and
         // were never added (the fixture stops at x = 128 / y = 127), and both sort between two
         // tiles that were, so the root lookup yields a leaf pointer and the miss has to be
