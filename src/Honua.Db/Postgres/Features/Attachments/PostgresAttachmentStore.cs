@@ -24,18 +24,51 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICloudFileStorage _fileStorage;
     private readonly ILogger<PostgresAttachmentStore> _logger;
+    private readonly IAttachmentOrphanLedger? _orphanLedger;
     private readonly string _tableName;
 
     public PostgresAttachmentStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ICloudFileStorage fileStorage,
         ILogger<PostgresAttachmentStore> logger,
-        string? schemaName = null)
+        string? schemaName = null,
+        IAttachmentOrphanLedger? orphanLedger = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _fileStorage = fileStorage ?? throw new ArgumentNullException(nameof(fileStorage));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _orphanLedger = orphanLedger;
         _tableName = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
+    }
+
+    /// <summary>
+    /// Records a storage object that outlived its metadata row, so the divergence is
+    /// enumerable and alertable rather than only logged. Never throws: an orphan record
+    /// must not mask the original failure nor fail an otherwise successful delete.
+    /// </summary>
+    private async Task RecordOrphanAsync(
+        string storagePath,
+        int layerId,
+        long featureId,
+        AttachmentOrphanKind kind,
+        string? reason,
+        CancellationToken cancellationToken)
+    {
+        if (_orphanLedger == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _orphanLedger.RecordAsync(
+                new AttachmentOrphan(storagePath, layerId, featureId, kind, DateTimeOffset.UtcNow, reason),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            AttachmentLog.AttachmentCleanupFailed(_logger, ex, storagePath);
+        }
     }
 
     public async Task<Attachment?> GetAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
@@ -229,25 +262,56 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
                     if (!deleted)
                     {
                         AttachmentLog.AttachmentFileMissing(_logger, existing.StoragePath, layerId, featureId);
+                        await RecordOrphanAsync(
+                            existing.StoragePath,
+                            layerId,
+                            featureId,
+                            AttachmentOrphanKind.UndeletedObject,
+                            "storage reported the superseded object was not deleted",
+                            cancellationToken).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     AttachmentLog.AttachmentFileDeleteFailed(_logger, ex, existing.StoragePath);
+                    await RecordOrphanAsync(
+                        existing.StoragePath,
+                        layerId,
+                        featureId,
+                        AttachmentOrphanKind.UndeletedObject,
+                        ex.Message,
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
 
             return updated;
         }
-        catch
+        catch (Exception updateException)
         {
             try
             {
-                await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken).ConfigureAwait(false);
+                var cleaned = await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken).ConfigureAwait(false);
+                if (!cleaned)
+                {
+                    await RecordOrphanAsync(
+                        uploadResult.File.FileId,
+                        layerId,
+                        featureId,
+                        AttachmentOrphanKind.ObjectWithoutMetadata,
+                        $"replace metadata update failed ({updateException.GetType().Name}) and storage reported the object was not deleted",
+                        cancellationToken).ConfigureAwait(false);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 AttachmentLog.AttachmentCleanupFailed(_logger, ex, uploadResult.File.FileId);
+                await RecordOrphanAsync(
+                    uploadResult.File.FileId,
+                    layerId,
+                    featureId,
+                    AttachmentOrphanKind.ObjectWithoutMetadata,
+                    $"replace metadata update failed ({updateException.GetType().Name}) and compensating delete failed ({ex.Message})",
+                    CancellationToken.None).ConfigureAwait(false);
             }
 
             throw;
@@ -279,11 +343,28 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             if (!deleted)
             {
                 AttachmentLog.AttachmentFileMissing(_logger, storagePath, layerId, featureId);
+
+                // The row is already committed away. If the object is still there the two
+                // stores now disagree, so the divergence is recorded rather than only logged.
+                await RecordOrphanAsync(
+                    storagePath,
+                    layerId,
+                    featureId,
+                    AttachmentOrphanKind.UndeletedObject,
+                    "storage reported the object was not deleted",
+                    cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             AttachmentLog.AttachmentFileDeleteFailed(_logger, ex, storagePath);
+            await RecordOrphanAsync(
+                storagePath,
+                layerId,
+                featureId,
+                AttachmentOrphanKind.UndeletedObject,
+                ex.Message,
+                cancellationToken).ConfigureAwait(false);
         }
 
         return true;
@@ -327,17 +408,36 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         {
             return await CreateAsync(layerId, featureId, attachment, cancellationToken);
         }
-        catch
+        catch (Exception insertException)
         {
             try
             {
                 // Best-effort compensating cleanup of the orphaned uploaded file after the metadata
                 // insert failed; a cleanup failure must not mask the original exception being rethrown.
-                await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken);
+                var cleaned = await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken);
+                if (!cleaned)
+                {
+                    await RecordOrphanAsync(
+                        uploadResult.File.FileId,
+                        layerId,
+                        featureId,
+                        AttachmentOrphanKind.ObjectWithoutMetadata,
+                        $"metadata insert failed ({insertException.GetType().Name}) and storage reported the object was not deleted",
+                        cancellationToken).ConfigureAwait(false);
+                }
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 AttachmentLog.AttachmentCleanupFailed(_logger, ex, uploadResult.File.FileId);
+
+                // Both halves failed: the object is live and no row will ever reference it.
+                await RecordOrphanAsync(
+                    uploadResult.File.FileId,
+                    layerId,
+                    featureId,
+                    AttachmentOrphanKind.ObjectWithoutMetadata,
+                    $"metadata insert failed ({insertException.GetType().Name}) and compensating delete failed ({ex.Message})",
+                    CancellationToken.None).ConfigureAwait(false);
             }
 
             throw;
