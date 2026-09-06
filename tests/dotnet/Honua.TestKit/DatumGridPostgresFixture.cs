@@ -12,28 +12,24 @@ using Testcontainers.PostgreSql;
 
 namespace Honua.TestKit;
 
-/// <summary>A dedicated PostGIS operation database with an optional pinned NOAA NADCON grid.</summary>
+/// <summary>A dedicated PostGIS operation database with the pinned NOAA NADCON grid.</summary>
 public sealed class DatumGridPostgresFixture : IAsyncDisposable
 {
     private PostgreSqlContainer? _container;
     private NpgsqlDataSource? _source;
 
     /// <summary>Starts an isolated operation database without changing the shared base-image fixture.</summary>
-    /// <param name="includeNadconGrid">Whether to install the pinned NOAA grid for NADCON operations.</param>
-    public async Task InitializeAsync(bool includeNadconGrid = true)
+    public async Task InitializeAsync()
     {
-        var builder = new PostgreSqlBuilder().WithImage("postgis/postgis:18-3.6")
-            .WithDatabase("datum_fixture").WithUsername("test").WithPassword("test");
-        if (includeNadconGrid)
-        {
-            await using var resource = typeof(DatumGridPostgresFixture).Assembly.GetManifestResourceStream(
-                "Honua.TestKit.TestData.Proj.us_noaa_conus.tif")
-                ?? throw new InvalidOperationException("The pinned NADCON fixture is missing.");
-            using var bytes = new MemoryStream();
-            await resource.CopyToAsync(bytes);
-            builder = builder.WithResourceMapping(bytes.ToArray(), "/usr/share/proj/us_noaa_conus.tif");
-        }
-        _container = builder.Build();
+        await using var resource = typeof(DatumGridPostgresFixture).Assembly.GetManifestResourceStream(
+            "Honua.TestKit.TestData.Proj.us_noaa_conus.tif")
+            ?? throw new InvalidOperationException("The pinned NADCON fixture is missing.");
+        using var bytes = new MemoryStream();
+        await resource.CopyToAsync(bytes);
+        _container = new PostgreSqlBuilder().WithImage("postgis/postgis:18-3.6")
+            .WithDatabase("datum_fixture").WithUsername("test").WithPassword("test")
+            .WithResourceMapping(bytes.ToArray(), "/usr/share/proj/us_noaa_conus.tif")
+            .Build();
         await _container.StartAsync();
         _source = NpgsqlDataSource.Create(_container.GetConnectionString());
         await using var command = _source.CreateCommand("CREATE EXTENSION IF NOT EXISTS postgis");

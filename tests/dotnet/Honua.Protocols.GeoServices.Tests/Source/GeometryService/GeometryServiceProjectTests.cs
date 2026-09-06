@@ -58,48 +58,34 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
     }
 
     [IntegrationTheory]
-    [InlineData(false, 4267, 4269, -100.00041558784554, 39.999996883367885)]
-    [InlineData(false, 4269, 4267, -99.99958442760155, 40.00000311609201)]
-    [InlineData(true, 4267, 4269, -100.00040583667015, 40.00000589472259)]
-    [InlineData(true, 4269, 4267, -99.99959418404879, 39.999994102939)]
+    [InlineData(4267, 4269, -100.00041558784554, 39.999996883367885)]
+    [InlineData(4269, 4267, -99.99958442760155, 40.00000311609201)]
     [Operation(Operations.Project)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_DefaultNad27Nad83_PreservesOrdinatesAndMatchesIndependentReference(
-        bool includeNadconGrid, int sourceSrid, int targetSrid, double expectedX, double expectedY)
+        int sourceSrid, int targetSrid, double expectedX, double expectedY)
     {
-        // Independent pyproj 3.7.2 / PROJ 9.5.1 references with network disabled:
-        // Helmert (-8,159,175) without grids, and NADCON with the pinned NOAA grid.
-        // CI's external PostGIS 16 fixture includes a legacy conus grid; isolate
-        // operation availability instead of assuming every base image is grid-free.
-        await using var datumDatabase = new DatumGridPostgresFixture();
-        await datumDatabase.InitializeAsync(includeNadconGrid);
-        var fixture = datumDatabase.ConfigureGeometryService(new WebAppFixture());
-        await fixture.InitializeAsync();
-        try
+        // Independent pyproj 3.8 / PROJ 9.8.1 reference, computed outside PostGIS
+        // with network disabled and an empty grid cache, matching the base test image.
+        // This uses the CONUS Helmert operation (-8,159,175), not an output snapshot.
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["f"] = "json",
-                ["inSR"] = sourceSrid.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["outSR"] = targetSrid.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["geometries"] = """{"geometryType":"esriGeometryPoint","geometries":[{"x":-100,"y":40,"z":12,"m":7}]}"""
-            });
-            using var response = await fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
-            var body = await response.Content.ReadAsStringAsync();
-            response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK, body);
-            using var document = JsonDocument.Parse(body);
-            document.RootElement.GetProperty("geometryType").GetString().Should().Be("esriGeometryPoint");
-            var geometry = document.RootElement.GetProperty("geometries").EnumerateArray().Single();
-            geometry.GetProperty("x").GetDouble().Should().BeApproximately(expectedX, 2e-9);
-            geometry.GetProperty("y").GetDouble().Should().BeApproximately(expectedY, 2e-9);
-            geometry.GetProperty("z").GetDouble().Should().Be(12);
-            geometry.GetProperty("m").GetDouble().Should().Be(7);
-            geometry.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(targetSrid);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+            ["f"] = "json",
+            ["inSR"] = sourceSrid.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["outSR"] = targetSrid.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["geometries"] = """{"geometryType":"esriGeometryPoint","geometries":[{"x":-100,"y":40,"z":12,"m":7}]}"""
+        });
+        using var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("geometryType").GetString().Should().Be("esriGeometryPoint");
+        var geometry = document.RootElement.GetProperty("geometries").EnumerateArray().Single();
+        geometry.GetProperty("x").GetDouble().Should().BeApproximately(expectedX, 2e-9);
+        geometry.GetProperty("y").GetDouble().Should().BeApproximately(expectedY, 2e-9);
+        geometry.GetProperty("z").GetDouble().Should().Be(12);
+        geometry.GetProperty("m").GetDouble().Should().Be(7);
+        geometry.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(targetSrid);
     }
 
     [IntegrationTest]

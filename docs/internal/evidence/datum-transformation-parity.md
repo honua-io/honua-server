@@ -77,21 +77,17 @@ subtracts those offsets; both retain M=7 and the target SRID. The former SQL fai
 these assertions. Grid availability remains a deployment prerequisite for a
 selected grid operation; the helper does not substitute an approximation.
 
-The GeometryServer default NAD27/NAD83 path uses SRID-only projection.
-`GeometryServiceProjectTests` checks both directions over HTTP in isolated
-PostGIS 18 fixtures, with and without the pinned NOAA NADCON grid. Independent
-references come from pyproj 3.7.2 / PROJ 9.5.1 with an empty grid cache or the
-pinned grid, respectively, and network disabled in both cases. Every case
-asserts XY within `2e-9` degrees, preserved Z/M, geometry type,
-and the destination WKID. CI's external `postgis/postgis:16-3.4` database includes
-a legacy `conus` grid and selects NADCON automatically, so it cannot supply the
-grid-free fixture merely by leaving modern `.tif` grids uninstalled.
+The GeometryServer default NAD27/NAD83 path already uses SRID-only projection on
+trunk. `GeometryServiceProjectTests` now checks both directions over HTTP against
+independent pyproj 3.8 / PROJ 9.8.1 reference values with network disabled and an
+empty grid cache, matching the base test image. It asserts XY, preserved Z/M,
+geometry type, and the destination WKID. This reference proves the base image's
+available operation, not provisioned NADCON accuracy.
 
 ## PROJ grid-data provisioning (#1501)
 
-Explicit grid-based pipelines (NADCON/NTv2/GEOID) depend on modern PROJ grid files
-that are absent from the base PostGIS 18 image. Older images may include legacy
-grids that remain usable for SRID-only operation selection. The catalog records each pipeline's
+Grid-based pipelines (NADCON/NTv2/GEOID) depend on PROJ grid files that do **not** ship in
+the base `postgis/postgis:*` PROJ data path. The catalog records each pipeline's
 `requiredGrids` with the canonical PROJ 9.x grid filename (resolved via `projinfo -o PROJ`).
 
 Runtime observations on the base test image (`postgis/postgis:18-3.6`, PROJ 9.6.0,
