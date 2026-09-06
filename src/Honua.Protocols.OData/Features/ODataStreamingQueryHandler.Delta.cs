@@ -93,7 +93,7 @@ internal sealed partial class ODataStreamingQueryHandler
         {
             var (featureQuery, error) = await _querySearchService.BuildFeatureQueryAsync(
                 query.Filter, query.OrderBy, pageSize, 0, resource,
-                query.Select, null, false, query.Compute, query.Format, null, cancellationToken).ConfigureAwait(false);
+                query.Select, null, true, query.Compute, query.Format, null, cancellationToken).ConfigureAwait(false);
             if (error is not null)
             {
                 return DeltaRecovery(context, "InvalidQuery", error, 400);
@@ -106,6 +106,10 @@ internal sealed partial class ODataStreamingQueryHandler
             if (result.HasMoreResults || result.Items.Length > MaximumSnapshotRows)
             {
                 return DeltaRecovery(context, "DeltaQueryTooLarge", "The tracked result exceeds the bounded snapshot capacity; narrow the filter.", 413);
+            }
+            if (result.TotalCount != result.Items.Length)
+            {
+                return DeltaRecovery(context, "DeltaSnapshotIncomplete", "The provider did not return a complete query image; retry the tracked query.", 409);
             }
             if (!ODataComputeService.TryParse(query.Compute, out var compute, out var computeError))
             {

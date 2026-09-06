@@ -109,6 +109,10 @@ internal sealed partial class ODataStreamingQueryHandler(
             int? deltaLayerId = null;
             ODataDeltaService.DeltaQueryState? deltaState = null;
             DurableDeltaContinuation? durableDelta = null;
+            if (context.Request.Query.ContainsKey("$deltatoken") && string.IsNullOrWhiteSpace(deltatoken))
+            {
+                return DeltaRecovery(context, "InvalidQueryOption", "A delta continuation cannot be empty.", 400);
+            }
             if (deltatoken?.StartsWith("v2.", StringComparison.Ordinal) == true)
             {
                 if (context.Request.Query.Keys.Any(key => key is not ("$deltatoken" or "$top")))
@@ -149,15 +153,14 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return DeltaRecovery(context, "DeltaTokenExpired", "Timestamp-only delta tokens require a new tracked baseline.", 410);
             }
             else if (trackChangesRequested &&
-                     context.Request.Query.TryGetValue(ODataUtilityService.TrackChangesSnapshotParameter, out var snapshotValues) &&
-                     !string.IsNullOrWhiteSpace(snapshotValues.ToString()))
+                     context.Request.Query.TryGetValue(ODataUtilityService.TrackChangesSnapshotParameter, out var snapshotValues))
             {
                 if (!ODataDeltaService.TryDecode(snapshotValues.ToString(), out deltaState, out var snapshotError))
                 {
                     return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", snapshotError!);
                 }
 
-                deltaLayerId = deltaState.LayerId;
+                return DeltaRecovery(context, "DeltaTokenExpired", "Timestamp-only snapshot continuations require a new tracked baseline.", 410);
             }
 
             if (trackChangesRequested &&
@@ -380,7 +383,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return ODataUtilityService.CreateODataError(
                     context,
                     "InvalidQueryOption",
-                    $"$deltatoken was issued for layer {deltaLayerId.Value} but the request targets layer {layerId.Value}.");
+                    "$deltatoken does not match the requested layer.");
             }
 
             var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
@@ -415,7 +418,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                     resource,
                     layerValidation.Publication,
                     storageLayerId.Value,
-                    requireCount: countValue == true,
+                    requireCount: trackChangesRequested || countValue == true,
                     effectiveToken).ConfigureAwait(false);
             var deltaDefinition = deltaState ?? new ODataDeltaService.DeltaQueryState
             {

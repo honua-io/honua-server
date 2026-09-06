@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Protocols.OData;
+using Honua.Protocols.OData.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.WebUtilities;
 
@@ -18,6 +19,8 @@ public sealed partial class ODataDeltaTests
     [InlineData("future", HttpStatusCode.Gone, "DeltaTokenExpired")]
     [InlineData("missing", HttpStatusCode.Gone, "DeltaTokenExpired")]
     [InlineData("malformed", HttpStatusCode.BadRequest, "InvalidQueryOption")]
+    [InlineData("empty", HttpStatusCode.BadRequest, "InvalidQueryOption")]
+    [InlineData("legacy", HttpStatusCode.Gone, "DeltaTokenExpired")]
     [InlineData("query", HttpStatusCode.BadRequest, "DeltaQueryMismatch")]
     [InlineData("scope", HttpStatusCode.Gone, "DeltaScopeChanged")]
     [Endpoint("GET /odata/Features({layerId})")]
@@ -49,6 +52,11 @@ public sealed partial class ODataDeltaTests
         }
         else if (scenario == "missing") { token = $"v2.{Guid.NewGuid():N}.0.t"; }
         else if (scenario == "malformed") { token = $"v2.{id:N}.-1.p"; }
+        else if (scenario == "empty") { token = ""; }
+        else if (scenario == "legacy")
+        {
+            token = ODataDeltaService.Encode(new ODataDeltaService.DeltaQueryState { Timestamp = DateTimeOffset.UtcNow, LayerId = 0 });
+        }
         else if (scenario == "scope")
         {
             // A canonical metadata change invalidates the stored authorization
