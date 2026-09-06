@@ -224,12 +224,12 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
             args.Add(string.Create(CultureInfo.InvariantCulture, $"--filters.reprojection.in_srs={NormalizeSrs(sourceSrs)}"));
             args.Add(string.Create(CultureInfo.InvariantCulture, $"--filters.reprojection.out_srs={TargetSrs}"));
             // Geographic output needs degree precision, not the LAS writer's
-            // centimetre default. Recenter offsets after changing coordinate units;
-            // a forwarded projected offset can overflow geographic scaled integers.
+            // centimetre default. Zero offsets fit the complete longitude/latitude
+            // range in signed Int32 at this scale; forwarded projected offsets do not.
             args.Add("--writers.las.scale_x=0.0000001");
             args.Add("--writers.las.scale_y=0.0000001");
-            args.Add("--writers.las.offset_x=auto");
-            args.Add("--writers.las.offset_y=auto");
+            args.Add("--writers.las.offset_x=0");
+            args.Add("--writers.las.offset_y=0");
         }
 
         // Force an uncompressed LAS writer regardless of the output extension so

@@ -10,12 +10,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 using Xunit.Sdk;
+using Xunit.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
 /// <summary>Production PDAL executor, real LAS fixtures, and an independent binary reader.</summary>
 [Trait("Category", "PdalExecutionProof")]
-public sealed class PdalExecutionProofTests : IDisposable
+public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDisposable
 {
     private readonly string _scratch = Path.Join(AppContext.BaseDirectory, "pdal-proof", Guid.NewGuid().ToString("N"));
 
@@ -29,6 +30,7 @@ public sealed class PdalExecutionProofTests : IDisposable
         image.Should().NotBeNullOrWhiteSpace("build docker/worker-gdal/Dockerfile --target native-tools and supply its immutable image ID");
         (image!.StartsWith("sha256:", StringComparison.Ordinal) || image.Contains("@sha256:", StringComparison.Ordinal))
             .Should().BeTrue("the native proof must bind to immutable image bytes");
+        testOutput.WriteLine("Native proof image: {0}; fixture: {1}", image, fixture);
         var runner = new DockerGdalCommandRunner(new ProcessDockerCommandInvoker(NullLogger<ProcessDockerCommandInvoker>.Instance),
             Options.Create(new GdalContainerExecutionOptions { Image = image, User = Environment.GetEnvironmentVariable("HONUA_GDAL_PROOF_USER") ?? "1001:1001" }), Options.Create(new GdalHardeningOptions()),
             Options.Create(new AwsS3Options()), Options.Create(new AzureBlobOptions()), NullLogger<DockerGdalCommandRunner>.Instance);
