@@ -32,6 +32,7 @@
         "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.DeleteRule_AfterDeliveredOrDeadLetterIncident_RetainsHistoricalEvidence",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_AuditReturnsNoIdentity_RollBackRealPostgresWrites",
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Requests_AnonymousAndTenantScopedAdmin_DenyWithoutDisclosureOrMutation"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -48,7 +49,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.DeleteZone_NonexistentZoneId_Returns404",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -13723,6 +13725,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_AuditReturnsNoIdentity_RollBackRealPostgresWrites",
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged",
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.CommunityEdition_ProAlertFeatures_AreBlockedWithEntitlementDetail",
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.CommunityEdition_WithEnterpriseCap_DoesNotGrantFeatures",
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.EnterpriseEdition_AllowsEnterpriseFeatures",
@@ -13763,7 +13766,8 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PostAlertZone_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.CreateZone_InvalidWkt_Returns400",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -21297,7 +21301,8 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.UpdateRule_NonexistentRuleId_Returns404",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_AuditReturnsNoIdentity_RollBackRealPostgresWrites"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_AuditReturnsNoIdentity_RollBackRealPostgresWrites",
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -21312,7 +21317,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -21328,7 +21334,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.UpdateZone_NonexistentZoneId_Returns404",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
