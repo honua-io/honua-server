@@ -107,13 +107,14 @@ def main() -> None:
         "if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != "
         "'pull_request' || github.run_attempt > 1"
     )
-    # Eight expensive steps live in build/test (including real raster proof,
-    # PostGIS pre-pull, and server boot smoke); four live in parallel format.
-    # All twelve must remain attempt-2-only in review-first enforcement.
-    if pr_gate.count(full_condition) != 12:
+    # Add the real remote-source proof to the existing twelve-step admission
+    # denominator; all thirteen remain behind exact-head review.
+    if pr_gate.count(full_condition) != 13:
         raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
     raster_step = build_test_job.split("- name: Prove raster catalog execution with production GDAL", 1)[1].split("- name:", 1)[0]
     require(raster_step, full_condition, "real raster execution must remain behind exact-head review")
+    remote_step = build_test_job.split("- name: Prove remote source execution with real HTTP and PostGIS", 1)[1].split("- name:", 1)[0]
+    require(remote_step, full_condition, "real remote-source execution must remain behind exact-head review")
 
     revalidation_condition = (
         "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
