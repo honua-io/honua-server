@@ -362,6 +362,16 @@ public class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("csv_import_table");
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
+
+        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // delimiter. Asserting only the feature count let a reader that split that cell — and then
+        // produced three rows anyway — pass. Read the attribute back instead.
+        var rows = await ReadImportedRowsAsync("csv_import_table");
+        rows.Select(row => row.Name).Should().BeEquivalentTo(
+            ["Half Moon Bay, CA", "Oakland", "San Francisco"],
+            "the quoted cell must survive the delimiter it contains");
+        rows.Should().ContainSingle(row => row.Name == "San Francisco")
+            .Which.X.Should().BeApproximately(-122.4194, 1e-9);
     }
 
     [IntegrationTest]
@@ -380,6 +390,16 @@ public class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("csv_semicolon_import_table");
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
+
+        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // delimiter. Asserting only the feature count let a reader that split that cell — and then
+        // produced three rows anyway — pass. Read the attribute back instead.
+        var rows = await ReadImportedRowsAsync("csv_semicolon_import_table");
+        rows.Select(row => row.Name).Should().BeEquivalentTo(
+            ["Half Moon Bay; CA", "Oakland", "San Francisco"],
+            "the quoted cell must survive the delimiter it contains");
+        rows.Should().ContainSingle(row => row.Name == "San Francisco")
+            .Which.X.Should().BeApproximately(-122.4194, 1e-9);
     }
 
     [IntegrationTest]
@@ -398,6 +418,16 @@ public class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("csv_tab_import_table");
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
+
+        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // delimiter. Asserting only the feature count let a reader that split that cell — and then
+        // produced three rows anyway — pass. Read the attribute back instead.
+        var rows = await ReadImportedRowsAsync("csv_tab_import_table");
+        rows.Select(row => row.Name).Should().BeEquivalentTo(
+            ["Half Moon Bay\tCA", "Oakland", "San Francisco"],
+            "the quoted cell must survive the delimiter it contains");
+        rows.Should().ContainSingle(row => row.Name == "San Francisco")
+            .Which.X.Should().BeApproximately(-122.4194, 1e-9);
     }
 
     [IntegrationTest]
@@ -416,6 +446,16 @@ public class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("csv_pipe_import_table");
         responseContent.Should().Contain("Csv");
         responseContent.Should().Contain("\"featureCount\":3");
+
+        // #4419: the decisive content of each delimiter fixture is a QUOTED cell that contains the
+        // delimiter. Asserting only the feature count let a reader that split that cell — and then
+        // produced three rows anyway — pass. Read the attribute back instead.
+        var rows = await ReadImportedRowsAsync("csv_pipe_import_table");
+        rows.Select(row => row.Name).Should().BeEquivalentTo(
+            ["Half Moon Bay| CA", "Oakland", "San Francisco"],
+            "the quoted cell must survive the delimiter it contains");
+        rows.Should().ContainSingle(row => row.Name == "San Francisco")
+            .Which.X.Should().BeApproximately(-122.4194, 1e-9);
     }
 
     [IntegrationTest]
@@ -463,6 +503,18 @@ public class StreamingImportTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("kml_import_table");
         responseContent.Should().Contain("Kml");
+
+        // #4419: without this read-back an importer that dropped the second placemark, or that
+        // read KML's lon,lat pair as lat,lon, passed this test.
+        var rows = await ReadImportedRowsAsync("kml_import_table");
+        rows.Should().HaveCount(2, "both placemarks must be stored");
+        rows[0].Name.Should().Be("Oakland");
+        rows[0].X.Should().BeApproximately(-122.2711, 1e-9);
+        rows[0].Y.Should().BeApproximately(37.8044, 1e-9);
+        rows[1].Name.Should().Be("San Francisco");
+        rows[1].X.Should().BeApproximately(-122.4194, 1e-9);
+        rows[1].Y.Should().BeApproximately(37.7749, 1e-9);
+        rows.Should().OnlyContain(row => row.Srid == 4326);
     }
 
     [IntegrationTest]
@@ -503,6 +555,12 @@ public class StreamingImportTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("kmz_import_table");
         responseContent.Should().Contain("Kml");
+
+        var rows = await ReadImportedRowsAsync("kmz_import_table");
+        rows.Should().ContainSingle("the archived document holds one placemark");
+        rows[0].Name.Should().Be("San Francisco");
+        rows[0].X.Should().BeApproximately(-122.4194, 1e-9);
+        rows[0].Y.Should().BeApproximately(37.7749, 1e-9);
     }
 
     [IntegrationTest]
@@ -990,6 +1048,14 @@ public class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("FlatGeobuf");
         responseContent.Should().Contain("flatgeobuf_import_test");
         responseContent.Should().Contain("\"success\":true");
+
+        // #4419: the sibling GeoJSON test already reads its table back; this one echoed only.
+        var rows = await ReadImportedRowsAsync("flatgeobuf_import_test");
+        rows.Should().ContainSingle();
+        rows[0].Name.Should().Be("FGB Import Test");
+        rows[0].X.Should().BeApproximately(-122.4194, 1e-9);
+        rows[0].Y.Should().BeApproximately(37.7749, 1e-9);
+        rows[0].Srid.Should().Be(4326);
     }
 
     [IntegrationTest]
@@ -1082,6 +1148,34 @@ public class StreamingImportTests : IAsyncLifetime
         command.Parameters.AddWithValue("table_name", "imported_" + tableName);
         var result = await command.ExecuteScalarAsync();
         return result is bool exists && exists;
+    }
+
+    /// <summary>
+    /// Reads every row an import created, straight out of PostGIS, ordered by the named attribute.
+    /// honua-server#4419: most per-format import tests asserted only that the JSON response echoed
+    /// the table name, so an importer that dropped rows, transposed longitude and latitude, or
+    /// mangled an attribute passed them all. A read-back is the only assertion that can fail.
+    /// </summary>
+    private async Task<List<(double X, double Y, int Srid, string? Name)>> ReadImportedRowsAsync(
+        string tableName,
+        string nameAttribute = "name")
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT ST_X(geometry), ST_Y(geometry), ST_SRID(geometry), attributes->>'{nameAttribute}' " +
+            $"FROM {QuoteIdentifier("honua_data")}.{QuoteIdentifier("imported_" + tableName)} " +
+            $"ORDER BY attributes->>'{nameAttribute}'";
+        var rows = new List<(double, double, int, string?)>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add((reader.GetDouble(0), reader.GetDouble(1), reader.GetInt32(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3)));
+        }
+
+        return rows;
     }
 
     private async Task<(double X, int Srid)> ReadImportedPointAsync(string tableName)
