@@ -5,6 +5,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Scene.PointCloud;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -26,14 +27,8 @@ public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDis
     [InlineData("mercator.las", "EPSG:3857", 4979, true)]
     public async Task Translate_RealLas_PreservesPointsAttributesPrecisionAndCrs(string fixture, string? sourceSrs, int srid, bool reproject)
     {
-        var image = Environment.GetEnvironmentVariable("HONUA_PDAL_PROOF_IMAGE");
-        image.Should().NotBeNullOrWhiteSpace("build docker/worker-gdal/Dockerfile --target native-tools and supply its immutable image ID");
-        (image!.StartsWith("sha256:", StringComparison.Ordinal) || image.Contains("@sha256:", StringComparison.Ordinal))
-            .Should().BeTrue("the native proof must bind to immutable image bytes");
-        testOutput.WriteLine("Native proof image: {0}; fixture: {1}", image, fixture);
-        var runner = new DockerGdalCommandRunner(new ProcessDockerCommandInvoker(NullLogger<ProcessDockerCommandInvoker>.Instance),
-            Options.Create(new GdalContainerExecutionOptions { Image = image, User = Environment.GetEnvironmentVariable("HONUA_GDAL_PROOF_USER") ?? "1001:1001" }), Options.Create(new GdalHardeningOptions()),
-            Options.Create(new AwsS3Options()), Options.Create(new AzureBlobOptions()), NullLogger<DockerGdalCommandRunner>.Instance);
+        var runner = CreateRunner();
+        testOutput.WriteLine("Fixture: {0}", fixture);
         var input = await File.ReadAllBytesAsync(Path.Join(AppContext.BaseDirectory, "Fixtures", "PointCloudProof", fixture));
         var inputs = new List<(string, string)> { ("source", Convert.ToBase64String(input)) };
         if (sourceSrs is not null)
@@ -103,6 +98,18 @@ public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDis
             }
         }
         AssertPoints(output);
+        // Also prove the production artifact is consumable by the actual tiler reader.
+        // The independent binary oracle above remains authoritative for every dimension.
+        var managed = LasPointCloudReader.ReadPoints(output).ToArray();
+        managed.Should().HaveCount(3);
+        for (var i = 0; i < 3; i++)
+        {
+            managed[i].X.Should().BeApproximately(expected[i][0], scales[0] / 2 + 1e-9);
+            managed[i].Y.Should().BeApproximately(expected[i][1], scales[1] / 2 + 1e-9);
+            managed[i].Z.Should().BeApproximately(expected[i][2], scales[2] / 2 + 1e-9);
+            managed[i].Classification.Should().Be(new byte[] { 2, 6, 9 }[i]);
+            managed[i].Intensity.Should().Be(new ushort[] { 10, 60000, 123 }[i]);
+        }
         // Change only intensity: the LAS remains well-formed, with valid bounds/CRS.
         var wrong = (byte[])output.Clone();
         BitConverter.GetBytes((ushort)11).CopyTo(wrong, offset + 12);
@@ -127,6 +134,37 @@ public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDis
             _scratch, CancellationToken.None);
         decodedCrs.ExitCode.Should().Be(0, decodedCrs.StandardError);
         decodedCrs.StandardOutput.Trim().Should().Be(srid.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Theory]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(9)]
+    [InlineData(10)]
+    public async Task Translate_UnsupportedWaveformFormat_FailsBeforePublishingAnArtifact(int format)
+    {
+        var input = await File.ReadAllBytesAsync(Path.Join(AppContext.BaseDirectory, "Fixtures", "PointCloudProof", $"waveform-{format}.las"));
+        input[104].Should().Be((byte)format);
+        BitConverter.ToUInt64(input, 247).Should().Be(3);
+        var job = GdalJobFactory.Job("pcloud.translate", ("source", Convert.ToBase64String(input)));
+        var context = new RecordingJobExecutionContext(job.OperationId);
+        var executor = new PdalPointCloudConvertJobExecutor(CreateRunner(), GdalJobFactory.Options(_scratch), NullLogger<PdalPointCloudConvertJobExecutor>.Instance);
+        var result = await executor.ExecuteAsync(job, context, CancellationToken.None);
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain($"Unsupported LAS input point format: {format}");
+        context.Artifacts.Should().BeEmpty("unsupported waveform data must not reach the managed reader");
+    }
+
+    private DockerGdalCommandRunner CreateRunner()
+    {
+        var image = Environment.GetEnvironmentVariable("HONUA_PDAL_PROOF_IMAGE");
+        image.Should().NotBeNullOrWhiteSpace("build docker/worker-gdal/Dockerfile --target native-tools and supply its immutable image ID");
+        (image!.StartsWith("sha256:", StringComparison.Ordinal) || image.Contains("@sha256:", StringComparison.Ordinal))
+            .Should().BeTrue("the native proof must bind to immutable image bytes");
+        testOutput.WriteLine("Native proof image: {0}", image);
+        return new DockerGdalCommandRunner(new ProcessDockerCommandInvoker(NullLogger<ProcessDockerCommandInvoker>.Instance),
+            Options.Create(new GdalContainerExecutionOptions { Image = image, User = Environment.GetEnvironmentVariable("HONUA_GDAL_PROOF_USER") ?? "1001:1001" }), Options.Create(new GdalHardeningOptions()),
+            Options.Create(new AwsS3Options()), Options.Create(new AzureBlobOptions()), NullLogger<DockerGdalCommandRunner>.Instance);
     }
 
     public void Dispose() => GdalCli.CleanupScratch(_scratch);
