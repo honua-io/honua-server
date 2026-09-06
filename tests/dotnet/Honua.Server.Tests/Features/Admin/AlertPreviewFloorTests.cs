@@ -242,7 +242,7 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
         policy.IsChannelAllowed(Arg.Any<AlertChannelType>()).Returns(true);
         policy.IsChannelConfigured(Arg.Any<AlertChannelType>()).Returns(true);
         return new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise)
-            .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false").UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false"))
+            .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false").UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false").UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword))
             .ReplaceService(policy);
     }
 }
