@@ -54,8 +54,13 @@ public sealed class CogEncodedTileTests
             NullLogger<CogTileResolver>.Instance);
         var registration = new CogRegistration
         {
-            Id = 1, LayerId = 1, Name = fixture, Provider = CloudStorageProvider.AwsS3,
-            Bucket = "fixtures", ObjectKey = fixture, CreatedAt = DateTimeOffset.UnixEpoch
+            Id = 1,
+            LayerId = 1,
+            Name = fixture,
+            Provider = CloudStorageProvider.AwsS3,
+            Bucket = "fixtures",
+            ObjectKey = fixture,
+            CreatedAt = DateTimeOffset.UnixEpoch
         };
 
         // Fixture scale 1222.992452562495 m/px * 128 px = the XYZ zoom-8 tile span.

@@ -159,7 +159,11 @@ internal sealed class CogTileResolver : ICogTileResolver
             var bounds = TileMath.GetTileBounds(col, row, level);
             var tiff = CogTiffTileEncoder.Encode(decompressedData, metadata, new RasterExtent
             {
-                XMin = bounds.XMin, YMin = bounds.YMin, XMax = bounds.XMax, YMax = bounds.YMax, Srid = 3857
+                XMin = bounds.XMin,
+                YMin = bounds.YMin,
+                XMax = bounds.XMax,
+                YMax = bounds.YMax,
+                Srid = 3857
             });
             if (tiff is not null)
             {
