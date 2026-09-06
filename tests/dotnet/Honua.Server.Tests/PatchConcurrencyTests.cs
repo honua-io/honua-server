@@ -16,6 +16,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
 
@@ -274,7 +275,8 @@ public sealed class PatchConcurrencyTests
         var barrier = new WriteBarrier();
         barrier.Resume.TrySetResult();
         var mask = new MutableFieldMask();
-        var fixture = CreateFixture(barrier, mask);
+        var errors = new ErrorCapture();
+        var fixture = CreateFixture(barrier, mask).ConfigureServices(services => services.AddSingleton<ILoggerProvider>(errors));
         await fixture.InitializeAsync();
         try
         {
@@ -286,7 +288,7 @@ public sealed class PatchConcurrencyTests
             mask.Fields = ImmutableArray.Create("population");
             using var request = new HttpRequestMessage(HttpMethod.Patch, "/ogc/features/collections/0/items/public-name") { Content = new StringContent("""{"geometry":{"type":"Point","coordinates":[-120,35]}}""", Encoding.UTF8, "application/merge-patch+json") };
             using var response = await fixture.Client.SendAsync(request);
-            Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+            Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync() + Environment.NewLine + string.Join(Environment.NewLine, errors.Messages));
             Assert.DoesNotContain("population", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
             mask.Fields = ImmutableArray<string>.Empty;
             var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
@@ -316,6 +318,23 @@ public sealed class PatchConcurrencyTests
                     return new InterleavedWriter(inner, barrier);
                 }, registration.Lifetime));
             });
+    }
+
+    private sealed class ErrorCapture : ILoggerProvider
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<string> Messages { get; } = new();
+        public ILogger CreateLogger(string categoryName) => new ErrorLogger(Messages);
+        public void Dispose() { }
+
+        private sealed class ErrorLogger(System.Collections.Concurrent.ConcurrentQueue<string> messages) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Error;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                if (IsEnabled(logLevel)) messages.Enqueue(formatter(state, exception) + Environment.NewLine + exception);
+            }
+        }
     }
 
     private sealed class MutableFieldMask : IFieldMaskSource

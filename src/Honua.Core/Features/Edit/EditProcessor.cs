@@ -741,7 +741,8 @@ public sealed class EditProcessor : IEditProcessor
         var attributes = editFeature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
         return Feature.Create(objectId, editFeature.Geometry, attributes) with
         {
-            PreserveOmittedMaskedAttributes = !isCreate && editFeature.UpdateMode != EditUpdateMode.Replace
+            PreserveOmittedMaskedAttributes = !isCreate &&
+                (editFeature.PreserveOmittedMaskedAttributes || editFeature.UpdateMode != EditUpdateMode.Replace)
         };
     }
 

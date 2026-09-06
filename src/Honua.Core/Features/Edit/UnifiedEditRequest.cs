@@ -165,6 +165,12 @@ public readonly record struct EditFeature
     public EditUpdateMode UpdateMode { get; init; }
 
     /// <summary>
+    /// Preserves omitted masked fields when an adapter has already materialized a partial update.
+    /// This retains partial-update intent even when the materialized payload uses replacement mode.
+    /// </summary>
+    public bool PreserveOmittedMaskedAttributes { get; init; }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="EditFeature"/> struct with default values.
     /// </summary>
     public EditFeature()
@@ -175,6 +181,7 @@ public readonly record struct EditFeature
         Attributes = null;
         Constraints = null;
         UpdateMode = EditUpdateMode.Replace;
+        PreserveOmittedMaskedAttributes = false;
         Metadata = null;
     }
 
