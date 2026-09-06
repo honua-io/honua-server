@@ -7,6 +7,13 @@ on:
         description: Exact GHCR Lambda AOT tag from the platform manifest
         required: true
         type: string
+      architecture:
+        description: awsLambdaArchitecture from the manifest candidate (must match the ECR platform)
+        required: true
+        type: choice
+        options:
+          - x86_64
+          - arm64
       source_digest:
         description: Exact GHCR Lambda manifest digest (sha256:<64hex>)
         required: true
@@ -22,17 +29,23 @@ permissions:
   packages: read
 
 concurrency:
-  group: lambda-preview-certification
+  group: real-aws-certification
   cancel-in-progress: false
 
 jobs:
   certify:
-    name: Real deploy, invoke, verify, teardown
+    name: Deploy, serve, upgrade, rollback, teardown
     runs-on: ubuntu-24.04
     environment: cert
-    timeout-minutes: 25
+    timeout-minutes: 45
     env:
       AWS_REGION: ${{ vars.REALAWS_CERT_REGION || 'us-east-1' }}
+      REALAWS_CERT_LAMBDA_FUNCTION: ${{ vars.REALAWS_CERT_LAMBDA_FUNCTION }}
+      REALAWS_CERT_LAMBDA_ALIAS: ${{ vars.REALAWS_CERT_LAMBDA_ALIAS }}
+      HONUA_LAMBDA_WRITE_BASE_URL: ${{ vars.REALAWS_CERT_LAMBDA_WRITE_BASE_URL }}
+      HONUA_DEMO_BASE_URL: ${{ vars.HONUA_DEMO_BASE_URL }}
+      HONUA_LAMBDA_CERT_ADMIN_KEY: ${{ secrets.REALAWS_CERT_ADMIN_KEY }}
+      HONUA_LAMBDA_ARCHITECTURE: ${{ inputs.architecture }}
       HONUA_LAMBDA_SOURCE_IMAGE: ${{ inputs.source_image }}
       HONUA_LAMBDA_SOURCE_DIGEST: ${{ inputs.source_digest }}
       HONUA_LAMBDA_SERVER_REVISION: ${{ inputs.server_revision }}
@@ -42,13 +55,22 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+
+      - name: Build the production Lambda deploy path driver
+        run: dotnet build scripts/cloud/lambda-deploy-driver/LambdaDeployDriver.csproj --configuration Release
+
+      - name: Offline lane self-test
+        run: python3 scripts/cloud/test-certify-lambda-preview.py
+
       - name: Require the certified bootstrap
         shell: bash
         env:
           ROLE_ARN: ${{ vars.REALAWS_CERT_ROLE_ARN }}
         run: |
           set -euo pipefail
-          required=(ROLE_ARN HONUA_LAMBDA_PREVIEW_REPOSITORY HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN)
+          required=(ROLE_ARN HONUA_LAMBDA_PREVIEW_REPOSITORY HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN REALAWS_CERT_LAMBDA_FUNCTION REALAWS_CERT_LAMBDA_ALIAS HONUA_LAMBDA_WRITE_BASE_URL HONUA_DEMO_BASE_URL HONUA_LAMBDA_CERT_ADMIN_KEY)
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing cert bootstrap variable: ${name}"

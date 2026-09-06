@@ -66,14 +66,13 @@ run_token="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 function_name="honua-certrun-lambda-${run_token}"
 log_group="/aws/lambda/${function_name}"
 source_ref="${HONUA_LAMBDA_SOURCE_IMAGE}@${HONUA_LAMBDA_SOURCE_DIGEST}"
-target_tag="candidate-${HONUA_LAMBDA_SERVER_REVISION:0:12}-${HONUA_LAMBDA_SOURCE_DIGEST:7:12}-${run_token}"
+target_tag="candidate-${HONUA_LAMBDA_SERVER_REVISION:0:12}-${HONUA_LAMBDA_SOURCE_DIGEST:7:12}"
 target_ref="${HONUA_LAMBDA_PREVIEW_REPOSITORY}:${target_tag}"
 repository_name="${HONUA_LAMBDA_PREVIEW_REPOSITORY#*/}"
 registry="${HONUA_LAMBDA_PREVIEW_REPOSITORY%%/*}"
 function_created=false
 log_group_created=false
 function_arn=""
-image_created=false
 
 fingerprint() {
   printf '%s' "$1" | sha256sum | awk '{print "sha256:" $1}'
@@ -95,22 +94,15 @@ cleanup() {
       echo "STOP: refusing to delete a function without this run's ownership tag" >&2
       exit 91
     fi
-    aws lambda delete-function --function-name "$function_name"
-    aws lambda wait function-not-exists --function-name "$function_name"
+    aws lambda delete-function --function-name "$function_name" || status=11
+    aws lambda wait function-not-exists --function-name "$function_name" || status=11
   fi
   if $log_group_created; then
     if [[ "$log_group" != /aws/lambda/honua-certrun-lambda-* ]]; then
       echo "STOP: refusing log-group destroy outside the lane run namespace: ${log_group}" >&2
       exit 92
     fi
-    aws logs delete-log-group --log-group-name "$log_group"
-  fi
-  if $image_created; then
-    # Delete only this run's tag; pre-existing artifacts are never removed.
-    aws ecr batch-delete-image --repository-name "$repository_name" --image-ids "imageTag=$target_tag" > "$scratch/image-delete.json"
-    if ! jq -e '(.failures | length) == 0 and (.imageIds | length) == 1' "$scratch/image-delete.json" >/dev/null; then
-      status=13
-    fi
+    aws logs delete-log-group --log-group-name "$log_group" || status=12
   fi
   rm -rf "$scratch"
   if (( status != 0 )); then
@@ -138,7 +130,6 @@ existing="$(aws ecr describe-images --repository-name "$repository_name" \
 if [[ -z "$existing" || "$existing" == "None" ]]; then
   aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
   docker tag "$source_ref" "$target_ref"
-  image_created=true
   docker push "$target_ref"
 fi
 
@@ -153,8 +144,15 @@ ecr_manifest="$(aws ecr batch-get-image --repository-name "$repository_name" \
   --accepted-media-types application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.v2+json \
   --query 'images[0].imageManifest' --output text)"
 ecr_config="$(jq -er '.config.digest' <<<"$ecr_manifest")"
-if [[ "$ecr_config" != "$source_config" ]]; then
+if [[ "$ecr_config" != "$source_config" || "$(jq -c '[.layers[].digest]' <<<"$source_manifest")" != "$(jq -c '[.layers[].digest]' <<<"$ecr_manifest")" ]]; then
   echo "ECR mirror config digest does not match the exact source artifact" >&2
+  exit 4
+fi
+
+aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
+docker pull --platform "linux/$docker_architecture" "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}"
+if [[ "$(docker image inspect "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" --format '{{ .Architecture }}')" != "$docker_architecture" ]]; then
+  echo "ECR image platform does not match candidate architecture" >&2
   exit 4
 fi
 
@@ -273,7 +271,7 @@ jq -n \
   --arg function_fingerprint "$(fingerprint "$function_name")" \
   --arg request_fingerprint "$(fingerprint "$request_id")" \
   --arg run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${GITHUB_RUN_ID}" \
-  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourceConfigDigest:$source_config_digest,ecrDigest:$ecr_digest,repositoryFingerprint:$repository_fingerprint,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true,runImageTagDeleted:true},runUrl:$run_url}' \
+  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourceConfigDigest:$source_config_digest,ecrDigest:$ecr_digest,repositoryFingerprint:$repository_fingerprint,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
   > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
 
 jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and .verification.coldStartInitDurationMs > 0' \

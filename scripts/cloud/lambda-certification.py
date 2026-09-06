@@ -135,11 +135,11 @@ def smoke(function, expected_version=None):
     require(sorted(feature["attributes"]["name"] for feature in rows.get("features", [])) == expected_names,
             "Fixture records do not match client-compat-v1")
     # The anonymous principal has no admin rights. This documented 401 must contain no records.
-    status, denial, _ = invoke(function, "/api/v1/admin/layers", authenticated=False, **common)
+    status, denial, _ = invoke(function, "/api/v1/admin/api-keys", authenticated=False, **common)
     require(status == 401 and isinstance(denial, dict), "Authorization denial must be HTTP 401")
-    require(denial.get("status") == 401 or denial.get("error", {}).get("code") == 401,
+    require(denial.get("status") == 401 and denial.get("type") == "https://honua.io/problems/admin",
             "Authorization refusal body is not the documented error")
-    require(not any(key in denial for key in ("data", "features", "records", "layers", "items")),
+    require(not any(key in denial for key in ("data", "features", "records", "layers", "items", "apiKeys")),
             "Authorization denial leaked records")
     write_path = "/rest/services/test_service/FeatureServer/10"
     marker = "honua-certrun-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"]
@@ -172,7 +172,7 @@ def smoke(function, expected_version=None):
     return {"result": "pass", "migrations": {"status": "succeeded", "pendingScripts": 0, "upgradeRequired": False},
             "fixture": {"name": "client-compat-v1", "sha256": fingerprint(FIXTURE.read_text()), "expectedRows": 10, "actualRows": 10, "namesVerified": True},
             "write": {"createdRows": 1, "readBackRows": 1, "deletedRows": 1, "remainingRows": 0, "distinctWriteUrl": True},
-            "authorization": {"principal": "anonymous", "operation": "GET /api/v1/admin/layers", "expectedStatus": 401, "actualStatus": 401, "records": 0},
+            "authorization": {"principal": "anonymous", "operation": "GET /api/v1/admin/api-keys", "expectedStatus": 401, "actualStatus": 401, "records": 0},
             "executedVersion": expected_version or "$LATEST"}
 
 
@@ -196,7 +196,7 @@ def alias_state(function, alias, expected=None):
 
 def certify(directory, ephemeral, digest):
     function, alias = inputs()
-    proof = {"result": "noProof", "candidateDigest": digest}
+    proof = {"result": "noProof", "candidateDigest": digest.split("@")[-1]}
     write_json(directory / "serving.json", proof)
     proof["deployed"] = smoke(ephemeral)
     previous = alias_state(function, alias)
@@ -207,6 +207,14 @@ def certify(directory, ephemeral, digest):
     latest = config(function)
     require(latest["Configuration"]["RevisionId"] == original["Configuration"]["RevisionId"], "Standing function changed during certification")
     candidate = None
+    cleanup_errors = []
+
+    def clean(action):
+        try:
+            action()
+        except Exception as error:
+            cleanup_errors.append(error)
+
     changed = False
     rollback_needed = False
     try:
@@ -228,26 +236,33 @@ def certify(directory, ephemeral, digest):
         proof["candidate"] = smoke(target, candidate)
     finally:
         if rollback_needed:
-            backend("rollback", function, alias, previous, candidate)
-            alias_state(function, alias, previous)
-            proof["rollback"] = smoke(target, previous)
+            clean(lambda: backend("rollback", function, alias, previous, candidate))
+            clean(lambda: alias_state(function, alias, previous))
+            def verify_rollback():
+                proof["rollback"] = smoke(target, previous)
+            clean(verify_rollback)
         if changed:
-            # Restore pre-existing $LATEST code as well as alias routing. Configuration was never edited.
-            current = config(function)
-            require(current["Code"]["ResolvedImageUri"] in (digest, original["Code"]["ResolvedImageUri"]),
-                    "Standing latest drifted; refusing to overwrite unrelated code")
-            aws("lambda", "update-function-code", "--function-name", function,
-                "--image-uri", original["Code"]["ResolvedImageUri"], "--revision-id", current["Configuration"]["RevisionId"])
-            aws("lambda", "wait", "function-updated-v2", "--function-name", function)
-            require(config(function)["Code"]["ResolvedImageUri"] == original["Code"]["ResolvedImageUri"], "Standing latest restoration failed")
+            def restore_latest():
+                # Restore pre-existing $LATEST code as well as alias routing. Configuration was never edited.
+                current = config(function)
+                require(current["Code"]["ResolvedImageUri"] in (digest, original["Code"]["ResolvedImageUri"]),
+                        "Standing latest drifted; refusing to overwrite unrelated code")
+                aws("lambda", "update-function-code", "--function-name", function,
+                    "--image-uri", original["Code"]["ResolvedImageUri"], "--revision-id", current["Configuration"]["RevisionId"])
+                aws("lambda", "wait", "function-updated-v2", "--function-name", function)
+                require(config(function)["Code"]["ResolvedImageUri"] == original["Code"]["ResolvedImageUri"], "Standing latest restoration failed")
+            clean(restore_latest)
         if candidate:
-            alias_state(function, alias, previous)
-            aliases = aws("lambda", "list-aliases", "--function-name", function)["Aliases"]
-            require(all(a["FunctionVersion"] != candidate and candidate not in a.get("RoutingConfig", {}).get("AdditionalVersionWeights", {}) for a in aliases),
-                    "Candidate still referenced; refusing version deletion")
-            aws("lambda", "delete-function", "--function-name", function, "--qualifier", candidate)
-            versions = aws("lambda", "list-versions-by-function", "--function-name", function)["Versions"]
-            require(all(v["Version"] != candidate for v in versions), "Candidate version remains after deletion")
+            def delete_candidate():
+                alias_state(function, alias, previous)
+                aliases = aws("lambda", "list-aliases", "--function-name", function)["Aliases"]
+                require(all(a["FunctionVersion"] != candidate and candidate not in a.get("RoutingConfig", {}).get("AdditionalVersionWeights", {}) for a in aliases),
+                        "Candidate still referenced; refusing version deletion")
+                aws("lambda", "delete-function", "--function-name", function, "--qualifier", candidate)
+                versions = aws("lambda", "list-versions-by-function", "--function-name", function)["Versions"]
+                require(all(v["Version"] != candidate for v in versions), "Candidate version remains after deletion")
+            clean(delete_candidate)
+    require(not cleanup_errors, "Alias rollback or candidate teardown failed")
     proof.update(result="pass", alias={"beforeVersion": previous, "afterVersion": candidate, "rollbackVersion": previous},
                  teardown={"candidateVersionDeleted": True, "standingLatestRestored": True})
     write_json(directory / "serving.json", proof)
