@@ -138,7 +138,9 @@ jobs:
         shell: bash
         run: |
           digest="$(jq -er '.artifact.ecrDigest' evidence/lambda-preview-receipt.json)"
+          mirror="$(jq -er '.artifact.mirrorOutcome' evidence/lambda-preview-receipt.json)"
           echo "### Lambda Preview receipt" >> "$GITHUB_STEP_SUMMARY"
           echo "- Result: pass" >> "$GITHUB_STEP_SUMMARY"
           echo "- True ECR artifact digest: \`${digest}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Mirror step (immutable candidate tag): \`${mirror}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Release handoff: replace \`honua-server.awsLambdaEcrDigest\` sentinel with this digest in the platform manifest." >> "$GITHUB_STEP_SUMMARY"
