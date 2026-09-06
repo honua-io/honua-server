@@ -439,7 +439,7 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             new TestDatabaseConnectionProvider(_fixture.DataSource),
             _fileStorage,
             NullLogger<PostgresAttachmentStore>.Instance,
-            schemaName: _schemaName + "_absent");
+            schemaName: MissingSchemaName);
 
         var objectsBefore = await ListStoredObjectIdsAsync();
 
@@ -470,7 +470,7 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
             new TestDatabaseConnectionProvider(_fixture.DataSource),
             storage,
             NullLogger<PostgresAttachmentStore>.Instance,
-            schemaName: _schemaName + "_absent",
+            schemaName: MissingSchemaName,
             orphanLedger: ledger);
 
         await using var stream = new MemoryStream("unreachable object"u8.ToArray());
@@ -549,6 +549,14 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.Empty(ledger.Orphans);
         Assert.False(await _fileStorage.ExistsAsync(attachment.StoragePath));
     }
+
+    /// <summary>
+    /// A schema that does not exist, so the metadata INSERT fails while the object upload against
+    /// the shared file storage succeeds — the exact window the compensating delete exists for.
+    /// A suffix on <c>_schemaName</c> cannot be used: the isolated schema name already sits at
+    /// Postgres's 63-character identifier limit.
+    /// </summary>
+    private const string MissingSchemaName = "honua_absent_schema";
 
     private async Task<HashSet<string>> ListStoredObjectIdsAsync()
     {

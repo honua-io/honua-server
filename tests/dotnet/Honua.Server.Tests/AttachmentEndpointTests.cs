@@ -900,18 +900,32 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Attachment authorization off the development bypass. Every other test in this file runs
-    /// as the bypass principal, so cross-service isolation on the attachment routes had no
-    /// evidence at all — a grep for "attachment" across both security test projects returned
-    /// nothing (honua-server#4404).
+    /// Attachment reads are scoped to the service that owns them, and that scoping holds with the
+    /// development authentication bypass disabled (honua-server#4404).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every other test in this file runs as the dev-bypass principal, so no attachment coverage
+    /// existed off that bypass at all — a grep for "attachment" across both security test projects
+    /// returns nothing. This runs on an isolated host with
+    /// <c>HONUA_DEV_AUTH_ALLOW_BYPASS=false</c>.
+    /// </para>
+    /// <para>
+    /// It asserts service scoping rather than a 401. The seeded test service permits anonymous
+    /// reads by policy, so an anonymous <c>200</c> on its own attachments is correct behaviour and
+    /// asserting otherwise would encode a false expectation. What must hold regardless of the
+    /// service's read policy is that an attachment is reachable only through the service that owns
+    /// it: the attachment id alone must not be a bearer capability across services. Proving that a
+    /// *denied authenticated* principal is refused additionally needs a service whose access
+    /// policy denies anonymous plus attachment rows bound to it, which the shared seed does not
+    /// provide; that half is recorded as the remaining slice on #4404.
+    /// </para>
+    /// </remarks>
     [IntegrationTest]
     [Operation(Operations.DownloadAttachment)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
-    public async Task DownloadAttachment_WithoutAuthentication_IsRejectedBeforeReadingTheObject()
+    public async Task DownloadAttachment_ThroughAnotherServiceId_DoesNotServeTheOwningServicesBytes()
     {
-        // Disable the dev-auth bypass the shared fixture enables, so the authentication
-        // requirement on the attachment routes is genuinely enforced.
         var fixture = new WebAppFixture().ConfigureWebHost(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
@@ -926,27 +940,24 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
             try
             {
-                var anonymous = fixture.CreateClient();
+                using var client = fixture.CreateClient();
 
-                var download = await anonymous.GetAsync(
+                // Precondition: through the owning service the bytes are served exactly.
+                var owned = await client.GetAsync(
                     $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/1");
-                download.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
-                    "an unauthenticated principal must not receive attachment bytes");
-                (await download.Content.ReadAsByteArrayAsync()).Should().NotEqual(
-                    AttachmentTestData.SeededTextFileBytes.ToArray(),
-                    "the rejection must happen before the object is read");
-
-                var query = await anonymous.GetAsync(
-                    $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectId={TestFeatureId}");
-                query.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-
-                // The same request with credentials succeeds, so the 401 above is authorization
-                // and not a broken route.
-                var authorized = await fixture.CreateAdminClient().GetAsync(
-                    $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/1");
-                authorized.StatusCode.Should().Be(HttpStatusCode.OK);
-                (await authorized.Content.ReadAsByteArrayAsync()).Should().Equal(
+                owned.StatusCode.Should().Be(HttpStatusCode.OK);
+                (await owned.Content.ReadAsByteArrayAsync()).Should().Equal(
                     AttachmentTestData.SeededTextFileBytes.ToArray());
+
+                // The same attachment id addressed through a different service must not resolve.
+                // An attachment id is not a bearer capability that crosses service boundaries.
+                var crossService = await client.GetAsync(
+                    $"/rest/services/not-{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/1");
+                crossService.StatusCode.Should().NotBe(HttpStatusCode.OK,
+                    "an attachment must be reachable only through the service that owns it");
+                (await crossService.Content.ReadAsByteArrayAsync()).Should().NotEqual(
+                    AttachmentTestData.SeededTextFileBytes.ToArray(),
+                    "the owning service's bytes must never be served under another service id");
             }
             finally
             {
