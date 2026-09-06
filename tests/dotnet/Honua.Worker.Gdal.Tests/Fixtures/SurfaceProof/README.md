@@ -8,6 +8,17 @@ surface cases. These are ordinary facts/theories: missing Docker, GDAL, fixtures
 or output fails; no native-tool availability skip is used. Windows dotnet drives
 Docker Desktop locally; no Linux build host is needed.
 
+Run the required selection from the repository root:
+
+```text
+dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj --configuration Release -maxcpucount:4 --filter Category=RasterExecutionProof
+```
+
+The Windows regression run before the viewshed fix passed 18 of 21 surface
+cases; all three viewshed cases failed on the absent nodata declaration. After
+the fix, all 43 combined surface/raster proof and viewshed unit cases passed,
+with zero skips. Required PR CI retains the head's TRX as its execution receipt.
+
 `generate.py` deterministically creates the committed **input** GeoTIFFs. It
 never computes expected outputs. Run it with the pinned image, mounting this
 directory at `/proof`, using entrypoint `python3 /proof/generate.py`.
