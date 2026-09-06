@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Microsoft.Extensions.DependencyInjection;
