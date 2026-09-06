@@ -240,12 +240,41 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return await ExecuteStatisticsQueryAsync(query, cancellationToken).ConfigureAwait(false);
     }
 
-    public Task<TemporalExtentResult?> GetTemporalExtentAsync(
+    public async Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId,
         string fieldName,
         TemporalPropertyType propertyType,
         CancellationToken cancellationToken = default)
-        => throw new NotSupportedException("Temporal extents are not supported for source-backed PostGIS layers yet.");
+    {
+        var query = await ApplyReadSecurityAsync(new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        if (query.EnforcedMaskedFields is { IsDefaultOrEmpty: false } masked &&
+            masked.Contains(fieldName, StringComparer.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        var fieldType = propertyType switch
+        {
+            TemporalPropertyType.Date => MetadataV2FieldType.Date,
+            TemporalPropertyType.DateTime => MetadataV2FieldType.DateTime,
+            _ => throw new ArgumentOutOfRangeException(nameof(propertyType))
+        };
+        var sql = new SqlBuilder();
+        var field = ResolveColumnExpression(fieldName, sql);
+        var minimum = BuildStatisticsAggregateExpression(StatisticType.Min, field, fieldType);
+        var maximum = BuildStatisticsAggregateExpression(StatisticType.Max, field, fieldType);
+        sql.Append(CultureInfo.InvariantCulture, $"SELECT {minimum}, {maximum} FROM {_qualifiedTableName}");
+        AppendFilter(sql, query);
+        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = CreateReadCommand(connection, sql);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+        var start = FeatureDataAccess.ReadTemporalValue(reader, 0);
+        var end = FeatureDataAccess.ReadTemporalValue(reader, 1);
+        return start is null && end is null ? null : TemporalExtentResult.Create(start, end);
+    }
 
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {

@@ -34,7 +34,7 @@ public sealed partial class CopyFeaturesExecutionProofTests
             _sourceResource.SchemaFields.Select(f => f.Name));
         target.SchemaFields.Single(f => f.Name == "label").Nullable.Should().BeTrue();
         target.SchemaFields.Single(f => f.Name == "score").Nullable.Should().BeFalse();
-        var publication = snapshot.Graph.Publications.Single(p => p.ResourceId == target.Metadata.Id);
+        var publication = snapshot.Graph.Publications.First(p => p.ResourceId == target.Metadata.Id && snapshot.IsRoutable(p));
         var reader = await _fixture.GetService<FeatureProviderQueryRouter>().ResolveReaderAsync(snapshot,
             snapshot.Index.ServicesById[publication.ServiceId], target, publication, result.LayerId, FeatureProviderReadOperation.Query);
         var rows = (await reader.QueryAsync(result.LayerId, new FeatureQuery { IncludeZ = true })).Items;
@@ -80,18 +80,7 @@ public sealed partial class CopyFeaturesExecutionProofTests
                 throw new OperationCanceledException(cancelled.Token);
             });
         var realMetadata = _fixture.GetService<IMetadataV2GraphStore>();
-        var metadata = Substitute.For<IMetadataV2GraphStore>();
-        metadata.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(call => realMetadata.GetCurrentAsync(call.Arg<CancellationToken>()));
-        metadata.SaveAsync(Arg.Any<MetadataV2Graph>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                var graph = call.Arg<MetadataV2Graph>();
-                if (stage == "metadata-rewrite" && graph.Resources.Any(r => r.Metadata.Name == "Failed copy" && r.Metadata.Annotations.ContainsKey("gp.operationId")))
-                {
-                    throw new InvalidOperationException("Injected metadata rewrite failure");
-                }
-                return realMetadata.SaveAsync(graph, call.Arg<string?>(), call.Arg<CancellationToken>());
-            });
+        var metadata = new FailingMetadataStore(realMetadata, stage);
         var service = new PostgresFeatureLayerCopyService(_fixture.GetService<FeatureProviderQueryRouter>(),
             _fixture.GetService<IAdoNetDatabaseConnectionProvider>(), metadata, publisher, _masks);
         var before = await _fixture.GetService<IMetadataV2GraphProvider>().GetCurrentAsync();
@@ -162,13 +151,41 @@ public sealed partial class CopyFeaturesExecutionProofTests
         var target = after.Index.ResourcesByStorageLayerId[result.LayerId];
         target.Temporal!.StartTimeField.Should().Be("observed");
         target.Temporal.Extent.Should().BeNull("the canonical metadata resolver must derive the selected live extent");
-        var publication = after.Graph.Publications.Single(p => p.ResourceId == target.Metadata.Id);
+        var publication = after.Graph.Publications.First(p => p.ResourceId == target.Metadata.Id && after.IsRoutable(p));
         var reader = await _fixture.GetService<FeatureProviderQueryRouter>().ResolveReaderAsync(after,
             after.Index.ServicesById[publication.ServiceId], target, publication, result.LayerId, FeatureProviderReadOperation.Query);
         var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(target, result.LayerId, reader, CancellationToken.None);
         range.Should().NotBeNull();
         range!.Value.Min.Should().Be(expectedCount == 0 || maskTime ? null : new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero));
         range.Value.Max.Should().Be(expectedCount == 0 || maskTime ? null : new DateTimeOffset(2026, 1, objectIds is null ? 5 : 3, 0, 0, 0, TimeSpan.Zero));
+        _masks.ResolveAsync(Arg.Is<MetadataV2Resource>(r => r.Metadata.Id == target.Metadata.Id), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create("observed"));
+        var redactedRange = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(target, result.LayerId, reader, CancellationToken.None);
+        redactedRange.Should().NotBeNull();
+        redactedRange!.Value.Min.Should().BeNull("a masked temporal field must not disclose its lower bound");
+        redactedRange.Value.Max.Should().BeNull("a masked temporal field must not disclose its upper bound");
         after.Index.ResourcesByStorageLayerId[_sourceId].Temporal.Should().BeEquivalentTo(temporal.Temporal);
     }
+
+    private sealed class FailingMetadataStore(IMetadataV2GraphStore inner, string stage) : IMetadataV2GraphStore
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => inner.GetCurrentAsync(cancellationToken);
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => inner.GetByRevisionAsync(revision, cancellationToken);
+
+        public Task<MetadataV2GraphSnapshot> ActivateRevisionAsync(long revision, string? expectedCurrentEtag, CancellationToken cancellationToken = default)
+            => inner.ActivateRevisionAsync(revision, expectedCurrentEtag, cancellationToken);
+
+        public Task<MetadataV2GraphSnapshot> SaveAsync(MetadataV2Graph graph, string? expectedEtag, CancellationToken cancellationToken = default)
+        {
+            if (stage == "metadata-rewrite" && graph.Resources.Any(r => r.Metadata.Name == "Failed copy" && r.Metadata.Annotations.ContainsKey("gp.operationId")))
+            {
+                throw new InvalidOperationException("Injected metadata rewrite failure");
+            }
+            return inner.SaveAsync(graph, expectedEtag, cancellationToken);
+        }
+    }
+
 }
