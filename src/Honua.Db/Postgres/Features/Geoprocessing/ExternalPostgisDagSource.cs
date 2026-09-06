@@ -54,7 +54,10 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
         await using var command = new NpgsqlCommand(sql, connection);
         foreach (var (name, value) in parameters)
         {
-            command.Parameters.AddWithValue(name, value);
+            // Let PostgreSQL infer the watermark type from its column (timestamp,
+            // number or text). Sending it as a typed text parameter makes a normal
+            // timestamptz >= @since comparison fail with operator-not-found.
+            command.Parameters.AddWithValue(name, NpgsqlTypes.NpgsqlDbType.Unknown, value);
         }
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -77,6 +80,13 @@ internal sealed partial class ExternalPostgisDagSource : IDagFeatureSource
                 }
 
                 var columnName = reader.GetName(i);
+                if (string.Equals(columnName, geometryColumn, StringComparison.Ordinal))
+                {
+                    // Geometry is already projected through ST_AsGeoJSON. Do not ask
+                    // the scalar Npgsql reader to materialize its unsupported native type.
+                    continue;
+                }
+
                 attributes[columnName] = await reader.IsDBNullAsync(i, cancellationToken).ConfigureAwait(false)
                     ? null
                     : reader.GetValue(i);

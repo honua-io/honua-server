@@ -1601,6 +1601,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("serviceUrl", "Service URL", "WFS service endpoint URL.", ProcessParameterValueType.Text, required: true),
                 Param("typeName", "Type Name", "WFS feature type name (typeNames).", ProcessParameterValueType.Text, required: true),
+                Param("where", "CQL Filter", "Optional CQL/ECQL predicate sent as CQL_FILTER. Requires an upstream WFS supporting that extension.", ProcessParameterValueType.Text),
                 Param("bbox", "Bounding Box", "Optional 'minX,minY,maxX,maxY' bbox filter.", ProcessParameterValueType.Text),
                 Param("pageSize", "Page Size", "Features per page (count). Defaults to 1000.", ProcessParameterValueType.WholeNumber, defaultValue: "1000"),
                 Param("username", "Username", "Optional HTTP Basic username.", ProcessParameterValueType.Text),

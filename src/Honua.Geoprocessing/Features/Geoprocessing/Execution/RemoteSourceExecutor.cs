@@ -145,7 +145,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(20, $"Streaming features from {_processId}", cancellationToken).ConfigureAwait(false);
 
-        var geoJsonReader = new GeoJsonReader();
+        var geoJsonReader = GeoJsonArtifactCodec.CreateReader();
         var features = new List<IFeature>();
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
 
