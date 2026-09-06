@@ -6,6 +6,23 @@ Set up the three ways callers prove who they are: API keys for automation and th
 
 ## Steps
 
+### SensorThings observation streams (Preview)
+
+`GET /sta/v1.1/ObservationsStream` requires authentication before either an SSE
+handshake or a WebSocket upgrade. Use the configured authentication scheme (for
+example, `X-API-Key` for an API client). Anonymous requests receive `401`; enabling
+anonymous SensorThings writes does not enable anonymous streaming.
+
+A subscription receives observations only for its resolved tenant and database
+schema. Omitting `datastreamId` selects all datastreams within that boundary.
+Tenant overrides follow the shared tenant middleware's administrator rules; a
+datastream ID is never a cross-tenant identifier.
+
+Upgrade every observation-stream node together. Scoped fan-out uses a new Redis
+channel, so old and updated nodes do not exchange observations during a rolling
+upgrade. Reconnect clients to updated nodes; streams remain best-effort, with no
+replay guarantee. Disable the old stream endpoints until their nodes are updated.
+
 ### 1. Set the admin API key
 
 ```bash

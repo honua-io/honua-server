@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -82,7 +83,7 @@ public sealed class SensorThingsStreamEndpointsTests : IAsyncLifetime
         pushed.Should().Contain("\"datastreamId\":1");
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.Streaming)]
@@ -149,6 +150,55 @@ public sealed class SensorThingsStreamEndpointsTests : IAsyncLifetime
         {
             await _fixture.Postgres.DropSchemaAsync(otherSchema);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("GET /sta/v1.1/ObservationsStream")]
+    public async Task ObservationsStream_WebSocket_OnlyDeliversResolvedTenant()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var client = _fixture.CreateWebSocketClient();
+        client.ConfigureRequest = request =>
+        {
+            request.Headers["X-API-Key"] = WebAppFixture.SharedAdminPassword;
+            request.Headers["X-Honua-Test-Schema"] = _fixture.CurrentSchema;
+            request.Headers["X-Honua-Tenant"] = "tenant-b";
+        };
+        using var socket = await client.ConnectAsync(new Uri("ws://localhost/sta/v1.1/ObservationsStream"), cts.Token);
+        using var connected = await ReadSocketFrameAsync(socket, cts.Token);
+        connected.RootElement.GetProperty("status").GetString().Should().Be("connected");
+        using var tenantA = _fixture.CreateAdminClient();
+        tenantA.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-a");
+        using var tenantB = _fixture.CreateAdminClient();
+        tenantB.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-b");
+        using var first = await tenantA.PostAsJsonAsync("/sta/v1.1/Datastreams(1)/Observations",
+            new { result = 42.5 }, cts.Token);
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var second = await tenantB.PostAsJsonAsync("/sta/v1.1/Datastreams(1)/Observations",
+            new { result = 81.25, phenomenonTime = "2026-09-05T04:05:06Z" }, cts.Token);
+        second.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var frame = await ReadSocketFrameAsync(socket, cts.Token);
+        frame.RootElement.GetProperty("result").GetDouble().Should().Be(81.25);
+        frame.RootElement.GetProperty("datastreamId").GetInt64().Should().Be(1);
+        frame.RootElement.GetProperty("phenomenonTime").GetString().Should().Be("2026-09-05T04:05:06.000Z");
+        using var persisted = JsonDocument.Parse(await second.Content.ReadAsStringAsync(cts.Token));
+        frame.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(persisted.RootElement.GetProperty("@iot.id").GetInt64());
+    }
+
+    private static async Task<JsonDocument> ReadSocketFrameAsync(WebSocket socket, CancellationToken ct)
+    {
+        using var payload = new MemoryStream();
+        var buffer = new byte[4096];
+        WebSocketReceiveResult result;
+        do
+        {
+            result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
+            result.MessageType.Should().Be(WebSocketMessageType.Text);
+            payload.Write(buffer, 0, result.Count);
+        } while (!result.EndOfMessage);
+
+        return JsonDocument.Parse(payload.ToArray());
     }
 
     /// <summary>
