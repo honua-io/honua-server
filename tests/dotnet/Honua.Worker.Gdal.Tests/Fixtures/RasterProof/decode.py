@@ -7,7 +7,8 @@ from osgeo import gdal, osr
 gdal.UseExceptions()
 ds = gdal.Open(sys.argv[1])
 srs = osr.SpatialReference(wkt=ds.GetProjection())
-srs.AutoIdentifyEPSG()
+if ds.GetProjection():
+    srs.AutoIdentifyEPSG()
 bands = []
 for i in range(1, ds.RasterCount + 1):
     band = ds.GetRasterBand(i)
@@ -18,4 +19,6 @@ for i in range(1, ds.RasterCount + 1):
                   "mask": band.GetMaskBand().ReadAsArray().flatten().tolist(),
                   "values": [v if math.isfinite(v) else str(v) for v in values]})
 print(json.dumps({"width": ds.RasterXSize, "height": ds.RasterYSize,
-                  "srid": int(srs.GetAuthorityCode(None)), "transform": ds.GetGeoTransform(), "bands": bands}))
+                  "srid": int(srs.GetAuthorityCode(None)) if ds.GetProjection() else None,
+                  "driver": ds.GetDriver().ShortName, "imageStructure": ds.GetMetadata("IMAGE_STRUCTURE"),
+                  "transform": ds.GetGeoTransform(), "bands": bands}))

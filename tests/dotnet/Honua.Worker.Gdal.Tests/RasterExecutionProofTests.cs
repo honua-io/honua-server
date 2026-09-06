@@ -142,6 +142,8 @@ public sealed partial class RasterExecutionProofTests : IDisposable
     [InlineData("raster.reproject", "nearest")]
     [InlineData("raster.reproject", "bilinear")]
     [InlineData("gdal.gdalwarp", "nearest")]
+    [InlineData("conversion.raster-reproject", "nearest")]
+    [InlineData("conversion.raster-reproject", "bilinear")]
     public async Task Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples(string processId, string resampling)
     {
         var source = await Decode(await File.ReadAllBytesAsync(Fixture("grid.tif")));
@@ -362,7 +364,9 @@ public sealed partial class RasterExecutionProofTests : IDisposable
             "raster.clip" => new GdalRasterClipJobExecutor(_runner, options, NullLogger<GdalRasterClipJobExecutor>.Instance),
             "raster.zonal-statistics" => new GdalRasterZonalStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
             "raster.spectral-index" => new GdalRasterSpectralIndexJobExecutor(_runner, options, NullLogger<GdalRasterSpectralIndexJobExecutor>.Instance),
-            "raster.reproject" => new GdalRasterReprojectCatalogJobExecutor(_runner, options, NullLogger<GdalRasterReprojectCatalogJobExecutor>.Instance),
+            "raster.reproject" or "conversion.raster-reproject" => new GdalRasterReprojectCatalogJobExecutor(_runner, options, NullLogger<GdalRasterReprojectCatalogJobExecutor>.Instance),
+            "conversion.raster-format" => new GdalRasterFormatConvertJobExecutor(_runner, options, NullLogger<GdalRasterFormatConvertJobExecutor>.Instance),
+            "conversion.polygonize" => new GdalPolygonizeJobExecutor(_runner, options, NullLogger<GdalPolygonizeJobExecutor>.Instance),
             "raster.mosaic" => new GdalRasterMosaicJobExecutor(_runner, options, NullLogger<GdalRasterMosaicJobExecutor>.Instance),
             "raster.resample" => new GdalRasterResampleJobExecutor(_runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
             "raster.interpolate-idw" => new GdalRasterInterpolateJobExecutor(_runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
