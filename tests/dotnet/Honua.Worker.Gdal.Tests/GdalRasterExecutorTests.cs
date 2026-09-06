@@ -63,10 +63,12 @@ public sealed class GdalRasterExecutorTests
             context.Artifacts.Should().ContainSingle();
             context.Artifacts[0].Should().StartWith("data:image/tiff");
 
-            var invocation = runner.Invocations.Single();
+            runner.Invocations.Select(call => call.Tool).Should().Equal("gdalinfo", "gdalwarp", "python3");
+            var invocation = runner.Invocations.Single(call => call.Tool == "gdalwarp");
             invocation.Tool.Should().Be("gdalwarp");
             invocation.Arguments.Should().Contain("-cutline");
             invocation.Arguments.Should().Contain("-crop_to_cutline");
+            invocation.Arguments.Should().Contain("-dstalpha");
         }
         finally
         {

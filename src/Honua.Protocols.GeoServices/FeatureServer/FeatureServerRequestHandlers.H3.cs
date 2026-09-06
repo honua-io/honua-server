@@ -526,6 +526,11 @@ internal static partial class FeatureServerEndpoints
                 tileLimits,
                 cancellationToken);
         }
+        catch (Honua.Core.Exceptions.TileSizeLimitExceededException)
+        {
+            return StandardErrorHelpers.CreatePayloadTooLarge(context,
+                new Honua.Core.Exceptions.TileSizeLimitExceededException().Message);
+        }
         catch (NotSupportedException)
         {
             return ProblemDetailsHelpers.CreateProblem(
@@ -534,6 +539,13 @@ internal static partial class FeatureServerEndpoints
                 StatusCodes.Status501NotImplemented,
                 "Not Implemented",
                 "H3 vector tiles are not supported by the configured feature provider for this layer.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (tileData?.LongLength > tileLimits.MaxTileSize)
+        {
+            return StandardErrorHelpers.CreatePayloadTooLarge(context,
+                new Honua.Core.Exceptions.TileSizeLimitExceededException().Message);
         }
 
         VectorTileExecution.ApplyCacheHeaders(

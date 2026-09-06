@@ -57,6 +57,37 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
         x.GetDouble().Should().BeApproximately(0, 1.0);
     }
 
+    [IntegrationTheory]
+    [InlineData(4267, 4269, -100.00041558784554, 39.999996883367885)]
+    [InlineData(4269, 4267, -99.99958442760155, 40.00000311609201)]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_DefaultNad27Nad83_PreservesOrdinatesAndMatchesIndependentReference(
+        int sourceSrid, int targetSrid, double expectedX, double expectedY)
+    {
+        // Independent pyproj 3.8 / PROJ 9.8.1 reference, computed outside PostGIS
+        // with network disabled and an empty grid cache, matching the base test image.
+        // This uses the CONUS Helmert operation (-8,159,175), not an output snapshot.
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["inSR"] = sourceSrid.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["outSR"] = targetSrid.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["geometries"] = """{"geometryType":"esriGeometryPoint","geometries":[{"x":-100,"y":40,"z":12,"m":7}]}"""
+        });
+        using var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/project", content);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("geometryType").GetString().Should().Be("esriGeometryPoint");
+        var geometry = document.RootElement.GetProperty("geometries").EnumerateArray().Single();
+        geometry.GetProperty("x").GetDouble().Should().BeApproximately(expectedX, 2e-9);
+        geometry.GetProperty("y").GetDouble().Should().BeApproximately(expectedY, 2e-9);
+        geometry.GetProperty("z").GetDouble().Should().Be(12);
+        geometry.GetProperty("m").GetDouble().Should().Be(7);
+        geometry.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(targetSrid);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Project)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
@@ -336,14 +367,17 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.Project)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
-    public async Task Project_NonIdentityTransformationPipeline_UsesSridProjection()
+    public async Task Project_NonIdentityTransformationPipeline_UsesSelectedNadconGrid()
     {
-        // WKID 1241 identifies the NAD27 -> NAD83 NADCON operation. Its catalog value is
-        // a coordinate-operation pipeline rather than a target CRS, so GeometryServer must
-        // retain the ordinary SRID projection instead of passing the pipeline to the PostGIS
-        // target-CRS overload. pyproj 3.7.2 maps this CONUS point to
-        // (-100.00040583667015, 40.00000589472259).
-        var body = """
+        // Keep the independent pyproj NADCON reference and supply its required grid
+        // in a dedicated real PostGIS fixture. The base fixture remains grid-free.
+        await using var datumDatabase = new DatumGridPostgresFixture();
+        await datumDatabase.InitializeAsync();
+        var fixture = datumDatabase.ConfigureGeometryService(new WebAppFixture());
+        await fixture.InitializeAsync();
+        try
+        {
+            var body = """
         {
             "geometries": {
                 "geometryType": "esriGeometryPoint",
@@ -356,15 +390,20 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
         }
         """;
 
-        using var content = new StringContent(body, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync(
-            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            var response = await fixture.Client.PostAsync(
+                "/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
-        response.Be200Ok();
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var point = document.RootElement.GetProperty("geometries")[0];
-        point.GetProperty("x").GetDouble().Should().BeApproximately(-100.00040583667015, 1e-5);
-        point.GetProperty("y").GetDouble().Should().BeApproximately(40.00000589472259, 1e-5);
+            response.Be200Ok();
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var point = document.RootElement.GetProperty("geometries")[0];
+            point.GetProperty("x").GetDouble().Should().BeApproximately(-100.00040583667015, 2e-9);
+            point.GetProperty("y").GetDouble().Should().BeApproximately(40.00000589472259, 2e-9);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

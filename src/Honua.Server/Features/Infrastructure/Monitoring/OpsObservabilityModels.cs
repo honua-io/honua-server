@@ -69,6 +69,11 @@ public sealed class OpsHealthChecksView
 /// <summary>A single health-check entry.</summary>
 public sealed class OpsHealthCheckEntryView
 {
+    /// <summary>Gets credential-free GP store evidence when this is the output-store health check.</summary>
+    [JsonPropertyName("outputStoreAttestation")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<string, string>? OutputStoreAttestation { get; init; }
+
     /// <summary>Gets the registered health-check name.</summary>
     [JsonPropertyName("name")]
     public required string Name { get; init; }
@@ -189,9 +194,13 @@ public sealed class OpsAlertDispatchView
     [JsonPropertyName("storagePollFailing")]
     public required bool StoragePollFailing { get; init; }
 
-    /// <summary>Gets the timestamp of the most recent successful dispatch pass, when known.</summary>
+    /// <summary>Gets the timestamp of the most recent dispatch attempt, including failed attempts.</summary>
     [JsonPropertyName("lastPollAt")]
     public DateTimeOffset? LastPollAt { get; init; }
+
+    /// <summary>Gets the timestamp of the most recent successfully collected backlog.</summary>
+    [JsonPropertyName("backlogObservedAt")]
+    public DateTimeOffset? BacklogObservedAt { get; init; }
 
     /// <summary>Gets the pending backlog count, when a backlog snapshot is available.</summary>
     [JsonPropertyName("pendingCount")]

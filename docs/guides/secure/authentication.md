@@ -59,8 +59,10 @@ Approval and execution remain separate authorities. The Console sends the
 read/approve key only to the proposal decision endpoint. After approval, Honua
 mints a short-lived, single-use credential bound to the exact approved Admin API
 method, path, and sealed tenant, uses it for the replay, and revokes it immediately.
-The tenant binding is restored from the persisted credential during authentication;
-a caller-supplied tenant header cannot change it. Credentials without an explicit
+The tenant binding is restored from the persisted credential during authentication
+and survives OIDC claim sanitization, including repeated transformation. An
+issuer-supplied copy of the internal tenant claim is removed; a caller-supplied
+tenant header cannot change the binding. Credentials without an explicit
 tenant binding are rejected. An explicit empty binding preserves an invocation
 accepted with tenant resolution disabled. The
 approver's key and identity headers are never forwarded as execution authority;

@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Infrastructure.Transforms;
 using Honua.TestKit;
@@ -34,6 +35,27 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData(true, 2, -3)]
+    [InlineData(false, -2, 3)]
+    public async Task SelectedPipeline_TransformsPointsAndEnvelopeEdges_InRequestedDirection(bool forward, double dx, double dy)
+    {
+        var selection = new DatumTransformationSelection
+        {
+            Name = "fixture-affine",
+            FromSrid = 4267,
+            ToSrid = 4269,
+            ProjPipeline = "+proj=pipeline +step +proj=affine +xoff=2 +yoff=-3",
+            TransformForward = forward
+        };
+        // Independent arithmetic: translate every corner and point by (+2,-3),
+        // or its inverse. No expected coordinate comes from another server call.
+        var point = await _service!.TransformPointAsync(-100, 40, 4267, 4269, selection);
+        point.Should().Be((-100 + dx, 40 + dy));
+        var extent = await _service.TransformExtentAsync(-101, 39, -99, 41, 4267, 4269, selection);
+        extent.Should().Be((-101 + dx, 39 + dy, -99 + dx, 41 + dy));
     }
 
     // --- Identity / in-memory fast path tests ---

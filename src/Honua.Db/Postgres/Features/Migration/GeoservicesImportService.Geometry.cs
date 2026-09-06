@@ -65,14 +65,14 @@ internal sealed partial class GeoservicesImportService
                 // ArcGIS REST polygons round-trip instead of flattening to 2-D (#1981).
                 // The ring math (signed area, point-in-ring, orientation) reads only
                 // X/Y (indices 0/1), so longer coordinate arrays pass through intact.
-                // Esri M is intentionally dropped on this path: the converter targets
-                // GeoJSON consumed by ST_GeomFromGeoJSON, which (per the GeoJSON spec)
-                // has no M ordinate. The file-import path (FileGDB/shapefile) carries M
-                // through WKB instead.
+                // GeoJSON consumers interpret a third ordinate as Z, so retain M only
+                // for the WKT insertion path, which supplies explicit layer dimensions
+                // and writes an M/ZM marker. Geometry flags alone must not turn an M
+                // measure into an elevation in the standalone GeoJSON conversion.
                 var ringCoordinates = rings.EnumerateArray()
                     .Select(ring => ring.EnumerateArray()
                         .Where(coord => coord.GetArrayLength() >= 2)
-                        .Select(coord => ExtractDimensions(coord, coordsCarryZ, coordsCarryM))
+                        .Select(coord => ExtractDimensions(coord, coordsCarryZ, layerHasM == true))
                         .ToArray())
                     .Select(EnsureClosedRing)
                     .Where(ring => ring.Length >= 4)
@@ -164,7 +164,11 @@ internal sealed partial class GeoservicesImportService
             return builder.Append(" EMPTY").ToString();
 
         builder.Append(' ');
+        if (type == "Point")
+            builder.Append('(');
         AppendWktCoordinates(builder, coordinates);
+        if (type == "Point")
+            builder.Append(')');
         return builder.ToString();
     }
 
@@ -183,14 +187,12 @@ internal sealed partial class GeoservicesImportService
         if (value.ValueKind == JsonValueKind.Array && value.GetArrayLength() > 0 &&
             value[0].ValueKind == JsonValueKind.Number)
         {
-            builder.Append('(');
             for (var i = 0; i < value.GetArrayLength(); i++)
             {
                 if (i > 0)
                     builder.Append(' ');
                 builder.Append(value[i].GetDouble().ToString("R", System.Globalization.CultureInfo.InvariantCulture));
             }
-            builder.Append(')');
             return;
         }
 

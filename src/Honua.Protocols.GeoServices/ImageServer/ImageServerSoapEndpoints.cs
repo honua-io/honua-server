@@ -1158,7 +1158,7 @@ internal static class ImageServerSoapEndpoints
         {
             var requestedSoap = RequestedSoapNamespace(context.Request);
             return (null, requestedSoap, CreateSoapFault(
-                "Malformed SOAP request.",
+                SoapRequestXml.GetSafeErrorMessage(exception),
                 StatusCodes.Status400BadRequest,
                 requestedSoap));
         }

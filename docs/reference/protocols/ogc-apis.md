@@ -65,6 +65,8 @@ unadvertised until the exact-candidate lane proves them. Full operator tables:
 
 Key parameters: `bbox`, `bbox-crs`, `crs`, `width`/`height` (1–4096, default 256), `f` (`png`, `jpeg`, `tiff`), `transparent` (default true), `bgcolor` (`0xRRGGBB`), `datetime`, `quality`.
 
+Map rendering and map tileset metadata observe the end-to-end `Limits__Connections__RequestTimeout` budget. An expired budget cancels metadata lookup and rendering through the shared request token and returns the existing HTTP 408 timeout response. Client disconnects also propagate cancellation.
+
 > Open `https://server.example.com/ogc/maps/collections/roads/map?bbox=-122.5,37.7,-122.3,37.9&width=800&height=600&f=png` in a browser.
 
 ## OGC API Tiles

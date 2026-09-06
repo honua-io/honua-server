@@ -4,6 +4,8 @@ The canonical representation, discovery, authentication, I3S projection, and ter
 
 Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + assets) for CesiumJS and `<honua-scene>` clients, with an SDK-facing discovery API, an Esri I3S SceneServer adapter, and an admin registry for dataset lifecycle.
 
+**Edition and lifecycle:** Existing 3D Tiles serving, scene discovery, elevation, and generation from feature layers remain **Community**. Specialised CityGML/BIM and point-cloud ingest and I3S remain **Enterprise**. These 3D surfaces remain **Experimental in 2026.1**; edition does not imply GA or production support. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
+
 ## Scene discovery (public, SDK-compatible)
 
 | Method | Path | Purpose |

@@ -102,6 +102,9 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetServices<IOperationDescriptorProvider>(),
                 sp.GetRequiredService<TimeProvider>()));
 
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StylePresetExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, StylePresetApprovalMapper>());
+
         // Executors: concrete work, registered as an enumerable for the dispatcher.
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, DeferredServicePublishExecutor>());

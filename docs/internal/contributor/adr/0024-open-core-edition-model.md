@@ -3,6 +3,8 @@
 ## Status
 Accepted
 
+> **Commercial amendment (2026-09-04):** The [current commercial boundaries](../../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261) supersede older tier descriptions below. Core branch versioning is Pro; organisational approval/policy is Enterprise; existing Community 3D serving/discovery/elevation/feature-layer generation stays Community; specialised ingest and I3S stay Enterprise. Customer multitenancy is Preview/trial only, with no hosted service or production deployment. Essential secure operation and recoverability are baseline in all editions.
+
 ## Context
 
 The manifesto commits to an open-core model with ELv2 licensing and enterprise
@@ -14,7 +16,7 @@ Key design constraints:
 
 1. **Never gate protocols.** Protocol pluralism (GeoServices REST, OGC, OData,
    MVT, gRPC) is the moat. Gating protocols would undermine the core value
-   proposition and slow adoption.
+   proposition and slow adoption. The commercial-boundaries amendment explicitly retains specialised I3S as Enterprise.
 2. **Never gate deployment targets.** Docker, Helm, Terraform, serverless
    templates — all infrastructure that helps people run Honua must be open.
    Gating _where_ you deploy gates adoption. Gate _what runs_ instead.
@@ -107,20 +109,20 @@ Everything in Pro, plus:
 | Area | Included | EnterpriseReady Pillar |
 |------|----------|----------------------|
 | **Identity Governance** | Multi-provider OIDC configuration, claim-to-role mapping, SAML bridge, SCIM user/group provisioning | Single Sign-On |
-| **RBAC** | Per-service, per-layer, per-operation role-based access; row-level security | Role-Based Access Control |
-| **Audit Logging** | Immutable audit trail (who queried/edited what, when, from where); SIEM export (Splunk, Datadog, Elastic) | Audit Logging |
-| **Change Management** | GitOps manifest API (apply, dryRun, prune); drift detection; approval workflows; rollback | Change Management |
+| **RBAC governance** | Advanced organisational policy administration; essential authorization and isolation remain baseline in every edition | Role-Based Access Control |
+| **Audit governance** | Advanced audit reporting and SIEM export; essential audit integrity remains baseline in every edition | Audit Logging |
+| **Change Management** | Advanced GitOps automation, drift detection and organisational approval workflows; essential rollback/recovery remains baseline | Change Management |
 | **Private Operator Copilot** | AI DevOps/operator tooling, rollout planning, delegated operations, and implementation workflows delivered through private enterprise tooling on top of the public control-plane API | Change Management / Support |
 | **Compliance** | SOC 2 / FedRAMP evidence collection; data residency controls; encryption-at-rest key rotation | Product Assurance |
 | **Federated Queries** | Cross-instance queries (Honua-to-Honua); external source proxy (Esri REST, OGC WFS) | Integrations |
-| **Multi-Tenancy** | Schema-per-tenant isolation; tenant-scoped API keys; per-tenant usage metering | Deployment Options |
+| **Multi-Tenancy (Preview/trial only)** | Single-tenant GA in 2026.1; no hosted service or production multi-tenant deployment; isolation remains a full-severity baseline | Deployment Options |
 | **Usage Analytics** | Dashboard — queries/sec, popular layers, slow queries, storage growth, user activity | Reporting |
 | **Plugin SDK** | Custom endpoints, pre/post-edit hooks, validators, computed fields (.NET source-gen, AOT-safe) | Integrations |
 | **Batch Geocoding** | Multi-address geocoding execution in a single request (`geocoding.batch`) over both the GeoServices `geocodeAddresses` HTTP operation and the MCP `honua_geocode_addresses` tool — the volume/enterprise geocoding workload, distinct from the Community single-address forward/reverse path (#2981) | Product Assurance |
 | **Event Bus (Advanced)** | Kafka and NATS sink support; exactly-once delivery; dead letter queues | Integrations |
-| **Secure Connections** | Connection host allowlist; encrypted credential vault; connection audit trail | Product Assurance |
+| **Secure Connections (baseline)** | Essential connection safety, credential protection and audit integrity apply in every edition; advanced governance is paid | Product Assurance |
 | **App-Level Rate Limiting** | Per-tenant, per-user, per-API-key rate limits (beyond edge enforcement) | Product Assurance |
-| **HA + DR** | Active-passive failover playbooks; backup/restore automation; RTO/RPO runbooks | Deployment Options |
+| **HA + DR automation** | Advanced failover and backup orchestration and reporting; essential backup/restore and recovery runbooks are baseline | Deployment Options |
 | **Premium Support** | Dedicated Slack channel; 4hr response SLA; architecture reviews; migration assistance | Support |
 
 ### License Key Enforcement
@@ -178,18 +180,18 @@ License checks must be:
 
 - **Community** = complete feature server, single process, deploy anywhere
 - **Pro** = distributed coordination, streaming, analytics
-- **Enterprise** = governance, compliance, multi-tenancy, extensibility, and private operator tooling
+- **Enterprise** = organisational governance, compliance automation, extensibility, and private operator tooling; multitenancy is Preview/trial only in 2026.1
 
 ### EnterpriseReady Pillar Mapping
 
 | Pillar | Community | Pro | Enterprise |
 |--------|-----------|-----|-----------|
 | Single Sign-On | API keys | Single-provider OIDC | Multi-provider OIDC, SAML, SCIM |
-| Audit Logging | Structured logs | Structured logs | Immutable trail + SIEM |
-| RBAC | Admin key (all-or-nothing) | Admin key | Per-resource roles + RLS |
+| Audit Logging | Essential audit integrity + structured logs | Same baseline | Advanced reporting + SIEM |
+| RBAC | Essential authorization and isolation | Same baseline | Advanced organisational policy governance |
 | Change Management | Manual config | Manual config | GitOps + drift detection + private operator copilot |
-| Product Assurance | AOT, TLS, SQL playground | + Streaming, analytics, sync, AI spatial agent | + Compliance, secure connections |
-| Deployment Options | All targets, single-process | + Distributed cache | + Multi-tenant, HA/DR |
+| Product Assurance | Essential secure operation and recoverability, AOT, TLS | Same baseline; paid analytics/automation | Advanced compliance/governance |
+| Deployment Options | All targets, single-process | + Distributed cache | + Advanced HA/DR automation; multitenancy Preview/trial only |
 | Integrations | SDKs, MCP (REST) | + CDC, real-time, MCP (gRPC) | + Federation, plugins, Kafka/NATS |
 | Support | Community (GitHub) | Email, 48hr SLA | Dedicated Slack, 4hr SLA |
 | Reporting | Health + Prometheus | Grafana dashboards | + Usage analytics |

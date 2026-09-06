@@ -28,7 +28,7 @@ Base: `/rest/services/{serviceId}/FeatureServer` (service and `/{layerId}` metad
 | Attachments | `/{layerId}/queryAttachments`, `/{layerId}/{featureId}/attachments`, `addAttachment`, `updateAttachment`, `deleteAttachments`, `attachments/{attachmentId}` | |
 | Related records | `/{layerId}/queryRelatedRecords` (GET, POST), `/relationships` | |
 | Offline sync | `createReplica`, `extractChanges`, `synchronizeReplica`, `unRegisterReplica`, `replicas`, `replicas/{replicaId}` | Preview/opt-in in 2026.1, with service-local `Sync` capability required. Security/isolation and lifecycle truth are in scope; broader parity is deferred to release/2026.2. |
-| Branch versioning | `/rest/services/{serviceId}/VersionManagementServer` — `versions`, `create`, per-version operations and jobs | Experimental and off by default; routes return 404 until `versioning.branch` is enabled. |
+| Branch versioning (Pro; Preview in 2026.1) | `/rest/services/{serviceId}/VersionManagementServer` — `versions`, `create`, per-version operations and jobs | Experimental and off by default; routes return 404 until `versioning.branch` is enabled. |
 | Bulk and SQL | `append` (service and layer), `/{layerId}/calculate`, `validateSQL`, `queryDomains`, `getEstimates` | |
 | Temporal and binning | `/{layerId}/queryTopFeatures`, `queryDateBins`, `temporalExtent`, `queryBins` | |
 | Spatial analytics (Pro tier) | `/{layerId}/queryH3` (GET, POST), `queryClusters`, `spatialJoin`, `queryBufferAggregate`, `queryDensity` (POST) | Return 402 when the entitlement is inactive. |

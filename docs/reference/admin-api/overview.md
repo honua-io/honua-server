@@ -22,6 +22,10 @@ All admin endpoints require authentication. Send `X-API-Key` with the admin pass
 
 Console control-plane surfaces (`/api/v1/console/*`, including workflow packages) use the same admin authorization posture.
 
+## Multitenancy and baseline operation
+
+Tenant lifecycle and usage administration is **Preview/trial only in 2026.1**. GA is single-tenant. There is no Honua SaaS and no production multi-tenant deployment: any tenancy environment is explicitly labelled demo/trial/preview, with no customer production data or availability, performance, durability or production SLO commitment. Cross-tenant disclosure retains full severity. Essential secure operation and recoverability remain baseline obligations; Enterprise adds organisational approval/policy and advanced automation. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
+
 ## Capability manifest
 
 `GET /api/v1/capabilities/manifest` returns a neutral runtime capability manifest for Console, MCP, QGIS, native hosts, and SDK clients. Authentication is optional; anonymous callers receive the public/default view. Optional `environment` and `workspaceId` query parameters scope the result.

@@ -40,6 +40,7 @@
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Db\Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
+    <ProjectReference Include="..\Honua.StaleAttemptWorker\Honua.StaleAttemptWorker.csproj" />
     <!-- Sample plugins exercised by the plugin custom-endpoint integration tests (#1562).
          The default host does not compile in plugins, so the contributed routes are only
          present in a test host that explicitly registers a sample plugin. -->

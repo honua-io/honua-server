@@ -33174,7 +33174,13 @@
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Timestamp of the most recent successful dispatch pass, when known."
+            "description": "Timestamp of the most recent dispatch attempt, including failed attempts."
+          },
+          "backlogObservedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp of the most recent successfully collected backlog, when known."
           },
           "pendingCount": {
             "type": "integer",

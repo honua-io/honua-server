@@ -1,5 +1,13 @@
 name: Impact Routing Evidence Ledger
 
+# Cohort reset contract: changes to the impact classifiers, native routing
+# policy, observer workflows, trusted resolver, or authoritative gate workflow
+# start a new semantic generation because they decide what a receipt means and
+# which source run is eligible for collection. Legacy serving/worker workflow
+# pins remain provenance because their routing declarations are validated by
+# the native policy. Keep the 60-sample floor, seven-day green requirement, and
+# report-only promotion boundary unchanged.
+
 on:
   workflow_dispatch:
   schedule:

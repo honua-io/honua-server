@@ -280,7 +280,6 @@ internal static partial class AttachmentHandler
                     $"Attachment {attachmentId} not found for feature {featureId}");
             }
 
-            var attachment = existingAttachment.Value;
             if (file != null)
             {
                 var fileNameValidation = FileUploadSecurity.ValidateFileName(file.FileName);
@@ -339,18 +338,8 @@ internal static partial class AttachmentHandler
             }
             else
             {
-                var updatedAttachment = Attachment.Create(
-                    attachment.Id,
-                    attachment.FeatureId,
-                    attachment.LayerId,
-                    attachment.Filename,
-                    attachment.ContentType,
-                    attachment.Size,
-                    attachment.CreatedAt,
-                    attachment.StoragePath,
-                    keywords);
-
-                await attachmentStore.UpdateAsync(layerId, featureId, updatedAttachment, cancellationToken);
+                // Only mutate keywords: the file may have been replaced since the existence check.
+                await attachmentStore.UpdateKeywordsAsync(layerId, featureId, attachmentId, keywords, cancellationToken);
             }
 
             var response = new UpdateAttachmentResponse

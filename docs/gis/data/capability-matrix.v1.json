@@ -31,7 +31,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 380,
-      "provingTestCount": 1156,
+      "provingTestCount": 1162,
       "maturity": {
         "implemented": 377,
         "preview": 2,
@@ -123,7 +123,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 115,
+      "provingTestCount": 116,
       "maturity": {
         "implemented": 4
       },
@@ -798,7 +798,7 @@
       "key": "editing.branch-versioning",
       "displayName": "Branch Versioning",
       "category": "Editing",
-      "edition": "Enterprise",
+      "edition": "Pro",
       "status": null,
       "entryCount": 15,
       "provingTestCount": 28,
@@ -825,7 +825,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 110,
+      "provingTestCount": 113,
       "maturity": {
         "implemented": 7
       },
@@ -883,7 +883,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 18,
-      "provingTestCount": 150,
+      "provingTestCount": 153,
       "maturity": {
         "preview": 18
       },
@@ -1313,7 +1313,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 14,
-      "provingTestCount": 89,
+      "provingTestCount": 92,
       "maturity": {
         "implemented": 14
       },
@@ -1635,7 +1635,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 47,
-      "provingTestCount": 410,
+      "provingTestCount": 415,
       "maturity": {
         "implemented": 47
       },
@@ -1734,7 +1734,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 48,
-      "provingTestCount": 131,
+      "provingTestCount": 132,
       "maturity": {
         "implemented": 48
       },
@@ -1921,7 +1921,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 30,
-      "provingTestCount": 193,
+      "provingTestCount": 196,
       "maturity": {
         "implemented": 30
       },

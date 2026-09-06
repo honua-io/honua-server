@@ -46,6 +46,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var queuedJob = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Queued,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -90,6 +91,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var cancelledJob = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Cancelled,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -120,6 +122,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var queuedJob = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Queued,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -162,6 +165,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var queuedJob = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Queued,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -220,6 +224,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var remoteQueued = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Queued,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -298,6 +303,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var remoteQueued = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Queued,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -379,6 +385,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var retryAwaitingResubmission = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Queued,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -460,6 +467,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var remoteQueued = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Queued,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -523,6 +531,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var queuedJob = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Queued,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -596,6 +605,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var remoteRunning = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -686,6 +696,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var remoteRunning = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -756,6 +767,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         var remoteRunning = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
             UpdatedAt = DateTimeOffset.UtcNow,

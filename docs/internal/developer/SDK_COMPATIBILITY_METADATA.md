@@ -45,7 +45,7 @@ Example response fragment:
       ],
       "features": {
         "metadataResources": true,
-        "manifestExport": true,
+        "manifestExport": false,
         "manifestApply": false,
         "manifestDryRun": false,
         "manifestPrune": false
@@ -65,6 +65,15 @@ Example response fragment:
 6. Treat `releaseChannel` as rollout metadata and `serverVersion` as a minimum-version floor within the same major, not as the full feature contract.
 
 ## Catalog Metadata Kinds
+
+The legacy `features.manifestExport` flag describes `GET /api/v1/admin/manifest`.
+That operation was removed in the Metadata v2 cutover, so this flag is false.
+SDKs must not call the removed operation when the flag is false. The existing
+boolean schema is unchanged; generated clients should consume its runtime value.
+Read-only package export remains available through
+`GET /api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest` after
+creating a metadata release package. It returns a `MetadataReleasePackage`
+GitOps manifest and is a separate operation from the legacy metadata manifest.
 
 `data.resourceKinds` advertises the metadata-resource kinds available through the generic CRUD surface. For catalog clients, `Group` and `SourceDescriptor` are first-class `honua.io/v1alpha1` kinds:
 

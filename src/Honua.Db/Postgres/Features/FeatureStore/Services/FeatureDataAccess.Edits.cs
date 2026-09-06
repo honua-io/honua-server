@@ -278,7 +278,14 @@ internal sealed partial class FeatureDataAccess
             // Committed is intentional for that case: if the reservation waits for an inserting
             // transaction, the following SELECT must observe the inserter's commit. Ordinary feature
             // batches retain RepeatableRead to prevent phantom reads during batch operations.
-            var isolationLevel = editBatch.Preconditions.Any(p => p.ExpectedRowAbsent)
+            // A single UPDATE has no cross-operation snapshot to preserve. ReadCommitted
+            // lets its locked precondition read observe the latest committed row and report
+            // a stale token instead of SQLSTATE 40001. GeoServices can then re-read and merge
+            // a partial request without overwriting unrelated concurrent changes (#4113).
+            var singleUpdate = editBatch.Updates.Length == 1 &&
+                editBatch.Creates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty &&
+                editBatch.Operations.IsDefaultOrEmpty;
+            var isolationLevel = singleUpdate || editBatch.Preconditions.Any(p => p.ExpectedRowAbsent)
                 ? IsolationLevel.ReadCommitted
                 : IsolationLevel.RepeatableRead;
             var (txConnection, dbTransaction) = await _connectionProvider
@@ -1253,7 +1260,8 @@ internal sealed partial class FeatureDataAccess
         // path that would skip the outbox writes.
         var outboxActive = TryUseTransactionalOutbox(out _);
 
-        if (transaction == null && features.Length > 1 && !outboxActive)
+        // Replica uploads also require the row transaction so provenance is stamped atomically.
+        if (transaction == null && features.Length > 1 && !outboxActive && ReplicaUploadOriginScope.Current is null)
         {
             return await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
                 features,
@@ -1701,15 +1709,33 @@ internal sealed partial class FeatureDataAccess
         CancellationToken cancellationToken,
         bool requireTransaction = false)
     {
-        if (batchTransaction is not null || (!requireTransaction && !TryUseTransactionalOutbox(out _)))
+        var origin = ReplicaUploadOriginScope.Current;
+        if (batchTransaction is not null || (origin is null && !requireTransaction && !TryUseTransactionalOutbox(out _)))
         {
+            if (origin is not null)
+            {
+                await SetReplicaUploadOriginAsync(connection, batchTransaction!, origin, cancellationToken).ConfigureAwait(false);
+            }
             return await mutateAndAppendOutbox(connection, batchTransaction, cancellationToken).ConfigureAwait(false);
         }
 
         await using var rowTransaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        if (origin is not null)
+        {
+            await SetReplicaUploadOriginAsync(connection, rowTransaction, origin, cancellationToken).ConfigureAwait(false);
+        }
         var result = await mutateAndAppendOutbox(connection, (NpgsqlTransaction)rowTransaction, cancellationToken).ConfigureAwait(false);
         await rowTransaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return result;
+    }
+
+    private static async Task SetReplicaUploadOriginAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, string replicaId, CancellationToken cancellationToken)
+    {
+        // Transaction-local provenance cannot leak to another request on a pooled connection.
+        await using var command = new NpgsqlCommand("SELECT set_config('honua.origin_replica_id', @replica, true)", connection, transaction);
+        command.Parameters.AddWithValue("replica", replicaId);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal static string GetSafeEditOperationError(Exception ex, string operation)

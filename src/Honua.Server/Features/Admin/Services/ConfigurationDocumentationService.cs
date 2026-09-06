@@ -372,7 +372,7 @@ public sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Limits:Tiles:TileTimeout", "Limits__Tiles__TileTimeout", "timespan",
                     "Tile generation timeout", TimeSpan.FromSeconds(10), opts.TileTimeout, "Range: 00:00:01-00:01:00"),
                 BuildPropertyWithCurrent("Limits:Tiles:MaxTileSize", "Limits__Tiles__MaxTileSize", "integer",
-                    "Maximum compressed tile size in bytes", 512000, opts.MaxTileSize, "Range: 100KB-5MB")
+                    "Maximum encoded vector tile size in bytes before HTTP compression", 512000, opts.MaxTileSize, "Range: 1-9223372036854775807 bytes")
             ]
         };
     }

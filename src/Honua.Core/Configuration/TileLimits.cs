@@ -25,10 +25,10 @@ public class TileLimits
     public int MinZoomLevel { get; set; } = 0;
 
     /// <summary>
-    /// Maximum tile size in pixels for rendered tiles.
+    /// Maximum encoded vector tile size in bytes, before HTTP content compression.
     /// </summary>
     [Range(1, long.MaxValue)]
-    public long MaxTileSize { get; set; } = 512;
+    public long MaxTileSize { get; set; } = 512000;
 
     /// <summary>
     /// Timeout for tile generation operations.

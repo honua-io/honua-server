@@ -64,7 +64,7 @@ Every published layer is reachable through every protocol its service enables. T
 | GeoServices GeocodeServer | `/rest/services/{locator}/GeocodeServer` | Esri geocoding clients (`findAddressCandidates`) |
 | GeoServices VectorTileServer | `/rest/services/{id}/VectorTileServer` | Esri vector-tile clients, ArcGIS SDKs |
 | GeoServices NAServer **(Pro)** | `/rest/services/{id}/NAServer` | Esri routing / network-analysis clients |
-| GeoServices VersionManagementServer **(Enterprise, experimental)** | `/rest/services/{id}/VersionManagementServer` | Esri branch-versioning editing workflows |
+| GeoServices VersionManagementServer **(Pro, experimental)** | `/rest/services/{id}/VersionManagementServer` | Esri branch-versioning editing workflows |
 | Portal token issuance | `/sharing/rest/generateToken` | Esri clients using username/password tokens |
 | OGC API Features | `/ogc/features` | QGIS, GDAL, OpenLayers, any OGC client |
 | OGC API Maps | `/ogc/maps` | OGC map clients |
@@ -97,7 +97,7 @@ Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), Op
 
 - **OGC CITE:** 1137 / 1138 passing across 14 conformance suites. WFS 2.0 `basic` is 166/167 because multi-layer `rollbackOnFailure=true` transactions are rejected; the other published suite profiles pass in full. See the [authoritative snapshot and run receipt](docs/cite-status.md) and [OGC conformance evidence](docs/reference/compatibility/ogc-conformance.md).
 - **Client compatibility:** the supported client x protocol matrix — including known limitations — is the [compatibility contract](docs/reference/compatibility/clients.md); Esri-side parity is tracked in [GeoServices parity](docs/reference/compatibility/geoservices-parity.md).
-- **gRPC stability:** versioning, deprecation, and stability guarantees for the `geospatial.v1` surface are defined in the [gRPC reference](docs/reference/protocols/grpc.md).
+- **gRPC stability:** gRPC remains supported for 2026.1. New `Geospatial.Grpc` .NET releases use GitHub Packages at `https://nuget.pkg.github.com/honua-io/index.json`. See the [gRPC reference](docs/reference/protocols/grpc.md#net-package-installation) for `nuget.config`, authenticated restore (`read:packages` locally or `GITHUB_TOKEN` in Actions), versioning, and stability guarantees.
 - **Control plane stability:** admin/control-plane API versioning is governed by [versioning and support](docs/reference/versioning-and-support.md).
 
 ## Key capabilities

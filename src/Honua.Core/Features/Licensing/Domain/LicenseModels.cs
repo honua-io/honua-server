@@ -30,7 +30,7 @@ public enum HonuaEdition
 public enum LicenseValidationState
 {
     /// <summary>
-    /// No license path is configured; the server is running in Community mode.
+    /// No license source is configured. Community can run; declared paid deployments refuse startup.
     /// </summary>
     NoLicenseConfigured = 0,
 

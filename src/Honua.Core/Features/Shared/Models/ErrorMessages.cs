@@ -191,7 +191,7 @@ MaxFeaturesPerTile = "MaxFeaturesPerTile must be between 1,000 and 1,000,000";
         public const string         /// <inheritdoc/>
 TileTimeout = "Tiles.TileTimeout must be between 1 second and 1 minute";
         public const string         /// <inheritdoc/>
-MaxTileSize = "MaxTileSize must be between 100KB and 5MB";
+MaxTileSize = "MaxTileSize must be a positive number of encoded vector tile bytes";
         public const string         /// <inheritdoc/>
 MaxConcurrentQueries = "MaxConcurrentQueries must be between 10 and 1,000";
         public const string         /// <inheritdoc/>

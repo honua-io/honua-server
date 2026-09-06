@@ -17,6 +17,23 @@ The endpoint is `POST /mcp`: JSON-RPC 2.0 over HTTP (single requests and batches
 Authentication supports both legacy `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`).
 When both are present, bearer tokens are evaluated first for this route.
 
+Applying a catalog style with `honua_apply_style_preset` requires admin write
+access in addition to the published-service publish grant. It uses the
+`style.apply-preset` operation and honors operator approval and
+`Operations:Policy` rules before changing the layer. An approval-required result
+has `approvalRequired: true`; when a durable proposal is created, use its returned
+`proposalId` and resource URI to track approval. Only a completed application
+returns `applied: true`. Set `dryRun: true` to validate without changing the
+layer; a completed preview returns `dryRun: true` and `applied: false`.
+Approval plans identify the service, layer, and preset and preserve preview
+intent when replayed after approval. The proposal also pins the selected publication,
+resource and storage binding; replay refuses a rebound target and requires a new
+approval request.
+If the binding commits but metadata reconciliation fails, the result keeps
+`applied: true` and includes a `warning`; re-apply the preset to retry that
+reconciliation. Policy rules receive the active license tier on both MCP and
+REST operation submissions.
+
 ## Two MCP surfaces: data-access (open) vs. operator (proprietary)
 
 There are two distinct MCP surfaces in the Honua platform, and it is easy to
@@ -161,6 +178,25 @@ identical in the full catalog and the narrowed view, and remains discovery-only 
 it never widens call-time authorization.
 
 Membership is derived from the live catalog, so an eligible server operation that appears (or disappears) at runtime joins or leaves the view with no client or SDK source-list edit. Runtime-published members are appended after the static ones so a mid-conversation `notifications/tools/list_changed` refresh does not re-sort the `tools` array and invalidate a host's prompt cache.
+
+### Release qualification
+
+The descriptor budget and discovery tests establish the server contract. A
+release-certifying terminal-model run must additionally consume the entire
+`setup` view without forcing a specific tool choice, execute real calls in an
+isolated namespace, and verify saved and reopened map/dashboard state. Record
+the view revision, membership and descriptor digests, measured UTF-8 descriptor
+bytes, estimated tokens, candidate image digest, and installed client versions.
+These measurements describe the complete descriptor array, including its JSON
+brackets and separators; the token estimate is the byte count divided by four.
+
+Run the [terminal-model canary](https://github.com/honua-io/honua-release/blob/trunk/.github/workflows/terminal-model-canary.yml)
+with a green deterministic journey receipt for the same candidate and the
+configured candidate proxy, model, and trusted public signing manifest. Missing
+configuration, skipped calls, a direct provider call, or a receipt for another
+candidate cannot qualify this workflow. The exact-candidate canary remains
+outstanding until that immutable candidate exists and this run passes; local
+discovery tests do not establish model selection or saved-state execution.
 
 ## Pagination
 

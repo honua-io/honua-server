@@ -162,6 +162,15 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest")]
     public async Task ReleasePackageEndpoints_CreateReadAndExportGitOpsSafeManifest()
     {
+        // The legacy SDK handshake must not mistake package export for GET /admin/manifest.
+        using var capabilitiesResponse = await _client.GetAsync("/api/v1/admin/capabilities");
+        capabilitiesResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var capabilities = JsonDocument.Parse(await capabilitiesResponse.Content.ReadAsStringAsync());
+        capabilities.RootElement.GetProperty("data").GetProperty("compatibility")
+            .GetProperty("features").GetProperty("manifestExport").GetBoolean().Should().BeFalse();
+        using var legacyResponse = await _client.GetAsync("/api/v1/admin/manifest");
+        legacyResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
         var body = JsonSerializer.Serialize(
             new CreateMetadataReleasePackageRequest
             {
