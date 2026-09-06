@@ -450,9 +450,9 @@ internal static class OgcRecordsEndpoints
                 Links = links.ToImmutable()
             },
             bbox,
-            Modified: null,
+            Modified: ResolveModified(serviceMetadata),
             ExternalIds: [serviceMetadata.Name],
-            SearchText: $"{serviceMetadata.Name} {serviceMetadata.Description}");
+            SearchText: BuildSearchText(serviceMetadata.Name, serviceMetadata.Title, serviceMetadata.Description));
     }
 
     private static CatalogRecord CreateResourceRecord(
@@ -512,10 +512,41 @@ internal static class OgcRecordsEndpoints
                 Links = links.ToImmutable()
             },
             bbox,
-            Modified: null,
+            Modified: ResolveModified(resource.Metadata),
             ExternalIds: [layerIdString, resource.Metadata.Name],
-            SearchText: $"{layerIdString} {resource.Metadata.Name} {resource.Metadata.Description}");
+            SearchText: BuildSearchText(
+                layerIdString,
+                resource.Metadata.Name,
+                resource.Metadata.Title,
+                resource.Metadata.Description));
     }
+
+    /// <summary>
+    /// Builds the free-text haystack the <c>q</c> parameter matches against.
+    /// </summary>
+    /// <remarks>
+    /// honua-server#4425: the shipped coverage document states that <c>q</c> searches "over id,
+    /// title, and description", but the haystack was built from id + name + description with the
+    /// title omitted. The fixture could not detect the mismatch because every seeded title is null,
+    /// so <c>Title ?? Name</c> collapsed to the same string. Include the title so the documented
+    /// behaviour and the implementation agree; a null or duplicate segment contributes nothing.
+    /// </remarks>
+    private static string BuildSearchText(params string?[] segments)
+        => string.Join(' ', segments.Where(segment => !string.IsNullOrWhiteSpace(segment)));
+
+    /// <summary>
+    /// Resolves the record's temporal value from the catalog entry's own timestamps.
+    /// </summary>
+    /// <remarks>
+    /// honua-server#4425: both record factories hard-coded <c>Modified: null</c>, so the
+    /// <c>datetime</c> filter short-circuited before <c>DateTimeFilter.Contains</c> could ever run
+    /// and no query could exclude a record by time — the parameter was accepted, advertised and
+    /// inert. The graph already carries <c>updatedAt</c>/<c>createdAt</c> on every catalog entity;
+    /// this projects them so the declared filter has something to filter on. Records that genuinely
+    /// have no timestamp are still not constrained by <c>datetime</c> (#1988).
+    /// </remarks>
+    private static DateTimeOffset? ResolveModified(MetadataV2ObjectMetadata metadata)
+        => metadata.UpdatedAt ?? metadata.CreatedAt;
 
     private static IEnumerable<CatalogRecord> ApplyFilters(
         IEnumerable<CatalogRecord> records,

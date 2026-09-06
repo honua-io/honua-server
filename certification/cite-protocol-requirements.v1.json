@@ -1,6 +1,6 @@
 {
   "schema": "honua.protocol-certification-requirements/v1",
-  "revision": "2026-08-29-complete.11",
+  "revision": "2026-09-06-lane-status.1",
   "requirements_source": "honua-io/honua-release/certification/protocol-certification-requirements.v1.json",
   "requirements_source_revision": "32b68decc54c0db88780b4e439ecbcb00504bb36",
   "source_revisions": {
@@ -66,7 +66,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -92,7 +94,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -118,7 +122,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -144,7 +150,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -170,7 +178,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -196,7 +206,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -222,7 +234,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -248,7 +262,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -274,7 +290,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -300,7 +318,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "No CITE runner is implemented for OGC API - Records discovery; the other serve.ogc operations are covered by the versioned OGC API Features/Tiles, WFS, WMS, WMTS and WCS lanes (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -326,7 +346,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -352,7 +374,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -378,7 +402,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -404,7 +430,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -430,7 +458,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc",
@@ -456,7 +486,9 @@
       "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc-api-coverages",
@@ -483,7 +515,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc-api-edr",
@@ -510,7 +544,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc-api-features",
@@ -538,7 +574,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc-api-features",
@@ -563,7 +601,9 @@
       "contract_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc-api-maps",
@@ -589,7 +629,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc-api-records",
@@ -616,7 +658,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc-api-tiles",
@@ -642,7 +686,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.ogc-api-tiles",
@@ -667,7 +713,9 @@
       "contract_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.sensorthings",
@@ -694,7 +742,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
     },
     {
       "capability_key": "serve.wcs",
@@ -721,7 +771,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.wcs",
@@ -746,7 +798,9 @@
       "contract_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.wfs",
@@ -774,7 +828,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.wfs",
@@ -799,7 +855,9 @@
       "contract_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.wfs",
@@ -824,7 +882,9 @@
       "contract_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.wfs",
@@ -849,7 +909,9 @@
       "contract_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.wms",
@@ -875,7 +937,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.wms",
@@ -900,7 +964,9 @@
       "contract_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.wmts",
@@ -926,7 +992,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "serve.wmts",
@@ -951,7 +1019,9 @@
       "contract_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "implemented",
+      "cite_lane_absence_reason": null
     },
     {
       "capability_key": "styling.ogc-api-styles",
@@ -976,7 +1046,9 @@
       "contract_revision": "canonical-client-assignments@2026-08-21.1",
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null
+      "budget_expectations": null,
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
     }
   ]
 }
