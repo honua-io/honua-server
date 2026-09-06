@@ -1539,8 +1539,56 @@ jobs:
           pip install -r tests/python/requirements.txt
 
       - name: Run Python Integration Tests (OGC + FeatureServer + GDAL)
+        # honua-server#4396: this lane carries the only independent-consumer evidence for
+        # GeoParquet. HONUA_REQUIRE_GEOPARQUET_INTEROP makes a missing reader stack an import
+        # error instead of a silent module-level skip.
+        env:
+          HONUA_REQUIRE_GEOPARQUET_INTEROP: "1"
         run: pytest --tb=short
         working-directory: tests/python
+
+      - name: Prove the GeoParquet interop cells were executed, not skipped
+        # honua-server#4396, modelled on the [GdalCliFact] anti-skip tripwire above: assert on
+        # executed-cell counts rather than on the exit code, so a lane that skips every
+        # GeoParquet cell reports non-passing instead of green. Under the 2026-09-04 ruling a
+        # skipped required cell is non-passing evidence, so a skip fails here.
+        env:
+          HONUA_REQUIRE_GEOPARQUET_INTEROP: "1"
+        working-directory: tests/python
+        run: |
+          set -euo pipefail
+          mkdir -p ../TestResults
+          report="../TestResults/geoparquet-interop.xml"
+          pytest --tb=short -q feature_server/test_geoparquet_interop.py --junitxml="${report}"
+          python - "${report}" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          tree = ET.parse(sys.argv[1])
+          suites = tree.getroot().iter("testsuite")
+          tests = errors = failures = skipped = 0
+          for suite in suites:
+              tests += int(suite.get("tests", 0))
+              errors += int(suite.get("errors", 0))
+              failures += int(suite.get("failures", 0))
+              skipped += int(suite.get("skipped", 0))
+
+          executed = tests - skipped
+          print(f"geoparquet interop: tests={tests} executed={executed} skipped={skipped} "
+                f"failures={failures} errors={errors}")
+
+          if skipped > 0:
+              print("::error::%d GeoParquet interop cell(s) were skipped - a skipped required "
+                    "cell is non-passing evidence (honua-server#4396)" % skipped)
+              sys.exit(1)
+          if executed < 1:
+              print("::error::no GeoParquet interop cell executed - the independent-consumer "
+                    "evidence for GeoParquet has silently disappeared")
+              sys.exit(1)
+          if failures or errors:
+              print("::error::GeoParquet interop cells failed")
+              sys.exit(1)
+          PY
 
       - name: Upload Python test results
         uses: actions/upload-artifact@v7.0.1
