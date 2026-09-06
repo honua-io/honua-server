@@ -147,7 +147,12 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
     }
 
     private static IEnumerable<(string Type, string Value, string Issuer)> Claims(ClaimsPrincipal principal) =>
-        principal.Claims.Select(claim => (claim.Type, claim.Value, claim.Issuer)).Order();
+        principal.Claims
+            // These are request binding projections added after authentication, not
+            // issuer claims. The original request's resolved scope stays immutable.
+            .Where(claim => claim.Type is not CanonicalSecurityActor.CanonicalActorClaim
+                and not CanonicalSecurityActor.EffectiveTenantClaim and not CanonicalSecurityActor.ScopeCeilingClaim)
+            .Select(claim => (claim.Type, claim.Value, claim.Issuer)).Order();
 
     private sealed class RetainedWebSocketFeature(IHttpWebSocketFeature inner) : IHttpWebSocketFeature
     {
@@ -186,7 +191,7 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             {
                 if (_authorizationEnded)
                 {
-                    throw new OperationCanceledException("Stream authorization ended.", cancellationToken);
+                    throw new WebSocketException(WebSocketError.InvalidState);
                 }
 
                 await inner.SendAsync(buffer, messageType, endOfMessage, cancellationToken).ConfigureAwait(false);
@@ -226,4 +231,4 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
 
 // Server-created marker: validating an already admitted credential is not a new
 // use of the token for replay-protection purposes. Clients cannot supply this feature.
-internal sealed class LiveStreamRevalidationFeature;
+internal sealed class LiveStreamRevalidationFeature { }
