@@ -64,6 +64,11 @@ Inline vector outputs return a FeatureSet object with `fields`, `features`,
 records with attributes. Stored feature, raster, and file outputs return an object
 such as `{"url":"https://example.test/result"}`. Both synchronous `execute` and
 asynchronous result retrieval use these shapes.
+Empty results retain the input-derived fields and geometry type. Canonical GeoJSON inputs use
+WGS 84 when no explicit working reference is supplied; equivalent Esri Web Mercator WKIDs are
+normalized before comparison. Merge rejects incompatible geometry types before creating a job.
+An unavailable artifact remains an explicit fallback label rather than a fictitious download URL.
+
 
 ## Verify
 

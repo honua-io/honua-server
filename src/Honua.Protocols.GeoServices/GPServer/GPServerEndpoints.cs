@@ -1748,7 +1748,8 @@ internal static class GPServerEndpoints
                     featureSchema = schema.GetRawText();
                 }
             }
-            catch (Exception ex) when (ex is ArgumentException or FormatException or System.Text.Json.JsonException or InvalidOperationException)
+            catch (Exception ex) when (ex is ArgumentException or FormatException or System.Text.Json.JsonException or Newtonsoft.Json.JsonException
+                or InvalidOperationException or KeyNotFoundException or GeoprocessingValidationException)
             {
                 return new SubmissionPlanResult(null,
                     "GPServer feature inputs must be valid homogeneous FeatureCollections with a supported geometry type.", derivedSrid);

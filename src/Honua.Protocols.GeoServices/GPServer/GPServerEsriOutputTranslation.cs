@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using NetTopologySuite.Geometries;
@@ -71,6 +72,15 @@ internal static class GPServerEsriOutputTranslation
             {
                 writer.WritePropertyName("geometryType");
                 type.WriteTo(writer);
+            }
+            foreach (var dimension in new[] { "hasZ", "hasM" })
+            {
+                if (!inferred.TryGetProperty(dimension, out _) &&
+                    declared?.RootElement.TryGetProperty(dimension, out var flag) == true)
+                {
+                    writer.WritePropertyName(dimension);
+                    flag.WriteTo(writer);
+                }
             }
             writer.WriteStartArray("fields");
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -158,11 +168,11 @@ internal static class GPServerEsriOutputTranslation
                     OgcGeometryType.MultiPoint => "esriGeometryMultipoint",
                     OgcGeometryType.LineString or OgcGeometryType.MultiLineString => "esriGeometryPolyline",
                     OgcGeometryType.Polygon or OgcGeometryType.MultiPolygon => "esriGeometryPolygon",
-                    _ => throw new ArgumentException("GP output contains an unsupported geometry collection.")
+                    _ => throw new GeoprocessingValidationException("GP output contains an unsupported geometry collection.")
                 };
                 if (geometryType is not null && geometryType != type)
                 {
-                    throw new ArgumentException("GP FeatureSet outputs must have a single geometry type.");
+                    throw new GeoprocessingValidationException("GP FeatureSet outputs must have a single geometry type.");
                 }
                 geometryType = type;
                 hasZ |= nts.Coordinates.Any(coordinate => !double.IsNaN(coordinate.Z));

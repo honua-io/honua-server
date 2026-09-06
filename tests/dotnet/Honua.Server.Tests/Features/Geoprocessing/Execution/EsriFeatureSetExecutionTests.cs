@@ -142,6 +142,15 @@ public sealed class EsriFeatureSetExecutionTests
         result.GetProperty("fields").EnumerateArray().Should().Contain(field => field.GetProperty("name").GetString() == "name");
     }
 
+    [UnitTest]
+    public void Output_HeterogeneousGeometry_ReturnsClassifiedCapabilityFailure()
+    {
+        const string json = """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[1,2]}},{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[[0,0],[1,1]]}}]}""";
+        var action = () => GPServerEsriOutputTranslation.Translate(ArtifactKind.FeatureLayer,
+            DataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(json)), 4326);
+        action.Should().Throw<GeoprocessingValidationException>().WithMessage("*single geometry type*");
+    }
+
     [Theory]
     [InlineData(ArtifactKind.File)]
     [InlineData(ArtifactKind.Raster)]
