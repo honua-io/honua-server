@@ -267,6 +267,58 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         actual.Sum().Should().Be(11);
     }
 
+    [Fact]
+    public async Task HistogramOracle_NoDataCountedAsData_IsRejected()
+    {
+        // A plausible wrong-but-well-formed histogram: the same cells over the same
+        // 256 Byte buckets, but the sentinel is counted instead of excluded. Real
+        // execution produces it from a source whose nodata declaration was dropped,
+        // so the bucket bounds, band index and array shape all stay valid.
+        Directory.CreateDirectory(_scratch);
+        File.Copy(Fixture("histogram.tif"), Path.Join(_scratch, "histogram.tif"), overwrite: true);
+        await Run("gdal_translate", ["-a_nodata", "none", "histogram.tif", "counted.tif"]);
+        using var json = JsonDocument.Parse(await Execute("raster.histogram",
+            ("source", Convert.ToBase64String(await File.ReadAllBytesAsync(Path.Join(_scratch, "counted.tif"))))));
+        var band = json.RootElement.GetProperty("bands")[0];
+        band.GetProperty("band").GetInt32().Should().Be(1);
+        band.GetProperty("min").GetDouble().Should().Be(-0.5);
+        band.GetProperty("max").GetDouble().Should().Be(255.5);
+        var actual = band.GetProperty("buckets").EnumerateArray().Select(v => v.GetInt32()).ToArray();
+        actual.Should().HaveCount(256);
+        actual[255].Should().Be(1, "the dropped sentinel is now counted as a measurement");
+        actual.Sum().Should().Be(12);
+        // The frozen distribution oracle used by the proof above rejects it.
+        var expected = new int[256];
+        expected[0] = 3;
+        expected[1] = 2;
+        expected[2] = 5;
+        expected[3] = 1;
+        Action assert = () => actual.Should().Equal(expected);
+        assert.Should().Throw<XunitException>();
+    }
+
+    [Fact]
+    public async Task ZonalOracle_GlobalStatisticsSubstitutedForZoneSelection_IsRejected()
+    {
+        // A plausible wrong-but-well-formed zonal result: one row carrying the
+        // requested zone id and valid statistics, but aggregated over the whole
+        // raster instead of the zone's cells. Real execution produces it from a
+        // zone polygon spanning the full extent.
+        const string global = "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\"," +
+            "\"properties\":{\"id\":\"left\"},\"geometry\":{\"type\":\"Polygon\"," +
+            "\"coordinates\":[[[0,0],[4,0],[4,4],[0,4],[0,0]]]}}]}";
+        using var json = JsonDocument.Parse(await Execute("raster.zonal-statistics",
+            ("source", Input("grid.tif")),
+            ("zones", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(global))),
+            ("band", "2")));
+        var zone = json.RootElement.GetProperty("zones").EnumerateArray().Should().ContainSingle().Which;
+        // Band two holds 10..160 by tens with 60 replaced by nodata: 15 valid cells summing to 1300.
+        AssertZone(zone, "left", 15, 10, 160, 1300);
+        // The hand-derived left-zone oracle ({10,20,50}) rejects the substitution.
+        Action assert = () => AssertZone(zone, "left", 3, 10, 50, 80);
+        assert.Should().Throw<XunitException>();
+    }
+
     private static double Sample(double x, double y, string mode)
     {
         var centerX = Math.Clamp((int)Math.Floor(x + 0.5), 0, 3);

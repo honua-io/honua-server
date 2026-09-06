@@ -33,6 +33,18 @@ distinguish well-formed but wrong results such as copied inputs, swapped bands,
 wrong resamplers, reversed mosaic precedence, nodata counted as data, and global
 statistics substituted for zone selection.
 
+## Demonstrated negatives
+
+Each output shape carries a case that executes real GDAL to produce a valid,
+plausible, but wrong result and then asserts the same oracle rejects it, so the
+suite proves discrimination rather than asserting it.
+
+| Output shape | Case | Wrong-but-well-formed result |
+| --- | --- | --- |
+| Raster bands (#3923, #3925-#3929) | `WarpOracle_ChangedPixelInValidGeoTiff_IsRejected` | One pixel is changed through GDAL; grid, CRS, nodata and TIFF structure stay valid. `AssertBand` is the shared oracle for every raster-output operation. |
+| Zonal scalars (#3924) | `ZonalOracle_GlobalStatisticsSubstitutedForZoneSelection_IsRejected` | A full-extent zone yields whole-raster aggregates (15 cells, sum 1300) under the requested zone id; `AssertZone` rejects the left zone's hand-derived {10,20,50}. |
+| Histogram scalars (#3930) | `HistogramOracle_NoDataCountedAsData_IsRejected` | Dropping the source nodata declaration counts sentinel 255, giving a valid 256-bucket histogram totalling 12; the frozen distribution oracle rejects it. |
+
 IDW's unbounded default uses GDAL's documented reduced-precision SSE/AVX path,
 even with Float64 output. The interior tolerance is eight Float32 rounding units
 at the fixture maximum magnitude (100), about 0.0000954; bounded searches retain
