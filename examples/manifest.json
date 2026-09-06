@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1097,
+    "total": 1101,
     "byStatus": {
-      "not-executable": 1082,
+      "not-executable": 1086,
       "blocked": 2,
       "passed": 9,
       "unvalidated": 4
@@ -33,7 +33,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 138,
+      "line": 145,
       "language": "bash"
     },
     {
@@ -85,7 +85,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 149,
+      "line": 156,
       "language": "bash"
     },
     {
@@ -3746,7 +3746,7 @@
         }
       },
       "fence": 4,
-      "line": 50,
+      "line": 55,
       "language": "bash",
       "contentSha256": "748ed86d6413f4e9fbcba570d3b8be0655f0eed420a952d858b8ddc9e6fc733c"
     },
@@ -3768,7 +3768,7 @@
         }
       },
       "fence": 5,
-      "line": 57,
+      "line": 62,
       "language": "bash",
       "contentSha256": "5bd4b0ec32f4801900e7af88d778f959ab5cf866757152c703ed9a77aa2f5a2e"
     },
@@ -3788,7 +3788,7 @@
         }
       },
       "fence": 3,
-      "line": 43,
+      "line": 48,
       "language": "bash",
       "contentSha256": "063c2dd6d7247f175aa58232a57c5d2908f8dd56b4628a2427204e0a5dcf9c1b"
     },
@@ -3802,7 +3802,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 21,
+      "line": 26,
       "language": "bash",
       "contentSha256": "fdf0f87cd48b985f50262623687521513137824a1564f14a0c253881abb6f94e"
     },
@@ -3822,7 +3822,7 @@
         }
       },
       "fence": 7,
-      "line": 83,
+      "line": 88,
       "language": "bash",
       "contentSha256": "7026974350286cab8c62f7c08a3fb501637c1eb4615e41244ebf166c67158662"
     },
@@ -3842,7 +3842,7 @@
         }
       },
       "fence": 10,
-      "line": 152,
+      "line": 157,
       "language": "bash",
       "contentSha256": "dc14542e87a084856cbfbacbc824f812e4d266fbaf1ad4c09e966448a98b1f9f"
     },
@@ -3856,7 +3856,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 2,
-      "line": 28,
+      "line": 33,
       "language": "bash",
       "contentSha256": "7652c9b5210720339bc443a193619a0844c0cec4669fe4b489f111937bada9da"
     },
@@ -3876,7 +3876,7 @@
         }
       },
       "fence": 9,
-      "line": 124,
+      "line": 129,
       "language": "bash",
       "contentSha256": "86ebc22b9a2dfe24ff69fa9aef97ce7d67f5000c4e696ea78dcb0e897769e4f8"
     },
@@ -3896,7 +3896,7 @@
         }
       },
       "fence": 6,
-      "line": 64,
+      "line": 69,
       "language": "bash",
       "contentSha256": "e76431c6a1302517e47d59fa2219d82660ac786fa422f91f3361c2f7ecb829ff"
     },
@@ -3910,7 +3910,7 @@
         "check": "content-hash-evidence"
       },
       "fence": 8,
-      "line": 94,
+      "line": 99,
       "language": "bash",
       "contentSha256": "4664b85dd076c39798ee4126c396c080572579f21102dd65350829b832e1a470"
     },
@@ -3930,7 +3930,7 @@
         }
       },
       "fence": 12,
-      "line": 185,
+      "line": 190,
       "language": "bash",
       "contentSha256": "9c1e88dc1b1b34b2ac23ea96e8c821171f53748d52eba3c096ebc5d639d4acfe"
     },
@@ -3944,7 +3944,7 @@
         "check": "inventory-classification"
       },
       "fence": 11,
-      "line": 178,
+      "line": 183,
       "language": "bash",
       "contentSha256": "619fb3cca57c16b68622a3214eadd14b862425bc563b991b332f62e7e2a0fbae"
     },
@@ -4413,7 +4413,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 37,
+      "line": 97,
       "language": "bash"
     },
     {
@@ -4426,7 +4426,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 64,
+      "line": 124,
       "language": "bash"
     },
     {
@@ -4439,7 +4439,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 23,
+      "line": 83,
       "language": "bash"
     },
     {
@@ -4452,7 +4452,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 72,
+      "line": 132,
       "language": "bash"
     },
     {
@@ -4465,7 +4465,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 111,
+      "line": 211,
       "language": "bash"
     },
     {
@@ -4478,7 +4478,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 100,
+      "line": 200,
       "language": "bash"
     },
     {
@@ -4491,7 +4491,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 85,
+      "line": 147,
       "language": "bash"
     },
     {
@@ -4504,7 +4504,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 31,
+      "line": 91,
       "language": "bash"
     },
     {
@@ -4860,7 +4860,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 154,
+      "line": 160,
       "language": "bash"
     },
     {
@@ -4873,7 +4873,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 293,
+      "line": 299,
       "language": "bash"
     },
     {
@@ -4886,7 +4886,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 84,
+      "line": 90,
       "language": "yaml"
     },
     {
@@ -4899,7 +4899,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 28,
+      "line": 34,
       "language": "bash"
     },
     {
@@ -4912,7 +4912,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 317,
+      "line": 323,
       "language": "bash"
     },
     {
@@ -4925,7 +4925,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 303,
+      "line": 309,
       "language": "bash"
     },
     {
@@ -4938,7 +4938,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 50,
+      "line": 56,
       "language": "bash"
     },
     {
@@ -4951,7 +4951,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 274,
+      "line": 280,
       "language": "yaml"
     },
     {
@@ -4964,7 +4964,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 185,
+      "line": 191,
       "language": "yaml"
     },
     {
@@ -7607,6 +7607,19 @@
       "language": "bash"
     },
     {
+      "id": "0f6443b637246acc",
+      "kind": "docs-fence",
+      "path": "docs/internal/ci/shard-timeout-budgets.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 6,
+      "line": 718,
+      "language": "text"
+    },
+    {
       "id": "2706646ecc033482",
       "kind": "docs-fence",
       "path": "docs/internal/ci/shard-timeout-budgets.md",
@@ -7618,6 +7631,19 @@
       "fence": 2,
       "line": 155,
       "language": "bash"
+    },
+    {
+      "id": "5f932cc4c24f1a51",
+      "kind": "docs-fence",
+      "path": "docs/internal/ci/shard-timeout-budgets.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 4,
+      "line": 645,
+      "language": "text"
     },
     {
       "id": "9f96ea9c652ebf2a",
@@ -7633,6 +7659,19 @@
       "language": "bash"
     },
     {
+      "id": "ccb580916a40156a",
+      "kind": "docs-fence",
+      "path": "docs/internal/ci/shard-timeout-budgets.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 5,
+      "line": 666,
+      "language": "json"
+    },
+    {
       "id": "d4f88c5959cb836c",
       "kind": "docs-fence",
       "path": "docs/internal/ci/shard-timeout-budgets.md",
@@ -7644,6 +7683,19 @@
       "fence": 3,
       "line": 316,
       "language": "bash"
+    },
+    {
+      "id": "ffa2c57c4e45dc0c",
+      "kind": "docs-fence",
+      "path": "docs/internal/ci/shard-timeout-budgets.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 7,
+      "line": 766,
+      "language": "text"
     },
     {
       "id": "09fca0e3b4dc3ef3",
