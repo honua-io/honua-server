@@ -41,7 +41,8 @@ public sealed partial class FeatureStreamEndpointsTests
         var ct = timeout.Token;
         await using var connection = new NpgsqlConnection(fixture.Postgres.ConnectionString);
         await connection.OpenAsync(ct);
-        var schema = new NpgsqlCommandBuilder().QuoteIdentifier(fixture.CurrentSchema!);
+        using var identifiers = new NpgsqlCommandBuilder();
+        var schema = identifiers.QuoteIdentifier(fixture.CurrentSchema!);
         await using (var seed = new NpgsqlCommand($$"""
             INSERT INTO {{schema}}.features(objectid, layer_id, attributes)
             VALUES (73011, 0, '{"name":"before-renewal"}'), (73012, 1, '{"name":"tenant-b-secret"}');
