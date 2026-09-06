@@ -109,8 +109,9 @@ internal sealed class PostgresFeatureLayerCopyService(
         // retained. A failed metadata copy cannot expose an unrestricted intermediate.
         try
         {
-        var target = await publisher.PublishLayerAsync(connectionString, new LayerPublishRequest
-        {
+            var target = await publisher.PublishLayerAsync(connectionString, new LayerPublishRequest
+            {
+                AllowEmptyTable = true,
             Schema = schema,
             Table = table,
             LayerName = targetLayerName,
@@ -140,7 +141,10 @@ internal sealed class PostgresFeatureLayerCopyService(
             },
             StorageBindingIds = targetResource.StorageBindingIds,
             PrimaryStorageBindingId = targetResource.PrimaryStorageBindingId,
-            SchemaFields = schemaFields,
+                SchemaFields = schemaFields,
+                Display = resource.Display is { DisplayField: { } displayField } && masked.Contains(displayField, StringComparer.OrdinalIgnoreCase)
+                    ? resource.Display with { DisplayField = targetResource.Display?.DisplayField }
+                    : resource.Display,
             Spatial = resource.Spatial! with { Bbox = targetResource.Spatial?.Bbox, StorageCrs = resource.Spatial!.SpatialReference },
             Temporal = resource.Temporal is null ? null : resource.Temporal with { Extent = null },
             Relationships = [],
