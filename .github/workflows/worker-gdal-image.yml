@@ -9,7 +9,10 @@ name: GDAL Worker Image
 # limited to inputs that DEFINE the image: the worker Docker context, worker-owned
 # managed source, the build context filter, the in-image restore helper, the
 # boundary verifier, the production-image certification test and its CI setup,
-# and this workflow. Shared managed-source and build-graph
+# the real-PDAL execution proof and the [PdalCliFact]/[GdalCliFact] attribute
+# helper it depends on (honua-server#4401 — this workflow is the ONLY lane that
+# runs Category=PDAL, so a PR that deletes the attribute, retraits the case or
+# weakens its assertions must land here to be seen), and this workflow. Shared managed-source and build-graph
 # inputs (`src/Honua.Core/**`, `src/Honua.Core.Abstractions/**`,
 # `src/Honua.Analyzers/**`, `src/Honua.Geoprocessing/**`, `src/Honua.Jobs/**`,
 # `src/Honua.Geometry/**`, `src/Honua.Hosting/**`,
@@ -43,6 +46,8 @@ on:
       - 'scripts/docker/restore-dotnet-with-github-packages.sh'
       - 'scripts/ci/verify-serving-image-boundary.py'
       - 'tests/dotnet/Honua.Worker.Gdal.Tests/ProductionWorkerContainerHandoffTests.cs'
+      - 'tests/dotnet/Honua.Worker.Gdal.Tests/PdalPointCloudRealCliTests.cs'
+      - 'tests/dotnet/Honua.Worker.Gdal.Tests/GdalCli.cs'
       - 'tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj'
       - '.github/actions/setup-dotnet-ci/**'
       - '.github/workflows/worker-gdal-image.yml'
@@ -174,17 +179,31 @@ jobs:
         # a fake runner. HONUA_REQUIRE_PDAL_CLI turns an absent PDAL into a failure
         # rather than a skip, and the counts tripwire below catches every other way
         # the coverage could vanish.
+        #
+        # `dotnet test` runs on the RUNNER, and no Ubuntu release publishes a `pdal`
+        # package — that is exactly why docker/worker-gdal/Dockerfile compiles the
+        # pinned upstream source — so the tool cannot be apt-provisioned here. The
+        # proof therefore dispatches every pdal invocation INTO the image just built,
+        # through the production DockerGdalCommandRunner that HONUA_WORKER_IMAGE
+        # selects (GdalCli.CreatePdalRunner): identical-path bind mount, executor code
+        # path unchanged, and the PDAL binary under test is the one the worker ships.
+        # HONUA_GDAL_PROOF_USER pins the container uid:gid to the runner's own so the
+        # LAS/LAZ files written into the bind-mounted scratch stay host-readable.
         id: pdal-proof
         env:
           HONUA_WORKER_IMAGE: honua-worker-gdal:boundary
           HONUA_REQUIRE_PDAL_CLI: "true"
-        run: >-
-          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj
-          --configuration Release
-          --filter "Category=PDAL"
-          --logger "console;verbosity=normal"
-          --logger "trx;LogFileName=worker-pdal-proof.trx"
-          --results-directory tests/TestResults
+        run: |
+          set -euo pipefail
+          # Fail fast and legibly if the image lost PDAL, rather than inside a test.
+          docker run --rm --network none --entrypoint pdal honua-worker-gdal:boundary --version
+          export HONUA_GDAL_PROOF_USER="$(id -u):$(id -g)"
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+            --configuration Release \
+            --filter "Category=PDAL" \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=worker-pdal-proof.trx" \
+            --results-directory tests/TestResults
 
       - name: Prove the PDAL cases ran, not skipped
         if: ${{ !cancelled() && steps.pdal-proof.conclusion != 'skipped' }}

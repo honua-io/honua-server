@@ -286,13 +286,13 @@ jobs:
           fi
 
       - name: Prove the real-GDAL CLI cases run on the required gate
-        # honua-server#4401: the three [GdalCliFact] cases emit Tier=Integration,
+        # honua-server#4401: the five [GdalCliFact] cases emit Tier=Integration,
         # which the lean gate's Tier=Fast filter can never match, and ci.yml has no
         # pull_request trigger — so real gdaldem / ogr2ogr coverage could regress
-        # without blocking a merge. Run them here, inside the pinned production
-        # worker image that the step above already pulled, with the same
-        # counts-based tripwire. HONUA_REQUIRE_GDAL_CLI turns a missing tool into a
-        # failure rather than a skip.
+        # without blocking a merge. Run them here on the gate runner, over an
+        # apt-provisioned GDAL CLI (the same provisioning ci.yml's worker-gdal-tests
+        # job uses), with the same counts-based tripwire. HONUA_REQUIRE_GDAL_CLI
+        # turns a missing tool into a failure rather than a skip.
         id: gdal-cli-proof
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         timeout-minutes: 10
@@ -301,11 +301,22 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -yqq gdal-bin
-          command -v gdaldem
-          command -v ogr2ogr
-          command -v gdal_translate
-          command -v gdalinfo
+          # Category=GDAL is the whole [GdalCliFact] set, not just the gdaldem /
+          # ogr2ogr cases. It also selects the two proximity correctness proofs:
+          # Distance_... shells out to the gdal_proximity.py utility, and
+          # Allocation_... runs the production step Scripts/gdal_euclidean_allocation.py,
+          # which imports the GDAL Python bindings, NumPy and SciPy. `gdal-bin` ships
+          # none of those, so provision the same set ci.yml's worker-gdal-tests job
+          # installs for this identical test surface and prefer the distro interpreter
+          # that owns the apt-installed modules. (GITHUB_PATH only affects LATER steps,
+          # so the PATH edit has to be an export inside this one.)
+          sudo apt-get install -yqq gdal-bin python3-gdal python3-numpy python3-scipy
+          export PATH="/usr/bin:${PATH}"
+          /usr/bin/python3 -c 'from osgeo import gdal; from scipy import ndimage; import numpy'
+          for tool in gdaldem ogr2ogr gdal_translate gdalinfo gdal_proximity.py python3; do
+            command -v "${tool}" >/dev/null \
+              || { echo "::error::${tool} is missing after installing the GDAL CLI packages"; exit 1; }
+          done
           trx=tests/TestResults/worker-gdal-cli.trx
           dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
             --configuration Release -maxcpucount:4 \

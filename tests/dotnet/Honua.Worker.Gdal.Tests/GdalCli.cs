@@ -127,19 +127,75 @@ internal static class GdalCli
     }
 
     /// <summary>
+    /// Gets the production worker image the GDAL image lane builds and names through
+    /// <c>HONUA_WORKER_IMAGE</c>, or <see langword="null"/> when this host is not that lane.
+    /// </summary>
+    public static string? WorkerImage
+    {
+        get
+        {
+            var image = Environment.GetEnvironmentVariable("HONUA_WORKER_IMAGE");
+            return string.IsNullOrWhiteSpace(image) ? null : image;
+        }
+    }
+
+    /// <summary>
+    /// Builds the command runner the real-PDAL proof executes through.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// PDAL cannot be provisioned on the runner with <c>apt-get install pdal</c>: no Ubuntu
+    /// release publishes a <c>pdal</c> package, which is precisely why
+    /// <c>docker/worker-gdal/Dockerfile</c> compiles the pinned upstream 2.10.2 source into
+    /// the image. A host <c>dotnet test</c> would therefore find no <c>pdal</c> on PATH and,
+    /// with <c>HONUA_REQUIRE_PDAL_CLI=true</c> refusing to skip, fail on every run.
+    /// </para>
+    /// <para>
+    /// So when the lane names the built worker image, dispatch the tool INTO that image with
+    /// the production <see cref="DockerGdalCommandRunner"/> — the same construction
+    /// <c>RasterExecutionProofTests</c> uses for the raster proofs. Its identical-path bind
+    /// mount (<c>-v ws:ws -w ws</c>) makes the executor's absolute workspace paths resolve to
+    /// the same files inside the container, so the executor's code path is unchanged and the
+    /// PDAL binary under test is the one the production worker actually ships. Falls back to
+    /// the host CLI on a dev box that has PDAL installed.
+    /// </para>
+    /// </remarks>
+    public static IGdalCommandRunner CreatePdalRunner()
+        => WorkerImage is { } image
+            ? new DockerGdalCommandRunner(
+                new ProcessDockerCommandInvoker(NullLogger<ProcessDockerCommandInvoker>.Instance),
+                Microsoft.Extensions.Options.Options.Create(new GdalContainerExecutionOptions
+                {
+                    Image = image,
+                    User = Environment.GetEnvironmentVariable("HONUA_GDAL_PROOF_USER") ?? "1001:1001",
+                }),
+                Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
+                Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
+                Microsoft.Extensions.Options.Options.Create(new AzureBlobOptions()),
+                NullLogger<DockerGdalCommandRunner>.Instance)
+            : CreateHostRunner();
+
+    /// <summary>
     /// Runs the real <c>pdal</c> CLI, throwing on a non-zero exit. Used to author genuinely
     /// compressed point-cloud inputs for the real-PDAL execution proof (honua-server#4401).
     /// </summary>
     public static Task RunPdalAsync(IReadOnlyList<string> args, string scratch)
-        => RunOrThrowAsync("pdal", args, scratch);
+        => RunOrThrowAsync("pdal", args, scratch, CreatePdalRunner());
 
-    private static async Task RunOrThrowAsync(string tool, IReadOnlyList<string> args, string scratch)
-    {
-        var runner = new ProcessGdalCommandRunner(
+    private static ProcessGdalCommandRunner CreateHostRunner()
+        => new(
             Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
             Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
             Microsoft.Extensions.Options.Options.Create(new AzureBlobOptions()),
             NullLogger<ProcessGdalCommandRunner>.Instance);
+
+    private static async Task RunOrThrowAsync(
+        string tool,
+        IReadOnlyList<string> args,
+        string scratch,
+        IGdalCommandRunner? runner = null)
+    {
+        runner ??= CreateHostRunner();
         var result = await runner.RunAsync(tool, args, scratch, CancellationToken.None).ConfigureAwait(false);
         if (!result.Succeeded)
         {
@@ -223,12 +279,14 @@ public sealed class PdalCliFactAttribute : FactAttribute, ITraitAttribute
     /// </summary>
     public PdalCliFactAttribute()
     {
-        if (GdalCli.Available("pdal") || RequireCli)
+        // The image lane has no host PDAL — no Ubuntu release packages one — so the proof
+        // runs the tool inside the named worker image. Treat that image as availability.
+        if (GdalCli.Available("pdal") || GdalCli.WorkerImage is not null || RequireCli)
         {
             return;
         }
 
-        Skip = "PDAL CLI tool 'pdal' is not available on PATH. "
+        Skip = "PDAL is available neither on PATH nor through a HONUA_WORKER_IMAGE container. "
             + $"Set {RequireEnvironmentVariable}=true to fail instead of skipping.";
     }
 }

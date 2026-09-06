@@ -15,6 +15,15 @@ payload='{"inputs":{"wkb":"AQEAAABQ/Bhz15pewNDVVuwv40JA","srid":4326,"distance":
 native_source="$(jq -cn '{type:"FeatureCollection",features:[range(0;500) as $id|{type:"Feature",properties:{id:$id},geometry:{type:"Point",coordinates:[(-157.8583 + ($id % 100) / 10000), (21.3069 + ($id % 50) / 10000)]}}]}' | base64 -w0)"
 native_payload="$(jq -cn --arg source "${native_source}" '{inputs:{source:$source,targetFormat:"GeoJSON",sourceFormat:"GeoJSON"}}')"
 mkdir -p "${receipt_root}"
+# #4401: which process a job ran is recorded per job id, never inferred from the
+# scenario name. Most scenarios submit gdal.ogr2ogr with ${native_payload} under
+# names that carry no "native" marker (duplicate-delivery, retry, stale-lease,
+# queue-backlog, restart-*-results-read, ...), so a name-based guess would apply
+# the geometry.buffer output check to an ogr2ogr point collection and fail every
+# one of them. A FILE, not a shell variable: submit_async runs inside a command
+# substitution subshell, so an assignment there would not survive.
+job_process_root="${receipt_root}/.job-process"
+mkdir -p "${job_process_root}"
 
 case "${lane}" in
   lifecycle)
@@ -186,11 +195,26 @@ wait_peer_ready() {
   done
 }
 
+# Records/reads the process a job was submitted with. See ${job_process_root} above.
+record_job_process() {
+  local job="$1" process="$2"
+  [[ -n "${job}" ]] || return 0
+  printf '%s' "${process}" > "${job_process_root}/${job//[^A-Za-z0-9._-]/_}"
+}
+
+job_process_of() {
+  local job="$1" path="${job_process_root}/${1//[^A-Za-z0-9._-]/_}"
+  [[ -n "${job}" && -s "${path}" ]] || return 0
+  cat "${path}"
+}
+
 submit_async() {
-  local process="${1:-geometry.buffer}" body="${2:-${payload}}" response
+  local process="${1:-geometry.buffer}" body="${2:-${payload}}" response job
   response="$(auth_curl -H 'Content-Type: application/json' -H 'Prefer: respond-async' \
     -d "${body}" "${base_url}/ogc/processes/processes/${process}/execution")"
-  jq -er '.jobID // .jobId' <<<"${response}"
+  job="$(jq -er '.jobID // .jobId' <<<"${response}")" || return 1
+  record_job_process "${job}" "${process}"
+  printf '%s' "${job}"
 }
 
 status_json() {
@@ -475,7 +499,7 @@ verify_buffer_semantics() {
 }
 
 result_digest() {
-  local tmp digest bytes semantics
+  local tmp digest bytes semantics process
   tmp="$(mktemp)"
   if ! auth_curl "${base_url}/ogc/processes/jobs/$1/results" > "${tmp}"; then
     rm -f "${tmp}"
@@ -484,24 +508,32 @@ result_digest() {
   digest="$(sha256sum "${tmp}" | cut -d' ' -f1)"
   bytes="$(wc -c < "${tmp}")"
 
-  # #4401: a sha over a non-empty document passed for a numerically wrong output. When the
-  # scenario ran the fixed geometry.buffer payload, additionally verify the output's semantics.
-  semantics=ok
-  if [[ "${HONUA_GP_VERIFY_BUFFER_SEMANTICS:-1}" == "1" && "${scenario_name:-}" != *native* ]]; then
+  # #4401: a sha over a non-empty document passed for a numerically wrong output. The
+  # semantic oracle below only describes the fixed geometry.buffer payload, so it applies
+  # to jobs that actually submitted geometry.buffer — read back from the recorded process,
+  # not guessed from the scenario name.
+  process="$(job_process_of "$1")"
+  if [[ "${HONUA_GP_VERIFY_BUFFER_SEMANTICS:-1}" == "1" && "${process}" == "geometry.buffer" ]]; then
     if ! semantics="$(verify_buffer_semantics "${tmp}")"; then
       jq -n --arg sha "${digest}" --argjson bytes "${bytes}" --arg semantics "${semantics}" \
-        '{sha256:$sha,bytes:$bytes,output_semantics:$semantics}' > "${scenario_state_file}"
+        --arg process "${process}" \
+        '{sha256:$sha,bytes:$bytes,process:$process,output_semantics:$semantics}' > "${scenario_state_file}"
       rm -f "${tmp}"
       printf '%s' "${semantics}" >&2
       return 1
     fi
     semantics=verified
+  elif [[ -z "${process}" ]]; then
+    # No recording means the job was not submitted through submit_async or
+    # record_job_process; say so in the receipt rather than implying a clean pass.
+    semantics=not-applicable-unrecorded-process
   else
-    semantics=not-applicable
+    semantics="not-applicable-${process}"
   fi
 
   jq -n --arg sha "${digest}" --argjson bytes "${bytes}" --arg semantics "${semantics}" \
-    '{sha256:$sha,bytes:$bytes,output_semantics:$semantics}' > "${scenario_state_file}"
+    --arg process "${process}" \
+    '{sha256:$sha,bytes:$bytes,process:$process,output_semantics:$semantics}' > "${scenario_state_file}"
   rm -f "${tmp}"
   printf '%s' "${digest}"
 }
@@ -573,6 +605,9 @@ run_idempotency() {
     write_receipt "${scenario}" fail "FINDING: identical Idempotency-Key created two jobs" "${first}"
     return 1
   fi
+  # Submitted with raw curl rather than submit_async, so record the process by hand
+  # to keep result_digest's buffer-output check applied to this scenario (#4401).
+  record_job_process "${first}" geometry.buffer
   local terminal state digest
   terminal="$(wait_terminal "${first}")" || { write_receipt "${scenario}" fail "FINDING: idempotent job lost" "${first}"; return 1; }
   state="$(jq -r '.status' <<<"${terminal}")"; digest="$(result_digest "${first}" 2>/dev/null || true)"
