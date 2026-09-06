@@ -10,7 +10,7 @@ The test publishes a typed source table before calling the production `data-mana
 | 13 | beta | 14 | null | -20,40,80 |
 | 15 | gamma | 21 | third | 30,-10,90 |
 
-The three independently specified selections are all rows; `score >= 14` yielding IDs 13,15; and that predicate intersected with `objectIds=11,15` yielding only ID 15. The oracle uses these literals, never values captured from the implementation under test.
+The three independently specified selections are all rows; `score >= 14` yielding IDs 13,15; and that predicate intersected with `objectIds=11,15` yielding only ID 15. A fourth case advertises EPSG:3857 for the source while storing EPSG:4326; the copied target uses EPSG:3857 physically and publicly. Expected XY ordinates use the independent spherical Mercator equations with radius 6378137, while Z is retained exactly. The oracle uses these literals and equations, never values captured from the implementation under test.
 
 Readback asserts all attributes (including the canonical objectid alias and its exact ID value), exact XYZ coordinates, output SRID, copied schema including field length/type/nullability, a distinct target layer, and source/operation provenance. The original source is then read back against all three literal rows and its original metadata to detect mutation.
 
