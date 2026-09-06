@@ -64,13 +64,14 @@ public sealed class ObservationStreamSessionManagerMetricsTests
             NullLogger<ObservationStreamSessionManager>.Instance,
             redis: null,
             maxBufferPerConnection: 1);
-        using var session = manager.TryCreateSession("sse", datastreamId: 7)!;
+        var scope = new ObservationStreamScope("tenant-a", "schema_a");
+        using var session = manager.TryCreateSession("sse", datastreamId: 7, scope)!;
 
         manager.PublishObservations(
             [
                 CreateObservation(id: 1, datastreamId: 7),
                 CreateObservation(id: 2, datastreamId: 7)
-            ]);
+            ], scope);
 
         Assert.Equal(1, manager.SlowConsumerDrops);
         Assert.Contains(1, samples);

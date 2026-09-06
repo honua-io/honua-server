@@ -63,7 +63,7 @@ public sealed record ObservationStreamStatus
 }
 
 /// <summary>Redis pub/sub envelope used to fan observation frames out across nodes.</summary>
-internal sealed record ClusterBroadcastDto(string OriginInstanceId, ObservationStreamFrame Frame);
+internal sealed record ClusterBroadcastDto(string OriginInstanceId, ObservationStreamFrame Frame, ObservationStreamScope? Scope);
 
 /// <summary>Source-generated JSON context for observation-stream frames.</summary>
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

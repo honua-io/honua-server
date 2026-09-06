@@ -37,15 +37,19 @@ internal static class ObservationStreamEndpoints
                 "Accept: text/event-stream. WebSocket: send an Upgrade request. " +
                 "Optional query param: datastreamId (tail a single Datastream).")
             .WithTags("SensorThings")
+            .RequireAuthorization()
             .Produces(200, contentType: "text/event-stream")
-            .Produces(400);
+            .Produces(400)
+            .Produces(401)
+            .Produces(403);
 
         return endpoints;
     }
 
     private static async Task<IResult> HandleStream(
         HttpContext context,
-        [FromServices] ObservationStreamSessionManager sessionManager)
+        [FromServices] ObservationStreamSessionManager sessionManager,
+        [FromServices] ObservationStreamScope scope)
     {
         long? datastreamId = null;
         if (context.Request.Query.TryGetValue("datastreamId", out var raw) &&
@@ -67,11 +71,11 @@ internal static class ObservationStreamEndpoints
 
         if (isWebSocket)
         {
-            await HandleWebSocketAsync(context, sessionManager, datastreamId).ConfigureAwait(false);
+            await HandleWebSocketAsync(context, sessionManager, datastreamId, scope).ConfigureAwait(false);
         }
         else
         {
-            await HandleSseAsync(context, sessionManager, datastreamId).ConfigureAwait(false);
+            await HandleSseAsync(context, sessionManager, datastreamId, scope).ConfigureAwait(false);
         }
 
         return Results.Empty;
@@ -80,9 +84,10 @@ internal static class ObservationStreamEndpoints
     private static async Task HandleSseAsync(
         HttpContext context,
         ObservationStreamSessionManager sessionManager,
-        long? datastreamId)
+        long? datastreamId,
+        ObservationStreamScope scope)
     {
-        var session = sessionManager.TryCreateSession("SSE", datastreamId);
+        var session = sessionManager.TryCreateSession("SSE", datastreamId, scope);
         if (session is null)
         {
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
@@ -163,9 +168,10 @@ internal static class ObservationStreamEndpoints
     private static async Task HandleWebSocketAsync(
         HttpContext context,
         ObservationStreamSessionManager sessionManager,
-        long? datastreamId)
+        long? datastreamId,
+        ObservationStreamScope scope)
     {
-        var session = sessionManager.TryCreateSession("WebSocket", datastreamId);
+        var session = sessionManager.TryCreateSession("WebSocket", datastreamId, scope);
         if (session is null)
         {
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
