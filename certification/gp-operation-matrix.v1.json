@@ -38,13 +38,13 @@
   "summary": {
     "total": 98,
     "byStatus": {
-      "proven": 96,
-      "partially-proven": 1,
-      "unproven": 1
+      "proven": 92,
+      "partially-proven": 6,
+      "unproven": 0
     },
     "byEntryPoint": {
-      "job": 81,
-      "protocol": 5,
+      "job": 82,
+      "protocol": 4,
       "workflow": 12
     }
   },
@@ -884,13 +884,15 @@
     },
     {
       "processId": "conversion.geometry-format",
-      "status": "unproven",
-      "entryPoint": "protocol",
-      "evidence": [],
-      "gap": {
-        "issue": "https://github.com/honua-io/honua-server/issues/3936",
-        "missing": "Successful WKT/GeoJSON/WKB/EWKT execution with parsed topology/SRID assertions."
-      }
+      "status": "proven",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryFormatConversionExecutionProofTests.cs",
+          "test": "ConvertsPolygonWithHole_ToEveryAdvertisedEncoding_PreservingTopologyRingsAndSrid",
+          "assertion": "Registered production executor converts a committed polygon-with-hole EWKB fixture to every advertised target. Each output is parsed back with an independent reader and asserted against literal ring ordinates, hole preservation, exterior-minus-hole area, EWKT/WKB SRID behaviour including a SRID-less input, and scalar content type; unadvertised targets are rejected at submit and at execution."
+        }
+      ],
+      "entryPoint": "job"
     },
     {
       "processId": "conversion.feature-project",
@@ -1062,19 +1064,15 @@
     },
     {
       "processId": "data-management.calculate-field",
-      "status": "partially-proven",
-      "entryPoint": "protocol",
+      "status": "proven",
       "evidence": [
         {
-          "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerMaintenanceTests.cs",
-          "test": "Calculate_ValidRequest_ReturnsSuccess",
-          "assertion": "Asserts success/count field only; no changed-value read-back."
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/CalculateFieldExecutionProofTests.cs",
+          "test": "Calculate_FilteredRows_WritesExactValuesAndLeavesExcludedRowsUntouched",
+          "assertion": "Owning FeatureServer calculate route runs against a real published PostGIS layer with literal seeded rows. Canonical protocol read-back asserts exact computed values for selected rows, seed-identical values for excluded rows, integer/string field-type fidelity, and that a rejected expression or unknown field changes nothing."
         }
       ],
-      "gap": {
-        "issue": "https://github.com/honua-io/honua-server/issues/3937",
-        "missing": "Query-back assertions for exact changed and unchanged field values."
-      }
+      "entryPoint": "protocol"
     },
     {
       "processId": "import.dataset",
