@@ -339,10 +339,7 @@ internal static partial class ProcessPlanValidator
                 ValidateRasterInterpolateIdwSemantics(step, violations);
                 break;
             case "raster.interpolate-kriging":
-                // Kriging remains shape-validated here so diagnostic tooling can
-                // describe malformed inputs. The catalog capability layer classifies
-                // it as Unavailable and the direct-submit validator rejects execution
-                // with the canonical operator-facing reason.
+                // The native worker validates point geometry, variogram, and bounded output size.
                 break;
             case "raster.mosaic":
                 ValidateRasterMosaicSemantics(step, violations);
@@ -352,7 +349,7 @@ internal static partial class ProcessPlanValidator
                 // whether a backend is actually configured is a deployment concern the
                 // static validator cannot see, so an unconfigured deployment surfaces
                 // the clear "no cloud inference backend is configured" message as a
-                // job failure at execution. Unlike unavailable kriging, imagery is a
+                // job failure at execution. Imagery is a
                 // configuration-dependent Job capability and remains directly callable.
                 ValidateImageryClassifySemantics(step, violations);
                 break;

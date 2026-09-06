@@ -165,14 +165,13 @@ public sealed class GdalRasterInterpolateExecutorTests
     }
 
     [UnitTest]
-    public async Task Kriging_IsFlaggedUnsupported_FailsFastWithClearMessage_AndNeverRunsCli()
+    public async Task Kriging_InvalidPoints_FailsBeforeEncoding_AndPublishesNoArtifact()
     {
         var runner = FakeGdalCommandRunner.Failing(1, "should-not-run");
         var executor = NewExecutor(runner, out var scratch);
         try
         {
-            // Even with valid inputs, kriging must fail fast with the unsupported
-            // message rather than silently substituting another algorithm.
+            // Invalid input must fail before the encoder runs; no artifact can escape.
             var job = GdalJobFactory.Job(
                 GdalRasterInterpolateJobExecutor.KrigingProcessId,
                 ("points", Base64("points")),
@@ -182,8 +181,7 @@ public sealed class GdalRasterInterpolateExecutorTests
             var result = await executor.ExecuteAsync(job, context, default);
 
             result.Status.Should().Be(ExecutionJobStatus.Failed);
-            result.ErrorMessage.Should().Be(GdalRasterInterpolateJobExecutor.KrigingUnsupportedMessage);
-            result.ErrorMessage.Should().Contain("not available in this build");
+            result.ErrorMessage.Should().StartWith("Invalid kriging points:");
             runner.Invocations.Should().BeEmpty();
             context.Artifacts.Should().BeEmpty();
         }

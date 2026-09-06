@@ -918,12 +918,15 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "raster.interpolate-kriging",
             Title = "Interpolate (Kriging)",
-            Description = "FLAGGED / UNSUPPORTED in this build: kriging interpolation requires a kriging-capable numerical backend that the worker image does not bundle (stock GDAL gdal_grid has no kriging algorithm). The process is advertised so callers can discover the limitation; a submitted job FAILS with a clear message rather than silently substituting a different algorithm. Use raster.interpolate-idw for inverse-distance-weighted interpolation.",
+            Description = "Ordinary kriging with the bundled isotropic linear, zero-nugget variogram solver. Distances use source CRS units (EPSG:4326 by default). Requires 2-128 distinct points with nonzero two-dimensional extent. Predicts at cell centers over the point extent, default 64x64; emits Float64 GeoTIFF with NaN nodata and model identity metadata. Numerical work and output size are bounded by the native worker.",
             Category = "raster",
             Parameters =
             [
                 Param("points", "Points", "Source points as a base64-encoded GeoJSON FeatureCollection.", ProcessParameterValueType.Text, required: true),
-                Param("zField", "Z Field", "Attribute name holding the value to interpolate.", ProcessParameterValueType.Text),
+                Param("zField", "Z Field", "Numeric value attribute; omitted uses the Point Z ordinate.", ProcessParameterValueType.Text),
+                Param("variogram", "Variogram", "Supported model: linear (isotropic, zero nugget).", ProcessParameterValueType.Text),
+                Param("width", "Width", "Output width in pixels; specify with height. Default 64.", ProcessParameterValueType.Integer),
+                Param("height", "Height", "Output height in pixels; specify with width. Default 64.", ProcessParameterValueType.Integer),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native

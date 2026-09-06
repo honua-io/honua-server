@@ -17,5 +17,5 @@ for i in range(1, ds.RasterCount + 1):
                   "color": gdal.GetColorInterpretationName(band.GetColorInterpretation()),
                   "mask": band.GetMaskBand().ReadAsArray().flatten().tolist(),
                   "values": [v if math.isfinite(v) else str(v) for v in values]})
-print(json.dumps({"width": ds.RasterXSize, "height": ds.RasterYSize,
+print(json.dumps({"width": ds.RasterXSize, "height": ds.RasterYSize, "metadata": ds.GetMetadata(),
                   "srid": int(srs.GetAuthorityCode(None)), "transform": ds.GetGeoTransform(), "bands": bands}))

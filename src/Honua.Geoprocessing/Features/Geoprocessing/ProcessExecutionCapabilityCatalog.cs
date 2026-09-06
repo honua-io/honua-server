@@ -79,6 +79,7 @@ internal static class ProcessExecutionCapabilityCatalog
         "raster.zonal-statistics",
         "raster.resample",
         "raster.interpolate-idw",
+        "raster.interpolate-kriging",
         "raster.mosaic",
         "raster.map-algebra",
         "raster.spectral-index",
@@ -131,14 +132,13 @@ internal static class ProcessExecutionCapabilityCatalog
         "geometry.centroid",
         "geometry.convex-hull",
         "geometry.dissolve",
-        "geometry.snap");
+        "geometry.snap",
+        "conversion.geometry-format");
 
     internal static readonly FrozenDictionary<string, string> UnavailableReasons =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["raster.interpolate-kriging"] =
-                "No kriging-capable numerical backend is bundled in this build. "
-                + "Use 'raster.interpolate-idw' for inverse-distance-weighted interpolation."
+
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     /// <summary>Stamps one raw built-in definition with its required canonical classification.</summary>

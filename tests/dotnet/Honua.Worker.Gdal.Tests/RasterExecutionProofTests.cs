@@ -347,7 +347,7 @@ public sealed partial class RasterExecutionProofTests : IDisposable
             "raster.reproject" => new GdalRasterReprojectCatalogJobExecutor(_runner, options, NullLogger<GdalRasterReprojectCatalogJobExecutor>.Instance),
             "raster.mosaic" => new GdalRasterMosaicJobExecutor(_runner, options, NullLogger<GdalRasterMosaicJobExecutor>.Instance),
             "raster.resample" => new GdalRasterResampleJobExecutor(_runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
-            "raster.interpolate-idw" => new GdalRasterInterpolateJobExecutor(_runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
+            "raster.interpolate-idw" or "raster.interpolate-kriging" => new GdalRasterInterpolateJobExecutor(_runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
             "raster.histogram" => new GdalRasterStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterStatisticsJobExecutor>.Instance),
             "conversion.rasterize" => new GdalRasterizeJobExecutor(_runner, options, NullLogger<GdalRasterizeJobExecutor>.Instance),
             _ => throw new ArgumentOutOfRangeException(nameof(id))
