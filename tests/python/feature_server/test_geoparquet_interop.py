@@ -23,20 +23,36 @@ Reader-side SDK tracking: honua-sdk-js#630.
 
 from __future__ import annotations
 
+import importlib
 import io
 import json
+import os
 
 import httpx
 import pytest
 
 # The GeoParquet reader stack is declared in tests/python/requirements.txt
-# (geopandas / pyproj / shapely) plus pyarrow (transitive via geopandas). Skip
-# cleanly if the environment lacks any of them rather than erroring.
-gpd = pytest.importorskip("geopandas", reason="geopandas is required for the GeoParquet interop lane")
-pyarrow_parquet = pytest.importorskip(
-    "pyarrow.parquet", reason="pyarrow is required for the GeoParquet interop lane"
-)
-pyproj = pytest.importorskip("pyproj", reason="pyproj is required for the GeoParquet interop lane")
+# (geopandas / pyproj / shapely) plus pyarrow (transitive via geopandas).
+#
+# honua-server#4396: importorskip alone made a lane that failed to install the reader stack
+# report green with zero executed cells. A lane that is *supposed* to run this evidence sets
+# HONUA_REQUIRE_GEOPARQUET_INTEROP=1, and a missing dependency is then an import error rather
+# than a skip. Local runs without the stack still skip cleanly.
+_REQUIRE_INTEROP_STACK = os.environ.get(
+    "HONUA_REQUIRE_GEOPARQUET_INTEROP", ""
+).strip().lower() in ("1", "true", "yes")
+
+
+def _import_reader(module: str):
+    """Import an independent-reader dependency, honouring the require-stack declaration."""
+    if _REQUIRE_INTEROP_STACK:
+        return importlib.import_module(module)
+    return pytest.importorskip(module, reason=f"{module} is required for the GeoParquet interop lane")
+
+
+gpd = _import_reader("geopandas")
+pyarrow_parquet = _import_reader("pyarrow.parquet")
+pyproj = _import_reader("pyproj")
 
 PARQUET_CONTENT_TYPE = "application/vnd.apache.parquet"
 
@@ -58,10 +74,33 @@ def _fetch_parquet(
     )
 
 
-def _skip_if_parquet_unavailable(response: httpx.Response) -> None:
-    """The native Parquet writer is unavailable on musl images (501); skip there."""
-    if response.status_code in (404, 501):
-        pytest.skip(f"GeoParquet output not available on this runtime (HTTP {response.status_code})")
+# honua-server#4396: this lane used to call ``pytest.skip`` whenever the server answered
+# 404/501, so a runtime that had lost its Parquet writer reported GREEN — and under the
+# 2026-09-04 ruling that "skipped required cells are non-passing evidence", the cell could
+# not count at all. The unsupported runtime is now *declared*, not inferred: the musl lane
+# sets HONUA_PARQUET_WRITER_UNSUPPORTED=1 and this module then asserts the server really
+# does answer 501 there. Everywhere else, a missing Parquet writer is a hard failure.
+PARQUET_WRITER_DECLARED_UNSUPPORTED = os.environ.get(
+    "HONUA_PARQUET_WRITER_UNSUPPORTED", ""
+).strip().lower() in ("1", "true", "yes")
+
+
+def _require_parquet_available(response: httpx.Response) -> None:
+    """Fail on a missing Parquet writer unless this runtime declared it unsupported."""
+    if PARQUET_WRITER_DECLARED_UNSUPPORTED:
+        assert response.status_code == 501, (
+            "HONUA_PARQUET_WRITER_UNSUPPORTED is set, so the server must answer 501 for "
+            f"f=parquet; got HTTP {response.status_code}. Either the runtime does support "
+            "GeoParquet (unset the variable) or the not-supported denial has regressed."
+        )
+        pytest.xfail("GeoParquet writer is declared unsupported on this runtime")
+
+    assert response.status_code not in (404, 501), (
+        f"GeoParquet output is required on this runtime but the server answered HTTP "
+        f"{response.status_code}. If this runtime genuinely cannot ship the native Parquet "
+        "writer, declare it by setting HONUA_PARQUET_WRITER_UNSUPPORTED=1 in the lane rather "
+        "than letting the test infer it from the response (honua-server#4396)."
+    )
 
 
 def _read_geo_metadata(payload: bytes) -> dict:
@@ -82,7 +121,7 @@ class TestGeoParquetSdkInterop:
     ):
         """The emitted ``geo`` metadata carries every field the SDK reader relies on."""
         response = _fetch_parquet(http_client, test_service_id, test_layer_id)
-        _skip_if_parquet_unavailable(response)
+        _require_parquet_available(response)
 
         assert response.status_code == 200, response.text[:300]
         assert PARQUET_CONTENT_TYPE in response.headers.get("content-type", "").lower()
@@ -117,7 +156,7 @@ class TestGeoParquetSdkInterop:
     ):
         """geopandas decodes the WKB + CRS and matches the GeoJSON reference view."""
         parquet_response = _fetch_parquet(http_client, test_service_id, test_layer_id)
-        _skip_if_parquet_unavailable(parquet_response)
+        _require_parquet_available(parquet_response)
         assert parquet_response.status_code == 200, parquet_response.text[:300]
 
         gdf = gpd.read_parquet(io.BytesIO(parquet_response.content))
@@ -153,9 +192,14 @@ class TestGeoParquetSdkInterop:
     ):
         """Projected (EPSG:3857) output carries authoritative PROJJSON and (x, y) coordinates."""
         response = _fetch_parquet(http_client, test_service_id, test_layer_id, out_sr=3857)
-        _skip_if_parquet_unavailable(response)
-        if response.status_code != 200:
-            pytest.skip(f"non-4326 GeoParquet output not honored (HTTP {response.status_code})")
+        _require_parquet_available(response)
+        # honua-server#4396: this used to skip on any non-200, which turned "outSR was
+        # ignored" and "reprojection crashed" into a green cell. Reprojected GeoParquet is
+        # part of the GA promise, so a non-200 fails.
+        assert response.status_code == 200, (
+            f"projected GeoParquet (outSR=3857) must be served; got HTTP "
+            f"{response.status_code}: {response.text[:300]}"
+        )
 
         # Raw geo metadata carries a PROJJSON crs object; pyproj must reconstruct EPSG:3857.
         geo = _read_geo_metadata(response.content)

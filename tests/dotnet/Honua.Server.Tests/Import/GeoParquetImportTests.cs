@@ -8,6 +8,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Import;
 
@@ -53,6 +55,23 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         responseContent.Should().Contain("geoparquet_import_test");
         responseContent.Should().Contain("GeoParquet");
         responseContent.Should().Contain("\"success\":true");
+
+        // honua-server#4396: the response substring above proves the import *reported* success.
+        // Read the persisted rows back and assert the values the fixture actually wrote, so an
+        // import that committed the wrong geometry, dropped the attributes or reprojected the
+        // point cannot pass.
+        var rows = await ReadImportedRowsAsync("geoparquet_import_test");
+        var row = rows.Should().ContainSingle().Subject;
+        row.ObjectId.Should().Be(1L);
+        row.Name.Should().Be("Test Feature");
+
+        // GeoParquetTestFactory writes POINT(-122.4194 37.7749) in EPSG:4326 and the upload
+        // requests TargetSrid=4326, so the stored point must be that point, unmoved.
+        row.Geometry.Should().BeOfType<Point>();
+        var point = (Point)row.Geometry!;
+        point.X.Should().BeApproximately(-122.4194, 1e-9);
+        point.Y.Should().BeApproximately(37.7749, 1e-9);
+        point.SRID.Should().Be(4326);
     }
 
     [IntegrationTest]
@@ -228,6 +247,61 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         // Must surface the specific validation reason, not "Import failed."
         responseContent.Should().Contain("geo");
     }
+
+    /// <summary>
+    /// Reads back the rows the import committed.
+    /// </summary>
+    /// <remarks>
+    /// honua-server#4396 asks for a readback "through the public API". The file-import surface
+    /// creates a raw table and does <em>not</em> register a service layer (there is no
+    /// layer-registration call anywhere in <c>src/Honua.Import</c>), so there is no public read
+    /// route for an imported table to go through. This reads the committed rows directly, which
+    /// is still a readback of persisted state rather than an assertion about the response body.
+    /// </remarks>
+    private async Task<IReadOnlyList<ImportedRow>> ReadImportedRowsAsync(string tableName)
+    {
+        var reader = new WKBReader();
+        var rows = new List<ImportedRow>();
+
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+
+        // The import chooses its own target schema, so resolve where the table actually landed
+        // rather than assuming; a missing table is itself a failure worth reporting clearly.
+        string? schema;
+        await using (var locate = connection.CreateCommand())
+        {
+            locate.CommandText = """
+                SELECT table_schema
+                FROM information_schema.tables
+                WHERE table_name = @table
+                ORDER BY (table_schema = current_schema()) DESC, table_schema
+                LIMIT 1
+                """;
+            locate.Parameters.AddWithValue("table", tableName);
+            schema = (string?)await locate.ExecuteScalarAsync();
+        }
+
+        schema.Should().NotBeNull("the import must have created table '{0}'", tableName);
+
+        await using var command = connection.CreateCommand();
+        // Both identifiers are resolved from the catalog / a test-owned literal, never user input.
+        command.CommandText =
+            $"SELECT objectid, name, ST_AsEWKB(geometry) FROM \"{schema}\".\"{tableName}\" ORDER BY objectid";
+
+        await using var result = await command.ExecuteReaderAsync();
+        while (await result.ReadAsync())
+        {
+            var geometry = result.IsDBNull(2) ? null : reader.Read((byte[])result.GetValue(2));
+            rows.Add(new ImportedRow(
+                result.IsDBNull(0) ? null : result.GetInt64(0),
+                result.IsDBNull(1) ? null : result.GetString(1),
+                geometry));
+        }
+
+        return rows;
+    }
+
+    private sealed record ImportedRow(long? ObjectId, string? Name, Geometry? Geometry);
 
     private static MultipartFormDataContent CreateUploadContent(byte[] fileBytes, string fileName, string tableName)
     {
