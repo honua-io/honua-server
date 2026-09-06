@@ -214,6 +214,7 @@ public sealed class CatalogExecutableConformanceTests
             new GeometrySnapJobExecutor(monitor, NullLogger<GeometrySnapJobExecutor>.Instance),
             new GeometryMakeValidJobExecutor(monitor, NullLogger<GeometryMakeValidJobExecutor>.Instance),
             new GeometryDifferenceJobExecutor(monitor, NullLogger<GeometryDifferenceJobExecutor>.Instance),
+            new GeometryFormatJobExecutor(monitor),
             new ManagedSpatialJoinExecutor(monitor),
             new ManagedClusterExecutor(monitor),
             new ManagedBufferAggregateExecutor(monitor),
