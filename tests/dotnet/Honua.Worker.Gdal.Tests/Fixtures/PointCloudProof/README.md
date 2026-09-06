@@ -27,7 +27,9 @@ coordinates; tolerance is half the output scale plus floating-point roundoff.
 explains why preserving source scale/header and selecting geographic output scale
 are necessary. Dropping RGB, rounding coordinates to the default 0.01 scale,
 copying projected coordinates under a geographic CRS, or changing an elevation
-cannot satisfy these assertions.
+cannot satisfy these assertions. The same point oracle is also applied to a valid
+LAS with one changed intensity and must reject it. Reprojected XY uses 1e-7-degree
+scale and zero offsets, which fit the full longitude/latitude range in Int32.
 
 These are pre-cut whole-catalog GA operation proofs for #3951. Candidate-bound
 lifecycle qualification consumes #3848; shared staged-output/database recovery
