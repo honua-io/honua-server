@@ -900,31 +900,26 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Attachment reads are scoped to the service that owns them, and that scoping holds with the
-    /// development authentication bypass disabled (honua-server#4404).
+    /// Attachment authorization with the development authentication bypass disabled
+    /// (honua-server#4404).
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Every other test in this file runs as the dev-bypass principal, so no attachment coverage
-    /// existed off that bypass at all — a grep for "attachment" across both security test projects
-    /// returns nothing. This runs on an isolated host with
+    /// Every other test in this file runs as the dev-bypass principal, and a grep for
+    /// "attachment" across both security test projects returns nothing — so the attachment
+    /// surface had no authorization evidence at all. This runs on an isolated host with
     /// <c>HONUA_DEV_AUTH_ALLOW_BYPASS=false</c>.
     /// </para>
     /// <para>
-    /// It asserts service scoping rather than a 401. The seeded test service permits anonymous
-    /// reads by policy, so an anonymous <c>200</c> on its own attachments is correct behaviour and
-    /// asserting otherwise would encode a false expectation. What must hold regardless of the
-    /// service's read policy is that an attachment is reachable only through the service that owns
-    /// it: the attachment id alone must not be a bearer capability across services. Proving that a
-    /// *denied authenticated* principal is refused additionally needs a service whose access
-    /// policy denies anonymous plus attachment rows bound to it, which the shared seed does not
-    /// provide; that half is recorded as the remaining slice on #4404.
+    /// The refusal is a GeoServices error envelope (HTTP 200 with <c>error.code</c> 499), not a
+    /// transport 401 — the convention this surface uses. The assertion that matters either way is
+    /// that the object's bytes are never in the response body.
     /// </para>
     /// </remarks>
     [IntegrationTest]
     [Operation(Operations.DownloadAttachment)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
-    public async Task DownloadAttachment_ThroughAnotherServiceId_DoesNotServeTheOwningServicesBytes()
+    public async Task DownloadAttachment_WithoutCredentials_IsRefusedAndNeverReturnsTheBytes()
     {
         var fixture = new WebAppFixture().ConfigureWebHost(builder =>
         {
@@ -940,24 +935,26 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
             try
             {
-                using var client = fixture.CreateClient();
+                var seeded = AttachmentTestData.SeededTextFileBytes.ToArray();
+                using var anonymous = fixture.CreateClient();
 
-                // Precondition: through the owning service the bytes are served exactly.
-                var owned = await client.GetAsync(
+                var download = await anonymous.GetAsync(
                     $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/1");
-                owned.StatusCode.Should().Be(HttpStatusCode.OK);
-                (await owned.Content.ReadAsByteArrayAsync()).Should().Equal(
-                    AttachmentTestData.SeededTextFileBytes.ToArray());
+                await download.AssertGeoServicesErrorAsync(499);
+                (await download.Content.ReadAsByteArrayAsync()).Should().NotEqual(
+                    seeded, "an unauthenticated caller must never receive the attachment bytes");
 
-                // The same attachment id addressed through a different service must not resolve.
-                // An attachment id is not a bearer capability that crosses service boundaries.
-                var crossService = await client.GetAsync(
-                    $"/rest/services/not-{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/1");
-                crossService.StatusCode.Should().NotBe(HttpStatusCode.OK,
-                    "an attachment must be reachable only through the service that owns it");
-                (await crossService.Content.ReadAsByteArrayAsync()).Should().NotEqual(
-                    AttachmentTestData.SeededTextFileBytes.ToArray(),
-                    "the owning service's bytes must never be served under another service id");
+                var query = await anonymous.GetAsync(
+                    $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectId={TestFeatureId}");
+                await query.AssertGeoServicesErrorAsync(499);
+
+                // Positive control: with credentials the same request succeeds and returns the
+                // exact bytes, so the refusal above is authorization and not a broken route.
+                using var admin = fixture.CreateAdminClient();
+                var authorized = await admin.GetAsync(
+                    $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/1");
+                authorized.StatusCode.Should().Be(HttpStatusCode.OK);
+                (await authorized.Content.ReadAsByteArrayAsync()).Should().Equal(seeded);
             }
             finally
             {
