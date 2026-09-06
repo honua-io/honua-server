@@ -206,6 +206,77 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("alert_zone.create")]
+    [InlineData("alert_zone.update")]
+    [InlineData("alert_zone.delete")]
+    [InlineData("alert_rule.create")]
+    [InlineData("alert_rule.update")]
+    [InlineData("alert_rule.enable")]
+    [InlineData("alert_rule.disable")]
+    [InlineData("alert_rule.delete")]
+    public async Task Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged(string action)
+    {
+        var store = _fixture.GetService<IAlertAdminStore>();
+        var rule = await store.CreateRuleAsync(Rule(_service) with { IsActive = action != "alert_rule.enable" });
+        var zone = await store.CreateZoneAsync(new AlertZoneDefinition
+        {
+            ZoneId = 0, ServiceId = _service, ZoneName = "original", IsActive = true,
+            GeometrySrid = 4326,
+            Geometry = new NetTopologySuite.IO.WKTReader().Read("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))").AsBinary()
+        });
+        var correlation = Guid.NewGuid().ToString("N");
+        _client.DefaultRequestHeaders.Add("X-Correlation-ID", correlation);
+        // Reject only this request's INSERT in the real migrated audit table.
+        // No fake sink or mutation-response echo supplies the persistence oracle.
+        var trigger = "alert_floor_" + correlation;
+        await using var connection = await _fixture.GetService<NpgsqlDataSource>().OpenConnectionAsync();
+        await using var install = new NpgsqlCommand($"""
+            CREATE FUNCTION honua.{trigger}() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF NEW.correlation_id = '{correlation}' THEN
+                    RAISE EXCEPTION 'injected audit persistence failure';
+                END IF;
+                RETURN NEW;
+            END $$;
+            CREATE TRIGGER {trigger} BEFORE INSERT ON honua.audit_log
+                FOR EACH ROW EXECUTE FUNCTION honua.{trigger}();
+            """, connection);
+        await install.ExecuteNonQueryAsync();
+        try
+        {
+            using var request = action switch
+            {
+                "alert_zone.create" => new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/alerts/zones") { Content = JsonContent.Create(ZonePayload("new")) },
+                "alert_zone.update" => new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/zones/{zone.ZoneId}") { Content = JsonContent.Create(ZonePayload("changed")) },
+                "alert_zone.delete" => new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/admin/alerts/zones/{zone.ZoneId}"),
+                "alert_rule.create" => new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/alerts/rules") { Content = JsonContent.Create(RulePayload("new", null)) },
+                "alert_rule.update" => new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/rules/{rule.RuleId}") { Content = JsonContent.Create(RulePayload("changed", null)) },
+                "alert_rule.delete" => new HttpRequestMessage(HttpMethod.Delete, $"/api/v1/admin/alerts/rules/{rule.RuleId}"),
+                _ => new HttpRequestMessage(HttpMethod.Put, $"/api/v1/admin/alerts/rules/{rule.RuleId}/enabled") { Content = JsonContent.Create(new { enabled = action == "alert_rule.enable" }) }
+            };
+            var response = await _client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
+            var persisted = await store.GetRuleAsync(rule.RuleId);
+            persisted!.RuleName.Should().Be("original");
+            persisted.IsActive.Should().Be(action != "alert_rule.enable");
+            var persistedZone = await store.GetZoneAsync(zone.ZoneId);
+            persistedZone!.ZoneName.Should().Be("original");
+            persistedZone.Geometry.Should().Equal(zone.Geometry!);
+            persistedZone.GeometrySrid.Should().Be(4326);
+            (await store.ListRulesAsync(_service, 1)).Select(row => row.RuleId).Should().Equal(rule.RuleId);
+            (await store.ListZonesAsync(_service)).Select(row => row.ZoneId).Should().Equal(zone.ZoneId);
+            await using var count = new NpgsqlCommand("SELECT count(*) FROM honua.audit_log WHERE correlation_id = @correlation", connection);
+            count.Parameters.AddWithValue("correlation", correlation);
+            (await count.ExecuteScalarAsync()).Should().Be(0L);
+        }
+        finally
+        {
+            await using var cleanup = new NpgsqlCommand($"DROP TRIGGER {trigger} ON honua.audit_log; DROP FUNCTION honua.{trigger}();", connection);
+            await cleanup.ExecuteNonQueryAsync();
+        }
+    }
+
     private object ZonePayload(string name) => new
     {
         serviceId = _service, zoneName = name,
@@ -214,7 +285,7 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
 
     private object RulePayload(string name, long? zoneId) => new
     {
-        serviceId = _service, layerId = 1, zoneId, ruleName = name, triggerType = "threshold",
+        serviceId = _service, layerId = 1, zoneId, ruleName = name, triggerType = zoneId.HasValue ? "enter" : "threshold",
         conditionsJson = "{\"field\":\"speed\",\"operator\":\">\",\"value\":30}", cooldownSeconds = 60,
         severity = "warning", editionRequired = "pro", channels = new[] { "webhook" }, isActive = true
     };
