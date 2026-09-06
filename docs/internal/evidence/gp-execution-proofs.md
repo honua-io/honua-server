@@ -44,6 +44,11 @@ zero failures/skips, in **2m26s** (`gp-architecture-final.trx`). The full soluti
 formatter passed. A trunk cache-test analyzer finding was corrected by using its
 concrete inferred type; every cache assertion was retained.
 
+The final integrated managed selection passed **402 tests**, zero failures/skips,
+in **39s** (`gp-managed-final-2.trx`): catalog/plan conformance, real geometry-format
+execution, imagery/georeferencing guards and cache replica assertions. Its manually
+constructed dispatcher fixture now includes the actual geometry-format executor.
+
 The native Windows Release hosted suite passed **174 tests**, zero failures/skips,
 in **55s** (`gp-managed-proofs-1.trx`), including the real geometry-format job and
 the imagery inference/georeferencing regression guards. The calculate-field
