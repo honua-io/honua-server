@@ -13,6 +13,31 @@ public class GeoServicesSqlParserTests
 {
     private readonly GeoServicesSqlParser _parser = new();
 
+    [Theory]
+    [InlineData("\"category\" = 'A' AND \"value\" >= 60")]
+    [InlineData("[category] = 'A' AND [value] >= 60")]
+    [InlineData("category = 'A' AND value >= 60")]
+    public void Parse_DelimitedCompoundFilter_UsesSchemaFieldNames(string filter)
+    {
+        var expression = (BinaryExpression)_parser.Parse(filter);
+        expression.Operator.Should().Be(BinaryOperator.And);
+        var category = (BinaryExpression)expression.Left;
+        var value = (BinaryExpression)expression.Right;
+        ((PropertyReference)category.Left).PropertyName.Should().Be("category");
+        ((Literal)category.Right).Value.Should().Be("A");
+        ((PropertyReference)value.Left).PropertyName.Should().Be("value");
+        ((Literal)value.Right).Value.Should().Be(60L);
+    }
+
+    [Theory]
+    [InlineData("\"layer\".\"name\" = 'Test Feature'")]
+    [InlineData("[layer].[name] = 'Test Feature'")]
+    public void Parse_DelimitedQualifiedIdentifier_RemovesEachDelimiter(string filter)
+    {
+        var expression = (BinaryExpression)_parser.Parse(filter);
+        ((PropertyReference)expression.Left).PropertyName.Should().Be("layer.name");
+    }
+
     [Fact]
     public void Parse_SimpleEquality_ReturnsBinaryExpression()
     {
