@@ -383,7 +383,7 @@ public sealed class GdalRasterExecutorTests
     }
 
     [UnitTest]
-    public async Task RasterStatistics_OmitsHistFlag()
+    public async Task RasterStatistics_ReadsMetadataWithoutScanningBeforeSharedStatistics()
     {
         const string fakeGdalinfo = """{"bands":[{"band":1,"mean":1,"validCount":4}]}""";
         var runner = new FakeGdalCommandRunner((_, _, _) => new GdalCommandResult
@@ -400,7 +400,7 @@ public sealed class GdalRasterExecutorTests
 
             await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
             runner.Invocations.Select(i => i.Tool).Should().Equal("gdalinfo", "python3");
-            runner.Invocations.Single(i => i.Tool == "gdalinfo").Arguments.Should().NotContain("-hist");
+            runner.Invocations.Single(i => i.Tool == "gdalinfo").Arguments.Should().NotContain("-hist").And.NotContain("-stats");
         }
         finally
         {

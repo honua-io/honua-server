@@ -13,10 +13,16 @@ from osgeo import gdal
 def statistics(path):
     gdal.UseExceptions()
     dataset = gdal.Open(path)
-    band = dataset.GetRasterBand(1)
-    mask = band.GetMaskBand()
     last = dataset.GetRasterBand(dataset.RasterCount)
     alpha = last if last.GetColorInterpretation() == gdal.GCI_AlphaBand else None
+    return {"bands": [band_statistics(dataset, 1, alpha)]}
+
+
+def band_statistics(dataset, index, alpha=None):
+    """Merge exact block populations in one bounded scan of a GDAL band."""
+    band = dataset.GetRasterBand(index)
+    mask = band.GetMaskBand()
+    nodata = band.GetNoDataValue()
     count = 0
     total = 0.0
     mean = 0.0
@@ -28,12 +34,14 @@ def statistics(path):
         for x in range(0, dataset.RasterXSize, 256):
             width = min(256, dataset.RasterXSize - x)
             height = min(256, dataset.RasterYSize - y)
-            data = band.ReadAsArray(x, y, width, height).astype(np.float64)
+            data = band.ReadAsArray(x, y, width, height)
             valid = (mask.ReadAsArray(x, y, width, height) != 0) & np.isfinite(data)
+            if nodata is not None and not math.isnan(nodata):
+                valid &= data != nodata
             if alpha is not None:
                 # GDAL's automatic byte mask does not expose Float32 alpha.
                 valid &= alpha.ReadAsArray(x, y, width, height) > 0
-            values = data[valid]
+            values = data[valid].astype(np.float64)
             n = values.size
             if n == 0:
                 continue
@@ -46,11 +54,11 @@ def statistics(path):
             total += float(values.sum())
             minimum = min(minimum, float(values.min()))
             maximum = max(maximum, float(values.max()))
-    return {"bands": [{"band": 1, "validCount": int(count), "sum": total,
+    return {"band": index, "validCount": int(count), "sum": total,
                        "minimum": minimum if count else None,
                        "maximum": maximum if count else None,
                        "mean": mean if count else None,
-                       "stdDev": math.sqrt(m2 / count) if count else None}]}
+                       "stdDev": math.sqrt(m2 / count) if count else None}
 
 
 if __name__ == "__main__":

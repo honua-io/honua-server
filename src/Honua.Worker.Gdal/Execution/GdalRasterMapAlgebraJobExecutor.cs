@@ -154,6 +154,7 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
             var effectiveNoData = explicitNoData
                 ?? await GdalNoData.TryReadSourceNoDataAsync(
                     runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken).ConfigureAwait(false);
+            var noDataLiteral = effectiveNoData?.ToString("R", CultureInfo.InvariantCulture);
             if (effectiveNoData is null)
             {
                 const string Script = "gdal_calc_nodata.py";
@@ -178,17 +179,17 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
                 {
                     return JobExecutionResult.Failed("Could not determine the map-algebra output nodata value.");
                 }
-                effectiveNoData = fallback;
+                // Preserve native integer literals without a lossy double round trip.
+                noDataLiteral = defaults.StandardOutput.Trim();
             }
             // Validate caller syntax above, then normalize undefined arithmetic to
             // the declared sentinel. Otherwise division by zero can publish NaN/Inf
             // pixels that consumers consider valid under a finite nodata sentinel.
-            var noDataLiteral = effectiveNoData.Value.ToString("R", CultureInfo.InvariantCulture);
             var calc = expression.Trim();
             // Promote floating intermediates before replacement so Float64 nodata
             // cannot overflow a Float32 expression. Leave integral arrays intact.
-            args.Add($"--calc=numpy.nan_to_num(numpy.asarray({calc},dtype=numpy.float64),nan={noDataLiteral},posinf={noDataLiteral},neginf={noDataLiteral}) if numpy.issubdtype(numpy.asarray({calc}).dtype,numpy.inexact) else ({calc})");
-            GdalNoData.AppendNoDataArg(args, effectiveNoData);
+            args.Add($"--calc=(lambda value: numpy.nan_to_num(value.astype(numpy.float64),nan={noDataLiteral},posinf={noDataLiteral},neginf={noDataLiteral}) if numpy.issubdtype(value.dtype,numpy.inexact) else value)(numpy.asarray({calc}))");
+            args.Add($"--NoDataValue={noDataLiteral}");
 
             args.Add("--overwrite");
             args.Add("--quiet");
