@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
-using Honua.Geoprocessing.Execution;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
@@ -81,7 +80,7 @@ internal static class ManagedExecutorTestHarness
     {
         var bytes = Convert.FromBase64String(dataUri[DataUriPrefix.Length..]);
         var json = Encoding.UTF8.GetString(bytes);
-        return GeoJsonArtifactCodec.CreateReader().Read<FeatureCollection>(json).ToList();
+        return new GeoJsonReader().Read<FeatureCollection>(json).ToList();
     }
 
     public static async Task<(ExecutionJobStatus Status, string? Uri)> RunAsync(

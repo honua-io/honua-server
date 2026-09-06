@@ -222,6 +222,8 @@ var redisOutputCacheConfigured = ObservabilityServiceCollectionExtensions.Should
     redisCacheEntitled,
     redisConnectionString);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
+RedisDurabilityAttestation? redisDurabilityAttestation = null;
+DurableJobSubstrateCause? redisDurabilityFailure = null;
 
 // honua-release#202: record WHY the durable job substrate is or is not composed, so the typed
 // refusal and the capability manifest can give remediation that actually works. "Redis is
@@ -231,6 +233,8 @@ builder.Services.Configure<DurableJobSubstrateOptions>(options =>
 {
     options.RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString);
     options.RedisEntitled = redisCacheEntitled;
+    options.RedisDurabilityAttestation = redisDurabilityAttestation;
+    options.RedisDurabilityFailure = redisDurabilityFailure;
 });
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
@@ -287,6 +291,7 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
     try
     {
         var redisOptions = ConfigurationOptions.Parse(redisInfrastructureConnectionString, ignoreUnknown: true);
+        redisOptions.AllowAdmin = true;
         redisOptions.AbortOnConnectFail = false;
         redisOptions.ConnectRetry = Math.Max(redisOptions.ConnectRetry, 3);
         redisOptions.ReconnectRetryPolicy ??= new ExponentialRetry(5_000);
@@ -305,6 +310,24 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
             var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
             ProgramLog.RedisStartupConnectionInactive(startupLogger);
         }
+
+        if (connectedRedis.IsConnected)
+        {
+            var durability = await RedisDurabilityAttestor.InspectAsync(connectedRedis);
+            redisDurabilityAttestation = durability.Attestation;
+            redisDurabilityFailure = durability.FailureCause;
+
+            // Redis is still usable for cache and non-job infrastructure, but only an
+            // accepted attestation may unlock the durable job registrations below.
+            if (redisCacheEntitled && durability.Attestation is not null)
+            {
+                builder.Services.TryAddSingleton(durability.Attestation);
+            }
+        }
+        else if (redisCacheEntitled)
+        {
+            redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
+        }
     }
     catch (Exception ex)
     {
@@ -318,6 +341,7 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
         ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
+        redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
     }
 }
 

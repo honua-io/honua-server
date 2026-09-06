@@ -38,6 +38,10 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
     }
 
     /// <inheritdoc />
+    public Task<string> BindKeyAsync(string key, CancellationToken cancellationToken = default)
+        => _innerCache.BindKeyAsync(key, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
     {
         using var scope = _performanceMonitor.StartOperation("cache_get")
@@ -120,8 +124,9 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
 
         try
         {
-            // First, try to get from cache
-            var cached = await _innerCache.GetAsync<T>(key, cancellationToken);
+            // Keep the factory fill in the generation observed before its query.
+            var boundKey = await _innerCache.BindKeyAsync(key, cancellationToken);
+            var cached = await _innerCache.GetAsync<T>(boundKey, cancellationToken);
             var cacheType = GetCacheType(key);
 
             if (cached != null)
@@ -144,7 +149,7 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
             factoryStopwatch.Stop();
 
             // Set in cache
-            await _innerCache.SetAsync(key, result, expiration, cancellationToken);
+            await _innerCache.SetAsync(boundKey, result, expiration, cancellationToken);
 
             _performanceMonitor.RecordCacheMetrics(cacheType, "miss");
             HonuaCacheMetrics.RecordMiss(cacheType);

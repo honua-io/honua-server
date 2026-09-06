@@ -80,7 +80,8 @@ require(
 )
 require(
     r"dotnet build \"\$\{GATE_BUILD_FILTER\}\" \\\s+--no-restore \\\s+"
-    r"--configuration Release \\\s+/p:TreatWarningsAsErrors=true",
+    r"--configuration Release \\\s+(?:-graphBuild \\\s+)?"
+    r"/p:TreatWarningsAsErrors=true",
     "build the affected solution filter with the same "
     "--no-restore/Release/warnings-as-errors contract as the full build",
 )
