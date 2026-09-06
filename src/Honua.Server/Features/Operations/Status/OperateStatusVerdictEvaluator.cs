@@ -27,14 +27,12 @@ public enum OperateOverallStatus
 /// <param name="ParkedDeploys">Count of deploy operations parked in ManualInterventionRequired.</param>
 /// <param name="AlertDeadLettered">Dead-lettered alert dispatch count (0 when unknown/none).</param>
 /// <param name="AlertDispatchImpaired">Whether the alert dispatcher is enabled but not running, or its storage poll is failing.</param>
-/// <param name="SloErrorBudgetExhausted">Whether a configured availability SLO has exhausted its error budget over the window.</param>
 public readonly record struct OperateStatusSignals(
     string HealthRollupStatus,
     IReadOnlyList<string> CriticalFindingRules,
     int ParkedDeploys,
     long AlertDeadLettered,
-    bool AlertDispatchImpaired,
-    bool SloErrorBudgetExhausted);
+    bool AlertDispatchImpaired);
 
 /// <summary>
 /// Pure, documented verdict rules for the aggregated operate status. The verdict lives server-side so
@@ -47,8 +45,7 @@ public readonly record struct OperateStatusSignals(
 ///   as the database or Redis is down; the system is not fully serving).</item>
 ///   <item><b>degraded</b> — not unhealthy, but any of: the health roll-up is <c>Degraded</c>; at least
 ///   one <c>Critical</c> finding is active; a deploy is parked in ManualInterventionRequired; alert
-///   deliveries have dead-lettered; the alert dispatcher is impaired; or a configured availability SLO
-///   has exhausted its error budget.</item>
+///   deliveries have dead-lettered; or the alert dispatcher is impaired.</item>
 ///   <item><b>healthy</b> — none of the above.</item>
 /// </list>
 /// Warning/Info findings and pending (non-parking) work do not by themselves downgrade the verdict —
@@ -98,11 +95,6 @@ public static class OperateStatusVerdictEvaluator
         if (signals.AlertDispatchImpaired)
         {
             reasons.Add("alert-dispatch-impaired");
-        }
-
-        if (signals.SloErrorBudgetExhausted)
-        {
-            reasons.Add("slo-error-budget-exhausted");
         }
 
         var status = reasons.Count > 0 ? OperateOverallStatus.Degraded : OperateOverallStatus.Healthy;
