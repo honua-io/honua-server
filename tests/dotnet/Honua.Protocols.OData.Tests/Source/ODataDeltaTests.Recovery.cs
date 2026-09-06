@@ -26,7 +26,7 @@ public sealed partial class ODataDeltaTests
         using var request = new HttpRequestMessage(HttpMethod.Get, "/odata/Features(0)?$top=100");
         request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
         using var baselineResponse = await _fixture.Client.SendAsync(request);
-        baselineResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        baselineResponse.StatusCode.Should().Be(HttpStatusCode.OK, string.Join(Environment.NewLine, _queryErrors));
         using var baseline = JsonDocument.Parse(await baselineResponse.Content.ReadAsStringAsync());
         var link = new Uri(baseline.RootElement.GetProperty("@odata.deltaLink").GetString()!);
         var token = QueryHelpers.ParseQuery(link.Query)["$deltatoken"].ToString();

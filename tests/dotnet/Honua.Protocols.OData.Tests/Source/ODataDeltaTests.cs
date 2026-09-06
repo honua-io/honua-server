@@ -14,6 +14,10 @@ using Microsoft.AspNetCore.WebUtilities;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
 using Npgsql;
+using System.Collections.Concurrent;
+using Honua.Protocols.OData;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
@@ -27,6 +31,23 @@ public sealed partial class ODataDeltaTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = 0;
+    private readonly ConcurrentQueue<string> _queryErrors = new();
+
+    public ODataDeltaTests()
+    {
+        _fixture.ConfigureServices(services => services.AddSingleton<ILogger<ODataStreamingQueryHandler>>(new QueryErrorLogger(_queryErrors)));
+    }
+
+    private sealed class QueryErrorLogger(ConcurrentQueue<string> errors) : ILogger<ODataStreamingQueryHandler>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (exception is not null) { errors.Enqueue(exception.ToString()); }
+        }
+    }
 
     public async Task InitializeAsync()
     {

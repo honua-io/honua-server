@@ -14,17 +14,19 @@ internal sealed class PostgresQuerySnapshotStore(IAdoNetDatabaseConnectionProvid
     {
         await using var connection = await connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         // A bounded cleanup batch avoids turning a normal poll into a retention sweep.
-        const string sql = """
+        const string cleanupSql = """
             DELETE FROM honua.query_snapshots WHERE id IN (
                 SELECT id FROM honua.query_snapshots WHERE expires_at <= CURRENT_TIMESTAMP
                 ORDER BY expires_at LIMIT 100);
-            INSERT INTO honua.query_snapshots(id, payload, expires_at) VALUES ($1, $2, $3);
             """;
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var batch = new NpgsqlBatch(connection);
+        batch.BatchCommands.Add(new NpgsqlBatchCommand(cleanupSql));
+        var command = new NpgsqlBatchCommand("INSERT INTO honua.query_snapshots(id, payload, expires_at) VALUES ($1, $2, $3)");
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Uuid, Value = id });
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bytea, Value = payload });
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.TimestampTz, Value = expiresAt });
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        batch.BatchCommands.Add(command);
+        await batch.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<byte[]?> ReadAsync(Guid id, CancellationToken cancellationToken = default)
