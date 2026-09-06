@@ -1,0 +1,59 @@
+{
+    "schemaVersion":  "1.0",
+    "execution":  "windows-native-dotnet",
+    "candidateQualification":  false,
+    "fixtureKind":  "Fixed-time deployment evidence envelopes, real MCP adapter and scope authorizer, recording gateway and authorization/envelope seams",
+    "testedCommit":  "869253f5db370d7056b21ad333a49f0c08db98c5",
+    "command":  "dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --no-restore --configuration Release -maxcpucount:4 --filter \"FullyQualifiedName~McpPlatformOpsReaderTests|FullyQualifiedName~CacheServiceResponseCacheReplicaTests\"",
+    "sdkVersion":  "10.0.100",
+    "total":  49,
+    "passed":  49,
+    "failed":  0,
+    "skipped":  0,
+    "proposalCases":  9,
+    "sourceSha256":  "f9f4bf18627e3c606293b96062e930a7956a1bbd2df55b80239e7e003973b934",
+    "assemblySha256":  "3ec2c27f0cc0997b2427d582a8ef9452469a7ed80e03b2ee45c7b68684bbcf30",
+    "cases":  [
+                  {
+                      "name":  "ProposeFinding IncompleteDeploymentEvidence BlocksBeforeProposalOrActuation(scenario: \"unavailable\", expectedCompleteness: \"unavailable\")",
+                      "outcome":  "Passed"
+                  },
+                  {
+                      "name":  "ProposeFinding IncompleteDeploymentEvidence BlocksBeforeProposalOrActuation(scenario: \"partial\", expectedCompleteness: \"partial\")",
+                      "outcome":  "Passed"
+                  },
+                  {
+                      "name":  "ProposeFinding CompleteDeploymentEvidence SealsOnlyTheBoundAction",
+                      "outcome":  "Passed"
+                  },
+                  {
+                      "name":  "ProposeFinding UnauthorizedDeploymentRequest CreatesNoProposal(denial: \"target\")",
+                      "outcome":  "Passed"
+                  },
+                  {
+                      "name":  "ProposeFinding UnauthorizedDeploymentRequest CreatesNoProposal(denial: \"scope\")",
+                      "outcome":  "Passed"
+                  },
+                  {
+                      "name":  "ProposeFinding IncompleteDeploymentEvidence BlocksBeforeProposalOrActuation(scenario: \"unverified\", expectedCompleteness: \"unavailable\")",
+                      "outcome":  "Passed"
+                  },
+                  {
+                      "name":  "ProposeFinding IncompleteDeploymentEvidence BlocksBeforeProposalOrActuation(scenario: \"notConfigured\", expectedCompleteness: \"notConfigured\")",
+                      "outcome":  "Passed"
+                  },
+                  {
+                      "name":  "ProposeFinding IncompleteDeploymentEvidence BlocksBeforeProposalOrActuation(scenario: \"stale\", expectedCompleteness: \"unavailable\")",
+                      "outcome":  "Passed"
+                  },
+                  {
+                      "name":  "ProposeFinding UnauthorizedDeploymentRequest CreatesNoProposal(denial: \"actor\")",
+                      "outcome":  "Passed"
+                  }
+              ],
+    "limitations":  [
+                        "Not a live telemetry backend or destructive outage replay",
+                        "No durable proposal/approval/actuator or candidate convergence receipt",
+                        "Target equality and denied admin/scope cases do not replace tenant/resource ownership proof"
+                    ]
+}

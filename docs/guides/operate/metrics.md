@@ -22,6 +22,13 @@ appear only after the corresponding event occurs. Use it with the
 
 See [Ops evidence posture](evidence-posture.md) for the complete vocabularies.
 
+For alert backlog evidence, `backlogObservedAt` is the successful collection
+time used by the source envelope. Legacy `lastPollAt` is only a dispatcher
+attempt heartbeat and may advance during a storage outage. The
+[executed outage receipt](evidence/3475-windows-outage.json) preserves the
+last successful observation through the failure and requires a new successful
+collection after recovery; a new response or poll attempt cannot refresh it.
+
 ## 2026.1 scenario signals
 
 | Concern | REST/MCP evidence | Prometheus series to verify on the candidate |

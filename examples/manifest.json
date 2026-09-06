@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1101,
+    "total": 1102,
     "byStatus": {
-      "not-executable": 1086,
+      "not-executable": 1087,
       "blocked": 2,
       "passed": 9,
       "unvalidated": 4
@@ -5731,7 +5731,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 143,
+      "line": 145,
       "language": "json"
     },
     {
@@ -5744,7 +5744,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 218,
+      "line": 220,
       "language": "bash"
     },
     {
@@ -5757,7 +5757,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 258,
+      "line": 260,
       "language": "bash"
     },
     {
@@ -5809,8 +5809,8 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 127,
-      "language": "powershell"
+      "line": 130,
+      "language": "json"
     },
     {
       "id": "48d512393b2fc117",
@@ -5835,7 +5835,20 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 134,
+      "line": 142,
+      "language": "powershell"
+    },
+    {
+      "id": "c77a756bf03cfb56",
+      "kind": "docs-fence",
+      "path": "docs/guides/operate/scenario.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 8,
+      "line": 149,
       "language": "powershell"
     },
     {

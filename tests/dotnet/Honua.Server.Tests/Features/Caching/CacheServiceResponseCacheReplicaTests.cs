@@ -87,7 +87,7 @@ public sealed class CacheServiceResponseCacheReplicaTests
     {
         var shared = new SharedCache();
         var writer = new CacheServiceResponseCache(shared);
-        IResponseCache reader = new CacheServiceResponseCache(shared);
+        var reader = new CacheServiceResponseCache(shared);
         var fillKey = await reader.BindKeyAsync(key);
         Assert.Null(await reader.GetAsync<string>(fillKey));
 

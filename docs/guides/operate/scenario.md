@@ -9,7 +9,7 @@ owns the model session. Console is an optional independent inspector/approver.
 The infrastructure control plane provisions the placement; the server control
 plane configures resources and governs registered operations.
 
-> **Pre-cut runbook, not a certification receipt.** The September 5 source
+> **Pre-cut runbook, not a certification receipt.** The September 6 source
 > review establishes route/tool contracts. Exact 2026.1 candidate replay is
 > still required. The platform manifest calls itself a working snapshot, and
 > [release #231](https://github.com/honua-io/honua-release/issues/231) owns the
@@ -107,6 +107,13 @@ Restore that backend and wait for complete fresh evidence before retrying.
 The [live outage harness contract](evidence-posture.md#live-outagerecovery-proof)
 defines the controls; they are test-harness endpoints, not product routes.
 
+The [executed Windows outage receipt](evidence/3475-windows-outage.json)
+already demonstrates this suppression for an isolated alert-dispatch source:
+zero new proposals and unchanged dispatch rows, followed by fresh recovery.
+Its `candidateQualification=false` is intentional. It does not replace this
+deployment/readiness scenario, prove partial/unverified deployment sources,
+or promote customer alerting beyond Preview.
+
 ## 4. Propose, poll, and approve separately
 
 Only after that gate passes, call discovered `honua_propose_finding` with
@@ -116,6 +123,14 @@ deployment target identifier, not the platform release ID or image digest;
 the server checks it matches the hidden Deploy action. A missing target is a
 stop condition. The deterministic REST
 equivalent is `POST /api/v1/admin/observability/findings/{findingId}/propose`.
+That operator route follows gateway policy and can execute an auto-safe action;
+it is not the model's proposal-only boundary. Use `honua_propose_finding` for
+the model workflow here. Replace both placeholders with the observed IDs:
+
+```json
+{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"honua_propose_finding","arguments":{"findingId":"<finding-id>","candidateId":"<subject.targetId>"}}}
+```
+
 Generic model-facing control tools seal proposals; they do not execute even
 when a separate server-owned policy allows direct execution. Do not use the
 removed opaque `honua_propose_operation` contract.
