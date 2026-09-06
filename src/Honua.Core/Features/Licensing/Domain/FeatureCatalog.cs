@@ -153,7 +153,7 @@ public static class FeatureCatalog
     /// Pro-tier (#1591): the Esri-compatibility premium is paid on the write side only. Feature
     /// editing via the open protocols (OGC API Features mutations, WFS-T, OData CRUD/$batch, and
     /// gRPC edits) is Community and carries no entitlement gate, while still flowing through the
-    /// shared edit/transaction pipeline. Enterprise branch versioning
+    /// shared edit/transaction pipeline. Pro branch versioning
     /// (<c>editing.branch-versioning</c>) is a separate entitlement.
     /// </summary>
     public const string FeatureServerEditsKey = "editing.featureserver-edits";
@@ -524,9 +524,9 @@ public static class FeatureCatalog
         new(FeatureServerEditsKey, "FeatureServer Editing", Categories.Editing,
             HonuaEdition.Pro, "Create, update, and delete features through the Esri GeoServices FeatureServer write surface — applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate."),
 
-        // Editing — Enterprise (Esri-style branch versioning; Postgres-only)
+        // Editing — Pro (core branch versioning; organisational approval/policy remains Enterprise)
         new(BranchVersioningKey, "Branch Versioning", Categories.Editing,
-            HonuaEdition.Enterprise, "Named gdb versions with isolated edits, reconcile/post back to DEFAULT, and gdbVersion-scoped editing/querying over the GeoServices VersionManagementServer."),
+            HonuaEdition.Pro, "Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Preview in 2026.1; the experimental runtime opt-in remains required."),
 
         // AI operations — Pro (read/discovery/query surfaces remain Community)
         new(AiSpecApplyKey, "Spec Apply Execution", Categories.Ai,
@@ -554,16 +554,16 @@ public static class FeatureCatalog
 
         // AI — Enterprise (approval + policy on top of the validation layer)
         new(AiApprovalWorkflowsKey, "Agent Approval Workflows", Categories.Ai,
-            HonuaEdition.Enterprise, "Human-in-the-loop approval, policy-scoped agent permissions, and immutable audit for agent-initiated operations."),
+            HonuaEdition.Enterprise, "Enterprise organisational approval workflows and policy-scoped agent permissions. Essential authorization, isolation, and audit integrity remain baseline product obligations."),
 
         // Disaster Recovery — Enterprise (HA/DR: backup automation, failover, RTO/RPO reporting)
         new(BackupAutomationKey, "Backup Automation", Categories.DisasterRecovery,
-            HonuaEdition.Enterprise, "Scheduled PostgreSQL base backups plus WAL archiving enabling point-in-time recovery."),
+            HonuaEdition.Enterprise, "Enterprise scheduling and orchestration of PostgreSQL base backups and WAL archiving. Essential backup, restore, and recoverability remain baseline obligations in every edition."),
         new(FailoverPlaybooksKey, "Failover Playbooks", Categories.DisasterRecovery,
-            HonuaEdition.Enterprise, "Active-passive failover playbooks driven by automated health checks against the primary serving surface."),
+            HonuaEdition.Enterprise, "Enterprise automated active-passive failover playbooks driven by health checks. Essential recovery procedures remain baseline obligations in every edition."),
         new(CacheBackupKey, "Cache State Backup", Categories.DisasterRecovery,
-            HonuaEdition.Enterprise, "Backup and restore Redis cache state so warm cache contents survive a regional failover."),
+            HonuaEdition.Enterprise, "Enterprise automation for Redis warm-cache recovery during regional failover. Recovery of enabled durable Redis job/workflow state remains a baseline obligation in every edition."),
         new(RecoveryReportingKey, "RTO/RPO Reporting", Categories.DisasterRecovery,
-            HonuaEdition.Enterprise, "Track recovery time and recovery point objectives and report recovery readiness, last successful backup, and restorable point."),
+            HonuaEdition.Enterprise, "Enterprise automated RTO/RPO reporting and recovery-readiness dashboards. Documented recovery expectations and verified restores remain baseline obligations in every edition."),
     ];
 }

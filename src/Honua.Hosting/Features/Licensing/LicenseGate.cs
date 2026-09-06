@@ -68,6 +68,10 @@ internal static class LicenseGate
         if (entitlementService is not null)
         {
             var decision = entitlementService.CheckEntitlement(entitlementKey);
+            if (decision.Edition > HonuaEdition.Community && decision.ValidationState != LicenseValidationState.Valid)
+            {
+                return decision with { IsActive = false, UpgradeMessage = "A valid paid license is required. Renew the configured license." };
+            }
             var routedExperimental = capability is not null &&
                 CapabilityKeyCatalog.RoutedExperimentalKeys.Any(
                     item => string.Equals(item.Key, capability.Key, StringComparison.OrdinalIgnoreCase));
@@ -106,10 +110,10 @@ internal static class LicenseGate
 
         var status = statusProvider.GetCurrentStatus();
         var requiredEdition = capability?.Edition;
-        var active = status.Entitlements?.Any(
+        var active = (status.Edition == HonuaEdition.Community || status.IsValid) && (status.Entitlements?.Any(
                 entitlement => entitlement.IsActive &&
                     string.Equals(entitlement.Key, entitlementKey, StringComparison.OrdinalIgnoreCase)) == true ||
-            (requiredEdition.HasValue && status.Edition >= requiredEdition.Value);
+            (requiredEdition.HasValue && status.Edition >= requiredEdition.Value));
 
         var featureName = capability?.DisplayName ?? entitlementKey;
         var upgradeMessage = active

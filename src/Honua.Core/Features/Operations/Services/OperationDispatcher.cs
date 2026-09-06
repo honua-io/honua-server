@@ -213,6 +213,15 @@ public sealed class OperationDispatcher : IOperationInvoker
             descriptor = await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken).ConfigureAwait(false)
                 ?? throw new OperationNotFoundException(request.OperationId);
             executor = ResolveExecutor(request.OperationId);
+            if (executor is IOperationRequestPreparer preparer)
+            {
+                var prepared = await preparer.PrepareAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
+                if (!string.Equals(prepared.OperationId, request.OperationId, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("Request preparation cannot change the operation identity.");
+                }
+                request = prepared;
+            }
             validation = await executor.ValidateAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -375,6 +384,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         {
             OperationInstanceId = operationInstanceId,
             OperationId = descriptor.OperationId,
+            TenantId = envelope.TenantId,
             CorrelationId = correlationId,
             AuditId = acceptanceAuditId,
             CreatedAt = createdAt,
@@ -644,6 +654,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             OperationInstanceId = context.OperationInstanceId
                 ?? throw new InvalidOperationException("The canonical operation instance id was not assigned."),
             OperationId = descriptor.OperationId,
+            TenantId = context.TenantId,
             CorrelationId = context.CorrelationId
                 ?? throw new InvalidOperationException("The canonical correlation id was not assigned."),
             Status = status,

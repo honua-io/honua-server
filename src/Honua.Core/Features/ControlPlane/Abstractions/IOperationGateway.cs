@@ -67,6 +67,9 @@ public enum OperationGatewayOutcome
 /// </summary>
 public sealed record OperationGatewayRequest
 {
+    /// <summary>Trusted tenant owner captured when the operation was accepted.</summary>
+    public string? TenantId { get; init; }
+
     /// <summary>
     /// Typed descriptor identity for requests entering through the canonical operation runtime.
     /// Persisting it prevents approval replay from guessing a descriptor from a broad legacy class.

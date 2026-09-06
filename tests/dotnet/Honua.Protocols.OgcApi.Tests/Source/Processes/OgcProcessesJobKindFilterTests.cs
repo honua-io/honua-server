@@ -97,6 +97,7 @@ public sealed class OgcProcessesJobKindFilterTestsFixture : IAsyncLifetime
     private static readonly ExecutionJobRecord EtlJob = new()
     {
         OperationId = EtlJobId,
+        Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
         Status = ExecutionJobStatus.Running,
         CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
         UpdatedAt = DateTimeOffset.UtcNow,
@@ -112,6 +113,7 @@ public sealed class OgcProcessesJobKindFilterTestsFixture : IAsyncLifetime
     private static readonly ExecutionJobRecord GeoJob = new()
     {
         OperationId = GeoJobId,
+        Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
         Status = ExecutionJobStatus.Running,
         CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
         UpdatedAt = DateTimeOffset.UtcNow,

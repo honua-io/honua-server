@@ -24,13 +24,13 @@ namespace Honua.Protocols.GeoServices.VersionManagementServer;
 /// <summary>
 /// Esri GeoServices VersionManagementServer protocol slice (#1272, ADR-0051). A thin protocol
 /// adapter over the canonical <see cref="IVersionManager"/>: it parses Esri-shaped requests,
-/// enforces the Enterprise branch-versioning entitlement and service write authorization, and maps
+/// enforces the Pro branch-versioning entitlement and service write authorization, and maps
 /// version-manager results to the Esri wire shape. It owns no storage, read, write, reconcile, or
 /// post behavior — that all lives in the provider's <see cref="IVersionManager"/> implementation.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Branch versioning is Postgres-only and Enterprise-gated. When the active provider's
+/// Branch versioning is Postgres-only and Pro-gated. When the active provider's
 /// <see cref="IVersionManager.SupportsVersioning"/> is false (DuckDB / SQL Server / MySQL), the
 /// mutating and lifecycle operations return a 501 not-supported response; the read-only
 /// service-info / <c>versions</c> / <c>versionInfo</c> operations report an empty version set.
@@ -72,7 +72,7 @@ public static class VersionManagementServerEndpoints
             .WithCapabilityGate("versioning.branch");
 
         // HANDLER-AUTHORIZED (#1144): every route below enforces authorization in its handler —
-        // service read (Query) access for the read surface, plus the Enterprise branch-versioning
+        // service read (Query) access for the read surface, plus the Pro branch-versioning
         // entitlement and service write authorization (Update + data-editor RBAC) for lifecycle
         // operations. Marked AllowAnonymous so the audit architecture guard records the
         // intentional decision, matching the sibling GeoServices endpoint files.
@@ -276,7 +276,7 @@ public static class VersionManagementServerEndpoints
             contentType: "application/json");
     }
 
-    // ---- Lifecycle (Enterprise-gated, write-authorized) ----------------------------------------
+    // ---- Lifecycle (Pro-gated, write-authorized) ----------------------------------------
 
     private static async Task<IResult> HandleCreate(
         string serviceId,
@@ -797,7 +797,7 @@ public static class VersionManagementServerEndpoints
     }
 
     /// <summary>
-    /// Enterprise-gates the version-management surface, enforces service write authorization, and
+    /// Pro-gates the version-management surface, enforces service write authorization, and
     /// reads the request body. Returns a non-null gate result to short-circuit on any failure.
     /// </summary>
     private static async Task<(IResult? Gate, IReadOnlyDictionary<string, StringValues>? Values)> AuthorizeAndReadAsync(

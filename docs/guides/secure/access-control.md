@@ -83,7 +83,21 @@ With this policy in place, a caller whose token carries `region=west` sees only 
 
 RLS is **fail-secure**: if a matching policy exists but the caller carries no value for the referenced claim, the predicate hides every row rather than revealing them. RLS composes with (and is independent of) a layer's always-on metadata permanent filter — both are AND-ed together.
 
-RLS controls which *rows* a role sees. Restricting which *fields* (columns) a role can read — field-level masking — is tracked separately and not yet available.
+RLS controls which *rows* a role sees. Field-mask policies control which attribute
+fields a role can read. Matching field masks remove the named fields, with
+case-insensitive matching, even when the client explicitly requests them.
+
+Feature-stream subscriptions resolve these same row and field policies for the
+subscriber. Both live delivery and cursor replay enforce row visibility and remove
+masked values from `attributes` and `changedAttributes`. Field masks also apply
+across snapshot-to-delta handoff. Snapshot modes reject subscriptions with row-level
+security predicates with `400`, as they already do for client value filters: an
+update that moves a row out of scope cannot remove it from a baseline without
+before-image or removal-transition support. Use delta mode for RLS-filtered events.
+Delete events with a before-image
+must pass row visibility; when a row policy applies and the event has no before-image,
+the delete is withheld because its visibility cannot be established. Stream routes
+also require access to the publication in the subscriber's effective tenant.
 
 ## Verify
 

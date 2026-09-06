@@ -28,6 +28,8 @@ the nested evaluation, dispatch, delivery-channel, and operations settings.
 
 ### Tenant schema isolation correction
 
+This section applies only to explicitly labelled **Preview/trial** environments in 2026.1. GA is single-tenant; no production multi-tenant deployment or customer production data is permitted. The isolation correction retains full security severity. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
+
 Schema routing remains opt-in (`MultiTenancy:SchemaRouting:Enabled`, default
 `false`). When enabled, tenant IDs are now matched exactly. Default derivation
 preserves existing lowercase ASCII letters, digits and underscores, such as
@@ -89,6 +91,17 @@ stop traffic and restore the previous names and matching configuration together.
 Do not restore the vulnerable normalization behavior as an isolation workaround.
 Single-tenant deployments and the explicitly excluded `public` tenant retain
 their configured default schema behavior.
+
+### Preview raster and coverage surfaces
+
+ImageServer, WMTS, OGC API Coverages, and EDR are Preview in 2026.1. Their
+capability manifests and evidence catalogs now agree on that lifecycle.
+ImageServer, WMTS, and Coverages retain their existing default availability;
+Preview is a release maturity statement and does not itself disable their routes.
+EDR retains its existing explicit opt-in through
+`Capabilities:Experimental:serve.ogc-api-edr:Enabled=true` (or the global experimental switch).
+Existing authorization and entitlement checks still apply. CITE and functional
+parity results describe the tested operations and do not promote these surfaces to GA.
 
 ### SensorThings API
 

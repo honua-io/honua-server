@@ -97,6 +97,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
             var routed = await gateway.RouteAsync(new OperationGatewayRequest
             {
+                TenantId = "public",
                 Kind = kind,
                 RequestedBy = requestedBy,
                 ExecutionPayload = executionPayload,
@@ -114,6 +115,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         var proposal = new OperationProposal
         {
             ProposalId = $"proposal-{Guid.NewGuid():N}",
+            TenantId = "public",
             Kind = kind,
             Status = status,
             RequestedBy = requestedBy,
@@ -156,6 +158,9 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("proposalId").GetString().Should().Be(proposal.ProposalId);
         document.RootElement.GetProperty("summary").GetString().Should().Be("Change setting X");
+        proposal.SealedPlanHash.Should().HaveLength(64);
+        document.RootElement.TryGetProperty("sealedPlanHash", out _).Should().BeFalse();
+        document.RootElement.TryGetProperty("executionPayload", out _).Should().BeFalse();
         document.RootElement.GetProperty("riskLevel").GetString().Should().Be("Medium");
     }
 
@@ -235,6 +240,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/api-keys")]
     [Endpoint("GET /api/v1/admin/api-keys/{id}/effective-permissions")]
+    [Endpoint("GET /api/v1/admin/proposals/{id}")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
     [Endpoint("PUT /api/v1/admin/services/{serviceId}/access-policy")]
@@ -248,17 +254,30 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
         var effective = await client.GetAsync($"/api/v1/admin/api-keys/{key.ApiKey.Id}/effective-permissions");
         effective.StatusCode.Should().Be(HttpStatusCode.OK);
-        var effectiveBody = await effective.Content.ReadAsStringAsync();
-        effectiveBody.Should().Contain("admin:read").And.Contain("admin:approve");
+        var effectiveBody = await effective.Content.ReadFromJsonAsync<ApiResponse<AdminApiKeyEffectivePermissionsResponse>>(JsonOptions);
+        effectiveBody!.Data!.Id.Should().Be(key.ApiKey.Id);
+        effectiveBody.Data.Permissions.Should().BeEquivalentTo(["admin:read", "admin:approve"]);
+        effectiveBody.Data.CanAuthenticate.Should().BeTrue();
+
+        var read = await client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}");
+        read.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var readBody = JsonDocument.Parse(await read.Content.ReadAsStringAsync());
+        readBody.RootElement.GetProperty("proposalId").GetString().Should().Be(proposal.ProposalId);
+        readBody.RootElement.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        _executor.ExecutionCount.Should().Be(0);
 
         var approve = await client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
         approve.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await _proposalStore.GetAsync(proposal.ProposalId))!.Status.Should().Be(OperationProposalStatus.Succeeded);
+        _executor.ExecutionCount.Should().Be(1);
 
         var rejectedProposal = await SeedProposalAsync(requestedBy: "agent:other-proposer");
         var reject = await client.PostAsJsonAsync(
             $"/api/v1/admin/proposals/{rejectedProposal.ProposalId}/reject",
             new { reason = "Not approved for release." });
         reject.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await _proposalStore.GetAsync(rejectedProposal.ProposalId))!.Status.Should().Be(OperationProposalStatus.Rejected);
+        _executor.ExecutionCount.Should().Be(1, "rejecting a proposal must not execute it");
 
         var forbidden = await client.PutAsJsonAsync(
             "/api/v1/admin/services/x/access-policy",
@@ -268,6 +287,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
     public async Task ReadOnlyScopedKey_ApproveNamesMissingGrant()
     {
         var key = await CreateApiKeyAsync("console-read-only", ["admin:read"]);
@@ -279,6 +299,19 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
         (await response.Content.ReadAsStringAsync()).Should().Contain("admin:approve");
+        (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeEquivalentTo(proposal);
+        _executor.ExecutionCount.Should().Be(0);
+        _notifier.ResolvedCount.Should().Be(0);
+
+        var reject = await client.PostAsJsonAsync(
+            $"/api/v1/admin/proposals/{proposal.ProposalId}/reject",
+            new { reason = "A read-only principal must not decide this proposal." });
+        reject.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        reject.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        (await reject.Content.ReadAsStringAsync()).Should().Contain("admin:approve");
+        (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeEquivalentTo(proposal);
+        _executor.ExecutionCount.Should().Be(0);
+        _notifier.ResolvedCount.Should().Be(0);
     }
 
     private async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(string name, IReadOnlyList<string> permissions)
@@ -470,6 +503,8 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     {
         public bool Executed { get; private set; }
 
+        public int ExecutionCount { get; private set; }
+
         public OperationClass OperationClass => OperationClass.AdminConfigChange;
 
         public Task<OperationProposalPlan?> PlanAsync(
@@ -483,6 +518,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
         {
             Executed = true;
+            ExecutionCount++;
             return Task.FromResult<string?>("exec-1");
         }
     }

@@ -177,6 +177,26 @@ internal sealed record GpResourceProfile
     }
 
     /// <summary>
+    /// Resolves the timeout carried by the durable workload contract. The serverless
+    /// <c>batch.timeout_seconds</c> parameter is also the supported local-worker policy:
+    /// persisting it on the job record makes the same submission deadline authoritative
+    /// for reconciliation and for the production worker. The GP request key is accepted
+    /// as a fallback for no-workload callers.
+    /// </summary>
+    internal static JobTimeoutPolicy? ResolveTimeoutPolicy(
+        IReadOnlyDictionary<string, string> parameters)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        var raw = parameters.GetValueOrDefault(BatchTimeoutSecondsKey)
+            ?? parameters.GetValueOrDefault(TimeoutSecondsRequestKey);
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds)
+            && seconds > 0
+            ? new JobTimeoutPolicy { MaxDuration = TimeSpan.FromSeconds(seconds) }
+            : null;
+    }
+
+    /// <summary>
     /// Aggregates two catalog-derived profiles by taking the heavier value of each dimension, so a
     /// single heavy step in a multi-step plan sizes the whole job. Architecture takes the
     /// other profile's value when set (the later step in the fold).

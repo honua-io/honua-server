@@ -1,7 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
@@ -23,6 +27,31 @@ internal readonly record struct MapToolLayerContext(
 
 internal static class MapToolLayerResolver
 {
+    public static Task<IFeatureReader> ResolveReaderAsync(
+        HttpContext httpContext,
+        MetadataV2GraphSnapshot snapshot,
+        MapToolLayerContext layer,
+        FeatureProviderReadOperation operation,
+        CancellationToken cancellationToken)
+    {
+        // Match the REST adapter's provider selection for bound publications.
+        var binding = snapshot.ResolveStorageBinding(layer.Publication);
+        var router = httpContext.RequestServices.GetService<FeatureProviderQueryRouter>();
+        if (binding is not null && router is not null)
+        {
+            return router.ResolveReaderAsync(snapshot, layer.Service, layer.Resource,
+                layer.Publication, layer.StorageLayerId, operation, cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(binding?.ConnectionId))
+        {
+            throw new GeoprocessingStoreUnavailableException("The connection-bound feature query runtime is not available on this server.");
+        }
+
+        // Managed/storeless compositions may provide only the default reader.
+        return Task.FromResult(httpContext.RequestServices.GetRequiredService<IFeatureReader>());
+    }
+
     /// <summary>
     /// Resolves the layer addressing tuple against the supplied metadata
     /// snapshot. The service is matched by id first, then by name (mirroring the
@@ -75,6 +104,41 @@ internal static class MapToolLayerResolver
         }
 
         return new MapToolLayerContext(service, publication, resource!, resolvedStorageLayerId);
+    }
+
+    /// <summary>Resolves a readable layer through the same resource-access gate as REST.</summary>
+    public static async Task<MapToolLayerContext> ResolveForReadAsync(
+        HttpContext httpContext,
+        MetadataV2GraphSnapshot snapshot,
+        string? serviceId,
+        int? layerId,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken)
+    {
+        var layer = Resolve(snapshot, serviceId, layerId);
+        await EnsureAccessAsync(httpContext, layer, operation, cancellationToken).ConfigureAwait(false);
+        return layer;
+    }
+
+    /// <summary>Checks the selected resource operation through the shared REST gate.</summary>
+    public static async Task EnsureAccessAsync(
+        HttpContext httpContext,
+        MapToolLayerContext layer,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken)
+    {
+        if (!TenantScopeHelpers.IsPublicationVisible(httpContext, layer.Publication, layer.Resource, layer.Service))
+        {
+            throw new GeoprocessingNotFoundException("Layer was not found in the published catalog.");
+        }
+
+        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+            httpContext, layer.Resource, layer.Service, operation, cancellationToken)
+            .ConfigureAwait(false);
+        if (!decision.IsAllowed)
+        {
+            throw new GeoprocessingAuthorizationException(decision.RequiresAuthentication);
+        }
     }
 
     private static MetadataV2Service? ResolveService(MetadataV2GraphSnapshot snapshot, string serviceId)

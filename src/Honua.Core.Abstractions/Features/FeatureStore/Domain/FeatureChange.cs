@@ -35,6 +35,9 @@ public readonly record struct FeatureChange
     /// </summary>
     public long? PublicObjectId { get; init; }
 
+    /// <summary>Replica that uploaded this change, or null for ordinary server edits.</summary>
+    public string? OriginReplicaId { get; init; }
+
     /// <summary>
     /// Type of change that occurred
     /// </summary>

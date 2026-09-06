@@ -217,6 +217,7 @@ public static partial class OgcMapsEndpoints
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
         if (!layerId.HasValue)
         {
@@ -235,6 +236,7 @@ public static partial class OgcMapsEndpoints
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var selectedLayerIds = Array.Empty<int>();
         if (request.Collections is not null)
         {
@@ -304,6 +306,7 @@ public static partial class OgcMapsEndpoints
         OgcMapsRenderingHandler handler,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
         if (!layerId.HasValue)
         {
@@ -322,6 +325,7 @@ public static partial class OgcMapsEndpoints
         OgcMapsTileSetHandler handler,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
         if (!layerId.HasValue)
         {
@@ -338,6 +342,7 @@ public static partial class OgcMapsEndpoints
         OgcMapsTileSetHandler handler,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
         if (!layerId.HasValue)
         {

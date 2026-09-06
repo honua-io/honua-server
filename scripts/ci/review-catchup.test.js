@@ -99,12 +99,12 @@ test('the catch-up pass is reachable without the schedule event', () => {
   const workflow = fs.readFileSync(
     path.join(__dirname, '..', '..', '.github', 'workflows', 'claude-review.yml'), 'utf8');
 
-  const catchUp = workflow.slice(workflow.indexOf('  catch-up:'), workflow.indexOf('  review:'));
+  const catchUp = workflow.slice(workflow.indexOf('  catch-up:'), workflow.indexOf('  resolve:'));
   assert.match(catchUp, /github\.event_name == 'schedule'/);
   assert.match(catchUp, /workflow_dispatch' && inputs\.pr == ''/,
     'a bare workflow_dispatch must reach the catch-up job');
 
-  const review = workflow.slice(workflow.indexOf('  review:'));
-  assert.match(review, /workflow_dispatch' && inputs\.pr != ''/,
-    'the review job must take a dispatch only when a PR is named, or a bare catch-up dispatch would also start a review with no target');
+  const resolve = workflow.slice(workflow.indexOf('  resolve:'), workflow.indexOf('  review:'));
+  assert.match(resolve, /workflow_dispatch' && inputs\.pr != ''/,
+    'the resolver must take a dispatch only when a PR is named, or a bare catch-up dispatch would also start a review with no target');
 });

@@ -45,6 +45,7 @@ collected() {
 }
 integration_results="$(collected "$INTEGRATION_NDJSON")"
 sdk_results="$(collected "$SDK_NDJSON")"
+jq -e 'all(.[]; ((.profile // .receipt.profile // .evidence_receipt.profile // "") != "preview-http-baseseed"))' <<<"$sdk_results" >/dev/null || { echo "[ERROR] preview-profile SDK receipt cannot be accepted as release-tier client evidence" >&2; exit 1; }
 
 jq -n \
   --slurpfile registry "$REGISTRY" \

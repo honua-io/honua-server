@@ -233,6 +233,41 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
             .Should().BeTrue("the blocked contract migration must not have applied");
     }
 
+    [Theory]
+    [InlineData("2")]
+    [InlineData("-1")]
+    public async Task RunMigrations_UndefinedPolicy_RejectsWithoutDdlOrJournalWrites(string policy)
+    {
+        _postgres.Available.Should().BeTrue("this regression requires the local PostgreSQL substrate");
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var assemblyName = $"honua_synthetic_invalidpolicy_{Guid.NewGuid():N}";
+        await ApplyExpandBaselineAsync(connectionString, assemblyName);
+        var upgrade = SyntheticMigrationsCompiler.Compile(assemblyName,
+            ("001_expand.sql", ExpandScript),
+            ("002_drop_legacy_annotated.sql", AnnotatedContractScript));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                [$"{MigrationSafetyOptions.SectionName}:ContractApplyPolicy"] = policy,
+            }).Build();
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var journal = connection.CreateCommand();
+        journal.CommandText = "SELECT count(*) FROM public.schema_versions";
+        var journalCount = (long)(await journal.ExecuteScalarAsync())!;
+
+        var apply = async () =>
+        {
+            var options = configuration.GetSection(MigrationSafetyOptions.SectionName).Get<MigrationSafetyOptions>()!;
+            await CreateRunner(options).RunMigrationsAsync(connectionString, upgrade);
+        };
+
+        var rejection = await apply.Should().ThrowAsync<Exception>();
+        rejection.Which.GetBaseException().Message.Should().Contain("ContractApplyPolicy");
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name")).Should().BeTrue();
+        ((long)(await journal.ExecuteScalarAsync())!).Should().Be(journalCount);
+    }
+
     [SkippableFact]
     public async Task RunMigrations_UpgradeUnderGate_AppliesAnnotatedContractWhenApproved()
     {

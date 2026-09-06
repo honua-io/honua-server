@@ -90,7 +90,7 @@ internal sealed class AzureKeyVaultLicenseContentResolver : ILicenseContentSecre
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Fail safe: the license pipeline degrades to Community when the secret cannot be
+            // Fail safe: the license pipeline rejects paid-tier startup when the secret cannot be
             // fetched (missing RBAC grant, wrong vault, deleted secret, unreachable endpoint, etc.).
             AzureLicenseLog.SecretFetchFailed(_logger, ex.GetType().Name);
             return null;

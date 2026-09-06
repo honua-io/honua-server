@@ -172,7 +172,7 @@ public sealed class AzureKeyVaultLicenseContentResolverTests
         var envelopeJson = Encoding.UTF8.GetString(license.LicenseData);
 
         var resolver = CreateResolver(_ => CreateSecretClient(envelopeJson));
-        var service = new FileBackedLicenseService(
+        using var service = new FileBackedLicenseService(
             Options.Create(new LicenseOptions
             {
                 LicenseContentSecretRef = ValidRef,
@@ -196,20 +196,21 @@ public sealed class AzureKeyVaultLicenseContentResolverTests
     }
 
     [UnitTest]
-    public async Task StartAsync_KeyVaultFetchFails_FallsBackToCommunity()
+    public async Task StartAsync_KeyVaultFetchFails_RefusesPaidStartup()
     {
         var resolver = CreateResolver(_ => throw new RequestFailedException(404, "SecretNotFound"));
-        var service = new FileBackedLicenseService(
-            Options.Create(new LicenseOptions { LicenseContentSecretRef = ValidRef }),
+        using var service = new FileBackedLicenseService(
+            Options.Create(new LicenseOptions { Edition = HonuaEdition.Pro, LicenseContentSecretRef = ValidRef }),
             new BouncyCastleEd25519Verifier(),
             NullLogger<FileBackedLicenseService>.Instance,
             [resolver]);
 
-        await service.StartAsync(CancellationToken.None);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
+        Assert.Contains("Honua Pro startup refused: license missing.", error.Message);
 
         var snapshot = service.GetSnapshot();
-        snapshot.Edition.Should().Be(HonuaEdition.Community);
-        snapshot.IsValid.Should().BeTrue();
+        snapshot.Edition.Should().Be(HonuaEdition.Pro);
+        snapshot.IsValid.Should().BeFalse();
         snapshot.ValidationState.Should().Be(LicenseValidationState.NoLicenseConfigured);
     }
 

@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Geoprocessing;
@@ -99,7 +100,15 @@ internal sealed class ListLayersTool : IMcpTool
             foreach (var publication in publications)
             {
                 var resource = snapshot.ResolveResource(publication);
-                if (!snapshot.IsRoutable(publication) || publication.LayerIndex is not { } layerIndex)
+                if (!snapshot.IsRoutable(publication) || publication.LayerIndex is not { } layerIndex
+                    || !TenantScopeHelpers.IsPublicationVisible(httpContext, publication, resource, service))
+                {
+                    continue;
+                }
+
+                var access = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+                    httpContext, resource!, service, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
+                if (!access.IsAllowed)
                 {
                     continue;
                 }

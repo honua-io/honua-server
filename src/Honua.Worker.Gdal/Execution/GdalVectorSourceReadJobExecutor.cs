@@ -111,6 +111,14 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             return JobExecutionResult.Failed($"Invalid source inputs: {inputError}");
         }
 
+        GdalJobInputReader.TryGetInput(parameters, "layerName", out var layerName);
+        if (!string.IsNullOrEmpty(layerName)
+            && (string.IsNullOrWhiteSpace(layerName) || layerName.Length > 1024
+                || layerName.StartsWith('-') || layerName.Any(char.IsControl)))
+        {
+            return JobExecutionResult.Failed("Invalid source inputs: layerName must be a nonempty layer name, not a command option.");
+        }
+
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
@@ -149,6 +157,12 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
                 outputPath,
                 ogrSourcePath,
             };
+
+            if (!string.IsNullOrEmpty(layerName))
+            {
+                // One argv token selects exactly one source layer, including names with spaces.
+                args.Add(layerName);
+            }
 
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);

@@ -75,7 +75,7 @@ groups:
           component: memory
         annotations:
           summary: "Honua server memory usage is high"
-          description: "Memory usage is {{ $value | humanizeBytes }} for more than 10 minutes"
+          description: "Memory usage is {{ $value | humanize1024 }}B for more than 10 minutes"
           runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#memory-and-performance"
 
       - alert: HonuaMemoryUsageCritical
@@ -86,7 +86,7 @@ groups:
           component: memory
         annotations:
           summary: "Honua server memory usage is critical"
-          description: "Memory usage is {{ $value | humanizeBytes }} - potential OOM risk"
+          description: "Memory usage is {{ $value | humanize1024 }}B - potential OOM risk"
           runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#memory-and-performance"
 
       # Query Performance Alerts
@@ -123,8 +123,12 @@ groups:
       # (all_surface_error_rate). Neither honua_errors_total nor honua_queries_total, which an
       # earlier revision divided, has ever been exported by any Honua component, so this ratio was
       # empty/empty and the alert could not fire (honua-release#5, honua-server#3323).
+      # The error and duration instruments have different protocol/operation/status labels.
+      # Aggregate those dimensions before division, retaining the scrape target so a healthy
+      # instance cannot hide another instance's outage. Sum rates for request-weighted ratios.
+      # Regression: promtool test rules prometheus-alerts.test.yml (from this directory).
       - alert: HonuaErrorRateHigh
-        expr: rate(honua_request_error_total[5m]) / rate(honua_serving_request_duration_ms_count[5m]) > 0.02
+        expr: sum by (job, instance) (rate(honua_request_error_total[5m])) / sum by (job, instance) (rate(honua_serving_request_duration_ms_count[5m])) > 0.02
         for: 5m
         labels:
           severity: warning
@@ -135,7 +139,7 @@ groups:
           runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#quick-triage"
 
       - alert: HonuaErrorRateCritical
-        expr: rate(honua_request_error_total[5m]) / rate(honua_serving_request_duration_ms_count[5m]) > 0.05
+        expr: sum by (job, instance) (rate(honua_request_error_total[5m])) / sum by (job, instance) (rate(honua_serving_request_duration_ms_count[5m])) > 0.05
         for: 2m
         labels:
           severity: critical

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://honua.io/schemas/sdk-release-certification.v1.json",
+  "schemaVersion": 1,
+  "tier": "preview",
+  "profile": "preview-http-baseseed",
+  "candidate": {
+    "sourceSha": "ac30266fbd153363bebdbed13130accc8ab0c94a",
+    "image": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+    "imageDigest": "sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+    "fixtureRevision": "tests/seed/base-schema.sql@ac30266fbd153363bebdbed13130accc8ab0c94a",
+    "contractRevision": "2026.1"
+  },
+  "sdks": {
+    "js": { "package": "@honua/sdk", "version": "0.1.9-beta.0", "registry": "https://registry.npmjs.org" },
+    "python": { "package": "honua-sdk", "version": "0.1.11", "registry": "https://pypi.org/simple" },
+    "dotnet": {
+      "package": "Honua.Sdk",
+      "version": "1.6.1",
+      "registry": "https://api.nuget.org/v3/index.json",
+      "protocolPackage": "Geospatial.Grpc",
+      "protocolVersion": "1.0.0"
+    }
+  },
+  "capabilities": [
+    "editing.featureserver-edits", "geocoding.batch", "geocoding.forward", "geocoding.reverse",
+    "process.geoprocessing", "process.ogc-api-processes", "routing.solve", "serve.3d-tiles-scene",
+    "serve.elevation", "serve.geoservices-featureserver", "serve.geoservices-geocodeserver",
+    "serve.geoservices-geometry-service", "serve.geoservices-imageserver", "serve.geoservices-mapserver",
+    "serve.geoservices-root", "serve.geoservices-vectortileserver", "serve.i3s-scene", "serve.odata",
+    "serve.ogc-api-coverages", "serve.ogc-api-edr", "serve.ogc-api-features", "serve.ogc-api-maps",
+    "serve.ogc-api-records", "serve.ogc-api-tiles", "serve.sensorthings", "serve.stac",
+    "serve.vector-tiles", "serve.wcs", "serve.wfs", "serve.wms", "serve.wmts",
+    "styling.auto-suggest", "styling.ogc-api-styles"
+  ]
+}

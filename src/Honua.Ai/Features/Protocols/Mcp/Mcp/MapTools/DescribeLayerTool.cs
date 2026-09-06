@@ -137,12 +137,15 @@ internal sealed class DescribeLayerTool : IMcpTool
         var graphProvider = httpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-        var context = MapToolLayerResolver.Resolve(snapshot, argument.ServiceId, argument.LayerId);
+        var context = await MapToolLayerResolver.ResolveForReadAsync(
+            httpContext, snapshot, argument.ServiceId, argument.LayerId, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
 
         long? rowCount = null;
         if (argument.IncludeRowCount ?? true)
         {
-            rowCount = await TryCountRowsAsync(httpContext, context.StorageLayerId, cancellationToken).ConfigureAwait(false);
+            await MapToolLayerResolver.EnsureAccessAsync(
+                httpContext, context, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
+            rowCount = await TryCountRowsAsync(httpContext, snapshot, context, cancellationToken).ConfigureAwait(false);
         }
 
         var output = BuildOutput(context, argument.LayerId!.Value, rowCount);
@@ -151,13 +154,16 @@ internal sealed class DescribeLayerTool : IMcpTool
 
     private async Task<long?> TryCountRowsAsync(
         HttpContext httpContext,
-        int storageLayerId,
+        MetadataV2GraphSnapshot snapshot,
+        MapToolLayerContext layer,
         CancellationToken cancellationToken)
     {
-        var reader = httpContext.RequestServices.GetRequiredService<IFeatureReader>();
         try
         {
-            return await reader.CountAsync(storageLayerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+            var reader = await MapToolLayerResolver.ResolveReaderAsync(httpContext, snapshot, layer,
+                Honua.Core.Features.FeatureStore.Services.FeatureProviderReadOperation.Count,
+                cancellationToken).ConfigureAwait(false);
+            return await reader.CountAsync(layer.StorageLayerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

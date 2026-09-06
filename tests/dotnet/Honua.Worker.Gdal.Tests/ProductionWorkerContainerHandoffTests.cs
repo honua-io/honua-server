@@ -13,6 +13,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
@@ -41,6 +42,13 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
         var image = Environment.GetEnvironmentVariable(ImageEnvironmentVariable)!;
         var hostOutputRoot = Path.Join(Path.GetTempPath(), $"honua-worker-container-{Guid.NewGuid():N}");
         Directory.CreateDirectory(hostOutputRoot);
+        GeoprocessingOutputStoreTestHelper.Attest(new GeoprocessingOutputStagingOptions
+        {
+            Enabled = true,
+            LocalRootPath = hostOutputRoot,
+            StoreReference = "container-certification",
+            MaxInlineArtifactBytes = 1024,
+        });
         File.SetUnixFileMode(hostOutputRoot,
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
             UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
@@ -53,6 +61,16 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
             .WithNetwork(network)
             .WithNetworkAliases(RedisAlias)
             .WithPortBinding(6379, true)
+            .WithCommand(
+                "redis-server",
+                "--appendonly",
+                "yes",
+                "--appendfsync",
+                "always",
+                "--save",
+                "",
+                "--maxmemory-policy",
+                "noeviction")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilCommandIsCompleted("redis-cli", "ping"))
             .Build();
 
@@ -172,6 +190,18 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
             .WithEnvironment("Geoprocessing__OutputStaging__StoreReference", "container-certification")
             .WithEnvironment("Geoprocessing__OutputStaging__LocalRootPath", ContainerOutputRoot)
             .WithEnvironment("Geoprocessing__OutputStaging__MaxInlineArtifactBytes", "1024")
+            .WithEnvironment("Geoprocessing__OutputStaging__PersistenceClass", "shared-persistent")
+            .WithEnvironment("Geoprocessing__OutputStaging__BackupIdentity", "qualification-backup")
+            .WithEnvironment("Geoprocessing__OutputStaging__BackupStoreReferences__0", "container-certification")
+            .WithEnvironment("Geoprocessing__OutputStaging__ConfigurationDigest",
+                GeoprocessingOutputStoreAttestation.Create(new GeoprocessingOutputStagingOptions
+                {
+                    StoreReference = "container-certification",
+                    MaxInlineArtifactBytes = 1024,
+                    PersistenceClass = "shared-persistent",
+                    BackupIdentity = "qualification-backup",
+                    BackupStoreReferences = ["container-certification"],
+                }).ConfigurationDigest)
             .WithBindMount(hostOutputRoot, ContainerOutputRoot)
             .Build();
 

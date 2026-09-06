@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Redshift.Features.FeatureStore.Services;
 
@@ -182,6 +183,17 @@ internal static partial class RedshiftFeatureQueryBuilder
 
     private static void AppendWhereClause(StringBuilder sb, FeatureQuery query, List<object> parameters)
     {
+        if (query.TextSearch is { } search)
+        {
+            var predicate = FeatureTextSearchSql.Build(search, RedshiftIdentifier.Quote, text =>
+            {
+                var marker = "@p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+                parameters.Add(text);
+                return marker;
+            }, (column, value) => $"STRPOS({column}, {value})");
+            sb.Append(" AND ").Append(predicate);
+        }
+
         // Prefer the canonical Where text. SqlFilter on FeatureQuery is produced by the shared
         // ISqlFilterTranslator pipeline, which only registers a Postgres (PostGIS) translator
         // today. PostGIS-emitted fragments use JSONB operators, ::casts, and PostGIS-only spatial

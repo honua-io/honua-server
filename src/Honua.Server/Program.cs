@@ -113,9 +113,16 @@ StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Finalize JSON precedence before any secret becomes a process-lifetime snapshot.
+StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
+// Validate the declared paid deployment before registering or starting any data workers,
+// including deployments without Redis (whose cache probe otherwise skips license bootstrap).
+await StartupConfigurationHelpers.LoadBootstrapLicenseSnapshotAsync(builder.Configuration, builder.Environment);
+// Start the license hosted service before any workload execution or reconciliation service.
+builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
 // Resolve aws:secretsmanager: Redis connection-string references before anything below reads
 // ConnectionStrings:redis — the multiplexer wiring a few lines down runs ahead of
 // WebApplicationBuilder.Build(), so it cannot use the DI-registered IConnectionSecretResolver
@@ -184,8 +191,6 @@ if (loadHostedBlazorStaticWebAssets)
     StartupConfigurationHelpers.LoadHostedBlazorStaticWebAssets(builder);
 }
 
-// Load optional security configuration without overriding environment-specific settings.
-StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 // The AWS serverless module injects these values as aws:secretsmanager: references. Validate the
 // admin credential while preserving its refreshable reference, and snapshot the encryption master
 // key before its direct consumer can mistake the reference text for key material.
@@ -217,6 +222,8 @@ var redisOutputCacheConfigured = ObservabilityServiceCollectionExtensions.Should
     redisCacheEntitled,
     redisConnectionString);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
+RedisDurabilityAttestation? redisDurabilityAttestation = null;
+DurableJobSubstrateCause? redisDurabilityFailure = null;
 
 // honua-release#202: record WHY the durable job substrate is or is not composed, so the typed
 // refusal and the capability manifest can give remediation that actually works. "Redis is
@@ -226,6 +233,8 @@ builder.Services.Configure<DurableJobSubstrateOptions>(options =>
 {
     options.RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString);
     options.RedisEntitled = redisCacheEntitled;
+    options.RedisDurabilityAttestation = redisDurabilityAttestation;
+    options.RedisDurabilityFailure = redisDurabilityFailure;
 });
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
@@ -282,6 +291,7 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
     try
     {
         var redisOptions = ConfigurationOptions.Parse(redisInfrastructureConnectionString, ignoreUnknown: true);
+        redisOptions.AllowAdmin = true;
         redisOptions.AbortOnConnectFail = false;
         redisOptions.ConnectRetry = Math.Max(redisOptions.ConnectRetry, 3);
         redisOptions.ReconnectRetryPolicy ??= new ExponentialRetry(5_000);
@@ -300,6 +310,24 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
             var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
             ProgramLog.RedisStartupConnectionInactive(startupLogger);
         }
+
+        if (connectedRedis.IsConnected)
+        {
+            var durability = await RedisDurabilityAttestor.InspectAsync(connectedRedis);
+            redisDurabilityAttestation = durability.Attestation;
+            redisDurabilityFailure = durability.FailureCause;
+
+            // Redis is still usable for cache and non-job infrastructure, but only an
+            // accepted attestation may unlock the durable job registrations below.
+            if (redisCacheEntitled && durability.Attestation is not null)
+            {
+                builder.Services.TryAddSingleton(durability.Attestation);
+            }
+        }
+        else if (redisCacheEntitled)
+        {
+            redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
+        }
     }
     catch (Exception ex)
     {
@@ -313,6 +341,7 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
         ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
+        redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
     }
 }
 
@@ -660,10 +689,6 @@ builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
-// ---- Extracted: licensing + identity-provider HTTP clients (Startup/LicensingRegistration.cs)
-builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
-// ---- End extracted block
-
 // Edition guardrail ladder (#1691): resolves DirectExecute/RequiresApproval/Blocked
 // per (operation class x edition). Fails closed for unknown classes outside dev.
 builder.Services.Configure<Honua.Core.Features.Guardrails.GuardrailLadderOptions>(
@@ -678,6 +703,10 @@ builder.Services.AddSingleton<Honua.Core.Features.Guardrails.Abstractions.IGuard
     Honua.Core.Features.Guardrails.DefaultGuardrailLadder>();
 
 // Register configuration documentation service for self-documenting admin endpoint
+// Admin startup connectivity diagnostics require the shared secret provider even when
+// offline sync and other experimental surfaces are disabled (#4008).
+Honua.Infrastructure.Configuration.ConfigurationServiceExtensions.AddSecretManagement(
+    builder.Services, builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.TryAddScoped<IConsoleJobService, ConsoleJobService>();
@@ -1339,6 +1368,9 @@ app.UseGlobalExceptionHandling();
 // untouched. Runs after global exception handling so thrown exceptions keep their
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
+
+// Paid deployments stop every data surface at expiry, including cached reads and exports.
+app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();
 
 // A configured deployment profile is a fail-closed HTTP surface allowlist backed by the
 // drift-gated feature catalog. With no profile configured this middleware is inert.

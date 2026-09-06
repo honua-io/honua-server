@@ -5,6 +5,7 @@ namespace Honua.Protocols.Ogc.Api.Processes;
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Migration.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 /// <summary>
@@ -25,6 +26,12 @@ internal static class OgcProcessesServiceCollectionExtensions
 
         services.Configure<OgcProcessesOptions>(
             configuration.GetSection(OgcProcessesOptions.SectionName));
+        services.AddHttpClient(OgcProcessInputReferenceHttpClient.Name, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(30);
+            })
+            .ConfigurePrimaryHttpMessageHandler(
+                static () => OgcApiFeaturesMigrationScanner.CreatePinnedDnsHttpMessageHandler());
 
         var citeEchoEnabled = OgcProcessesCiteEchoFixture.IsEnabled(
             configuration,

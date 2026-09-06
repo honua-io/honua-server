@@ -9,7 +9,7 @@
       "displayName": "Admin Control Plane",
       "category": "ControlPlane",
       "edition": "Community",
-      "description": "General administrative CRUD surfaces (connections, metadata, services, tenants, users, roles, configuration) with no dedicated entitlement of their own."
+      "description": "General administrative CRUD surfaces (connections, metadata, services, users, roles, configuration) with no dedicated entitlement of their own. Tenant administration is Preview/trial only in 2026.1; GA is single-tenant, with no hosted service or production multi-tenant deployment. Cross-tenant isolation remains mandatory."
     },
     {
       "key": "ai.agent-operations",
@@ -23,7 +23,7 @@
       "displayName": "Agent Approval Workflows",
       "category": "AI",
       "edition": "Enterprise",
-      "description": "Human-in-the-loop approval, policy-scoped agent permissions, and immutable audit for agent-initiated operations."
+      "description": "Enterprise organisational approval workflows and policy-scoped agent permissions. Essential authorization, isolation, and audit integrity remain baseline product obligations."
     },
     {
       "key": "ai.grounding",
@@ -258,35 +258,35 @@
       "displayName": "Backup Automation",
       "category": "DisasterRecovery",
       "edition": "Enterprise",
-      "description": "Scheduled PostgreSQL base backups plus WAL archiving enabling point-in-time recovery."
+      "description": "Enterprise scheduling and orchestration of PostgreSQL base backups and WAL archiving. Essential backup, restore, and recoverability remain baseline obligations in every edition."
     },
     {
       "key": "dr.cache-backup",
       "displayName": "Cache State Backup",
       "category": "DisasterRecovery",
       "edition": "Enterprise",
-      "description": "Backup and restore Redis cache state so warm cache contents survive a regional failover."
+      "description": "Enterprise automation for Redis warm-cache recovery during regional failover. Recovery of enabled durable Redis job/workflow state remains a baseline obligation in every edition."
     },
     {
       "key": "dr.failover",
       "displayName": "Failover Playbooks",
       "category": "DisasterRecovery",
       "edition": "Enterprise",
-      "description": "Active-passive failover playbooks driven by automated health checks against the primary serving surface."
+      "description": "Enterprise automated active-passive failover playbooks driven by health checks. Essential recovery procedures remain baseline obligations in every edition."
     },
     {
       "key": "dr.rto-rpo-reporting",
       "displayName": "RTO/RPO Reporting",
       "category": "DisasterRecovery",
       "edition": "Enterprise",
-      "description": "Track recovery time and recovery point objectives and report recovery readiness, last successful backup, and restorable point."
+      "description": "Enterprise automated RTO/RPO reporting and recovery-readiness dashboards. Documented recovery expectations and verified restores remain baseline obligations in every edition."
     },
     {
       "key": "editing.branch-versioning",
       "displayName": "Branch Versioning",
       "category": "Editing",
-      "edition": "Enterprise",
-      "description": "Named gdb versions with isolated edits, reconcile/post back to DEFAULT, and gdbVersion-scoped editing/querying over the GeoServices VersionManagementServer."
+      "edition": "Pro",
+      "description": "Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Preview in 2026.1; the experimental runtime opt-in remains required."
     },
     {
       "key": "editing.featureserver-edits",
@@ -605,7 +605,8 @@
       "displayName": "ImageServer",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface."
+      "description": "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface.",
+      "status": "preview"
     },
     {
       "key": "serve.geoservices-mapserver",
@@ -648,7 +649,8 @@
       "displayName": "OGC API Coverages",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve coverage data through OGC API - Coverages."
+      "description": "Serve coverage data through OGC API - Coverages.",
+      "status": "preview"
     },
     {
       "key": "serve.ogc-api-edr",
@@ -733,7 +735,8 @@
       "displayName": "WMTS 1.0",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve pre-rendered tile pyramids through WMTS 1.0."
+      "description": "Serve pre-rendered tile pyramids through WMTS 1.0.",
+      "status": "preview"
     },
     {
       "key": "staticmap.high-dpi",

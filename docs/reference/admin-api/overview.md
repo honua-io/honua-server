@@ -22,6 +22,10 @@ All admin endpoints require authentication. Send `X-API-Key` with the admin pass
 
 Console control-plane surfaces (`/api/v1/console/*`, including workflow packages) use the same admin authorization posture.
 
+## Multitenancy and baseline operation
+
+Tenant lifecycle and usage administration is **Preview/trial only in 2026.1**. GA is single-tenant. There is no Honua SaaS and no production multi-tenant deployment: any tenancy environment is explicitly labelled demo/trial/preview, with no customer production data or availability, performance, durability or production SLO commitment. Cross-tenant disclosure retains full severity. Essential secure operation and recoverability remain baseline obligations; Enterprise adds organisational approval/policy and advanced automation. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
+
 ## Capability manifest
 
 `GET /api/v1/capabilities/manifest` returns a neutral runtime capability manifest for Console, MCP, QGIS, native hosts, and SDK clients. Authentication is optional; anonymous callers receive the public/default view. Optional `environment` and `workspaceId` query parameters scope the result.
@@ -63,3 +67,41 @@ Control-plane SDKs should instead call `GET /api/v1/admin/capabilities` once per
 ## Versioning
 
 The admin API follows the control-plane versioning and deprecation policy in [Versioning and support](../versioning-and-support.md).
+
+## Reviewing Admin operation proposals
+
+New Admin operation proposals include the HTTP operation, accepted tenant,
+connection/service target, selected fields, and declared parameter values in the
+reviewable `diff`. For example, a layer-filter proposal identifies the layer and
+its proposed permanent-filter expression. The review distinguishes dry-run
+validation from execution. Approval replay verifies the complete plan seal
+internally; neither REST nor MCP exposes that private seal or replay payload.
+
+Credentials, opaque bodies, malformed JSON, and undeclared values are marked as
+redacted. Known secret references remain visible so the reviewer can identify the
+selected credential without seeing its secret. URL credentials and query strings
+are removed from displayed URLs. Review warnings identify these omissions; the
+complete execution payload is not returned by proposal-detail endpoints.
+
+Proposals created before this projection was available retain their original
+sealed plan. Re-propose such work to obtain the target-and-value review rather
+than relying on a generic legacy summary.
+
+## Canonical operation requests
+
+Admin release and operate requests use the required inputs declared by the
+operation catalog. Validation and dry-run reject missing or blank required
+values, missing required fields within structured inputs, and missing conditional
+cache targets. Metadata prevalidation requires a target environment and exactly
+one persisted package ID or inline release package. This input validation does
+not establish that a referenced package exists or replace live compatibility
+prevalidation.
+
+Supply declared text directly: a title of `2026`, `true`, or `null` stays a JSON
+string when sent to the Admin API. Supply numbers, booleans, arrays, and objects
+as JSON in the operation parameter value. Pagination and service filters are
+forwarded as query parameters, including values containing reserved characters.
+
+Operate validation also enforces declared scalar types, enum and format constraints,
+and explicit nullability of supplied objects, collections, and collection entries.
+Optional nullable values remain valid when their target scope does not require them.

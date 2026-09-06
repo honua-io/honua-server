@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Exceptions;
+using Honua.Infrastructure.Models;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -56,16 +58,32 @@ internal static class VectorTileExecution
         string? tileMatrixSetId = null,
         GridGeometry? gridGeometry = null)
     {
-        var tileData = await tileProvider.GetMvtTileAsync(
-            storageLayerId,
-            tileCol,
-            tileRow,
-            zoomLevel,
-            query,
-            tileOptions,
-            tileLimits,
-            gridGeometry,
-            cancellationToken);
+        byte[]? tileData;
+        try
+        {
+            tileData = await tileProvider.GetMvtTileAsync(
+                storageLayerId,
+                tileCol,
+                tileRow,
+                zoomLevel,
+                query,
+                tileOptions,
+                tileLimits,
+                gridGeometry,
+                cancellationToken);
+        }
+        catch (TileSizeLimitExceededException)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error);
+            return StandardErrorHelpers.CreatePayloadTooLarge(context, new TileSizeLimitExceededException().Message);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (tileData?.LongLength > tileLimits.MaxTileSize)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error);
+            return StandardErrorHelpers.CreatePayloadTooLarge(context, new TileSizeLimitExceededException().Message);
+        }
 
         if (tileData == null || tileData.Length == 0)
         {

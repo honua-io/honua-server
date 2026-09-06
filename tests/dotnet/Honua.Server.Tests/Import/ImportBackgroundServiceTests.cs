@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Abstractions;
 using System.Collections.Concurrent;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
@@ -190,6 +191,62 @@ public sealed class ImportBackgroundServiceTests
                 TimeSpan.FromSeconds(10)).ConfigureAwait(false);
 
             (await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false))!.Status.Should().Be(GeoservicesImportStatus.Cancelled);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [UnitTest]
+    public async Task GeoservicesBackgroundService_LicenseExpiry_RecordsFailure_WhenCancellationSurfacesAsGenericFailure()
+    {
+        using var expiry = new CancellationTokenSource();
+        var policy = Substitute.For<ILicenseOperationPolicy>();
+        policy.OperationCancellation.Returns(expiry.Token);
+        using var provider = CreateGeoservicesProvider(new ThrowingGeoservicesImportService(ThrowingBehavior.ThrowAfterCancellation));
+        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        using var jobManager = new RedisImportJobManager(
+            universalProgressStore,
+            null,
+            NullLogger<RedisImportJobManager>.Instance,
+            new TestHostEnvironment());
+        var service = new GeoservicesImportBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            jobManager,
+            NullLogger<GeoservicesImportBackgroundService>.Instance, licensePolicy: policy);
+
+        const string jobId = "geoservices-cancel";
+        var request = new GeoservicesImportRequest
+        {
+            JobId = jobId,
+            ServiceUrl = "https://8.8.8.8/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 0,
+            TableName = "geoservices_cancel_test",
+            AutoPublish = false
+        };
+        var progress = GeoservicesImportProgress.CreateInitial(jobId, request.ServiceUrl, request.LayerId, request.TableName);
+
+        await jobManager.RequestStore.SetProgressAsync(jobId, request, TimeSpan.FromMinutes(10));
+        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
+        await jobManager.JobQueue.EnqueueAsync(jobId);
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            var importService = provider.GetRequiredService<ThrowingGeoservicesImportService>();
+            await importService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+            expiry.Cancel();
+
+            await WaitForAsync(
+                async () => (await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false))?.Status == GeoservicesImportStatus.Failed,
+                TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+            var failed = (await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false))!;
+            failed.Status.Should().Be(GeoservicesImportStatus.Failed);
+            failed.ErrorMessage.Should().Be("license expired");
+            failed.CurrentPhase.Should().Contain("partial import is incomplete");
         }
         finally
         {
@@ -433,6 +490,63 @@ public sealed class ImportBackgroundServiceTests
                 TimeSpan.FromSeconds(10)).ConfigureAwait(false);
 
             (await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false))!.Status.Should().Be(GeoServerImportStatus.Cancelled);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [UnitTest]
+    public async Task GeoServerBackgroundService_LicenseExpiry_RecordsFailure_WhenCancellationSurfacesAsGenericFailure()
+    {
+        using var expiry = new CancellationTokenSource();
+        var policy = Substitute.For<ILicenseOperationPolicy>();
+        policy.OperationCancellation.Returns(expiry.Token);
+        using var provider = CreateGeoServerProvider(new ThrowingGeoServerImportService(ThrowingBehavior.ThrowAfterCancellation));
+        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        using var jobManager = new GeoServerImportJobManager(
+            universalProgressStore,
+            null,
+            NullLogger<GeoServerImportJobManager>.Instance,
+            new TestHostEnvironment());
+        var service = new GeoServerImportBackgroundService(
+            new ConfigurationBuilder().Build(),
+            new TestHostEnvironment(),
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            jobManager,
+            NullLogger<GeoServerImportBackgroundService>.Instance, licensePolicy: policy);
+
+        const string jobId = "geoserver-cancel";
+        var request = new GeoServerImportRequest
+        {
+            JobId = jobId,
+            GeoServerRestUrl = "https://8.8.8.8/geoserver/rest",
+            TargetHonuaUrl = "https://honua.example.com",
+            DryRun = true
+        };
+        var progress = GeoServerImportProgress.CreateInitial(jobId, request.GeoServerRestUrl, request.TargetHonuaUrl);
+
+        await jobManager.RequestStore.SetProgressAsync(jobId, request, TimeSpan.FromMinutes(10));
+        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
+        await jobManager.JobQueue.EnqueueAsync(jobId);
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            var importService = provider.GetRequiredService<ThrowingGeoServerImportService>();
+            await importService.Started.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+            expiry.Cancel();
+
+            await WaitForAsync(
+                async () => (await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false))?.Status == GeoServerImportStatus.Failed,
+                TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+            var failed = (await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false))!;
+            failed.Status.Should().Be(GeoServerImportStatus.Failed);
+            failed.ErrorMessage.Should().Be("license expired");
+            failed.CurrentPhase.Should().Contain("partial import is incomplete");
         }
         finally
         {

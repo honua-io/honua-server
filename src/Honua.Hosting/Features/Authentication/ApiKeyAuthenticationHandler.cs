@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -368,10 +369,26 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
         else if (isApprovedOperationKey)
         {
+            // Only persisted server-minted grants can supply this binding. Never
+            // promote the caller-controlled tenant header into authenticated claims.
+            var tenantBindings = permissions!
+                .Where(permission => permission.StartsWith(AdminApiKeyPermission.ApprovedOperationTenantGrantPrefix, StringComparison.Ordinal))
+                .Select(permission => permission[AdminApiKeyPermission.ApprovedOperationTenantGrantPrefix.Length..])
+                .ToArray();
+            if (tenantBindings.Length != 1)
+            {
+                return AuthenticateResult.Fail("Approved operation credential has no unambiguous tenant binding.");
+            }
+
+            var tenantClaim = new Claim(AdminApiKeyPermission.ApprovedOperationTenantClaim, tenantBindings[0]);
+            // This binding comes from the persisted server-minted credential, including
+            // an explicit empty binding. Preserve it through OIDC claim sanitization.
+            tenantClaim.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
             claims =
             [
                 new Claim(ClaimTypes.Name, apiKeyName ?? "approved-operation"),
                 new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole),
+                tenantClaim,
                 new Claim("auth_type", authenticationType),
             ];
         }

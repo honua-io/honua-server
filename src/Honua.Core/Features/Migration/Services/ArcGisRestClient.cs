@@ -167,6 +167,11 @@ internal sealed partial class ArcGisRestClient
         // Best-effort enrichment only: a failed count query still surfaces the rest of the
         // layer metadata. Cancellation must propagate rather than be swallowed as a
         // "count unavailable" result.
+        catch (InvalidOperationException ex)
+            when (ex.Message.StartsWith("ArcGIS response error", StringComparison.Ordinal))
+        {
+            throw;
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log.FeatureCountFailed(_logger, layerId, ex);
@@ -178,6 +183,10 @@ internal sealed partial class ArcGisRestClient
             Name = layerResponse.Name ?? $"Layer {layerResponse.Id}",
             Description = layerResponse.Description,
             GeometryType = layerResponse.GeometryType,
+            HasZ = layerResponse.HasZ,
+            HasM = layerResponse.HasM,
+            SupportsPagination = layerResponse.SupportsPagination
+                ?? layerResponse.AdvancedQueryCapabilities?.SupportsPagination,
             SpatialReferenceWkid = layerResponse.Extent?.SpatialReference?.Wkid,
             MaxRecordCount = layerResponse.MaxRecordCount,
             Fields = ParseFields(layerResponse.Fields),
@@ -202,6 +211,29 @@ internal sealed partial class ArcGisRestClient
             // set is reported via the inventory warning path and intentionally not persisted.
             AttributeRules = EsriAttributeRuleParser.Parse(layerResponse.AttributeRules).Rules
         };
+    }
+
+    /// <summary>Fetches all source object IDs for a layer.</summary>
+    public async Task<long[]> QueryObjectIdsAsync(
+        string serviceUrl,
+        int layerId,
+        string? whereClause,
+        int timeoutSeconds,
+        int maxRetries,
+        CancellationToken cancellationToken,
+        GeoservicesCredentialDescriptor? credentials = null)
+    {
+        var normalizedUrl = NormalizeServiceUrl(serviceUrl);
+        var url = $"{normalizedUrl}/{layerId}/query?f=json&where={Uri.EscapeDataString(whereClause ?? "1=1")}&returnIdsOnly=true";
+        var response = await GetJsonAsync(
+            url,
+            ArcGisJsonContext.Default.ArcGisObjectIdsResponse,
+            maxRetries,
+            timeoutSeconds,
+            credentials,
+            cancellationToken);
+
+        return response.ObjectIds ?? [];
     }
 
     /// <summary>
@@ -312,10 +344,11 @@ internal sealed partial class ArcGisRestClient
         int timeoutSeconds,
         int maxRetries,
         CancellationToken cancellationToken,
-        GeoservicesCredentialDescriptor? credentials = null)
+        GeoservicesCredentialDescriptor? credentials = null,
+        IReadOnlyCollection<long>? objectIds = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
-        var queryUrl = BuildQueryUrl(normalizedUrl, layerId, offset, batchSize, whereClause, outFields, outSrid);
+        var queryUrl = BuildQueryUrl(normalizedUrl, layerId, offset, batchSize, whereClause, outFields, outSrid, objectIds);
 
         Log.QueryingFeatures(_logger, layerId, offset, batchSize);
 
@@ -329,8 +362,7 @@ internal sealed partial class ArcGisRestClient
 
         if (response.Error != null)
         {
-            throw new InvalidOperationException(
-                $"ArcGIS query error {response.Error.Code}: {response.Error.Message}");
+            throw CreateArcGisResponseException(response.Error, queryUrl, credentials);
         }
 
         return new ArcGisQueryResult
@@ -348,17 +380,27 @@ internal sealed partial class ArcGisRestClient
         int batchSize,
         string? whereClause,
         string[]? outFields,
-        int? outSrid)
+        int? outSrid,
+        IReadOnlyCollection<long>? objectIds)
     {
         var query = new List<string>
         {
             "f=json",
             $"where={Uri.EscapeDataString(whereClause ?? "1=1")}",
             $"outFields={Uri.EscapeDataString(outFields != null ? string.Join(",", outFields) : "*")}",
-            "returnGeometry=true",
-            $"resultOffset={offset}",
-            $"resultRecordCount={batchSize}"
+            "returnGeometry=true"
         };
+
+        if (objectIds is null)
+        {
+            query.Add($"resultOffset={offset}");
+            query.Add($"resultRecordCount={batchSize}");
+        }
+
+        if (objectIds is not null)
+        {
+            query.Add($"objectIds={Uri.EscapeDataString(string.Join(',', objectIds))}");
+        }
 
         if (outSrid.HasValue)
         {
@@ -393,6 +435,11 @@ internal sealed partial class ArcGisRestClient
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync(jsonTypeInfo, cancellationToken);
+
+        if (result is IArcGisErrorResponse { Error: { } error })
+        {
+            throw CreateArcGisResponseException(error, url, credentials);
+        }
 
         return result ?? throw new InvalidOperationException("Failed to deserialize response");
     }
@@ -440,22 +487,9 @@ internal sealed partial class ArcGisRestClient
         string url,
         GeoservicesCredentialDescriptor? credentials)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, BuildAuthenticatedUrl(url, credentials));
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyAuthorizationHeader(request, credentials);
         return request;
-    }
-
-    private static string BuildAuthenticatedUrl(
-        string url,
-        GeoservicesCredentialDescriptor? credentials)
-    {
-        if (string.IsNullOrWhiteSpace(credentials?.AccessToken))
-        {
-            return url;
-        }
-
-        var separator = url.Contains('?', StringComparison.Ordinal) ? '&' : '?';
-        return $"{url}{separator}token={Uri.EscapeDataString(credentials.AccessToken)}";
     }
 
     private static void ThrowIfAuthenticationFailure(
@@ -469,45 +503,24 @@ internal sealed partial class ArcGisRestClient
             return;
         }
 
-        // Pattern-match to a non-null local rather than repeating `credentials?.` on Username
-        // and Password: once AccessToken is absent/blank, credentials being null makes the
-        // whole `credentialsSupplied` expression false anyway, so the null-conditional on the
-        // second branch was provably redundant (flagged by static analysis) — the `is { } c`
-        // guard makes that non-nullness explicit instead of relying on flow inference.
-        var credentialsSupplied = !string.IsNullOrWhiteSpace(credentials?.AccessToken)
-            || (credentials is { } c
-                && !string.IsNullOrWhiteSpace(c.Username)
-                && !string.IsNullOrWhiteSpace(c.Password));
-
-        var kind = statusCode switch
-        {
-            498 => ArcGisAuthenticationFailureKind.CredentialExpired,
-            499 => ArcGisAuthenticationFailureKind.CredentialRequired,
-            403 => ArcGisAuthenticationFailureKind.CredentialDenied,
-            401 => credentialsSupplied
-                ? ArcGisAuthenticationFailureKind.CredentialDenied
-                : ArcGisAuthenticationFailureKind.CredentialRequired,
-            _ => ArcGisAuthenticationFailureKind.CredentialDenied
-        };
-
-        var redactedUrl = RedactArcGisTokenParameters(url);
-        var message = kind switch
-        {
-            ArcGisAuthenticationFailureKind.CredentialExpired =>
-                $"ArcGIS credential expired (HTTP {statusCode}) for '{redactedUrl}'.",
-            ArcGisAuthenticationFailureKind.CredentialRequired =>
-                $"ArcGIS service requires authentication (HTTP {statusCode}) for '{redactedUrl}'.",
-            _ =>
-                $"ArcGIS credential denied (HTTP {statusCode}) for '{redactedUrl}'."
-        };
-
-        throw new ArcGisAuthenticationException(kind, statusCode, message);
+        throw CreateAuthenticationException(statusCode, url, credentials);
     }
 
     private static void ApplyAuthorizationHeader(
         HttpRequestMessage request,
         GeoservicesCredentialDescriptor? credentials)
     {
+        var mode = credentials?.GetNormalizedMode();
+        if (credentials is { } credential &&
+            (mode == GeoservicesAuthenticationModes.Token || mode == GeoservicesAuthenticationModes.OAuth) &&
+            !string.IsNullOrWhiteSpace(credential.AccessToken))
+        {
+            request.Headers.TryAddWithoutValidation(
+                "X-Esri-Authorization",
+                $"Bearer {credential.AccessToken}");
+            return;
+        }
+
         if (credentials?.GetNormalizedMode() != GeoservicesAuthenticationModes.Basic ||
             string.IsNullOrWhiteSpace(credentials.Username) ||
             string.IsNullOrWhiteSpace(credentials.Password))
@@ -536,7 +549,7 @@ internal sealed partial class ArcGisRestClient
     {
         var builder = Policy<HttpResponseMessage>
             .Handle<HttpRequestException>()
-            .OrResult(response => (int)response.StatusCode >= 500)
+            .OrResult(response => (int)response.StatusCode >= 500 || response.StatusCode == HttpStatusCode.TooManyRequests)
             .Or<OperationCanceledException>(_ => !cancellationToken.IsCancellationRequested);
 
         return ResiliencePolicyFactory.CreateStandardPolicy(
@@ -546,7 +559,75 @@ internal sealed partial class ArcGisRestClient
             {
                 Log.RetryingRequest(_logger, attempt, maxRetries, delay.TotalSeconds, GetFailureMessage(result));
                 result.Result?.Dispose();
-            });
+            },
+            retryDelayProvider: (attempt, result, _) => GetRetryDelay(options, attempt, result));
+    }
+
+    private static TimeSpan GetRetryDelay(
+        ResiliencePolicyOptions options,
+        int attempt,
+        DelegateResult<HttpResponseMessage> result)
+    {
+        var retryAfter = result.Result?.Headers.RetryAfter?.Delta;
+        if (!retryAfter.HasValue && result.Result?.Headers.RetryAfter?.Date is { } date)
+        {
+            retryAfter = date - DateTimeOffset.UtcNow;
+        }
+
+        var delay = retryAfter ?? options.GetDelay(attempt);
+        return delay < TimeSpan.Zero ? TimeSpan.Zero : delay;
+    }
+
+    private static Exception CreateArcGisResponseException(
+        ArcGisError error,
+        string url,
+        GeoservicesCredentialDescriptor? credentials = null)
+    {
+        if (error.Code is 401 or 403 or 498 or 499)
+        {
+            return CreateAuthenticationException(error.Code, url, credentials);
+        }
+
+        var details = error.Details is { Length: > 0 }
+            ? $" Details: {string.Join("; ", error.Details)}"
+            : string.Empty;
+        return new InvalidOperationException(
+            $"ArcGIS response error {error.Code} for '{RedactArcGisTokenParameters(url)}': {error.Message ?? "Unknown error"}.{details}");
+    }
+
+    private static ArcGisAuthenticationException CreateAuthenticationException(
+        int statusCode,
+        string url,
+        GeoservicesCredentialDescriptor? credentials)
+    {
+        var credentialsSupplied = !string.IsNullOrWhiteSpace(credentials?.AccessToken)
+            || (credentials is { } c
+                && !string.IsNullOrWhiteSpace(c.Username)
+                && !string.IsNullOrWhiteSpace(c.Password));
+
+        var kind = statusCode switch
+        {
+            498 => ArcGisAuthenticationFailureKind.CredentialExpired,
+            499 => ArcGisAuthenticationFailureKind.CredentialRequired,
+            403 => ArcGisAuthenticationFailureKind.CredentialDenied,
+            401 => credentialsSupplied
+                ? ArcGisAuthenticationFailureKind.CredentialDenied
+                : ArcGisAuthenticationFailureKind.CredentialRequired,
+            _ => ArcGisAuthenticationFailureKind.CredentialDenied
+        };
+
+        var redactedUrl = RedactArcGisTokenParameters(url);
+        var message = kind switch
+        {
+            ArcGisAuthenticationFailureKind.CredentialExpired =>
+                $"ArcGIS credential expired (HTTP {statusCode}) for '{redactedUrl}'.",
+            ArcGisAuthenticationFailureKind.CredentialRequired =>
+                $"ArcGIS service requires authentication (HTTP {statusCode}) for '{redactedUrl}'.",
+            _ =>
+                $"ArcGIS credential denied (HTTP {statusCode}) for '{redactedUrl}'."
+        };
+
+        return new ArcGisAuthenticationException(kind, statusCode, message);
     }
 
     private static string GetFailureMessage(DelegateResult<HttpResponseMessage> result)
@@ -885,7 +966,12 @@ internal sealed record ArcGisQueryResult
 // JSON response models for ArcGIS REST API
 #pragma warning disable CA1812 // Internal class is never instantiated (used for JSON deserialization)
 
-internal sealed record ArcGisServiceResponse
+internal interface IArcGisErrorResponse
+{
+    ArcGisError? Error { get; }
+}
+
+internal sealed record ArcGisServiceResponse : IArcGisErrorResponse
 {
     [JsonPropertyName("serviceDescription")]
     public string? ServiceDescription { get; init; }
@@ -910,6 +996,9 @@ internal sealed record ArcGisServiceResponse
 
     [JsonPropertyName("layers")]
     public ArcGisLayerRef[]? Layers { get; init; }
+
+    [JsonPropertyName("error")]
+    public ArcGisError? Error { get; init; }
 }
 
 internal sealed record ArcGisLayerRef
@@ -921,7 +1010,7 @@ internal sealed record ArcGisLayerRef
     public string? Name { get; init; }
 }
 
-internal sealed record ArcGisLayerResponse
+internal sealed record ArcGisLayerResponse : IArcGisErrorResponse
 {
     [JsonPropertyName("id")]
     public int Id { get; init; }
@@ -937,6 +1026,18 @@ internal sealed record ArcGisLayerResponse
 
     [JsonPropertyName("geometryType")]
     public string? GeometryType { get; init; }
+
+    [JsonPropertyName("hasZ")]
+    public bool HasZ { get; init; }
+
+    [JsonPropertyName("hasM")]
+    public bool HasM { get; init; }
+
+    [JsonPropertyName("supportsPagination")]
+    public bool? SupportsPagination { get; init; }
+
+    [JsonPropertyName("advancedQueryCapabilities")]
+    public ArcGisAdvancedQueryCapabilities? AdvancedQueryCapabilities { get; init; }
 
     [JsonPropertyName("maxRecordCount")]
     public int? MaxRecordCount { get; init; }
@@ -970,6 +1071,15 @@ internal sealed record ArcGisLayerResponse
 
     [JsonPropertyName("attributeRules")]
     public JsonElement? AttributeRules { get; init; }
+
+    [JsonPropertyName("error")]
+    public ArcGisError? Error { get; init; }
+}
+
+internal sealed record ArcGisAdvancedQueryCapabilities
+{
+    [JsonPropertyName("supportsPagination")]
+    public bool? SupportsPagination { get; init; }
 }
 
 internal sealed record ArcGisSpatialReference
@@ -1020,13 +1130,25 @@ internal sealed record ArcGisField
     public JsonElement? Domain { get; init; }
 }
 
-internal sealed record ArcGisCountResponse
+internal sealed record ArcGisCountResponse : IArcGisErrorResponse
 {
     [JsonPropertyName("count")]
     public int Count { get; init; }
+
+    [JsonPropertyName("error")]
+    public ArcGisError? Error { get; init; }
 }
 
-internal sealed record ArcGisFeatureResponse
+internal sealed record ArcGisObjectIdsResponse : IArcGisErrorResponse
+{
+    [JsonPropertyName("objectIds")]
+    public long[]? ObjectIds { get; init; }
+
+    [JsonPropertyName("error")]
+    public ArcGisError? Error { get; init; }
+}
+
+internal sealed record ArcGisFeatureResponse : IArcGisErrorResponse
 {
     [JsonPropertyName("features")]
     public ArcGisFeature[]? Features { get; init; }
@@ -1156,6 +1278,7 @@ internal sealed class ArcGisAttachmentDownload : IAsyncDisposable, IDisposable
 [JsonSerializable(typeof(ArcGisServiceResponse))]
 [JsonSerializable(typeof(ArcGisLayerResponse))]
 [JsonSerializable(typeof(ArcGisCountResponse))]
+[JsonSerializable(typeof(ArcGisObjectIdsResponse))]
 [JsonSerializable(typeof(ArcGisFeatureResponse))]
 [JsonSerializable(typeof(ArcGisAttachmentQueryResponse))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]

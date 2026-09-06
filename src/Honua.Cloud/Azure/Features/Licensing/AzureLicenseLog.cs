@@ -16,6 +16,6 @@ internal static partial class AzureLicenseLog
     [LoggerMessage(
         EventId = 10111,
         Level = LogLevel.Warning,
-        Message = "Failed to fetch license envelope from Azure Key Vault; the host will fall back to Community. reason={Reason}")]
+        Message = "Failed to fetch license envelope from Azure Key Vault; paid-tier startup will be refused if no valid license can be loaded. reason={Reason}")]
     public static partial void SecretFetchFailed(ILogger logger, string reason);
 }

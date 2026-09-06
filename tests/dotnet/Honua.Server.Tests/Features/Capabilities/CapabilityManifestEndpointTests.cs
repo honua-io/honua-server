@@ -135,7 +135,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             using var response = await client.GetAsync("/api/v1/capabilities/manifest");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = await ReadDocumentAsync(response);
-            foreach (var capability in new[] { "serve.geoservices-imageserver", "serve.wmts" }
+            foreach (var capability in new[] { "serve.geoservices-imageserver", "serve.wmts", "serve.ogc-api-coverages" }
                 .Select(id => GetCapability(document.RootElement, id)))
             {
                 capability.GetProperty("lifecycle").GetString().Should().Be("preview");
@@ -691,6 +691,17 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             {
                 services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore());
                 services.AddSingleton<IJobQueue>(new InMemoryJobQueue());
+                services.Configure<DurableJobSubstrateOptions>(options =>
+                {
+                    options.RedisConfigured = true;
+                    options.RedisEntitled = true;
+                    options.RedisDurabilityAttestation = new RedisDurabilityAttestation(
+                        "redis.example.internal:6379",
+                        "aof (appendonly=yes, aof_enabled=1)",
+                        "appendfsync=always",
+                        "noeviction",
+                        DateTimeOffset.UtcNow);
+                });
             });
         await fixture.InitializeAsync();
 

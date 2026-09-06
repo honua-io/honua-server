@@ -2,6 +2,67 @@
 
 Honua hosts a versioned gRPC surface from the [`Geospatial.Grpc`](https://github.com/honua-io/geospatial-grpc) protocol package (`geospatial.v1` protobuf package, `Geospatial.V1` .NET namespace) for high-throughput feature, geoprocessing, spec, and scene access.
 
+## .NET package installation
+
+gRPC remains **supported for 2026.1**. New `Geospatial.Grpc` releases use
+[GitHub Packages](https://github.com/orgs/honua-io/packages?repo_name=geospatial-grpc).
+Use the exact published package version certified for your server release;
+the server's existing dependency pin is described under versioning below.
+
+For a new consumer project, add this minimal `nuget.config` beside the project.
+For an existing project, merge the `github` source and `Geospatial.Grpc` mapping
+into its configuration and preserve other feeds and mappings. The `<clear />`
+in this standalone example removes inherited sources, including private feeds:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="github" value="https://nuget.pkg.github.com/honua-io/index.json" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="github"><package pattern="Geospatial.Grpc" /></packageSource>
+    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
+  </packageSourceMapping>
+</configuration>
+```
+
+The mapping selects GitHub Packages for `Geospatial.Grpc` and nuget.org for its
+dependencies. Replace `X.Y.Z` with the exact version listed in GitHub Packages:
+
+```text
+dotnet add package Geospatial.Grpc --version X.Y.Z
+```
+
+GitHub's NuGet registry requires authentication even for public packages.
+For local restores, have the operator supply a personal access token (classic)
+with `read:packages` and package access via a credential provider or the
+`NuGetPackageSourceCredentials_github` environment variable, formatted as
+`Username=GITHUB_LOGIN;Password=TOKEN;ValidAuthenticationTypes=Basic`.
+Keep credentials out of committed configuration and logs. In GitHub Actions,
+use `GITHUB_TOKEN` with `packages: read`; the package owner must grant the
+consumer repository read access under **Manage Actions access**.
+See [GitHub NuGet authentication](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-nuget-registry).
+
+After checkout and .NET SDK setup, explicitly bind the token to NuGet in the
+consumer workflow's restore step; `packages: read` alone does not authenticate:
+
+```yaml
+- name: Restore authenticated GitHub Packages dependencies
+  env:
+    NuGetPackageSourceCredentials_github: Username=${{ github.actor }};Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
+  run: dotnet restore
+```
+
+The producer attests tag-built package bytes before publishing. Verify a
+downloaded archive using
+`gh attestation verify Geospatial.Grpc.X.Y.Z.nupkg --repo honua-io/geospatial-grpc`.
+Historical nuget.org versions remain available there; use the existing source
+configuration when restoring the server's historical pin. This consumer setup
+does not upgrade the server dependency or expand its certified operations.
+
 ## Connection
 
 | Item | Value |

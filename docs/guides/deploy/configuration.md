@@ -45,7 +45,7 @@ A successful admin upload persists `<LicensePath>.uploaded`, which startup reads
 
 ## `.env` files: Compose vs Kubernetes
 
-- **Docker / Compose**: `.env` files are first-class — `docker compose --env-file .env.production up` or `env_file:` on the service. The repo ships [`.env.example`](../../../.env.example) (annotated catalog) and [`.env.production.example`](../../../.env.production.example) (production-tuned baseline) as starting points.
+- **Docker / Compose**: `.env` files are first-class — `docker compose -f docker-compose.production.yml --env-file .env.production up -d --wait` selects the production stack. An env file only supplies interpolation values; it does not override literal values in a Compose service. The root `docker-compose.yml` is the local Development quickstart. The repo ships [`.env.example`](../../../.env.example) (annotated catalog) and [`.env.production.example`](../../../.env.production.example) (production-tuned baseline) as starting points.
 - **Kubernetes**: there is no `.env` file at runtime. Put secrets in a `Secret`, non-secrets in a `ConfigMap`, and mount both with `envFrom`; the keys are the same `Section__Key` names.
 
 ## Next steps

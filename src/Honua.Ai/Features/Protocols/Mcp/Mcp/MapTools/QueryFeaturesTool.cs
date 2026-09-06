@@ -76,7 +76,8 @@ internal sealed class QueryFeaturesTool : IMcpTool
 
         var graphProvider = httpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var layer = MapToolLayerResolver.Resolve(snapshot, argument.ServiceId, argument.LayerId);
+        var layer = await MapToolLayerResolver.ResolveForReadAsync(
+            httpContext, snapshot, argument.ServiceId, argument.LayerId, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
 
         var limit = ResolveLimit(argument.Limit);
         var offset = ResolveOffset(argument.ResultOffset, argument.Cursor);
@@ -108,7 +109,11 @@ internal sealed class QueryFeaturesTool : IMcpTool
             SpatialFilter = BuildBboxFilter(geometryService, argument.Bbox, argument.BboxSrid)
         };
 
-        var reader = httpContext.RequestServices.GetRequiredService<IFeatureReader>();
+        var reader = await MapToolLayerResolver.ResolveReaderAsync(httpContext, snapshot, layer,
+            returnCountOnly
+                ? Honua.Core.Features.FeatureStore.Services.FeatureProviderReadOperation.Count
+                : Honua.Core.Features.FeatureStore.Services.FeatureProviderReadOperation.Query,
+            cancellationToken).ConfigureAwait(false);
 
         // returnCountOnly: adapt to the canonical count seam and return {count}
         // with no features (a cheap cardinality check that never buffers geometry).

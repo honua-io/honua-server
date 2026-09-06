@@ -661,7 +661,7 @@ public static class StudioCompositionViewBounds
 }
 
 /// <summary>
-/// One app-family widget bound to the composition (App package family only;
+/// One widget bound to a map/app/dashboard composition (
 /// <c>honua_studio_add_widget</c> / <c>honua_studio_remove_widget</c>).
 /// </summary>
 public sealed record StudioCompositionWidget

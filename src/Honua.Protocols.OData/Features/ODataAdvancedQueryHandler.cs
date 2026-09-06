@@ -106,7 +106,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "ResourceNotFound", safeDetail, 404);
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or Honua.Core.Exceptions.ValidationException)
         {
             HonuaTelemetry.RecordException(activity, ex);
             Log.InvalidApplyExpression(_logger, layerId, ex);
@@ -258,7 +258,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
             var safeDetail = ExceptionMapper.Map(ex).Detail;
             return ODataUtilityService.CreateODataError(context, "ResourceNotFound", safeDetail, 404);
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or Honua.Core.Exceptions.ValidationException)
         {
             HonuaTelemetry.RecordException(activity, ex);
             Log.SearchFailed(_logger, layerId, ex);

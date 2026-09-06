@@ -301,7 +301,7 @@ internal abstract class StudioDraftToolBase
         ArgumentNullException.ThrowIfNull(draft);
         if (draft.Generation != expectedGeneration)
         {
-            throw new GeoprocessingPreconditionFailedException("Stale draft generation; refresh and retry.");
+            throw new StudioDraftGenerationConflictException(draft.Generation);
         }
     }
 
@@ -377,6 +377,22 @@ internal abstract class StudioDraftToolBase
 
             return receipt.Value
                 ?? throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
+        }
+        catch (Exception ex) when (
+            ex is InvalidOperationException or GeoprocessingPreconditionFailedException
+            && string.Equals(ex.Message, "Stale draft generation; refresh and retry.", StringComparison.Ordinal))
+        {
+            // A writer may win the store CAS after the initial authorized read. Re-authorize
+            // the new snapshot before exposing its generation; never replay the mutation here.
+            var current = await RequireAuthorizedDraftAsync(
+                httpContext,
+                principal,
+                RequireLifecycleService(httpContext),
+                draftId,
+                StudioAuthorizationOperation.UpdateDraft,
+                OperatorOperation.Create,
+                cancellationToken).ConfigureAwait(false);
+            throw new StudioDraftGenerationConflictException(current.Generation);
         }
         catch (InvalidOperationException ex)
         {

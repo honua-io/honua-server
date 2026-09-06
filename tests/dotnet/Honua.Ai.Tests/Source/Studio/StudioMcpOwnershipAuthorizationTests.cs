@@ -679,6 +679,8 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         IStudioAuthorizationService authorization,
         IAuditLog? auditLog = null)
     {
+        lifecycle.GetCapabilities().Returns(
+            new StudioPackageFamilyRegistry(new InMemoryStudioPackageStore()).GetCapabilities());
         var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
         {
             services.AddSingleton(lifecycle);
