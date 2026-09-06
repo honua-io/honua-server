@@ -8,6 +8,8 @@ These tests protect the 2026.1 whole-catalog GP GA promise recorded in the relea
 - `LayerSinkExecutionProofTests.HonuaLayerSink_AppendThenKeyedUpsert_ReadsExactCommittedGeometryAttributesAndReceipts`: start with A at (-5,6), append B at (10,20) and one rejected null geometry, then keyed-upsert B at (30,40) and C at (50,60). Resolve the published target through the production Metadata v2 provider router and assert exact persisted rows, attributes, batch provenance and receipts.
 - `LayerSinkExecutionProofTests.HonuaLayerSink_FailingRow_RollsBackKeyDeletionAndAllInsertedRows`: a database CHECK rejects a negative value after an upsert would delete A. Assert failed execution, no artifact, and the original A value/geometry as the only visible row.
 
+The CRS regressions additionally distinguish advertised EPSG:3857 from physical EPSG:4326. They exercise both resource StorageCrs fallback and binding storageSrid precedence against the same literal points and analytical oracle. A retained executor regression verifies that source.postgis bbox SRID is not emitted as geometry SRID, since that connector has not projected its stored geometry.
+
 ## Candidate evidence sequencing
 
 The immutable 2026.1 candidate required by #3848 and the linked post-cut certification runs does not exist for these pre-cut implementation PRs. Local and required CI receipts prove the repository executors against real fixtures. Exact-candidate reruns remain released from these PRs until that candidate exists; this does not claim those later certification criteria have passed.
