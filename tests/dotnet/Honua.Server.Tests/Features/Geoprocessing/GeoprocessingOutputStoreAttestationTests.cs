@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.FileStorage;
@@ -112,7 +113,14 @@ public sealed class GeoprocessingOutputStoreAttestationTests : IDisposable
         migrations.MarkSucceeded();
         var readiness = new ReadinessCheckService(new MockHealthyDatabaseChecker(), migrations,
             NullLogger<ReadinessCheckService>.Instance,
-            outputStoreHealth: host.Services.GetRequiredService<GeoprocessingOutputStoreHealthCheck>());
+            outputStoreHealth: host.Services.GetRequiredService<GeoprocessingOutputStoreHealthCheck>(),
+            durableJobSubstrateOptions: Options.Create(new DurableJobSubstrateOptions
+            {
+                RedisConfigured = true,
+                RedisEntitled = true,
+                RedisDurabilityAttestation = new RedisDurabilityAttestation(
+                    "redis:6379", "aof_enabled=1", "appendfsync=always", "noeviction", DateTimeOffset.UtcNow)
+            }));
         (await readiness.CheckReadinessAsync()).IsReady.Should().BeTrue();
         var healthy = await health.CheckHealthAsync();
         healthy.Status.Should().Be(HealthStatus.Healthy);
@@ -131,7 +139,9 @@ public sealed class GeoprocessingOutputStoreAttestationTests : IDisposable
         unhealthy.Status.Should().Be(HealthStatus.Unhealthy);
         unhealthy.Entries["gp-output-store"].Data.Should().BeEmpty();
         unhealthy.Entries["gp-output-store"].Exception.Should().BeNull();
-        (await readiness.CheckReadinessAsync()).StatusCode.Should().Be(503);
+        var notReady = await readiness.CheckReadinessAsync();
+        notReady.StatusCode.Should().Be(503);
+        notReady.Message.Should().Be("Not Ready - Referenced output store attestation unavailable");
         var read = () => store.OpenReadAsync("gp/outputs/job/a1/result/value.bin");
         await read.Should().ThrowAsync<InvalidOperationException>().WithMessage("*attestation*");
         await host.StopAsync();
