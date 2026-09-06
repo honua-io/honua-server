@@ -9,8 +9,8 @@ only after the corresponding real execution suite passes.
 On 2026-09-06, native Windows .NET 10.0.100 Release builds used warnings as errors
 and `-maxcpucount:4`. The changed worker and managed GP production assemblies were
 rebuilt before the affected tests, reusing unchanged dependency outputs.
-All **26 RasterExecutionProof tests passed**, zero failures/skips, in **1m15s**
-(`proofs-gp-results/gp-raster-proofs-2.trx`). The required GDAL CI lane runs this
+After trunk integration, all **43 RasterExecutionProof tests passed**, zero
+failures/skips, in **1m51s** (`proofs-gp-results/gp-raster-final.trx`). The required GDAL CI lane runs this
 category with the pinned production GDAL image; absent Docker/native tools fail.
 
 - `raster.interpolate-kriging` computes ordinary kriging in the native worker with
