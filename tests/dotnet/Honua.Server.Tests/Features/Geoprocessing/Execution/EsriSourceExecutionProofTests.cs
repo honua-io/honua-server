@@ -70,13 +70,13 @@ public sealed class EsriSourceExecutionProofTests
         using var json = JsonDocument.Parse(Convert.FromBase64String(artifacts[0][(artifacts[0].IndexOf(',') + 1)..]));
         json.RootElement.GetProperty("featureCount").GetInt32().Should().Be(3);
         var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        features.Select(f => f.GetProperty("properties").GetProperty("OBJECTID").GetInt32()).Should().Equal(11, 13, 15);
+        features.Select(f => f.GetProperty("properties").GetProperty("OBJECTID").GetDouble()).Should().Equal(11d, 13d, 15d);
         for (var i = 0; i < features.Length; i++)
         {
             var id = 11 + 2 * i;
             var props = features[i].GetProperty("properties");
             props.GetProperty("name").GetString().Should().Be("station-" + id);
-            props.GetProperty("value").GetInt32().Should().Be(id * 7);
+            props.GetProperty("value").GetDouble().Should().Be(id * 7);
             props.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("OBJECTID", "name", "value");
             var geometry = features[i].GetProperty("geometry");
             geometry.GetProperty("type").GetString().Should().Be("Point");

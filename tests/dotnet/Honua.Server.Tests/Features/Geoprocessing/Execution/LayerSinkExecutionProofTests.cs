@@ -11,6 +11,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.ControlPlane;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Geoprocessing;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
@@ -46,7 +48,7 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
             """, connection);
         await command.ExecuteNonQueryAsync();
         var layer = await _fixture.GetService<ILayerPublishingService>().PublishLayerAsync(
-            _fixture.Postgres.ConnectionString,
+            new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString) { SearchPath = _schema + ",public" }.ConnectionString,
             new LayerPublishRequest { Schema = _schema, Table = "sinkproof", LayerName = "Sink proof",
                 GeometryColumn = "geom", PrimaryKey = "id", Srid = 4326, Fields = ["id", "attributes"],
                 ServiceName = "sinkproof_" + Guid.NewGuid().ToString("N"), Enabled = true });
@@ -123,7 +125,12 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
 
     private async Task<Feature[]> Read()
     {
-        var reader = _fixture.GetService<IFeatureReader>();
+        var snapshot = await _fixture.GetService<IMetadataV2GraphProvider>().GetCurrentAsync();
+        var resource = snapshot.Index.ResourcesByStorageLayerId[_layerId];
+        var publication = snapshot.Graph.Publications.First(p => p.ResourceId == resource.Metadata.Id && snapshot.IsRoutable(p));
+        var service = snapshot.Index.ServicesById[publication.ServiceId];
+        var reader = await _fixture.GetService<FeatureProviderQueryRouter>().ResolveReaderAsync(
+            snapshot, service, resource, publication, _layerId, FeatureProviderReadOperation.Query);
         reader.GetType().Assembly.GetName().Name.Should().Be("Honua.Postgres");
         return (await reader.QueryAsync(_layerId, new FeatureQuery())).Items.ToArray();
     }

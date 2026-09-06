@@ -11,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -28,10 +29,12 @@ namespace Honua.Db.Postgres.Features.Geoprocessing;
 internal sealed class HonuaLayerDagSource : IDagFeatureSource
 {
     private readonly IStreamingFeatureStore _streamingStore;
+    private readonly IMetadataV2GraphProvider? _metadata;
 
-    public HonuaLayerDagSource(IStreamingFeatureStore streamingStore)
+    public HonuaLayerDagSource(IStreamingFeatureStore streamingStore, IMetadataV2GraphProvider? metadata = null)
     {
         _streamingStore = streamingStore;
+        _metadata = metadata;
     }
 
     public string SourceId => "source.honua-layer";
@@ -64,6 +67,15 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
         }
 
         var query = BuildQuery(request);
+        if (_metadata is not null)
+        {
+            var snapshot = await _metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+            {
+                throw new InvalidOperationException("Source layer does not exist.");
+            }
+            query = query with { SpatialReferenceSrid = resource.Spatial?.SpatialReference?.ResolveSrid() };
+        }
 
         // Per-feature WKB -> GeoJSON conversion via the shared managed NTS reader/writer.
         var wkbReader = new WKBReader();
