@@ -17539,6 +17539,7 @@
         "Honua.Server.Tests.Features.Security.ODataServiceRbacTests.Batch_WithAnonymousClient_AllowsPublicLayerReads",
         "Honua.Server.Tests.Features.Security.ODataServiceRbacTests.Batch_WithScopedDataEditor_DeniesOtherService",
         "Honua.Server.Tests.PatchConcurrencyTests.BatchPatch_SameObjectTwice_PreservesOperationOrder",
+        "Honua.Server.Tests.PatchConcurrencyTests.Batch_FirstMutationControlsSnapshotGuard",
         "Honua.Server.Tests.PatchConcurrencyTests.ODataBatchPatch_ConcurrentDisjointPatch_PreservesCommittedPropertiesAndGeometry",
         "Honua.Server.Tests.PatchConcurrencyTests.ODataPatch_IfNoneMatchBecomesFalse_ReturnsPreconditionFailed",
         "Honua.Server.Tests.PatchConcurrencyTests.Patch_ConflictStatusUsesLockedSnapshot_WhenRowChangesAgain",
