@@ -112,7 +112,13 @@ public sealed class GeoEtlCatalogReconciliationTests
         workflowOnly.SupportsProcessEndpoint.Should().BeFalse();
         workflowOnly.Executable.Should().BeTrue();
 
-        var protocolOnly = nodes["conversion.geometry-format"].CapabilityFlags;
+        var conversion = nodes["conversion.geometry-format"].CapabilityFlags;
+        conversion.SupportsJob.Should().BeTrue();
+        conversion.SupportsSchedule.Should().BeTrue();
+        conversion.SupportsProcessEndpoint.Should().BeTrue();
+        conversion.Executable.Should().BeTrue();
+
+        var protocolOnly = nodes["data-management.calculate-field"].CapabilityFlags;
         protocolOnly.SupportsJob.Should().BeFalse();
         protocolOnly.SupportsSchedule.Should().BeFalse();
         protocolOnly.SupportsProcessEndpoint.Should().BeFalse();
