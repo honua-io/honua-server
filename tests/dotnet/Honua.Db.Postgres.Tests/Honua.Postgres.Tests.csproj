@@ -30,6 +30,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="TestData/ImportAdversarial/overwrite-existing-false.geojson">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="..\..\seed\demo-stac-imagery-v1.sql" Link="Seed\demo-stac-imagery-v1.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
