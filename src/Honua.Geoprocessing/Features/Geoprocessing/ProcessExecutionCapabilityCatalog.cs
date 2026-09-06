@@ -47,6 +47,7 @@ internal static class ProcessExecutionCapabilityCatalog
         "overlay.merge",
         "overlay.split",
         "data-management.append",
+        "data-management.copy-features",
         "proximity.near",
         "proximity.near-table",
         "statistics.summarize",
@@ -98,7 +99,6 @@ internal static class ProcessExecutionCapabilityCatalog
     private static readonly FrozenSet<string> ProtocolOnlyProcessIds = IdSet(
         "analytics.cluster",
         "analytics.density",
-        "data-management.copy-features",
         "data-management.delete-features",
         "data-management.calculate-field",
         "conversion.geometry-format");
