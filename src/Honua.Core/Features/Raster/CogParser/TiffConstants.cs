@@ -38,6 +38,7 @@ internal static class TiffConstants
     public const ushort TagTileOffsets = 324;
     public const ushort TagTileByteCounts = 325;
     public const ushort TagSampleFormat = 339;
+    public const ushort TagJpegTables = 347;
 
     // SampleFormat values (TIFF tag 339)
     public const ushort SampleFormatUnsigned = 1;

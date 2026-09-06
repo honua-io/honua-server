@@ -50,11 +50,19 @@ Providers: `AwsS3` and `AzureBlob` (a matching range reader must be configured).
 
 ## Verify
 
-ImageServer export:
+For a registered cloud COG, use the authorized [API explorer](../../reference/openapi-and-explorer.md)
+to request `GET /rest/services/{serviceId}/ImageServer/tile/{level}/{row}/{col}?format=png`.
+Use the published ImageServer service name and an XYZ tile covered by the source at an available
+overview resolution. Check that the response is a decodable `image/png` with the expected pixels;
+an HTTP 200 GeoServices error envelope does not prove delivery. Use `format=tiff` for scientific
+samples and `format=jpg` for standalone JPEG tiles. Register against a layer without imported
+PostGIS tiles when verifying the cloud path, because PostGIS tiles take precedence.
+
+For rasters imported into PostGIS, verify ImageServer export:
 
 > Open `/rest/services/{layerId}/ImageServer/exportImage?bbox=-122.5,37.7,-122.3,37.9&f=json` in a browser.
 
-Other protocol surfaces over the same raster backend:
+Other protocol surfaces over the imported PostGIS raster backend:
 
 > Open `/ogc/coverages/collections`, `/rest/services/{layerId}/ImageServer/WCS?service=WCS&request=GetCapabilities` in a browser.
 
@@ -92,6 +100,7 @@ Run `POST /api/v1/admin/multidim-coverages` with this body:
 - **Homogeneity error on upload** — the new raster's SRID or band count differs from the layer's first raster; use a separate layer or reproject/restack the source.
 - **COG tiles not served from cloud** — check the registration with `GET /api/v1/admin/cloud-rasters/{id}`, confirm a range reader is configured for the provider, and verify that the object has an ETag and a supported sample layout. DEFLATE/LZW/ZSTD/uncompressed chunky unsigned 8/16-bit grayscale or RGB tiles serve as lossless PNG with nodata transparency; use `format=tiff` or `format=cog` for lossless unsigned, signed or floating-point samples with nodata and tile georeferencing; palettes, separate planes and JPEG conversion from decoded samples are unsupported; its default `format=png` does not transcode JPEG either.
 - **Web tiles misaligned** — direct COG tile serving requires an EPSG:3857 GoogleMapsCompatible grid. Other SRIDs and grids return GeoServices error code 404 from the tile fallback (an HTTP 200 error envelope); use the imported PostGIS path for reprojection and general raster operations. A successful metadata refresh does not certify that a source is tile-servable. Rotated, sheared and invalid ModelTransformation grids are rejected during metadata extraction.
+- **Floating-point or JPEG source rejected** — TIFF floating-point predictor 3 is unsupported; prepare floating-point sources without that predictor (predictor 1). Complex or undefined TIFF SampleFormat values and sources declaring shared JPEGTables are rejected during metadata extraction. Use imported rasters for these source layouts.
 
 More help: [troubleshooting](../deploy/troubleshooting.md).
 

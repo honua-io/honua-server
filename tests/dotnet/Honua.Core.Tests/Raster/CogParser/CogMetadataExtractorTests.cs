@@ -16,6 +16,45 @@ namespace Honua.Core.Tests.Raster.CogParser;
 /// </summary>
 public class CogMetadataExtractorTests
 {
+    [Theory]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    public async Task ReadMetadataAsync_UnsupportedSampleFormat_RejectsInsteadOfRelabeling(ushort sampleFormat)
+    {
+        var tiff = BuildSyntheticCogBytesWithSampleFormat(16, 16, 64, sampleFormat);
+        var read = () => new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiff), "fixtures", "complex.tif");
+
+        await read.Should().ThrowAsync<InvalidDataException>().WithMessage("*SampleFormat*");
+    }
+
+    [Fact]
+    public async Task ReadMetadataAsync_SharedJpegTables_RejectsAbbreviatedTileSource()
+    {
+        var tiff = BuildSyntheticCogBytesWithSampleFormat(16, 16, 8, 1);
+        var entries = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(tiff.AsSpan(8));
+        for (var i = 0; i < entries; i++)
+        {
+            var entry = tiff.AsSpan(10 + i * 12, 12);
+            var tag = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(entry);
+            if (tag == 259)
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(entry[8..], 7);
+            if (tag == 339)
+            {
+                // Replace the optional default SampleFormat with inline JPEGTables.
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(entry, 347);
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(entry[2..], 7);
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(entry[4..], 4);
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(entry[8..], 0xD9FFD8FF);
+            }
+        }
+        var read = () => new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiff), "fixtures", "shared-tables.tif");
+
+        await read.Should().ThrowAsync<InvalidDataException>().WithMessage("*JPEGTables*");
+    }
+
     [Fact]
     public async Task ReadMetadataAsync_PixelScaleBeforeTiepoint_ComputesCorrectExtent()
     {

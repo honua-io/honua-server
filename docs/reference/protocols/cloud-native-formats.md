@@ -30,6 +30,10 @@ TIFF-JPEG streams requiring shared JPEGTables are not assembled. DEFLATE, LZW, Z
 chunky unsigned 8/16-bit grayscale or RGB samples serve as lossless PNG (`format=png`, the default), preserving sample depth and nodata transparency. For scientific data, `format=tiff` or `format=cog` preserves unsigned, signed and floating-point samples in a single-tile GeoTIFF with nodata and EPSG:3857 georeferencing. Palettes, separate planes and JPEG conversion from decoded samples are unsupported. The default
 `format=png` does not transcode JPEG. Unsupported grids and output formats return GeoServices error code 404 from the tile fallback (an HTTP 200 error envelope); a successful metadata refresh does not guarantee tile delivery. Workflow detail: [Publish rasters](../../guides/publish/publish-rasters.md).
 
+TIFF floating-point predictor 3 is unsupported: prepare floating-point sources with predictor 1.
+Complex or undefined TIFF SampleFormat values and sources declaring shared JPEGTables are rejected
+during metadata extraction, before any tile payload can be returned as an image.
+
 Imported rasters can be deleted (`DELETE /api/v1/admin/import/raster/{rasterId}`) and have their descriptive metadata updated (`PATCH /api/v1/admin/import/raster/{rasterId}` — `name`/`description`/`acquisitionDate`); cloud-registered COGs use `DELETE /api/v1/admin/cloud-rasters/{id}`. These admin operations are the canonical equivalents of Esri ImageServer's `deleteRasters`/`updateRaster` — see the [ImageServer admin-op mapping](../compatibility/imageserver-admin-mapping.md).
 
 Optional per-raster **sensor metadata** (sensor name, camera model, interior/exterior orientation, RPC, DEM source) can be modeled in the `raster_sensor_metadata` companion table. When present it powers ImageServer DEM-backed height mensuration, orientation-ranked `find`, and RPC image-coordinate-system `project` warps; plain rasters with no sensor metadata serve normally and those features degrade gracefully.

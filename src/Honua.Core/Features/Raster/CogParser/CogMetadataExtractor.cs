@@ -103,6 +103,11 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             {
                 switch (entry.Tag)
                 {
+                    case TiffConstants.TagJpegTables:
+                        // Tile ranges cannot be advertised as standalone JPEGs when their
+                        // decoding tables live outside the tile. Reject before persisting
+                        // metadata or returning a payload until table assembly is supported.
+                        throw new InvalidDataException("COG sources declaring shared JPEGTables are not supported for direct tile serving.");
                     case TiffConstants.TagPhotometricInterpretation when levelIndex == 0:
                         photometricInterpretation = (int)entry.ValueOrOffset;
                         break;
@@ -521,7 +526,8 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         {
             TiffConstants.SampleFormatFloat => "float",
             TiffConstants.SampleFormatSigned => "int",
-            _ => "uint"
+            TiffConstants.SampleFormatUnsigned => "uint",
+            _ => throw new InvalidDataException("COG SampleFormat must be unsigned integer, signed integer, or IEEE floating point; complex and undefined samples are unsupported.")
         };
         return $"{prefix}{bitsPerSample}";
     }
