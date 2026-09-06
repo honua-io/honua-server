@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System;
+using System.Globalization;
 using System.Text;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Microsoft.Extensions.Options;
@@ -9,60 +9,78 @@ using Microsoft.Extensions.Options;
 namespace Honua.Infrastructure.MultiTenancy;
 
 /// <summary>
-/// Default <see cref="ITenantSchemaResolver"/>: derives a SQL-safe PostgreSQL schema name
-/// from a tenant id, honoring explicit overrides and an exclusion list (issue #346).
+/// Resolves exact tenant identifiers without lossy normalization or PostgreSQL truncation.
+/// Explicit mappings reserve their schema names against all other tenants.
 /// </summary>
-/// <remarks>
-/// Resolution order:
-///  1. <see cref="TenantSchemaOptions.UnroutedTenantIds"/> — excluded tenants resolve to
-///     <see langword="false"/> so the connection keeps its configured default schema.
-///  2. <see cref="TenantSchemaOptions.SchemaMap"/> — explicit tenant-id -&gt; schema overrides.
-///  3. Derived form <c>{SchemaPrefix}{normalized-tenant-id}</c>, where normalization lower-cases
-///     the id and replaces every character outside <c>[a-z0-9_]</c> with <c>_</c>.
-///
-/// Every resolved schema name is validated against the same safe-identifier allow-list used
-/// by the database search-path applier, so a tenant id can never inject SQL via the schema.
-/// </remarks>
 internal sealed class TenantSchemaResolver : ITenantSchemaResolver
 {
     private readonly TenantSchemaOptions _options;
+    private readonly Dictionary<string, string> _schemaMap;
+    private readonly HashSet<string> _conflictingSchemas;
+    private readonly HashSet<string> _reservedSchemas;
 
     public TenantSchemaResolver(IOptions<TenantSchemaOptions> options)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
+        // Configuration dictionaries may use a case-insensitive comparer. Copy the actual
+        // keys so a claim with different casing cannot inherit somebody else's mapping.
+        _schemaMap = new(StringComparer.Ordinal);
+        _reservedSchemas = new(StringComparer.OrdinalIgnoreCase);
+        _conflictingSchemas = new(StringComparer.OrdinalIgnoreCase);
+        var owners = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var mappings = _options.SchemaMap.Concat(_options.SchemaMappings.Select(mapping =>
+            new KeyValuePair<string, string>(mapping.TenantId, mapping.SchemaName)));
+        foreach (var (tenant, schema) in mappings)
+        {
+            if (!_schemaMap.TryAdd(tenant, schema)
+                && !string.Equals(_schemaMap[tenant], schema, StringComparison.Ordinal))
+            {
+                // Conflicting declarations cannot be resolved by configuration order.
+                _schemaMap[tenant] = string.Empty;
+            }
+
+            _reservedSchemas.Add(schema);
+            if (!owners.TryAdd(schema, tenant)
+                && !string.Equals(owners[schema], tenant, StringComparison.Ordinal))
+            {
+                _conflictingSchemas.Add(schema);
+            }
+        }
     }
 
     /// <inheritdoc />
     public bool TryResolveSchema(string tenantId, out string schemaName)
     {
         schemaName = string.Empty;
-        if (string.IsNullOrWhiteSpace(tenantId))
+        if (string.IsNullOrWhiteSpace(tenantId)
+            || !string.Equals(tenantId, tenantId.Trim(), StringComparison.Ordinal)
+            || _options.UnroutedTenantIds.Contains(tenantId, StringComparer.Ordinal))
         {
             return false;
         }
 
-        var trimmed = tenantId.Trim();
-
-        // 1. Excluded tenants keep the default schema (e.g. the anonymous public tenant).
-        if (_options.UnroutedTenantIds.Any(unrouted =>
-                !string.IsNullOrWhiteSpace(unrouted)
-                && string.Equals(unrouted.Trim(), trimmed, StringComparison.OrdinalIgnoreCase)))
+        if (_schemaMap.TryGetValue(tenantId, out var mapped))
         {
-            return false;
-        }
+            if (!IsSafeIdentifier(mapped) || _conflictingSchemas.Contains(mapped))
+            {
+                return false;
+            }
 
-        // 2. Explicit override map takes precedence over the derived form.
-        if (_options.SchemaMap.TryGetValue(trimmed, out var mapped) && IsSafeIdentifier(mapped))
-        {
-            schemaName = mapped.Trim();
+            schemaName = mapped;
             return true;
         }
 
-        // 3. Derived form: {prefix}{normalized-tenant-id}.
-        var prefix = _options.SchemaPrefix ?? string.Empty;
-        var derived = prefix + Normalize(trimmed);
-        if (!IsSafeIdentifier(derived))
+        // Compatibility mode retains only identities the old normalizer did not change.
+        // Other existing tenants need a verified SchemaMap, never a silent schema move.
+        if (!_options.UseEncodedSchemaNames && !tenantId.All(IsCanonicalCharacter))
+        {
+            return false;
+        }
+
+        var derived = _options.SchemaPrefix
+            + (_options.UseEncodedSchemaNames ? Encode(tenantId) : tenantId);
+        if (!IsSafeIdentifier(derived) || _reservedSchemas.Contains(derived))
         {
             return false;
         }
@@ -71,55 +89,38 @@ internal sealed class TenantSchemaResolver : ITenantSchemaResolver
         return true;
     }
 
-    // Lower-case and replace any character outside [a-z0-9_] with '_'. Tenant ids may contain
-    // '-', '.', ':', '@' (allowed by the tenant rail) which are not valid in unquoted SQL
-    // identifiers, so they are folded to '_'. The prefix guarantees the result starts with a
-    // letter or underscore even when the tenant id begins with a digit.
-    private static string Normalize(string value)
+    private static string Encode(string tenantId)
     {
-        var builder = new StringBuilder(value.Length);
-        // Not a pure map: each mapped character is appended directly into the StringBuilder
-        // rather than collected into a new sequence, so a '.Select(...)' rewrite would only add
-        // an intermediate allocation without changing behavior.
-        foreach (var lower in (value).Select(ch => char.ToLowerInvariant(ch)))
+        var builder = new StringBuilder(tenantId.Length);
+        foreach (var character in tenantId)
         {
-            var ok = (lower >= 'a' && lower <= 'z')
-                || (lower >= '0' && lower <= '9')
-                || lower == '_';
-            builder.Append(ok ? lower : '_');
+            if (IsCanonicalCharacter(character) && character != '_')
+            {
+                builder.Append(character);
+            }
+            else
+            {
+                // Escape the escape character too: distinct input strings cannot share an
+                // encoding. UTF-16 code units preserve even non-ASCII identities exactly.
+                builder.Append('_').Append(((int)character).ToString("x4", CultureInfo.InvariantCulture));
+            }
         }
 
         return builder.ToString();
     }
 
-    // Mirrors the ^[A-Za-z_][A-Za-z0-9_]*$ allow-list enforced by the search-path applier.
+    private static bool IsCanonicalCharacter(char character) =>
+        character is >= 'a' and <= 'z' or >= '0' and <= '9' or '_';
+
     private static bool IsSafeIdentifier(string value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        // All allowed characters are ASCII, so length is also the PostgreSQL byte length.
+        if (string.IsNullOrEmpty(value) || value.Length > 63
+            || value[0] is not (>= 'A' and <= 'Z' or >= 'a' and <= 'z' or '_'))
         {
             return false;
         }
 
-        var trimmed = value.Trim();
-        var first = trimmed[0];
-        if (!((first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z') || first == '_'))
-        {
-            return false;
-        }
-
-        for (var i = 1; i < trimmed.Length; i++)
-        {
-            var c = trimmed[i];
-            var ok = (c >= 'A' && c <= 'Z')
-                || (c >= 'a' && c <= 'z')
-                || (c >= '0' && c <= '9')
-                || c == '_';
-            if (!ok)
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return value.All(character => IsCanonicalCharacter(character) || character is >= 'A' and <= 'Z');
     }
 }

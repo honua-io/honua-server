@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -489,6 +491,45 @@ public sealed class McpWorkflowViewTests
 
         McpWorkflowViewProjector.Project(edited, BuildCatalogEntries())
             .RevisionDigest.Should().NotBe(baseline.RevisionDigest);
+    }
+
+    [UnitTest]
+    public async Task ToolsList_SetupMeasurements_MatchIndependentlyMeasuredWireBytes()
+    {
+        var response = await DispatchAsync(BuildFullSurface(),
+            """{"jsonrpc":"2.0","id":"setup-budget","method":"tools/list","params":{"view":"setup"}}""");
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.TryGetProperty("nextCursor", out var cursor);
+        cursor.ValueKind.Should().BeOneOf(JsonValueKind.Undefined, JsonValueKind.Null);
+        var wireTools = result.GetProperty("tools");
+        var view = new ToolsListView(wireTools.EnumerateArray().ToArray(), result.GetProperty("_meta"), null);
+
+        // Measure the actual complete wire descriptors, without calling the projector,
+        // its serializer, digest helper, budget constants, or token estimator.
+        var descriptorJson = view.Tools.Select(tool => tool.GetRawText()).ToArray();
+        var aggregate = Encoding.UTF8.GetBytes(wireTools.GetRawText());
+        var largestDescriptor = descriptorJson.Max(json => Encoding.UTF8.GetByteCount(json));
+        var expectedDigest = "sha256:" + Convert.ToHexStringLower(SHA256.HashData(aggregate));
+        var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
+        var membership = string.Concat(view.Names.Select(name =>
+            stages.Single(stage => stage.GetProperty("tools").EnumerateArray()
+                .Any(tool => tool.GetString() == name)).GetProperty("id").GetString() + "/" + name + "\n"));
+
+        view.Meta.GetProperty("descriptorBytes").GetInt32().Should().Be(aggregate.Length);
+        view.Meta.GetProperty("descriptorDigest").GetString().Should().Be(expectedDigest);
+        view.Meta.GetProperty("membershipDigest").GetString().Should().Be(
+            "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(membership))));
+        view.Meta.GetProperty("toolCount").GetInt32().Should().Be(view.Tools.Length);
+        view.Meta.GetProperty("estimatedTokens").GetInt32().Should().Be(aggregate.Length / 4);
+        view.Tools.Length.Should().BeInRange(1, 48);
+        aggregate.Length.Should().BeLessThanOrEqualTo(128 * 1024);
+        largestDescriptor.Should().BeLessThanOrEqualTo(16 * 1024);
+        view.NextCursor.Should().BeNull();
+
+        _output.WriteLine(
+            $"setup wire: {view.Tools.Length} descriptors; {aggregate.Length} UTF-8 bytes; "
+            + $"~{aggregate.Length / 4} tokens; largest descriptor {largestDescriptor} bytes; {expectedDigest}");
     }
 
     [UnitTest]

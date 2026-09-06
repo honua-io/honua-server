@@ -4,6 +4,8 @@
 using System.Globalization;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Helpers;
@@ -44,6 +46,7 @@ internal static partial class FeatureStreamEndpoints
             .WithTags("Streaming");
 
         streamGroup.MapGet("/features", HandleFeatureStream)
+            .AddEndpointFilter<LiveStreamAuthorizationFilter>()
             .WithDisplayName("Stream Feature Changes")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .WithMetadata(LongLivedStreamEndpointMetadata.Instance)
@@ -131,7 +134,8 @@ internal static partial class FeatureStreamEndpoints
             isWebSocket ? WebSocketTransport : SseTransport,
             NullIfEmpty(context.Request.Query["clientLabel"].ToString()),
             filterResult.Filter,
-            addDefaultSubscription);
+            addDefaultSubscription,
+            ResolveAdmissionPartition(context));
         if (session is null)
         {
             return CreateSessionLimitExceeded(context, deps.Options.Value.MaxConcurrentSessions);
@@ -319,6 +323,18 @@ internal static partial class FeatureStreamEndpoints
 
     private static string? NullIfEmpty(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    internal static string ResolveAdmissionPartition(HttpContext context)
+    {
+        var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        if (!string.IsNullOrWhiteSpace(tenant))
+        {
+            return $"tenant:{tenant}";
+        }
+
+        var actor = CanonicalSecurityActor.Resolve(context.User);
+        return actor is null ? "anonymous" : $"principal:{actor.ActorId}";
+    }
 
     private static IResult CreateSessionLimitExceeded(HttpContext context, int maxConcurrentSessions)
         => ProblemDetailsHelpers.CreateAdminProblem(

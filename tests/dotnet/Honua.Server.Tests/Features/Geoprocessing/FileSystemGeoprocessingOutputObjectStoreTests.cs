@@ -7,6 +7,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.FileStorage;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
@@ -23,7 +24,7 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
 
     public FileSystemGeoprocessingOutputObjectStoreTests()
         => _store = new FileSystemGeoprocessingOutputObjectStore(Options.Create(
-            new GeoprocessingOutputStagingOptions { Enabled = true, LocalRootPath = _root }));
+            GeoprocessingOutputStoreTestHelper.Attest(new GeoprocessingOutputStagingOptions { Enabled = true, LocalRootPath = _root })));
 
     public void Dispose()
     {
@@ -217,12 +218,12 @@ public sealed class FileSystemGeoprocessingOutputObjectStoreTests : IDisposable
     [UnitTest]
     public async Task List_FromAnotherStoreInstance_DoesNotReclaimActivePendingWrite()
     {
-        var options = Options.Create(new GeoprocessingOutputStagingOptions
+        var options = Options.Create(GeoprocessingOutputStoreTestHelper.Attest(new GeoprocessingOutputStagingOptions
         {
             Enabled = true,
             LocalRootPath = _root,
             SweepGrace = TimeSpan.Zero,
-        });
+        }));
         var writerStore = new FileSystemGeoprocessingOutputObjectStore(options);
         var sweeperStore = new FileSystemGeoprocessingOutputObjectStore(options);
         await using var content = new BlockingReadStream();

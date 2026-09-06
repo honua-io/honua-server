@@ -383,21 +383,21 @@ public sealed class StudioCompositionBodyEditorTests
 
     [Theory]
     [InlineData(StudioPackageFamily.Query)]
-    [InlineData(StudioPackageFamily.Dashboard)]
     [InlineData(StudioPackageFamily.Report)]
     [InlineData(StudioPackageFamily.Form)]
     [InlineData(StudioPackageFamily.Workflow)]
     [InlineData(StudioPackageFamily.Geoprocessing)]
     [InlineData(StudioPackageFamily.Etl)]
     [InlineData(StudioPackageFamily.Analysis)]
-    public void EnsureCompositionEligibleFamily_RejectsNonMapAppFamilies(StudioPackageFamily family)
+    public void EnsureCompositionEligibleFamily_RejectsNonCompositionFamilies(StudioPackageFamily family)
         => Assert.Throws<StudioCompositionFamilyException>(
             () => StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(family));
 
     [Theory]
     [InlineData(StudioPackageFamily.Map)]
     [InlineData(StudioPackageFamily.App)]
-    public void EnsureCompositionEligibleFamily_AllowsMapAndApp(StudioPackageFamily family)
+    [InlineData(StudioPackageFamily.Dashboard)]
+    public void EnsureCompositionEligibleFamily_AllowsMapAppAndDashboard(StudioPackageFamily family)
         => StudioCompositionBodyEditor.EnsureCompositionEligibleFamily(family);
 
     private static StudioPackageEnvelope BuildEnvelope(StudioPackageFamily family, System.Text.Json.JsonElement? body)

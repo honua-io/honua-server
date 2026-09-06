@@ -16,17 +16,17 @@ Honua Server is open core under the [Elastic License 2.0](LICENSE). The GA-tier 
 
 ## Quick start
 
-**Docker Compose** (requires Docker with Compose v2):
+**Docker Compose** (requires Docker with Compose v2 and Python 3):
 
 ```bash
 git clone https://github.com/honua-io/honua-server.git && cd honua-server
-docker compose up -d
+python3 scripts/docker/quickstart.py
 docker compose ps
 ```
 
 Open <http://localhost:8080/healthz/ready> in a browser and wait for `Ready`.
 
-The default `docker-compose.yml` builds the server image from source on first run, so expect the first `up` to take a few minutes; for an instant start use the pre-built image below. PostGIS, Redis, and Honua Server start automatically; migrations run on first boot. HTTP/1 REST and gRPC-Web are at `http://localhost:8080`, native h2c gRPC at `http://localhost:8081`. Continue with the [quickstart](docs/get-started/quickstart.md) to import a dataset and see it on a map, or add the web Console with `docker compose --profile console up -d` (set `HONUA_CONSOLE_IMAGE` to a [honua-console](https://github.com/honua-io/honua-console) image you have built or mirrored — no public Console image is published yet; Operate serves at `http://localhost:5174/operate`).
+The bootstrap generates per-install datastore passwords in a private `.env` file; retain it with your volumes. All published ports default to loopback. The default `docker-compose.yml` builds the server image from source on first run, so expect the first `up` to take a few minutes; for an instant start use the pre-built image below. PostGIS, Redis, and Honua Server start automatically; migrations run on first boot. HTTP/1 REST and gRPC-Web are at `http://localhost:8080`, native h2c gRPC at `http://localhost:8081`. Continue with the [quickstart](docs/get-started/quickstart.md) to import a dataset and see it on a map, or add the web Console with `docker compose --profile console up -d` (set `HONUA_CONSOLE_IMAGE` to a [honua-console](https://github.com/honua-io/honua-console) image you have built or mirrored — no public Console image is published yet; Operate serves at `http://localhost:5174/operate`).
 
 **Pre-built image** (bring your own PostGIS):
 
@@ -64,7 +64,7 @@ Every published layer is reachable through every protocol its service enables. T
 | GeoServices GeocodeServer | `/rest/services/{locator}/GeocodeServer` | Esri geocoding clients (`findAddressCandidates`) |
 | GeoServices VectorTileServer | `/rest/services/{id}/VectorTileServer` | Esri vector-tile clients, ArcGIS SDKs |
 | GeoServices NAServer **(Pro)** | `/rest/services/{id}/NAServer` | Esri routing / network-analysis clients |
-| GeoServices VersionManagementServer **(Enterprise, experimental)** | `/rest/services/{id}/VersionManagementServer` | Esri branch-versioning editing workflows |
+| GeoServices VersionManagementServer **(Pro, experimental)** | `/rest/services/{id}/VersionManagementServer` | Esri branch-versioning editing workflows |
 | Portal token issuance | `/sharing/rest/generateToken` | Esri clients using username/password tokens |
 | OGC API Features | `/ogc/features` | QGIS, GDAL, OpenLayers, any OGC client |
 | OGC API Maps | `/ogc/maps` | OGC map clients |
@@ -97,7 +97,7 @@ Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), Op
 
 - **OGC CITE:** 1137 / 1138 passing across 14 conformance suites. WFS 2.0 `basic` is 166/167 because multi-layer `rollbackOnFailure=true` transactions are rejected; the other published suite profiles pass in full. See the [authoritative snapshot and run receipt](docs/cite-status.md) and [OGC conformance evidence](docs/reference/compatibility/ogc-conformance.md).
 - **Client compatibility:** the supported client x protocol matrix — including known limitations — is the [compatibility contract](docs/reference/compatibility/clients.md); Esri-side parity is tracked in [GeoServices parity](docs/reference/compatibility/geoservices-parity.md).
-- **gRPC stability:** versioning, deprecation, and stability guarantees for the `geospatial.v1` surface are defined in the [gRPC reference](docs/reference/protocols/grpc.md).
+- **gRPC stability:** gRPC remains supported for 2026.1. New `Geospatial.Grpc` .NET releases use GitHub Packages at `https://nuget.pkg.github.com/honua-io/index.json`. See the [gRPC reference](docs/reference/protocols/grpc.md#net-package-installation) for `nuget.config`, authenticated restore (`read:packages` locally or `GITHUB_TOKEN` in Actions), versioning, and stability guarantees.
 - **Control plane stability:** admin/control-plane API versioning is governed by [versioning and support](docs/reference/versioning-and-support.md).
 
 ## Key capabilities

@@ -42,6 +42,7 @@ on:
       - 'scripts/ci/check-doc-example-surfaces.py'
       - 'scripts/ci/check-doc-example-surfaces.test.py'
       - 'scripts/ci/doc-wire-reference-allowlist.v1.json'
+      - 'scripts/docs-validation/test_windows_package_verification.py'
       - '.github/workflows/docs-link-gate.yml'
   workflow_dispatch:
 
@@ -75,6 +76,9 @@ jobs:
 
       - name: Test documentation example surface enforcement
         run: python3 scripts/ci/check-doc-example-surfaces.test.py
+
+      - name: Challenge Windows package readback verification under Python optimization
+        run: python3 scripts/docs-validation/test_windows_package_verification.py
 
       - name: Check documentation links, anchors, and code-referenced anchors
         run: python3 scripts/ci/check-doc-links.py

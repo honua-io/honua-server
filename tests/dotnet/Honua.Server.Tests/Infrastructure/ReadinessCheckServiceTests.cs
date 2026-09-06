@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Server.Features.HealthCheck;
 using Honua.Core.Features.Infrastructure.Health;
@@ -11,6 +12,7 @@ using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure;
 
@@ -36,6 +38,30 @@ public sealed class ReadinessCheckServiceTests
         result.StatusCode.Should().Be(200);
         result.Message.Should().Be("Ready");
         result.Exception.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_WithRedisDurabilityFailure_ReturnsTypedNotReady()
+    {
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var service = new ReadinessCheckService(
+            new MockHealthyDatabaseChecker(),
+            migrationState,
+            new MockLogger<ReadinessCheckService>(),
+            durableJobSubstrateOptions: Options.Create(new DurableJobSubstrateOptions
+            {
+                RedisConfigured = true,
+                RedisEntitled = true,
+                RedisDurabilityFailure = DurableJobSubstrateCause.RedisEvictionPolicyUnsafe
+            }));
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeFalse();
+        result.Message.Should().Be(
+            "Not Ready - Redis durability attestation failed (RedisEvictionPolicyUnsafe)");
     }
 
     [UnitTest]
@@ -478,6 +504,11 @@ public sealed class ReadinessCheckServiceTests
         public bool IsDispatcherRunning { get; init; }
         public bool IsDispatcherEnabled { get; init; }
         public DateTimeOffset? LastPollAt { get; init; }
+
+        public DateTimeOffset? BacklogObservedAt => LastPollAt;
+
+        public Honua.Alerts.AlertDispatchObservation? LastObservation =>
+            LastBacklog is { } backlog ? new(backlog, BacklogObservedAt) : null;
         public Honua.Core.Features.Alerts.Domain.AlertDispatchBacklog? LastBacklog { get; init; }
         public bool IsStoragePollFailing { get; init; }
 

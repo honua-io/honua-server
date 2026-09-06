@@ -29,10 +29,12 @@ namespace Honua.Infrastructure.Caching;
 /// blocking operations in disposal. Always use 'await using' syntax to ensure
 /// proper async cleanup and prevent thread pool starvation.
 /// </remarks>
-internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChecker, ICacheStorageMetricsProvider, IDisposable
+internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChecker, ICacheStorageMetricsProvider, IDisposable, IAsyncDisposable
 {
     private const string CacheType = "layer-catalog";
     private const string HealthCheckKey = "__health_check__";
+    private static readonly byte[] HealthCheckValue = "1"u8.ToArray();
+    private static readonly TimeSpan HealthCheckTtl = TimeSpan.FromSeconds(30);
     private const string CacheKeyIndexKey = "__cache_key_index__";
     private const int MaxKeyLocks = 1000;
     // Maximum number of invalidation keys buffered during a Redis outage.  When the
@@ -51,6 +53,11 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CacheWriteInfo> _writeMetadata = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _distributedIndexLock = new(1, 1);
+    private readonly object _healthProbeStateLock = new();
+    private Task<bool>? _activeHealthProbe;
+    private Task? _disposeTask;
+    private readonly string _healthCheckKey = HealthCheckKey + ":" + Guid.NewGuid().ToString("N");
+    private readonly string _healthIndexKey = CacheKeyIndexKey + ":probe:" + Guid.NewGuid().ToString("N");
     // Bounded set of invalidation keys that failed to reach Redis during an outage and
     // must be replayed when the connection is restored.
     private readonly ConcurrentQueue<string> _pendingInvalidationKeys = new();
@@ -676,49 +683,105 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     }
 
     /// <inheritdoc />
-    public async Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
+    public Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
     {
-        if (_distributedCache == null)
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_healthProbeStateLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            // Overlapping callers share an actual in-flight round-trip. Cancellation
+            // stops only that caller's wait; disposal drains the probe and its cleanup.
+            if (_activeHealthProbe is null || _activeHealthProbe.IsCompleted)
+            {
+                _activeHealthProbe = ProbeCacheAsync(CancellationToken.None);
+            }
+            return _activeHealthProbe.WaitAsync(cancellationToken);
+        }
+    }
+
+    private async Task<bool> ProbeCacheAsync(CancellationToken cancellationToken)
+    {
+        if (_distributedCache == null && _redis == null)
         {
             // No Redis configured - report healthy if fallback is enabled
             return _options.EnableFallback;
         }
 
-        if (_isUsingFallback)
-        {
-            // Check if we should retry Redis
-            var lastFailureDt = new DateTime(Volatile.Read(ref _lastRedisFailureTicks), DateTimeKind.Utc);
-            if (DateTime.UtcNow - lastFailureDt > _options.RetryInterval)
-            {
-                var restored = await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
-                return restored || _options.EnableFallback;
-            }
-
-            return _options.EnableFallback;
-        }
-
+        // Readiness must probe the configured dependency on every call. A usable local
+        // cache or an open retry interval says nothing about distributed-state availability.
         try
         {
+            // Exercise the ordinary indexed write/read/delete path, including
+            // per-command transaction failures. Expiry bounds interrupted probes.
+            // One reserved entry per service instance bounds interrupted probes and
+            // separates replicas; overlapping local callers share this probe.
+            var healthKey = GetPrefixedKey(_healthCheckKey);
+            byte[]? cachedValue;
             if (_redis != null)
             {
-                var db = _redis.GetDatabase();
-                _ = await db.PingAsync().ConfigureAwait(false);
+                try
+                {
+                    await SetRedisEntryWithIndexAsync(healthKey, HealthCheckValue, HealthCheckTtl, cancellationToken)
+                        .ConfigureAwait(false);
+                    cachedValue = await GetRedisEntryAsync(healthKey).ConfigureAwait(false);
+                }
+                finally
+                {
+                    // Cleanup must survive caller cancellation and partial writes: the
+                    // value TTL cannot expire membership in the shared cache-key index.
+                    await RemoveRedisEntryWithIndexAsync(healthKey, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
             }
             else
             {
-                await _redisGetPolicy.ExecuteAsync(
-                    ct => _distributedCache.GetAsync(HealthCheckKey, ct),
-                    cancellationToken).ConfigureAwait(false);
+                // IDistributedCache has no cross-replica atomic update primitive. Read
+                // the production index, but exercise writes on a reserved index entry
+                // so a probe cannot overwrite a concurrent application's index update.
+                var indexProbeKey = GetPrefixedKey(_healthIndexKey);
+                try
+                {
+                    await _distributedCache!.SetAsync(healthKey, HealthCheckValue,
+                        new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = HealthCheckTtl },
+                        cancellationToken).ConfigureAwait(false);
+                    await LoadDistributedIndexedKeysAsync(cancellationToken).ConfigureAwait(false);
+                    var indexData = JsonSerializer.SerializeToUtf8Bytes(
+                        new CachedCacheKeyIndex([healthKey]), CacheJsonContext.Default.CachedCacheKeyIndex);
+                    await _distributedCache.SetAsync(indexProbeKey, indexData,
+                        new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = HealthCheckTtl },
+                        cancellationToken).ConfigureAwait(false);
+                    var cachedIndex = await _distributedCache.GetAsync(indexProbeKey, cancellationToken).ConfigureAwait(false);
+                    if (cachedIndex is null || !cachedIndex.AsSpan().SequenceEqual(indexData))
+                    {
+                        return false;
+                    }
+                    cachedValue = await _distributedCache.GetAsync(healthKey, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    try
+                    {
+                        await _distributedCache!.RemoveAsync(healthKey, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        await _distributedCache!.RemoveAsync(indexProbeKey, CancellationToken.None).ConfigureAwait(false);
+                    }
+                }
             }
 
-            return true;
+            return cachedValue is not null && cachedValue.AsSpan().SequenceEqual(HealthCheckValue);
         }
-        // Intentional: this is a health-probe boundary; a probe failure must resolve to a
-        // health verdict (fallback-availability) rather than throw out of the health check.
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        // Intentional: dependency failures resolve to a health verdict, while caller
+        // cancellation above retains the readiness check's cancellation contract.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RedisCacheServiceLog.RedisHealthCheckFailed(_logger, ex);
-            return _options.EnableFallback;
+            return false;
         }
     }
 
@@ -1343,19 +1406,45 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
     public void Dispose()
     {
-        if (_disposed)
-            return;
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
 
-        _disposed = true;
-        _cleanupTimer.Dispose();
-        _fallbackCache.Clear();
-        _writeMetadata.Clear();
-        _distributedIndexLock.Dispose();
-        foreach (var semaphore in _keyLocks.Values)
+    public ValueTask DisposeAsync()
+    {
+        lock (_healthProbeStateLock)
         {
-            semaphore.Dispose();
+            if (_disposeTask is not null)
+            {
+                return new ValueTask(_disposeTask);
+            }
+
+            _disposed = true;
+            _disposeTask = DrainAndDisposeAsync(_activeHealthProbe);
+            return new ValueTask(_disposeTask);
         }
-        _keyLocks.Clear();
+    }
+
+    private async Task DrainAndDisposeAsync(Task<bool>? healthProbe)
+    {
+        try
+        {
+            if (healthProbe is not null)
+            {
+                await healthProbe.ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _cleanupTimer.Dispose();
+            _fallbackCache.Clear();
+            _writeMetadata.Clear();
+            _distributedIndexLock.Dispose();
+            foreach (var semaphore in _keyLocks.Values)
+            {
+                semaphore.Dispose();
+            }
+            _keyLocks.Clear();
+        }
     }
 
     private sealed class KeyLock : IAsyncDisposable, IDisposable

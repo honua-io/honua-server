@@ -821,7 +821,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     // it survives a restart and is available to whichever node dequeues the job.
                     SubmitterSecurityContext = resolvedSecurityContext
                 },
-                Spec = spec
+                Spec = spec,
+                // The workload's supported timeout policy must be durable on the job
+                // record. Workers and reconciliation then share the same deadline after
+                // claiming, restart, or a serving-node handoff.
+                TimeoutPolicy = GpResourceProfile.ResolveTimeoutPolicy(spec.Parameters)
             };
 
             var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
@@ -945,7 +949,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Page the canonical store (newest first, status-filtered there), then apply
         // the adapter binding constraint and per-job ownership in the shared service so
         // no protocol surface can list jobs the caller cannot read. The store cursor is
-        // returned verbatim so the client walks the full history without dupes; a page
+        // tenant-scoped before pagination so the returned cursor cannot expose a foreign
+        // job identifier. The cursor lets the client walk history without dupes; a page
         // may carry fewer than `limit` items after post-filtering.
         var page = await jobStore.QueryAsync(
             new ExecutionJobQuery
@@ -953,6 +958,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 Kind = ExecutionJobKind.Geoprocessing,
                 Statuses = filter.Statuses,
                 RequestedBy = ownerScope,
+                ApplyTenantScope = true,
+                TenantId = _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId,
                 Cursor = filter.Cursor,
                 Limit = limit
             },
@@ -988,8 +995,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return true;
     }
 
-    private static bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
+    private bool IsJobReadable(ExecutionJobRecord job, ClaimsPrincipal principal)
     {
+        // Effective request tenancy is authoritative, including an explicitly unscoped
+        // context. Apply this before admin/owner grants and reuse submission capture so
+        // token claim fallbacks cannot diverge between job creation and retrieval.
+        var tenantId = _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId;
+        if (!string.Equals(job.Audit.SubmitterSecurityContext?.TenantId, tenantId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
         if (principal.IsInRole("admin"))
         {
             return true;
@@ -1273,21 +1289,13 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     /// specific record to its submitter so one authenticated user cannot read or
     /// cancel another user's jobs. Jobs without a recorded submitter are readable
     /// only by <c>admin</c> (#2753 closed the prior any-caller read of ownerless
-    /// jobs), and the conventional <c>admin</c> role retains full visibility for
-    /// operations. Denials surface as not-found so cross-principal probing cannot
+    /// jobs), and the conventional <c>admin</c> role retains visibility within the
+    /// effective tenant. Denials surface as not-found so cross-tenant/principal probing cannot
     /// confirm that a job identifier exists.
     /// </summary>
     private void EnsureJobOwnership(ExecutionJobRecord job, ClaimsPrincipal principal)
     {
-        if (principal.IsInRole("admin"))
-        {
-            return;
-        }
-
-        var owner = job.Audit.RequestedBy;
-        var caller = ResolvePrincipalId(principal);
-        if (!string.IsNullOrWhiteSpace(owner) &&
-            string.Equals(owner, caller, StringComparison.Ordinal))
+        if (IsJobReadable(job, principal))
         {
             return;
         }

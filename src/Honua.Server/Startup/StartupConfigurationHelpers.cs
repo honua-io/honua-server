@@ -91,8 +91,8 @@ internal static class StartupConfigurationHelpers
             "Security:ConnectionEncryption:MasterKey"
         };
 
-        // AddSecurityConfiguration can introduce either key after the initial environment-reference
-        // pass near the start of Program.cs, so normalize env: references again at the final source order.
+        // Normalize references for direct callers as well. Program.cs finalizes source precedence
+        // before its initial environment-reference pass, so security-file overrides are already visible.
         foreach (var key in keys)
         {
             ResolveEnvironmentSecretReference(configuration, key);
@@ -173,7 +173,7 @@ internal static class StartupConfigurationHelpers
                 continue;
             }
 
-            configuration[key] = resolved;
+            SetResolvedSecretValue(configuration, key, resolved);
         }
     }
 
@@ -183,8 +183,16 @@ internal static class StartupConfigurationHelpers
         var resolved = SecretReferenceResolver.ResolveEnvironmentReference(value, key);
         if (!string.Equals(value, resolved, StringComparison.Ordinal))
         {
-            configuration[key] = resolved;
+            SetResolvedSecretValue(configuration, key, resolved);
         }
+    }
+
+    private static void SetResolvedSecretValue(ConfigurationManager configuration, string key, string? value)
+    {
+        // Indexer writes modify provider instances only. Reordering sources rebuilds
+        // those instances and reloads the original environment/JSON references.
+        // InitialData survives rebuilding and keeps this process-lifetime snapshot last.
+        configuration.AddInMemoryCollection(new Dictionary<string, string?> { [key] = value });
     }
 
     /// <summary>
@@ -246,6 +254,17 @@ internal static class StartupConfigurationHelpers
             metadataClient,
             loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
 
+        await ResolveRedisConnectionSecretReferenceAsync(configuration, key, resolver, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task ResolveRedisConnectionSecretReferenceAsync(
+        ConfigurationManager configuration,
+        string key,
+        Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver resolver,
+        CancellationToken cancellationToken = default)
+    {
+        var value = configuration[key];
         string? resolved;
         try
         {
@@ -262,7 +281,7 @@ internal static class StartupConfigurationHelpers
 
         if (!string.Equals(value, resolved, StringComparison.Ordinal))
         {
-            configuration[key] = resolved;
+            SetResolvedSecretValue(configuration, key, resolved);
         }
     }
 
@@ -309,7 +328,7 @@ internal static class StartupConfigurationHelpers
     /// (honua-server#1755) — and honors the dev-only <c>Licensing:DevGrantEdition</c> override
     /// outside Production (honua-server#1787).
     /// </summary>
-    private static async Task<LicenseSnapshot> LoadBootstrapLicenseSnapshotAsync(
+    internal static async Task<LicenseSnapshot> LoadBootstrapLicenseSnapshotAsync(
         IConfiguration configuration,
         IHostEnvironment environment)
     {

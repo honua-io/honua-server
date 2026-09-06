@@ -15,7 +15,10 @@ public sealed class ProgramMiddlewareOrderTests
 
         var serilogIndex = source.IndexOf("app.UseSerilogRequestLogging(", StringComparison.Ordinal);
         var exceptionIndex = source.IndexOf("app.UseGlobalExceptionHandling();", StringComparison.Ordinal);
-        var authIndex = source.IndexOf("app.UseApiKeyAuthentication();", StringComparison.Ordinal);
+        var authIndex = source.IndexOf("app.UseAuthentication();", StringComparison.Ordinal);
+        var portalIndex = source.IndexOf("app.UsePortalTokenAuthentication();", StringComparison.Ordinal);
+        var authorizationIndex = source.IndexOf("app.UseAuthorization();", StringComparison.Ordinal);
+        var tenantIndex = source.IndexOf("app.UseHonuaTenantContext();", StringComparison.Ordinal);
         // Output caching is wired as an entitlement-gated `app.UseWhen` branch (#2998), so the
         // call sits on the branch builder as `entitled.UseOutputCache())` — an expression-bodied
         // lambda argument with no trailing semicolon. Match without one, or this assertion silently
@@ -25,6 +28,10 @@ public sealed class ProgramMiddlewareOrderTests
         serilogIndex.Should().BeGreaterThan(-1);
         exceptionIndex.Should().BeGreaterThan(-1);
         authIndex.Should().BeGreaterThan(-1);
+        portalIndex.Should().BeGreaterThan(authIndex);
+        authorizationIndex.Should().BeGreaterThan(portalIndex,
+            "required-authentication routes must see the validated portal principal");
+        tenantIndex.Should().BeGreaterThan(authorizationIndex);
         outputCacheIndex.Should().BeGreaterThan(-1);
 
         serilogIndex.Should().BeLessThan(exceptionIndex);
@@ -56,7 +63,10 @@ public sealed class ProgramMiddlewareOrderTests
             "invalid credentials must be rejected before tenant resolution");
         tenantIndex.Should().BeLessThan(schemaIndex);
         schemaIndex.Should().BeLessThan(statusIndex);
-        statusIndex.Should().BeLessThan(normalRateLimitIndex);
+        tenantIndex.Should().BeLessThan(normalRateLimitIndex,
+            "rate limiting needs the resolved tenant identity");
+        normalRateLimitIndex.Should().BeLessThan(schemaIndex,
+            "failed schema routes must consume the tenant request budget before returning 503");
     }
 
     private static string ResolveProgramPath()

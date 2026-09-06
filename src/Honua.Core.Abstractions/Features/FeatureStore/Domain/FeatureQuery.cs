@@ -25,6 +25,9 @@ public readonly record struct FeatureQuery
     /// </summary>
     public SqlFragment? SqlFilter { get; init; }
 
+    /// <summary>Provider-neutral literal text search, composed with other query filters.</summary>
+    public FeatureTextSearch? TextSearch { get; init; }
+
     /// <summary>
     /// Provider-enforced SQL filter applied before caller-supplied filters.
     /// </summary>

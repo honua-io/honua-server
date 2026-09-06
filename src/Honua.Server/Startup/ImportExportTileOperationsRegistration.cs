@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
@@ -111,7 +112,8 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<System.Threading.Channels.Channel<string>>(),
                 sp.GetRequiredService<IServiceScopeFactory>(),
                 sp.GetRequiredService<ILogger<ExportJobService>>(),
-                sp.GetService<IConnectionMultiplexer>()));
+                sp.GetService<IConnectionMultiplexer>(),
+                licensePolicy: sp.GetRequiredService<ILicenseOperationPolicy>()));
         services.AddHostedService<ExportBackgroundService>();
 
         // Resumable generated tile-cache seed/warm generation checkpoint store (#2661). Durable
@@ -143,7 +145,8 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<IOptions<LimitsOptions>>(),
                 sp.GetRequiredService<ILogger<TileOperationJobService>>(),
                 sp.GetService<IConnectionMultiplexer>(),
-                sp.GetService<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>()));
+                sp.GetService<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>(),
+                sp.GetRequiredService<ILicenseOperationPolicy>()));
         services.Configure<TileCacheWarmingOptions>(
             configuration.GetSection(TileCacheWarmingOptions.SectionName));
         services.AddHostedService<TileCacheWarmingHostedService>();
@@ -214,11 +217,11 @@ internal static class ImportExportTileOperationsRegistration
                 TileCacheJobExecutor>());
 
         // The submission service depends on the durable execution-job store/queue,
-        // which are only present when Redis is configured (mirrors AddGeoprocessing).
-        // Gating registration on Redis keeps GetService<ITileCacheJobService>() from
+        // which are only present when Redis durability has been attested (mirrors AddGeoprocessing).
+        // Gating registration on the store keeps GetService<ITileCacheJobService>() from
         // throwing on a missing dependency in stores-less dev/test profiles; in those
         // profiles the admin endpoint simply uses the in-process channel path.
-        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        if (services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
         {
             services.TryAddSingleton<ITileCacheJobService, TileCacheJobService>();
         }

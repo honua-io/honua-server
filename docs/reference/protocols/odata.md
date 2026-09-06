@@ -18,7 +18,11 @@ Honua exposes layers and features as an OData v4 service at `/odata`, so BI tool
 | DELETE | `/odata/Features(LayerId={layerId},ObjectId={objectId})` | Delete feature. |
 | POST | `/odata/$batch` | Batch (JSON and multipart/mixed; atomicity groups supported). |
 
+Connection-bound publications use their configured provider for reads, including $search, $apply, and entity-by-key lookups. OData writes to connection-bound or secondary providers return HTTP 501 ProviderWriteNotSupported, including batch changesets, until binding-aware writes are supported. Managed layers retain CRUD support.
+
 PATCH, PUT, and DELETE are also available on the layer-scoped key form `/odata/Layers({layerId})/Features({objectId})` and the legacy form `/odata/Features({layerId},{objectId})`. Legacy aggregation/search routes `/odata/Features({layerId})/$apply` and `/$search` remain available.
+
+On managed PostgreSQL layers, concurrent PATCH requests may return `409 Conflict`, preserving the competing edit. Read the current feature and retry the partial update. Requests whose `If-Match` or `If-None-Match` precondition fails return `412 Precondition Failed`. Fields hidden by field-level security are preserved when omitted from the PATCH. Conditional PUT requests can also return `409` if their read snapshot changes while `If-Match` still matches; a conditional header does not change which fields the replacement stores. Conditions are evaluated against the row snapshot captured under the lock that rejected the edit.
 
 ## Query options
 
@@ -34,8 +38,32 @@ PATCH, PUT, and DELETE are also available on the layer-scoped key form `/odata/L
 | `$compute` | Implemented | Arithmetic (`add`/`sub`/`mul`/`div`/`mod`) plus `floor`/`ceiling`/`round`; not combinable with `$apply` or `$search`. See [$compute and compute()](#compute-and-compute). |
 | `$search` | Implemented | Full-text across string fields; AND/OR/NOT and quoted phrases. |
 | `$apply` | Implemented | `aggregate`, `groupby`, `filter`, `compute` transformations, composable into a `/`-separated pipeline. See [$apply aggregation](#apply-aggregation). |
-| `$deltatoken` | Implemented | Timestamp-based change tracking via `@odata.deltaLink`. |
+| `$deltatoken` | Implemented | Durable authorized query snapshots via `@odata.deltaLink`; see change tracking below. |
 | `$format` | Partial | `json` / `application/json` only. |
+
+## Change tracking
+
+Send `Prefer: odata.track-changes` to obtain an initial collection baseline. Follow
+each `@odata.nextLink` to its terminal `@odata.deltaLink`, then poll that link for
+net changes. Baseline pages use the collection context; poll pages use `/$delta`.
+Equal timestamps do not suppress updates. Deletes and filter exits produce
+key-preserving `@removed` entries; clients remove those keys from their local state.
+Repeating a terminal poll is idempotent, and durable tokens survive host restart.
+
+Tracking requires PostgreSQL snapshot storage (migration 113) and a provider with
+count capability. Without snapshot storage, tracking returns 503. A baseline is
+limited to 10,000 rows and 16 MiB of projected JSON; narrow the filter/projection on
+413. Incomplete provider results return 409 `DeltaSnapshotIncomplete`. Tracking
+requires a positive page size and rejects initial skips, expansion, bbox and
+Parquet; `$search` and `$apply` cannot be combined with tracking.
+
+Snapshots expire after 24 hours. Version-2 cursors bind the query, actor, tenant,
+schema, metadata and row/field policies; do not edit them or change those bindings
+between pages. Malformed or query-mismatched tokens return typed 400 errors;
+expired, missing, invalid-future, changed-scope and legacy timestamp tokens return
+typed 410 recovery. Obtain an explicit new tracked baseline after 410; the server
+never silently rebases. Creation-time validation tolerates five minutes of node
+clock skew, while PostgreSQL enforces receipt expiry.
 
 ## Server-driven paging
 
@@ -60,6 +88,17 @@ persisting an old token across deployments.
 > so paging links resolve to the external URL. Clients that resolve `@odata.nextLink`
 > relative to the request URL are unaffected.
 
+Bound $search uses a structured literal search request translated by each SQL provider (PostGIS, SQL Server, MySQL, DuckDB, Oracle, Redshift, Snowflake, and Databricks). Other providers reject $search with HTTP 400 before reading. Existing provider restrictions on combined $filter expressions still apply.
+
+Expanded children share an additional total row budget of `OData:MaxPageSize`
+across all parents and requested relationships in the response. The provider reads
+at most the remaining budget plus one overflow probe. An over-budget expansion
+returns HTTP 400 in the OData error envelope: `error.code` is `InvalidQuery` for a
+feature collection query (including the `$search` query option), or
+`InvalidQueryOption` for the legacy `/odata/Features({layerId})/$search` route. No partial child array
+is returned. Narrow the parent query or query the related layer separately with
+paging. Child grouping observes request cancellation.
+
 ## $filter support
 
 | Category | Supported |
@@ -70,12 +109,14 @@ persisting an old token across deployments.
 | String functions | `contains`, `startswith`, `endswith`, `substring`, `tolower`, `toupper`, `length`, `trim`, `indexof`, `replace`, `concat` |
 | Numeric functions | `round`, `floor`, `ceiling`, `abs` |
 | Date/time functions | `now`, `year`, `month`, `day`, `hour`, `minute`, `second` |
-| Spatial functions | `geo.distance`, `geo.intersects` — with `geography'WKT'` / `geometry'WKT'` literals (optional `SRID=####;` prefix) |
+| Spatial functions | `geo.distance`, `geo.intersects` with `geography'SRID=4326;WKT'` / `geometry'SRID=####;WKT'` literals. Geometry requires an explicit SRID; geography without one retains the WGS84 shorthand. |
 | Typed literals | `date'...'`, `datetime'...'`/`datetimeoffset'...'`, `geography'...'`/`geometry'...'` |
 
 Not supported (rejected with 400): `has`, `in`, `any`, `all` operators; `cast`/`isof`; `geo.length` and any other `geo.*` function beyond the two listed; `$levels`.
 
 ## $apply aggregation
+
+In-process transformations read at most OData:MaxApplyInputRows input rows (default 10,000; configurable from 1 to 100,000). A query exceeding that budget returns HTTP 400 with an OData error; it never returns a truncated aggregate. Narrow the input with $filter or a leading filter() transformation.
 
 `$apply` is a transformation pipeline. One or more transforms are chained with a top-level `/`
 and applied left to right; the **last** transform decides whether the response is an aggregation

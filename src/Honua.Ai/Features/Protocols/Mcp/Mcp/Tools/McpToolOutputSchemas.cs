@@ -47,6 +47,7 @@ internal static class McpToolOutputSchemas
             "code": { "type": "string" },
             "message": { "type": "string" },
             "studioAuthorizationCode": { "type": ["string", "null"] },
+            "currentGeneration": { "type": ["integer", "null"], "minimum": 1 },
             "error": { "type": "object" }
         """;
 
@@ -69,6 +70,7 @@ internal static class McpToolOutputSchemas
             "policyRef": { "type": ["string", "null"] },
             "studioAuthorizationCode": { "type": ["string", "null"] },
             "conflictingJobId": { "type": ["string", "null"] },
+            "currentGeneration": { "type": ["integer", "null"], "minimum": 1 },
             "retryable": { "type": ["boolean", "null"] },
             "violations": {
               "type": ["array", "null"],
@@ -941,10 +943,12 @@ internal static class McpToolOutputSchemas
           "properties": {
             "serviceId": { "type": "string" },
             "layerId": { "type": "integer" },
-            "styleId": { "type": "string", "description": "The preset now bound as the layer's primary/default style." },
+            "styleId": { "type": "string", "description": "The selected preset; bound as primary only when applied=true." },
             "title": { "type": ["string", "null"] },
             "styleVersion": { "type": "integer" },
-            "applied": { "type": "boolean" }
+            "applied": { "type": "boolean" },
+            "dryRun": { "type": "boolean", "description": "True when validation completed without changing metadata." },
+            "warning": { "type": ["string", "null"], "description": "Any follow-up needed after the style binding was applied." }
           }
         }
         """);

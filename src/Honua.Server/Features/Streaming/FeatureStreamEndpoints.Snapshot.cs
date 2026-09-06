@@ -526,7 +526,7 @@ internal static partial class FeatureStreamEndpoints
         // baseline the deltas cannot keep true; delivering it needs transition semantics the
         // event pipeline does not carry (honua-server#3038 review).
         return scoped.HasValueDependentPredicate
-            ? "snapshot subscriptions cannot be combined with bbox, attribute, or temporal filters: a feature that leaves the filter after an update produces no delta, so the baseline could not be kept convergent. Use mode=delta with the filter, or mode=snapshot scoped by service/layer only."
+            ? "snapshot subscriptions cannot be combined with row-level security, bbox, attribute, or temporal filters: a feature that leaves the filter after an update produces no delta, so the baseline could not be kept convergent. Use mode=delta with the filter, or mode=snapshot scoped by service/layer only."
             : null;
     }
 

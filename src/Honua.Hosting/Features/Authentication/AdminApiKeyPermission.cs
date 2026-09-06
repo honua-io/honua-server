@@ -66,6 +66,11 @@ internal static class AdminApiKeyPermission
     internal const string ApproveGrant = "admin:approve";
     internal const string ApprovedOperationGrantPrefix = "admin:operation:";
     internal const string ApprovedOperationRole = "approved-operation";
+    internal const string ApprovedOperationTenantGrantPrefix = "admin:operation:tenant:";
+    internal const string ApprovedOperationTenantClaim = "honua:approved-operation-tenant";
+
+    /// <summary>Admits scoped admin keys to permission-checked policies without full-admin role bypasses.</summary>
+    internal const string ScopedAdminRole = "scoped-admin-key";
 
     /// <summary>The admin API path prefix approved-operation credentials are scoped to.</summary>
     private const string AdminApiPathPrefix = "/api/v1/admin/";
@@ -192,6 +197,13 @@ internal static class AdminApiKeyPermission
         return $"{ApprovedOperationGrantPrefix}{httpMethod.ToUpperInvariant()}:{requestPath}";
     }
 
+    /// <summary>Creates method/path authority and a persisted, server-only tenant binding.</summary>
+    internal static string[] CreateApprovedOperationGrants(string httpMethod, string requestPath, string? tenantId)
+    {
+        // An explicit empty binding preserves accepted single-tenant invocations.
+        return [CreateApprovedOperationGrant(httpMethod, requestPath), ApprovedOperationTenantGrantPrefix + tenantId];
+    }
+
     /// <summary>Determines whether a grant belongs to the server-only approved-operation vocabulary.</summary>
     internal static bool IsApprovedOperationGrant(string? grant)
         => grant?.Trim().StartsWith(ApprovedOperationGrantPrefix, StringComparison.Ordinal) == true;
@@ -285,6 +297,10 @@ internal static class AdminApiKeyPermission
         // Safe method: a read-only admin grant or a read-only ops grant is sufficient.
         return level == AdminAccessLevel.Read || HasOpsReadGrant(principal);
     }
+
+    /// <summary>Whether a persisted grant belongs to the shared administrative permission grammar.</summary>
+    internal static bool IsAdministrativeGrant(string? grant)
+        => ClassifyGrant(grant) != AdminAccessLevel.None;
 
     private static AdminAccessLevel ClassifyGrant(string? grant)
     {

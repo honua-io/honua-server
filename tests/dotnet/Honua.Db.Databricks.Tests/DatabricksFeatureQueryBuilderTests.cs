@@ -27,6 +27,29 @@ public class DatabricksFeatureQueryBuilderTests
     };
 
     [Fact]
+    public void BuildSelectQuery_TextSearch_BindsLiteralTermsInProviderDialect()
+    {
+        const string term = "Harbor%_'\\";
+        var query = new FeatureQuery
+        {
+            TextSearch = new FeatureTextSearch(["name", "owner"],
+                [new FeatureSearchTerm[] { new(term, false), new("closed", true) }]),
+            Limit = 2,
+            Offset = 1
+        };
+        var result = Builder.BuildSelect(Mapping("name", "owner"), query);
+        Assert.Contains("INSTR(", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(" OR ", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("NOT ", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain(term, result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ILIKE", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("attributes->>", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(term, result.Parameters[0].Value);
+        Assert.Equal(term, result.Parameters[1].Value);
+        Assert.Equal("closed", result.Parameters[2].Value);
+        Assert.Equal("closed", result.Parameters[3].Value);
+    }
+    [Fact]
     public void BuildSelect_ProjectsIdGeometryHexAndAttributes_WithQualifiedTable()
     {
         var statement = Builder.BuildSelect(Mapping(), new FeatureQuery());

@@ -67,10 +67,14 @@ OIDC provider configuration (`Oidc__*` — Azure AD, Google, Okta, Auth0, generi
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `Licensing__LicensePath` | — (Community mode) | Path to a signed JSON license envelope; unset runs Community mode. |
+| `Licensing__LicensePath` | unset | Ordinary signed license file and path prefix for the persisted `.uploaded` override. Community mode applies when no source is configured. |
+| `Licensing__LicenseContent` | unset | Inline signed envelope, used after any uploaded override and resolved secret. |
+| `Licensing__LicenseContentSecretRef` | unset | Secret-store reference to a signed envelope, used after any uploaded override. |
 | `Licensing__TrustedKeys__{keyId}` | — | Trusted raw Ed25519 public key (base64url) per license key id. |
-| `Licensing__AllowAdminUpload` | `false` | Allow license upload through the admin API. |
+| `Licensing__AllowAdminUpload` | `false` | Allow future admin uploads; turning it off does not undo a persisted upload. |
 | `Licensing__ExpiryWarningDays` | `30` | Days before expiry at which warnings are emitted. |
+
+After a successful upload, `<LicensePath>.uploaded` takes precedence at startup. Replacing only `LicensePath` and restarting keeps that override. Renew through the admin upload endpoint, or stop the server, remove the override, and align the configured sources before restart. See [Renew or replace a license](../../concepts/editions-and-licensing.md#renew-or-replace-a-license). Persist and back up the containing license directory.
 
 ## Caching (Redis)
 
@@ -223,3 +227,22 @@ Geoprocessing job admission and executor guardrails:
 - [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
 - [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
 - [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
+
+
+## Vector tile output budget
+
+`Limits__Tiles__MaxTileSize` defaults to `512000` bytes and accepts positive byte counts.
+It limits encoded MVT bytes before HTTP content compression; it does not set tile
+pixel dimensions. Managed and source-backed PostGIS reads check the byte length
+before allocating the response array. Oversized output is rejected without a
+partial tile or tile cache headers. OGC API Tiles returns HTTP 413 with an
+`application/problem+json` body (`status: 413`, `title: Payload Too Large`).
+GeoServices MVT routes return the documented HTTP 200 error envelope with
+`error.code: 413`. Request a higher zoom level or reduce the included data.
+Tile output-cache keys include the byte budget, so entries created before enforcement
+or under a larger cap cannot bypass the limit.
+
+Previously this option had no effect and its model default was 512 with pixel
+units. Explicitly configured values now mean bytes; review any existing value
+that was chosen as a pixel dimension. The database still encodes the tile under
+its existing feature and statement limits before the output length is known.

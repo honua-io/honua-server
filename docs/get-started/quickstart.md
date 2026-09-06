@@ -1,5 +1,9 @@
 # Go from zero to a map in your browser
 
+For a native Windows installation from registry packages, follow
+[Windows: install published packages](windows-packages.md). That journey needs
+no checkout, source build, Bash, or GitHub Packages credentials.
+
 You'll have Honua running in Docker with a published dataset rendered in a browser map in about 10 minutes.
 
 **Prerequisites:** Docker with Compose v2, `git`, GitHub CLI authenticated with package-read access, and Python 3.11 or later.
@@ -13,7 +17,7 @@ You'll have Honua running in Docker with a published dataset rendered in a brows
 git clone https://github.com/honua-io/honua-server.git && cd honua-server
 ```
 
-2. Build the server image from this checkout, then start the stack (PostGIS, Redis, and Honua Server). The build consumes the repository's GitHub Packages dependency without storing your token in an image layer. The repo-root Compose file includes development-only defaults for the admin password, connection-encryption key, Redis control-plane connection, Gate migration policy, and browser origin used below.
+2. Build the server image from this checkout, then start the stack (PostGIS, Redis, and Honua Server). The build consumes the repository's GitHub Packages dependency without storing your token in an image layer. The bootstrap stores random per-install PostgreSQL and MinIO passwords in a private `.env` file and preserves them on restart. All published ports bind to loopback unless you explicitly change `HONUA_BIND_ADDRESS`. Keep `.env` with your persistent volumes; changing its passwords does not rotate credentials in an existing database. The repo-root Compose file includes development-only defaults for the admin password, connection-encryption key, Redis control-plane connection, Gate migration policy, and browser origin used below.
 
 <!-- docs-validation:quickstart.start mode=run -->
 ```bash
@@ -23,7 +27,7 @@ if [ -z "${HONUA_SERVER_IMAGE:-}" ]; then
   GITHUB_ACTOR="${GITHUB_ACTOR:-$(gh api user --jq .login)}" GH_TOKEN=$(gh auth token) \
     bash "${repo_root}/scripts/docker/build-with-github-packages.sh" -t honua-server:local "${repo_root}"
 fi
-docker compose up -d --no-build --wait --wait-timeout 180
+python3 "${repo_root}/scripts/docker/quickstart.py"
 ```
 
 3. Wait until the server reports ready.
@@ -49,7 +53,7 @@ For headless local runs after enabling the profile, leave Redis enabled and disa
 HONUA_CONSOLE_REPLICAS=0 docker compose up -d
 ```
 
-5. Create a small PostGIS table with three points. The Compose database is local development infrastructure, so this seed uses its documented development credentials directly.
+5. Create a small PostGIS table with three points. The Compose database is local development infrastructure; this seed uses its local container socket.
 
 <!-- docs-validation:quickstart.sample-data mode=run -->
 ```bash
@@ -87,6 +91,8 @@ python3 - <<'PY'
 import os
 from pathlib import Path
 
+import subprocess
+
 from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
 
 with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-password") as admin:
@@ -96,7 +102,10 @@ with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-pa
         port=5432,
         database_name="honua_dev",
         username="honua_user",
-        password="honua_password",
+        password=subprocess.check_output(
+            ["docker", "compose", "exec", "-T", "postgres", "printenv", "POSTGRES_PASSWORD"],
+            text=True,
+        ).strip(),
         ssl_mode="Prefer",
         ssl_required=False,
     ))
@@ -198,3 +207,5 @@ The command should report three verified features, and the browser map should sh
 - [Publish your first dataset](first-dataset.md) — the import → publish → query flow in detail
 - [Make your first map](first-map.md) — TileJSON, auto-generated styles, and MapLibre
 - [All guides](../guides/README.md)
+
+For an existing installation using the old sample passwords, rotate the PostgreSQL role password and MinIO root password explicitly, then save the matching values in `.env` before restarting. Do not delete existing data volumes to reset credentials. The bootstrap refuses old weak values instead of silently replacing them.

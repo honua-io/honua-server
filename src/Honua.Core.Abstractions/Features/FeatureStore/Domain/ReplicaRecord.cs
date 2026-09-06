@@ -55,9 +55,9 @@ public readonly record struct ReplicaRecord
     public required long LastSyncGeneration { get; init; }
 
     /// <summary>
-    /// Server generation produced by the most recent upload sync. Used as the download "since"
-    /// cursor so a replica does not receive its own just-applied edits back on a subsequent
-    /// download delta. Defaults to 0 for replicas that have never uploaded (#1272).
+    /// Server generation observed after the most recent upload sync. This is an upload
+    /// checkpoint, not a download cursor: unrelated server edits must still be downloaded.
+    /// Defaults to 0 for replicas that have never uploaded.
     /// </summary>
     public long UploadBaseGeneration { get; init; }
 }

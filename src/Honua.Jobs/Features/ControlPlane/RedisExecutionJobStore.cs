@@ -605,6 +605,12 @@ internal sealed partial class RedisExecutionJobStore(
             return false;
         }
 
+        if (query.ApplyTenantScope &&
+            !string.Equals(query.TenantId, job.Audit.SubmitterSecurityContext?.TenantId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
         if (query.Kind.HasValue && job.Spec.Kind != query.Kind.Value)
         {
             return false;

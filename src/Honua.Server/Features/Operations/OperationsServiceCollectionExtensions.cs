@@ -47,6 +47,14 @@ internal static class OperationsServiceCollectionExtensions
                 : new UnavailableOperationApprovalReplayVerifier());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, ServicePublishApprovalRequestMapper>());
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(WorkflowRollbackApprovalRegistrationMarker)))
+        {
+            services.AddSingleton<WorkflowRollbackApprovalRegistrationMarker>();
+            services.AddSingleton<IOperationApprovalRequestMapper>(
+                new WorkflowRollbackApprovalRequestMapper(WorkflowRollbackOperations.Deploy));
+            services.AddSingleton<IOperationApprovalRequestMapper>(
+                new WorkflowRollbackApprovalRequestMapper(WorkflowRollbackOperations.CoordinatedRelease));
+        }
         foreach (var operationId in new[]
                  {
                      StudioDraftOperations.Create,
@@ -93,6 +101,9 @@ internal static class OperationsServiceCollectionExtensions
             new OperationCatalog(
                 sp.GetServices<IOperationDescriptorProvider>(),
                 sp.GetRequiredService<TimeProvider>()));
+
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StylePresetExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, StylePresetApprovalMapper>());
 
         // Executors: concrete work, registered as an enumerable for the dispatcher.
         services.TryAddEnumerable(
@@ -247,4 +258,5 @@ internal static class OperationsServiceCollectionExtensions
 
     internal sealed class AdminConnectImportRegistrationMarker;
     internal sealed class AdminApiOperationRegistrationMarker;
+    internal sealed class WorkflowRollbackApprovalRegistrationMarker;
 }

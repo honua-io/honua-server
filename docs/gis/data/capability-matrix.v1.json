@@ -31,7 +31,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 380,
-      "provingTestCount": 1153,
+      "provingTestCount": 1162,
       "maturity": {
         "implemented": 377,
         "preview": 2,
@@ -123,7 +123,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 115,
+      "provingTestCount": 116,
       "maturity": {
         "implemented": 4
       },
@@ -175,7 +175,7 @@
       "displayName": "Dwell Trigger",
       "category": "Alerts",
       "edition": "Enterprise",
-      "status": null,
+      "status": "preview",
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -197,7 +197,7 @@
       "displayName": "Enter/Exit Geofence Triggers",
       "category": "Alerts",
       "edition": "Pro",
-      "status": null,
+      "status": "preview",
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -219,7 +219,7 @@
       "displayName": "Alert Evaluation Engine",
       "category": "Alerts",
       "edition": "Pro",
-      "status": null,
+      "status": "preview",
       "entryCount": 18,
       "provingTestCount": 47,
       "maturity": {
@@ -237,7 +237,7 @@
       "displayName": "Threshold Trigger",
       "category": "Alerts",
       "edition": "Enterprise",
-      "status": null,
+      "status": "preview",
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -501,7 +501,7 @@
       "displayName": "AWS SNS Delivery",
       "category": "Channels",
       "edition": "Enterprise",
-      "status": null,
+      "status": "preview",
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -523,7 +523,7 @@
       "displayName": "Azure Event Grid Delivery",
       "category": "Channels",
       "edition": "Enterprise",
-      "status": null,
+      "status": "preview",
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -545,7 +545,7 @@
       "displayName": "Digest Delivery",
       "category": "Channels",
       "edition": "Enterprise",
-      "status": null,
+      "status": "preview",
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -567,7 +567,7 @@
       "displayName": "Email Delivery",
       "category": "Channels",
       "edition": "Enterprise",
-      "status": null,
+      "status": "preview",
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -589,7 +589,7 @@
       "displayName": "Slack Delivery",
       "category": "Channels",
       "edition": "Enterprise",
-      "status": null,
+      "status": "preview",
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -611,7 +611,7 @@
       "displayName": "Microsoft Teams Delivery",
       "category": "Channels",
       "edition": "Enterprise",
-      "status": null,
+      "status": "preview",
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -633,7 +633,7 @@
       "displayName": "Webhook Delivery",
       "category": "Channels",
       "edition": "Pro",
-      "status": null,
+      "status": "preview",
       "entryCount": 0,
       "provingTestCount": 0,
       "maturity": {},
@@ -798,7 +798,7 @@
       "key": "editing.branch-versioning",
       "displayName": "Branch Versioning",
       "category": "Editing",
-      "edition": "Enterprise",
+      "edition": "Pro",
       "status": null,
       "entryCount": 15,
       "provingTestCount": 28,
@@ -825,7 +825,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 110,
+      "provingTestCount": 113,
       "maturity": {
         "implemented": 7
       },
@@ -883,7 +883,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 18,
-      "provingTestCount": 150,
+      "provingTestCount": 153,
       "maturity": {
         "preview": 18
       },
@@ -1215,7 +1215,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 15,
-      "provingTestCount": 63,
+      "provingTestCount": 66,
       "maturity": {
         "implemented": 15
       },
@@ -1313,7 +1313,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 14,
-      "provingTestCount": 89,
+      "provingTestCount": 95,
       "maturity": {
         "implemented": 14
       },
@@ -1339,7 +1339,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 10,
-      "provingTestCount": 161,
+      "provingTestCount": 188,
       "maturity": {
         "implemented": 10
       },
@@ -1423,7 +1423,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 5,
-      "provingTestCount": 13,
+      "provingTestCount": 11,
       "maturity": {
         "implemented": 5
       },
@@ -1635,7 +1635,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 47,
-      "provingTestCount": 410,
+      "provingTestCount": 417,
       "maturity": {
         "implemented": 47
       },
@@ -1734,7 +1734,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 48,
-      "provingTestCount": 131,
+      "provingTestCount": 132,
       "maturity": {
         "implemented": 48
       },
@@ -1756,9 +1756,9 @@
       "displayName": "ImageServer",
       "category": "Serve",
       "edition": "Community",
-      "status": null,
+      "status": "preview",
       "entryCount": 142,
-      "provingTestCount": 377,
+      "provingTestCount": 380,
       "maturity": {
         "preview": 142
       },
@@ -1784,7 +1784,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 45,
-      "provingTestCount": 337,
+      "provingTestCount": 339,
       "maturity": {
         "implemented": 43,
         "preview": 2
@@ -1851,7 +1851,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 42,
+      "provingTestCount": 44,
       "maturity": {
         "implemented": 4
       },
@@ -1875,7 +1875,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 9,
-      "provingTestCount": 27,
+      "provingTestCount": 29,
       "maturity": {
         "implemented": 9
       },
@@ -1921,7 +1921,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 30,
-      "provingTestCount": 184,
+      "provingTestCount": 221,
       "maturity": {
         "implemented": 30
       },
@@ -1974,11 +1974,11 @@
       "displayName": "OGC API Coverages",
       "category": "Serve",
       "edition": "Community",
-      "status": null,
+      "status": "preview",
       "entryCount": 8,
       "provingTestCount": 37,
       "maturity": {
-        "implemented": 8
+        "preview": 8
       },
       "noSurface": null,
       "cite": [],
@@ -2012,7 +2012,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 273,
+      "provingTestCount": 282,
       "maturity": {
         "implemented": 19
       },
@@ -2170,7 +2170,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 15,
-      "provingTestCount": 29,
+      "provingTestCount": 34,
       "maturity": {
         "preview": 15
       },
@@ -2188,7 +2188,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 12,
-      "provingTestCount": 122,
+      "provingTestCount": 129,
       "maturity": {
         "implemented": 12
       },
@@ -2390,7 +2390,7 @@
       "displayName": "WMTS 1.0",
       "category": "Serve",
       "edition": "Community",
-      "status": null,
+      "status": "preview",
       "entryCount": 1,
       "provingTestCount": 6,
       "maturity": {
@@ -2514,7 +2514,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 5,
-      "provingTestCount": 95,
+      "provingTestCount": 108,
       "maturity": {
         "implemented": 3,
         "preview": 2

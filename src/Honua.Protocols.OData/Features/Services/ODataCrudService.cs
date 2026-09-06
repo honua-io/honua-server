@@ -75,10 +75,19 @@ internal sealed partial class ODataCrudService
     /// <summary>
     /// Retrieves a single feature by its ID with proper validation and error handling.
     /// </summary>
+    public Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
+        int layerId,
+        long objectId,
+        string baseUrl,
+        CancellationToken cancellationToken = default)
+        => GetFeatureAsync(layerId, objectId, baseUrl, _featureReader, layerId, cancellationToken);
+
     public async Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
         int layerId,
         long objectId,
         string baseUrl,
+        IFeatureReader reader,
+        int storageLayerId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -91,7 +100,7 @@ internal sealed partial class ODataCrudService
             }
 
             // Get the feature
-            var feature = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
+            var feature = await reader.GetAsync(storageLayerId, objectId, cancellationToken);
             if (feature == null)
             {
                 return ODataCrudResult<Dictionary<string, object?>>.NotFound($"Feature {objectId} not found in layer {layerId}");
@@ -290,13 +299,12 @@ internal sealed partial class ODataCrudService
                     "Resource has not changed.");
             }
 
-            // The If-Match pre-check above ran against a read snapshot; carry the
-            // snapshot's canonical state token to the writer so the precondition is
-            // re-validated inside the write transaction (closes the read-merge-write
-            // lost-update window).
-            var expectedStateToken = string.IsNullOrWhiteSpace(ifMatch)
-                ? null
-                : FeatureStateToken.Compute(existingFeatureValue);
+            // PATCH merges a read snapshot, so protect that snapshot inside the write
+            // transaction even without If-Match. Otherwise an omitted property or
+            // geometry could overwrite a concurrent edit. Unconditional PUT is a replacement.
+            var expectedStateToken = !replace || !string.IsNullOrWhiteSpace(ifMatch)
+                ? FeatureStateToken.FromReadSnapshot(existingFeatureValue)
+                : null;
 
             // PATCH preserves omitted geometry; PUT replaces it with null unless supplied.
             byte[]? geometryBytes = replace ? null : existingFeatureValue.Geometry;
@@ -363,8 +371,28 @@ internal sealed partial class ODataCrudService
             if (editResult.Result is { } updateEditResult &&
                 updateEditResult.UpdateResults.Any(static result => result.IsPreconditionFailure))
             {
-                return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed(
-                    "ETag does not match the current resource.");
+                if (!string.IsNullOrWhiteSpace(ifMatch) || !string.IsNullOrWhiteSpace(ifNoneMatch))
+                {
+                    var current = updateEditResult.UpdateResults.First(static result => result.IsPreconditionFailure).PreconditionFailureFeature;
+                    if (!current.HasValue && !string.IsNullOrWhiteSpace(ifMatch))
+                    {
+                        return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed("Resource no longer exists.");
+                    }
+                    if (current.HasValue)
+                    {
+                        var geometry = ODataGeometryConverter.ConvertWkbToGeometry(_geometryService, current.Value.Geometry, srid, axisOrder);
+                        var attributes = ODataAttributeSerializer.Serialize(current.Value.Attributes);
+                        var latestEtag = ComputeFeatureEtag(layerId, current.Value, geometry, attributes);
+                        if ((!string.IsNullOrWhiteSpace(ifMatch) && !_etagService.MatchesPrecondition(ifMatch, latestEtag)) ||
+                            (!string.IsNullOrWhiteSpace(ifNoneMatch) && !_etagService.IsModified(ifNoneMatch, latestEtag)))
+                        {
+                            return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed("The conditional request does not match the current resource.");
+                        }
+                    }
+                }
+
+                return ODataCrudResult<Dictionary<string, object?>>.Conflict(
+                    "The feature changed during the update. Read the current resource and retry the update.");
             }
 
             var result = await _featureReader.GetAsync(layerId, objectId, cancellationToken);

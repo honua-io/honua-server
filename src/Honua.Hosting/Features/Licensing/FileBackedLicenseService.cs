@@ -10,11 +10,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Licensing;
 
-internal sealed class FileBackedLicenseService :
+internal sealed partial class FileBackedLicenseService :
     IHostedService,
     ILicenseEntitlementService,
     ILicenseStatusProvider,
-    ILicenseManager
+    ILicenseManager,
+    ILicenseOperationPolicy,
+    IDisposable
 {
     private const int MaxLicenseFileBytes = 64 * 1024;
     private const int ExpectedEnvelopeVersion = 1;
@@ -27,6 +29,7 @@ internal sealed class FileBackedLicenseService :
     private readonly IEd25519Verifier _verifier;
     private readonly ILogger<FileBackedLicenseService> _logger;
     private readonly IReadOnlyList<ILicenseContentSecretResolver> _secretResolvers;
+    private readonly SemaphoreSlim _uploadLock = new(1, 1);
     private LicenseSnapshot _snapshot;
     private long _snapshotVersion;
 
@@ -34,11 +37,15 @@ internal sealed class FileBackedLicenseService :
         IOptions<LicenseOptions> options,
         IEd25519Verifier verifier,
         ILogger<FileBackedLicenseService> logger,
-        IEnumerable<ILicenseContentSecretResolver>? secretResolvers = null)
+        IEnumerable<ILicenseContentSecretResolver>? secretResolvers = null,
+        TimeProvider? timeProvider = null)
     {
         _options = options;
         _verifier = verifier;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _expiryTimer = _timeProvider.CreateTimer(_ => GetSnapshot(), null,
+            Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _secretResolvers = secretResolvers as IReadOnlyList<ILicenseContentSecretResolver>
             ?? secretResolvers?.ToArray()
             ?? [];
@@ -53,32 +60,59 @@ internal sealed class FileBackedLicenseService :
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         await LoadConfiguredLicenseAsync(cancellationToken).ConfigureAwait(false);
+        EnsureStartupLicense();
+        _revalidationTask = RunRevalidationAsync(_stopping.Token);
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await _stopping.CancelAsync().ConfigureAwait(false);
+        if (_revalidationTask is not null)
+        {
+            await _revalidationTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (_runtimeLock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            _disposed = true;
+            _stopping.Cancel();
+            _expiryTimer.Dispose();
+            _operationCancellation.Dispose();
+            foreach (var retired in _retiredCancellations)
+            {
+                retired.Dispose();
+            }
+            // StopAsync owns asynchronous shutdown. A load may still hold the semaphore.
+        }
+    }
 
     public LicenseSnapshot GetSnapshot()
     {
-        var snapshot = Volatile.Read(ref _snapshot);
-        if (snapshot.ValidationState != LicenseValidationState.Valid ||
-            !snapshot.ExpiresAt.HasValue ||
-            snapshot.ExpiresAt.Value > DateTimeOffset.UtcNow)
+        lock (_runtimeLock)
         {
+            var snapshot = _snapshot;
+            if (_disposed)
+            {
+                return snapshot;
+            }
+            if (snapshot.Edition != HonuaEdition.Community &&
+                snapshot.ValidationState == LicenseValidationState.Valid &&
+                snapshot.ExpiresAt <= _timeProvider.GetUtcNow())
+            {
+                snapshot = CreateExpiredSnapshot(snapshot);
+                _snapshot = snapshot;
+                CancelOperations();
+                LicenseRuntimeLog.LicenseExpired(_logger, snapshot.LicenseId, snapshot.ExpiresAt);
+            }
             return snapshot;
         }
-
-        // The license expired while the server was running. Republish an expired
-        // snapshot so entitlement checks and health reporting reflect reality without
-        // requiring a restart.
-        var expired = CreateExpiredSnapshot(snapshot);
-        if (ReferenceEquals(Interlocked.CompareExchange(ref _snapshot, expired, snapshot), snapshot))
-        {
-            LicenseRuntimeLog.LicenseExpired(_logger, snapshot.LicenseId, snapshot.ExpiresAt);
-            return expired;
-        }
-
-        // Another thread published a newer snapshot concurrently; use that one.
-        return Volatile.Read(ref _snapshot);
     }
 
     private LicenseSnapshot CreateExpiredSnapshot(LicenseSnapshot current)
@@ -92,7 +126,7 @@ internal sealed class FileBackedLicenseService :
         };
 
         return CreateSnapshot(
-            HonuaEdition.Community,
+            current.Edition,
             isValid: false,
             LicenseValidationState.Expired,
             NextSnapshotVersion(),
@@ -119,8 +153,7 @@ internal sealed class FileBackedLicenseService :
     /// The same <see cref="ILicenseContentSecretResolver"/> set that <c>AddHonuaLicensing</c> registers
     /// for the per-request license service (e.g. AWS Secrets Manager and/or Azure Key Vault). Supplying
     /// them here lets the bootstrap snapshot honor <c>Licensing:LicenseContentSecretRef</c> (e.g. a
-    /// secret-store-only Pro license); without them a secret-ref license degrades to Community at
-    /// bootstrap and a startup gate such as the Redis-cache probe stays off for the process lifetime
+    /// secret-store-only Pro license); without them a paid secret-ref-only deployment refuses startup
     /// (honua-server#1755). It is optional so hosts without a secret resolver (or built with the cloud
     /// SDK excluded) still resolve file / inline / Community licenses correctly.
     /// </param>
@@ -144,12 +177,14 @@ internal sealed class FileBackedLicenseService :
             return DevLicenseSnapshotFactory.Create(grantEdition);
         }
 
-        var service = new FileBackedLicenseService(
+        using var service = new FileBackedLicenseService(
             Options.Create(options),
             new BouncyCastleEd25519Verifier(),
             loggerFactory.CreateLogger<FileBackedLicenseService>(),
             secretResolvers);
-        await service.StartAsync(cancellationToken).ConfigureAwait(false);
+        service._suppressExpiryWarnings = true;
+        await service.LoadConfiguredLicenseAsync(cancellationToken).ConfigureAwait(false);
+        service.EnsureStartupLicense();
         return service.GetSnapshot();
     }
 
@@ -256,12 +291,25 @@ internal sealed class FileBackedLicenseService :
     private async Task LoadConfiguredLicenseAsync(CancellationToken cancellationToken)
     {
         var options = _options.Value;
+        if (options.Edition == HonuaEdition.Community)
+        {
+            PublishCommunity(LicenseValidationState.NoLicenseConfigured, isValid: true, payload: null, keyId: null);
+            return;
+        }
 
-        // A secret-store reference takes highest precedence: the ~2KB signed envelope is
-        // fetched from a secret manager (e.g. AWS Secrets Manager) at startup so it does not
+        // A successful admin upload is an explicit persisted override. Check it before
+        // contacting a secret store, including when subsequent uploads have been disabled.
+        if (!string.IsNullOrWhiteSpace(options.LicensePath)
+            && await TryLoadUploadedOverrideAsync(options, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        // Without an uploaded override, a secret-store reference takes highest precedence:
+        // the ~2KB signed envelope is fetched from a secret manager (e.g. AWS Secrets Manager) at startup so it does not
         // have to fit a serverless environment-variable size limit or be baked into the image.
-        // Resolution is fail-safe — a missing resolver / unreachable secret degrades to Community
-        // rather than crashing the host.
+        // Resolution records source failures. Strict startup validation rejects a paid
+        // deployment when no valid configured source can be loaded.
         var secretContent = await TryResolveLicenseContentSecretAsync(options, cancellationToken)
             .ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(secretContent))
@@ -294,17 +342,7 @@ internal sealed class FileBackedLicenseService :
 
         try
         {
-            await using var licenseStream = new FileStream(
-                options.LicensePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                bufferSize: 4096,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var licenseData = await ReadBoundedLicenseDataAsync(licenseStream, cancellationToken).ConfigureAwait(false);
-            var result = ValidateLicenseData(licenseData, options);
-            PublishSnapshot(result.Snapshot);
-            LogValidationResult(result);
+            await ReadAndPublishLicenseFileAsync(options.LicensePath, options, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -319,12 +357,48 @@ internal sealed class FileBackedLicenseService :
         }
     }
 
+    private async Task<bool> TryLoadUploadedOverrideAsync(LicenseOptions options, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ReadAndPublishLicenseFileAsync(options.LicensePath + ".uploaded", options, cancellationToken)
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // An unreadable/malformed override must not silently resurrect a stale source.
+            PublishCommunity(LicenseValidationState.Malformed, isValid: false, payload: null, keyId: null);
+            LicenseRuntimeLog.LicenseMalformed(_logger, ex.GetType().Name);
+            return true;
+        }
+    }
+
+    private async Task ReadAndPublishLicenseFileAsync(string path, LicenseOptions options, CancellationToken cancellationToken)
+    {
+        await using var licenseStream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var licenseData = await ReadBoundedLicenseDataAsync(licenseStream, cancellationToken).ConfigureAwait(false);
+        var result = ValidateLicenseData(licenseData, options);
+        PublishSnapshot(result.Snapshot);
+        LogValidationResult(result);
+    }
+
     /// <summary>
     /// Resolves <see cref="LicenseOptions.LicenseContentSecretRef"/> through the first registered
     /// <see cref="ILicenseContentSecretResolver"/> that recognizes the reference (e.g. AWS Secrets
     /// Manager for <c>aws:secretsmanager:</c>, Azure Key Vault for <c>azure:keyvault:</c>). Never
     /// throws: no registered resolver, an unsupported reference, or an unreachable secret returns
-    /// <c>null</c> so the caller falls through to inline content / file / Community.
+    /// <c>null</c> so the caller falls through to inline content / file validation.
     /// </summary>
     private async Task<string?> TryResolveLicenseContentSecretAsync(
         LicenseOptions options,
@@ -374,7 +448,7 @@ internal sealed class FileBackedLicenseService :
     /// <summary>
     /// Validates an in-memory signed-license envelope (UTF-8 JSON, from inline config or a
     /// resolved secret) and publishes the resulting snapshot. Malformed content publishes a
-    /// safe Community snapshot rather than throwing.
+    /// failed snapshot; the startup contract rejects it on paid deployments.
     /// </summary>
     private void ApplyInlineLicenseContent(string licenseContent, LicenseOptions options)
     {
@@ -399,6 +473,21 @@ internal sealed class FileBackedLicenseService :
     }
 
     private async Task<LicenseUploadResult> ApplyUploadedLicenseDataAsync(
+        byte[] licenseData,
+        CancellationToken cancellationToken)
+    {
+        await _uploadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await ApplyUploadedLicenseDataCoreAsync(licenseData, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _uploadLock.Release();
+        }
+    }
+
+    private async Task<LicenseUploadResult> ApplyUploadedLicenseDataCoreAsync(
         byte[] licenseData,
         CancellationToken cancellationToken)
     {
@@ -441,28 +530,45 @@ internal sealed class FileBackedLicenseService :
                 Directory.CreateDirectory(directory);
             }
 
-            // Unique temp file per upload so concurrent admin uploads cannot interleave
-            // writes/moves on the same temporary path.
-            var tempPath = $"{options.LicensePath}.{Guid.NewGuid():N}.tmp";
-            try
-            {
-                await File.WriteAllBytesAsync(tempPath, licenseData, cancellationToken).ConfigureAwait(false);
-                File.Move(tempPath, options.LicensePath, overwrite: true);
-            }
-            catch
-            {
-                TryDeleteFile(tempPath);
-                throw;
-            }
+            // This atomic replacement is the commit point. A failed upload must never
+            // change the fallback file before the authoritative override is durable.
+            await WriteLicenseFileAsync(options.LicensePath + ".uploaded", licenseData, cancellationToken).ConfigureAwait(false);
 
             PublishSnapshot(result.Snapshot);
             LogValidationResult(result);
-            return new LicenseUploadResult(true, "License applied.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             LicenseRuntimeLog.LicenseUploadSaveFailed(_logger, ex);
             return new LicenseUploadResult(false, "License upload could not be saved. See server logs for details.");
+        }
+
+        // Retain the configured file for existing operator tooling. Once committed,
+        // cancellation or a mirror failure cannot turn the applied upload into a rejection.
+        try
+        {
+            await WriteLicenseFileAsync(options.LicensePath, licenseData, CancellationToken.None).ConfigureAwait(false);
+            return new LicenseUploadResult(true, "License applied.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LicenseRuntimeLog.LicenseUploadSaveFailed(_logger, ex);
+            return new LicenseUploadResult(true,
+                "License applied to the persisted upload override; the LicensePath mirror could not be updated. See server logs for details.");
+        }
+    }
+
+    private static async Task WriteLicenseFileAsync(string path, byte[] licenseData, CancellationToken cancellationToken)
+    {
+        var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await File.WriteAllBytesAsync(tempPath, licenseData, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        finally
+        {
+            TryDeleteFile(tempPath);
         }
     }
 
@@ -551,9 +657,9 @@ internal sealed class FileBackedLicenseService :
             return CreateInvalidResult(LicenseValidationState.Malformed, payloadError, payload, envelope.KeyId);
         }
 
-        if (payload.ExpiresAt.HasValue && payload.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        if (payload.ExpiresAt.HasValue && payload.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
-            return CreateInvalidResult(LicenseValidationState.Expired, "expired", payload, envelope.KeyId);
+            return CreateInvalidResult(LicenseValidationState.Expired, "expired", payload, envelope.KeyId, edition);
         }
 
         var snapshot = CreateSnapshot(
@@ -648,7 +754,7 @@ internal sealed class FileBackedLicenseService :
 
     private static bool TryParseEdition(string value, out HonuaEdition edition)
     {
-        if (Enum.TryParse(value, ignoreCase: true, out edition))
+        if (Enum.TryParse(value, ignoreCase: true, out edition) && Enum.IsDefined(edition))
         {
             return true;
         }
@@ -666,11 +772,12 @@ internal sealed class FileBackedLicenseService :
         LicenseValidationState state,
         string reason,
         SignedLicensePayload? payload,
-        string? keyId)
+        string? keyId,
+        HonuaEdition edition = HonuaEdition.Community)
     {
         var snapshot = state == LicenseValidationState.Expired && payload is not null
             ? CreateSnapshot(
-                HonuaEdition.Community,
+                edition,
                 isValid: false,
                 state,
                 NextSnapshotVersion(),
@@ -712,7 +819,7 @@ internal sealed class FileBackedLicenseService :
             .ToArray();
 
         var activeKeys = FeatureCatalog.All
-            .Where(feature => feature.MinimumEdition == HonuaEdition.Community)
+            .Where(feature => (isValid || edition == HonuaEdition.Community) && feature.MinimumEdition == HonuaEdition.Community)
             .Select(feature => feature.Key)
             .Concat(knownSignedEntitlements)
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -760,7 +867,53 @@ internal sealed class FileBackedLicenseService :
 
     private void PublishSnapshot(LicenseSnapshot snapshot)
     {
-        Volatile.Write(ref _snapshot, snapshot);
+        lock (_runtimeLock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            var expected = _options.Value.Edition ?? (_snapshot.Edition > HonuaEdition.Community
+                ? _snapshot.Edition : snapshot.Edition);
+            if (expected > HonuaEdition.Community &&
+                (snapshot.ValidationState != LicenseValidationState.Valid || snapshot.Edition < expected))
+            {
+                snapshot = snapshot with
+                {
+                    Edition = expected,
+                    IsValid = false,
+                    ValidationState = snapshot.ValidationState == LicenseValidationState.Valid
+                        ? LicenseValidationState.Malformed : snapshot.ValidationState,
+                    ActiveEntitlementKeys = Array.Empty<string>().ToFrozenSet(StringComparer.OrdinalIgnoreCase),
+                    Entitlements = snapshot.Entitlements.Select(item => new Entitlement
+                    {
+                        Key = item.Key,
+                        Name = item.Name,
+                        IsActive = false
+                    }).ToArray()
+                };
+            }
+            _snapshot = snapshot;
+            var blocked = snapshot.Edition > HonuaEdition.Community && !snapshot.IsValid;
+            if (blocked)
+            {
+                CancelOperations();
+            }
+            else if (_operationCancellation.IsCancellationRequested)
+            {
+                _retiredCancellations.Add(_operationCancellation);
+                _operationCancellation = new CancellationTokenSource();
+            }
+
+            var due = !blocked && snapshot.Edition > HonuaEdition.Community && snapshot.ExpiresAt.HasValue
+                ? snapshot.ExpiresAt.Value - _timeProvider.GetUtcNow() : Timeout.InfiniteTimeSpan;
+            if (due != Timeout.InfiniteTimeSpan)
+            {
+                due = TimeSpan.FromMilliseconds(Math.Clamp(due.TotalMilliseconds, 0, uint.MaxValue - 1));
+            }
+            _expiryTimer.Change(due, Timeout.InfiniteTimeSpan);
+            LogExpiryWarning(snapshot);
+        }
     }
 
     private long NextSnapshotVersion() => Interlocked.Increment(ref _snapshotVersion);

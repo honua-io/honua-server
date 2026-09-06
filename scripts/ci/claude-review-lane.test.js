@@ -99,6 +99,28 @@ test('completed exact-head reviews are visibly deduplicated before review', () =
   assert.match(source, /core\.summary\.write\(\)/);
 });
 
+test('the resolved PR/head is the in-flight Claude dedupe key', () => {
+  assert.match(source, /^  resolve:\n/m);
+  assert.match(source, /skip: \$\{\{ steps\.target\.outputs\.skip \}\}/);
+  assert.match(
+    source,
+    /needs: resolve\n\s+if: needs\.resolve\.outputs\.skip == 'false'/,
+  );
+  assert.match(
+    source,
+    /group: claude-review-\$\{\{ needs\.resolve\.outputs\.pr \}\}-\$\{\{ needs\.resolve\.outputs\.head \}\}/,
+  );
+  assert.match(source, /duplicate: PR #\$\{pr\} already reviewed at \$\{head\}/);
+  assert.match(source, /cancel-in-progress: false/);
+});
+
+test('completion is checked only after the exact-head concurrency boundary', () => {
+  const boundary = source.indexOf('group: claude-review-${{ needs.resolve.outputs.pr }}-${{ needs.resolve.outputs.head }}');
+  const completionCheck = source.indexOf('findCompletedClaudeReview');
+  assert.ok(boundary >= 0, 'review job must have an exact PR/head concurrency group');
+  assert.ok(completionCheck > boundary, 'completion must be re-checked after queue admission');
+});
+
 test('candidate-controlled reviewer instructions are stripped before review', () => {
   assert.match(source, /-name CLAUDE\.md/);
   assert.match(source, /-name AGENTS\.md/);
@@ -119,6 +141,15 @@ test('the reviewer turn budget scales with the staged diff and stays capped', ()
   assert.match(source, /max_turns=60/);
   assert.match(source, /max_turns=80/);
   assert.match(source, /--max-turns \$\{\{ steps\.diff\.outputs\.max_turns \}\}/);
+});
+
+test('the staged diff is verified against the resolved exact head', () => {
+  assert.doesNotMatch(source, /gh pr diff "\$\{PR\}"/);
+  assert.match(source, /refs\/pull\/\$\{PR\}\/head:pr-head/);
+  assert.match(source, /fetched_head="\$\(git -C \.pr-diff-src rev-parse pr-head\)"/);
+  assert.match(source, /\[ "\$\{fetched_head\}" != "\$\{BOUND_HEAD\}" \]/);
+  assert.match(source, /not the bound head \$\{BOUND_HEAD\}; not staging a mismatched diff/);
+  assert.match(source, /git -C \.pr-diff-src diff --patch "\$\{merge_base\}" pr-head/);
 });
 
 test('an exhausted review posts the explicit fallback without widening token permissions', () => {

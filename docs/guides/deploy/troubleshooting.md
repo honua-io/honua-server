@@ -10,7 +10,7 @@ You'll diagnose the most common operational failures by symptom and apply the ve
 
 Expected: `Healthy` and `Ready`. If either fails, start with the startup or database tables below. Admin-only diagnostics: `GET /monitoring/health/production`, `GET /monitoring/health/comprehensive`, `GET /api/v1/admin/observability/errors`.
 
-A single-node deployment with no Redis configured reports `Ready` — feature-change events run in node-local in-memory mode (a startup warning notes this). If `/healthz/ready` returns `503` while `/healthz/live` is healthy and Redis **is** configured, Redis is unreachable: check `ConnectionStrings__Redis` and the Redis server itself.
+A single-node deployment with no Redis configured reports `Ready` — feature-change events run in node-local in-memory mode (a startup warning notes this). When Redis is configured, every readiness probe requires successful cache write/read/delete operations, including index access and while cached data uses in-process fallback. Overlapping local probes share an in-flight round-trip, and shutdown drains it before disposing the cache. The direct Redis path checks atomic index updates. The distributed-cache-only path reads the production index and checks write/read/delete on a separate reserved index entry, preserving concurrent replicas' production index contents. The reserved health and index probe keys use the cache's configured namespace, are removed after a successful probe, and expire after 30 seconds if interrupted. A Redis-related readiness `503` can indicate a connection failure, denied cache commands, or a read-only Redis endpoint; check `ConnectionStrings__Redis`, Redis permissions, and the server itself.
 
 ## Startup
 
@@ -22,6 +22,50 @@ A single-node deployment with no Redis configured reports `Ready` — feature-ch
 | Exits with an options-validation error naming a `Limits` or `ControlPlane` setting | Out-of-range or malformed env value (validated at startup) | Correct the named variable; compare against [.env.example](../../../.env.example) |
 | Container restart loop, log shows migration failure | Database migration failed at startup | Fix DB connectivity/permissions; check `GET /api/v1/admin/observability/migrations` once up. `HONUA_SKIP_MIGRATIONS=true` defers (does not fix) the migration |
 | Starts but logs "connection string not configured" | `ConnectionStrings__DefaultConnection` missing | Set it; migrations and data access are skipped without it |
+
+## License failure mode
+
+Declare `Licensing__Edition=Pro` or `Enterprise` on paid servers and native
+workers. A missing, invalid or expired license stops startup before serving
+requests, exits non-zero, and never falls back to Community. Community requires
+no license; `Licensing__Edition=Community` ignores license sources.
+
+These are the exact startup errors:
+
+```text
+Honua Pro startup refused: license missing. Install a valid Pro license in the configured licensing source and restart. Community fallback is disabled.
+Honua Pro startup refused: license invalid. Install a valid Pro license in the configured licensing source and restart. Community fallback is disabled.
+Honua Pro startup refused: license expired. Install a valid Pro license in the configured licensing source and restart. Community fallback is disabled.
+Honua Enterprise startup refused: license missing. Install a valid Enterprise license in the configured licensing source and restart. Community fallback is disabled.
+Honua Enterprise startup refused: license invalid. Install a valid Enterprise license in the configured licensing source and restart. Community fallback is disabled.
+Honua Enterprise startup refused: license expired. Install a valid Enterprise license in the configured licensing source and restart. Community fallback is disabled.
+```
+
+| State | Operator remedy |
+|---|---|
+| Missing | Supply the purchased tier's signed license at the configured path or secret source; check mount availability and read permissions, then restart. |
+| Invalid | Replace the malformed, untrusted, incorrectly signed or wrong-tier license with a valid license; verify trusted public-key configuration, then restart. Do not paste license contents or keys into logs or tickets. |
+| Expired at startup | Renew the authoritative license and restart. |
+| Expired while running | Reads, exports and other data operations stop. In-flight jobs are cancelled and recorded as failed with reason `license expired`; partial artifacts/downloads are removed from completion results or marked incomplete. Renew, inspect failed jobs, and submit new jobs as needed. |
+| Renewed | Restart, or wait for the running instance's one-minute re-validation interval. An accepted admin upload applies immediately. Cancelled jobs remain failed. |
+
+Admin expiry warnings and logs use the **30, 14, 7 and 1 day** schedule. Complete
+renewal, or the [backup/export procedure](backup-and-restore.md), **before expiry**.
+Existing-data reads and exports through a paid instance stop at expiry too.
+New data requests receive HTTP `402` (native gRPC: `FAILED_PRECONDITION`). An
+in-flight response that has entered transmission may instead be aborted; clients
+must treat the interrupted read/export as failed, never as a complete output.
+The authenticated license status/upload recovery routes and health probes remain
+reachable during runtime expiry.
+
+The selected source is `<LicensePath>.uploaded` when present, then a resolved
+secret reference, inline content, and the ordinary license file. An upload is a
+durable override: replacing only the ordinary file does not renew that override.
+Use the supported SDK's license upload operation for an enabled admin upload, or
+follow [the source-switch procedure](../../concepts/editions-and-licensing.md#renew-or-replace-a-license)
+while stopped. Verify status through the SDK's `getLicenseStatus` operation after
+renewal. Apply the same source update to every replica and worker. Environment
+variable changes require restart; file and secret contents are re-read every minute. The native GDAL worker uses the same file, inline, AWS Secrets Manager and Azure Key Vault resolvers as the API host.
 
 ## Database connections
 
@@ -49,6 +93,16 @@ Connectivity check: `psql -h db.example.com -U honua -d honua -c "SELECT 1;"` an
 ## Rate limiting
 
 Rate limiting belongs at the edge (WAF, API gateway, ingress, or load balancer) for the default MVP posture. Honua also has an opt-in application limiter (`RateLimiting__Enabled=true`), but it is off by default and supplements rather than replaces edge enforcement. The `HonuaRateLimitViolationsHigh` example alert is currently **inert** because Honua does not yet emit `honua_rate_limit_violations_total`; if a deployment supplies that metric, investigate it at the component that emits it.
+
+When the application limiter is enabled and a Redis counter fails, Honua enforces
+its in-process fixed-window counters for both the shared subject limit and any
+endpoint-specific limit. Excess requests still receive `429` and `Retry-After`.
+After a Redis counter fails, remaining counters in that request use the local store without waiting for another Redis timeout.
+The process keeps at most 10,000 active subject/endpoint counters. At capacity, new counter keys receive `429` until an existing window expires; active counters retain their budgets.
+These fallback budgets are per server process, start independently of Redis's
+sliding-window counters, and are not synchronized between replicas. Redis metering
+resumes when counter operations succeed; keep edge enforcement for a fleet-wide
+ceiling across outages and recovery.
 
 When violations spike:
 

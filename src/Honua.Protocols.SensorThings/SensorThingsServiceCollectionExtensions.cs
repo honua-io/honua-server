@@ -21,8 +21,8 @@ internal static class SensorThingsServiceCollectionExtensions
     /// (<see cref="Honua.Core.Features.SensorThings.Abstractions.IObservationStore"/>)
     /// is registered by the active data provider. The Phase 2 ingest path publishes new
     /// observations to the Phase 3 real-time stream through
-    /// <see cref="IObservationChangeEventPublisher"/>, implemented by the singleton
-    /// <see cref="ObservationStreamSessionManager"/> (Redis cross-node fan-out when a
+    /// <see cref="IObservationChangeEventPublisher"/>, implemented by a scoped publisher
+    /// feeding the singleton <see cref="ObservationStreamSessionManager"/> (Redis cross-node fan-out when a
     /// multiplexer is registered, single-node otherwise).
     /// </summary>
     public static IServiceCollection AddSensorThings(this IServiceCollection services)
@@ -31,13 +31,13 @@ internal static class SensorThingsServiceCollectionExtensions
 
         services.TryAddScoped<StaObservationFilterTranslator>();
 
-        // The session manager is both the observation-stream transport and the
-        // change-event publisher consumed by the ingest path.
+        // Capture tenant/schema only after request middleware resolves them. The
+        // singleton transport must never hold request services or read ambient state.
         services.TryAddSingleton(sp => new ObservationStreamSessionManager(
             sp.GetRequiredService<ILogger<ObservationStreamSessionManager>>(),
             sp.GetService<IConnectionMultiplexer>()));
-        services.TryAddSingleton<IObservationChangeEventPublisher>(sp =>
-            sp.GetRequiredService<ObservationStreamSessionManager>());
+        services.TryAddScoped(ObservationStreamScope.FromServices);
+        services.TryAddScoped<IObservationChangeEventPublisher, ObservationStreamPublisher>();
         services.AddHostedService<ObservationStreamHeartbeatService>();
 
         return services;

@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -349,12 +350,12 @@ internal sealed class ApiKeyAuthenticationHandler(
         // and the development bypass authenticate with null permissions and so remain
         // full admins; an unscoped key (or one carrying admin / * / admin:* grants)
         // likewise passes every admin endpoint. A key whose grants are genuinely
-        // scoped — neither a full-admin grant nor a write: grant — is authenticated as
-        // a NON-admin principal so it no longer silently passes RequireRole("admin").
-        // Its grants are surfaced as "permission" claims below for endpoint-level
-        // enforcement.
+        // scoped never silently passes RequireRole("admin"). Narrow administrative
+        // grants receive a separate role admitted only by permission-checked policies;
+        // ordinary scoped keys retain only their own endpoint-level authority.
         var confersFullAdmin = LayerScopedWriteKey.ConfersFullAdmin(permissions);
         var isApprovedOperationKey = permissions?.Any(AdminApiKeyPermission.IsApprovedOperationGrant) == true;
+        var hasAdministrativeGrant = permissions?.Any(AdminApiKeyPermission.IsAdministrativeGrant) == true;
         List<Claim> claims;
         if (isScopedWriteKey)
         {
@@ -368,10 +369,26 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
         else if (isApprovedOperationKey)
         {
+            // Only persisted server-minted grants can supply this binding. Never
+            // promote the caller-controlled tenant header into authenticated claims.
+            var tenantBindings = permissions!
+                .Where(permission => permission.StartsWith(AdminApiKeyPermission.ApprovedOperationTenantGrantPrefix, StringComparison.Ordinal))
+                .Select(permission => permission[AdminApiKeyPermission.ApprovedOperationTenantGrantPrefix.Length..])
+                .ToArray();
+            if (tenantBindings.Length != 1)
+            {
+                return AuthenticateResult.Fail("Approved operation credential has no unambiguous tenant binding.");
+            }
+
+            var tenantClaim = new Claim(AdminApiKeyPermission.ApprovedOperationTenantClaim, tenantBindings[0]);
+            // This binding comes from the persisted server-minted credential, including
+            // an explicit empty binding. Preserve it through OIDC claim sanitization.
+            tenantClaim.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
             claims =
             [
                 new Claim(ClaimTypes.Name, apiKeyName ?? "approved-operation"),
                 new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole),
+                tenantClaim,
                 new Claim("auth_type", authenticationType),
             ];
         }
@@ -381,6 +398,15 @@ internal sealed class ApiKeyAuthenticationHandler(
             [
                 new Claim(ClaimTypes.Name, "admin"),
                 new Claim(ClaimTypes.Role, "admin"),
+                new Claim("auth_type", authenticationType),
+            ];
+        }
+        else if (hasAdministrativeGrant)
+        {
+            claims =
+            [
+                new Claim(ClaimTypes.Name, apiKeyName ?? "scoped-admin-key"),
+                new Claim(ClaimTypes.Role, AdminApiKeyPermission.ScopedAdminRole),
                 new Claim("auth_type", authenticationType),
             ];
         }

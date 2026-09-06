@@ -6,6 +6,23 @@ Set up the three ways callers prove who they are: API keys for automation and th
 
 ## Steps
 
+### SensorThings observation streams (Preview)
+
+`GET /sta/v1.1/ObservationsStream` requires authentication before either an SSE
+handshake or a WebSocket upgrade. Use the configured authentication scheme (for
+example, `X-API-Key` for an API client). Anonymous requests receive `401`; enabling
+anonymous SensorThings writes does not enable anonymous streaming.
+
+A subscription receives observations only for its resolved tenant and database
+schema. Omitting `datastreamId` selects all datastreams within that boundary.
+Tenant overrides follow the shared tenant middleware's administrator rules; a
+datastream ID is never a cross-tenant identifier.
+
+Upgrade every observation-stream node together. Scoped fan-out uses a new Redis
+channel, so old and updated nodes do not exchange observations during a rolling
+upgrade. Reconnect clients to updated nodes; streams remain best-effort, with no
+replay guarantee. Disable the old stream endpoints until their nodes are updated.
+
 ### 1. Set the admin API key
 
 ```bash
@@ -58,10 +75,28 @@ token are authorized by operator RBAC instead of this API-key recipe.
 Approval and execution remain separate authorities. The Console sends the
 read/approve key only to the proposal decision endpoint. After approval, Honua
 mints a short-lived, single-use credential bound to the exact approved Admin API
-method and path, uses it for the replay, and revokes it immediately. The
+method, path, and sealed tenant, uses it for the replay, and revokes it immediately.
+The tenant binding is restored from the persisted credential during authentication
+and survives OIDC claim sanitization, including repeated transformation. An
+issuer-supplied copy of the internal tenant claim is removed; a caller-supplied
+tenant header cannot change the binding. Credentials without an explicit
+tenant binding are rejected. An explicit empty binding preserves an invocation
+accepted with tenant resolution disabled. The
 approver's key and identity headers are never forwarded as execution authority;
 `admin:operation:*` grants are server-reserved and cannot be requested through
-the API-key creation endpoint.
+the API-key creation endpoint. Internal replay credentials are excluded from
+public key listings and permission inspection, and cannot be rotated into a
+new plaintext credential.
+
+Proposal lists, proposal reads and decisions, and operation-handle reads are
+restricted to the tenant recorded when the operation was accepted. A record
+owned by another tenant is omitted from lists and returns `404` on direct
+access. Cross-tenant access requires a configured `MultiTenancy:MultiTenantAdminRoles`
+role (by default `multi_tenant_admin` or `platform_admin`); the ordinary `admin`
+role does not grant it. MCP proposal resources use the same ownership boundary.
+Legacy records without a tenant owner are hidden from tenant-scoped callers;
+a platform operator can inspect those records and re-propose pending work in
+its intended tenant. Idempotency keys are scoped to the accepted tenant.
 
 ### 3. Enable OIDC for browser and admin sign-in
 

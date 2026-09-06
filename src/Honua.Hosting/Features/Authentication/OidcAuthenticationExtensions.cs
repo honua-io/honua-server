@@ -261,7 +261,8 @@ public static class OidcAuthenticationExtensions
                 "admin",
                 "administrator",
                 "Administrator",
-                AdminApiKeyPermission.ApprovedOperationRole);
+                AdminApiKeyPermission.ApprovedOperationRole,
+                AdminApiKeyPermission.ScopedAdminRole);
 
             UpdateRolePolicy(
                 authzOptions,
@@ -683,7 +684,7 @@ public static class OidcAuthenticationExtensions
                         CanonicalSecurityActor.StampFrameworkClaim(
                             bearerIdentity,
                             CanonicalSecurityActor.AuthenticationSchemeClaim,
-                            context.Scheme.Name);
+                            JwtBearerScheme);
                         CanonicalSecurityActor.StampFrameworkClaim(
                             bearerIdentity,
                             OperatorScopeCatalog.ScopeGovernedClaimType,
@@ -703,6 +704,7 @@ public static class OidcAuthenticationExtensions
                     }
 
                     if (oidcOptions.TokenValidation.EnableTokenReplayProtection &&
+                        context.HttpContext.Features.Get<LiveStreamRevalidationFeature>() is null &&
                         !context.HttpContext.IsAdminAuthSessionBridged())
                     {
                         var redis = context.HttpContext.RequestServices.GetService<IConnectionMultiplexer>();

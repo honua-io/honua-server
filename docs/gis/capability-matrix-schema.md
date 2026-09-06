@@ -100,10 +100,10 @@ file (drift gate), printing the regeneration command above.
 | Field | Type | Description |
 |---|---|---|
 | `key`, `displayName`, `category`, `edition` | string | Copied from `capability-keys.v1.json`. |
-| `status` | string \| null | Explicit public release posture copied from `capability-keys.v1.json` (`experimental` for the warehouse providers, `live` for GeoArrow); `null` when the key has no explicit override. |
+| `status` | string \| null | Explicit public release posture copied from `capability-keys.v1.json` (`preview` for customer alerting, `experimental` for warehouse providers, `live` for GeoArrow); `null` when the key has no explicit override. |
 | `entryCount` | number | Count of `feature-catalog.json` entries stamped with this capability. |
 | `provingTestCount` | number | Sum of `proving_tests` across those entries. |
-| `maturity` | object | Count per maturity tier (`implemented`, `partial`, `experimental`, `deferred`, `planned`) among this capability's entries. |
+| `maturity` | object | Count per maturity tier (`implemented`, `partial`, `preview`, `experimental`, `deferred`, `planned`) among this capability's entries. |
 | `noSurface` | object \| null | The matching row from `capability-no-surface-allowlist.v1.json` when `entryCount` is `0`; otherwise `null`. |
 | `cite` | array | Zero or one OGC CITE suite result (`{ suite, profile, passed, total, passRate }`) when this capability's protocol has an official ETS (see `CAPABILITY_TO_CITE_SUITE` in the generator script). Empty for capabilities with no CITE suite. |
 | `parity` | array | Esri GeoServices REST parity rows (`{ serviceId, displayName, parity }`) from `geoservices-rest-parity.json`, joined via the `esriCompatMatrix` crosswalk. |

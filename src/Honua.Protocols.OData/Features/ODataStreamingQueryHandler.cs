@@ -108,7 +108,33 @@ internal sealed partial class ODataStreamingQueryHandler(
             DateTimeOffset? deltaSince = null;
             int? deltaLayerId = null;
             ODataDeltaService.DeltaQueryState? deltaState = null;
-            if (!string.IsNullOrWhiteSpace(deltatoken))
+            DurableDeltaContinuation? durableDelta = null;
+            if (context.Request.Query.ContainsKey("$deltatoken") && string.IsNullOrWhiteSpace(deltatoken))
+            {
+                return DeltaRecovery(context, "InvalidQueryOption", "A delta continuation cannot be empty.", 400);
+            }
+            if (deltatoken?.StartsWith("v2.", StringComparison.Ordinal) == true)
+            {
+                if (context.Request.Query.Keys.Any(key => key is not ("$deltatoken" or "$top")))
+                {
+                    return DeltaRecovery(context, "DeltaQueryMismatch", "Delta continuations cannot redefine their query.", 400);
+                }
+                var loaded = await ReadDurableDeltaAsync(context, deltatoken, cancellationToken);
+                if (loaded.Error is not null) { return loaded.Error; }
+                durableDelta = loaded.Continuation!;
+                deltaState = durableDelta.Snapshot.Query;
+                deltaLayerId = deltaState.LayerId;
+                filter = deltaState.Filter;
+                select = deltaState.Select;
+                orderby = deltaState.OrderBy;
+                expand = deltaState.Expand;
+                compute = deltaState.Compute;
+                format = deltaState.Format;
+                count = deltaState.Count?.ToString()?.ToLowerInvariant();
+                top ??= durableDelta.Snapshot.PageSize.ToString(CultureInfo.InvariantCulture);
+                trackChangesRequested = true;
+            }
+            else if (!string.IsNullOrWhiteSpace(deltatoken))
             {
                 var deltaValidation = ValidateDeltaRequestQuery(context.Request.Query.Keys);
                 if (deltaValidation != null)
@@ -124,31 +150,17 @@ internal sealed partial class ODataStreamingQueryHandler(
                     return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", deltaError!);
                 }
 
-                deltaState = deltaState.UpperBoundTimestamp.HasValue
-                    ? deltaState
-                    : deltaState with { UpperBoundTimestamp = DateTimeOffset.UtcNow };
-
-                deltaSince = deltaState.Timestamp;
-                deltaLayerId = deltaState.LayerId;
-                filter = deltaState.Filter;
-                select = deltaState.Select;
-                orderby = deltaState.OrderBy;
-                expand = deltaState.Expand;
-                compute = deltaState.Compute;
-                format = deltaState.Format;
-                count = deltaState.Count?.ToString()?.ToLowerInvariant();
-                trackChangesRequested = true;
+                return DeltaRecovery(context, "DeltaTokenExpired", "Timestamp-only delta tokens require a new tracked baseline.", 410);
             }
             else if (trackChangesRequested &&
-                     context.Request.Query.TryGetValue(ODataUtilityService.TrackChangesSnapshotParameter, out var snapshotValues) &&
-                     !string.IsNullOrWhiteSpace(snapshotValues.ToString()))
+                     context.Request.Query.TryGetValue(ODataUtilityService.TrackChangesSnapshotParameter, out var snapshotValues))
             {
                 if (!ODataDeltaService.TryDecode(snapshotValues.ToString(), out deltaState, out var snapshotError))
                 {
                     return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", snapshotError!);
                 }
 
-                deltaLayerId = deltaState.LayerId;
+                return DeltaRecovery(context, "DeltaTokenExpired", "Timestamp-only snapshot continuations require a new tracked baseline.", 410);
             }
 
             if (trackChangesRequested &&
@@ -371,7 +383,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return ODataUtilityService.CreateODataError(
                     context,
                     "InvalidQueryOption",
-                    $"$deltatoken was issued for layer {deltaLayerId.Value} but the request targets layer {layerId.Value}.");
+                    "$deltatoken does not match the requested layer.");
             }
 
             var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
@@ -406,7 +418,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                     resource,
                     layerValidation.Publication,
                     storageLayerId.Value,
-                    requireCount: countValue == true,
+                    requireCount: trackChangesRequested || countValue == true,
                     effectiveToken).ConfigureAwait(false);
             var deltaDefinition = deltaState ?? new ODataDeltaService.DeltaQueryState
             {
@@ -427,6 +439,14 @@ internal sealed partial class ODataStreamingQueryHandler(
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
             requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, publicLayerId.ToString(CultureInfo.InvariantCulture));
+
+            if (trackChangesRequested)
+            {
+                featureActivity = HonuaTelemetry.StartFeatureActivity("query", HonuaTelemetry.Protocols.OData,
+                    publicLayerId.ToString(CultureInfo.InvariantCulture), context.TraceIdentifier);
+                return await HandleDurableDeltaAsync(context, featureReader, resource, storageLayerId.Value,
+                    layerValidation.Snapshot!.Etag, deltaDefinition, durableDelta, pagination.Limit, pagination.Offset, bbox, effectiveToken);
+            }
 
             // OData v4 allows $top=0 (a deliberately empty page, commonly paired with
             // $count=true for the total). The empty-page short-circuit lives in the
@@ -598,7 +618,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         {
             throw;
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or Honua.Core.Exceptions.ValidationException)
         {
             Log.InvalidFeaturesQuery(_logger, layerId ?? 0, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
@@ -1096,7 +1116,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         {
             throw;
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or Honua.Core.Exceptions.ValidationException)
         {
             Log.InvalidFeaturesQuery(_logger, layerId ?? 0, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;

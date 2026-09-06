@@ -72,16 +72,16 @@ advertised in the capability manifest):
   entitlement/UI gated — they simply ship. Not experimental.
 - **AI operator surface with fix-forward** — the operate model below.
 
-### 2. Experimental + disabled set (built server-side, gated off)
+### 2. Experimental/Preview + disabled set (built server-side, gated off)
 
 The following are **built server-side and gated OFF for the first release**.
-They carry `maturity: experimental` in the feature catalog, are **NOT advertised
-in the capability manifest**, and their surfaces/endpoints are **disabled by
-default** — reachable only as a **customer opt-in** (via the registry capability
+They carry their reviewed non-GA lifecycle in the feature catalog and capability
+manifest, and their surfaces/endpoints are **disabled by default** — reachable
+only as a **customer opt-in** (via the registry capability
 flag for the route-bearing capabilities, or via edition/entitlement + Console-UI
 for the rest — see the two-mechanism note below).
-Present, wired, and tested in the binary, they still must not appear in the
-manifest, `/mcp`, Studio availability, or Console in a default deployment. This
+Present, wired, and tested in the binary, they still must not appear as available
+in the manifest, `/mcp`, Studio, or Console in a default deployment. This
 is a "built, gated off, customer-opt-in" posture — **not** "deferred / not
 built." Each links its tracking issue:
 
@@ -110,21 +110,19 @@ built." Each links its tracking issue:
   built).
 
 These are certified-off, not absent: the code is present, wired, and tested, but
-it is not certified for this release and is not reachable by a default
+it is not certified GA for this release and is not reachable by a default
 deployment. It lights up when the customer opts in.
 
-> **Update (#2427).** **Geofence alerting** (`alerts.geofence`) has been promoted
-> out of the experimental + disabled set to **GA (`Implemented`)**. The alerts
-> engine ships as shared, un-gated infrastructure: geofence/dwell/attribute-threshold triggers,
-> multi-channel delivery, and a second consumer (ops deploy/job-event
-> notifications, per ADR-0060). Its admin routes (`/api/v1/admin/alerts/*`)
-> therefore carry `maturity: implemented` in the feature catalog and are
-> advertised in the capability manifest. They remain OFF by default
-> operationally — the pipeline self-gates on `Alerts:Enabled` (default `false`) —
-> but that is a runtime enablement switch, not experimental gating. The
-> "Realtime / geofence alerting" bullet and the geofence entries in the
-> two-mechanism roster below are superseded for the alerting half by this note;
-> realtime feature-streaming stays experimental.
+> **Operator amendment (2026-09-04; honua-release#268).** **Customer alerting**
+> (`alerts.geofence`) ships as **Preview** in 2026.1. This supersedes #2427's GA
+> claim: section 7.3 conditional GA is not pursued for this release. The
+> geofence/dwell/attribute-threshold implementation, multi-channel delivery,
+> second consumer, and qualification tests remain intact. Its admin routes
+> (`/api/v1/admin/alerts/*`) carry `maturity: preview`; the manifest reports
+> `lifecycle: preview` and `optInRequired: true`; and the routes and workers stay
+> off by default behind the canonical capability opt-in and `Alerts:Enabled`.
+>
+> Realtime feature-streaming remains a separate opt-in Preview capability.
 
 > **Update (#2429).** **Temporal analytics** (`temporal.filtering`,
 > `temporal.extent-discovery`, `temporal.histogram`, `temporal.time-series-tiles`,
@@ -190,13 +188,13 @@ deployment. It lights up when the customer opts in.
 > to release/2026.2.
 
 **Two mechanisms hold this set OFF — not one uniform registry flag.** The
-route-bearing experimental capabilities — **temporal** analytics/versioning
+route-bearing opt-in capabilities — **temporal** analytics/versioning
 (`/api/v1/temporal/*`), **disconnected-sync / replicas**, **realtime
 feature-streams**, **geofence alerting** (`/api/v1/admin/alerts/*`), and **mTLS
 client-certificate validation** — are gated by the **registry capability flag**:
 flipping them off in the registry drops them from the manifest, `/mcp`, Studio,
 and Console at once (the single-lever behavior ADR-0058 gives the registry, over
-exactly the descriptors whose routes are in the catalog's `experimental` tier).
+exactly the descriptors whose routes are in the catalog's non-GA lifecycle tiers).
 The remainder — **SSO/OIDC/SAML/SCIM**, **forms + field data collection**,
 **mobile / offline**, **branch / versioned editing**, **SIEM / investigations**,
 **cross-environment promotion**, the **rollback** operate loop, and

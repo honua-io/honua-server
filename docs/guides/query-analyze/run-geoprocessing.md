@@ -32,7 +32,7 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
    }
    ```
 
-   The `wkb` value above is `POINT(-122.4194 37.7749)`. This asynchronous example requires document mode, so omit `response` or set it to `document`. For a process advertising `sync-execute`, omit `Prefer` to run synchronously; a synchronous request with exactly one inline output may set `"response": "raw"`.
+   The `wkb` value above is `POINT(-122.4194 37.7749)`. Omit `response` or set it to `document` for inline qualified output values. Set `"response": "raw"` to retrieve native output bytes from the results route; multiple selected outputs use `multipart/related`. Both response modes work asynchronously. For a process advertising `sync-execute`, omit `Prefer` to run synchronously with the same response negotiation.
 
 4. Poll the job until `status` reaches `successful` (or `failed`/`dismissed`). Take `JOB` from the `Location` header or the `jobID` field:
 
@@ -42,11 +42,33 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
 
    Run `GET /ogc/processes/jobs/{jobId}/results`, then `DELETE /ogc/processes/jobs/{jobId}` in the explorer.
 
-   Catalog processes return document-mode artifact references when the runtime publishes results; `GET /ogc/processes/jobs` lists your recent jobs.
+   Catalog processes return inline qualified values in document mode, or native/multipart content when raw mode was requested; `GET /ogc/processes/jobs` lists your recent jobs.
 
 The same catalog is exposed Esri-style for ArcGIS clients: `GET /rest/services/{serviceId}/GPServer` lists every canonical process id (for example `geometry.buffer`) and also publishes 39 unambiguous Esri-conventional task-name aliases (for example `Buffer`). Both `/GPServer/geometry.buffer` and `/GPServer/Buffer` address the same process. These aliases are a name-level convenience, not a task-specific wire adapter: task info for `Buffer` publishes the canonical `wkb`, `srid`, and numeric `distance` inputs, not Esri Buffer's feature-record-set, linear-unit, and dissolve-option contract. Clients must use the published task metadata.
 
 The standard `submitJob` / `jobs/{jobId}` / `jobs/{jobId}/results/{paramName}` / `jobs/{jobId}/cancel` operations drive the same job runtime. Successful jobs advertise their named result parameters, and the per-parameter result route reads the stored result-package value and Esri data type. A fresh instance ships a default `geoprocessing` service so the facade works out of the box — e.g. `GET /rest/services/geoprocessing/GPServer` — and every published service also exposes GPServer (so `{serviceId}` can be any service you have published). To turn the default service off, set `Geoprocessing:SeedDefaultService=false` (env `HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false`). Deterministic single-geometry tasks (the `geometry.*` family and `conversion.geometry-format`) also accept the synchronous `execute` route (`POST`/`GET /rest/services/{serviceId}/GPServer/geometry.buffer/execute`), which runs the task inline through that same runtime and returns the Esri execute envelope (`results` + `messages`) on the same request. Async-only tasks reject `execute` with a 400 capability message pointing back at `submitJob`.
+
+Layer-scoped task parameters published as `GPFeatureRecordSetLayer`, including the
+`input` and `clip` parameters of `Clip`, accept an Esri FeatureSet JSON object in
+the form parameter. Supply `features` with `attributes` and Esri `geometry`
+objects, plus the collection's `spatialReference`. Every feature and attribute row
+is retained. Z ordinates are supported; measured FeatureSets are rejected explicitly
+because the canonical GeoJSON collection format cannot preserve M ordinates.
+Single-geometry tasks still require one geometry and do not flatten multiple
+features into a single geometry.
+
+GP result `value` follows the
+[Esri data-type contract](https://developers.arcgis.com/rest/services-reference/enterprise/gp-data-types/).
+Inline vector outputs return a FeatureSet object with `fields`, `features`,
+`geometryType`, `spatialReference`, and dimensional flags. Table outputs return
+records with attributes. Stored feature, raster, and file outputs return an object
+such as `{"url":"https://example.test/result"}`. Both synchronous `execute` and
+asynchronous result retrieval use these shapes.
+Empty results retain the input-derived fields and geometry type. Canonical GeoJSON inputs use
+WGS 84 when no explicit working reference is supplied; equivalent Esri Web Mercator WKIDs are
+normalized before comparison. Merge rejects incompatible geometry types before creating a job.
+An unavailable artifact remains an explicit fallback label rather than a fictitious download URL.
+
 
 ## Verify
 
@@ -63,8 +85,9 @@ Expected (trimmed):
 
 - **401 on execution** — discovery is anonymous but `POST .../execution` is not; send your `X-API-Key` (or bearer token).
 - **403** — the identity authenticates but lacks `Process.Execute` or the additional `Process.ExecuteMutatingProcess` / `Process.ExecuteCustomCode` grant required by the selected execution tier.
-- **404 for a process id you saw in the full catalog** — only first-slice vector processes are projected through OGC API Processes; others run via the canonical `honua-geoprocessing` plan process or are listed in the [reference](../../reference/geoprocessing-operations.md).
-- **400 `Invalid response mode` / `Raw response unavailable`** — raw mode requires a process that supports synchronous execution and a completed result containing exactly one inline value. Use document mode for async-only processes, multiple outputs, or artifact references.
+- **404 for a process id you saw in the full catalog** — the OGC route projects catalog processes classified as executable jobs. Protocol-only, workflow-only, and unavailable entries are described in the [reference](../../reference/geoprocessing-operations.md).
+- **400 `Invalid response mode`**: the canonical `honua-geoprocessing` plan process requires document mode because it has no declared value outputs. Catalog processes support raw results with synchronous or asynchronous execution.
+- **413 when fetching results**: the selected results exceed the configured `Geoprocessing:Executors:MaxArtifactBytes` response limit.
 - **Job stuck in `accepted`** — the job queue needs the durable job substrate (Redis) to be healthy; see [troubleshooting](../deploy/troubleshooting.md).
 
 ## Next steps

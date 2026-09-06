@@ -268,6 +268,11 @@ internal static class MapToolSchemas
           "type": "object",
           "required": ["serviceId", "layerId", "styleId"],
           "properties": {
+            "dryRun": {
+              "type": "boolean",
+              "default": false,
+              "description": "Validate the preset application without changing catalog bindings or metadata. A successful preview returns applied=false."
+            },
             "serviceId": {
               "type": "string",
               "minLength": 1,

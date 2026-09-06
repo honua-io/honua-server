@@ -5,7 +5,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using System.Text.Json;
 using System.Threading.Channels;
-using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -18,12 +17,11 @@ namespace Honua.Protocols.SensorThings.Streaming;
 /// (<c>FeatureStreamSessionManager</c>): each connected client (SSE or WebSocket) gets
 /// a bounded channel, a heartbeat keeps idle connections alive, slow consumers whose
 /// buffer fills are dropped, and — when Redis is present — newly-ingested observations
-/// are fanned out across nodes via pub/sub. It also implements
-/// <see cref="IObservationChangeEventPublisher"/> so the Phase 2 ingest path pushes
-/// straight into the live fan-out. Observations are scoped per Datastream so a client
-/// can tail a single sensor feed.
+/// are fanned out across nodes via pub/sub. The request-scoped publisher captures the
+/// resolved tenant and schema before calling this singleton. Observations are scoped
+/// to that boundary and optionally a Datastream so a client can tail a single feed.
 /// </summary>
-internal sealed class ObservationStreamSessionManager : IObservationChangeEventPublisher, IDisposable
+internal sealed class ObservationStreamSessionManager : IDisposable
 {
     /// <summary>
     /// The <see cref="Meter"/> name emitted for OpenTelemetry. Must be registered in the
@@ -33,7 +31,9 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
     internal const string MeterName = "Honua.SensorThings";
 
     private static readonly RedisChannel BroadcastChannel =
-        new("sta:observation:stream:broadcast", RedisChannel.PatternMode.Literal);
+        // Isolate the scoped protocol from older nodes that broadcast every frame to
+        // every tenant. They must never receive scoped messages during rolling upgrades.
+        new("sta:observation:stream:v2:broadcast", RedisChannel.PatternMode.Literal);
 
     private readonly ConcurrentDictionary<Guid, SessionEntry> _sessions = new();
     private readonly ILogger<ObservationStreamSessionManager> _logger;
@@ -98,8 +98,9 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
     /// Attempts to register a new session filtered to <paramref name="datastreamId"/>
     /// (null = all datastreams). Returns null when the concurrent-session cap is reached.
     /// </summary>
-    public ObservationStreamSession? TryCreateSession(string transport, long? datastreamId)
+    public ObservationStreamSession? TryCreateSession(string transport, long? datastreamId, ObservationStreamScope scope)
     {
+        ArgumentNullException.ThrowIfNull(scope);
         if (!TryReserveSlot())
         {
             return null;
@@ -113,7 +114,7 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
             SingleWriter = false
         });
         var cts = new CancellationTokenSource();
-        var entry = new SessionEntry(channel, cts, datastreamId, transport);
+        var entry = new SessionEntry(channel, cts, datastreamId, transport, scope);
         if (!_sessions.TryAdd(id, entry))
         {
             Interlocked.Decrement(ref _activeSessionCount);
@@ -153,8 +154,8 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
         }
     }
 
-    /// <inheritdoc />
-    public void PublishObservations(IReadOnlyList<SensorThingsObservation> observations)
+    /// <summary>Publishes committed observations only within their captured request scope.</summary>
+    public void PublishObservations(IReadOnlyList<SensorThingsObservation> observations, ObservationStreamScope scope)
     {
         if (observations is null || observations.Count == 0)
         {
@@ -166,21 +167,21 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
         // collected, so this is a side-effecting loop, not a projection.
         foreach (var frame in (observations).Select(observation => ObservationStreamFrame.FromObservation(observation)))
         {
-            BroadcastLocally(frame);
+            BroadcastLocally(frame, scope);
 
             if (_clusterEnabled && _subscriber is not null)
             {
-                TryPublishCluster(frame);
+                TryPublishCluster(frame, scope);
             }
         }
     }
 
-    private void TryPublishCluster(ObservationStreamFrame frame)
+    private void TryPublishCluster(ObservationStreamFrame frame, ObservationStreamScope scope)
     {
         try
         {
             var payload = JsonSerializer.Serialize(
-                new ClusterBroadcastDto(_instanceId, frame),
+                new ClusterBroadcastDto(_instanceId, frame, scope),
                 ObservationStreamJsonContext.Default.ClusterBroadcastDto);
             _subscriber!.Publish(BroadcastChannel, payload, CommandFlags.FireAndForget);
         }
@@ -203,12 +204,13 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
         {
             var message = JsonSerializer.Deserialize(
                 value.ToString(), ObservationStreamJsonContext.Default.ClusterBroadcastDto);
-            if (message is null || string.Equals(message.OriginInstanceId, _instanceId, StringComparison.Ordinal))
+            if (message?.Scope is null || message.Frame is null ||
+                string.Equals(message.OriginInstanceId, _instanceId, StringComparison.Ordinal))
             {
                 return;
             }
 
-            BroadcastLocally(message.Frame);
+            BroadcastLocally(message.Frame, message.Scope);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -218,11 +220,11 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
         }
     }
 
-    private void BroadcastLocally(ObservationStreamFrame frame)
+    private void BroadcastLocally(ObservationStreamFrame frame, ObservationStreamScope scope)
     {
         foreach (var (id, entry) in _sessions)
         {
-            if (entry.Cts.IsCancellationRequested)
+            if (entry.Cts.IsCancellationRequested || entry.Scope != scope)
             {
                 continue;
             }
@@ -287,18 +289,21 @@ internal sealed class ObservationStreamSessionManager : IObservationChangeEventP
             Channel<ObservationStreamFrame> channel,
             CancellationTokenSource cts,
             long? datastreamId,
-            string transport)
+            string transport,
+            ObservationStreamScope scope)
         {
             Channel = channel;
             Cts = cts;
             DatastreamId = datastreamId;
             Transport = transport;
+            Scope = scope;
         }
 
         public Channel<ObservationStreamFrame> Channel { get; }
         public CancellationTokenSource Cts { get; }
         public long? DatastreamId { get; }
         public string Transport { get; }
+        public ObservationStreamScope Scope { get; }
     }
 }
 

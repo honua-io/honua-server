@@ -32,6 +32,8 @@ Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages,
 | POST | `/ogc/features/collections/{collectionId}/clusters`, `/spatial-join`, `/buffer-aggregate`, `/density` | Spatial analytics extensions (Pro tier; 402 when entitlement inactive). |
 | GET | `/ogc/features/schemas/honua-ogcapi-features.xsd` | GML application schema. |
 
+On managed PostgreSQL layers, concurrent PATCH requests may return `409 Conflict`, preserving the competing edit. Read the current feature and retry the partial update. Requests whose `If-Match` precondition fails return `412 Precondition Failed`. Fields hidden by field-level security are preserved when omitted from the PATCH. Conditional PUT requests can also return `409` if their read snapshot changes while `If-Match` still matches; a conditional header does not change which fields the replacement stores. Conditions are evaluated against the row snapshot captured under the lock that rejected the edit.
+
 ### Items query parameters
 
 | Parameter | Notes |
@@ -65,6 +67,8 @@ unadvertised until the exact-candidate lane proves them. Full operator tables:
 
 Key parameters: `bbox`, `bbox-crs`, `crs`, `width`/`height` (1–4096, default 256), `f` (`png`, `jpeg`, `tiff`), `transparent` (default true), `bgcolor` (`0xRRGGBB`), `datetime`, `quality`.
 
+Map rendering and map tileset metadata observe the end-to-end `Limits__Connections__RequestTimeout` budget. An expired budget cancels metadata lookup and rendering through the shared request token and returns the existing HTTP 408 timeout response. Client disconnects also propagate cancellation.
+
 > Open `https://server.example.com/ogc/maps/collections/roads/map?bbox=-122.5,37.7,-122.3,37.9&width=800&height=600&f=png` in a browser.
 
 ## OGC API Tiles
@@ -83,6 +87,8 @@ Custom tile matrix sets are merged in from the `TileMatrixSets` configuration se
 > Open `https://server.example.com/ogc/tiles/collections/roads/tiles/WebMercatorQuad/12/1586/2412` in a browser.
 
 ## OGC API Coverages
+
+OGC API Coverages is **Preview in 2026.1** and retains its existing default route availability. It has no GA support commitment. Security, tenant isolation, and truthful lifecycle reporting remain required.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -105,36 +111,24 @@ Key coverage parameters: `f` (`geotiff`/`tiff`/`png` and MIME forms), `bbox`, `b
 | GET | `/ogc/processes/jobs`, `.../jobs/{jobId}`, `.../jobs/{jobId}/results` | Job list (active only, `limit`), status, results. |
 | DELETE | `/ogc/processes/jobs/{jobId}` | Dismiss (cancel) a job. |
 
-The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omit `Prefer` for bounded synchronous execution when a process advertises `sync-execute`; send `Prefer: respond-async` for a durable asynchronous job. Async-only processes remain asynchronous when the header is omitted. All current execution modes and job endpoints require Redis-backed durable storage (503 otherwise).
+The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omit `Prefer` for bounded synchronous execution when a process advertises `sync-execute`; send `Prefer: respond-async` for a durable asynchronous job. Async-only processes remain asynchronous when the header is omitted. Catalog inputs accept bare values, qualified values such as `{ "value": 100 }`, and `href` references (public HTTPS URLs or bounded data URIs). Layer, raster and enrichment-dataset references are resolved as bounded identifier lookups (at most 4 KiB each) after process authorization. Resource authorization precedes other HTTPS input downloads; authorized resource bindings are retained through submission. When a reference and its HTTP response omit a media type, the catalog parameter type supplies the interpretation; specify a media type for binary inputs. Catalog outputs advertise value transmission: document responses inline each output (with media-type and base64 qualifiers where needed), while `response: "raw"` returns the native representation from either a synchronous execution or the asynchronous job results endpoint. The canonical `honua-geoprocessing` plan runner requires document mode and retains its artifact document. All current execution modes and job endpoints require Redis-backed durable storage (503 otherwise).
 
-In the [API explorer](../openapi-and-explorer.md), run `POST /ogc/processes/processes/honua-geoprocessing/execution` with `Prefer: respond-async` and this body:
+In the [API explorer](../openapi-and-explorer.md), run `POST /ogc/processes/processes/geometry.buffer/execution` with `Prefer: respond-async` and this body:
 
 ```json
 {
   "inputs": {
-    "plan": {
-      "planId": "buffer-demo",
-      "steps": [
-        {
-          "kind": "geoprocess",
-          "processId": "geometry.buffer",
-          "inputs": {
-            "wkb": "<base64-encoded-point-or-polygon-wkb>",
-            "srid": 4326,
-            "distance": 100
-          }
-        }
-      ]
-    }
+    "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "srid": 4326,
+    "distance": 100
   },
   "response": "document"
 }
 ```
 
-The direct `honua-geoprocessing` endpoint accepts one executable catalog step;
-the `geometry.buffer` example therefore supplies the catalog's required `wkb`
-and `srid` inputs. Multi-step DAG plans are submitted through the durable plan
-runner when that surface is enabled, not through this direct execution path.
+The example supplies a complete little-endian WKB point at `(0, 0)` and the
+catalog process's required `srid` and `distance` inputs, so it can be submitted
+verbatim. Replace the WKB value and distance for a useful buffer operation.
 
 ## OGC API Records
 
@@ -150,7 +144,8 @@ Read-only catalog discovery over published services and layers (record ids `laye
 
 ## OGC API - Environmental Data Retrieval (EDR) — Preview
 
-The `/edr` surface is Preview in release 2026.1. Functional CRS, temporal
+The `/edr` surface is Preview in release 2026.1 and requires
+`Capabilities:Experimental:serve.ogc-api-edr:Enabled=true`. Functional CRS, temporal
 selection, output-format, and MULTIPOINT coordinate corrections are deferred to
 release 2026.2.
 

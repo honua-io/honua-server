@@ -31,7 +31,7 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
     /// <c>honua_publish_result</c>.
     /// </summary>
     private static readonly HashSet<string> ExcludedOperationIds =
-        new(StringComparer.Ordinal) { PublishServiceTool.PublishOperationId };
+        new(StringComparer.Ordinal) { PublishServiceTool.PublishOperationId, "style.apply-preset" };
 
     private static readonly IReadOnlyList<IMcpTool> Empty = [];
 

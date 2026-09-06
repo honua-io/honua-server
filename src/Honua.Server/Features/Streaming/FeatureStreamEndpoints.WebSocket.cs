@@ -37,6 +37,8 @@ internal static partial class FeatureStreamEndpoints
         var options = deps.Options.Value;
         var cursorParam = context.Request.Query["cursor"].ToString();
         long? cursor = long.TryParse(cursorParam, CultureInfo.InvariantCulture, out var c) ? c : null;
+        var initialLiveCursor = cursor.HasValue ? 0
+            : await eventStore.GetCurrentCursorAsync(context.RequestAborted).ConfigureAwait(false);
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
 
         // The default subscription is allocated at session creation and is never replaced
@@ -220,7 +222,7 @@ internal static partial class FeatureStreamEndpoints
         }
         else
         {
-            replayCursor = await eventStore.GetCurrentCursorAsync(linkedCts.Token).ConfigureAwait(false);
+            replayCursor = initialLiveCursor;
         }
 
         // Activate drain with buffer-sized grace for replay sessions so concurrent
@@ -1360,6 +1362,8 @@ internal static partial class FeatureStreamEndpoints
             temporalFilter = parsedTemporalFilter;
         }
 
+        var subscriberSecurity = await ResolveSubscriberSecurityAsync(
+            context, snapshot, service, layerIds, cancellationToken).ConfigureAwait(false);
         return (new StreamSubscriptionFilter(
             serviceId: serviceId,
             serviceIdIsExact: serviceIdIsExact,
@@ -1369,7 +1373,8 @@ internal static partial class FeatureStreamEndpoints
             bbox: bbox,
             attributeFilter: attributeFilter,
             temporalFilter: temporalFilter,
-            routabilityGuard: deps.RoutabilityGuard), null);
+            routabilityGuard: deps.RoutabilityGuard,
+            subscriberSecurity: subscriberSecurity), null);
     }
 
     private static int[]? ResolveControlLayerIds(FeatureStreamControlMessage control)

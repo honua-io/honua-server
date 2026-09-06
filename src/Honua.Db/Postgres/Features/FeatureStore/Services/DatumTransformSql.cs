@@ -10,7 +10,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 /// <c>ST_Transform</c> generation keeps datum-pipeline selection consistent across
 /// the ~20 SQL call sites in the feature-query builders and prevents drift between
 /// the bare 2-argument form (PROJ picks its own pipeline) and the explicit
-/// 3-argument form that honors an Esri-parity datum transformation.
+/// <c>ST_TransformPipeline</c> form that honors an explicit datum transformation.
 /// </summary>
 internal static class DatumTransformSql
 {
@@ -22,7 +22,7 @@ internal static class DatumTransformSql
     /// <param name="toSrid">Target SRID.</param>
     /// <param name="selection">
     /// Optional resolved datum transformation. When present and it carries a PROJ
-    /// pipeline, the explicit 3-argument <c>ST_Transform(geom, '&lt;pipeline&gt;', toSrid)</c>
+    /// pipeline, the explicit <c>ST_TransformPipeline(geom, '&lt;pipeline&gt;', toSrid)</c>
     /// form is emitted so PostGIS uses the selected (Esri-parity) pipeline. Otherwise
     /// the 2-argument form is emitted and PROJ chooses its default pipeline.
     /// </param>
@@ -31,6 +31,14 @@ internal static class DatumTransformSql
     {
         if (selection?.ProjPipeline is { Length: > 0 } pipeline)
         {
+            // ST_Transform's text argument is a source CRS, not an operation.
+            // A catalog null transformation preserves every ordinate in either
+            // direction; only the destination SRID changes.
+            if (pipeline.Trim().Equals("+proj=noop", StringComparison.Ordinal))
+            {
+                return $"ST_SetSRID({operand}, {toSrid})";
+            }
+
             // A PROJ pipeline is direction-sensitive (a +proj=hgridshift NADCON/NTv2 step
             // shifts the opposite way from its inverse). The catalog stores the forward
             // pipeline verbatim for reverse selections and only flips TransformForward, so the
@@ -39,7 +47,7 @@ internal static class DatumTransformSql
             // twice the intended correction in the wrong direction (#2069). Mirrors the
             // import-path guard, but applies the inverse rather than dropping the pipeline.
             var orientedPipeline = ProjPipelineInverter.Orient(pipeline, selection.TransformForward);
-            return $"ST_Transform({operand}, {QuoteLiteral(orientedPipeline)}, {toSrid})";
+            return $"ST_TransformPipeline({operand}, {QuoteLiteral(orientedPipeline)}, {toSrid})";
         }
 
         return $"ST_Transform({operand}, {toSrid})";

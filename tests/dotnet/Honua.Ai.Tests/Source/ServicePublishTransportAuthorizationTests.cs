@@ -323,6 +323,8 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
         {
             new(JwtRegisteredClaimNames.Sub, $"publish-principal-{Guid.NewGuid():N}"),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            // Reach publish authorization with a tenant-bound authenticated principal.
+            new("tid", "publish-authorization-tenant"),
         };
         if (scope is not null)
         {

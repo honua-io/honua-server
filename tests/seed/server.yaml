@@ -1266,7 +1266,7 @@ sql:
           dedupe_key TEXT NOT NULL,
           -- rule_id is nullable and `source` discriminates rule-driven (gis) vs
           -- operations-notification (ops) events, mirroring 075_AddAlertOpsSource.sql
-          -- (#2427 alerts GA) so this migration-skipping integration fixture matches
+          -- (#2427 alert pipeline; Preview in 2026.1) so this migration-skipping integration fixture matches
           -- the canonical alert_events shape the alert stores write to.
           rule_id BIGINT REFERENCES honua.alert_rules(rule_id) ON DELETE CASCADE,
           zone_id BIGINT NULL REFERENCES honua.alert_zones(zone_id) ON DELETE SET NULL,
@@ -1634,6 +1634,7 @@ sql:
           replica_id TEXT PRIMARY KEY,
           replica_name TEXT NOT NULL,
           service_id TEXT NOT NULL,
+          owner_id TEXT NULL,
           sync_model TEXT NOT NULL DEFAULT 'perReplica',
           layer_ids INT[] NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1643,6 +1644,7 @@ sql:
           CONSTRAINT replicas_valid_service CHECK(LENGTH(service_id) > 0),
           CONSTRAINT replicas_valid_sync_model CHECK(sync_model IN ('none', 'perLayer', 'perReplica'))
       );
+  - "ALTER TABLE honua.replicas ADD COLUMN IF NOT EXISTS owner_id TEXT NULL;"
   - "ALTER TABLE honua.replicas ADD COLUMN IF NOT EXISTS upload_base_generation BIGINT NOT NULL DEFAULT 0;"
   - |
       CREATE TABLE IF NOT EXISTS honua.feature_changes (
@@ -1661,6 +1663,8 @@ sql:
           CONSTRAINT feature_changes_valid_operation CHECK(operation IN (1, 2, 3))
       );
   - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS public_objectid BIGINT;"
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS origin_replica_id TEXT;"
+  - "ALTER TABLE honua.feature_changes ALTER COLUMN origin_replica_id SET DEFAULT NULLIF(current_setting('honua.origin_replica_id', true), '');"
   - |
       ALTER TABLE IF EXISTS honua.feature_changes
           ADD COLUMN IF NOT EXISTS event_id TEXT,

@@ -51,6 +51,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "serve.sensorthings",
         "serve.geoservices-imageserver",
         "serve.wmts",
+        "serve.ogc-api-coverages",
         "alerts.geofence",
         "jobs.runner",
         "ai.spec-apply",
@@ -80,6 +81,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
     [Theory]
     [InlineData("serve.geoservices-imageserver")]
     [InlineData("serve.wmts")]
+    [InlineData("serve.ogc-api-coverages")]
     public void Registry_LifecycleOnlyPreviews_RemainEnabledWithoutOptIn(string id)
     {
         var descriptor = Registry.Find(id)!;
@@ -116,7 +118,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         // sync.offline is Preview in 2026.1 and remains in the manifest projection when the
         // deployment-wide Preview gate is enabled.
         // realtime.feature-streams promoted to Implemented (GA) in #2428 — no longer omitted.
-        // alerts.geofence promoted in #2427 — not omitted.
+        // alerts.geofence is Preview in 2026.1 and is projected through PreviewCapabilityIds.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
         // security.mtls was promoted to Implemented (GA) in #2431, then DEMOTED back to
@@ -134,6 +136,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "serve.sensorthings",
         "serve.geoservices-imageserver",
         "serve.wmts",
+        "serve.ogc-api-coverages",
     ];
 
     [Fact]

@@ -16,7 +16,7 @@ namespace Honua.Protocols.GeoServices;
 /// <summary>
 /// Shared helpers for GeoServices geometry conversions.
 /// </summary>
-internal static class GeoServicesGeometryConverter
+internal static partial class GeoServicesGeometryConverter
 {
     private readonly record struct FastPointGeometry(
         double X,
@@ -158,9 +158,9 @@ internal static class GeoServicesGeometryConverter
         // rest of the pipeline only ever deals with linear geometry. NTS/WKB cannot represent a true
         // curve, so densification is the storage representation (#1877 Part A; storage-linearization
         // limitation documented on CurveGeometryConverter).
-        if (CurveGeometryConverter.HasTrueCurves(geometry))
+        if (HasTrueCurves(geometry))
         {
-            geometry = CurveGeometryConverter.Densify(geometry);
+            geometry = DensifyCurves(geometry);
         }
 
         if (IsEmptyGeometry(geometry))

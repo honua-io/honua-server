@@ -5,9 +5,11 @@ using System;
 using System.Threading.Tasks;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.MultiTenancy;
 
@@ -32,12 +34,15 @@ internal sealed class TenantSchemaRoutingMiddleware(
     RequestDelegate next,
     ITenantSchemaResolver schemaResolver,
     ITenantUsageMeter usageMeter,
-    ILogger<TenantSchemaRoutingMiddleware> logger)
+    ILogger<TenantSchemaRoutingMiddleware> logger,
+    IOptions<TenantSchemaOptions> options)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
     private readonly ITenantSchemaResolver _schemaResolver = schemaResolver ?? throw new ArgumentNullException(nameof(schemaResolver));
     private readonly ITenantUsageMeter _usageMeter = usageMeter ?? throw new ArgumentNullException(nameof(usageMeter));
     private readonly ILogger<TenantSchemaRoutingMiddleware> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+    private readonly TenantSchemaOptions _options = options.Value;
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -58,10 +63,19 @@ internal sealed class TenantSchemaRoutingMiddleware(
         // (e.g. by the test schema header) or the tenant is excluded from routing.
         var schemaContext = context.RequestServices.GetService<SchemaContext>();
         var routed = false;
-        if (schemaContext is not null
-            && string.IsNullOrWhiteSpace(schemaContext.CurrentSchema)
-            && _schemaResolver.TryResolveSchema(tenantId, out var schemaName))
+        if (!_options.UnroutedTenantIds.Contains(tenantId, StringComparer.Ordinal)
+            && string.IsNullOrWhiteSpace(schemaContext?.CurrentSchema))
         {
+            if (schemaContext is null || !_schemaResolver.TryResolveSchema(tenantId, out var schemaName))
+            {
+                await StandardErrorResponseFormatter.WriteErrorAsync(context, new StandardErrorResponse(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "Tenant schema routing unavailable",
+                    "Configure a unique tenant schema mapping or complete the documented schema migration."))
+                    .ConfigureAwait(false);
+                return;
+            }
+
             schemaContext.CurrentSchema = schemaName;
             routed = true;
             TenantSchemaRoutingLog.Routed(_logger, tenantId, schemaName, context.Request.Path.Value);

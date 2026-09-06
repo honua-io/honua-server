@@ -37,7 +37,7 @@ internal static class LicensingRegistration
         // Licensing:LicenseContentSecretRef. The AWSSDK / Azure SDK surfaces stay confined to
         // Honua.Aws / Honua.Azure (cloud-SDK isolation contract); the cloud-neutral pipeline
         // consumes only the ILicenseContentSecretResolver abstraction, iterates every registered
-        // resolver, dispatches by reference prefix, and falls back to Community when none matches.
+        // resolver and dispatches by reference prefix. Paid startup refuses when no valid source resolves.
 #if !HONUA_EXCLUDE_AWS
         Honua.Cloud.Aws.Features.Licensing.AwsLicenseSecretResolverServiceCollectionExtensions
             .AddAwsLicenseSecretResolver(services, configuration);
@@ -48,6 +48,8 @@ internal static class LicensingRegistration
 #endif
 
         services.AddSingleton<FileBackedLicenseService>();
+        services.AddSingleton<ILicenseOperationPolicy>(sp =>
+            sp.GetRequiredService<FileBackedLicenseService>());
         services.AddSingleton<ILicenseEntitlementService>(sp =>
             sp.GetRequiredService<FileBackedLicenseService>());
         services.AddSingleton<ILicenseStatusProvider>(sp =>

@@ -4,15 +4,20 @@ Honua's day-2 operating model is one loop shared by humans, Console, and MCP
 agents: observe, diagnose, remediate, learn, and graduate. The server stays the
 source of truth for health, findings, proposals, approvals, and execution. Tools
 may explain or propose, but the control plane applies only deterministic,
-authorized operations. Start with the execution-verified [Operate
+authorized operations. Start with the pre-cut [Operate
 scenario](scenario.md), then use the [metric inventory](metrics.md) and [evidence
 posture contract](evidence-posture.md) to decide whether a successful read is
 actually actionable.
 
-This guide describes the shipped surfaces; the scenario pins its exact candidate
-and marks its unexecutable proposal/approval/actuation stages with #3411, #3430,
-#3431, and #3475. The remaining limits are called out explicitly so “runs
-itself” never means “may mutate anything unattended.”
+This guide describes source contracts, separate from the remaining exact-candidate
+execution receipt. The infrastructure control plane provisions the placement;
+the server control plane configures resources and owns governed operations.
+The terminal client is the model seat, with a separate human approval principal.
+
+> **Customer alerting is Preview in 2026.1.** Alert zones, rules, evaluation,
+> delivery channels, and their Console Operate views require an explicit
+> `alerts.geofence` capability opt-in. The qualification lanes and operational
+> evidence described here prove the implementation; they are not a GA claim.
 
 ## The loop
 
@@ -48,13 +53,14 @@ proposal authority.
 
 The Console `/operate` seat is the human seat. It reads the same status,
 history, events, alerts, and findings as the REST APIs, and it is where an
-operator reviews approval proposals. It should be the only place a human has to
-decide whether a proposed mutating action runs.
+operator reviews approval proposals. An independently authenticated Admin CLI
+approver can make the same decision; Console is optional and observes the same
+durable proposal and operation IDs.
 
 The MCP seat is the agent seat. It can observe through read-only tools and
 resources, diagnose findings, and propose in-scope control-plane operations. It
 does not get a second approval path. If the gateway returns a `proposalId`, the
-agent waits for the Console approval lane to resolve it.
+agent waits for a separate authorized terminal or Console principal to resolve it.
 
 The useful split is:
 

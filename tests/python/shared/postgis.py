@@ -371,6 +371,9 @@ class PostGISFixture:
                         maplibre_style JSONB,
                         geoservices_drawing_info JSONB,
                         style_version INT DEFAULT 0,
+                        style_revised_at TIMESTAMPTZ,
+                        style_revised_by TEXT,
+                        style_change_summary TEXT,
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """
@@ -395,6 +398,14 @@ class PostGISFixture:
                 conn.execute(
                     "ALTER TABLE IF EXISTS honua.layers "
                     "ADD COLUMN IF NOT EXISTS storage_options JSONB NOT NULL DEFAULT '{}'::jsonb;"
+                )
+                # Style catalog reads include the revision metadata from migration
+                # 022, including when WMS/WMTS resolves a layer's default style.
+                conn.execute(
+                    "ALTER TABLE IF EXISTS honua.layers "
+                    "ADD COLUMN IF NOT EXISTS style_revised_at TIMESTAMPTZ, "
+                    "ADD COLUMN IF NOT EXISTS style_revised_by TEXT, "
+                    "ADD COLUMN IF NOT EXISTS style_change_summary TEXT;"
                 )
 
                 conn.execute(
@@ -1012,6 +1023,20 @@ class PostGISFixture:
 
     def _seed_metadata_v2_snapshot(self, conn: psycopg.Connection) -> None:
         """Seed a Metadata v2 snapshot that mirrors the v1 compatibility catalog."""
+        # The STAC compatibility fixture seeds the metadata snapshot directly rather than
+        # through seed_test_catalog. Keep the schema-floor receipt alongside the physical
+        # metadata-v2 baseline so the migration-skipping Python server can load it.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS public.schema_versions (
+                scriptname TEXT PRIMARY KEY,
+                applied TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            INSERT INTO public.schema_versions (scriptname)
+            VALUES ('Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql')
+            ON CONFLICT (scriptname) DO NOTHING;
+            """
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS honua.metadata_v2_snapshots (

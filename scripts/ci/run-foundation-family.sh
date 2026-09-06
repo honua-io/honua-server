@@ -142,7 +142,10 @@ foundation_build() {
 
   echo "::group::dotnet build (${family}: ${#projects[@]} project(s))"
   local rc=0
-  dotnet build "${slnf}" --no-restore --configuration "${CONFIGURATION}" || rc=$?
+  # The required PR Gate and merge-queue build already run the full solution
+  # with analyzers and warnings-as-errors. Foundation jobs consume that signal
+  # independently, so do not pay to repeat analyzers in this test-only rebuild.
+  dotnet build "${slnf}" --no-restore --configuration "${CONFIGURATION}" -graphBuild /p:RunAnalyzers=false || rc=$?
   echo "::endgroup::"
   rm -f "${slnf}"
   return "${rc}"
@@ -178,7 +181,7 @@ foundation_run() {
     if [[ ",${flags}," == *,advisory,* ]]; then
       local build_rc=0
       echo "::group::dotnet build ${csproj} (advisory)"
-      dotnet build "${csproj}" --no-restore --configuration "${CONFIGURATION}" || build_rc=$?
+      dotnet build "${csproj}" --no-restore --configuration "${CONFIGURATION}" -graphBuild /p:RunAnalyzers=false || build_rc=$?
       echo "::endgroup::"
       if ((build_rc != 0)); then
         echo "::warning::${csproj} failed to BUILD (advisory, non-gating — see #2949); skipping its tests"

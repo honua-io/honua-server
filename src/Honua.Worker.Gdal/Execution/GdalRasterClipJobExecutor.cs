@@ -128,6 +128,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
             var inputPath = sourceInput.ReferencedPath ?? Path.Join(workspace, "input.tif");
             var cutlinePath = Path.Join(workspace, "cutline.geojson");
             var outputPath = Path.Join(workspace, "output.tif");
+            var warpedPath = Path.Join(workspace, "warped.tif");
 
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
@@ -155,10 +156,20 @@ internal sealed partial class GdalRasterClipJobExecutor(
                 "-of", "GTiff",
                 "-cutline", cutlinePath,
                 "-crop_to_cutline",
+                // Keep the cutline validity mask even when the input has no
+                // nodata sentinel (zero may be a legitimate source value).
+                "-dstalpha",
             };
+            var sourceNoData = await GdalNoData.TryReadSourceNoDataAsync(
+                runner, inputPath, workspace, opts.ToolTimeout, cancellationToken, sourceInput.ExpectedETag).ConfigureAwait(false);
+            if (sourceNoData.HasValue)
+            {
+                args.Add("-dstnodata");
+                args.Add(sourceNoData.Value.ToString("R", CultureInfo.InvariantCulture));
+            }
             sourceInput.AddReadPin(args);
             args.Add(inputPath);
-            args.Add(outputPath);
+            args.Add(warpedPath);
 
             await GdalCommandLog.LogCommandAsync(context, "gdalwarp", args, workspace, cancellationToken).ConfigureAwait(false);
 
@@ -183,32 +194,24 @@ internal sealed partial class GdalRasterClipJobExecutor(
                     $"gdalwarp exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
 
-            if (!File.Exists(outputPath))
+            if (!File.Exists(warpedPath))
             {
                 return JobExecutionResult.Failed("gdalwarp reported success but produced no output raster.");
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            await context.ReportProgressAsync(80, "Encoding clipped raster artifact", cancellationToken).ConfigureAwait(false);
-
-            var outputLength = new FileInfo(outputPath).Length;
-            if (outputLength == 0)
+            if (new FileInfo(warpedPath).Length == 0)
             {
                 return JobExecutionResult.Failed("gdalwarp produced an empty output raster.");
             }
 
-            var publishError = await GdalArtifactPublisher.PublishFileAsync(
-                context, opts, logger, job.OperationId, outputPath, GeoTiffContentType,
-                "Clipped raster", cancellationToken).ConfigureAwait(false);
-            if (publishError is not null)
-            {
-                return JobExecutionResult.Failed(publishError);
-            }
-
-            await context.ReportProgressAsync(100, "Clip completed", cancellationToken).ConfigureAwait(false);
-
-            Log.ClipCompleted(logger, job.OperationId, outputLength);
-            return JobExecutionResult.Succeeded();
+            const string MaskScript = "gdal_cutline_mask.py";
+            var scriptPath = Path.Join(workspace, MaskScript);
+            File.Copy(Path.Join(AppContext.BaseDirectory, "Scripts", MaskScript), scriptPath);
+            return await GdalToolExecution.RunAndPublishAsync(
+                runner, context, opts, logger, job.OperationId, "python3", [scriptPath, warpedPath, outputPath],
+                workspace, outputPath, GeoTiffContentType, "Clipped raster",
+                "Encoding clipped raster artifact", "Clip completed", cancellationToken).ConfigureAwait(false);
         }
         finally
         {

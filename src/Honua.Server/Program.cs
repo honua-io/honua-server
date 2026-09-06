@@ -35,6 +35,7 @@ using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Console.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
+using Honua.Infrastructure.Logging;
 using Honua.Io.Export;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Provisioner;
@@ -112,9 +113,16 @@ StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Finalize JSON precedence before any secret becomes a process-lifetime snapshot.
+StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
+// Validate the declared paid deployment before registering or starting any data workers,
+// including deployments without Redis (whose cache probe otherwise skips license bootstrap).
+await StartupConfigurationHelpers.LoadBootstrapLicenseSnapshotAsync(builder.Configuration, builder.Environment);
+// Start the license hosted service before any workload execution or reconciliation service.
+builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
 // Resolve aws:secretsmanager: Redis connection-string references before anything below reads
 // ConnectionStrings:redis — the multiplexer wiring a few lines down runs ahead of
 // WebApplicationBuilder.Build(), so it cannot use the DI-registered IConnectionSecretResolver
@@ -183,8 +191,6 @@ if (loadHostedBlazorStaticWebAssets)
     StartupConfigurationHelpers.LoadHostedBlazorStaticWebAssets(builder);
 }
 
-// Load optional security configuration without overriding environment-specific settings.
-StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 // The AWS serverless module injects these values as aws:secretsmanager: references. Validate the
 // admin credential while preserving its refreshable reference, and snapshot the encryption master
 // key before its direct consumer can mistake the reference text for key material.
@@ -216,6 +222,8 @@ var redisOutputCacheConfigured = ObservabilityServiceCollectionExtensions.Should
     redisCacheEntitled,
     redisConnectionString);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
+RedisDurabilityAttestation? redisDurabilityAttestation = null;
+DurableJobSubstrateCause? redisDurabilityFailure = null;
 
 // honua-release#202: record WHY the durable job substrate is or is not composed, so the typed
 // refusal and the capability manifest can give remediation that actually works. "Redis is
@@ -225,6 +233,8 @@ builder.Services.Configure<DurableJobSubstrateOptions>(options =>
 {
     options.RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString);
     options.RedisEntitled = redisCacheEntitled;
+    options.RedisDurabilityAttestation = redisDurabilityAttestation;
+    options.RedisDurabilityFailure = redisDurabilityFailure;
 });
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
@@ -281,6 +291,7 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
     try
     {
         var redisOptions = ConfigurationOptions.Parse(redisInfrastructureConnectionString, ignoreUnknown: true);
+        redisOptions.AllowAdmin = true;
         redisOptions.AbortOnConnectFail = false;
         redisOptions.ConnectRetry = Math.Max(redisOptions.ConnectRetry, 3);
         redisOptions.ReconnectRetryPolicy ??= new ExponentialRetry(5_000);
@@ -299,6 +310,24 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
             var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
             ProgramLog.RedisStartupConnectionInactive(startupLogger);
         }
+
+        if (connectedRedis.IsConnected)
+        {
+            var durability = await RedisDurabilityAttestor.InspectAsync(connectedRedis);
+            redisDurabilityAttestation = durability.Attestation;
+            redisDurabilityFailure = durability.FailureCause;
+
+            // Redis is still usable for cache and non-job infrastructure, but only an
+            // accepted attestation may unlock the durable job registrations below.
+            if (redisCacheEntitled && durability.Attestation is not null)
+            {
+                builder.Services.TryAddSingleton(durability.Attestation);
+            }
+        }
+        else if (redisCacheEntitled)
+        {
+            redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
+        }
     }
     catch (Exception ex)
     {
@@ -312,6 +341,7 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
         ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
+        redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
     }
 }
 
@@ -325,7 +355,6 @@ builder.Host.UseSerilog((context, services, config) =>
         .MinimumLevel.Information()
         .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Information)
         .MinimumLevel.Override("Microsoft.AspNetCore.Routing", Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
         .Enrich.FromLogContext()
@@ -334,7 +363,8 @@ builder.Host.UseSerilog((context, services, config) =>
         .Enrich.WithThreadId()
         .Enrich.WithSpan()  // OpenTelemetry trace/span IDs
         .Enrich.WithProperty("Application", "Honua")
-        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown");
+        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown")
+        .ConfigureHonuaRequestDiagnostics();
 
     if (benchmarkQuietLogs)
     {
@@ -659,10 +689,6 @@ builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
-// ---- Extracted: licensing + identity-provider HTTP clients (Startup/LicensingRegistration.cs)
-builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
-// ---- End extracted block
-
 // Edition guardrail ladder (#1691): resolves DirectExecute/RequiresApproval/Blocked
 // per (operation class x edition). Fails closed for unknown classes outside dev.
 builder.Services.Configure<Honua.Core.Features.Guardrails.GuardrailLadderOptions>(
@@ -677,6 +703,10 @@ builder.Services.AddSingleton<Honua.Core.Features.Guardrails.Abstractions.IGuard
     Honua.Core.Features.Guardrails.DefaultGuardrailLadder>();
 
 // Register configuration documentation service for self-documenting admin endpoint
+// Admin startup connectivity diagnostics require the shared secret provider even when
+// offline sync and other experimental surfaces are disabled (#4008).
+Honua.Infrastructure.Configuration.ConfigurationServiceExtensions.AddSecretManagement(
+    builder.Services, builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.TryAddScoped<IConsoleJobService, ConsoleJobService>();
@@ -841,6 +871,9 @@ if (replicaProvider != DataProviderNames.DuckDb &&
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IQuerySnapshotStore>(sp =>
+        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresQuerySnapshotStore(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
     // Temporal history store (#1166 slices 2-5): reads the uncollapsed change log with attribution.
     // Overrides the Core no-op fallback registered by AddTemporalHistory. Read-only/non-Postgres
@@ -1339,6 +1372,9 @@ app.UseGlobalExceptionHandling();
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
 
+// Paid deployments stop every data surface at expiry, including cached reads and exports.
+app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();
+
 // A configured deployment profile is a fail-closed HTTP surface allowlist backed by the
 // drift-gated feature catalog. With no profile configured this middleware is inert.
 Honua.Server.Features.Capabilities.DeploymentCapabilityProfileApplicationBuilderExtensions
@@ -1351,15 +1387,19 @@ app.UseInputValidation();
 // required mTLS surfaces can return machine-readable errors instead of TLS handshakes.
 app.UseHonuaClientCertificateAuthentication();
 
-// Add authentication and authorization middleware early to short-circuit unauthorized requests
-app.UseApiKeyAuthentication();
+// Authenticate the default scheme before hydrating additional credential types.
+app.UseAuthentication();
 
 // Bridge ArcGIS-style portal tokens (?token=, form POST token, X-Esri-Authorization,
 // Authorization: Bearer)
 // for requests that the default scheme did not authenticate. Must run after
-// UseAuthentication (inside UseApiKeyAuthentication) and before tenant resolution
+// UseAuthentication and before authorization and tenant resolution
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
+
+// Required-authentication routes must see every validated credential type. Running
+// this before the portal bridge rejects valid SensorThings subscription tokens.
+app.UseAuthorization();
 
 // Canonical governed-lineage headers are accepted only when accompanied by a
 // one-use, process-local attestation issued by an operation loopback executor.
@@ -1394,6 +1434,12 @@ app.UseWhen(
 // before any downstream feature handler reads ITenantContext (#1144).
 app.UseHonuaTenantContext();
 
+// App-level rate limiting (issue #355). Runs after authentication and tenant resolution
+// so schema-routing failures also consume the tenant + authenticated user/API-key bucket
+// (falling back to source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
+// posture is still edge enforcement (ADR-0004).
+app.UseRateLimiting();
+
 // Route the resolved tenant to its PostgreSQL schema and record a usage signal (#346).
 // No-op unless MultiTenancy:SchemaRouting:Enabled=true. Must run after tenant context
 // resolution and before any feature handler that reads the database.
@@ -1403,12 +1449,6 @@ app.UseHonuaTenantSchemaRouting();
 // resolution. A no-op for tenants not present in the catalog, so the default pipeline is
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
-
-// App-level rate limiting (issue #355). Runs after authentication and tenant resolution
-// so buckets partition by tenant + authenticated user/API-key identity (falling back to
-// source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
-// posture is still edge enforcement (ADR-0004).
-app.UseRateLimiting();
 
 // Reject invalid Esri portal tokens only after the shared rate limiter has metered the
 // request, so repeated bad credentials cannot bypass the configured source-IP bucket.

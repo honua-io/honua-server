@@ -6,6 +6,8 @@ using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -28,6 +30,7 @@ internal static class ObservationStreamEndpoints
     public static IEndpointRouteBuilder MapSensorThingsStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/sta/v1.1/ObservationsStream", HandleStream)
+            .AddEndpointFilter<LiveStreamAuthorizationFilter>()
             .WithDisplayName("STA Observation Stream")
             .WithName("StaObservationStream")
             .WithSummary("Stream new Observations in real time (SSE or WebSocket)")
@@ -37,16 +40,34 @@ internal static class ObservationStreamEndpoints
                 "Accept: text/event-stream. WebSocket: send an Upgrade request. " +
                 "Optional query param: datastreamId (tail a single Datastream).")
             .WithTags("SensorThings")
+            .RequireAuthorization()
             .Produces(200, contentType: "text/event-stream")
-            .Produces(400);
+            .Produces(400)
+            .Produces(401)
+            .Produces(403);
 
         return endpoints;
     }
 
     private static async Task<IResult> HandleStream(
         HttpContext context,
-        [FromServices] ObservationStreamSessionManager sessionManager)
+        [FromServices] ObservationStreamSessionManager sessionManager,
+        [FromServices] ObservationStreamScope scope)
     {
+        var tenant = context.RequestServices.GetService<ITenantContext>();
+        if (!context.User.IsInRole("admin") && (string.IsNullOrWhiteSpace(scope.TenantId)
+            || tenant?.Source != TenantContextSource.Claim))
+        {
+            return StandardErrorHelpers.CreateForbidden(context,
+                "Observation subscriptions require a resolved tenant scope.");
+        }
+
+        if (context.Request.Query.ContainsKey("cursor") || context.Request.Headers.ContainsKey("Last-Event-ID"))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Observation subscriptions are live-only and cannot replay a supplied cursor.");
+        }
+
         long? datastreamId = null;
         if (context.Request.Query.TryGetValue("datastreamId", out var raw) &&
             long.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
@@ -67,11 +88,11 @@ internal static class ObservationStreamEndpoints
 
         if (isWebSocket)
         {
-            await HandleWebSocketAsync(context, sessionManager, datastreamId).ConfigureAwait(false);
+            await HandleWebSocketAsync(context, sessionManager, datastreamId, scope).ConfigureAwait(false);
         }
         else
         {
-            await HandleSseAsync(context, sessionManager, datastreamId).ConfigureAwait(false);
+            await HandleSseAsync(context, sessionManager, datastreamId, scope).ConfigureAwait(false);
         }
 
         return Results.Empty;
@@ -80,9 +101,10 @@ internal static class ObservationStreamEndpoints
     private static async Task HandleSseAsync(
         HttpContext context,
         ObservationStreamSessionManager sessionManager,
-        long? datastreamId)
+        long? datastreamId,
+        ObservationStreamScope scope)
     {
-        var session = sessionManager.TryCreateSession("SSE", datastreamId);
+        var session = sessionManager.TryCreateSession("SSE", datastreamId, scope);
         if (session is null)
         {
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
@@ -163,9 +185,10 @@ internal static class ObservationStreamEndpoints
     private static async Task HandleWebSocketAsync(
         HttpContext context,
         ObservationStreamSessionManager sessionManager,
-        long? datastreamId)
+        long? datastreamId,
+        ObservationStreamScope scope)
     {
-        var session = sessionManager.TryCreateSession("WebSocket", datastreamId);
+        var session = sessionManager.TryCreateSession("WebSocket", datastreamId, scope);
         if (session is null)
         {
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;

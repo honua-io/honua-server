@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using System.Net.Sockets;
 using Honua.TestKit.Seeding;
 using Npgsql;
@@ -18,7 +17,6 @@ namespace Honua.TestKit;
 public sealed class PostgresFixture : IAsyncLifetime
 {
     // The state object is process-wide and every mutation is serialized by _sharedLock.
-    private static readonly ConcurrentDictionary<string, int> _schemaCounters = new();
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly PostgresSharedState SharedState = new();
 
@@ -82,6 +80,16 @@ public sealed class PostgresFixture : IAsyncLifetime
                         await using var cmd = conn.CreateCommand();
                         cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
                         await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        // Test hosts skip application migrations. Execute the owning
+                        // production receipt DDL once under the shared initialization
+                        // lock so every protocol fixture gets the durable delta store.
+                        var assembly = typeof(Program).Assembly;
+                        var migration = assembly.GetManifestResourceNames().Single(name =>
+                            name.EndsWith("113_AddDurableQuerySnapshots.sql", StringComparison.Ordinal));
+                        await using var sql = assembly.GetManifestResourceStream(migration)!;
+                        using var reader = new StreamReader(sql);
+                        cmd.CommandText = "CREATE SCHEMA IF NOT EXISTS honua;\n" + await reader.ReadToEndAsync().ConfigureAwait(false);
+                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                     }).ConfigureAwait(false);
 
                     SharedState.SharedInitialized = true;
@@ -137,8 +145,7 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     internal async Task<string> CreateIsolatedSchemaInternalAsync(string testClassName, bool applySeed)
     {
-        var counter = _schemaCounters.AddOrUpdate(testClassName, 1, (_, c) => c + 1);
-        var schemaName = $"test_{SanitizeSchemaName(testClassName)}_{counter}_{Guid.NewGuid():N}".ToLowerInvariant();
+        var schemaName = CreateIsolatedIdentifier(testClassName);
 
         // honua-server#1568 residual (#2028 follow-up): CREATE SCHEMA writes pg_namespace and
         // churns the shared pg_catalog (pg_class/pg_depend) exactly like the already-serialized
@@ -177,8 +184,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// <returns>A connection string scoped to the freshly created database.</returns>
     public async Task<string> CreateIsolatedDatabaseAsync(string testClassName)
     {
-        var counter = _schemaCounters.AddOrUpdate($"db::{testClassName}", 1, (_, c) => c + 1);
-        var databaseName = $"test_{SanitizeSchemaName(testClassName)}_{counter}_{Guid.NewGuid():N}".ToLowerInvariant();
+        var databaseName = CreateIsolatedIdentifier(testClassName);
 
         // CREATE DATABASE cannot run inside a transaction/pooled session that holds other
         // state, so use a dedicated connection on the bootstrap data source.
@@ -588,11 +594,16 @@ public sealed class PostgresFixture : IAsyncLifetime
             """);
     }
 
-    private static string SanitizeSchemaName(string name)
+    private static string CreateIsolatedIdentifier(string testClassName)
     {
-        return new string(name
-            .Where(c => char.IsLetterOrDigit(c) || c == '_')
+        // PostgreSQL identifiers are limited to 63 bytes. Bound only the readable
+        // ASCII prefix so the full random suffix survives without server truncation.
+        // "test_" + 25 characters + "_" + 32 GUID characters = 63 bytes.
+        var prefix = new string(testClassName
+            .Where(c => char.IsAsciiLetterOrDigit(c) || c == '_')
+            .Take(25)
             .ToArray());
+        return $"test_{prefix}_{Guid.NewGuid():N}".ToLowerInvariant();
     }
 
     private static bool IsTransientDropSchemaFailure(Exception ex)
