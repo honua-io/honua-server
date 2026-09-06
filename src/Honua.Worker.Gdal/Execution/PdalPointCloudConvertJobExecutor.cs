@@ -223,11 +223,23 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
             args.Add("reprojection");
             args.Add(string.Create(CultureInfo.InvariantCulture, $"--filters.reprojection.in_srs={NormalizeSrs(sourceSrs)}"));
             args.Add(string.Create(CultureInfo.InvariantCulture, $"--filters.reprojection.out_srs={TargetSrs}"));
+            // Geographic output needs degree precision, not the LAS writer's
+            // centimetre default. Recenter offsets after changing coordinate units;
+            // a forwarded projected offset can overflow geographic scaled integers.
+            args.Add("--writers.las.scale_x=0.0000001");
+            args.Add("--writers.las.scale_y=0.0000001");
+            args.Add("--writers.las.offset_x=auto");
+            args.Add("--writers.las.offset_y=auto");
         }
 
         // Force an uncompressed LAS writer regardless of the output extension so
         // the managed LasPointCloudReader can parse the artifact directly.
         args.Add("--writers.las.compression=false");
+        // Preserve source precision, point format (RGB/GPS time), LAS header and
+        // user metadata. Explicit reprojection scale/offset options above win over
+        // forwarded values; the source elevation scale remains intact.
+        args.Add("--writers.las.forward=all");
+        args.Add("--writers.las.extra_dims=all");
 
         return args;
     }
