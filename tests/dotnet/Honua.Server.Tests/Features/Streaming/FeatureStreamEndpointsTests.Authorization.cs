@@ -99,7 +99,7 @@ public sealed partial class FeatureStreamEndpointsTests
         {
             var changed = await IssueAsync(TimeSpan.FromMinutes(1), tenant);
             using var hidden = await PollAsync(deltaPath, changed.Token);
-            hidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            hidden.StatusCode.Should().Be(HttpStatusCode.NotFound, "tenant-scoped OData metadata lookup conceals foreign publications");
             (await hidden.Content.ReadAsStringAsync(ct)).Should().NotContain("after-renewal").And.NotContain("tenant-b-secret");
         }
     }

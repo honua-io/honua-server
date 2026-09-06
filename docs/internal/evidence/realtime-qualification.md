@@ -82,6 +82,13 @@ with development authentication bypass disabled. These are regression evidence. 
 not replace the exact-candidate image/SDK/issuer receipt described above; until the candidate
 is cut and that receipt is available, candidate qualification remains rejected.
 
+The 2026-09-06 native Windows .NET 10.0.100 SensorThings regression run passed
+all 12 stream cases with zero failures or skips in 5m45s. Release builds used
+warnings-as-errors and `-maxcpucount:4`. The local receipt is
+`proofs-3871-results/sensorthings-auth-4.trx`. It covers real portal-token expiry
+and revocation, bounded typed termination, exact observation values and IDs,
+tenant isolation and replacement subscriptions, plus pre-handshake denials.
+
 Ordering/duplicate depth, HA and proxy routing, Redis failover, broker outage recovery,
 saturation/backpressure, and the 24–72 hour soak are 2026.2 operational-graduation rows. They
 remain valuable evidence but are deliberately not required to ship realtime as Preview in
