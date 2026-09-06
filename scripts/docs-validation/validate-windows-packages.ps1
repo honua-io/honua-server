@@ -34,7 +34,7 @@ try {
     }
     $receipt.image = $Image
     $receipt.freshInstall = $true
-    $receipt.clients = @('honua-admin==0.1.8', 'honua-sdk==0.1.11')
+    $receipt.clients = @('honua-admin==0.1.8', 'honua-sdk==0.1.11', 'mcp==2.1.1')
     . ([scriptblock]::Create($blocks[4].Groups[1].Value))
     $receipt.restartReadback = $true
     dc down
