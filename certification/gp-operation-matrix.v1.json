@@ -38,8 +38,8 @@
   "summary": {
     "total": 98,
     "byStatus": {
-      "proven": 90,
-      "partially-proven": 7,
+      "proven": 91,
+      "partially-proven": 6,
       "unproven": 1
     },
     "byEntryPoint": {
@@ -896,19 +896,20 @@
     },
     {
       "processId": "conversion.rasterize",
-      "status": "partially-proven",
+      "status": "proven",
       "entryPoint": "job",
       "evidence": [
         {
-          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterizeExecutorTests.cs",
-          "test": "Rasterize_BurnValueAndCellSize_ProjectsArguments_AndPublishesGeoTiff",
-          "assertion": "Fake-runner grid/arguments and artifact shape only."
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "Rasterize_AttributeMode_BurnsPerFeatureValuesAtPixelCentres",
+          "assertion": "Production executor over pinned production GDAL burns a committed GeoJSON fixture. Decoded GeoTIFF asserts extent/geotransform/CRS/type, every cell of the attribute and burn-value grids against a hand-applied pixel-centre oracle, background and nodata, and sub-pixel edge discrimination between a sliver that contains a pixel centre and one 0.1 units away that does not."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "Rasterize_CellSizeMode_CentresTheGridOnTheLayerEnvelope",
+          "assertion": "cellSize path pins the half-cell-expanded grid, the burn-value domain and strictly interior/exterior cells."
         }
-      ],
-      "gap": {
-        "issue": "https://github.com/honua-io/honua-server/issues/3938",
-        "missing": "Real inside/outside/boundary burned-pixel oracle."
-      }
+      ]
     },
     {
       "processId": "generalization.simplify-layer",

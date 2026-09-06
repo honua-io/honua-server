@@ -1,0 +1,25 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "dn": 7, "name": "west" },
+      "geometry": { "type": "Polygon", "coordinates": [[[0, 0], [3, 0], [3, 3], [0, 3], [0, 0]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "dn": 3, "name": "east" },
+      "geometry": { "type": "Polygon", "coordinates": [[[3, 0], [5, 0], [5, 2], [3, 2], [3, 0]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "dn": 9, "name": "sliver-below-centre" },
+      "geometry": { "type": "Polygon", "coordinates": [[[0.6, 2.6], [2.4, 2.6], [2.4, 2.9], [0.6, 2.9], [0.6, 2.6]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "dn": 8, "name": "sliver-over-centre" },
+      "geometry": { "type": "Polygon", "coordinates": [[[0.6, 2.4], [2.4, 2.4], [2.4, 2.9], [0.6, 2.9], [0.6, 2.4]]] }
+    }
+  ]
+}
