@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Infrastructure.Licensing;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -17,6 +18,8 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
+[Protocol(ProtocolNames.Infrastructure)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class GdalWorkerLicensingTests
 {
     [IntegrationTest]
