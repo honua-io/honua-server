@@ -149,7 +149,8 @@ internal sealed partial class GdalPolygonizeJobExecutor(
             await context.ReportProgressAsync(40, "Running gdal_polygonize", cancellationToken).ConfigureAwait(false);
 
             return await GdalToolExecution.RunAndPublishAsync(
-                runner, context, opts, logger, job.OperationId,
+                eightConnected ? new ValidPolygonRunner(runner, context, opts.MaxArtifactBytes) : runner,
+                context, opts, logger, job.OperationId,
                 "gdal_polygonize.py", args, workspace, outputPath,
                 GeoJsonContentType, "Polygonized vector",
                 "Encoding polygonized vector artifact", "Polygonize completed",
@@ -158,6 +159,44 @@ internal sealed partial class GdalPolygonizeJobExecutor(
         finally
         {
             GdalScratch.TryCleanup(workspace, logger);
+        }
+    }
+
+    // Eight-connected cells may touch only at a corner. GDAL polygonization
+    // represents that region as a self-touching ring; publish a valid MultiPolygon
+    // with the same region/class instead. Both commands share the caller's timeout
+    // and cancellation fence, and no intermediate artifact is published.
+    private sealed class ValidPolygonRunner(
+        IGdalCommandRunner inner, IJobExecutionContext context, long maxBytes) : IGdalCommandRunner
+    {
+        public async Task<GdalCommandResult> RunAsync(string tool, IReadOnlyList<string> arguments,
+            string workingDirectory, CancellationToken cancellationToken)
+        {
+            var result = await inner.RunAsync(tool, arguments, workingDirectory, cancellationToken).ConfigureAwait(false);
+            var raw = Path.Join(workingDirectory, "output.geojson");
+            if (!result.Succeeded || !File.Exists(raw) || new FileInfo(raw).Length == 0)
+            {
+                return result;
+            }
+            if (new FileInfo(raw).Length > maxBytes)
+            {
+                return new GdalCommandResult { ExitCode = 1, StandardError = "Polygonized output exceeds MaxArtifactBytes." };
+            }
+
+            var valid = Path.Join(workingDirectory, "valid.geojson");
+            string[] args = ["-f", "GeoJSON", "-makevalid", valid, raw];
+            await GdalCommandLog.LogCommandAsync(context, "ogr2ogr", args, workingDirectory, cancellationToken).ConfigureAwait(false);
+            result = await inner.RunAsync("ogr2ogr", args, workingDirectory, cancellationToken).ConfigureAwait(false);
+            if (!result.Succeeded)
+            {
+                return result;
+            }
+            if (!File.Exists(valid) || new FileInfo(valid).Length == 0)
+            {
+                return new GdalCommandResult { ExitCode = 1, StandardError = "Polygon validity conversion produced no output." };
+            }
+            File.Move(valid, raw, overwrite: true);
+            return result;
         }
     }
 

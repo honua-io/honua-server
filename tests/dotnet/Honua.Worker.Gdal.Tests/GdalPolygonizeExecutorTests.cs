@@ -24,9 +24,9 @@ public sealed class GdalPolygonizeExecutorTests
     // gdal_polygonize.py positional layout is "raster out_file layer fieldname", so
     // the output path is NOT the last argument; write to whichever arg names it.
     private static FakeGdalCommandRunner SucceedingGeoJson(byte[] bytes)
-        => new((_, args, _) =>
+        => new((tool, args, _) =>
         {
-            var outputPath = args.First(a => a.EndsWith("output.geojson", StringComparison.Ordinal));
+            var outputPath = args.First(a => a.EndsWith(tool == "ogr2ogr" ? "valid.geojson" : "output.geojson", StringComparison.Ordinal));
             File.WriteAllBytes(outputPath, bytes);
             return new GdalCommandResult { ExitCode = 0 };
         });
@@ -61,12 +61,44 @@ public sealed class GdalPolygonizeExecutorTests
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
             context.Artifacts.Single().Should().StartWith("data:application/geo+json");
 
-            var invocation = runner.Invocations.Single();
+            runner.Invocations.Should().HaveCount(2);
+            var invocation = runner.Invocations[0];
+            runner.Invocations[1].Tool.Should().Be("ogr2ogr");
+            runner.Invocations[1].Arguments.Should().Contain("-makevalid");
             invocation.Tool.Should().Be("gdal_polygonize.py");
             invocation.Arguments.Should().Contain("-8");
             invocation.Arguments.Should().ContainInOrder("-b", "2");
             invocation.Arguments.Should().ContainInOrder("-f", "GeoJSON");
             invocation.Arguments[^1].Should().Be("value");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Polygonize_ValidityConversionFails_DoesNotPublishTheInvalidIntermediate()
+    {
+        var runner = new FakeGdalCommandRunner((tool, args, _) =>
+        {
+            if (tool == "ogr2ogr")
+            {
+                return new GdalCommandResult { ExitCode = 1, StandardError = "validity conversion failed" };
+            }
+            File.WriteAllText(args.First(a => a.EndsWith("output.geojson", StringComparison.Ordinal)), "invalid intermediate");
+            return new GdalCommandResult { ExitCode = 0 };
+        });
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job(GdalPolygonizeJobExecutor.HandledProcessId,
+                ("source", Base64("fake-raster")), ("connectedness", "8"));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+            var result = await executor.ExecuteAsync(job, context, default);
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            context.Artifacts.Should().BeEmpty();
+            runner.Invocations.Should().HaveCount(2);
         }
         finally
         {
