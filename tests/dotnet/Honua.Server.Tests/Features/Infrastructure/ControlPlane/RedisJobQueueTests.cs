@@ -790,6 +790,11 @@ public sealed class RedisJobQueueTests
     private static IDatabase CreateSingleCandidateDatabase(string operationId)
     {
         var database = Substitute.For<IDatabase>();
+
+        // The candidate is visible to the first range scan only. That models the losing
+        // race faithfully: the peer's ZREM already took the member, so the scan that
+        // surfaced it was a stale read and every later scan sees an empty pending set.
+        var scans = 0;
         database.SortedSetRangeByRankAsync(
                 Arg.Any<RedisKey>(),
                 Arg.Any<long>(),
@@ -799,7 +804,8 @@ public sealed class RedisJobQueueTests
             .Returns(callInfo =>
             {
                 var start = (long)callInfo[1];
-                return Task.FromResult(start == 0
+                var first = Interlocked.Increment(ref scans) == 1;
+                return Task.FromResult(first && start == 0
                     ? new[] { (RedisValue)operationId }
                     : Array.Empty<RedisValue>());
             });

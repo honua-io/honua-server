@@ -380,7 +380,7 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
     {
         private readonly ConcurrentQueue<ExecutionJobRecord> _notifications = new();
 
-        public IReadOnlyList<ExecutionJobRecord> Notifications => _notifications.ToArray();
+        public ExecutionJobRecord[] Notifications => _notifications.ToArray();
 
         public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
         {
