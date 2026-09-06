@@ -1260,7 +1260,8 @@ internal sealed partial class FeatureDataAccess
         // path that would skip the outbox writes.
         var outboxActive = TryUseTransactionalOutbox(out _);
 
-        if (transaction == null && features.Length > 1 && !outboxActive)
+        // Replica uploads also require the row transaction so provenance is stamped atomically.
+        if (transaction == null && features.Length > 1 && !outboxActive && ReplicaUploadOriginScope.Current is null)
         {
             return await ExecuteAdaptiveNonTransactionalCreateBatchAsync(
                 features,

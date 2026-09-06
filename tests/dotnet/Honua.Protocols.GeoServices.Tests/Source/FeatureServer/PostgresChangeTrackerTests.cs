@@ -23,6 +23,63 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
 
     [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
+    public async Task ReplicaUpload_BatchWithoutOutbox_StampsEveryRowAndRestoresOrigin()
+    {
+        var schemaContext = _fixture.GetService<Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext>();
+        var previousSchema = schemaContext.CurrentSchema;
+        schemaContext.CurrentSchema = _fixture.CurrentSchema;
+        try
+        {
+            var writer = _fixture.GetService<IFeatureWriter>();
+            var reader = _fixture.GetService<IFeatureReader>();
+            var tracker = _fixture.GetService<IChangeTracker>();
+            var baseline = await tracker.GetCurrentGenerationAsync();
+            Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.Current.Should().BeNull();
+            Feature MakeFeature(string name, double x, double y) => Feature.Create(0,
+                new NetTopologySuite.IO.WKBWriter().Write(new NetTopologySuite.Geometries.Point(x, y) { SRID = 4326 }),
+                System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty.Add("name", name));
+    
+            FeatureEditResult uploaded;
+            using (ReplicaUploadOriginScope.Begin("bulk-replica"))
+            {
+                uploaded = await writer.ApplyEditsAsync(0, new FeatureEditBatch
+                {
+                    Creates = [MakeFeature("bulk-one", 10, 20), MakeFeature("bulk-two", 30, 40)],
+                    RollbackOnFailure = false
+                });
+            }
+            uploaded.CreatedCount.Should().Be(2, string.Join("; ", uploaded.CreateResults.Select(result => result.ErrorMessage)));
+            uploaded.CreatedIds.Should().OnlyHaveUniqueItems();
+            ReplicaUploadOriginScope.Current.Should().BeNull();
+            var foreign = await writer.ApplyEditsAsync(0, new FeatureEditBatch
+            {
+                Creates = [MakeFeature("foreign-after-bulk", 50, 60)], RollbackOnFailure = false
+            });
+            foreign.CreatedCount.Should().Be(1);
+            var ownDelta = await tracker.GetChangesSinceAsync(baseline, [0], null, "bulk-replica");
+            ownDelta.Should().ContainSingle().Which.ObjectId.Should().Be(foreign.CreatedIds.Single());
+            ownDelta.Single().OriginReplicaId.Should().BeNull();
+            var otherDelta = await tracker.GetChangesSinceAsync(baseline, [0], null, "other-replica");
+            otherDelta.Where(change => change.OriginReplicaId == "bulk-replica")
+                .Select(change => change.ObjectId).Should().BeEquivalentTo(uploaded.CreatedIds);
+            for (var index = 0; index < 2; index++)
+            {
+                var stored = await reader.GetAsync(0, uploaded.CreatedIds[index]);
+                stored.Should().NotBeNull();
+                stored!.Value.Attributes["name"].Should().Be(index == 0 ? "bulk-one" : "bulk-two");
+                var geometry = new NetTopologySuite.IO.WKBReader().Read(stored.Value.Geometry!);
+                geometry.Coordinate.X.Should().Be(index == 0 ? 10 : 30);
+                geometry.Coordinate.Y.Should().Be(index == 0 ? 20 : 40);
+            }
+        }
+        finally
+        {
+            schemaContext.CurrentSchema = previousSchema;
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
     public async Task ReplicaOrigins_CollapseForeignHistory_AndRemainVisibleToOtherReplicas()
     {
         const int layerId = 990112;
