@@ -39,7 +39,7 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// </summary>
 [Collection("Redis")]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
+public sealed partial class VectorProcessParityIntegrationTests(RedisFixture redis)
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
 

@@ -89,6 +89,7 @@ internal static class ProcessExecutionCapabilityCatalog
         "surface.viewshed",
         "conversion.polygonize",
         "conversion.rasterize",
+        "conversion.geometry-format",
         "conversion.raster-format",
         "conversion.raster-reproject",
         "pcloud.translate",
@@ -100,8 +101,7 @@ internal static class ProcessExecutionCapabilityCatalog
         "analytics.density",
         "data-management.copy-features",
         "data-management.delete-features",
-        "data-management.calculate-field",
-        "conversion.geometry-format");
+        "data-management.calculate-field");
 
     private static readonly FrozenSet<string> WorkflowOnlyProcessIds = IdSet(
         "source.geojson",
