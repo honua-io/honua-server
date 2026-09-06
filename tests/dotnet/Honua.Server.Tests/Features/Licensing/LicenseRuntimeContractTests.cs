@@ -132,28 +132,61 @@ public sealed class LicenseRuntimeContractTests
             };
             using var service = new FileBackedLicenseService(Options.Create(options), new BouncyCastleEd25519Verifier(),
                 NullLogger<FileBackedLicenseService>.Instance, timeProvider: clock);
-            await service.StartAsync(CancellationToken.None);
-            var originalToken = service.OperationCancellation;
-            clock.Advance(TimeSpan.FromMinutes(2));
-            Assert.True(service.IsBlocked);
-            Assert.True(originalToken.IsCancellationRequested);
-            await File.WriteAllBytesAsync(path, renewed.LicenseData);
-            clock.Advance(TimeSpan.FromMinutes(1));
-            await WaitUntilAsync(() => !service.IsBlocked);
-            Assert.False(service.OperationCancellation.IsCancellationRequested);
-            Assert.True(originalToken.IsCancellationRequested);
-            await service.StopAsync(CancellationToken.None);
+            try
+            {
+                await service.StartAsync(CancellationToken.None);
+                var originalToken = service.OperationCancellation;
+                clock.Advance(TimeSpan.FromMinutes(2));
+                Assert.True(service.IsBlocked);
+                Assert.True(originalToken.IsCancellationRequested);
+                await ReplaceLicenseSourceAsync(path, renewed.LicenseData);
+                clock.Advance(TimeSpan.FromMinutes(1));
+                await WaitUntilAsync(() => !service.IsBlocked);
+                Assert.False(service.OperationCancellation.IsCancellationRequested);
+                Assert.True(originalToken.IsCancellationRequested);
+            }
+            finally
+            {
+                // Dispose cancels polling; StopAsync also waits for any open file read.
+                // Always join it before deleting the fixture, including assertion failures.
+                await service.StopAsync(CancellationToken.None);
+            }
 
             using var restarted = new FileBackedLicenseService(Options.Create(options), new BouncyCastleEd25519Verifier(),
                 NullLogger<FileBackedLicenseService>.Instance, timeProvider: clock);
-            await restarted.StartAsync(CancellationToken.None);
-            Assert.Equal(HonuaEdition.Pro, restarted.GetSnapshot().Edition);
-            Assert.False(restarted.IsBlocked);
-            await restarted.StopAsync(CancellationToken.None);
+            try
+            {
+                await restarted.StartAsync(CancellationToken.None);
+                Assert.Equal(HonuaEdition.Pro, restarted.GetSnapshot().Edition);
+                Assert.False(restarted.IsBlocked);
+            }
+            finally
+            {
+                await restarted.StopAsync(CancellationToken.None);
+            }
         }
         finally
         {
             directory.Delete(recursive: true);
+        }
+    }
+
+    private static async Task ReplaceLicenseSourceAsync(string path, byte[] content)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (true)
+        {
+            try
+            {
+                await File.WriteAllBytesAsync(path, content, timeout.Token);
+                return;
+            }
+            catch (IOException exception) when ((exception.HResult & 0xffff) == 32)
+            {
+                // Advancing the fake clock also starts the periodic reader. On Windows
+                // its short-lived FileShare.Read handle excludes a replacement write.
+                await Task.Delay(10, timeout.Token);
+            }
         }
     }
 
