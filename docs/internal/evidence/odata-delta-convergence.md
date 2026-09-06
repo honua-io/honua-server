@@ -72,3 +72,12 @@ skew, baseline versus delta context, and structured error-code telemetry under
 the production exception-detail redaction policy. The changed OData production
 assembly and test assembly were rebuilt with zero warnings or errors before
 execution; unchanged dependency outputs were reused.
+
+The Linux review-adjudication run also passed all 22 delta cases with zero
+failures or skips on 2026-09-06 (6m48s), recorded in
+`/tmp/pr4441-test-results/delta-focused-fixed.trx`. The first run exposed a
+test-helper portability bug: Unix treated a root-relative request as a file URI
+and returned 404. Preserving that URL and its query string lets the unchanged
+convergence assertions execute through paging and host restart. The full Release
+test-project build and subsequent affected-assembly rebuilds passed with zero
+warnings or errors; Roslyn shared compilation and the lane CPU cap remained enabled.
