@@ -155,7 +155,7 @@
     },
     {
       "name": "Server Features Collaboration and Content",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Collaboration.|FullyQualifiedName~Honua.Server.Tests.Features.FeatureStore.|FullyQualifiedName~Honua.Server.Tests.Features.Mobile.|FullyQualifiedName~Honua.Server.Tests.Features.Export.|FullyQualifiedName~Honua.Server.Tests.Features.Reporting.|FullyQualifiedName~Honua.Server.Tests.Features.SpatialAnalytics.|FullyQualifiedName~Honua.Server.Tests.Features.Studio.|FullyQualifiedName~Honua.Server.Tests.Features.Identity.)",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Collaboration.|FullyQualifiedName~Honua.Server.Tests.Features.FeatureStore.|FullyQualifiedName~Honua.Server.Tests.Features.Mobile.|FullyQualifiedName~Honua.Server.Tests.Features.Export.|FullyQualifiedName~Honua.Server.Tests.Features.Reporting.|FullyQualifiedName~Honua.Server.Tests.Features.SpatialAnalytics.|FullyQualifiedName~Honua.Server.Tests.Features.Studio.|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests|FullyQualifiedName~Honua.Server.Tests.Features.Identity.)",
       "children": [
         "Server Features Analytics Studio Export and Reporting",
         "Server Features Collaboration Mobile and Identity"
@@ -1747,9 +1747,10 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Round-2 offline TRX rebalance (#3770): folds the 5.2m-p90 Studio/Feature Store micro-shard into its same-project content neighbor.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Export.|FullyQualifiedName~Honua.Server.Tests.Features.Reporting.|FullyQualifiedName~Honua.Server.Tests.Features.SpatialAnalytics.)|(FullyQualifiedName~Honua.Server.Tests.Features.Studio.|FullyQualifiedName~Honua.Server.Tests.Features.FeatureStore.)",
+      "_comment": "Round-2 offline TRX rebalance (#3770): folds the 5.2m-p90 Studio/Feature Store micro-shard into its same-project content neighbor. The #4376 dashboard MCP fixture also belongs here: its MCP namespace is compiled into Honua.Server.Tests, not Honua.Ai.Tests.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Export.|FullyQualifiedName~Honua.Server.Tests.Features.Reporting.|FullyQualifiedName~Honua.Server.Tests.Features.SpatialAnalytics.)|(FullyQualifiedName~Honua.Server.Tests.Features.Studio.|FullyQualifiedName~Honua.Server.Tests.Features.FeatureStore.|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests)",
       "paths": [
+        "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/",
         "src/Honua.Core/Features/AnalysisContent/",
         "src/Honua.Core/Features/Authorization/",
         "src/Honua.Core/Features/FeatureStore/",
