@@ -153,32 +153,41 @@ public sealed class StudioMcpToolDelegationTests
         previewResult.IsError.Should().BeFalse();
         previewResult.StructuredContent!.Value.GetProperty("synchronous").GetBoolean().Should().BeTrue();
 
-        // 10. Propose publication — records intent only. No content version was
-        // ever created (no honua_studio_* tool creates one), so the item's
-        // current/published pointers must both still be absent.
-        var proposeTool = new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance);
+        // 10. Save an immutable version through the lifecycle service before
+        // proposing publication. Composition alone must not populate either pointer.
+        var pointersBeforeSave = await store.GetPointersAsync(itemId);
+        pointersBeforeSave.Should().NotBeNull("the item record exists once a draft has been created");
+        pointersBeforeSave!.CurrentVersionId.Should().BeNull();
+        pointersBeforeSave.PublishedVersionId.Should().BeNull();
+
         var currentGeneration = (await lifecycleService.GetDraftAsync(draftId))!.Generation;
+        var version = await lifecycleService.SaveDraftAsVersionAsync(
+            draftId, "ready for review", "test-user", currentGeneration);
+        version.Should().NotBeNull();
+        var draftBeforeProposal = await lifecycleService.GetDraftAsync(draftId);
+
+        // Publication delegates the saved identity to the approval runtime;
+        // it must neither mutate the draft nor publish the saved version.
+        var proposeTool = new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance);
         var proposeResult = await proposeTool.InvokeAsync(
             httpContext,
-            McpTestFactory.ParseJson($$$"""{"draftId":"{{{draftId}}}","generation":{{{currentGeneration}}},"route":"/studio/parcels","visibility":"organization","note":"ready for review"}"""),
+            McpTestFactory.ParseJson($$$"""{"itemId":"{{{itemId}}}","versionId":"{{{version!.VersionId}}}","contentHash":"{{{version.ContentHash}}}","route":"/studio/parcels","visibility":"organization","note":"ready for review"}"""),
             CancellationToken.None);
         proposeResult.IsError.Should().BeFalse();
-        proposeResult.StructuredContent!.Value.GetProperty("recorded").GetBoolean().Should().BeTrue();
+        var proposal = proposeResult.StructuredContent!.Value;
+        proposal.GetProperty("status").GetString().Should().Be("AwaitingApproval");
+        proposal.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
+        proposal.GetProperty("proposalUri").GetString().Should().Be("honua://proposals/proposal-studio-publication");
+        proposal.GetProperty("operation").GetProperty("operationId").GetString()
+            .Should().Be("studio.content.create-publication-request");
 
         var finalDraft = await lifecycleService.GetDraftAsync(draftId);
-        finalDraft!.Envelope.PublicationIntent.Should().NotBeNull();
-        finalDraft.Envelope.PublicationIntent!.Route.Should().Be("/studio/parcels");
-        finalDraft.Envelope.Provenance.Should().Contain(p => p.Rel == "proposes-publication");
+        finalDraft.Should().BeEquivalentTo(draftBeforeProposal);
 
-        // The store creates an item record as a side effect of the very first
-        // CreateDraftAsync (honua_studio_create_draft in step 1) — GetPointersAsync
-        // is therefore non-null from that point on. What must stay true is that
-        // NEITHER pointer was ever populated: no honua_studio_* tool creates an
-        // immutable content version, so both stay unset through every mutation
-        // above, including propose-publication.
         var pointers = await store.GetPointersAsync(itemId);
-        pointers.Should().NotBeNull("the item record exists once a draft has been created");
-        pointers!.CurrentVersionId.Should().BeNull("no honua_studio_* tool ever creates a content version");
+        pointers.Should().NotBeNull();
+        pointers!.CurrentVersionId.Should().Be(version.VersionId,
+            "propose-publication must keep the exact saved version current");
         pointers.PublishedVersionId.Should().BeNull(
             "propose-publication must never create a content version or move the published pointer");
     }
