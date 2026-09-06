@@ -4,6 +4,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Domain;
@@ -34,17 +35,26 @@ namespace Honua.Core.Tests.Raster.ZarrParser;
 public sealed class CuratedZarrCorpusReaderTests
 {
     private const string Bucket = "curated";
-    private const string Root = "sea-surface-temperature.zarr";
+    private const string GroupRoot = "sea-surface-temperature.zarr";
     private const string Variable = "temperature";
+
+    /// <summary>
+    /// The array is addressed directly rather than discovered from the group. The curated cube is
+    /// CF-conventional (<c>Conventions: CF-1.8</c>, <c>_ARRAY_DIMENSIONS</c>) and carries neither
+    /// a Honua-specific <c>variables</c> attribute nor a consolidated <c>.zmetadata</c>, which are
+    /// the only two things <c>ZarrMetadataExtractor.ResolveVariables</c> reads. Pinned by
+    /// <see cref="CuratedGroupRoot_HasNoDiscoverableVariables_SoTheArrayMustBeAddressedDirectly"/>.
+    /// </summary>
+    private const string ArrayRoot = GroupRoot + "/" + Variable;
 
     [UnitTest]
     public async Task CuratedCube_ReadThroughTheServerReader_MatchesTheIndependentlyDecodedCells()
     {
         var (reader, _) = BuildReader();
 
-        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, Bucket, Root);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, Bucket, ArrayRoot);
 
-        var array = metadata.Arrays.Should().ContainSingle(candidate => candidate.Name == Variable).Subject;
+        var array = metadata.Arrays.Should().ContainSingle().Subject;
         array.Shape.Should().Equal([2, 3, 4], "the curated cube is time x latitude x longitude");
         array.DataType.Should().Be("<f4");
         array.DimensionNames.Should().Equal(["time", "latitude", "longitude"]);
@@ -53,11 +63,11 @@ public sealed class CuratedZarrCorpusReaderTests
         var subset = await new ZarrSubsetReader().ReadSubsetAsync(
             reader,
             Bucket,
-            Root,
+            ArrayRoot,
             metadata,
             new ZarrSubsetRequest
             {
-                Variable = Variable,
+                Variable = array.Name,
                 Start = [0, 0, 0],
                 Stop = [2, 3, 4],
             });
@@ -83,16 +93,16 @@ public sealed class CuratedZarrCorpusReaderTests
     {
         var (reader, chunk) = BuildReader();
 
-        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, Bucket, Root);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, Bucket, ArrayRoot);
 
         var subset = await new ZarrSubsetReader().ReadSubsetAsync(
             reader,
             Bucket,
-            Root,
+            ArrayRoot,
             metadata,
             new ZarrSubsetRequest
             {
-                Variable = Variable,
+                Variable = metadata.Arrays[0].Name,
                 Start = [1, 0, 0],
                 Stop = [2, 3, 4],
             });
@@ -122,6 +132,34 @@ public sealed class CuratedZarrCorpusReaderTests
     }
 
     /// <summary>
+    /// Pins why the tests above address the array directly: a CF-conventional Zarr group is not
+    /// enough for the extractor to find its variables (honua-server#4395).
+    /// </summary>
+    /// <remarks>
+    /// <c>ZarrMetadataExtractor.ResolveVariables</c> discovers variables only from a
+    /// <c>variables</c> array in the group's <c>.zattrs</c> or from a consolidated
+    /// <c>.zmetadata</c>. The curated cube — which is what ordinary CF/xarray-written Zarr looks
+    /// like — has neither, so opening it at the group root falls through to the
+    /// "root is itself a single array" path and fails looking for a <c>.zarray</c> that is one
+    /// level down. This test records the current behaviour rather than endorsing it; whether the
+    /// extractor should also enumerate child groups is a product question, and the PR that added
+    /// this test raises it.
+    /// </remarks>
+    [UnitTest]
+    public async Task CuratedGroupRoot_HasNoDiscoverableVariables_SoTheArrayMustBeAddressedDirectly()
+    {
+        var (reader, _) = BuildReader();
+
+        var groupRootFailure = await Assert.ThrowsAsync<InvalidDataException>(
+            () => new ZarrMetadataExtractor().ReadMetadataAsync(reader, Bucket, GroupRoot));
+        groupRootFailure.Message.Should().Contain(".zarray");
+
+        // The same store opened at the array path resolves.
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, Bucket, ArrayRoot);
+        metadata.Arrays.Should().ContainSingle();
+    }
+
+    /// <summary>
     /// Loads the digest-verified corpus objects into a range reader under the keys a Zarr store
     /// uses, so the extractor walks the same layout it would in object storage.
     /// </summary>
@@ -132,11 +170,11 @@ public sealed class CuratedZarrCorpusReaderTests
 
         var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal)
         {
-            [$"{Root}/.zgroup"] = corpus.ReadAllBytes("sst-zarr-group"),
-            [$"{Root}/.zattrs"] = corpus.ReadAllBytes("sst-zarr-group-attributes"),
-            [$"{Root}/{Variable}/.zarray"] = corpus.ReadAllBytes("sst-temperature-array"),
-            [$"{Root}/{Variable}/.zattrs"] = corpus.ReadAllBytes("sst-temperature-attributes"),
-            [$"{Root}/{Variable}/0.0.0"] = chunk,
+            [$"{GroupRoot}/.zgroup"] = corpus.ReadAllBytes("sst-zarr-group"),
+            [$"{GroupRoot}/.zattrs"] = corpus.ReadAllBytes("sst-zarr-group-attributes"),
+            [$"{ArrayRoot}/.zarray"] = corpus.ReadAllBytes("sst-temperature-array"),
+            [$"{ArrayRoot}/.zattrs"] = corpus.ReadAllBytes("sst-temperature-attributes"),
+            [$"{ArrayRoot}/0.0.0"] = chunk,
         };
 
         return (new InMemoryZarrRangeReader(objects), chunk);
