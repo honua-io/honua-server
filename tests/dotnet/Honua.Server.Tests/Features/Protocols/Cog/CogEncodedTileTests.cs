@@ -23,23 +23,28 @@ namespace Honua.Server.Tests.Features.Protocols.Cog;
 public sealed class CogEncodedTileTests
 {
     [Theory]
-    [InlineData("deflate_pred1_uint8", 1, 8, false)]
-    [InlineData("lzw_pred2_uint8", 1, 8, false)]
-    [InlineData("lzw_pred2_rgb_uint8", 3, 8, false)]
-    [InlineData("lzw_pred2_uint16", 1, 16, false)]
-    [InlineData("zstd_pred1_uint8", 1, 8, false)]
-    [InlineData("zstd_pred2_uint16", 1, 16, false)]
-    [InlineData("none_uint8", 1, 8, false)]
-    [InlineData("none_uint8", 1, 8, true)]
+    [InlineData("deflate_pred1_uint8", 1, 8, "area")]
+    [InlineData("lzw_pred2_uint8", 1, 8, "area")]
+    [InlineData("lzw_pred2_rgb_uint8", 3, 8, "area")]
+    [InlineData("lzw_pred2_uint16", 1, 16, "area")]
+    [InlineData("zstd_pred1_uint8", 1, 8, "area")]
+    [InlineData("zstd_pred2_uint16", 1, 16, "area")]
+    [InlineData("none_uint8", 1, 8, "area")]
+    [InlineData("none_uint8", 1, 8, "point")]
+    [InlineData("none_uint8", 1, 8, "matrix")]
     [Operation(Operations.GetTile)]
-    public async Task GetTileAsync_GdalCog_ReturnsPngWithIndependentGdalSamples(string fixture, int bands, int bits, bool pixelIsPoint)
+    public async Task GetTileAsync_GdalCog_ReturnsImagesWithIndependentGdalSamples(string fixture, int bands, int bits, string georeferencing)
     {
         // These are GDAL-generated TIFFs with paired GDAL-decoded bytes, not Honua snapshots.
         var directory = Path.Combine(AppContext.BaseDirectory, "CogFixtures");
         var source = await File.ReadAllBytesAsync(Path.Combine(directory, fixture + ".tif"));
-        if (pixelIsPoint)
+        if (georeferencing == "point")
         {
             SetPointGeoreferencing(source);
+        }
+        if (georeferencing == "matrix")
+        {
+            source = SetMatrixGeoreferencing(source);
         }
         var expected = await File.ReadAllBytesAsync(Path.Combine(directory, fixture + ".bin"));
         var reader = new FixtureReader(source);
@@ -192,6 +197,36 @@ public sealed class CogEncodedTileTests
             offset += 12 + length;
         }
         return chunks;
+    }
+
+    private static byte[] SetMatrixGeoreferencing(byte[] source)
+    {
+        // Keep GDAL's real tile and keys, replacing PixelScale with an equivalent affine matrix.
+        var matrixOffset = (source.Length + 7) & ~7;
+        var result = new byte[matrixOffset + 128];
+        source.CopyTo(result, 0);
+        const double scale = 1222.992452562495;
+        double[] matrix = [scale, 0, 0, -20037508.342789244, 0, -scale, 0, 20037508.342789244,
+            0, 0, 1, 0, 0, 0, 0, 1];
+        for (var i = 0; i < matrix.Length; i++)
+            BinaryPrimitives.WriteDoubleLittleEndian(result.AsSpan(matrixOffset + i * 8), matrix[i]);
+        var ifd = (int)BinaryPrimitives.ReadUInt32LittleEndian(result.AsSpan(4));
+        var count = BinaryPrimitives.ReadUInt16LittleEndian(result.AsSpan(ifd));
+        var entries = new List<byte[]>();
+        for (var i = 0; i < count; i++)
+        {
+            var entry = result.AsSpan(ifd + 2 + i * 12, 12).ToArray();
+            if (BinaryPrimitives.ReadUInt16LittleEndian(entry) == 33550)
+            {
+                BinaryPrimitives.WriteUInt16LittleEndian(entry, 34264);
+                BinaryPrimitives.WriteUInt32LittleEndian(entry.AsSpan(4), 16);
+                BinaryPrimitives.WriteUInt32LittleEndian(entry.AsSpan(8), (uint)matrixOffset);
+            }
+            entries.Add(entry);
+        }
+        var ordered = entries.OrderBy(entry => BinaryPrimitives.ReadUInt16LittleEndian(entry)).ToArray();
+        for (var i = 0; i < ordered.Length; i++) ordered[i].CopyTo(result, ifd + 2 + i * 12);
+        return result;
     }
 
     private static void SetPointGeoreferencing(byte[] source)
