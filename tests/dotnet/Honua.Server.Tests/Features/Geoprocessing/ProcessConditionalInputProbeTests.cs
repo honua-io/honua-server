@@ -113,17 +113,11 @@ public sealed class ProcessConditionalInputProbeTests
     // -----------------------------------------------------------------------
 
     [UnitTest]
-    public void FindAdmissibilityViolations_AdvertisedButNotExecutableProcess_IsNotJobExecutable()
+    public void FindAdmissibilityViolations_BundledKrigingBackend_IsJobExecutable()
     {
-        // raster.interpolate-kriging validates cleanly (points is its only required input) but
-        // no kriging backend is bundled, so its executor fails every job.
         var violations = Probe().FindAdmissibilityViolations("raster.interpolate-kriging", ["points"]);
-
-        violations.Should().ContainSingle();
-        violations[0].Kind.Should().Be(ProcessAdmissibilityViolationKind.NotJobExecutable);
-        violations[0].Message.Should().Contain("raster.interpolate-idw");
+        violations.Should().BeEmpty("the native worker now bundles ordinary kriging");
     }
-
     [UnitTest]
     public void FindAdmissibilityViolations_DeploymentDependentProcess_IsStillAdmissible()
     {

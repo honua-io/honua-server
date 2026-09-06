@@ -925,8 +925,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("points", "Points", "Source points as a base64-encoded GeoJSON FeatureCollection.", ProcessParameterValueType.Text, required: true),
                 Param("zField", "Z Field", "Numeric value attribute; omitted uses the Point Z ordinate.", ProcessParameterValueType.Text),
                 Param("variogram", "Variogram", "Supported model: linear (isotropic, zero nugget).", ProcessParameterValueType.Text),
-                Param("width", "Width", "Output width in pixels; specify with height. Default 64.", ProcessParameterValueType.Integer),
-                Param("height", "Height", "Output height in pixels; specify with width. Default 64.", ProcessParameterValueType.Integer),
+                Param("width", "Width", "Output width in pixels; specify with height. Default 64.", ProcessParameterValueType.WholeNumber),
+                Param("height", "Height", "Output height in pixels; specify with width. Default 64.", ProcessParameterValueType.WholeNumber),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native

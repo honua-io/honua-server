@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <None Update="Fixtures\RasterProof\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\samples\imagery-classifier\server.py" Link="Fixtures\ImageryClassifier\server.py" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\samples\imagery-classifier\model.json" Link="Fixtures\ImageryClassifier\model.json" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Testcontainers" />
