@@ -118,6 +118,7 @@ jobs:
           --worker-redis 127.0.0.1:6379
 
       - name: Certify production worker queue handoff
+        id: worker-handoff
         env:
           HONUA_WORKER_IMAGE: honua-worker-gdal:boundary
         run: >-
@@ -125,6 +126,102 @@ jobs:
           --configuration Release
           --filter FullyQualifiedName~ProductionWorkerContainerHandoffTests
           --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=worker-container-handoff.trx"
+          --results-directory tests/TestResults
+
+      - name: Prove the container handoff cases ran, not skipped
+        # honua-server#4401. ProductionWorkerContainerHandoffTests is a
+        # [RequiredEnvironmentFact("HONUA_WORKER_IMAGE")] with no require-override:
+        # if that env var is ever dropped from the step above, every case skips
+        # cleanly and `dotnet test` still exits 0, so this lane would report green
+        # having executed zero cases. Assert on the TRX counts, not the exit code.
+        # Same idiom as ci.yml's Category=GDAL tripwire.
+        if: ${{ !cancelled() && steps.worker-handoff.conclusion != 'skipped' }}
+        run: |
+          set -euo pipefail
+          trx=tests/TestResults/worker-container-handoff.trx
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for ProductionWorkerContainerHandoffTests"
+            exit 1
+          fi
+          # `|| true` is load-bearing under `set -euo pipefail`: grep exits 1 when
+          # it matches nothing, which is the healthy case for the skipped count.
+          count_outcome() {
+            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
+          }
+          passed=$(count_outcome Passed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Production worker container handoff'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} container handoff case(s) were skipped — HONUA_WORKER_IMAGE was not seen by the test host"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no container handoff case passed — the production-image certification has silently disappeared"
+            exit 1
+          fi
+
+      - name: Prove real PDAL executes in the production worker image
+        # honua-server#4401: PDAL had never been executed by any test — a repo-wide
+        # grep for PdalCliFact / HONUA_REQUIRE_PDAL returned nothing, no workflow
+        # installed it, and the only invocation anywhere was `pdal --version`. So
+        # pcloud.translate's GA claim rested entirely on argument assertions against
+        # a fake runner. HONUA_REQUIRE_PDAL_CLI turns an absent PDAL into a failure
+        # rather than a skip, and the counts tripwire below catches every other way
+        # the coverage could vanish.
+        id: pdal-proof
+        env:
+          HONUA_WORKER_IMAGE: honua-worker-gdal:boundary
+          HONUA_REQUIRE_PDAL_CLI: "true"
+        run: >-
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj
+          --configuration Release
+          --filter "Category=PDAL"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=worker-pdal-proof.trx"
+          --results-directory tests/TestResults
+
+      - name: Prove the PDAL cases ran, not skipped
+        if: ${{ !cancelled() && steps.pdal-proof.conclusion != 'skipped' }}
+        run: |
+          set -euo pipefail
+          trx=tests/TestResults/worker-pdal-proof.trx
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for the Category=PDAL subset"
+            exit 1
+          fi
+          count_outcome() {
+            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
+          }
+          passed=$(count_outcome Passed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Real-PDAL coverage'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} PDAL case(s) were skipped — the only real-PDAL coverage in the repository has disappeared"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no PDAL case passed — pcloud.translate has no executed receipt"
+            exit 1
+          fi
+
+      - name: Upload worker certification results
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: worker-gdal-certification
+          path: tests/TestResults/*.trx
+          if-no-files-found: warn
 
       - name: Create worker vulnerability report
         uses: aquasecurity/trivy-action@v0.36.0
