@@ -181,13 +181,16 @@ Get-Content -LiteralPath .env | ForEach-Object {
 $env:HONUA_BASE_URL = 'http://localhost:' + $values['HONUA_HTTP_PORT']
 $env:HONUA_ADMIN_PASSWORD = $values['HONUA_ADMIN_PASSWORD']
 $env:POSTGRES_PASSWORD = $values['POSTGRES_PASSWORD']
-$deadline = (Get-Date).AddMinutes(3)
-do {
-    $ready = $false
-    try { $ready = (Invoke-WebRequest "$env:HONUA_BASE_URL/healthz/ready" -UseBasicParsing).StatusCode -eq 200 } catch { }
-    if (-not $ready) { Start-Sleep -Seconds 2 }
-} until ($ready -or (Get-Date) -ge $deadline)
-if (-not $ready) { throw 'Readiness failed; use the diagnostics below before proceeding' }
+function Wait-HonuaReady {
+    $deadline = (Get-Date).AddMinutes(3)
+    do {
+        $ready = $false
+        try { $ready = (Invoke-WebRequest "$env:HONUA_BASE_URL/healthz/ready" -UseBasicParsing).StatusCode -eq 200 } catch { }
+        if (-not $ready) { Start-Sleep -Seconds 2 }
+    } until ($ready -or (Get-Date) -ge $deadline)
+    if (-not $ready) { throw 'Readiness failed; use the diagnostics below before proceeding' }
+}
+Wait-HonuaReady
 @'
 import os
 import httpx
@@ -283,12 +286,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Import/publish/query failed; retain diagnostic
 
 ## 4. Restart and recover
 
-Restart only this installation's server, wait for readiness as in step 2, then
+Restart only this installation's server, wait for readiness, then
 read back the same persisted layer without importing or publishing it again:
 
 ```powershell
 dc restart honua
-# Repeat the readiness loop in step 2, then:
+Wait-HonuaReady
 & $Python journey.py --verify-only
 if ($LASTEXITCODE -ne 0) { throw 'Persisted data verification failed' }
 ```

@@ -35,23 +35,11 @@ try {
     $receipt.image = $Image
     $receipt.freshInstall = $true
     $receipt.clients = @('honua-admin==0.1.8', 'honua-sdk==0.1.11')
-    function Wait-DocumentedReadiness {
-        $deadline = (Get-Date).AddMinutes(3)
-        do {
-            $ready = $false
-            try { $ready = (Invoke-WebRequest "$env:HONUA_BASE_URL/healthz/ready" -UseBasicParsing).StatusCode -eq 200 } catch { }
-            if (-not $ready) { Start-Sleep -Seconds 2 }
-        } until ($ready -or (Get-Date) -ge $deadline)
-        if (-not $ready) { throw 'Readiness failed after recovery' }
-    }
-    dc restart honua
-    Wait-DocumentedReadiness
-    & $Python journey.py --verify-only
-    if ($LASTEXITCODE -ne 0) { throw 'Restart readback failed' }
+    . ([scriptblock]::Create($blocks[4].Groups[1].Value))
     $receipt.restartReadback = $true
     dc down
     dc up -d --wait --wait-timeout 180
-    Wait-DocumentedReadiness
+    Wait-HonuaReady
     & $Python journey.py --verify-only
     if ($LASTEXITCODE -ne 0) { throw 'Recreated-container readback failed' }
     $receipt.recreatedContainerReadback = $true
