@@ -191,6 +191,16 @@ internal static class OgcFeatureIdentifierResolver
         return true;
     }
 
+    public static Task<ResolvedFeature?> ResolveAsync(
+        IFeatureReader featureReader,
+        IQueryProcessor queryProcessor,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        string featureId,
+        CancellationToken cancellationToken)
+        => ResolveAsync(featureReader, queryProcessor, snapshot, publication, resource, featureId, false, cancellationToken);
+
     public static async Task<ResolvedFeature?> ResolveAsync(
         IFeatureReader featureReader,
         IQueryProcessor queryProcessor,
@@ -198,6 +208,7 @@ internal static class OgcFeatureIdentifierResolver
         MetadataV2Publication publication,
         MetadataV2Resource resource,
         string featureId,
+        bool requireEditSnapshot,
         CancellationToken cancellationToken)
     {
         var idField = ResolvePublicIdField(resource);
@@ -231,6 +242,10 @@ internal static class OgcFeatureIdentifierResolver
             if (!result.Items.IsDefaultOrEmpty)
             {
                 var feature = result.Items[0];
+                if (!requireEditSnapshot)
+                {
+                    return new ResolvedFeature(feature.Id, feature);
+                }
                 // Query projections may mask fields without carrying the complete
                 // row token needed by edits. Re-read through the token-aware by-ID
                 // path, retaining row security and checking the public ID did not move.

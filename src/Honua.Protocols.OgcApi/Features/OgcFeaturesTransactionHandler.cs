@@ -407,6 +407,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 publication,
                 resource,
                 featureId,
+                requireEditSnapshot: true,
                 cancellationToken).ConfigureAwait(false);
             if (!resolvedFeature.HasValue)
             {
@@ -686,6 +687,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 publication,
                 resource,
                 featureId,
+                requireEditSnapshot: true,
                 cancellationToken).ConfigureAwait(false);
             if (!resolvedFeature.HasValue)
             {

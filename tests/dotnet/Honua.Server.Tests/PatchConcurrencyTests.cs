@@ -180,6 +180,9 @@ public sealed class PatchConcurrencyTests
     [InlineData("batch")]
     [Protocol(TestProtocols.ODataV4, TestProtocols.OgcApiFeatures)]
     [Operation(Operations.Update)]
+    [Endpoint("PATCH /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    [Endpoint("POST /odata/$batch")]
     public Task Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict(string protocol)
         => VerifyConcurrentPatchAsync(protocol != "ogc", true, firstIsBatch: protocol == "batch", ifMatch: "*");
 
@@ -196,7 +199,7 @@ public sealed class PatchConcurrencyTests
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "original name");
-            var body = $$"""{"requests":[{"id":"first","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{id}})","body":{"name":"changed name"}},{"id":"second","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{id}})","body":{"population":45678}}]}""";
+            var body = $$$"""{"requests":[{"id":"first","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{"name":"changed name"}},{"id":"second","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{{id}}})","body":{"population":45678}}]}""";
             using var response = await fixture.Client.PostAsync("/odata/$batch", new StringContent(body, Encoding.UTF8, "application/json"));
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var responses = document.RootElement.GetProperty("responses");
