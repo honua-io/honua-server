@@ -96,6 +96,36 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 });
             });
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_FileExportDirections_AdvertisesOnlyThreeImplementedWriters(bool fromRegistry)
+    {
+        await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry);
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var writers = document.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(capability => capability.GetProperty("category").GetString() == "format-write").ToArray();
+        writers.Should().HaveCount(13);
+        writers.Where(capability => capability.GetProperty("supported").GetBoolean())
+            .Select(capability => capability.GetProperty("id").GetString()).Should().BeEquivalentTo(
+                "format.write.csv", "format.write.shapefile", "format.write.geopackage");
+        foreach (var writer in writers)
+        {
+            var supported = writer.GetProperty("supported").GetBoolean();
+            writer.GetProperty("available").GetBoolean().Should().Be(supported);
+            writer.GetProperty("lifecycle").GetString().Should().Be(supported ? "implemented" : "planned");
+            if (!supported)
+            {
+                writer.GetProperty("reasonCode").GetString().Should().Be("unsupported");
+            }
+        }
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_LegacyProjection_MarksDisabledPreviewsUnavailable()

@@ -112,6 +112,7 @@ internal sealed class CapabilityManifestService(
         var capabilities = options.ManifestFromRegistry
             ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
+        capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext)];
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
             : BuildPackages();
@@ -161,6 +162,16 @@ internal sealed class CapabilityManifestService(
         }
 
         return manifest;
+    }
+
+    private IEnumerable<CapabilityManifestCapability> BuildFileFormatCapabilities(CapabilityPolicyContext context)
+    {
+        foreach (var descriptor in capabilityRegistry.All.Where(d => d.Category is "format-read" or "format-write"))
+        {
+            yield return Capability(descriptor.Id, descriptor.Category, context,
+                maturity: descriptor.Maturity,
+                supported: descriptor.ImplementationStatus == CapabilityImplementationStatus.Served);
+        }
     }
 
     private async ValueTask<CapabilityManifestEnvironment> ResolveEnvironmentAsync(

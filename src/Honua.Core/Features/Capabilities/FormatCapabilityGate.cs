@@ -23,11 +23,10 @@ namespace Honua.Core.Features.Capabilities;
 /// reason code into a format-scoped one (<see cref="FormatCapabilityReasonCodes"/>).
 /// </para>
 /// <para>
-/// In T6 every registered format is still <see cref="CapabilityMaturity.Implemented"/>,
-/// so the gate reports <see cref="FormatGateStatus.Enabled"/> for every registered
-/// format — no format is disabled in this ticket. The experimental flips land in T10
-/// (#2346) and flow through this seam unchanged: a flipped-and-flag-off format then
-/// resolves <see cref="FormatGateStatus.ExperimentalDisabled"/> here.
+/// The original format names describe shared codecs. File import/export callers
+/// may resolve <c>read.&lt;name&gt;</c> or <c>write.&lt;name&gt;</c> to check a specific
+/// direction; a declared implementation gap resolves
+/// <see cref="FormatGateStatus.NotImplemented"/> and is blocked.
 /// </para>
 /// <para>
 /// A format the registry does not manage resolves <see cref="FormatGateStatus.Unknown"/>
@@ -119,9 +118,6 @@ public static class FormatCapabilityGate
 /// </summary>
 public enum FormatGateStatus
 {
-    /// <summary>The requested file-format direction has no implementation.</summary>
-    NotImplemented = 4,
-
     /// <summary>The format is registered and enabled for the context.</summary>
     Enabled = 0,
 
@@ -143,6 +139,9 @@ public enum FormatGateStatus
     /// active edition, so it must be rejected on entitlement.
     /// </summary>
     LicenseRequired = 3,
+
+    /// <summary>The requested file-format direction has no implementation.</summary>
+    NotImplemented = 4,
 }
 
 /// <summary>

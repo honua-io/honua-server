@@ -100,7 +100,7 @@ JSON (`application/json`) responses by default; geometry is emitted as GeoJSON-s
 
 Large exports queue as background jobs. See [export data guide](../guides/query-analyze/export-data.md).
 
-The capability registry distinguishes `format.read.<name>` (file import) from
+The capability registry and `GET /api/v1/capabilities/manifest` distinguish `format.read.<name>` (file import) from
 `format.write.<name>` (built-in admin file export). Only `csv`, `shapefile`, and
 `geopackage` have implemented file-write descriptors; the GeoPackage endpoint token
 is `gpkg`. The other ten file-write descriptors are planned, known implementation
