@@ -29,6 +29,9 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 [Collection("Database")]
 [Trait("Category", "LayerExecutionProof")]
+// These contracts exercise shared executors and storage directly, without an HTTP adapter.
+[Protocol(TestProtocols.Infrastructure)]
+[Operation(Operations.ContractTesting)]
 public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureServices(_ => { });
