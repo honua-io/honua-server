@@ -12,7 +12,7 @@ The test publishes a typed source table before calling the production `data-mana
 
 The three independently specified selections are all rows; `score >= 14` yielding IDs 13,15; and that predicate intersected with `objectIds=11,15` yielding only ID 15. The oracle uses these literals, never values captured from the implementation under test.
 
-Readback asserts all attributes, exact XYZ coordinates, output SRID, copied schema including field length/type/nullability, a distinct target layer, and source/operation provenance. The original source is then read back against all three literal rows and its original metadata to detect mutation.
+Readback asserts all attributes (including the canonical objectid alias and its exact ID value), exact XYZ coordinates, output SRID, copied schema including field length/type/nullability, a distinct target layer, and source/operation provenance. The original source is then read back against all three literal rows and its original metadata to detect mutation.
 
 The operation creates typed storage from the canonical source schema and streams the selected provider read into it transactionally. Publication remains disabled while source schema and policy metadata are retained, then is enabled before the executor publishes its receipt.
 

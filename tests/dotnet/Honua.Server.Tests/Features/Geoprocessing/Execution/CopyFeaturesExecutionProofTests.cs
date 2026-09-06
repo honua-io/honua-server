@@ -47,9 +47,18 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
         var published = await _fixture.GetService<ILayerPublishingService>().PublishLayerAsync(
             new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString) { SearchPath = schema + ",public" }.ConnectionString,
-            new LayerPublishRequest { Schema = schema, Table = "copyproof", LayerName = "Copy proof source",
-                GeometryColumn = "geom", PrimaryKey = "id", Srid = 4326, Fields = ["id", "label", "score", "note"],
-                ServiceName = "copyproof_" + Guid.NewGuid().ToString("N"), Enabled = true });
+            new LayerPublishRequest
+            {
+                Schema = schema,
+                Table = "copyproof",
+                LayerName = "Copy proof source",
+                GeometryColumn = "geom",
+                PrimaryKey = "id",
+                Srid = 4326,
+                Fields = ["id", "label", "score", "note"],
+                ServiceName = "copyproof_" + Guid.NewGuid().ToString("N"),
+                Enabled = true
+            });
         _sourceId = published.LayerId;
         _sourceResource = (await _fixture.GetService<IMetadataV2GraphProvider>().GetCurrentAsync())
             .Index.ResourcesByStorageLayerId[_sourceId];
@@ -68,8 +77,11 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
         _fixture.GetService<IEnumerable<IProcessExecutor>>().Should().Contain(executor);
         var operationId = Guid.NewGuid().ToString("N");
         var name = "Independent copy " + operationId;
-        var parameters = new Dictionary<string, string> { ["protocolProcessId"] = "data-management.copy-features",
-            [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "data-management.copy-features" };
+        var parameters = new Dictionary<string, string>
+        {
+            ["protocolProcessId"] = "data-management.copy-features",
+            [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "data-management.copy-features"
+        };
         foreach (var (key, value) in new[] { ("sourceLayerId", _sourceId.ToString(CultureInfo.InvariantCulture)), ("targetLayerName", name),
             ("where", where), ("objectIds", objectIds) })
         {
@@ -78,10 +90,21 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
                 parameters[ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0." + key] = value;
             }
         }
-        var job = new ExecutionJobRecord { OperationId = operationId, Status = ExecutionJobStatus.Running,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
-            Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob,
-                Backend = "local", WorkloadName = "geoprocessing:data-management.copy-features", Parameters = parameters } };
+        var job = new ExecutionJobRecord
+        {
+            OperationId = operationId,
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "geoprocessing:data-management.copy-features",
+                Parameters = parameters
+            }
+        };
         var artifacts = new List<string>();
         var context = Substitute.For<IJobExecutionContext>();
         context.When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())).Do(c => artifacts.Add(c.ArgAt<string>(0)));
@@ -125,9 +148,13 @@ public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
         rows.Select(f => f.Id).Should().BeEquivalentTo(expectedIds);
         foreach (var row in rows)
         {
-            var expected = row.Id switch { 11 => ("alpha", 7, "retained", 12d, 34d, 56d),
+            var expected = row.Id switch
+            {
+                11 => ("alpha", 7, "retained", 12d, 34d, 56d),
                 13 => ("beta", 14, (string?)null, -20d, 40d, 80d),
-                15 => ("gamma", 21, "third", 30d, -10d, 90d), _ => throw new InvalidOperationException("Unexpected row") };
+                15 => ("gamma", 21, "third", 30d, -10d, 90d),
+                _ => throw new InvalidOperationException("Unexpected row")
+            };
             row.Attributes.Keys.Should().BeEquivalentTo("id", "objectid", "label", "score", "note");
             Convert.ToInt64(row.Attributes["id"], CultureInfo.InvariantCulture).Should().Be(row.Id);
             // The canonical reader adds its public objectid alias to the typed id.

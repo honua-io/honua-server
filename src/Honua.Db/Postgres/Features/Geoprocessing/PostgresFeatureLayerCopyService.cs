@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
@@ -105,9 +105,15 @@ internal sealed class PostgresFeatureLayerCopyService(
         // retained. A failed metadata copy cannot expose an unrestricted intermediate.
         var target = await publisher.PublishLayerAsync(connectionString, new LayerPublishRequest
         {
-            Schema = schema, Table = table, LayerName = targetLayerName, GeometryColumn = geometryField,
-            PrimaryKey = primary, Fields = fields.Select(f => f.Name).ToArray(), Srid = srid,
-            ServiceName = serviceName, Enabled = false
+            Schema = schema,
+            Table = table,
+            LayerName = targetLayerName,
+            GeometryColumn = geometryField,
+            PrimaryKey = primary,
+            Fields = fields.Select(f => f.Name).ToArray(),
+            Srid = srid,
+            ServiceName = serviceName,
+            Enabled = false
         }, cancellationToken).ConfigureAwait(false);
         var current = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var targetResource = current.Index.ResourcesByStorageLayerId[target.LayerId];
@@ -117,13 +123,20 @@ internal sealed class PostgresFeatureLayerCopyService(
         annotations["gp.operationId"] = operationId;
         var copied = resource with
         {
-            Metadata = resource.Metadata with { Id = targetResource.Metadata.Id, Name = targetLayerName,
-                Title = targetLayerName, CreatedAt = targetResource.Metadata.CreatedAt,
-                UpdatedAt = DateTimeOffset.UtcNow, Annotations = annotations },
+            Metadata = resource.Metadata with
+            {
+                Id = targetResource.Metadata.Id,
+                Name = targetLayerName,
+                Title = targetLayerName,
+                CreatedAt = targetResource.Metadata.CreatedAt,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Annotations = annotations
+            },
             StorageBindingIds = targetResource.StorageBindingIds,
             PrimaryStorageBindingId = targetResource.PrimaryStorageBindingId,
             Spatial = resource.Spatial! with { Bbox = targetResource.Spatial?.Bbox },
-            Relationships = [], Status = targetResource.Status
+            Relationships = [],
+            Status = targetResource.Status
         };
         await metadata.SaveAsync(current.Graph with
         {
