@@ -36,6 +36,19 @@ Axis-order quirk: WMS 1.3.0 `BBOX` follows the CRS-defined axis order (lat,lon f
 
 > Open `https://server.example.com/ogc/services/roads/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&CRS=EPSG:4326&BBOX=37.7,-122.5,37.9,-122.3&WIDTH=800&HEIGHT=600&FORMAT=image/png` in a browser.
 
+### GetFeatureInfo JSON
+
+`INFO_FORMAT=application/json` returns a GeoJSON `FeatureCollection`. Each result
+has `type: "Feature"`, a `properties` object containing visible attributes, and
+`geometry: null`: this identify response supplies attributes only. Null attribute
+values remain JSON null, and internal attributes are excluded. An empty result
+is a FeatureCollection with an empty features array.
+
+The `layer` and `attributes` members remain available as foreign members for
+existing consumers. The top-level type replaces the earlier `FeatureInfoResponse`
+value so native GeoJSON identify readers, including QGIS, can read the response.
+Consumers that explicitly match the old type must accept `FeatureCollection`.
+
 ### GetLegendGraphic
 
 `GetLegendGraphic` is not part of the WMS 1.3.0 core specification, but it is universally
