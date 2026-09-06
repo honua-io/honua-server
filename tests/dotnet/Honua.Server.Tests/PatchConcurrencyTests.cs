@@ -174,6 +174,104 @@ public sealed class PatchConcurrencyTests
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("odata")]
+    [InlineData("ogc")]
+    [InlineData("batch")]
+    [Protocol(TestProtocols.ODataV4, TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.Update)]
+    public Task Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict(string protocol)
+        => VerifyConcurrentPatchAsync(protocol != "ogc", true, firstIsBatch: protocol == "batch", ifMatch: "*");
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.ODataV4)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /odata/$batch")]
+    public async Task BatchPatch_SameObjectTwice_PreservesBothUpdates()
+    {
+        var barrier = new WriteBarrier();
+        barrier.Resume.TrySetResult();
+        var fixture = CreateFixture(barrier);
+        await fixture.InitializeAsync();
+        try
+        {
+            var id = await fixture.InsertFeatureAsync(0, "original name");
+            var body = $$"""{"requests":[{"id":"first","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{id}})","body":{"name":"changed name"}},{"id":"second","atomicityGroup":"g","method":"PATCH","url":"Features(LayerId=0,ObjectId={{id}})","body":{"population":45678}}]}""";
+            using var response = await fixture.Client.PostAsync("/odata/$batch", new StringContent(body, Encoding.UTF8, "application/json"));
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var responses = document.RootElement.GetProperty("responses");
+            Assert.Equal(2, responses.GetArrayLength());
+            foreach (var result in responses.EnumerateArray()) Assert.InRange(result.GetProperty("status").GetInt32(), 200, 299);
+            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            Assert.Equal("changed name", stored.Attributes["name"]);
+            Assert.Equal(45678L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Protocol(TestProtocols.ODataV4)]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    public async Task Put_MaskedOmittedField_HasReplacementSemanticsWithOrWithoutIfMatch(bool conditional)
+    {
+        var barrier = new WriteBarrier();
+        barrier.Resume.TrySetResult();
+        var mask = new MutableFieldMask();
+        var fixture = CreateFixture(barrier, mask);
+        await fixture.InitializeAsync();
+        try
+        {
+            var id = await fixture.InsertFeatureAsync(0, "original name");
+            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original with { Attributes = original.Attributes.SetItem("population", 12345L) });
+            mask.Fields = ImmutableArray.Create("population");
+            var url = $"/odata/Features(LayerId=0,ObjectId={id})";
+            using var read = await fixture.Client.GetAsync(url);
+            using var request = new HttpRequestMessage(HttpMethod.Put, url) { Content = new StringContent("""{"name":"replacement","Geometry":{"type":"Point","coordinates":[-120,35]}}""", Encoding.UTF8, "application/json") };
+            if (conditional) request.Headers.TryAddWithoutValidation("If-Match", read.Headers.ETag!.ToString());
+            using var response = await fixture.Client.SendAsync(request);
+            Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+            mask.Fields = ImmutableArray<string>.Empty;
+            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            Assert.False(stored.Attributes.ContainsKey("population"));
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task OgcPatch_PublicIdentifierAndMaskedField_UsesCompleteSnapshot()
+    {
+        var barrier = new WriteBarrier();
+        barrier.Resume.TrySetResult();
+        var mask = new MutableFieldMask();
+        var fixture = CreateFixture(barrier, mask);
+        await fixture.InitializeAsync();
+        try
+        {
+            var id = await fixture.InsertFeatureAsync(0, "public-name");
+            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original with { Attributes = original.Attributes.SetItem("population", 12345L) });
+            fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = [] });
+            fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, SemanticRoles = ["id.primary"] });
+            mask.Fields = ImmutableArray.Create("population");
+            using var request = new HttpRequestMessage(HttpMethod.Patch, "/ogc/features/collections/0/items/public-name") { Content = new StringContent("""{"geometry":{"type":"Point","coordinates":[-120,35]}}""", Encoding.UTF8, "application/merge-patch+json") };
+            using var response = await fixture.Client.SendAsync(request);
+            Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+            Assert.DoesNotContain("population", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+            mask.Fields = ImmutableArray<string>.Empty;
+            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            Assert.Equal(12345L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
+            Assert.NotEqual(original.Geometry, stored.Geometry);
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
     private static WebAppFixture CreateFixture(WriteBarrier barrier, MutableFieldMask? mask = null)
     {
         return new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
@@ -203,7 +301,7 @@ public sealed class PatchConcurrencyTests
             => Task.FromResult(Fields);
     }
 
-    private static async Task VerifyConcurrentPatchAsync(bool firstIsOData, bool otherIsOData, bool firstIsBatch = false, bool withIfNoneMatch = false)
+    private static async Task VerifyConcurrentPatchAsync(bool firstIsOData, bool otherIsOData, bool firstIsBatch = false, bool withIfNoneMatch = false, string? ifMatch = null)
     {
         var barrier = new WriteBarrier();
         var fixture = CreateFixture(barrier);
@@ -222,7 +320,7 @@ public sealed class PatchConcurrencyTests
                 ifNoneMatch = futureRead.Headers.ETag!.ToString();
                 await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original);
             }
-            using var firstRequest = CreatePatch(firstIsOData, objectId, changeName: true, batch: firstIsBatch, ifNoneMatch: ifNoneMatch);
+            using var firstRequest = CreatePatch(firstIsOData, objectId, changeName: true, batch: firstIsBatch, ifNoneMatch: ifNoneMatch, ifMatch: ifMatch);
             var firstTask = fixture.Client.SendAsync(firstRequest);
             Feature committed;
             try
@@ -265,7 +363,7 @@ public sealed class PatchConcurrencyTests
         }
     }
 
-    private static HttpRequestMessage CreatePatch(bool odata, long objectId, bool changeName, bool batch = false, string? ifNoneMatch = null)
+    private static HttpRequestMessage CreatePatch(bool odata, long objectId, bool changeName, bool batch = false, string? ifNoneMatch = null, string? ifMatch = null)
     {
         var payload = (odata, changeName) switch
         {
@@ -277,6 +375,7 @@ public sealed class PatchConcurrencyTests
         if (batch)
         {
             var condition = ifNoneMatch is null ? string.Empty : ",\"If-None-Match\":" + JsonSerializer.Serialize(ifNoneMatch);
+            if (ifMatch is not null) condition += ",\"If-Match\":" + JsonSerializer.Serialize(ifMatch);
             var body = $$"""{"requests":[{"id":"patch","atomicityGroup":"changes","method":"PATCH","url":"Features(LayerId=0,ObjectId={{objectId}})","headers":{"Content-Type":"application/json"{{condition}}},"body":{{payload}}}]}""";
             return new HttpRequestMessage(HttpMethod.Post, "/odata/$batch")
             {
@@ -294,6 +393,7 @@ public sealed class PatchConcurrencyTests
         {
             request.Headers.TryAddWithoutValidation("If-None-Match", ifNoneMatch);
         }
+        if (ifMatch is not null) request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
         return request;
     }
 
