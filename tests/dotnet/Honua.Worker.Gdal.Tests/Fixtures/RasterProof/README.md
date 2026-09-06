@@ -72,3 +72,8 @@ layers and option-shaped layer names must fail without an artifact. The optional
 catalog `layerName` input selects one exact layer; omission retains OGR's default
 behavior. These inline artifact proofs do not cross a staged-output or database
 boundary; #3852/#3855 are not inferred to pass from them.
+
+For local Linux hosts whose user differs from the container default 1001:1001,
+set `HONUA_GDAL_PROOF_USER` to the host UID:GID before running the test. This only
+maps ownership at the test's bind-mount boundary; the production executor and
+container hardening remain in use.

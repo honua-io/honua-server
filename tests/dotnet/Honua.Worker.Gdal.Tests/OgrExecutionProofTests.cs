@@ -82,7 +82,9 @@ public sealed partial class RasterExecutionProofTests
                 geometry.ValueKind.Should().Be(JsonValueKind.Null);
                 continue;
             }
-            var actual = new GeoJsonReader().Read<NetTopologySuite.Geometries.Geometry>(geometry.GetRawText());
+            var actual = new GeoJsonReader(NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326),
+                new Newtonsoft.Json.JsonSerializerSettings(), dimension: 3)
+                .Read<NetTopologySuite.Geometries.Geometry>(geometry.GetRawText());
             var expected = new WKTReader().Read(wkt);
             actual.GeometryType.Should().Be(expected.GeometryType);
             actual.Coordinates.Select(c => (c.X, c.Y, c.Z)).Should()
