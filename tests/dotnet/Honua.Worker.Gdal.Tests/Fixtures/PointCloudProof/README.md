@@ -40,3 +40,12 @@ For local Linux hosts whose user differs from the container default 1001:1001,
 set `HONUA_GDAL_PROOF_USER` to the host UID:GID before running the test. This only
 maps ownership at the test's bind-mount boundary; the production executor and
 container hardening remain in use. CI records its own host UID:GID likewise.
+
+`waveform-4/5/9/10.las` are valid waveform-capable LAS records with descriptor 0
+(no attached waveform packet). The production-pinned PDAL reader rejects those
+formats before writing output. Required execution cases assert failure and no
+artifact, so an unsupported waveform format cannot be handed to the managed
+reader as a successful translation. Successful fixtures are additionally read
+through `LasPointCloudReader`, while the independent binary oracle retains all
+coordinate, attribute, scale, bounds and CRS assertions above. The reader-supported
+point formats are preserved; this does not normalize away source dimensions.
