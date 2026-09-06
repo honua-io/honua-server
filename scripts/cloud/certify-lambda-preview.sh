@@ -3,6 +3,12 @@ set -euo pipefail
 
 # Standing limits (release#210, verbatim): plan summaries to the evidence thread BEFORE apply, STOP on any destroy beyond the lane's own teardown-of-what-it-created, no IAM trust widening, fingerprints only.
 
+# Invalidate any previous receipt before validating the remaining inputs.
+if [[ -n "${HONUA_LAMBDA_PREVIEW_RECEIPT:-}" ]]; then
+mkdir -p "$(dirname "$HONUA_LAMBDA_PREVIEW_RECEIPT")"
+printf '%s\n' '{"schema":"honua.lambda-preview-certification/v1","result":"fail","serving":{"result":"noProof"}}' > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
+fi
+
 required=(
   HONUA_LAMBDA_SOURCE_IMAGE
   HONUA_LAMBDA_ARCHITECTURE
@@ -60,8 +66,7 @@ fi
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 umask 077
 scratch="$(mktemp -d)"
-mkdir -p "$(dirname "$HONUA_LAMBDA_PREVIEW_RECEIPT")"
-printf '%s\n' '{"schema":"honua.lambda-preview-certification/v1","result":"fail","serving":{"result":"noProof"}}' > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
+
 run_token="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 function_name="honua-certrun-lambda-${run_token}"
 log_group="/aws/lambda/${function_name}"
@@ -224,8 +229,9 @@ fi
 
 cloudwatch_verified=false
 for _ in {1..12}; do
-  if [[ "$(aws logs filter-log-events --log-group-name "$log_group" \
-    --filter-pattern "\"${request_id}\"" --query 'length(events)' --output text)" != "0" ]]; then
+  event_count="$(aws logs filter-log-events --log-group-name "$log_group" \
+    --filter-pattern "\"${request_id}\"" --query 'length(events)' --output text)"
+  if [[ "$event_count" =~ ^[1-9][0-9]*$ ]]; then
     cloudwatch_verified=true
     break
   fi

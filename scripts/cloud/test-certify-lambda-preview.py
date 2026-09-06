@@ -13,12 +13,16 @@ WORKFLOW = (ROOT / ".github/workflows/lambda-preview-certification.yml").read_te
 
 # One executable, symlinked as aws/docker/dotnet/sleep. Unknown calls fail rather than succeed.
 STUB = r'''#!/usr/bin/env python3
-import base64, json, os, sys
+import base64, fcntl, json, os, sys
 from pathlib import Path
 from urllib.parse import parse_qs
 args = sys.argv[1:]
 name = Path(sys.argv[0]).name
 path = Path(os.environ["STUB_STATE"])
+if name == "docker" and args[0] == "login":
+    sys.stdin.read()
+lock = open(str(path) + ".lock", "w")
+fcntl.flock(lock, fcntl.LOCK_EX)
 s = json.loads(path.read_text())
 fail = os.environ.get("STUB_FAIL", "")
 def arg(key, default=None):
@@ -91,7 +95,7 @@ if op == "get-function":
                  "HONUA_ADMIN_PASSWORD": "aws:secretsmanager:offline-admin", "HONUA_SKIP_MIGRATIONS": "false"}
     if fail == "skip-config": variables["HONUA_SKIP_MIGRATIONS"] = "true"
     if fail == "missing-db": variables.pop("ConnectionStrings__DefaultConnection")
-    emit({"Configuration": {"RevisionId": "rev", "PackageType": "Image", "Architectures": [os.environ["HONUA_LAMBDA_ARCHITECTURE"]],
+    emit({"Configuration": {"RevisionId": "rev", "Description": "honua-cert-run=123-1" if arg("--qualifier") == "8" else "standing", "PackageType": "Image", "Architectures": [os.environ["HONUA_LAMBDA_ARCHITECTURE"]],
          "Environment": {"Variables": variables}, "VpcConfig": {"SubnetIds":["subnet-cert"], "SecurityGroupIds":["sg-cert"]}},
          "Code": {"ResolvedImageUri": image}})
 if op == "create-function":
@@ -111,9 +115,12 @@ if op == "delete-function":
     emit(None)
 if op == "get-alias": emit({"FunctionVersion": s["alias"], "RoutingConfig": {"AdditionalVersionWeights": {"6": 0.1} if fail == "weighted" else {}}})
 if op == "update-function-code": s["image"] = arg("--image-uri"); emit({"CodeSha256":"code"})
-if op == "publish-version": s["versions"].append("8"); emit({"Version":"8"})
+if op == "publish-version":
+    s["versions"].append("8")
+    if fail == "publish-response-lost": bad()
+    emit({"Version":"8"})
 if op == "list-aliases": emit({"Aliases":[{"FunctionVersion":s["alias"]}]})
-if op == "list-versions-by-function": emit({"Versions":[{"Version":v} for v in s["versions"]]})
+if op == "list-versions-by-function": emit({"Versions":[{"Version":v,"Description":"honua-cert-run=123-1" if v == "8" else "standing"} for v in s["versions"]]})
 if op != "invoke": bad()
 payload = arg("--payload")
 event = json.loads(Path(payload[7:]).read_text() if payload.startswith("file://") else payload)
@@ -244,6 +251,15 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertEqual(["8"], state["deleted_versions"])
                 self.assertEqual(original, state["image"])
                 self.assertFalse(state["function"] or state["logs"] or state["row"])
+
+    def test_lost_publish_response_deletes_only_owned_new_version(self):
+        result, receipt, state, original = self.run_lane("publish-response-lost")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        self.assertEqual([], state["backend"])
+        self.assertEqual(["8"], state["deleted_versions"])
+        self.assertEqual(["7"], state["versions"])
+        self.assertEqual(original, state["image"])
 
     def test_write_url_guardrail_and_target_binding(self):
         for url in ("https://demo.invalid", "https://DEMO.invalid/", "https://demo.invalid:443", "https://unrelated.invalid"):

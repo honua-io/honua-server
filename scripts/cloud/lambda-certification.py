@@ -206,6 +206,8 @@ def certify(directory, ephemeral, digest):
     original = json.loads((directory / "standing.json").read_text())
     latest = config(function)
     require(latest["Configuration"]["RevisionId"] == original["Configuration"]["RevisionId"], "Standing function changed during certification")
+    versions_before = {v["Version"] for v in aws("lambda", "list-versions-by-function", "--function-name", function)["Versions"]}
+    ownership = "honua-cert-run=" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"]
     candidate = None
     cleanup_errors = []
 
@@ -226,15 +228,25 @@ def certify(directory, ephemeral, digest):
         require(deployed["Code"]["ResolvedImageUri"] == digest, "Standing candidate digest mismatch")
         published = aws("lambda", "publish-version", "--function-name", function,
                         "--revision-id", deployed["Configuration"]["RevisionId"],
-                        "--code-sha256", update["CodeSha256"], "--description", "honua-cert-run=" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"])
+                        "--code-sha256", update["CodeSha256"], "--description", ownership)
         candidate = published["Version"]
-        require(re.fullmatch(r"[1-9][0-9]*", candidate) and candidate != previous, "Candidate is not a new published version")
+        require(re.fullmatch(r"[1-9][0-9]*", candidate) and candidate not in versions_before, "Candidate is not a new published version")
         require(config(function, candidate)["Code"]["ResolvedImageUri"] == digest, "Published candidate digest mismatch")
         rollback_needed = True  # Set BEFORE the call: an SDK timeout may follow a successful shift.
         backend("shift", function, alias, previous, candidate)
         alias_state(function, alias, candidate)
         proof["candidate"] = smoke(target, candidate)
     finally:
+        if changed and candidate is None:
+            # A publish can succeed even when its response is lost. Recover only a newly
+            # created version bearing this run's unique description, never a pre-existing one.
+            def recover_candidate():
+                nonlocal candidate
+                versions = aws("lambda", "list-versions-by-function", "--function-name", function)["Versions"]
+                owned = [v["Version"] for v in versions if v["Version"] not in versions_before and v.get("Description") == ownership]
+                require(len(owned) <= 1, "Ambiguous candidate ownership")
+                candidate = owned[0] if owned else None
+            clean(recover_candidate)
         if rollback_needed:
             clean(lambda: backend("rollback", function, alias, previous, candidate))
             clean(lambda: alias_state(function, alias, previous))
@@ -254,6 +266,10 @@ def certify(directory, ephemeral, digest):
             clean(restore_latest)
         if candidate:
             def delete_candidate():
+                require(candidate not in versions_before, "Refusing deletion of a pre-existing version")
+                owned = config(function, candidate)
+                require(owned["Configuration"].get("Description") == ownership and owned["Code"]["ResolvedImageUri"] == digest,
+                        "Candidate version ownership mismatch")
                 alias_state(function, alias, previous)
                 aliases = aws("lambda", "list-aliases", "--function-name", function)["Aliases"]
                 require(all(a["FunctionVersion"] != candidate and candidate not in a.get("RoutingConfig", {}).get("AdditionalVersionWeights", {}) for a in aliases),
@@ -276,7 +292,10 @@ if __name__ == "__main__":
             certify(Path(sys.argv[2]), sys.argv[3], sys.argv[4])
         else:
             raise RuntimeError("Unknown lane command")
-    except (RuntimeError, KeyError, ValueError, OSError):
+    except RuntimeError as error:
+        print(f"{error}; serving noProof", file=sys.stderr)
+        sys.exit(1)
+    except (KeyError, ValueError, OSError):
         # Raw API exceptions/bodies can contain secrets. Receipts remain noProof on any error.
         print("Lambda certification assertion failed; serving noProof", file=sys.stderr)
         sys.exit(1)
