@@ -656,6 +656,160 @@ public sealed class RedisJobQueueTests
         Assert.Null(result);
     }
 
+    /// <summary>
+    /// The atomic claim script's losing branch (<c>return 0</c> in
+    /// <c>RedisJobQueue.AtomicClaimScript</c>) fires when a competing worker's ZREM
+    /// removed the candidate first. Until this test the branch had no coverage at all:
+    /// every <c>ScriptEvaluateAsync</c> stub in this file returned <c>"1"</c>. A loser
+    /// must walk away completely — no claim metadata, no <c>Provisioning</c> write, and
+    /// above all no attempt-count bump, because the record now belongs to the winner and
+    /// a stray CAS write from the loser would either steal the claim or burn one of the
+    /// winner's retries.
+    /// </summary>
+    [UnitTest]
+    public async Task TryClaimAsync_WhenAtomicClaimScriptReportsLoss_WritesNothingAndReturnsNull()
+    {
+        const string operationId = "job-lost-race";
+
+        var database = CreateSingleCandidateDatabase(operationId);
+        database.ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(RedisResult.Create((RedisValue)"0")));
+
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+            .Returns(CreateQueuedJob(operationId, OperationPriority.Normal));
+
+        var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
+
+        var claimed = await queue.TryClaimAsync("worker-loser");
+
+        Assert.Null(claimed);
+
+        // The script really was evaluated once — this is a genuine loss, not a candidate
+        // that was filtered out before the claim attempt.
+        Assert.Equal(1, CountCalls(database, nameof(IDatabase.ScriptEvaluateAsync)));
+
+        // No claim ownership metadata is stamped for the loser.
+        Assert.False(HasCall(database, nameof(IDatabase.HashSetAsync), (RedisKey)GetClaimMetaKey(operationId)));
+
+        // And no durable write happens: the winner's record must not be moved to
+        // Provisioning by the loser, and its AttemptCount must not be incremented.
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+        await jobStore.DidNotReceive().SetAsync(
+            Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+
+        // Losing must not trigger the rollback repair path either: nothing was claimed,
+        // so there is nothing to move back to the pending set.
+        Assert.False(HasCall(database, nameof(IDatabase.SortedSetRemoveAsync), (RedisKey)ClaimedSetKey, (RedisValue)operationId));
+        Assert.False(HasCall(database, nameof(IDatabase.SortedSetAddAsync), (RedisKey)QueueKey, (RedisValue)operationId));
+    }
+
+    /// <summary>
+    /// Losing one candidate must not abort the scan: the worker moves on to the next
+    /// pending job. This is the liveness half of the losing branch — without it a queue
+    /// under contention could starve workers that lose the first race in every batch.
+    /// </summary>
+    [UnitTest]
+    public async Task TryClaimAsync_WhenFirstCandidateIsLost_ClaimsTheNextCandidate()
+    {
+        const string lostId = "job-taken-by-peer";
+        const string wonId = "job-still-free";
+
+        var database = Substitute.For<IDatabase>();
+        database.SortedSetRangeByRankAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<long>(),
+                Arg.Any<long>(),
+                Arg.Any<Order>(),
+                Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var start = (long)callInfo[1];
+                return Task.FromResult(start == 0
+                    ? new[] { (RedisValue)lostId, (RedisValue)wonId }
+                    : Array.Empty<RedisValue>());
+            });
+        database.HashGetAllAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(Array.Empty<HashEntry>()));
+        database.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<HashEntry[]>(), Arg.Any<CommandFlags>())
+            .Returns(Task.CompletedTask);
+        database.ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                Arg.Any<CommandFlags>())
+            .Returns(
+                Task.FromResult(RedisResult.Create((RedisValue)"0")),
+                Task.FromResult(RedisResult.Create((RedisValue)"1")));
+
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(lostId, Arg.Any<CancellationToken>())
+            .Returns(CreateQueuedJob(lostId, OperationPriority.Normal));
+        jobStore.GetAsync(wonId, Arg.Any<CancellationToken>())
+            .Returns(CreateQueuedJob(wonId, OperationPriority.Normal));
+
+        var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
+
+        var claimed = await queue.TryClaimAsync("worker-b");
+
+        Assert.Equal(wonId, claimed);
+        Assert.Equal(2, CountCalls(database, nameof(IDatabase.ScriptEvaluateAsync)));
+
+        // Only the won candidate gets claim metadata and a durable claim write.
+        Assert.False(HasCall(database, nameof(IDatabase.HashSetAsync), (RedisKey)GetClaimMetaKey(lostId)));
+        Assert.True(HasCall(database, nameof(IDatabase.HashSetAsync), (RedisKey)GetClaimMetaKey(wonId)));
+        await jobStore.Received(1).TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job =>
+                job.OperationId == wonId
+                && job.ClaimedBy == "worker-b"
+                && job.Status == ExecutionJobStatus.Provisioning
+                && job.AttemptCount == 1),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.OperationId == lostId),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    private static IDatabase CreateSingleCandidateDatabase(string operationId)
+    {
+        var database = Substitute.For<IDatabase>();
+        database.SortedSetRangeByRankAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<long>(),
+                Arg.Any<long>(),
+                Arg.Any<Order>(),
+                Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var start = (long)callInfo[1];
+                return Task.FromResult(start == 0
+                    ? new[] { (RedisValue)operationId }
+                    : Array.Empty<RedisValue>());
+            });
+        database.HashGetAllAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(Array.Empty<HashEntry>()));
+        database.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<HashEntry[]>(), Arg.Any<CommandFlags>())
+            .Returns(Task.CompletedTask);
+        return database;
+    }
+
     private static int CountCalls(IDatabase database, string methodName)
         => database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == methodName);
 
