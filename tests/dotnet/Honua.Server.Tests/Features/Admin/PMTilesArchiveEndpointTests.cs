@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
+using Honua.TestKit.Formats;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -70,18 +71,20 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
         var jobId = await StartArchiveJobAsync();
         var (finalStatus, lastJson) = await WaitForJobCompletionAsync(jobId);
 
-        finalStatus.Should().NotBeNull("job should have completed within timeout");
+        // honua-server#4421: the size and file-id assertions used to sit inside
+        // `if (finalStatus == OperationStatus.Completed)`, so the test passed when the job FAILED.
+        // Require completion, then assert unconditionally.
+        finalStatus.Should().Be(
+            OperationStatus.Completed,
+            "the archive job must reach Completed — a failed job must fail this test, not skip its " +
+            $"assertions: {lastJson?.RootElement.ToString()}");
 
         var root = lastJson!.RootElement;
         GetPropertyCaseInsensitive(root, "operation").GetString().Should().Be("archive");
 
-        var archiveSize = GetPropertyCaseInsensitive(root, "archiveSizeBytes").GetInt64();
-
-        if (finalStatus == OperationStatus.Completed)
-        {
-            archiveSize.Should().BeGreaterThan(0, "completed archive should have non-zero size");
-            GetPropertyCaseInsensitive(root, "archiveFileId").GetString().Should().NotBeNullOrWhiteSpace();
-        }
+        GetPropertyCaseInsensitive(root, "archiveSizeBytes").GetInt64()
+            .Should().BeGreaterThan(0, "completed archive should have non-zero size");
+        GetPropertyCaseInsensitive(root, "archiveFileId").GetString().Should().NotBeNullOrWhiteSpace();
 
         lastJson.Dispose();
     }
@@ -165,6 +168,17 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
         tileDataLength.Should().BeGreaterThan(0, "tile data section should not be empty");
         (tileDataOffset + tileDataLength).Should().Be((ulong)archiveBytes.Length,
             "tile data should extend to end of archive");
+
+        // honua-server#4421: every header assertion above passes on an archive whose tile data is
+        // arbitrary bytes — `tileType == 1` is a declared byte, not a payload check. Decode the
+        // tile data so "the archive holds MVTs" is proven rather than declared.
+        var tileData = archiveBytes[(int)tileDataOffset..];
+        MvtTileDecoder.TryDecode(tileData, out var decoded).Should().BeTrue(
+            "the archived tile data must be a decodable Mapbox Vector Tile, since the header " +
+            "declares tile type 1 (MVT)");
+        decoded!.Layers.Should().NotBeEmpty();
+        decoded.FeatureCount.Should().BeGreaterThan(
+            0, "an archive of empty tiles proves nothing about the tile pipeline");
     }
 
     private async Task<string> StartArchiveJobAsync()
