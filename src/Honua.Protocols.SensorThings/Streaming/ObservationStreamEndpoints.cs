@@ -6,6 +6,7 @@ using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -28,6 +29,7 @@ internal static class ObservationStreamEndpoints
     public static IEndpointRouteBuilder MapSensorThingsStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/sta/v1.1/ObservationsStream", HandleStream)
+            .AddEndpointFilter<LiveStreamAuthorizationFilter>()
             .WithDisplayName("STA Observation Stream")
             .WithName("StaObservationStream")
             .WithSummary("Stream new Observations in real time (SSE or WebSocket)")
