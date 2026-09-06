@@ -16,7 +16,7 @@ namespace Honua.Worker.Gdal.Tests;
 
 /// <summary>Real production executors and pinned native GDAL, with analytical cell oracles.</summary>
 [Trait("Category", "RasterExecutionProof")]
-public sealed class RasterExecutionProofTests : IDisposable
+public sealed partial class RasterExecutionProofTests : IDisposable
 {
     private const double NoData = -9999;
     private static readonly string Image = ReadProductionImage();
@@ -138,15 +138,16 @@ public sealed class RasterExecutionProofTests : IDisposable
     }
 
     [Theory]
-    [InlineData("nearest")]
-    [InlineData("bilinear")]
-    public async Task Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples(string resampling)
+    [InlineData("raster.reproject", "nearest")]
+    [InlineData("raster.reproject", "bilinear")]
+    [InlineData("gdal.gdalwarp", "nearest")]
+    public async Task Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples(string processId, string resampling)
     {
         var source = await Decode(await File.ReadAllBytesAsync(Fixture("grid.tif")));
         AssertGrid(source, 4, 4, 4326, [0, 1, 0, 4, 0, -1], 2);
         AssertBand(source, 0, Grid);
-        var output = await ExecuteRaster("raster.reproject", ("source", Input("grid.tif")),
-            ("targetSrid", "3857"), ("resampling", resampling));
+        var output = await ExecuteRaster(processId, ("source", Input("grid.tif")),
+            (processId == "gdal.gdalwarp" ? "targetSrs" : "targetSrid", "3857"), ("resampling", resampling));
         // Spherical Mercator EPSG:3857 uses R=6378137. GDAL's suggested square
         // pixel spans the transformed diagonal divided by the source diagonal.
         const double radius = 6378137;
@@ -341,6 +342,8 @@ public sealed class RasterExecutionProofTests : IDisposable
         var options = GdalJobFactory.Options(_scratch);
         IProcessExecutor executor = id switch
         {
+            "gdal.gdalwarp" => new GdalRasterReprojectJobExecutor(_runner, options, NullLogger<GdalRasterReprojectJobExecutor>.Instance),
+            "source.ogr" => new GdalVectorSourceReadJobExecutor(_runner, options, NullLogger<GdalVectorSourceReadJobExecutor>.Instance),
             "raster.clip" => new GdalRasterClipJobExecutor(_runner, options, NullLogger<GdalRasterClipJobExecutor>.Instance),
             "raster.zonal-statistics" => new GdalRasterZonalStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
             "raster.spectral-index" => new GdalRasterSpectralIndexJobExecutor(_runner, options, NullLogger<GdalRasterSpectralIndexJobExecutor>.Instance),
