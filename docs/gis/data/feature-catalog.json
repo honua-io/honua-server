@@ -13479,7 +13479,13 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Write_ConnectionBoundPublication_RejectsBeforeManagedReadOrWrite",
         "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.UpdateFeature_WithNamedKeys_ReturnsUpdatedFeature",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.UpdateFeature_ETagChangesAfterUpdate",
-        "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.UpdateFeature_WithPreferMinimal_Returns204"
+        "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.UpdateFeature_WithPreferMinimal_Returns204",
+        "Honua.Server.Tests.PatchConcurrencyTests.ODataPatch_ConcurrentDisjointPatch_PreservesCommittedPropertiesAndGeometry",
+        "Honua.Server.Tests.PatchConcurrencyTests.ODataPatch_IfNoneMatchBecomesFalse_ReturnsPreconditionFailed",
+        "Honua.Server.Tests.PatchConcurrencyTests.PatchEndpoints_DeclareConflictAndPreconditionResponses",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_ConflictStatusUsesLockedSnapshot_WhenRowChangesAgain",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_MaskedAttribute_PreservesStoredValueWithoutExposingIt"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented",
@@ -13495,7 +13501,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.UpdateFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType",
         "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.UpdateFeature_WithValidPayload_ReturnsUpdatedFeature",
-        "Honua.Server.Tests.Features.Protocols.OData.ODataCrudExceptionMappingTests.UpdateFeature_WhenWriterThrowsUnexpectedInvalidOperation_ReturnsInternalServerError"
+        "Honua.Server.Tests.Features.Protocols.OData.ODataCrudExceptionMappingTests.UpdateFeature_WhenWriterThrowsUnexpectedInvalidOperation_ReturnsInternalServerError",
+        "Honua.Server.Tests.PatchConcurrencyTests.PatchEndpoints_DeclareConflictAndPreconditionResponses"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented",
@@ -13511,7 +13518,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.UpdateFeature_WithLayerPath_ReturnsUpdatedFeature",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataUpdate_InsertOnlyGrant_DeniesUpdate",
-        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataUpdate_UpdateGrant_AllowsUpdate"
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataUpdate_UpdateGrant_AllowsUpdate",
+        "Honua.Server.Tests.PatchConcurrencyTests.PatchEndpoints_DeclareConflictAndPreconditionResponses"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented",
@@ -13534,7 +13542,14 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.PatchFeature_WithGetItemEtagIfMatch_RoundTripsSuccessfully",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.PatchFeature_WithInvalidPropertiesShape_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.PatchFeature_WithPropertiesOnly_ReturnsUpdatedFeatureAndPreservesGeometry",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.PatchFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.PatchFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType",
+        "Honua.Server.Tests.PatchConcurrencyTests.OgcPatch_ConcurrentDisjointPatch_PreservesCommittedPropertiesAndGeometry",
+        "Honua.Server.Tests.PatchConcurrencyTests.OgcPatch_ExplicitMaskedRemoval_RespectsMergePatchSemantics",
+        "Honua.Server.Tests.PatchConcurrencyTests.OgcPatch_PublicIdentifierAndMaskedField_UsesCompleteSnapshot",
+        "Honua.Server.Tests.PatchConcurrencyTests.PatchEndpoints_DeclareConflictAndPreconditionResponses",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_ConflictStatusUsesLockedSnapshot_WhenRowChangesAgain",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_MaskedAttribute_PreservesStoredValueWithoutExposingIt"
       ],
       "proof_ledger_surface": "ogc-api-features",
       "maturity": "implemented",
@@ -17540,7 +17555,14 @@
         "Honua.Server.Tests.Features.Security.ODataServiceAccessPolicyTests.Batch_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService",
         "Honua.Server.Tests.Features.Security.ODataServiceBoundaryTests.BatchCreateFeature_PublishesCanonicalServiceId",
         "Honua.Server.Tests.Features.Security.ODataServiceRbacTests.Batch_WithAnonymousClient_AllowsPublicLayerReads",
-        "Honua.Server.Tests.Features.Security.ODataServiceRbacTests.Batch_WithScopedDataEditor_DeniesOtherService"
+        "Honua.Server.Tests.Features.Security.ODataServiceRbacTests.Batch_WithScopedDataEditor_DeniesOtherService",
+        "Honua.Server.Tests.PatchConcurrencyTests.BatchPatch_SameObjectTwice_PreservesOperationOrder",
+        "Honua.Server.Tests.PatchConcurrencyTests.Batch_FirstMutationControlsSnapshotGuard",
+        "Honua.Server.Tests.PatchConcurrencyTests.ODataBatchPatch_ConcurrentDisjointPatch_PreservesCommittedPropertiesAndGeometry",
+        "Honua.Server.Tests.PatchConcurrencyTests.ODataPatch_IfNoneMatchBecomesFalse_ReturnsPreconditionFailed",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_ConflictStatusUsesLockedSnapshot_WhenRowChangesAgain",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_MaskedAttribute_PreservesStoredValueWithoutExposingIt"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented",
@@ -22100,7 +22122,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.OData.ODataGeometryCrudTests.ReplaceFeature_NamedKeyRoute_ReturnsUpdatedFeature"
+        "Honua.Server.Tests.Features.Protocols.OData.ODataGeometryCrudTests.ReplaceFeature_NamedKeyRoute_ReturnsUpdatedFeature",
+        "Honua.Server.Tests.PatchConcurrencyTests.PatchEndpoints_DeclareConflictAndPreconditionResponses",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict",
+        "Honua.Server.Tests.PatchConcurrencyTests.Put_MaskedOmittedField_HasReplacementSemanticsWithOrWithoutIfMatch"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented",
@@ -22114,7 +22139,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.OData.ODataGeometryCrudTests.ReplaceFeature_AttributesOnly_ClearsGeometry"
+        "Honua.Server.Tests.Features.Protocols.OData.ODataGeometryCrudTests.ReplaceFeature_AttributesOnly_ClearsGeometry",
+        "Honua.Server.Tests.PatchConcurrencyTests.PatchEndpoints_DeclareConflictAndPreconditionResponses"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented",
@@ -22129,7 +22155,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.ReplaceFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType",
-        "Honua.Server.Tests.Features.Protocols.OData.ODataGeometryCrudTests.ReplaceFeature_NestedLayerRoute_ReturnsUpdatedFeature"
+        "Honua.Server.Tests.Features.Protocols.OData.ODataGeometryCrudTests.ReplaceFeature_NestedLayerRoute_ReturnsUpdatedFeature",
+        "Honua.Server.Tests.PatchConcurrencyTests.PatchEndpoints_DeclareConflictAndPreconditionResponses"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented",
@@ -22158,7 +22185,9 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.UpdateFeature_WithMismatchedPayloadId_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.UpdateFeature_WithUnsupportedContentType_ReturnsUnsupportedMediaType",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.UpdateFeature_WithValidGeoJson_ReturnsUpdated",
-        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.OgcFeaturesUpdate_InsertOnlyGrant_DeniesUpdate"
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.OgcFeaturesUpdate_InsertOnlyGrant_DeniesUpdate",
+        "Honua.Server.Tests.PatchConcurrencyTests.PatchEndpoints_DeclareConflictAndPreconditionResponses",
+        "Honua.Server.Tests.PatchConcurrencyTests.Patch_IfMatchWildcardWithConcurrentEdit_ReturnsConflict"
       ],
       "proof_ledger_surface": "ogc-api-features",
       "maturity": "implemented",

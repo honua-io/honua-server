@@ -167,7 +167,7 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             return QuoteIdentifier(field.Name);
         }
 
-        if (field.IsPrimaryKey)
+        if (field.IsPrimaryKey && field.Name.Equals(_primaryKeyColumn, StringComparison.OrdinalIgnoreCase))
         {
             return QuoteIdentifier(_primaryKeyColumn);
         }
@@ -993,8 +993,16 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
 
     private bool TryMapCoreField(string propertyName, FilterTranslationContext context, out string expression)
     {
+        var declaredField = context.TryGetField(propertyName);
+        // A declared public ID is an attribute when the schema also exposes the
+        // physical object ID. Retain the legacy integer-id alias for schemas that
+        // expose only that alias, and the unqualified alias when no id is declared.
         if (propertyName.Equals("id", StringComparison.OrdinalIgnoreCase) &&
-            context.PrimaryKeyName is not null)
+            context.PrimaryKeyName is not null &&
+            (declaredField is null ||
+             (declaredField.Value.IsPrimaryKey &&
+              (declaredField.Value.Type is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger) &&
+              context.TryGetField(_primaryKeyColumn) is null)))
         {
             expression = QuoteIdentifier(_primaryKeyColumn);
             return true;
