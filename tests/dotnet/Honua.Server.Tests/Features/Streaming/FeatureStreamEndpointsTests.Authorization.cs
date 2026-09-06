@@ -14,11 +14,92 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
+using Npgsql;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
 public sealed partial class FeatureStreamEndpointsTests
 {
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task ODataPoll_RealPortalCredential_RequiresValidSameTenantReplacement(bool expire)
+    {
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+        await fixture.InitializeAsync();
+        fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with { Tenant = "tenant-a" });
+        fixture.MutateV2ResourceObjectMetadata(1, metadata => metadata with { Tenant = "tenant-b" });
+        fixture.UpdateV2ResourceMetadata(0, accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] });
+        fixture.UpdateV2ResourceMetadata(1, accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        var ct = timeout.Token;
+        await using var connection = new NpgsqlConnection(fixture.Postgres.ConnectionString);
+        await connection.OpenAsync(ct);
+        var schema = new NpgsqlCommandBuilder().QuoteIdentifier(fixture.CurrentSchema!);
+        await using (var seed = new NpgsqlCommand($$"""
+            INSERT INTO {{schema}}.features(objectid, layer_id, attributes)
+            VALUES (73011, 0, '{"name":"before-renewal"}'), (73011, 1, '{"name":"tenant-b-secret"}');
+            """, connection))
+        {
+            await seed.ExecuteNonQueryAsync(ct);
+        }
+        const string referer = "https://odata-auth-proof.example/";
+        var issuer = fixture.GetService<IPortalTokenIssuer>();
+        async Task<PortalTokenIssuance> IssueAsync(TimeSpan ttl, string? tenant = "tenant-a") => await issuer.IssueAsync(
+            new PortalTokenIssueRequest("odata-proof", "OData proof", tenant, ["reader"], PortalTokenClientType.Referer,
+                referer, DateTimeOffset.UtcNow + ttl), ct);
+        async Task<HttpResponseMessage> PollAsync(string path, string token)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, path);
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            request.Headers.Referrer = new Uri(referer);
+            request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
+            return await fixture.Client.SendAsync(request, ct);
+        }
+        var credential = await IssueAsync(expire ? TimeSpan.FromSeconds(30) : TimeSpan.FromMinutes(2));
+        using var baselineResponse = await PollAsync("/odata/Features(0)?$filter=ObjectId%20eq%2073011", credential.Token);
+        baselineResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var baseline = JsonDocument.Parse(await baselineResponse.Content.ReadAsStringAsync(ct));
+        baseline.RootElement.GetProperty("value").GetArrayLength().Should().Be(1);
+        baseline.RootElement.GetProperty("value")[0].GetProperty("name").GetString().Should().Be("before-renewal");
+        var deltaPath = new Uri(baseline.RootElement.GetProperty("@odata.deltaLink").GetString()!).PathAndQuery;
+        if (expire)
+        {
+            var remaining = credential.ExpiresAt - DateTimeOffset.UtcNow;
+            if (remaining > TimeSpan.Zero) { await Task.Delay(remaining + TimeSpan.FromMilliseconds(100), ct); }
+        }
+        else { await issuer.RevokeAsync(credential.Token, ct); }
+        using var denied = await PollAsync(deltaPath, credential.Token);
+        denied.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await denied.Content.ReadAsStringAsync(ct)).Should().NotContain("before-renewal").And.NotContain("tenant-b-secret");
+        await using (var update = new NpgsqlCommand($$"""
+            UPDATE {{schema}}.features SET attributes = '{"name":"after-renewal"}', updated_at = CURRENT_TIMESTAMP
+            WHERE layer_id = 0 AND objectid = 73011;
+            """, connection))
+        {
+            await update.ExecuteNonQueryAsync(ct);
+        }
+        var replacement = await IssueAsync(TimeSpan.FromMinutes(1));
+        using var resumed = await PollAsync(deltaPath, replacement.Token);
+        resumed.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var values = JsonDocument.Parse(await resumed.Content.ReadAsStringAsync(ct));
+        values.RootElement.GetProperty("value").GetArrayLength().Should().Be(1);
+        values.RootElement.GetProperty("value")[0].GetProperty("ObjectId").GetInt64().Should().Be(73011);
+        values.RootElement.GetProperty("value")[0].GetProperty("name").GetString().Should().Be("after-renewal");
+        foreach (var tenant in new string?[] { "tenant-b", null })
+        {
+            var changed = await IssueAsync(TimeSpan.FromMinutes(1), tenant);
+            using var hidden = await PollAsync(deltaPath, changed.Token);
+            hidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await hidden.Content.ReadAsStringAsync(ct)).Should().NotContain("after-renewal").And.NotContain("tenant-b-secret");
+        }
+    }
+
     [IntegrationTheory]
     [InlineData(false, false)]
     [InlineData(false, true)]
@@ -150,7 +231,7 @@ public sealed partial class FeatureStreamEndpointsTests
             incompatible.Headers.Referrer = new Uri(referer);
             incompatible.Headers.Accept.ParseAdd("text/event-stream");
             using var hidden = await fixture.Client.SendAsync(incompatible, HttpCompletionOption.ResponseHeadersRead, ct);
-            hidden.StatusCode.Should().Be(HttpStatusCode.BadRequest, "a tenant-scoped layer cannot be resolved from another or unscoped tenant");
+            hidden.StatusCode.Should().Be(HttpStatusCode.Forbidden, "an authenticated principal cannot access another tenant's protected layer");
             (await hidden.Content.ReadAsStringAsync(ct)).Should().NotContain("credential-proof").And.NotContain("tenant-b-secret");
         }
     }
