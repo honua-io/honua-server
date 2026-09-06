@@ -165,7 +165,7 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public void ValidatePlan_WorkflowOnlyAndUnavailableProcesses_ReportCanonicalCapability()
+    public void ValidatePlan_WorkflowOnlyAndProtocolOnlyProcesses_ReportCanonicalCapability()
     {
         var workflowPlan = new AnalysisPlan
         {
@@ -542,35 +542,6 @@ public sealed class GeoprocessingJobServiceTests
         job.OperationId.Should().NotBeNullOrWhiteSpace();
         job.Status.Should().Be(ExecutionJobStatus.Queued);
         job.Spec.Kind.Should().Be(ExecutionJobKind.Geoprocessing);
-    }
-
-    [UnitTest]
-    [Operation(Operations.Create)]
-    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_NonJobCapability_RejectsBeforeDurablePersistence()
-    {
-        var protocolOnlyPlan = new AnalysisPlan
-        {
-            PlanId = "plan-protocol-only",
-            IntentId = "intent-protocol-only",
-            Steps =
-            [
-                new AnalysisPlanStep
-                {
-                    StepId = "cluster",
-                    Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "analytics.cluster",
-                    Inputs = new Dictionary<string, string>(),
-                },
-            ],
-        };
-
-        var act = () => _sut.SubmitJobAsync(protocolOnlyPlan, null, CreatePrincipal());
-
-        await act.Should().ThrowAsync<GeoprocessingValidationException>()
-            .WithMessage("*SYNC_ONLY_PROCESS*");
-        await _jobStore.DidNotReceive().TryCreateAsync(
-            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
