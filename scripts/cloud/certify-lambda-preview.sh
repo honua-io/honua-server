@@ -64,6 +64,10 @@ if [[ ! "$GITHUB_RUN_ID" =~ ^[0-9]+$ || ! "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]; 
   echo "run id and attempt must be numeric" >&2
   exit 2
 fi
+if ! command -v crane >/dev/null 2>&1; then
+  echo "crane is required to mirror the exact source manifest without re-encoding it" >&2
+  exit 2
+fi
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 umask 077
 scratch="$(mktemp -d)"
@@ -71,6 +75,7 @@ scratch="$(mktemp -d)"
 run_token="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 function_name="honua-certrun-lambda-${run_token}"
 log_group="/aws/lambda/${function_name}"
+source_repository="${HONUA_LAMBDA_SOURCE_IMAGE%%:*}"
 source_ref="${HONUA_LAMBDA_SOURCE_IMAGE}@${HONUA_LAMBDA_SOURCE_DIGEST}"
 target_tag="candidate-${HONUA_LAMBDA_SERVER_REVISION:0:12}-${HONUA_LAMBDA_SOURCE_DIGEST:7:12}"
 target_ref="${HONUA_LAMBDA_PREVIEW_REPOSITORY}:${target_tag}"
@@ -126,24 +131,48 @@ trap cleanup EXIT
 python3 "$script_dir/lambda-certification.py" prepare "$scratch"
 
 source_manifest="$(docker buildx imagetools inspect --raw "$source_ref")"
+if [[ "$(jq -r 'has("manifests")' <<<"$source_manifest")" == "true" ]]; then
+  # Lambda takes a single-architecture artifact. When the pin names an index, the thing that must be
+  # mirrored and certified is the one child manifest for the candidate platform, never the index.
+  children="$(jq -ce --arg architecture "$docker_architecture" \
+    '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $architecture)]' <<<"$source_manifest")"
+  if [[ "$(jq -r 'length' <<<"$children")" != "1" ]]; then
+    echo "source index does not resolve to exactly one linux/${docker_architecture} manifest" >&2
+    exit 3
+  fi
+  source_platform_digest="$(jq -er '.[0].digest' <<<"$children")"
+  source_manifest="$(docker buildx imagetools inspect --raw "${source_repository}@${source_platform_digest}")"
+else
+  source_platform_digest="$HONUA_LAMBDA_SOURCE_DIGEST"
+fi
+if [[ ! "$source_platform_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || [[ "$(jq -r 'has("manifests")' <<<"$source_manifest")" == "true" ]]; then
+  echo "source did not resolve to an exact single-platform manifest digest" >&2
+  exit 3
+fi
+source_platform_ref="${source_repository}@${source_platform_digest}"
 source_config="$(jq -er '.config.digest' <<<"$source_manifest")"
-docker pull --platform "linux/$docker_architecture" "$source_ref"
-source_revision="$(docker image inspect "$source_ref" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
-source_architecture="$(docker image inspect "$source_ref" --format '{{ .Architecture }}')"
+source_layers="$(jq -ce '[.layers[].digest]' <<<"$source_manifest")"
+
+docker pull --platform "linux/$docker_architecture" "$source_platform_ref"
+source_revision="$(docker image inspect "$source_platform_ref" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+source_architecture="$(docker image inspect "$source_platform_ref" --format '{{ .Architecture }}')"
+source_rootfs="$(docker image inspect "$source_platform_ref" --format '{{ json .RootFS.Layers }}' | jq -ce '.')"
 if [[ "$source_revision" != "$HONUA_LAMBDA_SERVER_REVISION" || "$source_architecture" != "$docker_architecture" ]]; then
   echo "source image config does not match the declared server revision and candidate architecture" >&2
   exit 3
 fi
-docker run --rm --entrypoint /bin/sh "$source_ref" -c \
+docker run --rm --entrypoint /bin/sh "$source_platform_ref" -c \
   'test -x /opt/extensions/lambda-adapter && test -x /var/task/Honua.Server'
 
-existing="$(aws ecr describe-images --repository-name "$repository_name" \
-  --image-ids imageTag="$target_tag" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true)"
-if [[ -z "$existing" || "$existing" == "None" ]]; then
-  aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
-  docker tag "$source_ref" "$target_ref"
-  docker push "$target_ref"
-fi
+aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
+# Mirror the exact source manifest by digest. A docker pull/tag/push round trip re-serialises the
+# image config through the daemon's own representation, which changes the config blob digest and
+# makes the artifact ECR stores a different artifact from the one the pin certifies. crane uploads
+# the manifest and its blobs verbatim, so the config blob and rootfs survive the copy; ECR may still
+# re-encode the manifest envelope to Docker schema 2, which is why nothing below compares manifest
+# digests. Re-copying on every run is deliberate: it keeps a tag written by an earlier, re-encoding
+# mirror from being accepted on a later run.
+crane copy "$source_platform_ref" "$target_ref"
 
 ecr_digest="$(aws ecr describe-images --repository-name "$repository_name" \
   --image-ids imageTag="$target_tag" --query 'imageDetails[0].imageDigest' --output text)"
@@ -156,15 +185,24 @@ ecr_manifest="$(aws ecr batch-get-image --repository-name "$repository_name" \
   --accepted-media-types application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.v2+json \
   --query 'images[0].imageManifest' --output text)"
 ecr_config="$(jq -er '.config.digest' <<<"$ecr_manifest")"
-if [[ "$ecr_config" != "$source_config" || "$(jq -c '[.layers[].digest]' <<<"$source_manifest")" != "$(jq -c '[.layers[].digest]' <<<"$ecr_manifest")" ]]; then
+if [[ "$ecr_config" != "$source_config" ]]; then
   echo "ECR mirror config digest does not match the exact source artifact" >&2
   exit 4
 fi
+if [[ "$(jq -ce '[.layers[].digest]' <<<"$ecr_manifest")" != "$source_layers" ]]; then
+  echo "ECR mirror layer digests do not match the exact source artifact" >&2
+  exit 4
+fi
 
-aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
 docker pull --platform "linux/$docker_architecture" "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}"
 if [[ "$(docker image inspect "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" --format '{{ .Architecture }}')" != "$docker_architecture" ]]; then
-  echo "ECR image platform does not match candidate architecture" >&2
+  echo "ECR mirror platform does not match candidate architecture" >&2
+  exit 4
+fi
+# The manifest only advertises the config digest; this reads the rootfs the config blob actually
+# declares, on both sides, so a mirror that served a different filesystem cannot pass.
+if [[ "$(docker image inspect "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" --format '{{ json .RootFS.Layers }}' | jq -ce '.')" != "$source_rootfs" ]]; then
+  echo "ECR mirror rootfs diff ids do not match the exact source artifact" >&2
   exit 4
 fi
 
@@ -280,6 +318,8 @@ jq -n \
   --arg server_revision "$HONUA_LAMBDA_SERVER_REVISION" \
   --arg source_digest "$HONUA_LAMBDA_SOURCE_DIGEST" \
   --arg source_config_digest "$source_config" \
+  --arg source_platform_digest "$source_platform_digest" \
+  --arg source_rootfs_fingerprint "$(fingerprint "$source_rootfs")" \
   --arg ecr_digest "$ecr_digest" \
   --arg region_fingerprint "$(fingerprint "${AWS_REGION:-${AWS_DEFAULT_REGION:-}}")" \
   --arg account_fingerprint "$(fingerprint "$(aws sts get-caller-identity --query Account --output text)")" \
@@ -287,9 +327,9 @@ jq -n \
   --arg function_fingerprint "$(fingerprint "$function_name")" \
   --arg request_fingerprint "$(fingerprint "$request_id")" \
   --arg run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${GITHUB_RUN_ID}" \
-  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourceConfigDigest:$source_config_digest,ecrDigest:$ecr_digest,repositoryFingerprint:$repository_fingerprint,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
+  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourcePlatformDigest:$source_platform_digest,sourceConfigDigest:$source_config_digest,sourceRootfsFingerprint:$source_rootfs_fingerprint,ecrDigest:$ecr_digest,repositoryFingerprint:$repository_fingerprint,mirrorTool:"crane",configDigestPreserved:true,rootfsPreserved:true,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
   > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
 
-jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and .verification.coldStartInitDurationMs > 0' \
+jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourcePlatformDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourceConfigDigest | test("^sha256:[0-9a-f]{64}$")) and .artifact.configDigestPreserved and .artifact.rootfsPreserved and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and .verification.coldStartInitDurationMs > 0' \
   "$HONUA_LAMBDA_PREVIEW_RECEIPT" >/dev/null
 echo "Lambda Preview certification passed; ECR digest: ${ecr_digest}"

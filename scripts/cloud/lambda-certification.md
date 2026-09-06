@@ -46,6 +46,28 @@ It asserts all ten names and the exact count on `test_service/0`, and uses the
 snapshot's scratch layer `test_service/10` for only its run-owned row. Missing or
 drifted fixture data fails the run.
 
+## Byte-exact ECR mirror
+
+Lambda runs the ECR copy, so the artifact ECR stores must be the artifact the platform
+manifest pins — not a re-encoding of it. The lane mirrors with `crane copy` by digest
+(pinned and checksum-verified in the workflow), which uploads the source manifest and its
+blobs verbatim. A `docker pull` / `docker tag` / `docker push` round trip cannot be used:
+the daemon re-serialises the image config through its own representation, which changes the
+config blob digest and makes ECR's copy a different artifact.
+
+The verification is therefore blob identity, never envelope identity:
+
+- ECR re-encodes the OCI manifest into a Docker schema 2 envelope, so its **manifest**
+  digest legitimately differs from the source's and is never compared.
+- The **config blob digest** and the **layer blob digests** must match the source manifest
+  exactly, and the rootfs `diff_ids` the pulled ECR image declares must match the source
+  image's. Any mismatch fails the run (exit 4).
+- When the pinned source is a multi-platform index, the lane resolves the one
+  `linux/<candidate architecture>` child and mirrors that manifest. Zero or more than one
+  matching child fails the run (exit 3) rather than guessing.
+- The copy runs on every attempt, so a tag written by an earlier re-encoding mirror can
+  never be accepted by a later run.
+
 ## Live proof
 
 1. Mirror and verify the digest, clone the standing cert environment/VPC, and boot
@@ -78,6 +100,10 @@ alias, so requests do not depend on public ingress or redirect behavior.
 `evidence/lambda-preview-receipt.json` keeps its existing schema and fields and adds:
 
 - `deployment.architecture`: asserted manifest architecture.
+- `artifact.sourcePlatformDigest`: the resolved single-platform source manifest digest
+  (equal to `artifact.sourceDigest` unless the pin named an index).
+- `artifact.sourceConfigDigest`, `artifact.sourceRootfsFingerprint`, `artifact.mirrorTool`,
+  `artifact.configDigestPreserved` and `artifact.rootfsPreserved`: the byte-exactness proof.
 - `verification.coldStartInitDurationMs`: observed first-invoke REPORT value.
 - `serving.result`, `serving.candidateDigest` (digest only), and `serving.candidateVersion`.
 - `serving.deployed`, `.baseline`, `.candidate`, `.rollback`: migration assertions;
