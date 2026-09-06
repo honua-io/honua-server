@@ -58,8 +58,8 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
     }
 
     [IntegrationTheory]
-    [InlineData(false, 4267, 4269, -100.00041558784554, 39.999996883367885)]
-    [InlineData(false, 4269, 4267, -99.99958442760155, 40.00000311609201)]
+    [InlineData(false, 4267, 4269, -100.00041558862637, 39.999996883362)]
+    [InlineData(false, 4269, 4267, -99.99958442682077, 40.00000311609789)]
     [InlineData(true, 4267, 4269, -100.00040583667015, 40.00000589472259)]
     [InlineData(true, 4269, 4267, -99.99959418404879, 39.999994102939)]
     [Operation(Operations.Project)]
@@ -67,8 +67,8 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
     public async Task Project_DefaultNad27Nad83_PreservesOrdinatesAndMatchesIndependentReference(
         bool includeNadconGrid, int sourceSrid, int targetSrid, double expectedX, double expectedY)
     {
-        // Independent pyproj references with network disabled: PROJ 9.8.1 without
-        // grids (Helmert -8,159,175), and PROJ 9.5.1 with the pinned NOAA NADCON grid.
+        // Independent pyproj 3.7.2 / PROJ 9.5.1 references with network disabled:
+        // no grids (Helmert -8,159,175), and the pinned NOAA NADCON grid.
         // CI's external PostGIS 16 fixture includes a legacy conus grid; isolate
         // operation availability instead of assuming every base image is grid-free.
         await using var datumDatabase = new DatumGridPostgresFixture();
