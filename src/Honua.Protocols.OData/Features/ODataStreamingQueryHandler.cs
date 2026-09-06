@@ -108,7 +108,29 @@ internal sealed partial class ODataStreamingQueryHandler(
             DateTimeOffset? deltaSince = null;
             int? deltaLayerId = null;
             ODataDeltaService.DeltaQueryState? deltaState = null;
-            if (!string.IsNullOrWhiteSpace(deltatoken))
+            DurableDeltaContinuation? durableDelta = null;
+            if (deltatoken?.StartsWith("v2.", StringComparison.Ordinal) == true)
+            {
+                if (context.Request.Query.Keys.Any(key => key is not ("$deltatoken" or "$top")))
+                {
+                    return DeltaRecovery(context, "DeltaQueryMismatch", "Delta continuations cannot redefine their query.", 400);
+                }
+                var loaded = await ReadDurableDeltaAsync(context, deltatoken, cancellationToken);
+                if (loaded.Error is not null) { return loaded.Error; }
+                durableDelta = loaded.Continuation!;
+                deltaState = durableDelta.Snapshot.Query;
+                deltaLayerId = deltaState.LayerId;
+                filter = deltaState.Filter;
+                select = deltaState.Select;
+                orderby = deltaState.OrderBy;
+                expand = deltaState.Expand;
+                compute = deltaState.Compute;
+                format = deltaState.Format;
+                count = deltaState.Count?.ToString()?.ToLowerInvariant();
+                top ??= durableDelta.Snapshot.PageSize.ToString(CultureInfo.InvariantCulture);
+                trackChangesRequested = true;
+            }
+            else if (!string.IsNullOrWhiteSpace(deltatoken))
             {
                 var deltaValidation = ValidateDeltaRequestQuery(context.Request.Query.Keys);
                 if (deltaValidation != null)
@@ -124,20 +146,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                     return ODataUtilityService.CreateODataError(context, "InvalidQueryOption", deltaError!);
                 }
 
-                deltaState = deltaState.UpperBoundTimestamp.HasValue
-                    ? deltaState
-                    : deltaState with { UpperBoundTimestamp = DateTimeOffset.UtcNow };
-
-                deltaSince = deltaState.Timestamp;
-                deltaLayerId = deltaState.LayerId;
-                filter = deltaState.Filter;
-                select = deltaState.Select;
-                orderby = deltaState.OrderBy;
-                expand = deltaState.Expand;
-                compute = deltaState.Compute;
-                format = deltaState.Format;
-                count = deltaState.Count?.ToString()?.ToLowerInvariant();
-                trackChangesRequested = true;
+                return DeltaRecovery(context, "DeltaTokenExpired", "Timestamp-only delta tokens require a new tracked baseline.", 410);
             }
             else if (trackChangesRequested &&
                      context.Request.Query.TryGetValue(ODataUtilityService.TrackChangesSnapshotParameter, out var snapshotValues) &&
@@ -423,6 +432,12 @@ internal sealed partial class ODataStreamingQueryHandler(
             var effectiveFilter = deltaSince.HasValue
                 ? ODataDeltaService.BuildDeltaFilter(filter, deltaSince.Value, deltaDefinition.UpperBoundTimestamp)
                 : filter;
+
+            if (trackChangesRequested)
+            {
+                return await HandleDurableDeltaAsync(context, featureReader, resource, storageLayerId.Value,
+                    deltaDefinition, durableDelta, pagination.Limit, pagination.Offset, bbox, effectiveToken);
+            }
 
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
