@@ -117,47 +117,47 @@ internal sealed class PostgresFeatureLayerCopyService(
             var target = await publisher.PublishLayerAsync(connectionString, new LayerPublishRequest
             {
                 AllowEmptyTable = true,
-            Schema = schema,
-            Table = table,
-            LayerName = targetLayerName,
-            GeometryColumn = geometryField,
-            PrimaryKey = primary,
-            Fields = fields.Select(f => f.Name).ToArray(),
-            Srid = srid,
-            ServiceName = serviceName,
-            Enabled = false
-        }, cancellationToken).ConfigureAwait(false);
-        var current = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var targetResource = current.Index.ResourcesByStorageLayerId[target.LayerId];
-        var annotations = resource.Metadata.Annotations.ToDictionary(kv => kv.Key, kv => kv.Value);
-        annotations["gp.processId"] = "data-management.copy-features";
-        annotations["gp.sourceLayerId"] = sourceLayerId.ToString(CultureInfo.InvariantCulture);
-        annotations["gp.operationId"] = operationId;
-        var copied = resource with
-        {
-            Metadata = resource.Metadata with
+                Schema = schema,
+                Table = table,
+                LayerName = targetLayerName,
+                GeometryColumn = geometryField,
+                PrimaryKey = primary,
+                Fields = fields.Select(f => f.Name).ToArray(),
+                Srid = srid,
+                ServiceName = serviceName,
+                Enabled = false
+            }, cancellationToken).ConfigureAwait(false);
+            var current = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var targetResource = current.Index.ResourcesByStorageLayerId[target.LayerId];
+            var annotations = resource.Metadata.Annotations.ToDictionary(kv => kv.Key, kv => kv.Value);
+            annotations["gp.processId"] = "data-management.copy-features";
+            annotations["gp.sourceLayerId"] = sourceLayerId.ToString(CultureInfo.InvariantCulture);
+            annotations["gp.operationId"] = operationId;
+            var copied = resource with
             {
-                Id = targetResource.Metadata.Id,
-                Name = targetLayerName,
-                Title = targetLayerName,
-                CreatedAt = targetResource.Metadata.CreatedAt,
-                UpdatedAt = DateTimeOffset.UtcNow,
-                Annotations = annotations
-            },
-            StorageBindingIds = targetResource.StorageBindingIds,
-            PrimaryStorageBindingId = targetResource.PrimaryStorageBindingId,
+                Metadata = resource.Metadata with
+                {
+                    Id = targetResource.Metadata.Id,
+                    Name = targetLayerName,
+                    Title = targetLayerName,
+                    CreatedAt = targetResource.Metadata.CreatedAt,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    Annotations = annotations
+                },
+                StorageBindingIds = targetResource.StorageBindingIds,
+                PrimaryStorageBindingId = targetResource.PrimaryStorageBindingId,
                 SchemaFields = schemaFields,
-            Spatial = resource.Spatial! with { Bbox = targetResource.Spatial?.Bbox, StorageCrs = resource.Spatial!.SpatialReference },
-            Temporal = resource.Temporal is null ? null : resource.Temporal with { Extent = null },
-            Relationships = [],
-            Status = targetResource.Status
-        };
-        await metadata.SaveAsync(current.Graph with
-        {
-            Resources = current.Graph.Resources.Select(r => r.Metadata.Id == copied.Metadata.Id ? copied : r).ToArray()
-        }, current.Etag, cancellationToken).ConfigureAwait(false);
-        await publisher.SetLayerEnabledAsync(connectionString, target.LayerId, serviceName, true, cancellationToken).ConfigureAwait(false);
-        return new FeatureLayerCopyResult(target.LayerId, count, srid);
+                Spatial = resource.Spatial! with { Bbox = targetResource.Spatial?.Bbox, StorageCrs = resource.Spatial!.SpatialReference },
+                Temporal = resource.Temporal is null ? null : resource.Temporal with { Extent = null },
+                Relationships = [],
+                Status = targetResource.Status
+            };
+            await metadata.SaveAsync(current.Graph with
+            {
+                Resources = current.Graph.Resources.Select(r => r.Metadata.Id == copied.Metadata.Id ? copied : r).ToArray()
+            }, current.Etag, cancellationToken).ConfigureAwait(false);
+            await publisher.SetLayerEnabledAsync(connectionString, target.LayerId, serviceName, true, cancellationToken).ConfigureAwait(false);
+            return new FeatureLayerCopyResult(target.LayerId, count, srid);
         }
         catch
         {
