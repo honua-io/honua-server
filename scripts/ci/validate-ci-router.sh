@@ -246,6 +246,14 @@ assert_exact_shards() {
 }
 
 echo "Dry-running shard router cases..."
+assert_exact_shards \
+  "core-capacity-ApiSurfaceComplianceTests" \
+  "tests/dotnet/Honua.Server.Tests/Comprehensive/ApiSurfaceComplianceTests.cs" \
+  '["STAC and API Governance"]'
+assert_exact_shards \
+  "core-capacity-TestQualityValidationTests" \
+  "tests/dotnet/Honua.Server.Tests/Comprehensive/TestQualityValidationTests.cs" \
+  '["STAC and API Governance"]'
 # Whole-class capacity moves must update path routing and executable ownership.
 assert_exact_shards \
   "core-capacity-CrsTransformationCorrectnessTests" \
@@ -1264,6 +1272,14 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.AdvancedSpatialQueryTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Core Endpoints" \
+  --assert-owner \
+    "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "STAC and API Governance" \
+  --assert-owner \
+    "Honua.Server.Tests.Comprehensive.TestQualityValidationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "STAC and API Governance" \
   --assert-owner \
     "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \

@@ -540,7 +540,7 @@ def test_studio_dashboard_mcp_integration_has_one_server_assembly_owner() -> Non
 
 
 def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
-    """Spatial proofs leave the Core catch-all without orphaning or duplication."""
+    """Capacity moves leave the Core catch-all without orphaning or duplication."""
     config = json.loads(
         (REPOSITORY_ROOT / ".github" / "ci-shards.json").read_text(encoding="utf-8")
     )
@@ -548,6 +548,8 @@ def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
     for name, owner in (
         ("CrsTransformationCorrectnessTests", "Core Attachments and Records"),
         ("AdvancedSpatialQueryTests", "Core Endpoints"),
+        ("Comprehensive.ApiSurfaceComplianceTests", "STAC and API Governance"),
+        ("Comprehensive.TestQualityValidationTests", "STAC and API Governance"),
     ):
         fqn = f"Honua.Server.Tests.{name}"
         assert classes[fqn]["csproj"] == KNOWN

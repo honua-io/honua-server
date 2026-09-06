@@ -220,12 +220,13 @@
       ]
     },
     {
-      "name": "Core, Endpoints and Cloud Contracts",
-      "filter": "((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))|(FullyQualifiedName~FeatureServerEndpointTests)|(FullyQualifiedName~AttachmentEndpointTests|FullyQualifiedName~PostgresAttachmentStoreTests|FullyQualifiedName~QueryRelatedRecordsEndpointTests|FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~LimitsEnforcementTests)",
+      "name": "Core and API Governance capacity rebalance",
+      "filter": "((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))|(FullyQualifiedName~FeatureServerEndpointTests)|(FullyQualifiedName~AttachmentEndpointTests|FullyQualifiedName~PostgresAttachmentStoreTests|FullyQualifiedName~QueryRelatedRecordsEndpointTests|FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~LimitsEnforcementTests)|(FullyQualifiedName~Honua.Server.Tests.Features.API)",
       "children": [
         "Core and Cloud Contracts",
         "Core Endpoints",
-        "Core Attachments and Records"
+        "Core Attachments and Records",
+        "STAC and API Governance"
       ]
     }
   ],
@@ -284,13 +285,13 @@
       "dispatch_rank": 16.7,
       "artifact_suffix": "core-cloud-contracts",
       "log_name": "server-tests-core-cloud-contracts",
-      "_comment": "September 2026 capacity rebalance (run 34025905230): move CrsTransformationCorrectnessTests to Core Attachments and Records and AdvancedSpatialQueryTests to Core Endpoints. Preserve the Core/Cloud catch-all and the 26-minute budget; the Core partition guards lossless ownership.",
+      "_comment": "September 2026 capacity rebalance (run 34025905230): move CrsTransformationCorrectnessTests to Core Attachments and Records and AdvancedSpatialQueryTests to Core Endpoints. Preserve the Core/Cloud catch-all and the 26-minute budget; the Core partition guards lossless ownership. ApiSurfaceComplianceTests and TestQualityValidationTests move to STAC and API Governance to retain headroom for all 40 PatchConcurrencyTests cases, censored in both timeout attempts.",
       "timeout_minutes": 36,
       "test_timeout_minutes": 26,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "(((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))&FullyQualifiedName!~Honua.Server.Tests.CrsTransformationCorrectnessTests)&FullyQualifiedName!~Honua.Server.Tests.AdvancedSpatialQueryTests",
+      "filter": "(((((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))&FullyQualifiedName!~Honua.Server.Tests.CrsTransformationCorrectnessTests)&FullyQualifiedName!~Honua.Server.Tests.AdvancedSpatialQueryTests)&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests)&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.TestQualityValidationTests",
       "paths": [
         "src/Honua.Core/Features/Metadata/",
         "src/Honua.Core/Features/Publishing/",
@@ -303,7 +304,7 @@
         "src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql",
         "tests/dotnet/Honua.Server.Tests/ApiExplorerEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Cloud/",
-        "tests/dotnet/Honua.Server.Tests/Comprehensive/",
+        "tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
         "tests/dotnet/Honua.Server.Tests/Contract/",
         "tests/dotnet/Honua.Server.Tests/DatabaseMigrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/HealthEndpointTests.cs",
@@ -648,14 +649,17 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.API",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.API|FullyQualifiedName~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests|FullyQualifiedName~Honua.Server.Tests.Comprehensive.TestQualityValidationTests",
       "_paths_comment": "#2693: the exact ImageServer endpoint-registry fragment is bounded protocol registration; pair its ImageServer owner with this API-governance projection without widening other EndpointRegistry fragments.",
       "paths": [
         "src/Honua.Protocols.Stac/",
         "src/Honua.Server/EndpointRegistry.ImageServer.cs",
         "tests/dotnet/Honua.Server.Tests/Features/API/",
-        "src/Honua.Core/Features/Validation/"
-      ]
+        "src/Honua.Core/Features/Validation/",
+        "tests/dotnet/Honua.Server.Tests/Comprehensive/ApiSurfaceComplianceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Comprehensive/TestQualityValidationTests.cs"
+      ],
+      "_comment": "September 2026 capacity rebalance (run 34025905230): owns the whole ApiSurfaceComplianceTests and TestQualityValidationTests classes from Core and Cloud Contracts, alongside API governance; unchanged 20-minute budget."
     },
     {
       "name": "OData Core",
