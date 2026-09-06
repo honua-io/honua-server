@@ -35,8 +35,24 @@ public sealed class CuratedCorpus
         return LoadFromDirectory(RepositoryPaths.Resolve("tests", "fixtures", "curated-edge-corpus", revision));
     }
 
+    /// <summary>
+    /// Loads the external-format corpus: the format fixtures written by GDAL/OGR rather than by
+    /// Honua's own readers and writers (honua-server#4419). It shares this manifest schema, digest
+    /// verification and containment checks; only the corpus identity differs.
+    /// </summary>
+    public static CuratedCorpus LoadExternalFormats(string revision = "v1")
+    {
+        ValidateRevision(revision);
+        return LoadFromDirectory(
+            RepositoryPaths.Resolve("tests", "fixtures", "external-format-corpus", revision),
+            expectedId: ExternalFormatCorpusId);
+    }
+
+    /// <summary>Corpus identity of the GDAL-authored format fixtures.</summary>
+    public const string ExternalFormatCorpusId = "external-format-corpus";
+
     /// <summary>Loads a corpus rooted at an explicit directory, primarily for integrity tests.</summary>
-    public static CuratedCorpus LoadFromDirectory(string root)
+    public static CuratedCorpus LoadFromDirectory(string root, string expectedId = "curated-edge-corpus")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         var fullRoot = Path.GetFullPath(root);
@@ -50,7 +66,7 @@ public sealed class CuratedCorpus
         var document = manifest.RootElement;
         RequireString(document, "schemaVersion", SupportedSchemaVersion);
         var identity = RequireObject(document, "identity");
-        RequireString(identity, "id", "curated-edge-corpus");
+        RequireString(identity, "id", expectedId);
         var revision = RequireString(identity, "revision");
         ValidateRevision(revision);
 

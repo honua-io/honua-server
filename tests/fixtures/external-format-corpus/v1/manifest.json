@@ -1,0 +1,192 @@
+{
+  "schemaVersion": "honua.curated-test-corpus/v1",
+  "identity": {
+    "id": "external-format-corpus",
+    "revision": "v1",
+    "title": "Format fixtures authored by GDAL/OGR, not by Honua"
+  },
+  "provenance": {
+    "kind": "third-party-writer",
+    "source": "honua-server#4419",
+    "writer": "GDAL 3.14.0dev-951e07ecebe21de09235a507eb1cd9c055bd25bb (ghcr.io/osgeo/gdal:ubuntu-small-latest)",
+    "generator": "scripts/test-data/generate-external-format-corpus.sh",
+    "containsProductionData": false
+  },
+  "license": {
+    "expression": "Elastic-2.0",
+    "scope": "repository"
+  },
+  "assets": [
+    {
+      "id": "survey-sites-source",
+      "path": "survey-sites.source.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 690,
+      "sha256": "9f1272022d828263900a760364ed857b98d5edb2c7775971298926098b40fb1b",
+      "facets": [
+        "source/authored-by-honua",
+        "geometry/point",
+        "attributes/utf-8",
+        "attributes/negative-latitude"
+      ]
+    },
+    {
+      "id": "polygon-with-hole-source",
+      "path": "polygon-with-hole.source.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 407,
+      "sha256": "9976758fb21d2a4960724eedf572e7a01a9782c6bf3857833141ab8ebe675e08",
+      "facets": [
+        "source/authored-by-honua",
+        "geometry/polygon-with-hole"
+      ]
+    },
+    {
+      "id": "routes-source",
+      "path": "routes.source.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 272,
+      "sha256": "0db9e578955c2c964f0c961295aca046f3e88e165e129dd2cd83ed2c72ff3a53",
+      "facets": [
+        "source/authored-by-honua",
+        "geometry/linestring"
+      ]
+    },
+    {
+      "id": "survey-sites-gdb",
+      "path": "survey-sites.gdb.zip",
+      "mediaType": "application/zip",
+      "byteLength": 9956,
+      "sha256": "b41aeac0fde0f2c7aa64a347f07eaafecbf85705d72d4bc8345a2fe22e630898",
+      "facets": [
+        "writer/gdal-openfilegdb",
+        "filegdb/single-feature-class",
+        "geometry/point"
+      ]
+    },
+    {
+      "id": "survey-sites-shapefile",
+      "path": "survey-sites-shapefile.zip",
+      "mediaType": "application/zip",
+      "byteLength": 1005,
+      "sha256": "8f5dc6500845393a6a90db192e1ec556e1b6943d161001c6f1f93c0dbb9a6600",
+      "facets": [
+        "writer/gdal-esri-shapefile",
+        "shapefile/prj",
+        "shapefile/cpg-utf-8",
+        "geometry/point"
+      ]
+    },
+    {
+      "id": "polygon-with-hole-shapefile",
+      "path": "polygon-with-hole-shapefile.zip",
+      "mediaType": "application/zip",
+      "byteLength": 820,
+      "sha256": "2b8fb787dde3876ea88213ce0e78196448e09bd17eb0dae59dae1c50fda1f2f7",
+      "facets": [
+        "writer/gdal-esri-shapefile",
+        "shapefile/prj",
+        "geometry/polygon-with-hole"
+      ]
+    },
+    {
+      "id": "survey-sites-kml",
+      "path": "survey-sites.kml",
+      "mediaType": "application/vnd.google-earth.kml+xml",
+      "byteLength": 1657,
+      "sha256": "2cd63c23eb6f88985c63922468db407101228c5db3bb6bb07d91568fdadee600",
+      "facets": [
+        "writer/gdal-kml",
+        "kml/folder",
+        "kml/schemadata",
+        "geometry/point",
+        "attributes/utf-8"
+      ]
+    },
+    {
+      "id": "polygon-with-hole-kml",
+      "path": "polygon-with-hole.kml",
+      "mediaType": "application/vnd.google-earth.kml+xml",
+      "byteLength": 974,
+      "sha256": "575a57e6f1c4a2869d56e8a68371d3313a47c01c3b199fe5a4bbfa76c6210375",
+      "facets": [
+        "writer/gdal-kml",
+        "kml/outer-boundary",
+        "kml/inner-boundary",
+        "geometry/polygon-with-hole"
+      ]
+    },
+    {
+      "id": "routes-kml",
+      "path": "routes.kml",
+      "mediaType": "application/vnd.google-earth.kml+xml",
+      "byteLength": 759,
+      "sha256": "1054e10e0bc30fa0966fed102646e8c3cf02dd828bc1ccb0ad4e9bb3a771678d",
+      "facets": [
+        "writer/gdal-kml",
+        "geometry/linestring"
+      ]
+    },
+    {
+      "id": "survey-sites-fgb",
+      "path": "survey-sites.fgb",
+      "mediaType": "application/octet-stream",
+      "byteLength": 1784,
+      "sha256": "45af6a9ca7d5b54f5a5d3045244a764af5fe939a635a7b127bd9c29a191b9c2e",
+      "facets": [
+        "writer/gdal-flatgeobuf",
+        "geometry/point",
+        "attributes/utf-8"
+      ]
+    },
+    {
+      "id": "survey-sites-gpkg",
+      "path": "survey-sites.gpkg",
+      "mediaType": "application/geopackage+sqlite3",
+      "byteLength": 106496,
+      "sha256": "b044ea1dae0865f39c527331a97f5e3af5fe2179e358e45675c5b9c182948d5c",
+      "facets": [
+        "writer/gdal-gpkg",
+        "gpkg/srs-4326",
+        "geometry/point",
+        "attributes/utf-8"
+      ]
+    },
+    {
+      "id": "polygon-with-hole-gpkg",
+      "path": "polygon-with-hole.gpkg",
+      "mediaType": "application/geopackage+sqlite3",
+      "byteLength": 106496,
+      "sha256": "fa338fe36dd46a8afd5cb635a0de01a327630772c526f8834def6794e3dbb93c",
+      "facets": [
+        "writer/gdal-gpkg",
+        "gpkg/srs-4326",
+        "geometry/polygon-with-hole"
+      ]
+    },
+    {
+      "id": "survey-sites-gpx",
+      "path": "survey-sites.gpx",
+      "mediaType": "application/gpx+xml",
+      "byteLength": 1225,
+      "sha256": "01894a4f6048c0cb8258f9d90231e34943ed7688711d226522521c1cd3c15491",
+      "facets": [
+        "writer/gdal-gpx",
+        "gpx/waypoints",
+        "geometry/point"
+      ]
+    },
+    {
+      "id": "survey-sites-csv",
+      "path": "survey-sites.csv",
+      "mediaType": "text/csv",
+      "byteLength": 213,
+      "sha256": "81d292748cc160d7d73e16a2d7853c0ee487c18651b53018dde918b8697569a9",
+      "facets": [
+        "writer/gdal-csv",
+        "csv/wkt-geometry",
+        "attributes/utf-8"
+      ]
+    }
+  ]
+}

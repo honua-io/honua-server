@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document id="root_doc">
+<Schema name="survey_sites" id="survey_sites">
+	<SimpleField name="site_id" type="int"></SimpleField>
+	<SimpleField name="site_name" type="string"></SimpleField>
+	<SimpleField name="elev_m" type="float"></SimpleField>
+	<SimpleField name="surveyed" type="string"></SimpleField>
+</Schema>
+<Folder><name>survey_sites</name>
+  <Placemark id="survey_sites.1">
+	<ExtendedData><SchemaData schemaUrl="#survey_sites">
+		<SimpleData name="site_id">1</SimpleData>
+		<SimpleData name="site_name">San Francisco</SimpleData>
+		<SimpleData name="elev_m">16.5</SimpleData>
+		<SimpleData name="surveyed">2026/01/15</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>-122.4194,37.7749</coordinates></Point>
+  </Placemark>
+  <Placemark id="survey_sites.2">
+	<ExtendedData><SchemaData schemaUrl="#survey_sites">
+		<SimpleData name="site_id">2</SimpleData>
+		<SimpleData name="site_name">Hawaiʻi 東京</SimpleData>
+		<SimpleData name="elev_m">-3.25</SimpleData>
+		<SimpleData name="surveyed">2026/02/29</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>-157.8583,21.3069</coordinates></Point>
+  </Placemark>
+  <Placemark id="survey_sites.3">
+	<ExtendedData><SchemaData schemaUrl="#survey_sites">
+		<SimpleData name="site_id">3</SimpleData>
+		<SimpleData name="site_name">Ushuaia</SimpleData>
+		<SimpleData name="elev_m">23</SimpleData>
+		<SimpleData name="surveyed">2026/03/01</SimpleData>
+	</SchemaData></ExtendedData>
+      <Point><coordinates>-68.3029,-54.8019</coordinates></Point>
+  </Placemark>
+</Folder>
+</Document></kml>
