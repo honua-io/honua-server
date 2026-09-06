@@ -66,8 +66,11 @@ public sealed class ExternalFormatCorpusImportTests : IAsyncLifetime
         // the table. Wrap the same GDAL-authored KML so the archive path is exercised on content
         // whose expected values are already pinned.
         var kmz = BuildKmzArchive(Corpus.ReadAllBytes("survey-sites-kml"));
+        // FileFormatDetectionService deliberately maps `.kmz` onto SupportedFileFormat.Kml, so the
+        // detected format reported in the response is "Kml" — the archive is a container, not a
+        // separate format.
         await ImportAndAssertSitesAsync(
-            kmz, "survey-sites.kmz", "application/vnd.google-earth.kmz", "ext_kmz_sites", "Kmz");
+            kmz, "survey-sites.kmz", "application/vnd.google-earth.kmz", "ext_kmz_sites", "Kml");
     }
 
     [IntegrationTest]
@@ -195,6 +198,11 @@ public sealed class ExternalFormatCorpusImportTests : IAsyncLifetime
         return document.RootElement.TryGetProperty("success", out var success) && success.GetBoolean();
     }
 
+    /// <summary>
+    /// Reads the created table back. <c>honua.ensure_import_table</c> creates
+    /// <c>(id, geometry, properties, created_at)</c>, so the geometry is asserted directly and the
+    /// attribute lookup goes through <c>to_jsonb(row)</c> instead of naming columns directly.
+    /// </summary>
     private async Task<ImportedRow[]> ReadRowsAsync(string tableName)
     {
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
@@ -202,10 +210,10 @@ public sealed class ExternalFormatCorpusImportTests : IAsyncLifetime
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT ST_X(ST_PointOnSurface(geometry)), ST_Y(ST_PointOnSurface(geometry)), ST_SRID(geometry),
-                   ST_Area(geometry), ST_NumInteriorRings(CASE WHEN GeometryType(geometry) = 'POLYGON'
-                                                               THEN geometry END),
-                   attributes->>'site_name', attributes->>'zone_name'
-            FROM {Quote("honua_data")}.{Quote("imported_" + tableName)}
+                   ST_Area(geometry),
+                   CASE WHEN GeometryType(geometry) = 'POLYGON' THEN ST_NumInteriorRings(geometry) ELSE 0 END,
+                   COALESCE(properties->>'site_name', properties->>'zone_name')
+            FROM {Quote("honua_data")}.{Quote("imported_" + tableName)} t
             """;
         var rows = new List<ImportedRow>();
         await using var reader = await command.ExecuteReaderAsync();
@@ -216,8 +224,8 @@ public sealed class ExternalFormatCorpusImportTests : IAsyncLifetime
                 reader.GetDouble(1),
                 reader.GetInt32(2),
                 reader.GetDouble(3),
-                reader.IsDBNull(4) ? 0 : reader.GetInt32(4),
-                reader.IsDBNull(5) ? (reader.IsDBNull(6) ? null : reader.GetString(6)) : reader.GetString(5)));
+                reader.GetInt32(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5)));
         }
 
         return [.. rows];

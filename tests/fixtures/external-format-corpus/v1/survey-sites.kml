@@ -22,7 +22,7 @@
 		<SimpleData name="site_id">2</SimpleData>
 		<SimpleData name="site_name">Hawaiʻi 東京</SimpleData>
 		<SimpleData name="elev_m">-3.25</SimpleData>
-		<SimpleData name="surveyed">2026/02/29</SimpleData>
+		<SimpleData name="surveyed">2026/02/20</SimpleData>
 	</SchemaData></ExtendedData>
       <Point><coordinates>-157.8583,21.3069</coordinates></Point>
   </Placemark>
