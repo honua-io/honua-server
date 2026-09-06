@@ -194,23 +194,21 @@ internal sealed partial class GdalRasterInterpolateJobExecutor
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
-            await File.WriteAllBytesAsync(Path.Join(workspace, "prediction.bin"), output, cancellationToken).ConfigureAwait(false);
-            var vrtPath = Path.Join(workspace, "prediction.vrt");
+            var predictionPath = Path.Join(workspace, "prediction.bin");
+            await File.WriteAllBytesAsync(predictionPath, output, cancellationToken).ConfigureAwait(false);
             var outputPath = Path.Join(workspace, "output.tif");
-            var vrt = FormattableString.Invariant($"""
-                <VRTDataset rasterXSize="{width}" rasterYSize="{height}">
-                  <SRS>EPSG:{srid}</SRS>
-                  <GeoTransform>{xmin:R},{dx:R},0,{ymax:R},0,{-dy:R}</GeoTransform>
-                  <Metadata><MDI key="HONUA_KRIGING_MODEL">ordinary-linear-zero-nugget-v1</MDI></Metadata>
-                  <VRTRasterBand dataType="Float64" band="1" subClass="VRTRawRasterBand">
-                    <NoDataValue>nan</NoDataValue><SourceFilename relativeToVRT="1">prediction.bin</SourceFilename>
-                    <ImageOffset>0</ImageOffset><PixelOffset>8</PixelOffset><LineOffset>{width * 8}</LineOffset><ByteOrder>LSB</ByteOrder>
-                  </VRTRasterBand>
-                </VRTDataset>
-                """);
-            await File.WriteAllTextAsync(vrtPath, vrt, cancellationToken).ConfigureAwait(false);
+            // VRT is intentionally disabled by the worker's driver hardening.
+            // Use the shipped encoder, copied under the existing scratch mount,
+            // without admitting arbitrary VRT sources or relaxing GDAL_SKIP.
+            const string encoderName = "gdal_kriging_encode.py";
+            var encoderPath = Path.Join(workspace, encoderName);
+            File.Copy(Path.Join(AppContext.BaseDirectory, "Scripts", encoderName), encoderPath);
             return await GdalToolExecution.RunAndPublishAsync(runner, context, opts, logger, job.OperationId,
-                "gdal_translate", ["-of", "GTiff", vrtPath, outputPath], workspace, outputPath,
+                "python3", [encoderPath, predictionPath, outputPath,
+                    width.ToString(CultureInfo.InvariantCulture), height.ToString(CultureInfo.InvariantCulture),
+                    srid.ToString(CultureInfo.InvariantCulture), xmin.ToString("R", CultureInfo.InvariantCulture),
+                    ymax.ToString("R", CultureInfo.InvariantCulture), dx.ToString("R", CultureInfo.InvariantCulture),
+                    dy.ToString("R", CultureInfo.InvariantCulture)], workspace, outputPath,
                 GeoTiffContentType, "Ordinary kriging prediction", "Encoding kriging raster", "Kriging completed",
                 cancellationToken).ConfigureAwait(false);
         }

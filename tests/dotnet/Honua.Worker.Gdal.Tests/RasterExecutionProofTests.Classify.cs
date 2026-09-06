@@ -20,6 +20,17 @@ namespace Honua.Worker.Gdal.Tests;
 public sealed partial class RasterExecutionProofTests
 {
     [Fact]
+    public void Classify_UnchangedSmallGridIsVerifiable_ButShiftedOrCoarsenedGridIsRejected()
+    {
+        GeoTiffGeoreferencing.TryRead(File.ReadAllBytes(Fixture("grid.tif")), out var source).Should().BeTrue();
+        source.DescribeMismatchAgainst(source).Should().BeNull();
+        (source with { OriginX = source.OriginX + 0.001 }).DescribeMismatchAgainst(source).Should().Contain("origin");
+        (source with { OriginY = source.OriginY + 0.5 }).DescribeMismatchAgainst(source).Should().Contain("origin");
+        (source with { Width = 1, Height = 1, PixelSizeX = 4, PixelSizeY = 4 })
+            .DescribeMismatchAgainst(source).Should().Contain("too coarse");
+    }
+
+    [Fact]
     public async Task Classify_ConfiguredHttpModel_PreservesGridAndMatchesThreeClassConfusionOracle()
     {
         var backend = Path.Join(AppContext.BaseDirectory, "Fixtures", "ImageryClassifier");

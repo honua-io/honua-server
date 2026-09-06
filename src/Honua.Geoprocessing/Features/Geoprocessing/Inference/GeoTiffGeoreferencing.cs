@@ -352,6 +352,16 @@ internal readonly record struct GeoTiffGeoreferencing
                 $"origin ({OriginX}, {OriginY}) does not match the source origin ({source.OriginX}, {source.OriginY})");
         }
 
+        // An unchanged grid requires no resampling tolerance at all. Small source
+        // scenes (including a real 4x4 classification fixture) are still verifiable
+        // when their exact dimensions and pixel sizes are preserved. Keep origin
+        // and CRS validation above this fast path; a shifted small grid is invalid.
+        if (Width == source.Width && Height == source.Height &&
+            PixelSizeX == source.PixelSizeX && PixelSizeY == source.PixelSizeY)
+        {
+            return null;
+        }
+
         // Extent, unlike the origin, legitimately rounds: resampling to a cell size
         // that does not divide the source coverage evenly forces the pixel count up
         // or down, so ONE OUTPUT pixel of slack is genuinely needed. But that
