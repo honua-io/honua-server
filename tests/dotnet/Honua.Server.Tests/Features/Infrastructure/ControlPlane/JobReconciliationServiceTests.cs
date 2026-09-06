@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
+using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
@@ -94,7 +95,7 @@ public sealed class JobReconciliationServiceTests
         await RunSingleSweepAsync(service, cts.Token);
 
         // The store should NOT have been written to with a Failed/Queued update.
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Failed || j.Status == ExecutionJobStatus.Queued),
             Arg.Any<TimeSpan?>(),
@@ -135,7 +136,7 @@ public sealed class JobReconciliationServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
 
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -154,11 +155,16 @@ public sealed class JobReconciliationServiceTests
                 Timeout = TimeSpan.FromSeconds(1)
             });
 
+        // The fresh record must ALSO look heartbeat-expired. With a live heartbeat the sweep
+        // skips on the heartbeat re-validation instead, and the ownership guard this test is
+        // named for is never reached — a mutation removing the claim-equality clause from
+        // IsStaleSnapshot left the test green (honua-server#4403). Expiring both makes the
+        // changed owner the only remaining reason not to act.
         var reclaimedByOther = snapshot with
         {
             ClaimedBy = "worker-2",
-            ClaimedAt = DateTimeOffset.UtcNow,
-            LastHeartbeatAt = DateTimeOffset.UtcNow
+            ClaimedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            LastHeartbeatAt = DateTimeOffset.UtcNow.AddMinutes(-5)
         };
 
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
@@ -169,19 +175,35 @@ public sealed class JobReconciliationServiceTests
 
         var jobQueue = Substitute.For<IJobQueue>();
         var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+        var terminalCallback = new CountingTerminalCallback();
 
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
-            Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobReconciliationService>.Instance);
+            [terminalCallback], null, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
 
-        await jobStore.DidNotReceive().SetAsync(
-            Arg.Is<ExecutionJobRecord>(j =>
-                j.Status == ExecutionJobStatus.Failed || j.Status == ExecutionJobStatus.Queued),
+        // Positive precondition: the sweep genuinely reached this job and re-read it.
+        // Without this the negative assertions below would also hold for a sweep that
+        // silently processed nothing at all.
+        await jobStore.Received().GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>());
+
+        // worker-2 owns a live claim. The reconciler must not write the record at all —
+        // not a Failed transition, not a Queued requeue, not a heartbeat touch.
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Any<ExecutionJobRecord>(),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
+
+        // Nor may it disturb the queue state backing worker-2's claim.
+        await jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await jobQueue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+
+        // And the submitter must not be told the job reached a terminal state.
+        terminalCallback.Notifications.Should().BeEmpty(
+            "stealing a live claim would notify the submitter of a failure that never happened");
     }
 
     /// <summary>
@@ -229,7 +251,7 @@ public sealed class JobReconciliationServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
 
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -263,18 +285,30 @@ public sealed class JobReconciliationServiceTests
 
         var jobQueue = Substitute.For<IJobQueue>();
         var claimReconciler = Substitute.For<IQueueClaimReconciler>();
+        var terminalCallback = new CountingTerminalCallback();
 
         var service = new JobReconciliationService(
             jobStore, jobQueue, claimReconciler, new ExecutionJobCancellationTokens(),
-            Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobReconciliationService>.Instance);
+            [terminalCallback], null, NullLogger<JobReconciliationService>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
 
-        await jobStore.DidNotReceive().SetAsync(
+        // Positive precondition: the sweep genuinely reached this job and re-read it,
+        // finding it deleted. Otherwise the negative assertions below are vacuous.
+        await jobStore.Received().GetAsync(snapshot.OperationId, Arg.Any<CancellationToken>());
+
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
+
+        // A deleted record must not be resurrected into the queue, nor reported terminal.
+        await jobQueue.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await jobQueue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        terminalCallback.Notifications.Should().BeEmpty(
+            "a job that no longer exists has no terminal state to report");
     }
 
     /// <summary>
@@ -319,7 +353,7 @@ public sealed class JobReconciliationServiceTests
         await RunSingleSweepAsync(service, cts.Token);
 
         // The reconciler must NOT requeue or fail the job.
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
                 j.Status == ExecutionJobStatus.Failed || j.Status == ExecutionJobStatus.Queued),
             Arg.Any<TimeSpan?>(),
@@ -429,7 +463,7 @@ public sealed class JobReconciliationServiceTests
         await RunSingleSweepAsync(service, cts.Token);
 
         // The reconciler must NOT fail the job.
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Failed),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -475,7 +509,7 @@ public sealed class JobReconciliationServiceTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await RunSingleSweepAsync(service, cts.Token);
 
-        await jobStore.DidNotReceive().SetAsync(
+        await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>());
@@ -1246,6 +1280,36 @@ public sealed class JobReconciliationServiceTests
 
         var task = (Task)method!.Invoke(service, [cancellationToken])!;
         await task.ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Records every terminal notification the reconciler emits, so a test can assert
+    /// that a job it must leave alone produced no terminal notification at all.
+    /// </summary>
+    private sealed class CountingTerminalCallback : IJobTerminalCallback
+    {
+        private readonly List<ExecutionJobRecord> _notifications = [];
+
+        public IReadOnlyList<ExecutionJobRecord> Notifications
+        {
+            get
+            {
+                lock (_notifications)
+                {
+                    return _notifications.ToArray();
+                }
+            }
+        }
+
+        public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+        {
+            lock (_notifications)
+            {
+                _notifications.Add(job);
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class ListLogger<T> : ILogger<T>
