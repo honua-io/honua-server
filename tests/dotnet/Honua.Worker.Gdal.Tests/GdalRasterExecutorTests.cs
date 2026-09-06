@@ -11,6 +11,7 @@ using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -400,6 +401,30 @@ public sealed class GdalRasterExecutorTests
             await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
             runner.Invocations.Select(i => i.Tool).Should().Equal("gdalinfo", "python3");
             runner.Invocations.Single(i => i.Tool == "gdalinfo").Arguments.Should().NotContain("-hist");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [Theory]
+    [InlineData(1, "")]
+    [InlineData(0, "{}")]
+    [InlineData(0, "{\"bands\":[{\"band\":1,\"validCount\":null}]}")]
+    public async Task RasterStatistics_MissingOrInvalidExactCounts_FailsWithoutPublishing(int exitCode, string counts)
+    {
+        var runner = new FakeGdalCommandRunner((tool, _, _) => tool == "gdalinfo"
+            ? new GdalCommandResult { ExitCode = 0, StandardOutput = """{"bands":[{"band":1,"mean":2}]}""" }
+            : new GdalCommandResult { ExitCode = exitCode, StandardOutput = counts });
+        var executor = NewStatsExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job("raster.statistics", ("source", Base64("fake-input-raster")));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+            var result = await executor.ExecuteAsync(job, context, default);
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            context.Artifacts.Should().BeEmpty();
         }
         finally
         {

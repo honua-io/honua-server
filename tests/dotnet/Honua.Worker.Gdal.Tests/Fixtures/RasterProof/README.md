@@ -38,7 +38,12 @@ reconstructed from `STATISTICS_VALID_PERCENT`.
 Map algebra preserves each input's nodata mask. Undefined floating-point results
 (NaN or positive/negative infinity, including 0/0 and nonzero/0) become output
 nodata. An explicit `noData` overrides the first input's sentinel; otherwise that
-sentinel is retained, with NaN as the fallback when the source has none.
+sentinel is retained. When the first source has none, GDAL's default for the
+requested or inferred output type is used (also proved with Float64 and Int16).
+This stays representable in integer rasters and avoids NaN-times-zero corrupting
+valid cells when a later input has nodata. A 513x513 constant raster with one
+nodata cell proves count 263168 across nine read windows even though GDAL rounds
+its valid percentage to 100.
 
 Every raster output checks CRS, all six affine ordinates, dimensions, band count,
 pixel type, nodata metadata, GDAL mask-band values, and decoded pixel values. The

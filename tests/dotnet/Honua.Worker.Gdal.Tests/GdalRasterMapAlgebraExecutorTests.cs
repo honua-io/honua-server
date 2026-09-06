@@ -38,7 +38,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
     [UnitTest]
     public async Task MapAlgebra_TwoSources_ProjectsBandVariables_AndPublishesGeoTiff()
     {
-        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("calc-tif"));
+        var runner = SucceedingCalc(Encoding.UTF8.GetBytes("calc-tif"));
         var executor = NewExecutor(runner, out var scratch);
         try
         {
@@ -60,7 +60,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
             invocation.Tool.Should().Be("gdal_calc.py");
             invocation.Arguments.Should().Contain(a => a.StartsWith("-A"));
             invocation.Arguments.Should().Contain(a => a.StartsWith("-B"));
-            invocation.Arguments.Should().Contain("--calc=numpy.nan_to_num((A-B)/(A+B),nan=numpy.nan,posinf=numpy.nan,neginf=numpy.nan)");
+            invocation.Arguments.Should().Contain("--calc=numpy.nan_to_num(numpy.asarray((A-B)/(A+B),dtype=numpy.float64),nan=-9999,posinf=-9999,neginf=-9999) if numpy.issubdtype(numpy.asarray((A-B)/(A+B)).dtype,numpy.inexact) else ((A-B)/(A+B))");
             invocation.Arguments.Should().Contain("--overwrite");
             invocation.Arguments[^1].Should().EndWith("output.tif");
         }
@@ -73,7 +73,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
     [UnitTest]
     public async Task MapAlgebra_LeadingUnaryMinus_PassesCalcAsSingleToken()
     {
-        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("calc-tif"));
+        var runner = SucceedingCalc(Encoding.UTF8.GetBytes("calc-tif"));
         var executor = NewExecutor(runner, out var scratch);
         try
         {
@@ -91,7 +91,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
             // The wrapped expression is a single --calc= token so argparse cannot mistake
             // the leading minus for a separate option. (The band-variable flag "-A" is
             // a separate, expected argument.)
-            args.Should().Contain("--calc=numpy.nan_to_num(-A,nan=numpy.nan,posinf=numpy.nan,neginf=numpy.nan)");
+            args.Should().Contain("--calc=numpy.nan_to_num(numpy.asarray(-A,dtype=numpy.float64),nan=-9999,posinf=-9999,neginf=-9999) if numpy.issubdtype(numpy.asarray(-A).dtype,numpy.inexact) else (-A)");
             args.Should().NotContain("--calc");
         }
         finally
@@ -103,7 +103,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
     [UnitTest]
     public async Task MapAlgebra_DataType_PassesTypeFlag()
     {
-        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("ok"));
+        var runner = SucceedingCalc(Encoding.UTF8.GetBytes("ok"));
         var executor = NewExecutor(runner, out var scratch);
         try
         {
@@ -267,7 +267,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
     [InlineData("A * 1e10")]     // valid: multi-digit exponent
     public async Task MapAlgebra_ExpressionWithValidSciNotation_Succeeds(string expression)
     {
-        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("ok"));
+        var runner = SucceedingCalc(Encoding.UTF8.GetBytes("ok"));
         var executor = NewExecutor(runner, out var scratch);
         try
         {
@@ -285,6 +285,37 @@ public sealed class GdalRasterMapAlgebraExecutorTests
             CleanupScratch(scratch);
         }
     }
+
+    [UnitTest]
+    public async Task MapAlgebra_MissingNativeDefaultDetection_FailsWithoutPublishing()
+    {
+        var runner = new FakeGdalCommandRunner((tool, _, _) => tool == "gdalinfo"
+            ? new GdalCommandResult { ExitCode = 0, StandardOutput = """{"bands":[{}]}""" }
+            : new GdalCommandResult { ExitCode = 1, StandardError = "missing native script" });
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job("raster.map-algebra", ("sources", Sources("raster-a")), ("expression", "A/2"));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+            var result = await executor.ExecuteAsync(job, context, default);
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            context.Artifacts.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    private static FakeGdalCommandRunner SucceedingCalc(byte[] output) => new((tool, args, _) =>
+    {
+        if (tool == "gdalinfo")
+        {
+            return new GdalCommandResult { ExitCode = 0, StandardOutput = """{"bands":[{"noDataValue":-9999}]}""" };
+        }
+        File.WriteAllBytes(args[^1], output);
+        return new GdalCommandResult { ExitCode = 0 };
+    });
 
     private static GdalRasterMapAlgebraJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {

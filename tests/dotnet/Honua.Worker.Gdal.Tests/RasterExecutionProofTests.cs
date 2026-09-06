@@ -327,14 +327,20 @@ public sealed class RasterExecutionProofTests : IDisposable
         AssertStatistics(bands[secondBandOnly ? 0 : 1], 2, 4, -5, 25, 10, Math.Sqrt(125));
     }
 
-    [Fact]
-    public async Task MapAlgebra_SourcesWithoutNoData_UndefinedDivisionUsesNaNFallback()
+    [Theory]
+    [InlineData("Float64", false)]
+    [InlineData("Float64", true)]
+    [InlineData("Int16", false)]
+    public async Task MapAlgebra_FirstSourceWithoutNoData_UndefinedDivisionUsesTypeDefault(string type, bool secondSourceHasNoData)
     {
         var output = await ExecuteRaster("raster.map-algebra",
-            ("sources", Input("algebra-a-unmasked.tif") + "|" + Input("algebra-b-unmasked.tif")),
-            ("expression", "A/B"), ("dataType", "Float64"));
+            ("sources", Input("algebra-a-unmasked.tif") + "|" + Input(secondSourceHasNoData ? "algebra-b.tif" : "algebra-b-unmasked.tif")),
+            ("expression", "A/B"), ("dataType", type));
         AssertGrid(output, 4, 2, 4326, [10, 0.25, 0, 20, 0, -0.5], 1);
-        AssertBand(output, 0, [2, double.NaN, double.NaN, 5, 2, 0.5, 4, 0], "Float64", double.NaN);
+        // GDAL defaults are Float64.MaxValue and Int16.MinValue. Integer
+        // RasterIO rounds the exactly representable half to the nearest integer.
+        var n = type == "Int16" ? short.MinValue : double.MaxValue;
+        AssertBand(output, 0, [2, n, n, 5, secondSourceHasNoData ? n : 2, type == "Int16" ? 1 : 0.5, 4, 0], type, n);
     }
 
     [Fact]
