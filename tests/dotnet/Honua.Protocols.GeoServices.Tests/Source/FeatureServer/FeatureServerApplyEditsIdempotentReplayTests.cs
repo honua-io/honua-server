@@ -140,18 +140,41 @@ public sealed class FeatureServerApplyEditsIdempotentReplayTests : IAsyncLifetim
         firstDelete.DeleteResults.Should().ContainSingle(result => result.Success && result.ObjectId == objectId);
         (await CountAsync(name)).Should().Be(0);
 
-        // Re-create a row and let it take the same object id space, then replay the delete. The
-        // replay must be answered from the recorded response, not re-executed.
+        // Re-create a row under the SAME object id the delete targeted, then replay the delete.
+        // objectid is BIGSERIAL, so an ordinary add would take the next sequence value and the
+        // replayed delete would harmlessly target an absent row — the assertion would then pass
+        // even with replay protection broken. Reinsert the exact id instead.
         var revivedName = $"{name}-revived";
-        var revivedBody = await ReadAsync(await PostAsync(AddPayload(revivedName), Guid.NewGuid().ToString("n")));
-        var revivedId = Deserialize(revivedBody).AddResults!.Single().ObjectId!.Value;
+        await ReinsertWithObjectIdAsync(objectId, revivedName);
+        (await CountAsync(revivedName)).Should().Be(1, "the row was re-created under the deleted object id");
 
         var replay = Deserialize(await ReadAsync(await PostAsync(deletePayload, key)));
         replay.DeleteResults.Should().ContainSingle().Which.ObjectId.Should().Be(objectId);
 
         (await CountAsync(revivedName)).Should().Be(
             1,
-            $"the replayed delete must not execute again and take out object id {revivedId}");
+            $"the replayed delete must be answered from the recorded response, not re-executed — " +
+            $"re-executing it would delete the row now occupying object id {objectId}");
+    }
+
+    /// <summary>
+    /// Re-creates a row under an explicit object id, so a replayed delete has something to destroy
+    /// if replay protection fails.
+    /// </summary>
+    private async Task ReinsertWithObjectIdAsync(long objectId, string name)
+    {
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO features (layer_id, objectid, geometry, attributes)
+            VALUES (@layerId, @objectId, ST_SetSRID(ST_Point(-122.4194, 37.7749), 4326),
+                    jsonb_build_object('name', @name));
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        command.Parameters.AddWithValue("objectId", objectId);
+        command.Parameters.AddWithValue("name", name);
+        (await command.ExecuteNonQueryAsync()).Should().Be(1);
     }
 
     private static string AddPayload(string name)
