@@ -4,6 +4,8 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Geoprocessing;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.IO;
@@ -47,6 +49,49 @@ public sealed partial class RasterExecutionProofTests
         var result = await executor.ExecuteAsync(job, context, CancellationToken.None);
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         context.Artifacts.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(" ", false)]
+    [InlineData("-sql", false)]
+    [InlineData("a\nb", false)]
+    [InlineData("a\0b", false)]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("survey", true)]
+    [InlineData("Kīlauea 日本", true)]
+    public void Ogr_PlanValidation_RejectsMalformedLayerNamesBeforeDispatch(string? layerName, bool valid)
+        => AssertLayerPlan(layerName, valid);
+
+    [Theory]
+    [InlineData(1024, true)]
+    [InlineData(1025, false)]
+    public void Ogr_PlanValidation_EnforcesLayerNameLengthBoundary(int length, bool valid)
+        => AssertLayerPlan(new string('x', length), valid);
+
+    private static void AssertLayerPlan(string? layerName, bool valid)
+    {
+        var inputs = new Dictionary<string, string> { ["source"] = "AQID", ["sourceFormat"] = "GPKG" };
+        if (layerName is not null)
+        {
+            inputs["layerName"] = layerName;
+        }
+        var plan = new AnalysisPlan
+        {
+            PlanId = "ogr-proof", IntentId = "source-read",
+            Steps = [new AnalysisPlanStep { StepId = "s1", Kind = AnalysisPlanStepKind.Geoprocess, ProcessId = "source.ogr", Inputs = inputs }]
+        };
+        var (violations, _) = ProcessPlanValidator.Validate(plan, new BuiltInProcessCatalog());
+        if (valid)
+        {
+            violations.Should().BeEmpty();
+        }
+        else
+        {
+            var violation = violations.Should().ContainSingle().Subject;
+            violation.Code.Should().Be("INVALID_PARAMETER_VALUE");
+            violation.FieldPath.Should().Be("steps[s1].inputs.layerName");
+        }
     }
 
     private static void AssertSurvey(JsonElement root)
