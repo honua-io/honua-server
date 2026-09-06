@@ -64,3 +64,11 @@ the Release assemblies built with warnings as errors and `-maxcpucount:4`.
 The architecture result is retained as `proofs-3872-results/architecture-delta.trx`
 (3m29s). This validates integration operation attributes and committed catalog
 parity; the review-follow-up delta execution cases require their own receipt.
+
+The review-follow-up focused run passed all 22 delta cases with zero failures
+or skips on 2026-09-06 (5m25s), retained as
+`proofs-3872-results/odata-delta-6.trx`. This includes bounded cross-node clock
+skew, baseline versus delta context, and structured error-code telemetry under
+the production exception-detail redaction policy. The changed OData production
+assembly and test assembly were rebuilt with zero warnings or errors before
+execution; unchanged dependency outputs were reused.

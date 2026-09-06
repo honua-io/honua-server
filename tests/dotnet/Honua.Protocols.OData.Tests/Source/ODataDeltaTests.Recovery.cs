@@ -62,7 +62,11 @@ public sealed partial class ODataDeltaTests
         invalidResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var failedActivity = activities.Should().ContainSingle().Subject;
         failedActivity.Status.Should().Be(ActivityStatusCode.Error);
-        failedActivity.StatusDescription.Should().Be("InvalidQueryOption");
+        failedActivity.GetTagItem("odata.error_code").Should().Be("InvalidQueryOption");
+        failedActivity.StatusDescription.Should().BeNull("exception details remain redacted by the production telemetry processor");
+        using var invalidBody = JsonDocument.Parse(await invalidResponse.Content.ReadAsStringAsync());
+        invalidBody.RootElement.GetProperty("error").GetProperty("code").GetString()
+            .Should().Be("InvalidQueryOption", "wire and telemetry error codes must agree");
     }
 
     [IntegrationTest]
