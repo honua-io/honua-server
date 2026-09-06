@@ -221,6 +221,13 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
     [InlineData("alert_rule.enable")]
     [InlineData("alert_rule.disable")]
     [InlineData("alert_rule.delete")]
+    [Endpoint("POST /api/v1/admin/alerts/zones")]
+    [Endpoint("PUT /api/v1/admin/alerts/zones/{zoneId}")]
+    [Endpoint("DELETE /api/v1/admin/alerts/zones/{zoneId}")]
+    [Endpoint("POST /api/v1/admin/alerts/rules")]
+    [Endpoint("PUT /api/v1/admin/alerts/rules/{ruleId}")]
+    [Endpoint("PUT /api/v1/admin/alerts/rules/{ruleId}/enabled")]
+    [Endpoint("DELETE /api/v1/admin/alerts/rules/{ruleId}")]
     public async Task Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged(string action)
     {
         var store = _fixture.GetService<IAlertAdminStore>();
