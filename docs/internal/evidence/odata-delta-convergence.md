@@ -28,8 +28,9 @@ Receipts expire after 24 hours. Missing, expired and invalid future state return
 `410 DeltaTokenExpired`. Malformed tokens and query redefinitions return typed 400
 errors. Timestamp-only legacy tokens require an explicit new tracked baseline;
 they receive 410 and cannot silently rebaseline. Snapshot capacity is bounded at
-10,000 rows and 16 MiB of projected row JSON; incomplete provider results return
-413. Tracked queries require a positive page size and do not support initial skips,
+10,000 rows and 16 MiB of projected row JSON; capacity overflow returns 413.
+Tracked queries require count capability, and an incomplete provider result returns
+409 `DeltaSnapshotIncomplete`. They require a positive page size and do not support initial skips,
 expansion, bbox or Parquet. Ordinary untracked query behavior is unchanged.
 
 The native .NET regression fixture commits independently specified names, deletes,
@@ -48,9 +49,10 @@ the candidate as not yet cut; local results must not be relabeled candidate proo
 
 ## Local verification
 
-On 2026-09-06, the native Windows .NET 10.0.100 run passed all 18
+On 2026-09-06, the native Windows .NET 10.0.100 run passed all 20
 `ODataDeltaTests` / `ODataDeltaValueTests` cases with zero failures or skips.
 The Release build treated warnings as errors and used `-maxcpucount:4`.
 After the initial build, the corrected PostgreSQL receipt store was rebuilt and
 the focused tests reused unchanged project outputs with `BuildProjectReferences=false`.
-The result is retained locally as `proofs-3872-results/odata-delta-2.trx`.
+The result is retained locally as `proofs-3872-results/odata-delta-3.trx` (9m08s).
+This includes explicit rejection of empty delta tokens and legacy snapshot cursors.
