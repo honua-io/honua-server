@@ -22,7 +22,8 @@ public sealed partial class ODataDeltaTests
     {
         await using var connection = new NpgsqlConnection(_fixture.Postgres.ConnectionString);
         await connection.OpenAsync();
-        var schema = new NpgsqlCommandBuilder().QuoteIdentifier(_fixture.CurrentSchema!);
+        using var commandBuilder = new NpgsqlCommandBuilder();
+        var schema = commandBuilder.QuoteIdentifier(_fixture.CurrentSchema!);
         await using (var seed = new NpgsqlCommand($$"""
             DELETE FROM {{schema}}.features WHERE layer_id = 0;
             INSERT INTO {{schema}}.features(objectid, layer_id, geometry, attributes, updated_at)
