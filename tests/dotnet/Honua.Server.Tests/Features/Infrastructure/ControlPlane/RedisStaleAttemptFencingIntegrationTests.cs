@@ -353,7 +353,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
         var operationId = $"job-3851-retry-{Guid.NewGuid():N}";
         var retryPolicy = new JobRetryPolicy
         {
-            MaxAttempts = 3,
+            MaxAttempts = 4,
             Strategy = BackoffStrategy.Exponential,
             BaseDelay = TimeSpan.FromMilliseconds(100),
             MaxDelay = TimeSpan.FromMilliseconds(250)
@@ -367,7 +367,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
         await harness.Queue.EnqueueAsync(operationId);
 
         var callback = new CountingTerminalCallback();
-        var executor = new FailingExecutor(3);
+        var executor = new FailingExecutor(4);
         using var worker = new JobExecutionService(
             harness.Queue,
             harness.JobStore,
@@ -397,10 +397,20 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             (secondBackoff.NextRetryAt!.Value - secondBackoff.UpdatedAt).Should().BeCloseTo(
                 TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(25));
 
+            var thirdBackoff = await WaitForJobAsync(
+                harness.JobStore,
+                operationId,
+                current => current.Status == ExecutionJobStatus.Queued && current.AttemptCount == 3,
+                TimeSpan.FromSeconds(10));
+            thirdBackoff.NextRetryAt.Should().NotBeNull();
+            // 100 * 2^2 = 400 ms, capped by the independently specified 250 ms maximum.
+            (thirdBackoff.NextRetryAt!.Value - thirdBackoff.UpdatedAt).Should().BeCloseTo(
+                TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(25));
+
             var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(15));
             terminal.Status.Should().Be(ExecutionJobStatus.Failed);
             executor.InvocationCount.Should().Be(retryPolicy.MaxAttempts);
-            executor.Attempts.Select(attempt => attempt.AttemptCount).Should().Equal(1, 2, 3);
+            executor.Attempts.Select(attempt => attempt.AttemptCount).Should().Equal(1, 2, 3, 4);
             executor.Attempts.Should().OnlyContain(attempt => !string.IsNullOrWhiteSpace(attempt.ClaimedBy));
             callback.InvocationCount.Should().Be(1);
 
