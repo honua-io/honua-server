@@ -220,6 +220,14 @@
       ]
     },
     {
+      "name": "STAC Protocol capacity split",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac",
+      "children": [
+        "STAC Protocol",
+        "STAC Items and Collections"
+      ]
+    },
+    {
       "name": "Core and API Governance capacity rebalance",
       "filter": "((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))|(FullyQualifiedName~FeatureServerEndpointTests)|(FullyQualifiedName~AttachmentEndpointTests|FullyQualifiedName~PostgresAttachmentStoreTests|FullyQualifiedName~QueryRelatedRecordsEndpointTests|FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~LimitsEnforcementTests)|(FullyQualifiedName~Honua.Server.Tests.Features.API)",
       "children": [
@@ -1188,7 +1196,7 @@
     {
       "name": "STAC Protocol",
       "shard_name": "STAC Protocol",
-      "dispatch_rank": 16.6,
+      "dispatch_rank": 6.5,
       "artifact_suffix": "stac-protocol",
       "log_name": "server-tests-stac-protocol",
       "timeout_minutes": 25,
@@ -1197,7 +1205,28 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac",
+      "_comment": "September 2026 capacity split of the STAC assembly (runs 34039679229 attempts 1 and 2, both exit 124 at the 15m cap; the last green run 34034090781 already recorded capacity_status=low_headroom at 766s / 85.1% with zero failures). Every class here declares [Collection(\"Database\")], the one collection still marked DisableParallelization, so the shard is a strictly serial timeline: the TRX of the green run shows 136 tests occupying 755s of wall with 19s of total idle, and no two classes overlapping. StacItemsTests and StacCollectionsTests are 348.2s of that 755s and move to `STAC Items and Collections`; this shard keeps the remaining 388.6s. Budgets are unchanged. This shard stays the higher `dispatch_rank` of the pair so it is the exact-head cache WRITER (ci.yml sorts the matrix by -dispatch_rank and server-test-shard-cache.sh picks the first selected shard per csproj): it owns StacOpsDemoEndpointTests, whose hosted Blazor `_framework/` content root is a build output that the packaged payload does not carry, so on attempt 1 it builds that content root while every sibling materializes it. That narrows the exposure rather than removing it: server-test-shard-cache.sh checks `run_attempt > 1` before the writer designation, so on a rerun the writer materializes the payload too and the class 404s again (attempt 2 of run 34039679229). #4453 carries the real fix. validate-ci-router.sh pins that ordering.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests",
+      "paths": [
+        "src/Honua.Protocols.Stac/",
+        "tests/dotnet/Honua.Protocols.Stac.Tests/Source/",
+        "src/Honua.Core/Features/Validation/"
+      ]
+    },
+    {
+      "name": "STAC Items and Collections",
+      "shard_name": "STAC Items and Collections",
+      "dispatch_rank": 5.8,
+      "artifact_suffix": "stac-items-collections",
+      "log_name": "server-tests-stac-items-collections",
+      "timeout_minutes": 25,
+      "test_timeout_minutes": 15,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj",
+      "_comment": "September 2026 capacity split of `STAC Protocol` (run 34039679229). Owns the two heaviest classes of the serialized STAC timeline measured on the last green run 34034090781: StacCollectionsTests 179.8s / 18 cases and StacItemsTests 168.4s / 19 cases, 348.2s of the parent's 755s. Both declare [Collection(\"Database\")] and construct a WebAppFixture per test case (class-level IAsyncLifetime), so their cost is ~9.4s per case of host construction that cannot overlap with anything else in the assembly; that is why the split is by class and not by budget. Same csproj as `STAC Protocol` and a lower dispatch_rank, so this shard consumes the exact-head payload the writer publishes. Budgets match the parent and are unchanged.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests",
       "paths": [
         "src/Honua.Protocols.Stac/",
         "tests/dotnet/Honua.Protocols.Stac.Tests/Source/",
