@@ -246,6 +246,15 @@ assert_exact_shards() {
 }
 
 echo "Dry-running shard router cases..."
+# Whole-class capacity moves must update path routing and executable ownership.
+assert_exact_shards \
+  "core-capacity-CrsTransformationCorrectnessTests" \
+  "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs" \
+  '["Core Attachments and Records"]'
+assert_exact_shards \
+  "core-capacity-AdvancedSpatialQueryTests" \
+  "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs" \
+  '["Core Endpoints"]'
 assert_descriptor \
   "ci-shards-only" \
   ".github/ci-shards.json" \
@@ -1247,6 +1256,14 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices ImageServer" \
+  --assert-owner \
+    "Honua.Server.Tests.CrsTransformationCorrectnessTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core Attachments and Records" \
+  --assert-owner \
+    "Honua.Server.Tests.AdvancedSpatialQueryTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core Endpoints" \
   --assert-owner \
     "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
