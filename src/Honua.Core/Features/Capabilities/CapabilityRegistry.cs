@@ -299,6 +299,12 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("scene.bim-ingest", "scene", FeatureCatalog.SceneBimIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("scene.pointcloud-ingest", "scene", FeatureCatalog.ScenePointCloudIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Preview),
+            // Honua 2026.1 is GA for single-tenant deployments. Multi-tenant operation
+            // remains an opt-in Preview/trial surface for non-production evaluation only,
+            // with no GA, availability, performance, durability, SLO, or scale claim and
+            // no customer production data. This maturity is claims-only and does not weaken the
+            // full-severity security floor for cross-tenant disclosure (#3906).
+            ("admin.multi-tenancy", "control-plane", FeatureCatalog.MultiTenancyKey, CapabilityKind.Feature, null, CapabilityMaturity.Preview),
             // Realtime remains opt-in Preview until the per-transport qualification
             // denominator passes against the exact release candidate (#3810).
             ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Preview),
