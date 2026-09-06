@@ -25,7 +25,8 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
     [Operation(Operations.ExtractChanges)]
     public async Task ReplicaUpload_BatchWithoutOutbox_StampsEveryRowAndRestoresOrigin()
     {
-        var schemaContext = _fixture.GetService<Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext>();
+        var schemaContext = (Honua.Infrastructure.Middleware.SchemaContext)_fixture
+            .GetService<Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext>();
         var previousSchema = schemaContext.CurrentSchema;
         schemaContext.CurrentSchema = _fixture.CurrentSchema;
         try
