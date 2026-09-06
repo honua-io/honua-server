@@ -44,6 +44,10 @@ This stays representable in integer rasters and avoids NaN-times-zero corrupting
 valid cells when a later input has nodata. A 513x513 constant raster with one
 nodata cell proves count 263168 across nine read windows even though GDAL rounds
 its valid percentage to 100.
+An explicit shared TIFF mask independently removes the first sample of each
+statistics band, leaving {1,2,3,4} and {5,15,25}. Counts 4 and 3 and population
+standard deviations sqrt(5/4) and sqrt(200/3) prove that the count reader honors
+validity masks in addition to per-band nodata, matching GDAL's moments.
 
 Every raster output checks CRS, all six affine ordinates, dimensions, band count,
 pixel type, nodata metadata, GDAL mask-band values, and decoded pixel values. The

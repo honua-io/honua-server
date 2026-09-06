@@ -354,6 +354,18 @@ public sealed class RasterExecutionProofTests : IDisposable
         AssertStatistics(bands[0], 1, 513 * 513 - 1, 1, 1, 1, 0);
     }
 
+    [Fact]
+    public async Task Statistics_ExplicitValidityMask_ExcludesMaskedCellsAndBandNoData()
+    {
+        using var json = JsonDocument.Parse(await Execute("raster.statistics", ("source", Input("statistics-masked.tif"))));
+        var bands = json.RootElement.GetProperty("bands");
+        bands.GetArrayLength().Should().Be(2);
+        // The explicit mask removes the first sample in each band in addition
+        // to band nodata: {1,2,3,4} and {5,15,25}, with population variances 5/4 and 200/3.
+        AssertStatistics(bands[0], 1, 4, 1, 4, 2.5, Math.Sqrt(1.25));
+        AssertStatistics(bands[1], 2, 3, 5, 25, 15, Math.Sqrt(200.0 / 3));
+    }
+
     private static void AssertStatistics(JsonElement band, int index, long count, double min, double max, double mean, double stddev)
     {
         band.GetProperty("band").GetInt32().Should().Be(index);

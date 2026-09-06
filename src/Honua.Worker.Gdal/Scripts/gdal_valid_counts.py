@@ -16,14 +16,15 @@ dataset = gdal.Open(args[1])
 bands = []
 for index in range(1, dataset.RasterCount + 1):
     band = dataset.GetRasterBand(index)
+    mask = band.GetMaskBand()
     nodata = band.GetNoDataValue()
     count = 0
     for y in range(0, dataset.RasterYSize, 256):
         for x in range(0, dataset.RasterXSize, 256):
             data = band.ReadAsArray(x, y, min(256, dataset.RasterXSize - x), min(256, dataset.RasterYSize - y))
-            # Match GDAL statistics: NaN and the band sentinel are excluded.
-            # Explicit dataset masks are not used by GDAL ComputeStatistics.
-            valid = ~np.isnan(data)
+            # Match GDAL statistics: explicit validity masks, NaN and the band
+            # sentinel all exclude samples from the population.
+            valid = (mask.ReadAsArray(x, y, data.shape[1], data.shape[0]) != 0) & ~np.isnan(data)
             if nodata is not None and not math.isnan(nodata):
                 valid &= data != nodata
             count += int(np.count_nonzero(valid))
