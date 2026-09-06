@@ -11,10 +11,13 @@ public sealed class CogLifecycleDocumentationTests
     [Theory]
     [InlineData("docs/reference/protocols/cloud-native-formats.md")]
     [InlineData("docs/guides/publish/publish-rasters.md")]
-    public void CloudCogDocs_DeclarePreviewTileOnlyRestrictions(string path)
+    public void CloudCogDocs_DeclareGaTileWorkflowAndRestrictions(string path)
     {
         var text = File.ReadAllText(Path.Combine(FindRepositoryRoot(), path));
-        text.Should().Contain("Preview ImageServer tile fallback");
+        text.Should().Contain("ImageServer tile fallback");
+        text.Should().Contain("COG is a 2026.1 GA target");
+        text.Should().Contain("lossless PNG");
+        text.Should().NotContain("pending an operator ruling");
         text.Should().Contain("GoogleMapsCompatible");
         text.Should().Contain("JPEGTables");
         text.Should().NotContain("Both surface through the same protocol adapters");

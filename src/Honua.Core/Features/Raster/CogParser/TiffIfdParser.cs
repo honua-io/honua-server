@@ -196,6 +196,7 @@ internal sealed class TiffIfdParser
             var pos = i * typeSize;
             result[i] = type switch
             {
+                TiffConstants.TypeByte or TiffConstants.TypeAscii => data[pos],
                 TiffConstants.TypeShort => ReadUInt16(data, pos, _isLittleEndian),
                 TiffConstants.TypeLong => ReadUInt32(data, pos, _isLittleEndian),
                 TiffConstants.TypeLong8 => ReadInt64(data, pos, _isLittleEndian),
@@ -219,6 +220,7 @@ internal sealed class TiffIfdParser
             var pos = i * typeSize;
             result[i] = type switch
             {
+                TiffConstants.TypeByte or TiffConstants.TypeAscii => data[pos],
                 TiffConstants.TypeShort => ReadUInt16(data, pos, _isLittleEndian),
                 TiffConstants.TypeLong => (int)ReadUInt32(data, pos, _isLittleEndian),
                 TiffConstants.TypeLong8 => checked((int)ReadInt64(data, pos, _isLittleEndian)),

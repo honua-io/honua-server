@@ -6,7 +6,7 @@ Honua's support for the cloud-native geospatial format family: what each format 
 
 | Format | Role | Register / produce | Serve / consume | Status |
 |---|---|---|---|---|
-| COG / GeoTIFF | Registered source + import | `POST /api/v1/admin/cloud-rasters` (S3/Azure, in place) or file import `POST /api/v1/admin/import/raster` | Registered cloud objects: ImageServer WebMercatorQuad tiles only; imported GeoTIFFs use the normal raster pipeline | ImageServer is Preview; cloud-format GA vs Preview is pending an operator ruling |
+| COG / GeoTIFF | Registered source + import | `POST /api/v1/admin/cloud-rasters` (S3/Azure, in place) or file import `POST /api/v1/admin/import/raster` | Registered cloud objects: ImageServer WebMercatorQuad tiles only; imported GeoTIFFs use the normal raster pipeline | COG is a 2026.1 GA target; direct serving is limited to the documented tile workflow |
 | PMTiles | Produced artifact | Tile-operations jobs (`archive`, `publish`) — see [Publish tiles](../../guides/publish/publish-tiles.md) | `GET`/`HEAD /api/v1/tiles/pmtiles/{artifactId}` (HTTP range requests) | Serving live |
 | GeoParquet | Import + wire format | File import (`.parquet`, `.geoparquet`) | FeatureServer `f=parquet` (GeoParquet 1.1.0, shared response formatter) | Live |
 | GeoArrow | Wire format | — | FeatureServer `f=arrow` (Arrow IPC stream, shared response formatter) | Live |
@@ -18,7 +18,7 @@ Honua's support for the cloud-native geospatial format family: what each format 
 ## COG and cloud rasters
 
 Register a raster that already lives in object storage — no copy, no conversion. Cloud tile serving
-currently uses the Preview ImageServer tile fallback:
+uses the ImageServer tile fallback:
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/cloud-rasters` with `{"layerId":1,"name":"Imagery 2026","provider":"AwsS3","bucket":"my-rasters","objectKey":"imagery/2026.tif"}`.
 
@@ -27,7 +27,7 @@ PostGIS tile path. `exportImage`, `identify`, WCS 2.0.1, and OGC API Coverages d
 cloud COGs. The tile object must be an EPSG:3857, GoogleMapsCompatible-aligned COG; other grids fail
 closed rather than being reprojected. Only standalone JPEG tiles can pass through with `format=jpg`;
 TIFF-JPEG streams requiring shared JPEGTables are not assembled. DEFLATE, LZW, ZSTD and uncompressed
-samples can be decoded internally, but this route has no image encoder for them. The default
+chunky unsigned 8/16-bit grayscale or RGB samples serve as lossless PNG (`format=png`, the default), preserving sample depth and nodata transparency. Other sample types, palettes and planar layouts are rejected; JPEG/TIFF/COG output conversion is not available for decoded samples. The default
 `format=png` does not transcode JPEG. Unsupported grids and output formats return GeoServices error code 404 from the tile fallback (an HTTP 200 error envelope); a successful metadata refresh does not guarantee tile delivery. Workflow detail: [Publish rasters](../../guides/publish/publish-rasters.md).
 
 Imported rasters can be deleted (`DELETE /api/v1/admin/import/raster/{rasterId}`) and have their descriptive metadata updated (`PATCH /api/v1/admin/import/raster/{rasterId}` — `name`/`description`/`acquisitionDate`); cloud-registered COGs use `DELETE /api/v1/admin/cloud-rasters/{id}`. These admin operations are the canonical equivalents of Esri ImageServer's `deleteRasters`/`updateRaster` — see the [ImageServer admin-op mapping](../compatibility/imageserver-admin-mapping.md).
@@ -61,8 +61,8 @@ Registered Zarr coverages can also be rendered as PNG map tiles via `GET /api/v1
 
 - [Data formats matrix](../data-formats.md) — full import/export format support
 - [STAC](stac.md) — catalog discovery for these assets
-- [OGC APIs](ogc-apis.md) — the Coverages surface COG serving rides on
+- [OGC APIs](ogc-apis.md) — coverage routes for imported rasters
 
 Cloud COG `layerId` is the service-local publication index, not the backing storage layer ID.
 It must identify one routable publication across the catalog; colliding indexes fail closed.
-Cloud-format GA vs Preview remains pending an operator ruling; ImageServer itself is Preview.
+COG is a 2026.1 GA target through the documented direct tile workflow.

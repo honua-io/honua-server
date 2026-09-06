@@ -141,7 +141,28 @@ internal sealed class CogTileResolver : ICogTileResolver
             metadata.BitsPerSample,
             metadata.Predictor,
             metadata.IsLittleEndian);
-        var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout);
+        var decodedLimit = TileDecompressor.DefaultMaxDecompressedBytes;
+        if (metadata.Compression != "JPEG")
+        {
+            var sampleBytes = (long)metadata.TileWidth * metadata.TileHeight * metadata.BandCount
+                * (metadata.BitsPerSample / 8);
+            if (sampleBytes <= 0 || sampleBytes > decodedLimit)
+            {
+                return null;
+            }
+            decodedLimit = (int)sampleBytes;
+        }
+        var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout, decodedLimit);
+
+        if (format == RasterFormat.PNG && contentType == "application/octet-stream")
+        {
+            var png = CogTileEncoder.EncodePng(decompressedData, metadata);
+            if (png is not null)
+            {
+                decompressedData = png;
+                contentType = "image/png";
+            }
+        }
 
         if (!CanServeRequestedFormat(format, contentType))
         {

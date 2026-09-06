@@ -56,6 +56,8 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         double[]? modelTransformation = null;
         double tiepointI = 0, tiepointJ = 0;
         int rasterType = 1; // RasterPixelIsArea is the GeoTIFF default.
+        int photometricInterpretation = 1, planarConfiguration = 1;
+        string? noData = null;
 
         while (currentOffset > 0 && levelIndex < MaxOverviewLevels)
         {
@@ -101,6 +103,24 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             {
                 switch (entry.Tag)
                 {
+                    case TiffConstants.TagPhotometricInterpretation when levelIndex == 0:
+                        photometricInterpretation = (int)entry.ValueOrOffset;
+                        break;
+                    case 284 when levelIndex == 0: // PlanarConfiguration
+                        planarConfiguration = (int)entry.ValueOrOffset;
+                        break;
+                    case 42113 when levelIndex == 0: // GDAL_NODATA
+                        if (entry.Type != TiffConstants.TypeAscii || entry.Count is < 1 or > 128)
+                        {
+                            throw new InvalidDataException("Invalid COG nodata tag.");
+                        }
+                        var noDataBytes = entry.IsInline
+                            ? parser.ReadInlineIntArray(entry.ValueOrOffset, (int)entry.Count, entry.Type)
+                                .Select(value => (byte)value).ToArray()
+                            : await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset,
+                                (int)entry.Count, cancellationToken).ConfigureAwait(false);
+                        noData = System.Text.Encoding.ASCII.GetString(noDataBytes).TrimEnd('\0');
+                        break;
                     case TiffConstants.TagImageWidth:
                         ifdWidth = (int)entry.ValueOrOffset;
                         break;
@@ -282,7 +302,8 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             tileWidth, tileHeight,
             overviewLevels.ToArray(),
             new RasterExtent { XMin = xMin, YMin = yMin, XMax = xMax, YMax = yMax, Srid = srid },
-            bitsPerSample, predictor, parser.IsLittleEndian);
+            bitsPerSample, predictor, parser.IsLittleEndian,
+            photometricInterpretation, planarConfiguration, noData);
     }
 
     private static async Task<long[]> ReadLongArrayFromEntryAsync(
