@@ -210,7 +210,7 @@ public static class MvtTileDecoder
     /// features yield one single-coordinate ring per point; line and polygon features yield one
     /// ring per part (polygon interior rings included, in wire order).
     /// </summary>
-    private static IReadOnlyList<IReadOnlyList<MvtPoint>> DecodeGeometry(List<uint> commands, string layerName)
+    private static List<IReadOnlyList<MvtPoint>> DecodeGeometry(List<uint> commands, string layerName)
     {
         var rings = new List<IReadOnlyList<MvtPoint>>();
         List<MvtPoint>? current = null;
