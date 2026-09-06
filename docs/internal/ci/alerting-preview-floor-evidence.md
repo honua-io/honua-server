@@ -3,7 +3,7 @@
 The 2026.1 Preview amendment retains durable mutation auditing and fail-closed
 tenant isolation. Preview does not release either floor. This change keeps the
 instance-wide alert stores inaccessible to tenant-scoped administrators and
-commits each lifecycle mutation together with its persisted audit record.
+commits each lifecycle mutation together with its persisted audit record on one explicitly owned Postgres connection and transaction. Secure connection resolution finishes before that transaction starts; connection-string auto-enlistment is not required.
 
 ## Independent fixture expectations
 
@@ -25,6 +25,7 @@ not captured from the implementation's current output:
   request in each of eight action cases. The HTTP result must be `503`, stored
   names/geometry/SRID/active states and row counts must remain unchanged, and no
   audit row may survive. Each test removes its own trigger and function.
+- Named secure connections (with a real, separate registry connection) and direct connections configured with `Enlist=false` must both roll back a rejected audit INSERT and commit a subsequent successful mutation with exactly one matching persisted audit row. Both `/rules/test` and `/rules/test/` remain read-only and work without a persisted audit sink.
 - A sink that returns no audit identity also causes `503` and rollback of real
   persisted changes. An audit receipt is required to commit.
 - Omitted or blank service scope returns `400`; an explicit scope returns only
