@@ -7268,6 +7268,7 @@
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.ClipProcess_CompletesAndReturnsClippedSquare",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.ConvexHullProcess_CompletesAndReturnsBoundingPolygon",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.DissolveProcess_CompletesAndReturnsFeatureCollectionPerGroup",
+        "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.GeometryFormat_AllTargets_PreservePolygonHoleCoordinatesAndSrid",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.IntersectProcess_CompletesAndReturnsOverlapSquare",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.LengthProcess_CompletesAndReturnsPlanarMeasure",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.ProjectProcess_IdentityTransform_RoundTripsCoordinates",
@@ -17775,6 +17776,7 @@
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.ClipProcess_CompletesAndReturnsClippedSquare",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.ConvexHullProcess_CompletesAndReturnsBoundingPolygon",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.DissolveProcess_CompletesAndReturnsFeatureCollectionPerGroup",
+        "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.GeometryFormat_AllTargets_PreservePolygonHoleCoordinatesAndSrid",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.IntersectProcess_CompletesAndReturnsOverlapSquare",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.LengthProcess_CompletesAndReturnsPlanarMeasure",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.ProjectProcess_IdentityTransform_RoundTripsCoordinates",
@@ -19261,6 +19263,7 @@
       "proving_tests": [
         "Honua.Server.Tests.FeatureServerEndpointTests.Calculate_AcceptsEsriValueAndSqlExpressionForms",
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.CalculateFieldCorrectnessTests.Calculate_FilteredArithmetic_ReadbackPreservesTypesAndInvalidExpressionIsAtomic",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.Calculate_PostFormBody_ReturnsSuccess"
       ],
       "proof_ledger_surface": "feature-server",
