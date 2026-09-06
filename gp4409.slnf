@@ -1,0 +1,12 @@
+{
+  "solution": {
+    "path": "Honua.sln",
+    "projects": [
+      "tests\\dotnet\\Honua.Worker.Gdal.Tests\\Honua.Worker.Gdal.Tests.csproj",
+      "tests\\dotnet\\Honua.Architecture.Tests\\Honua.Architecture.Tests.csproj",
+      "tests\\dotnet\\Honua.Protocols.GeoServices.Tests\\Honua.Protocols.GeoServices.Tests.csproj",
+      "tests\\dotnet\\Honua.Ai.Tests\\Honua.Ai.Tests.csproj",
+      "tests\\dotnet\\Honua.Server.Tests\\Honua.Server.Tests.csproj"
+    ]
+  }
+}

@@ -360,7 +360,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         {
             // Both second segments are fixed relative literal filenames, so they can
             // never be rooted and silently discard workspace.
-            var gridPath = Path.Join(workspace, "kriging.bil");
+            var gridPath = Path.Join(workspace, "kriging.asc");
             var outputPath = Path.Join(workspace, "output.tif");
             await KrigingGridInputs.WriteGridAsync(gridPath, grid, values, cancellationToken).ConfigureAwait(false);
 
@@ -368,7 +368,13 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
             await context.ReportProgressAsync(75, "Encoding the interpolated raster", cancellationToken)
                 .ConfigureAwait(false);
 
-            var args = new List<string> { "-of", "GTiff", "-a_srs", srid, gridPath, outputPath };
+            // -a_ullr restores the grid's true extent over AAIGrid's single square
+            // cellsize; see KrigingGridInputs.WriteGridAsync for why the hand-off format
+            // has to be a single file.
+            var args = new List<string> { "-of", "GTiff", "-a_srs", srid };
+            args.AddRange(KrigingGridInputs.ExtentArguments(grid));
+            args.Add(gridPath);
+            args.Add(outputPath);
             await GdalCommandLog.LogCommandAsync(context, "gdal_translate", args, workspace, cancellationToken)
                 .ConfigureAwait(false);
 

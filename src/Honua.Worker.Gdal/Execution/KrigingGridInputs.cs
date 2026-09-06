@@ -142,11 +142,25 @@ internal static class KrigingGridInputs
     }
 
     /// <summary>
-    /// Writes <paramref name="values"/> (row-major, north row first) as an EHdr
-    /// float32 raster pair at <paramref name="rasterPath"/> plus its <c>.hdr</c> sidecar.
+    /// Writes <paramref name="values"/> (row-major, north row first) as a single-file
+    /// ESRI ASCII grid at <paramref name="rasterPath"/>, ready for
+    /// <c>gdal_translate -of GTiff</c>.
+    ///
+    /// <para>
+    /// Single-file matters: the worker hardens every local GDAL invocation with
+    /// <c>GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR</c>, so a driver that discovers its
+    /// georeferencing through a sidecar (ESRI labelled binary and friends) cannot open at
+    /// all. AAIGrid carries one square <c>cellsize</c>, while the prediction grid is the
+    /// sample extent divided by the requested width and height and so is rectangular in
+    /// general — the header therefore states the X cell size and the caller restores the
+    /// true extent with <c>gdal_translate -a_ullr</c> (see <see cref="ExtentArguments"/>).
+    /// </para>
+    ///
+    /// <para>
     /// No nodata value is declared: ordinary kriging predicts every cell of the grid from
     /// the global sample set, so declaring a sentinel could only mask a legitimate
     /// prediction that happened to equal it.
+    /// </para>
     /// </summary>
     public static async Task WriteGridAsync(
         string rasterPath,
@@ -156,42 +170,39 @@ internal static class KrigingGridInputs
     {
         ArgumentNullException.ThrowIfNull(values);
 
-        var payload = new byte[values.Length * sizeof(float)];
-        for (var i = 0; i < values.Length; i++)
-        {
-            BitConverter.TryWriteBytes(payload.AsSpan(i * sizeof(float)), (float)values[i]);
-        }
+        var builder = new StringBuilder()
+            .Append("ncols ").Append(Format(grid.Width)).Append('\n')
+            .Append("nrows ").Append(Format(grid.Height)).Append('\n')
+            .Append("xllcorner ").Append(Format(grid.MinX)).Append('\n')
+            .Append("yllcorner ").Append(Format(grid.MinY)).Append('\n')
+            .Append("cellsize ").Append(Format(grid.CellWidth)).Append('\n');
 
-        if (!BitConverter.IsLittleEndian)
+        for (var row = 0; row < grid.Height; row++)
         {
-            for (var i = 0; i < payload.Length; i += sizeof(float))
+            cancellationToken.ThrowIfCancellationRequested();
+            for (var column = 0; column < grid.Width; column++)
             {
-                Array.Reverse(payload, i, sizeof(float));
+                if (column > 0)
+                {
+                    builder.Append(' ');
+                }
+
+                builder.Append(FormatCell(values[(row * grid.Width) + column]));
             }
+
+            builder.Append('\n');
         }
 
-        await File.WriteAllBytesAsync(rasterPath, payload, cancellationToken).ConfigureAwait(false);
-
-        // ULXMAP / ULYMAP address the CENTRE of the upper-left cell, which is where the
-        // predictions were evaluated.
-        var header = new StringBuilder()
-            .Append("NCOLS ").Append(Format(grid.Width)).Append('\n')
-            .Append("NROWS ").Append(Format(grid.Height)).Append('\n')
-            .Append("NBANDS 1\n")
-            .Append("NBITS 32\n")
-            .Append("PIXELTYPE FLOAT\n")
-            .Append("BYTEORDER I\n")
-            .Append("LAYOUT BIL\n")
-            .Append("ULXMAP ").Append(Format(grid.MinX + (grid.CellWidth / 2d))).Append('\n')
-            .Append("ULYMAP ").Append(Format(grid.MaxY - (grid.CellHeight / 2d))).Append('\n')
-            .Append("XDIM ").Append(Format(grid.CellWidth)).Append('\n')
-            .Append("YDIM ").Append(Format(grid.CellHeight)).Append('\n')
-            .ToString();
-
-        var headerPath = Path.ChangeExtension(rasterPath, ".hdr");
-        await File.WriteAllTextAsync(headerPath, header, new UTF8Encoding(false), cancellationToken)
+        await File.WriteAllTextAsync(rasterPath, builder.ToString(), new UTF8Encoding(false), cancellationToken)
             .ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Builds the <c>gdal_translate -a_ullr</c> arguments that restore the grid's true
+    /// (possibly rectangular) extent over the square-celled AAIGrid hand-off.
+    /// </summary>
+    public static IEnumerable<string> ExtentArguments(KrigingGrid grid)
+        => ["-a_ullr", Format(grid.MinX), Format(grid.MaxY), Format(grid.MaxX), Format(grid.MinY)];
 
     private static bool TryReadAttribute(IFeature feature, string field, out double value)
     {
@@ -234,6 +245,15 @@ internal static class KrigingGridInputs
 
     private static string Format(double value) => value.ToString("R", CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Formats a predicted cell for AAIGrid. The value always carries a decimal point so
+    /// the driver types the band Float32 rather than inferring Int32 from a grid that
+    /// happens to be integral, and never uses exponent notation, which AAIGrid readers
+    /// treat inconsistently.
+    /// </summary>
+    private static string FormatCell(double value)
+        => value.ToString("0.0##################", CultureInfo.InvariantCulture);
+
     private static string Format(int value) => value.ToString(CultureInfo.InvariantCulture);
 }
 
@@ -248,6 +268,9 @@ internal readonly record struct KrigingGrid(
 {
     /// <summary>North edge of the grid.</summary>
     public double MaxY => MinY + (CellHeight * Height);
+
+    /// <summary>East edge of the grid.</summary>
+    public double MaxX => MinX + (CellWidth * Width);
 
     /// <summary>X ordinate of the centre of column <paramref name="column"/>.</summary>
     public double CentreX(int column) => MinX + ((column + 0.5d) * CellWidth);
