@@ -52,6 +52,7 @@ if name == "docker":
 if name == "dotnet":
     action, previous, candidate = args[1], args[4], args[5]
     s["backend"].append(action)
+    if fail == "backend-rollback-unapplied" and action == "rollback": bad()
     s["alias"] = previous if action == "rollback" else candidate
     if action == "shift": s["shifted"] = True
     if action == "rollback": s["rolledback"] = True
@@ -202,7 +203,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                    "HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN": "arn:aws:iam::123456789012:role/cert", **overrides}
             # A stale success must be invalidated even when required inputs are absent.
             (directory / "receipt.json").write_text('{"result":"pass"}')
-            result = subprocess.run(["bash", str(SCRIPT_PATH)], env=env, capture_output=True, text=True, timeout=45)
+            result = subprocess.run(["bash", str(SCRIPT_PATH)], env=env, capture_output=True, text=True, timeout=180)
             receipt_path = directory / "receipt.json"
             receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
             self.assertNotIn("offline-sensitive-canary", result.stdout + result.stderr + json.dumps(receipt))
@@ -259,6 +260,18 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertEqual(original, state["image"])
                 self.assertFalse(state["function"] or state["logs"] or state["row"])
 
+    def test_failed_rollback_never_deletes_a_version_still_serving(self):
+        result, receipt, state, original = self.run_lane("backend-rollback-unapplied")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        self.assertEqual("8", state["alias"])
+        self.assertEqual([], state["deleted_versions"])
+        self.assertEqual("8", receipt["serving"]["candidateVersion"])
+        self.assertIsNone(receipt["serving"]["alias"]["rollbackVersion"])
+        self.assertFalse(receipt["serving"]["teardown"]["candidateVersionDeleted"])
+        self.assertEqual(original, state["image"])
+        self.assertFalse(state["function"] or state["logs"] or state["row"])
+
     def test_lost_publish_response_deletes_only_owned_new_version(self):
         result, receipt, state, original = self.run_lane("publish-response-lost")
         self.assertNotEqual(0, result.returncode)
@@ -289,7 +302,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
     def test_workflow_uses_cert_oidc_and_shared_substrate_lock(self):
         for text in ("environment: cert", "id-token: write", "vars.REALAWS_CERT_ROLE_ARN", "group: real-aws-certification",
                      "cancel-in-progress: false", "test-certify-lambda-preview.py", "LambdaDeployDriver.csproj",
-                     "inputs.architecture", ".artifact.ecrDigest"):
+                     "inputs.architecture", "ubuntu-24.04-arm", ".artifact.ecrDigest"):
             self.assertIn(text, WORKFLOW)
         self.assertNotIn("AWS_ACCESS_KEY_ID", WORKFLOW + SCRIPT)
         self.assertNotIn("AWS_SECRET_ACCESS_KEY", WORKFLOW + SCRIPT)

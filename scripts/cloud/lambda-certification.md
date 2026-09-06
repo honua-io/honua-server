@@ -1,7 +1,8 @@
 # Lambda GA certification lane
 
 `lambda-preview-certification.yml` certifies the manifest's exact image digest and
-`awsLambdaArchitecture` (`x86_64` → OCI `amd64`, or `arm64`). It preserves the true
+`awsLambdaArchitecture` (`x86_64` → OCI `amd64`, or `arm64`), using the matching
+native GitHub runner for the executable runtime-adapter check. It preserves the true
 ECR digest handoff and the existing image revision, runtime adapter, health,
 CloudWatch, ownership and teardown checks. The ECR mirror is a release output,
 as in the original lane; functions, log groups, written rows and the candidate
@@ -78,13 +79,18 @@ alias, so requests do not depend on public ingress or redirect behavior.
 
 - `deployment.architecture`: asserted manifest architecture.
 - `verification.coldStartInitDurationMs`: observed first-invoke REPORT value.
-- `serving.result` and `serving.candidateDigest` (digest only).
+- `serving.result`, `serving.candidateDigest` (digest only), and `serving.candidateVersion`.
 - `serving.deployed`, `.baseline`, `.candidate`, `.rollback`: migration assertions;
   fixture name/hash, expected/actual row count and name verification; created,
   read-back, deleted and remaining row counts; distinct write target; denial
   principal/operation/expected and actual status/zero records, anonymous 401; executed version.
 - `serving.alias.beforeVersion`, `.afterVersion`, `.rollbackVersion`.
 - `serving.teardown.candidateVersionDeleted`, `.standingLatestRestored`.
+
+Failed rollback preserves observed versions and cleanup flags in a `noProof`
+receipt. A version still referenced by an alias is never deleted; that failed run
+requires operator recovery of the standing alias before the owned version can be
+removed. An ordinary serving failure restores routing and still deletes its version.
 
 No endpoint URLs, connection strings, API keys or raw AWS logs enter the receipt.
 Infrastructure identifiers remain fingerprints. A pass from the offline stubs is

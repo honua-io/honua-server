@@ -55,7 +55,7 @@ def inputs():
     for url in (write, demo):
         require(url.scheme == "https" and url.hostname and not url.username and not url.password
                 and not url.query and not url.fragment and url.path in ("", "/"), "Expected an HTTPS base URL")
-    require(write.hostname.lower() != demo.hostname.lower(), "REFUSED: write base URL equals demo read URL host")
+    require(write.hostname.lower().rstrip(".") != demo.hostname.lower().rstrip("."), "REFUSED: write base URL equals demo read URL host")
     actual = aws("lambda", "get-function-url-config", "--function-name", function, "--qualifier", alias)
     require(actual["FunctionUrl"].rstrip("/").lower() == os.environ["HONUA_LAMBDA_WRITE_BASE_URL"].rstrip("/").lower(),
             "Write URL does not belong to the standing cert alias")
@@ -219,6 +219,8 @@ def certify(directory, ephemeral, digest):
     versions_before = {v["Version"] for v in aws("lambda", "list-versions-by-function", "--function-name", function)["Versions"]}
     ownership = "honua-cert-run=" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"]
     candidate = None
+    proof["alias"] = {"beforeVersion": previous, "afterVersion": None, "rollbackVersion": None}
+    proof["teardown"] = {"candidateVersionDeleted": False, "standingLatestRestored": False}
     cleanup_errors = []
 
     def clean(action):
@@ -244,7 +246,7 @@ def certify(directory, ephemeral, digest):
         require(config(function, candidate)["Code"]["ResolvedImageUri"] == digest, "Published candidate digest mismatch")
         rollback_needed = True  # Set BEFORE the call: an SDK timeout may follow a successful shift.
         backend("shift", function, alias, previous, candidate)
-        alias_state(function, alias, candidate)
+        proof["alias"]["afterVersion"] = alias_state(function, alias, candidate)
         proof["candidate"] = smoke(target, candidate)
     finally:
         if changed and candidate is None:
@@ -259,7 +261,9 @@ def certify(directory, ephemeral, digest):
             clean(recover_candidate)
         if rollback_needed:
             clean(lambda: backend("rollback", function, alias, previous, candidate))
-            clean(lambda: alias_state(function, alias, previous))
+            def observe_rollback():
+                proof["alias"]["rollbackVersion"] = alias_state(function, alias, previous)
+            clean(observe_rollback)
             def verify_rollback():
                 proof["rollback"] = smoke(target, previous)
             clean(verify_rollback)
@@ -273,6 +277,7 @@ def certify(directory, ephemeral, digest):
                     "--image-uri", original["Code"]["ResolvedImageUri"], "--revision-id", current["Configuration"]["RevisionId"])
                 aws("lambda", "wait", "function-updated-v2", "--function-name", function)
                 require(config(function)["Code"]["ResolvedImageUri"] == original["Code"]["ResolvedImageUri"], "Standing latest restoration failed")
+                proof["teardown"]["standingLatestRestored"] = True
             clean(restore_latest)
         if candidate:
             def delete_candidate():
@@ -287,7 +292,10 @@ def certify(directory, ephemeral, digest):
                 aws("lambda", "delete-function", "--function-name", function, "--qualifier", candidate)
                 versions = aws("lambda", "list-versions-by-function", "--function-name", function)["Versions"]
                 require(all(v["Version"] != candidate for v in versions), "Candidate version remains after deletion")
+                proof["teardown"]["candidateVersionDeleted"] = True
             clean(delete_candidate)
+        proof["candidateVersion"] = candidate
+        write_json(directory / "serving.json", proof)
     require(not cleanup_errors, "Alias rollback or candidate teardown failed")
     proof.update(result="pass", alias={"beforeVersion": previous, "afterVersion": candidate, "rollbackVersion": previous},
                  teardown={"candidateVersionDeleted": True, "standingLatestRestored": True})

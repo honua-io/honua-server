@@ -35,7 +35,7 @@ concurrency:
 jobs:
   certify:
     name: Deploy, serve, upgrade, rollback, teardown
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     environment: cert
     timeout-minutes: 45
     env:

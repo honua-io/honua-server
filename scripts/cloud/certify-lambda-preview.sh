@@ -110,6 +110,12 @@ cleanup() {
     fi
     aws logs delete-log-group --log-group-name "$log_group" || status=12
   fi
+  if (( status != 0 )) && [[ -f "$scratch/serving.json" ]]; then
+    # Preserve observed version/cleanup facts for recovery, without claiming proof.
+    jq --slurpfile serving "$scratch/serving.json" '.serving = $serving[0] | .serving.result = "noProof" | .result = "fail"' \
+      "$HONUA_LAMBDA_PREVIEW_RECEIPT" > "$scratch/failed-receipt.json" &&
+      cp "$scratch/failed-receipt.json" "$HONUA_LAMBDA_PREVIEW_RECEIPT"
+  fi
   rm -rf "$scratch"
   if (( status != 0 )); then
     exit "$status"
