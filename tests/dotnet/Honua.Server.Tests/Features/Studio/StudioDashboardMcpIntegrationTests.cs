@@ -241,10 +241,15 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             reader.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
                 .Should().Be(StudioPackagePersistenceMode.Durable);
             var intent = await CallAsync("propose_publication",
-                $$"""{"draftId":"{{reopened.DraftId}}","generation":{{reopened.Generation}},"route":"/studio/dashboard-fixture","visibility":"private"}""");
-            intent.GetProperty("recorded").GetBoolean().Should().BeTrue();
+                $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"/studio/dashboard-fixture","visibility":"private"}""");
+            intent.GetProperty("status").GetString().Should().Be("AwaitingApproval");
             intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
-            (await lifecycle.GetPointersAsync(version.ItemId))!.PublishedVersionId.Should().BeNull();
+            intent.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace();
+            intent.GetProperty("proposalUri").GetString()
+                .Should().Be($"honua://proposals/{intent.GetProperty("proposalId").GetString()}");
+            var pointers = await lifecycle.GetPointersAsync(version.ItemId);
+            pointers!.CurrentVersionId.Should().Be(version.VersionId);
+            pointers.PublishedVersionId.Should().BeNull();
             (await lifecycle.GetVersionAsync(version.ItemId, version.VersionId))!.ContentHash.Should().Be(expectedHash);
         }
         finally
