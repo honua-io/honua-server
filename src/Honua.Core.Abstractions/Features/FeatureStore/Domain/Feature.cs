@@ -43,6 +43,13 @@ public readonly record struct Feature
     public string? ReadStateToken { get; init; }
 
     /// <summary>
+    /// Whether this partial edit preserves omitted attributes hidden by field security.
+    /// Replacement edits leave this false regardless of conditional request headers.
+    /// </summary>
+    [JsonIgnore]
+    public bool PreserveOmittedMaskedAttributes { get; init; }
+
+    /// <summary>
     /// Creates a new feature with the specified properties
     /// </summary>
     /// <param name="id">Feature identifier</param>

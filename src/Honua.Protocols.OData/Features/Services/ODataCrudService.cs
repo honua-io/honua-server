@@ -371,23 +371,22 @@ internal sealed partial class ODataCrudService
             if (editResult.Result is { } updateEditResult &&
                 updateEditResult.UpdateResults.Any(static result => result.IsPreconditionFailure))
             {
-                if (!string.IsNullOrWhiteSpace(ifMatch))
-                {
-                    return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed(
-                        "ETag does not match the current resource.");
-                }
-
-                if (!string.IsNullOrWhiteSpace(ifNoneMatch))
+                if (!string.IsNullOrWhiteSpace(ifMatch) || !string.IsNullOrWhiteSpace(ifNoneMatch))
                 {
                     var current = await _featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
+                    if (!current.HasValue && !string.IsNullOrWhiteSpace(ifMatch))
+                    {
+                        return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed("Resource no longer exists.");
+                    }
                     if (current.HasValue)
                     {
                         var geometry = ODataGeometryConverter.ConvertWkbToGeometry(_geometryService, current.Value.Geometry, srid, axisOrder);
                         var attributes = ODataAttributeSerializer.Serialize(current.Value.Attributes);
                         var latestEtag = ComputeFeatureEtag(layerId, current.Value, geometry, attributes);
-                        if (!_etagService.IsModified(ifNoneMatch, latestEtag))
+                        if ((!string.IsNullOrWhiteSpace(ifMatch) && !_etagService.MatchesPrecondition(ifMatch, latestEtag)) ||
+                            (!string.IsNullOrWhiteSpace(ifNoneMatch) && !_etagService.IsModified(ifNoneMatch, latestEtag)))
                         {
-                            return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed("Resource has not changed.");
+                            return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed("The conditional request does not match the current resource.");
                         }
                     }
                 }

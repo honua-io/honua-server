@@ -861,7 +861,14 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 {
                     if (updateResult.IsPreconditionFailure)
                     {
-                        return string.IsNullOrWhiteSpace(ifMatch)
+                        var conditionFailed = false;
+                        if (!string.IsNullOrWhiteSpace(ifMatch))
+                        {
+                            var current = await _featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
+                            conditionFailed = !current.HasValue || !OgcFeatureEntityTag.MatchesEntityOrRepresentation(
+                                ifMatch, OgcFeatureEntityTag.Compute(current.Value, _etagService), _etagService);
+                        }
+                        return !conditionFailed
                             ? Results.Problem(
                                 statusCode: StatusCodes.Status409Conflict,
                                 title: "Conflict",

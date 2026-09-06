@@ -691,10 +691,7 @@ public sealed class EditProcessor : IEditProcessor
         var features = new List<Feature>();
         foreach (var editFeature in editFeatures)
         {
-            var objectId = isCreate ? 0 : (editFeature.ObjectId ?? 0);
-            var attributes = editFeature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
-
-            features.Add(Feature.Create(objectId, editFeature.Geometry, attributes));
+            features.Add(ConvertEditFeatureToFeature(editFeature, resource, isCreate));
         }
 
         return features.ToImmutableArray();
@@ -742,7 +739,10 @@ public sealed class EditProcessor : IEditProcessor
     {
         var objectId = isCreate ? 0 : (editFeature.ObjectId ?? 0);
         var attributes = editFeature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
-        return Feature.Create(objectId, editFeature.Geometry, attributes);
+        return Feature.Create(objectId, editFeature.Geometry, attributes) with
+        {
+            PreserveOmittedMaskedAttributes = !isCreate && editFeature.UpdateMode != EditUpdateMode.Replace
+        };
     }
 
     private static int GetMaxOperationsForResource(MetadataV2Resource resource)

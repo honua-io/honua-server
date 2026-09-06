@@ -231,7 +231,15 @@ internal static class OgcFeatureIdentifierResolver
             if (!result.Items.IsDefaultOrEmpty)
             {
                 var feature = result.Items[0];
-                return new ResolvedFeature(feature.Id, feature);
+                // Query projections may mask fields without carrying the complete
+                // row token needed by edits. Re-read through the token-aware by-ID
+                // path, retaining row security and checking the public ID did not move.
+                var current = await featureReader.GetAsync(sLayerId, feature.Id, cancellationToken).ConfigureAwait(false);
+                if (current.HasValue && string.Equals(
+                    FormatPublicId(feature, resource), FormatPublicId(current.Value, resource), StringComparison.Ordinal))
+                {
+                    return new ResolvedFeature(feature.Id, current.Value);
+                }
             }
         }
 

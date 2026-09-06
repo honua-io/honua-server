@@ -36,6 +36,8 @@ internal sealed partial class ODataBatchHandler
         // above runs against a read snapshot, so a concurrent commit between that check
         // and the batch write would otherwise be silently overwritten (TOCTOU).
         var preconditionsByLayer = new Dictionary<int, List<FeatureEditPrecondition>>();
+        var initialSnapshots = new Dictionary<(int LayerId, long ObjectId), Feature>();
+        var preparedFeatures = new Dictionary<(int LayerId, long ObjectId), Feature?>();
         var writeLayerIds = new HashSet<int>();
         // BH7-012: key by (layerId, normalizedMethod) so each distinct operation on the
         // same layer triggers its own per-operation RBAC check via ResolveBatchLayerContextAsync.
@@ -249,7 +251,12 @@ internal sealed partial class ODataBatchHandler
                                 break;
                             }
 
-                            var existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
+                            var target = (layerId.Value, objectId.Value);
+                            if (!preparedFeatures.TryGetValue(target, out var existing))
+                            {
+                                existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
+                            }
+                            if (existing.HasValue) initialSnapshots.TryAdd(target, existing.Value);
                             if (!existing.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(
@@ -334,7 +341,8 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             updateList.Add((request.Id, objectId.Value, feature, requestGeometryChanged));
-                            RegisterPrecondition(preconditionsByLayer, layerId.Value, objectId.Value, request.Headers, existing.Value, requireSnapshot: isPatch);
+                            preparedFeatures[target] = feature;
+                            RegisterPrecondition(preconditionsByLayer, layerId.Value, objectId.Value, request.Headers, initialSnapshots[target], requireSnapshot: isPatch);
                             writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }
@@ -352,7 +360,12 @@ internal sealed partial class ODataBatchHandler
                                 break;
                             }
 
-                            var existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
+                            var target = (layerId.Value, objectId.Value);
+                            if (!preparedFeatures.TryGetValue(target, out var existing))
+                            {
+                                existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
+                            }
+                            if (existing.HasValue) initialSnapshots.TryAdd(target, existing.Value);
                             if (!existing.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(
@@ -408,7 +421,8 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             deleteList.Add((request.Id, deleteValidation.Batch.Value.Deletes[0], existing.Value));
-                            RegisterPrecondition(preconditionsByLayer, layerId.Value, deleteValidation.Batch.Value.Deletes[0], request.Headers, existing.Value);
+                            preparedFeatures[target] = null;
+                            RegisterPrecondition(preconditionsByLayer, layerId.Value, deleteValidation.Batch.Value.Deletes[0], request.Headers, initialSnapshots[target]);
                             writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }
@@ -673,15 +687,18 @@ internal sealed partial class ODataBatchHandler
                         else if (updateResult.IsPreconditionFailure)
                         {
                             var requestHeaders = requests.First(request => request.Id == requestId).Headers;
-                            var failedCondition = !string.IsNullOrWhiteSpace(GetHeaderValue(requestHeaders, "If-Match"));
+                            var ifMatch = GetHeaderValue(requestHeaders, "If-Match");
                             var ifNoneMatch = GetHeaderValue(requestHeaders, "If-None-Match");
-                            if (!failedCondition && !string.IsNullOrWhiteSpace(ifNoneMatch))
+                            var failedCondition = false;
+                            if (!string.IsNullOrWhiteSpace(ifMatch) || !string.IsNullOrWhiteSpace(ifNoneMatch))
                             {
                                 var current = await _featureReader.GetAsync(layer.StorageLayerId, updatedFeature.Id, cancellationToken).ConfigureAwait(false);
+                                failedCondition = !current.HasValue && !string.IsNullOrWhiteSpace(ifMatch);
                                 if (current.HasValue)
                                 {
                                     _ = FeatureToBody(current.Value, layer, axisOrder, baseUrl, out var currentEtag);
-                                    failedCondition = !_etagService.IsModified(ifNoneMatch, currentEtag);
+                                    failedCondition = (!string.IsNullOrWhiteSpace(ifMatch) && !_etagService.MatchesPrecondition(ifMatch, currentEtag)) ||
+                                        (!string.IsNullOrWhiteSpace(ifNoneMatch) && !_etagService.IsModified(ifNoneMatch, currentEtag));
                                 }
                             }
                             responses.Add(CreateErrorResponse(

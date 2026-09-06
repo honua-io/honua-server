@@ -568,7 +568,7 @@ internal sealed partial class FeatureDataAccess
 
     private static Feature PreserveMaskedAttributes(Feature update, Feature current, ImmutableArray<string> maskedFields)
     {
-        if (maskedFields.IsDefaultOrEmpty)
+        if (!update.PreserveOmittedMaskedAttributes || maskedFields.IsDefaultOrEmpty)
         {
             return update;
         }
@@ -854,6 +854,10 @@ internal sealed partial class FeatureDataAccess
                             },
                             cancellationToken,
                             requireTransaction: hasPrecondition).ConfigureAwait(false);
+                        if (hasPrecondition)
+                        {
+                            preconditions![updated.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated) };
+                        }
                         updateResults.Add(EditOperationResult.Success(
                             updated.Id,
                             feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
@@ -1555,6 +1559,12 @@ internal sealed partial class FeatureDataAccess
                     },
                     cancellationToken,
                     requireTransaction: hasPrecondition).ConfigureAwait(false);
+                if (hasPrecondition)
+                {
+                    // Later operations on this row in the same batch must observe our
+                    // successful write, while still rejecting any external change.
+                    preconditions![updated.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated) };
+                }
                 updatedCount++;
                 results.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
