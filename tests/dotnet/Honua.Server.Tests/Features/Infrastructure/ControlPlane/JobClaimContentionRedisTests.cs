@@ -152,11 +152,15 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The heartbeat lapses <em>naturally</em>: the job's <see cref="JobHeartbeatPolicy.Interval"/>
-    /// is longer than the whole test, so the running worker's pump never writes a beat,
-    /// while its <see cref="JobHeartbeatPolicy.Timeout"/> is one second. No test code
-    /// backdates <c>LastHeartbeatAt</c> — the expiry the reconciler acts on is the one the
-    /// worker's own silence produced, which is what a killed pod actually looks like.
+    /// The heartbeat lapses <em>naturally</em> under a <see cref="JobHeartbeatPolicy"/> that
+    /// honours its own contract (<see cref="JobHeartbeatPolicy.Timeout"/> greater than
+    /// <see cref="JobHeartbeatPolicy.Interval"/>), so a merely slow worker would never be
+    /// declared abandoned here. Worker loss is simulated the way it actually presents to the
+    /// control plane: the lost worker's link to the durable store is severed, so its heartbeat
+    /// pump keeps running locally but its beats stop landing — exactly what the reconciler sees
+    /// when a pod is killed or partitioned away from Redis. No test code backdates
+    /// <c>LastHeartbeatAt</c>; the expiry the reconciler acts on is the one the worker's own
+    /// silence produced, and the test asserts the stored beat never advanced.
     /// </para>
     /// <para>
     /// The side effect is counted: the executor appends one ledger entry per invocation.
@@ -178,12 +182,13 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
 
         var job = CreateQueuedJob(operationId) with
         {
-            // Interval far longer than this test: the worker's pump never writes a beat,
-            // so the lapse the reconciler observes is genuine worker silence.
+            // A policy that satisfies the JobHeartbeatPolicy contract: the timeout exceeds the
+            // interval, so a live worker always beats well before it could be declared
+            // abandoned. Only a worker that has genuinely stopped reaching the store expires.
             HeartbeatPolicy = new JobHeartbeatPolicy
             {
-                Interval = TimeSpan.FromMinutes(30),
-                Timeout = TimeSpan.FromSeconds(1)
+                Interval = TimeSpan.FromSeconds(1),
+                Timeout = TimeSpan.FromSeconds(2)
             },
             RetryPolicy = new JobRetryPolicy
             {
@@ -199,7 +204,11 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
         (await harness.JobStore.TryCreateAsync(job)).Should().BeTrue();
         await harness.Queue.EnqueueAsync(operationId);
 
-        var lostWorker = harness.CreateWorker(executor, terminals);
+        // The lost worker writes through a store whose link is severed for heartbeat traffic:
+        // its pump runs and its beats are lost in flight, while every state-changing write it
+        // attempts still reaches Redis and must be fenced by production code on its merits.
+        var lostWorkerStore = new HeartbeatSeveringJobStore(harness.JobStore);
+        var lostWorker = harness.CreateWorker(executor, terminals, lostWorkerStore);
         await lostWorker.StartAsync(CancellationToken.None);
         JobExecutionService? recoveredWorker = null;
 
@@ -211,14 +220,19 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
                 TimeSpan.FromSeconds(30));
             var lostOwner = running.ClaimedBy;
             lostOwner.Should().NotBeNullOrEmpty();
+
+            // Observing Running is not enough: JobExecutionService persists the Running
+            // transition before it dispatches to the executor, so wait on the executor's own
+            // readiness signal rather than racing a busy CI scheduler to the invocation count.
+            await executor.WhenAttemptStarted(1).WaitAsync(TimeSpan.FromSeconds(30));
             executor.Invocations.Should().ContainSingle("the lost worker's attempt really executed");
 
-            // Let the one-second heartbeat timeout elapse with no beat written.
-            await Task.Delay(TimeSpan.FromSeconds(2));
+            // Let the two-second heartbeat timeout elapse with no beat reaching the store.
+            await Task.Delay(TimeSpan.FromSeconds(3));
             var beforeSweep = await harness.JobStore.GetAsync(operationId);
             beforeSweep!.LastHeartbeatAt.Should().Be(
                 running.LastHeartbeatAt,
-                "the worker must have written no heartbeat — the lapse is real, not backdated");
+                "no heartbeat of the lost worker reached the store — the lapse is real, not backdated");
 
             // The reconciler runs with its own cancellation-token registry, as it does in
             // production when it lives in a different process from the lost worker: it must
@@ -240,6 +254,7 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
                 record => record.Status == ExecutionJobStatus.Running && record.AttemptCount == 2,
                 TimeSpan.FromSeconds(30));
             reclaimed.ClaimedBy.Should().NotBe(lostOwner, "the recovered attempt belongs to a different worker");
+            await executor.WhenAttemptStarted(2).WaitAsync(TimeSpan.FromSeconds(30));
             executor.Invocations.Should().HaveCount(2, "the recovered attempt re-ran a real executor");
 
             // Release the lost worker: it now returns a success and tries to publish and
@@ -328,6 +343,7 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
     private sealed class LedgerExecutor : IJobExecutor
     {
         private readonly ConcurrentDictionary<int, TaskCompletionSource> _gates = new();
+        private readonly ConcurrentDictionary<int, TaskCompletionSource> _starts = new();
         private readonly ConcurrentDictionary<int, TaskCompletionSource> _completions = new();
         private readonly ConcurrentQueue<(int Attempt, string? Owner)> _invocations = new();
 
@@ -338,6 +354,13 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
         public static string ArtifactFor(int attempt) => $"artifact://attempt-{attempt}";
 
         public void ReleaseAttempt(int attempt) => Gate(attempt).TrySetResult();
+
+        /// <summary>
+        /// Completes once <see cref="ExecuteAsync"/> for <paramref name="attempt"/> has recorded
+        /// its invocation. Callers assert invocation counts against this signal instead of
+        /// against the Running transition, which the worker persists before it dispatches.
+        /// </summary>
+        public Task WhenAttemptStarted(int attempt) => Started(attempt).Task;
 
         public Task WhenAttemptCompleted(int attempt) => Completion(attempt).Task;
 
@@ -356,6 +379,7 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
         {
             var attempt = job.AttemptCount;
             _invocations.Enqueue((attempt, job.ClaimedBy));
+            Started(attempt).TrySetResult();
 
             try
             {
@@ -372,8 +396,110 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
         private TaskCompletionSource Gate(int attempt)
             => _gates.GetOrAdd(attempt, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
 
+        private TaskCompletionSource Started(int attempt)
+            => _starts.GetOrAdd(attempt, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+
         private TaskCompletionSource Completion(int attempt)
             => _completions.GetOrAdd(attempt, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+    }
+
+    /// <summary>
+    /// Models the loss of a worker the way the control plane actually experiences it: the
+    /// worker's heartbeats stop reaching the durable store, while the worker itself keeps
+    /// running.
+    /// </summary>
+    /// <remarks>
+    /// Only heartbeat-shaped writes are dropped — a write that leaves status, ownership,
+    /// attempt count, phase and artifact set unchanged and merely advances
+    /// <see cref="ExecutionJobRecord.LastHeartbeatAt"/>, which is exactly the shape of
+    /// <c>JobExecutionContext.RunHeartbeatPumpAsync</c>'s update. Every state-changing write the
+    /// lost worker attempts (its Running transition, its late artifact publication, its terminal
+    /// finalize) still reaches Redis, so the stale worker is fenced by production code rather
+    /// than muted by the test. Reads are never suppressed.
+    /// </remarks>
+    private sealed class HeartbeatSeveringJobStore(IExecutionJobStore inner) : IExecutionJobStore
+    {
+        public Task<bool> TryCreateAsync(
+            ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => inner.TryCreateAsync(job, ttl, cancellationToken);
+
+        public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
+            => inner.GetAsync(operationId, cancellationToken);
+
+        public async Task SetAsync(
+            ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            if (await IsHeartbeatOnlyAsync(job, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            await inner.SetAsync(job, ttl, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<bool> TrySetAsync(
+            ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            if (await IsHeartbeatOnlyAsync(job, cancellationToken).ConfigureAwait(false))
+            {
+                // The beat left the worker and was never durably recorded. Report success so the
+                // pump behaves exactly as it does in a process that is about to be killed.
+                return true;
+            }
+
+            return await inner.TrySetAsync(job, ttl, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<bool> TrySetIfLeaseOwnedAsync(
+            ExecutionJobRecord job,
+            string leaseOperationId,
+            string leaseOwnerId,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (await IsHeartbeatOnlyAsync(job, cancellationToken).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            return await inner
+                .TrySetIfLeaseOwnedAsync(job, leaseOperationId, leaseOwnerId, ttl, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        public Task<ExecutionJobPage> QueryAsync(
+            ExecutionJobQuery query, CancellationToken cancellationToken = default)
+            => inner.QueryAsync(query, cancellationToken);
+
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
+            ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
+            => inner.ListActiveAsync(kind, limit, cancellationToken);
+
+        public Task<bool> TryAcquireLeaseAsync(
+            string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => inner.TryAcquireLeaseAsync(operationId, ownerId, leaseDuration, cancellationToken);
+
+        public Task<bool> RenewLeaseAsync(
+            string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => inner.RenewLeaseAsync(operationId, ownerId, leaseDuration, cancellationToken);
+
+        public Task ReleaseLeaseAsync(
+            string operationId, string ownerId, CancellationToken cancellationToken = default)
+            => inner.ReleaseLeaseAsync(operationId, ownerId, cancellationToken);
+
+        private async Task<bool> IsHeartbeatOnlyAsync(
+            ExecutionJobRecord job, CancellationToken cancellationToken)
+        {
+            var stored = await inner.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            return stored != null
+                && job.LastHeartbeatAt != stored.LastHeartbeatAt
+                && job.Status == stored.Status
+                && job.ClaimedBy == stored.ClaimedBy
+                && job.AttemptCount == stored.AttemptCount
+                && job.CurrentPhase == stored.CurrentPhase
+                && job.CancellationRequestedAt == stored.CancellationRequestedAt
+                && job.ArtifactReferences.Count == stored.ArtifactReferences.Count;
+        }
     }
 
     private sealed class CountingTerminalCallback : IJobTerminalCallback
@@ -426,10 +552,13 @@ public sealed class JobClaimContentionRedisTests(RedisFixture redis)
             return harness;
         }
 
-        public JobExecutionService CreateWorker(IJobExecutor executor, IJobTerminalCallback terminalCallback)
+        public JobExecutionService CreateWorker(
+            IJobExecutor executor,
+            IJobTerminalCallback terminalCallback,
+            IExecutionJobStore? jobStore = null)
             => new(
                 Queue,
-                JobStore,
+                jobStore ?? JobStore,
                 [executor],
                 new ExecutionJobCancellationTokens(),
                 [terminalCallback],
