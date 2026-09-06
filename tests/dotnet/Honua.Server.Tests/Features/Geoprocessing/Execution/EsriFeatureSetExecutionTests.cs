@@ -107,6 +107,41 @@ public sealed class EsriFeatureSetExecutionTests
         translated.Translated.Should().BeFalse();
     }
 
+    [UnitTest]
+    public void Input_EquivalentWebMercatorWkids_AreAcceptedAtEveryLevel()
+    {
+        var translated = GPServerEsriInputTranslation.Translate(new Dictionary<string, string>
+        {
+            ["input"] = """{"spatialReference":{"wkid":102100},"features":[{"attributes":{},"geometry":{"x":1000,"y":2000,"spatialReference":{"wkid":3857}}}]}""",
+            ["merge"] = """{"spatialReference":{"wkid":3857},"features":[{"attributes":{},"geometry":{"x":3000,"y":4000,"spatialReference":{"wkid":102113}}}]}"""
+        }, new HashSet<string> { "input", "merge" });
+        translated.CapabilityMessage.Should().BeNull();
+        translated.InputSpatialReference.Should().Be(3857);
+        ReadFeatures(translated.Inputs["input"]).Single().Geometry.Coordinate.X.Should().Be(1000);
+        ReadFeatures(translated.Inputs["merge"]).Single().Geometry.Coordinate.Y.Should().Be(4000);
+    }
+
+    [UnitTest]
+    public void Output_UnavailableArtifactLabel_IsNotAdvertisedAsUrl()
+    {
+        var value = GPServerEsriOutputTranslation.Translate(ArtifactKind.Raster, "Output raster", 0);
+        value.ValueKind.Should().Be(JsonValueKind.String);
+        value.GetString().Should().Be("Output raster");
+    }
+
+    [UnitTest]
+    public void EmptyInput_DeclaredFieldsAndGeometryType_AreRetainedInEmptyResult()
+    {
+        const string declared = """{"geometryType":"esriGeometryPolygon","fields":[{"name":"name","type":"esriFieldTypeString"}],"features":[]}""";
+        var translated = GPServerEsriInputTranslation.Translate(new Dictionary<string, string> { ["input"] = declared }, new HashSet<string> { "input" });
+        var schema = GPServerEsriOutputTranslation.DescribeInput(translated.Inputs["input"], declared);
+        var result = GPServerEsriOutputTranslation.Translate(ArtifactKind.FeatureLayer, translated.Inputs["input"], 0, schema.GetRawText());
+        result.GetProperty("features").GetArrayLength().Should().Be(0);
+        result.GetProperty("geometryType").GetString().Should().Be("esriGeometryPolygon");
+        result.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+        result.GetProperty("fields").EnumerateArray().Should().Contain(field => field.GetProperty("name").GetString() == "name");
+    }
+
     [Theory]
     [InlineData(ArtifactKind.File)]
     [InlineData(ArtifactKind.Raster)]

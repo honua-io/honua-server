@@ -43,13 +43,16 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
     private const string ServiceId = GeoprocessingServiceSeeder.ServiceName;
 
     [IntegrationTheory]
-    [InlineData("geometry.buffer")]
-    [InlineData("Clip")]
+    [InlineData("geometry.buffer", false)]
+    [InlineData("Clip", false)]
+    [InlineData("Clip", true)]
+    [InlineData("Merge", false)]
+    [InlineData("source.geojson", false)]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
-    public async Task DefaultGpService_DrivesRealExecutorToEsriFeatureSetResult(string taskName)
+    public async Task DefaultGpService_DrivesRealExecutorToEsriFeatureSetResult(string taskName, bool disjoint)
     {
         await DeleteControlPlaneKeysAsync(redis.ConnectionString);
 
@@ -154,6 +157,26 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
                         """
                 };
             }
+            if (disjoint)
+            {
+                inputs["clip"] = inputs["clip"].Replace("[[2,-1],[2,5],[6,5],[6,-1],[2,-1]]",
+                    "[[20,20],[20,24],[24,24],[24,20],[20,20]]", StringComparison.Ordinal);
+            }
+            if (taskName == "Merge")
+            {
+                inputs = new Dictionary<string, string>
+                {
+                    ["input"] = """{"features":[{"attributes":{"name":"point"},"geometry":{"x":1,"y":2}}]}""",
+                    ["merge"] = """{"features":[{"attributes":{"name":"polygon"},"geometry":{"rings":[[[0,0],[0,4],[4,4],[4,0],[0,0]]]}}]}"""
+                };
+            }
+            if (taskName == "source.geojson")
+            {
+                inputs = new Dictionary<string, string>
+                {
+                    ["inline"] = """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-100,40,12]},"properties":{"name":"canonical"}}]}"""
+                };
+            }
             using var content = new FormUrlEncodedContent(inputs);
 
             using var submit = await client.PostAsync(
@@ -163,6 +186,13 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
             submit.StatusCode.Should().Be(HttpStatusCode.OK,
                 "the seeded default GP service must resolve through the GPServer facade out of the box");
             using var submitDoc = JsonDocument.Parse(await submit.Content.ReadAsStringAsync());
+            if (taskName == "Merge")
+            {
+                submitDoc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+                submitDoc.RootElement.GetProperty("error").GetProperty("message").GetString().Should().Contain("compatible geometry types");
+                submitDoc.RootElement.TryGetProperty("jobId", out _).Should().BeFalse();
+                return;
+            }
             submitDoc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
                 "the real task submission must succeed: {0}", submitDoc.RootElement.GetRawText());
             var jobId = submitDoc.RootElement.GetProperty("jobId").GetString();
@@ -183,9 +213,27 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
             resultRoot.GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
             resultRoot.GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
             var value = resultRoot.GetProperty("value");
-            value.GetProperty("geometryType").GetString().Should().Be("esriGeometryPolygon");
+            value.GetProperty("geometryType").GetString().Should().Be(
+                taskName == "source.geojson" ? "esriGeometryPoint" : "esriGeometryPolygon");
             value.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+            if (disjoint)
+            {
+                value.GetProperty("features").GetArrayLength().Should().Be(0);
+                value.GetProperty("fields").EnumerateArray().Should().Contain(field =>
+                    field.GetProperty("name").GetString() == "name" && field.GetProperty("type").GetString() == "esriFieldTypeString");
+                value.GetProperty("fields").EnumerateArray().Should().Contain(field =>
+                    field.GetProperty("name").GetString() == "amount" && field.GetProperty("type").GetString() == "esriFieldTypeDouble");
+                return;
+            }
             var feature = value.GetProperty("features").EnumerateArray().Single();
+            if (taskName == "source.geojson")
+            {
+                feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-100);
+                feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(40);
+                feature.GetProperty("geometry").GetProperty("z").GetDouble().Should().Be(12);
+                feature.GetProperty("attributes").GetProperty("name").GetString().Should().Be("canonical");
+                return;
+            }
             var ring = feature.GetProperty("geometry").GetProperty("rings")[0].EnumerateArray()
                 .Select(position => (X: position[0].GetDouble(), Y: position[1].GetDouble())).ToArray();
             if (taskName == "Clip")

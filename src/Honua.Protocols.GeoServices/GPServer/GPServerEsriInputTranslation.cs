@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Shared.Models;
 using Honua.Geoprocessing.Execution;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using NetTopologySuite.IO;
@@ -381,7 +382,7 @@ internal static class GPServerEsriInputTranslation
         {
             var wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, srid);
             wkbBase64 = Convert.ToBase64String(wkb);
-            spatialReference = srid;
+            spatialReference = srid is { } value ? SpatialReferenceExtensions.NormalizeWebMercatorSrid(value) : null;
             return true;
         }
         catch (ArgumentException)
@@ -405,14 +406,14 @@ internal static class GPServerEsriInputTranslation
             wkid.ValueKind == JsonValueKind.Number &&
             wkid.TryGetInt32(out var wkidValue))
         {
-            return wkidValue;
+            return SpatialReferenceExtensions.NormalizeWebMercatorSrid(wkidValue);
         }
 
         if (srElement.TryGetProperty("latestWkid", out var latest) &&
             latest.ValueKind == JsonValueKind.Number &&
             latest.TryGetInt32(out var latestValue))
         {
-            return latestValue;
+            return SpatialReferenceExtensions.NormalizeWebMercatorSrid(latestValue);
         }
 
         return null;

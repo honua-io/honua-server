@@ -15,22 +15,31 @@ internal static class GPServerEsriOutputTranslation
 {
     private const string GeoJsonPrefix = "data:application/geo+json;base64,";
 
-    public static JsonElement Translate(ArtifactKind kind, string value, int srid)
+    public static JsonElement Translate(ArtifactKind kind, string value, int srid, string? schemaJson = null)
     {
+        using var schema = schemaJson is null ? null : JsonDocument.Parse(schemaJson);
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             if (kind is ArtifactKind.FeatureLayer or ArtifactKind.Table && value.StartsWith(GeoJsonPrefix, StringComparison.Ordinal))
             {
                 using var document = JsonDocument.Parse(Convert.FromBase64String(value[GeoJsonPrefix.Length..]));
-                WriteFeatureSet(writer, document.RootElement, srid);
+                WriteFeatureSet(writer, document.RootElement, srid > 0 ? srid : 4326, schema?.RootElement);
             }
             else if (kind is ArtifactKind.FeatureLayer or ArtifactKind.Table or ArtifactKind.File or ArtifactKind.Report
                 or ArtifactKind.Map or ArtifactKind.AppBundle or ArtifactKind.Raster)
             {
-                writer.WriteStartObject();
-                writer.WriteString("url", value);
-                writer.WriteEndObject();
+                if (Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+                    uri.Scheme is "http" or "https" or "data")
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("url", value);
+                    writer.WriteEndObject();
+                }
+                else
+                {
+                    writer.WriteStringValue(value);
+                }
             }
             else
             {
@@ -41,7 +50,55 @@ internal static class GPServerEsriOutputTranslation
         return result.RootElement.Clone();
     }
 
-    private static void WriteFeatureSet(Utf8JsonWriter writer, JsonElement root, int srid)
+    public static JsonElement DescribeInput(string canonicalValue, string? declaredInput)
+    {
+        var inferred = Translate(ArtifactKind.FeatureLayer, canonicalValue, 4326);
+        using var declared = declaredInput?.TrimStart().StartsWith('{') == true
+            ? JsonDocument.Parse(declaredInput) : null;
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            foreach (var property in inferred.EnumerateObject())
+            {
+                if (property.Name is not ("features" or "fields"))
+                {
+                    property.WriteTo(writer);
+                }
+            }
+            if (!inferred.TryGetProperty("geometryType", out _) &&
+                declared?.RootElement.TryGetProperty("geometryType", out var type) == true)
+            {
+                writer.WritePropertyName("geometryType");
+                type.WriteTo(writer);
+            }
+            writer.WriteStartArray("fields");
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var field in inferred.GetProperty("fields").EnumerateArray())
+            {
+                names.Add(field.GetProperty("name").GetString()!);
+                field.WriteTo(writer);
+            }
+            if (declared?.RootElement.TryGetProperty("fields", out var fields) == true)
+            {
+                foreach (var field in fields.EnumerateArray())
+                {
+                    var name = field.GetProperty("name").GetString()!;
+                    if (names.Add(name))
+                    {
+                        var fieldType = field.GetProperty("type").GetString()!;
+                        WriteField(writer, name, fieldType == "esriFieldTypeOID" ? "esriFieldTypeInteger" : fieldType);
+                    }
+                }
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+        using var result = JsonDocument.Parse(buffer.ToArray());
+        return result.RootElement.Clone();
+    }
+
+    private static void WriteFeatureSet(Utf8JsonWriter writer, JsonElement root, int srid, JsonElement? schema)
     {
         var features = root.GetProperty("type").GetString() == "FeatureCollection"
             ? root.GetProperty("features").EnumerateArray().ToArray()
@@ -66,6 +123,18 @@ internal static class GPServerEsriOutputTranslation
                 }
             }
         }
+        if (features.Length == 0 && schema is { } declared && declared.TryGetProperty("fields", out var declaredFields))
+        {
+            var syntheticOid = declared.TryGetProperty("objectIdFieldName", out var oid) ? oid.GetString() : null;
+            foreach (var field in declaredFields.EnumerateArray())
+            {
+                var name = field.GetProperty("name").GetString()!;
+                if (name != syntheticOid)
+                {
+                    fields[name] = field.GetProperty("type").GetString()!;
+                }
+            }
+        }
         var oidName = "OBJECTID";
         while (fields.Keys.Contains(oidName, StringComparer.OrdinalIgnoreCase))
         {
@@ -73,9 +142,10 @@ internal static class GPServerEsriOutputTranslation
         }
 
         var geometries = new List<GeoServicesGeometry?>(features.Length);
-        string? geometryType = null;
-        var hasZ = false;
-        var hasM = false;
+        string? geometryType = features.Length == 0 && schema is { } shape && shape.TryGetProperty("geometryType", out var declaredType)
+            ? declaredType.GetString() : null;
+        var hasZ = features.Length == 0 && schema is { } zSchema && zSchema.TryGetProperty("hasZ", out var z) && z.ValueKind == JsonValueKind.True;
+        var hasM = features.Length == 0 && schema is { } mSchema && mSchema.TryGetProperty("hasM", out var m) && m.ValueKind == JsonValueKind.True;
         foreach (var feature in features)
         {
             GeoServicesGeometry? esri = null;
