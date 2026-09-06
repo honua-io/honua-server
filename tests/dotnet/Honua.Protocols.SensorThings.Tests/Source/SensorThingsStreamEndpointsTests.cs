@@ -4,9 +4,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
@@ -18,7 +22,13 @@ namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsStreamEndpointsTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+    {
+        builder.UseSetting("HONUA_DEV_AUTH", "false");
+        builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+            new Dictionary<string, string?> { ["MultiTenancy:MultiTenantAdminRoles:0"] = "admin" }));
+    });
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 
@@ -29,7 +39,8 @@ public sealed class SensorThingsStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /sta/v1.1/ObservationsStream")]
     public async Task ObservationsStream_WithoutTransportHeader_Returns400()
     {
-        var response = await _fixture.Client.GetAsync("/sta/v1.1/ObservationsStream");
+        using var adminClient = _fixture.CreateAdminClient();
+        var response = await adminClient.GetAsync("/sta/v1.1/ObservationsStream");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -44,7 +55,8 @@ public sealed class SensorThingsStreamEndpointsTests : IAsyncLifetime
         using var request = new HttpRequestMessage(HttpMethod.Get, "/sta/v1.1/ObservationsStream?datastreamId=1");
         request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
 
-        using var response = await _fixture.Client.SendAsync(
+        using var streamClient = _fixture.CreateAdminClient();
+        using var response = await streamClient.SendAsync(
             request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -68,6 +80,75 @@ public sealed class SensorThingsStreamEndpointsTests : IAsyncLifetime
         var pushed = await ReadUntilAsync(reader, "event: observation", cts.Token);
         pushed.Should().Contain("\"result\":99");
         pushed.Should().Contain("\"datastreamId\":1");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Streaming)]
+    [Endpoint("GET /sta/v1.1/ObservationsStream")]
+    public async Task ObservationsStream_Anonymous_IsDeniedBeforeHandshake(bool webSocket)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/sta/v1.1/ObservationsStream");
+        request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
+        if (webSocket)
+        {
+            request.Headers.TryAddWithoutValidation("Connection", "Upgrade");
+            request.Headers.TryAddWithoutValidation("Upgrade", "websocket");
+            request.Headers.TryAddWithoutValidation("Sec-WebSocket-Version", "13");
+            request.Headers.TryAddWithoutValidation("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+        }
+
+        using var response = await _fixture.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Content.Headers.ContentType?.MediaType.Should().NotBe("text/event-stream");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Streaming)]
+    [Endpoint("GET /sta/v1.1/ObservationsStream")]
+    public async Task ObservationsStream_CollidingTenantDatastreams_OnlyDeliversOwnPersistedValues()
+    {
+        var otherSchema = await _fixture.Postgres.CreateIsolatedSchemaAsync("sta_other_tenant");
+        try
+        {
+            await ServerTestData.SeedAsync(_fixture.Postgres, otherSchema);
+            using var tenantA = _fixture.CreateAdminClient();
+            tenantA.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-a");
+            using var tenantB = _fixture.CreateAdminClient();
+            tenantB.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-b");
+            tenantB.DefaultRequestHeaders.Remove("X-Honua-Test-Schema");
+            tenantB.DefaultRequestHeaders.Add("X-Honua-Test-Schema", otherSchema);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/sta/v1.1/ObservationsStream?datastreamId=1");
+            request.Headers.TryAddWithoutValidation("Accept", "text/event-stream");
+            using var response = await tenantB.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            await using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            (await ReadUntilAsync(reader, "event: status", cts.Token)).Should().Contain("connected");
+
+            // Both schemas seed Datastream(1). A's committed value must never precede B's
+            // sentinel on B's ordered local queue; this detects leakage without a timing sleep.
+            using var first = await tenantA.PostAsJsonAsync("/sta/v1.1/Datastreams(1)/Observations",
+                new { result = 42.5, phenomenonTime = "2026-09-05T01:02:03Z" }, cts.Token);
+            first.StatusCode.Should().Be(HttpStatusCode.Created);
+            using var second = await tenantB.PostAsJsonAsync("/sta/v1.1/Datastreams(1)/Observations",
+                new { result = 81.25, phenomenonTime = "2026-09-05T04:05:06Z" }, cts.Token);
+            second.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            var pushed = await ReadUntilAsync(reader, "event: observation", cts.Token);
+            using var frame = JsonDocument.Parse(pushed[(pushed.IndexOf("data: ", StringComparison.Ordinal) + 6)..]);
+            frame.RootElement.GetProperty("result").GetDouble().Should().Be(81.25);
+            frame.RootElement.GetProperty("datastreamId").GetInt64().Should().Be(1);
+            frame.RootElement.GetProperty("phenomenonTime").GetString().Should().Be("2026-09-05T04:05:06.000Z");
+            using var persisted = JsonDocument.Parse(await second.Content.ReadAsStringAsync(cts.Token));
+            frame.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(persisted.RootElement.GetProperty("@iot.id").GetInt64());
+        }
+        finally
+        {
+            await _fixture.Postgres.DropSchemaAsync(otherSchema);
+        }
     }
 
     /// <summary>
