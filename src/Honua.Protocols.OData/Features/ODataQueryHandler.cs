@@ -589,6 +589,7 @@ internal sealed partial class ODataQueryHandler(
 
             if (canCache && cacheKey != null)
             {
+                cacheKey = await _responseCache.BindKeyAsync(cacheKey, effectiveToken);
                 var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, effectiveToken);
                 if (cached != null)
                 {

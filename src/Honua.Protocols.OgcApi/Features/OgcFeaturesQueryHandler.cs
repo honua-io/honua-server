@@ -224,6 +224,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (canCache && cacheKey != null)
             {
+                cacheKey = await _responseCache.BindKeyAsync(cacheKey, cancellationToken);
                 var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, cancellationToken);
                 if (cached != null)
                 {
@@ -691,6 +692,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (canCache && cacheKey != null)
             {
+                cacheKey = await _responseCache.BindKeyAsync(cacheKey, cancellationToken);
                 var cached = await _responseCache.GetAsync<CachedResponse>(cacheKey, cancellationToken);
                 if (cached != null)
                 {
