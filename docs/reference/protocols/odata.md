@@ -22,6 +22,8 @@ Connection-bound publications use their configured provider for reads, including
 
 PATCH, PUT, and DELETE are also available on the layer-scoped key form `/odata/Layers({layerId})/Features({objectId})` and the legacy form `/odata/Features({layerId},{objectId})`. Legacy aggregation/search routes `/odata/Features({layerId})/$apply` and `/$search` remain available.
 
+On managed PostgreSQL layers, concurrent PATCH requests may return `409 Conflict`, preserving the competing edit. Read the current feature and retry the partial update. Requests whose `If-Match` or `If-None-Match` precondition fails return `412 Precondition Failed`. Fields hidden by field-level security are preserved when omitted from the PATCH. Conditional PUT requests can also return `409` if their read snapshot changes while `If-Match` still matches; a conditional header does not change which fields the replacement stores. Conditions are evaluated against the row snapshot captured under the lock that rejected the edit.
+
 ## Query options
 
 | Option | Status | Notes |
@@ -36,8 +38,32 @@ PATCH, PUT, and DELETE are also available on the layer-scoped key form `/odata/L
 | `$compute` | Implemented | Arithmetic (`add`/`sub`/`mul`/`div`/`mod`) plus `floor`/`ceiling`/`round`; not combinable with `$apply` or `$search`. See [$compute and compute()](#compute-and-compute). |
 | `$search` | Implemented | Full-text across string fields; AND/OR/NOT and quoted phrases. |
 | `$apply` | Implemented | `aggregate`, `groupby`, `filter`, `compute` transformations, composable into a `/`-separated pipeline. See [$apply aggregation](#apply-aggregation). |
-| `$deltatoken` | Implemented | Timestamp-based change tracking via `@odata.deltaLink`. |
+| `$deltatoken` | Implemented | Durable authorized query snapshots via `@odata.deltaLink`; see change tracking below. |
 | `$format` | Partial | `json` / `application/json` only. |
+
+## Change tracking
+
+Send `Prefer: odata.track-changes` to obtain an initial collection baseline. Follow
+each `@odata.nextLink` to its terminal `@odata.deltaLink`, then poll that link for
+net changes. Baseline pages use the collection context; poll pages use `/$delta`.
+Equal timestamps do not suppress updates. Deletes and filter exits produce
+key-preserving `@removed` entries; clients remove those keys from their local state.
+Repeating a terminal poll is idempotent, and durable tokens survive host restart.
+
+Tracking requires PostgreSQL snapshot storage (migration 113) and a provider with
+count capability. Without snapshot storage, tracking returns 503. A baseline is
+limited to 10,000 rows and 16 MiB of projected JSON; narrow the filter/projection on
+413. Incomplete provider results return 409 `DeltaSnapshotIncomplete`. Tracking
+requires a positive page size and rejects initial skips, expansion, bbox and
+Parquet; `$search` and `$apply` cannot be combined with tracking.
+
+Snapshots expire after 24 hours. Version-2 cursors bind the query, actor, tenant,
+schema, metadata and row/field policies; do not edit them or change those bindings
+between pages. Malformed or query-mismatched tokens return typed 400 errors;
+expired, missing, invalid-future, changed-scope and legacy timestamp tokens return
+typed 410 recovery. Obtain an explicit new tracked baseline after 410; the server
+never silently rebases. Creation-time validation tolerates five minutes of node
+clock skew, while PostgreSQL enforces receipt expiry.
 
 ## Server-driven paging
 

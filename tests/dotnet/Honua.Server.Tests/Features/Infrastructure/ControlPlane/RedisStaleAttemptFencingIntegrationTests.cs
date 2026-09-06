@@ -1,7 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text;
 using FluentAssertions;
 using Honua.ControlPlane;
@@ -22,6 +26,7 @@ using NSubstitute;
 using Npgsql;
 using StackExchange.Redis;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -35,7 +40,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class RedisStaleAttemptFencingIntegrationTests(
     RedisFixture redis,
-    DatabaseFixtureAdapter database) : IClassFixture<DatabaseFixtureAdapter>
+    DatabaseFixtureAdapter database,
+    ITestOutputHelper output) : IClassFixture<DatabaseFixtureAdapter>
 {
     [IntegrationTest]
     public async Task StaleAttempt_IsFencedAcrossReclaimDuplicateDeliveryAndTerminalization()
@@ -49,6 +55,14 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
         var releaseKey = $"controlplane:test:3851:release:{operationId}";
         var schema = await database.CreateIsolatedSchemaAsync(nameof(RedisStaleAttemptFencingIntegrationTests));
         Process? staleWorker = null;
+        var receipt = new JsonObject
+        {
+            ["schema"] = "honua.stale-attempt-proof/v1",
+            ["operationId"] = operationId,
+            ["startedAt"] = DateTimeOffset.UtcNow.ToString("O"),
+            ["assertionsPassed"] = false,
+            ["cleanup"] = "not-completed"
+        };
 
         try
         {
@@ -92,6 +106,10 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
 
             var checkpoint = await WaitForRedisValueAsync(harness.Database, checkpointKey, TimeSpan.FromSeconds(15));
             checkpoint.Should().Contain("attempt=1");
+            receipt["workerACheckpoint"] = checkpoint;
+            var runningA = (await harness.JobStore.GetAsync(operationId))!;
+            receipt["workerAClaimedAt"] = runningA.ClaimedAt?.ToString("O");
+            receipt["workerAHeartbeat"] = runningA.LastHeartbeatAt?.ToString("O");
             var workerA = checkpoint[..checkpoint.IndexOf('|', StringComparison.Ordinal)];
 
             await SendSignalAsync("-STOP", staleWorker.Id);
@@ -112,6 +130,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 operationId,
                 current => current.Status == ExecutionJobStatus.Queued && current.AttemptCount == 1,
                 TimeSpan.FromSeconds(10));
+            receipt["requeuedAt"] = requeued.UpdatedAt.ToString("O");
             requeued.ClaimedBy.Should().BeNull();
             requeued.ClaimedAt.Should().BeNull();
             requeued.LastHeartbeatAt.Should().BeNull();
@@ -209,6 +228,23 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             var package = await resultStore.GetAsync(operationId);
             package.Should().NotBeNull();
             package!.Artifacts.Should().ContainSingle();
+            var artifact = package.Artifacts.Single();
+            artifact.Uri.Should().StartWith("data:application/json;base64,");
+            var artifactBytes = Convert.FromBase64String(artifact.Uri!["data:application/json;base64,".Length..]);
+            using var descriptor = JsonDocument.Parse(artifactBytes);
+            descriptor.RootElement.GetProperty("processId").GetString().Should().Be("sink.external-postgis");
+            descriptor.RootElement.GetProperty("schema").GetString().Should().Be(schema);
+            descriptor.RootElement.GetProperty("table").GetString().Should().Be("fenced_output");
+            descriptor.RootElement.GetProperty("featuresWritten").GetInt64().Should().Be(1);
+            descriptor.RootElement.GetProperty("featuresRejected").GetInt64().Should().Be(0);
+            receipt["resultPackageId"] = package.ResultPackageId;
+            receipt["output"] = new JsonObject
+            {
+                ["artifactId"] = artifact.ArtifactId,
+                ["label"] = artifact.Label,
+                ["sha256"] = Convert.ToHexStringLower(SHA256.HashData(artifactBytes)),
+                ["descriptor"] = JsonNode.Parse(artifactBytes)
+            };
 
             await using var connection = await database.DataSource.OpenConnectionAsync();
             await using var count = new NpgsqlCommand(
@@ -224,6 +260,32 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             attemptTwo.Parameters.AddWithValue("batch", $"{operationId}:attempt:2");
             ((long)(await attemptTwo.ExecuteScalarAsync())!).Should().Be(1);
 
+            // The fixture is one unchanged EPSG:4326 point (1, 2), not an oracle
+            // derived from the sink's output. Count-only checks miss corrupted values.
+            await using var values = new NpgsqlCommand(
+                $"SELECT id, ST_X(geom), ST_Y(geom), ST_SRID(geom), ST_NDims(geom), attributes->>'row_id', idempotency_key FROM \"{schema}\".fenced_output", connection);
+            await using (var reader = await values.ExecuteReaderAsync())
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                reader.GetDouble(1).Should().Be(1);
+                reader.GetDouble(2).Should().Be(2);
+                reader.GetInt32(3).Should().Be(4326);
+                reader.GetInt32(4).Should().Be(2);
+                reader.GetString(5).Should().Be("logical-1");
+                reader.GetString(6).Should().Be($"{operationId}:0");
+                receipt["sink"] = new JsonObject
+                {
+                    ["rowId"] = reader.GetInt64(0),
+                    ["x"] = reader.GetDouble(1),
+                    ["y"] = reader.GetDouble(2),
+                    ["srid"] = reader.GetInt32(3),
+                    ["dimensions"] = reader.GetInt32(4),
+                    ["logicalId"] = reader.GetString(5),
+                    ["idempotencyKey"] = reader.GetString(6)
+                };
+                (await reader.ReadAsync()).Should().BeFalse();
+            }
+
             (await harness.Database.HashGetAsync(receiptKey, "executorInvocations")).ToString().Should().Be("2");
             (await harness.Database.HashGetAsync(receiptKey, "executorCheckpointCount")).ToString().Should().Be("1");
             (await harness.Database.HashGetAsync(receiptKey, $"invocations:{workerA}")).ToString().Should().Be("1");
@@ -234,6 +296,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             (await harness.Database.HashGetAsync(receiptKey, "requeue")).ToString().Should().Be("heartbeat-expired");
             (await harness.Database.HashGetAsync(receiptKey, "duplicateBeforeTerminal")).ToString().Should().Be("rejected");
             (await harness.Database.HashGetAsync(receiptKey, "duplicateAfterTerminal")).ToString().Should().Be("rejected");
+            receipt["assertionsPassed"] = true;
         }
         finally
         {
@@ -244,9 +307,42 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             }
 
             staleWorker?.Dispose();
-            await harness.Database.KeyDeleteAsync([
-                receiptKey, checkpointKey, $"{checkpointKey}:resumed", resumeKey, rejectedKey, releaseKey]);
-            await database.DropSchemaAsync(schema);
+            var events = new JsonObject();
+            foreach (var entry in await harness.Database.HashGetAllAsync(receiptKey))
+            {
+                events[entry.Name.ToString()] = entry.Value.ToString();
+            }
+
+            receipt["events"] = events;
+            receipt["staleAttemptRejection"] = (await harness.Database.StringGetAsync(rejectedKey)).ToString();
+            try
+            {
+                RedisKey[] keys = [receiptKey, checkpointKey, $"{checkpointKey}:resumed", resumeKey,
+                    rejectedKey, releaseKey, $"{releaseKey}:ready"];
+                await harness.Database.KeyDeleteAsync(keys);
+                foreach (var key in keys)
+                {
+                    (await harness.Database.KeyExistsAsync(key)).Should().BeFalse();
+                }
+
+                await database.DropSchemaAsync(schema);
+                receipt["cleanup"] = "checkpoint-keys-and-sink-schema-removed";
+            }
+            finally
+            {
+                receipt["completedAt"] = DateTimeOffset.UtcNow.ToString("O");
+                var directory = Environment.GetEnvironmentVariable("HONUA_SERVER_TEST_RESULTS_DIR");
+                if (string.IsNullOrWhiteSpace(directory))
+                {
+                    directory = RepositoryPaths.Resolve("tests", "TestResults");
+                }
+
+                Directory.CreateDirectory(directory);
+                var path = Path.Join(directory, $"{operationId}.json");
+                var json = receipt.ToJsonString();
+                await File.WriteAllTextAsync(path, json);
+                output.WriteLine($"Stale-attempt receipt: {path}\n{json}");
+            }
         }
     }
 
@@ -257,7 +353,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
         var operationId = $"job-3851-retry-{Guid.NewGuid():N}";
         var retryPolicy = new JobRetryPolicy
         {
-            MaxAttempts = 3,
+            MaxAttempts = 4,
             Strategy = BackoffStrategy.Exponential,
             BaseDelay = TimeSpan.FromMilliseconds(100),
             MaxDelay = TimeSpan.FromMilliseconds(250)
@@ -271,7 +367,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
         await harness.Queue.EnqueueAsync(operationId);
 
         var callback = new CountingTerminalCallback();
-        var executor = new FailingExecutor(3);
+        var executor = new FailingExecutor(4);
         using var worker = new JobExecutionService(
             harness.Queue,
             harness.JobStore,
@@ -290,7 +386,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 TimeSpan.FromSeconds(10));
             firstBackoff.NextRetryAt.Should().NotBeNull();
             (firstBackoff.NextRetryAt!.Value - firstBackoff.UpdatedAt).Should().BeCloseTo(
-                retryPolicy.ComputeDelay(2), TimeSpan.FromMilliseconds(75));
+                TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(25));
 
             var secondBackoff = await WaitForJobAsync(
                 harness.JobStore,
@@ -299,11 +395,23 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 TimeSpan.FromSeconds(10));
             secondBackoff.NextRetryAt.Should().NotBeNull();
             (secondBackoff.NextRetryAt!.Value - secondBackoff.UpdatedAt).Should().BeCloseTo(
-                retryPolicy.ComputeDelay(3), TimeSpan.FromMilliseconds(75));
+                TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(25));
+
+            var thirdBackoff = await WaitForJobAsync(
+                harness.JobStore,
+                operationId,
+                current => current.Status == ExecutionJobStatus.Queued && current.AttemptCount == 3,
+                TimeSpan.FromSeconds(10));
+            thirdBackoff.NextRetryAt.Should().NotBeNull();
+            // 100 * 2^2 = 400 ms, capped by the independently specified 250 ms maximum.
+            (thirdBackoff.NextRetryAt!.Value - thirdBackoff.UpdatedAt).Should().BeCloseTo(
+                TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(25));
 
             var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(15));
             terminal.Status.Should().Be(ExecutionJobStatus.Failed);
             executor.InvocationCount.Should().Be(retryPolicy.MaxAttempts);
+            executor.Attempts.Select(attempt => attempt.AttemptCount).Should().Equal(1, 2, 3, 4);
+            executor.Attempts.Should().OnlyContain(attempt => !string.IsNullOrWhiteSpace(attempt.ClaimedBy));
             callback.InvocationCount.Should().Be(1);
 
             var final = await harness.JobStore.GetAsync(operationId);
@@ -365,6 +473,14 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 "Cancelled during retry backoff");
             cancelled.State.Should().Be(ExecutionJobCancellationState.Cancelled);
             await harness.Queue.RemoveAsync(operationId);
+
+            // Observe beyond the scheduled retry so an incorrectly resurrected job
+            // cannot pass merely because cancellation initially looked terminal.
+            var remainingBackoff = backoff.NextRetryAt!.Value - DateTimeOffset.UtcNow;
+            if (remainingBackoff > TimeSpan.Zero)
+            {
+                await Task.Delay(remainingBackoff + TimeSpan.FromMilliseconds(250));
+            }
 
             var final = await WaitForJobAsync(
                 harness.JobStore,
@@ -595,6 +711,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
     private sealed class FailingExecutor(int failures) : IJobExecutor
     {
         public int InvocationCount => Volatile.Read(ref _invocationCount);
+        public ConcurrentQueue<ExecutionJobRecord> Attempts { get; } = new();
         public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
         private int _invocationCount;
 
@@ -603,6 +720,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             IJobExecutionContext context,
             CancellationToken cancellationToken)
         {
+            Attempts.Enqueue(job);
             var invocation = Interlocked.Increment(ref _invocationCount);
             return Task.FromResult(invocation <= failures
                 ? JobExecutionResult.Failed($"transient failure {invocation}")

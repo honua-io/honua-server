@@ -45,7 +45,9 @@ public sealed partial class VectorProcessParityIntegrationTests
             converted.GetProperty("srid").GetInt32().Should().Be(4326);
             converted.GetProperty("contentType").GetString().Should().Be(target switch
             {
-                "geojson" => "application/geo+json", "wkb" => "application/wkb", _ => "text/plain"
+                "geojson" => "application/geo+json",
+                "wkb" => "application/wkb",
+                _ => "text/plain"
             });
             var value = converted.GetProperty("value");
             Geometry parsed;
@@ -82,7 +84,8 @@ public sealed partial class VectorProcessParityIntegrationTests
 
         using var invalidBody = new StringContent(JsonSerializer.Serialize(new
         {
-            response = "document", inputs = new { geometry = encoded, target = "invalid-target" }
+            response = "document",
+            inputs = new { geometry = encoded, target = "invalid-target" }
         }), Encoding.UTF8, "application/json");
         using var invalid = await client.PostAsync("/ogc/processes/processes/conversion.geometry-format/execution", invalidBody);
         invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);

@@ -77,12 +77,15 @@ subtracts those offsets; both retain M=7 and the target SRID. The former SQL fai
 these assertions. Grid availability remains a deployment prerequisite for a
 selected grid operation; the helper does not substitute an approximation.
 
-The GeometryServer default NAD27/NAD83 path already uses SRID-only projection on
-trunk. `GeometryServiceProjectTests` now checks both directions over HTTP against
-independent pyproj 3.8 / PROJ 9.8.1 reference values with network disabled and an
-empty grid cache, matching the base test image. It asserts XY, preserved Z/M,
-geometry type, and the destination WKID. This reference proves the base image's
-available operation, not provisioned NADCON accuracy.
+The GeometryServer default NAD27/NAD83 path uses SRID-only projection.
+`GeometryServiceProjectTests` checks both directions over HTTP in digest-pinned
+PostGIS 18 fixtures, with and without the pinned NOAA NADCON grid. Each profile
+has an isolated PROJ data directory and disables network grid downloads.
+Independent pyproj references cover the grid-free CONUS Helmert operation and
+the pinned NADCON operation. Every case asserts XY within `2e-9` degrees,
+preserved Z/M, geometry type, and the destination WKID. CI's shared PostGIS 16
+database includes a legacy `conus` grid; its default operation must not be
+compared with a grid-free reference.
 
 ## PROJ grid-data provisioning (#1501)
 

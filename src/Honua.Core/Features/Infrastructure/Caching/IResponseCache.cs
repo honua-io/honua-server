@@ -9,6 +9,17 @@ namespace Honua.Core.Features.Infrastructure.Caching;
 public interface IResponseCache
 {
     /// <summary>
+    /// Binds a key to the current cache generation before reading or computing a response.
+    /// Use the returned opaque key for both the lookup and its eventual fill so an
+    /// intervening invalidation cannot publish old data into a new generation.
+    /// </summary>
+    /// <param name="key">Logical response cache key.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The key to retain for this read and fill operation.</returns>
+    Task<string> BindKeyAsync(string key, CancellationToken cancellationToken = default)
+        => Task.FromResult(key);
+
+    /// <summary>
     /// Gets a cached response by key
     /// </summary>
     /// <typeparam name="T">Type of cached object</typeparam>

@@ -104,6 +104,9 @@ concurrency:
 
 env:
   DOTNET_VERSION: '10.0.x'
+  # Keep one persistent MSBuild server alive across restore/build/test calls in
+  # each job. Roslyn shared compilation remains enabled by default.
+  DOTNET_CLI_USE_MSBUILD_SERVER: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
   PYTHON_VERSION: '3.11'
@@ -742,11 +745,13 @@ jobs:
             dotnet build ${{ steps.affected.outputs.projects }} \
               --no-restore \
               --configuration Release \
+              -graphBuild \
               /p:TreatWarningsAsErrors=true
           else
             dotnet build Honua.sln \
               --no-restore \
               --configuration Release \
+              -graphBuild \
               /p:TreatWarningsAsErrors=true
           fi
 
@@ -1178,6 +1183,7 @@ jobs:
           dotnet build "${csproj}" \
             --no-restore \
             --configuration Release \
+            -graphBuild \
             /p:RunAnalyzers=false
 
       - name: Package shard-local cache payload
@@ -1381,8 +1387,12 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -yqq gdal-bin
-          for tool in gdaldem ogr2ogr gdal_translate; do
+          sudo apt-get install -yqq gdal-bin python3-gdal python3-numpy python3-scipy
+          # Match the allocation worker's GDAL + SciPy dependency path. Prefer
+          # the distro interpreter that owns the apt-installed Python bindings.
+          echo "/usr/bin" >> "${GITHUB_PATH}"
+          /usr/bin/python3 -c 'from osgeo import gdal; from scipy import ndimage; import numpy'
+          for tool in gdaldem ogr2ogr gdal_translate gdal_proximity.py; do
             command -v "${tool}" >/dev/null \
               || { echo "::error::${tool} is missing after installing gdal-bin"; exit 1; }
           done

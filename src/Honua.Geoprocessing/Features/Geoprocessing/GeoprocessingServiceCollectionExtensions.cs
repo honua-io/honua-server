@@ -3,6 +3,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.FileStorage;
@@ -93,7 +94,8 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<IProcessUsageTelemetry, InMemoryProcessUsageTelemetry>();
 
         // Execution job store (ticket #722)
-        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer))
+            && services.Any(d => d.ServiceType == typeof(RedisDurabilityAttestation)))
         {
             services.TryAddSingleton<IExecutionJobStore>(sp =>
                 new RedisExecutionJobStore(

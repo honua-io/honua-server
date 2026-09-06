@@ -475,6 +475,9 @@ internal static partial class ProcessPlanValidator
                 // enforces positive SRIDs. Unsupported datum-shift pairs are
                 // rejected at execution time by the managed transform path.
                 break;
+            case "source.ogr":
+                ValidateOgrSourceSemantics(step, violations);
+                break;
             case "source.geojson":
                 ValidateGeoJsonSourceSemantics(step, violations);
                 break;
@@ -595,6 +598,26 @@ internal static partial class ProcessPlanValidator
         {
             AddRangeViolationIfNew(step, parameter,
                 $"expected an identifier matching ^[A-Za-z_][A-Za-z0-9_]*$, got '{value}'", violations);
+        }
+    }
+
+    private static void ValidateOgrSourceSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // Mirror the native worker's argv boundary before dispatch. Empty values
+        // retain the optional input's omission semantics; whitespace is invalid.
+        if (step.Inputs.TryGetValue("layerName", out var layerName)
+            && !string.IsNullOrEmpty(layerName)
+            && (string.IsNullOrWhiteSpace(layerName) || layerName.Length > 1024
+                || layerName.StartsWith('-') || layerName.Any(char.IsControl)))
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = "INVALID_PARAMETER_VALUE",
+                Message = "layerName must be a nonempty layer name, not a command option.",
+                FieldPath = $"steps[{step.StepId}].inputs.layerName"
+            });
         }
     }
 
