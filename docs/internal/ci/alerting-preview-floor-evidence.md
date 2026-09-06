@@ -42,6 +42,8 @@ Executed on 2026-09-06 using the Windows .NET SDK 10.0.100, Release configuratio
 | Affected alert endpoint, operations, floor, and isolation suites | 48 passed, 0 failed, 0 skipped |
 | Postgres audit persistence, chain, retention, and truncation suites | 26 passed, 0 failed, 0 skipped |
 | MCP taxonomy and capability registry conformance | 68 passed, 0 failed, 0 skipped |
+| Server Fast suite | 4078 passed, 0 failed, 0 skipped |
+| Final endpoint metadata, API coverage, and catalog checks | 15 passed, 0 failed, 0 skipped |
 | Tenant claim casing regression before the fix | 2 failed, 6 passed; both failures reached the forbidden instance-store delegate |
 | Changed-file `dotnet format` and `--verify-no-changes` | Passed |
 
@@ -49,6 +51,12 @@ The Server and Architecture projects compiled with zero warnings/errors. The
 solution build initially caught CA1859 in an existing cache test; the same
 concrete-variable correction already present on trunk is included here. The
 broad alert run above includes a successful rebuilt Server.Tests assembly.
+The full architecture run passed 286 checks and identified one missing endpoint
+annotation; the final 15-check run above verifies that correction. Native Fast
+validation also required canonical LF output in the parity-export generator and
+coordinated renewal-file access and asynchronous shutdown in the license fixture.
+All renewal assertions remain intact. Documentation validation passed 2056 link
+targets and 13 code-referenced anchors, with 14 pre-existing allowlisted warnings.
 
 See the [alert rule design](../design/realtime-alert-rules.md) for the endpoint contract.
 The required PR gate runs `AlertPreviewFloorTests` in its Server governance step.
