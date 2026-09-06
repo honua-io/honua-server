@@ -726,6 +726,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private static string DescribePostgresError(string? sqlState) => sqlState switch
     {
         "42P01" => "a required staging table was not available",
+        "42P07" => "the target already exists; choose a new table name or enable overwrite",
         "42883" => "a required database function was not available",
         "23505" => "a record with a conflicting key already exists",
         "23502" => "a required value was missing",

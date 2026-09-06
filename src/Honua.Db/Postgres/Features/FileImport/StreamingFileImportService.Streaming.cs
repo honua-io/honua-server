@@ -43,6 +43,7 @@ internal sealed partial class StreamingFileImportService
         var allowedTableName = await ResolvePhysicalTableNameAsync(
             connection, targetSchema, request.TableName, cancellationToken);
         var loadMode = request.EffectiveLoadMode;
+        var requiresNewTarget = !request.OverwriteExisting && request.LoadMode == ImportLoadMode.Replace;
 
         // Replace uses one physical staging name per logical target. Hold a session-scoped
         // advisory lock across the complete read/load/swap so a concurrent request cannot drop
@@ -50,7 +51,7 @@ internal sealed partial class StreamingFileImportService
         ImportAdvisoryLock? replaceLock = null;
         try
         {
-            if (loadMode == ImportLoadMode.Replace)
+            if (loadMode == ImportLoadMode.Replace || requiresNewTarget)
             {
                 replaceLock = await AcquireImportLockAsync(
                     connection,
@@ -79,6 +80,11 @@ internal sealed partial class StreamingFileImportService
             switch (loadMode)
             {
                 case ImportLoadMode.Append:
+                    if (requiresNewTarget)
+                    {
+                        await CreateNewTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
+                    }
+
                     await EnsureTableAsync(connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
                     loadTableName = allowedTableName;
                     break;

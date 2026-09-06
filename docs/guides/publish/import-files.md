@@ -35,6 +35,10 @@ Run `POST /api/v1/admin/import/upload` with these form values:
 
 Optional form fields: `sourceSrid` (when CRS auto-detection fails), `targetSchema`, `forceBackground`. Files above the background-job threshold (see `GET /api/v1/admin/import/limits`) return `202 Accepted` with a `jobId` instead of a synchronous result.
 
+Set `overwriteExisting` to `true` only when you intend to replace a target. When it is
+`false` or omitted, importing to an existing table fails and leaves its rows and metadata
+unchanged. Choose a new table name to keep both datasets.
+
 ### 4. Poll the job (background imports only)
 
 Run `GET /api/v1/admin/import/jobs/{jobId}`, substituting the `jobId` returned by the upload.
