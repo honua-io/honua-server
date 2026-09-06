@@ -330,6 +330,7 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         }
         else
         {
+            band.GetProperty("nodata").ValueKind.Should().Be(JsonValueKind.Number, "the output must declare its nodata sentinel");
             band.GetProperty("nodata").GetDouble().Should().Be(nodata.Value);
         }
         var values = band.GetProperty("values").EnumerateArray().ToArray();
