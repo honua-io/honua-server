@@ -124,6 +124,7 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
             // rooted and silently discard workspace.
             var outputPath = Path.Join(workspace, "output.tif");
             var firstInputPath = "";
+            var inputPaths = new List<string>(sources.Count);
             var args = new List<string>(sources.Count * 2 + 8);
             for (var i = 0; i < sources.Count; i++)
             {
@@ -132,6 +133,7 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
                 // user input), so it can never be rooted and silently discard workspace.
                 var inputPath = Path.Join(workspace, $"input{i.ToString(CultureInfo.InvariantCulture)}.tif");
                 await File.WriteAllBytesAsync(inputPath, sources[i], cancellationToken).ConfigureAwait(false);
+                inputPaths.Add(inputPath);
                 if (i == 0)
                 {
                     firstInputPath = inputPath;
@@ -140,10 +142,6 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
                 args.Add(inputPath);
             }
 
-            // Pass the calc as a single "--calc=<expr>" token so an expression with a
-            // leading unary minus (e.g. "-A") is not mistaken for a separate option by
-            // gdal_calc.py's argparse.
-            args.Add($"--calc={expression.Trim()}");
             if (dataType is not null)
             {
                 args.Add("--type");
@@ -156,6 +154,40 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
             var effectiveNoData = explicitNoData
                 ?? await GdalNoData.TryReadSourceNoDataAsync(
                     runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken).ConfigureAwait(false);
+            if (effectiveNoData is null)
+            {
+                const string Script = "gdal_calc_nodata.py";
+                var scriptPath = Path.Join(workspace, Script);
+                File.Copy(Path.Join(AppContext.BaseDirectory, "Scripts", Script), scriptPath, overwrite: true);
+                var defaultsArgs = new List<string> { scriptPath, dataType ?? "Unknown" };
+                defaultsArgs.AddRange(inputPaths);
+                await GdalCommandLog.LogCommandAsync(context, "python3", defaultsArgs, workspace, cancellationToken).ConfigureAwait(false);
+                using var defaultsTimeout = new CancellationTokenSource(opts.ToolTimeout);
+                using var defaultsLinked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, defaultsTimeout.Token);
+                GdalCommandResult defaults;
+                try
+                {
+                    defaults = await runner.RunAsync("python3", defaultsArgs, workspace, defaultsLinked.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (defaultsTimeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                {
+                    return JobExecutionResult.Failed("Map-algebra output nodata detection timed out.");
+                }
+                if (!defaults.Succeeded || !double.TryParse(defaults.StandardOutput.Trim(), NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out var fallback) || !double.IsFinite(fallback))
+                {
+                    return JobExecutionResult.Failed("Could not determine the map-algebra output nodata value.");
+                }
+                effectiveNoData = fallback;
+            }
+            // Validate caller syntax above, then normalize undefined arithmetic to
+            // the declared sentinel. Otherwise division by zero can publish NaN/Inf
+            // pixels that consumers consider valid under a finite nodata sentinel.
+            var noDataLiteral = effectiveNoData.Value.ToString("R", CultureInfo.InvariantCulture);
+            var calc = expression.Trim();
+            // Promote floating intermediates before replacement so Float64 nodata
+            // cannot overflow a Float32 expression. Leave integral arrays intact.
+            args.Add($"--calc=numpy.nan_to_num(numpy.asarray({calc},dtype=numpy.float64),nan={noDataLiteral},posinf={noDataLiteral},neginf={noDataLiteral}) if numpy.issubdtype(numpy.asarray({calc}).dtype,numpy.inexact) else ({calc})");
             GdalNoData.AppendNoDataArg(args, effectiveNoData);
 
             args.Add("--overwrite");

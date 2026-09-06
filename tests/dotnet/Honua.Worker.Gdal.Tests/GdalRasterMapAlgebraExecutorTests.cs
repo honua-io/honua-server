@@ -60,7 +60,7 @@ public sealed class GdalRasterMapAlgebraExecutorTests
             invocation.Tool.Should().Be("gdal_calc.py");
             invocation.Arguments.Should().Contain(a => a.StartsWith("-A"));
             invocation.Arguments.Should().Contain(a => a.StartsWith("-B"));
-            invocation.Arguments.Should().Contain("--calc=(A-B)/(A+B)");
+            invocation.Arguments.Should().Contain("--calc=numpy.nan_to_num((A-B)/(A+B),nan=numpy.nan,posinf=numpy.nan,neginf=numpy.nan)");
             invocation.Arguments.Should().Contain("--overwrite");
             invocation.Arguments[^1].Should().EndWith("output.tif");
         }
@@ -88,10 +88,10 @@ public sealed class GdalRasterMapAlgebraExecutorTests
 
             // GdalNoData.TryReadSourceNoDataAsync adds a gdalinfo invocation before gdal_calc.py.
             var args = runner.Invocations.Single(i => i.Tool == "gdal_calc.py").Arguments;
-            // The expression is a single "--calc=-A" token so argparse cannot mistake
+            // The wrapped expression is a single --calc= token so argparse cannot mistake
             // the leading minus for a separate option. (The band-variable flag "-A" is
             // a separate, expected argument.)
-            args.Should().Contain("--calc=-A");
+            args.Should().Contain("--calc=numpy.nan_to_num(-A,nan=numpy.nan,posinf=numpy.nan,neginf=numpy.nan)");
             args.Should().NotContain("--calc");
         }
         finally

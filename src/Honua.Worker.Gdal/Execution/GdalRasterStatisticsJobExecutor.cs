@@ -147,7 +147,9 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
             {
                 scalar = isHistogram
                     ? ProjectHistogramScalar(result.StandardOutput, bandFilter)
-                    : ProjectStatisticsScalar(result.StandardOutput, bandFilter);
+                    : ProjectStatisticsScalar(result.StandardOutput, bandFilter,
+                        await ReadValidCountsAsync(sourceInput, inputPath, workspace, opts.ToolTimeout,
+                            context, cancellationToken).ConfigureAwait(false));
             }
             catch (JsonException ex)
             {
@@ -181,6 +183,35 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
         {
             GdalScratch.TryCleanup(workspace, logger);
         }
+    }
+
+    private async Task<string> ReadValidCountsAsync(
+        GdalRasterInput sourceInput, string inputPath, string workspace, TimeSpan timeout,
+        IJobExecutionContext context, CancellationToken cancellationToken)
+    {
+        const string Script = "gdal_valid_counts.py";
+        var scriptPath = Path.Join(workspace, Script);
+        File.Copy(Path.Join(AppContext.BaseDirectory, "Scripts", Script), scriptPath, overwrite: true);
+        var args = new List<string> { scriptPath };
+        sourceInput.AddReadPin(args);
+        args.Add(inputPath);
+        await GdalCommandLog.LogCommandAsync(context, "python3", args, workspace, cancellationToken).ConfigureAwait(false);
+        using var timeoutCts = new CancellationTokenSource(timeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+        GdalCommandResult result;
+        try
+        {
+            result = await runner.RunAsync("python3", args, workspace, linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException("Exact raster count timed out.", ex);
+        }
+        if (!result.Succeeded)
+        {
+            throw new InvalidOperationException($"Exact raster count failed: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
+        }
+        return result.StandardOutput;
     }
 
     private static bool TryParseBands(
@@ -224,13 +255,18 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
     /// Extracts {min, max, mean, stddev, validCount} per band from the gdalinfo
     /// JSON document. Filters to the requested band list when one was supplied.
     /// </summary>
-    internal static string ProjectStatisticsScalar(string gdalinfoJson, HashSet<int>? bandFilter)
+    internal static string ProjectStatisticsScalar(string gdalinfoJson, HashSet<int>? bandFilter, string validCountsJson)
     {
         using var document = JsonDocument.Parse(gdalinfoJson);
+        using var counts = JsonDocument.Parse(validCountsJson);
         var root = document.RootElement;
         if (!root.TryGetProperty("bands", out var bandsElement) || bandsElement.ValueKind != JsonValueKind.Array)
         {
             throw new InvalidOperationException("gdalinfo output did not include a 'bands' array.");
+        }
+        if (!counts.RootElement.TryGetProperty("bands", out var countBands) || countBands.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidOperationException("Exact raster counts did not include a 'bands' array.");
         }
 
         var writerOptions = new JsonWriterOptions { Indented = false };
@@ -259,10 +295,28 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
                 {
                     writer.WriteString("type", typeElement.GetString());
                 }
-                CopyNumberProperty(band, "minimum", "min", writer);
-                CopyNumberProperty(band, "maximum", "max", writer);
-                CopyNumberProperty(band, "mean", "mean", writer);
-                CopyNumberProperty(band, "stdDev", "stddev", writer);
+                var countBand = countBands.EnumerateArray()
+                    .Single(b => b.GetProperty("band").GetInt32() == bandIndex);
+                if (!countBand.TryGetProperty("validCount", out var countElement)
+                    || countElement.ValueKind != JsonValueKind.Number
+                    || !countElement.TryGetInt64(out var count) || count < 0)
+                {
+                    throw new InvalidOperationException("Exact raster count did not include a valid count for every band.");
+                }
+                writer.WriteNumber("validCount", count);
+                if (band.TryGetProperty("noDataValue", out var noData))
+                {
+                    writer.WritePropertyName("noDataValue");
+                    noData.WriteTo(writer);
+                }
+                else
+                {
+                    writer.WriteNull("noDataValue");
+                }
+                WriteStatistic(band, "minimum", "MINIMUM", "min", count, writer);
+                WriteStatistic(band, "maximum", "MAXIMUM", "max", count, writer);
+                WriteStatistic(band, "mean", "MEAN", "mean", count, writer);
+                WriteStatistic(band, "stdDev", "STDDEV", "stddev", count, writer);
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -334,6 +388,29 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
         }
 
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteStatistic(JsonElement band, string displayName, string metadataName,
+        string targetName, long count, Utf8JsonWriter writer)
+    {
+        if (count == 0)
+        {
+            writer.WriteNull(targetName);
+            return;
+        }
+        // gdalinfo's display fields are rounded to three decimal places. The
+        // STATISTICS_* metadata preserves the native calculation's precision.
+        if (band.TryGetProperty("metadata", out var metadata)
+            && metadata.TryGetProperty("", out var domain)
+            && domain.TryGetProperty("STATISTICS_" + metadataName, out var statistic)
+            && statistic.ValueKind == JsonValueKind.String
+            && double.TryParse(statistic.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            && double.IsFinite(value))
+        {
+            writer.WriteNumber(targetName, value);
+            return;
+        }
+        CopyNumberProperty(band, displayName, targetName, writer);
     }
 
     private static void CopyNumberProperty(JsonElement source, string sourceName, string targetName, Utf8JsonWriter writer)

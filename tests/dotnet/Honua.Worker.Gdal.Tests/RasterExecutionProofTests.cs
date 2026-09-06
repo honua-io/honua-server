@@ -327,6 +327,27 @@ public sealed class RasterExecutionProofTests : IDisposable
         AssertStatistics(bands[secondBandOnly ? 0 : 1], 2, 4, -5, 25, 10, Math.Sqrt(125));
     }
 
+    [Fact]
+    public async Task MapAlgebra_SourcesWithoutNoData_UndefinedDivisionUsesNaNFallback()
+    {
+        var output = await ExecuteRaster("raster.map-algebra",
+            ("sources", Input("algebra-a-unmasked.tif") + "|" + Input("algebra-b-unmasked.tif")),
+            ("expression", "A/B"), ("dataType", "Float64"));
+        AssertGrid(output, 4, 2, 4326, [10, 0.25, 0, 20, 0, -0.5], 1);
+        AssertBand(output, 0, [2, double.NaN, double.NaN, 5, 2, 0.5, 4, 0], "Float64", double.NaN);
+    }
+
+    [Fact]
+    public async Task Statistics_MultipleReadWindows_CountsExactlyWhenValidPercentRoundsTo100()
+    {
+        using var json = JsonDocument.Parse(await Execute("raster.statistics", ("source", Input("statistics-wide.tif"))));
+        var bands = json.RootElement.GetProperty("bands");
+        bands.GetArrayLength().Should().Be(1);
+        // A 513x513 plane of ones with one nodata at (256,256) spans nine
+        // read windows. Its valid percentage rounds to 100, but count != area.
+        AssertStatistics(bands[0], 1, 513 * 513 - 1, 1, 1, 1, 0);
+    }
+
     private static void AssertStatistics(JsonElement band, int index, long count, double min, double max, double mean, double stddev)
     {
         band.GetProperty("band").GetInt32().Should().Be(index);
