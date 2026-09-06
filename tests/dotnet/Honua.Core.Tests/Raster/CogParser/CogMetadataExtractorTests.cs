@@ -16,6 +16,45 @@ namespace Honua.Core.Tests.Raster.CogParser;
 /// </summary>
 public class CogMetadataExtractorTests
 {
+    [Theory]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    public async Task ReadMetadataAsync_UnsupportedSampleFormat_RejectsInsteadOfRelabeling(ushort sampleFormat)
+    {
+        var tiff = BuildSyntheticCogBytesWithSampleFormat(16, 16, 64, sampleFormat);
+        var read = () => new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiff), "fixtures", "complex.tif");
+
+        await read.Should().ThrowAsync<InvalidDataException>().WithMessage("*SampleFormat*");
+    }
+
+    [Fact]
+    public async Task ReadMetadataAsync_SharedJpegTables_RejectsAbbreviatedTileSource()
+    {
+        var tiff = BuildSyntheticCogBytesWithSampleFormat(16, 16, 8, 1);
+        var entries = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(tiff.AsSpan(8));
+        for (var i = 0; i < entries; i++)
+        {
+            var entry = tiff.AsSpan(10 + i * 12, 12);
+            var tag = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(entry);
+            if (tag == 259)
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(entry[8..], 7);
+            if (tag == 339)
+            {
+                // Replace the optional default SampleFormat with inline JPEGTables.
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(entry, 347);
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(entry[2..], 7);
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(entry[4..], 4);
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(entry[8..], 0xD9FFD8FF);
+            }
+        }
+        var read = () => new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiff), "fixtures", "shared-tables.tif");
+
+        await read.Should().ThrowAsync<InvalidDataException>().WithMessage("*JPEGTables*");
+    }
+
     [Fact]
     public async Task ReadMetadataAsync_PixelScaleBeforeTiepoint_ComputesCorrectExtent()
     {
@@ -237,6 +276,65 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(0.0, 1e-10);   // 50  - 1.0 * 50
     }
 
+    [Fact]
+    public async Task ReadMetadataAsync_PixelIsPointAndNonZeroTiepointCoordinates_NormalizesToPixelCorner()
+    {
+        var tiffData = BuildSyntheticCogBytesWithPixelPoint(
+            width: 100,
+            height: 50,
+            scaleX: 2,
+            scaleY: 4,
+            tiepointI: 3,
+            tiepointJ: 5,
+            tiepointX: 100,
+            tiepointY: 200);
+
+        var metadata = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiffData), "test-bucket", "test.tif");
+
+        metadata.Extent.XMin.Should().BeApproximately(93, 1e-10);
+        metadata.Extent.YMax.Should().BeApproximately(222, 1e-10);
+        metadata.Extent.XMax.Should().BeApproximately(293, 1e-10);
+        metadata.Extent.YMin.Should().BeApproximately(22, 1e-10);
+    }
+
+    [Fact]
+    public async Task ReadMetadataAsync_ModelTransformation_ComputesNorthUpExtent()
+    {
+        var tiffData = BuildSyntheticCogBytesWithModelTransformation(
+            width: 100,
+            height: 50,
+            originX: 500,
+            originY: 1000,
+            scaleX: 2,
+            scaleY: 4);
+
+        var metadata = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiffData), "test-bucket", "test.tif");
+
+        metadata.Extent.XMin.Should().BeApproximately(500, 1e-10);
+        metadata.Extent.YMax.Should().BeApproximately(1000, 1e-10);
+        metadata.Extent.XMax.Should().BeApproximately(700, 1e-10);
+        metadata.Extent.YMin.Should().BeApproximately(800, 1e-10);
+    }
+
+    [Theory]
+    [InlineData(1, 0.25)]
+    [InlineData(4, 0.25)]
+    [InlineData(0, double.NaN)]
+    [InlineData(3, double.PositiveInfinity)]
+    [InlineData(12, 1)]
+    [InlineData(15, 0)]
+    public async Task ReadMetadataAsync_UnsafeModelTransformation_RejectsInsteadOfInventingExtent(int element, double value)
+    {
+        var tiff = BuildSyntheticCogBytesWithModelTransformation(100, 50, 500, 1000, 2, 4);
+        System.Buffers.Binary.BinaryPrimitives.WriteDoubleLittleEndian(tiff.AsSpan(110 + element * 8), value);
+
+        var act = () => new CogMetadataExtractor().ReadMetadataAsync(new InMemoryRangeReader(tiff), "bucket", "test.tif");
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
     /// <summary>
     /// Builds a synthetic classic TIFF (little-endian) with georeferencing tags
     /// in TIFF-spec ascending order. Tag 33550 comes before tag 33922.
@@ -316,6 +414,82 @@ public class CogMetadataExtractorTests
 
         writer.Write((uint)0); // no next IFD
 
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildSyntheticCogBytesWithPixelPoint(
+        int width, int height, double scaleX, double scaleY,
+        double tiepointI, double tiepointJ, double tiepointX, double tiepointY)
+    {
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms);
+        writer.Write((ushort)0x4949);
+        writer.Write((ushort)42);
+        writer.Write((uint)8);
+
+        const int entryCount = 10;
+        const uint scaleOffset = 134;
+        const uint tiepointOffset = 158;
+        const uint geoKeyOffset = tiepointOffset + 6 * sizeof(double);
+        writer.Write((ushort)entryCount);
+        WriteIfdEntry(writer, 256, 4, 1, (uint)width);
+        WriteIfdEntry(writer, 257, 4, 1, (uint)height);
+        WriteIfdEntry(writer, 259, 3, 1, 1);
+        WriteIfdEntry(writer, 322, 4, 1, 256);
+        WriteIfdEntry(writer, 323, 4, 1, 256);
+        WriteIfdEntry(writer, 324, 4, 1, 5000);
+        WriteIfdEntry(writer, 325, 4, 1, 1000);
+        WriteIfdEntry(writer, 33550, 12, 3, scaleOffset);
+        WriteIfdEntry(writer, 33922, 12, 6, tiepointOffset);
+        WriteIfdEntry(writer, 34735, 3, 8, geoKeyOffset);
+        writer.Write((uint)0);
+        writer.Write(scaleX);
+        writer.Write(scaleY);
+        writer.Write(0d);
+        writer.Write(tiepointI);
+        writer.Write(tiepointJ);
+        writer.Write(0d);
+        writer.Write(tiepointX);
+        writer.Write(tiepointY);
+        writer.Write(0d);
+        writer.Write((ushort)1);
+        writer.Write((ushort)1);
+        writer.Write((ushort)0);
+        writer.Write((ushort)1);
+        writer.Write((ushort)1025);
+        writer.Write((ushort)0);
+        writer.Write((ushort)1);
+        writer.Write((ushort)2);
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildSyntheticCogBytesWithModelTransformation(
+        int width, int height, double originX, double originY, double scaleX, double scaleY)
+    {
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms);
+        writer.Write((ushort)0x4949);
+        writer.Write((ushort)42);
+        writer.Write((uint)8);
+
+        const int entryCount = 8;
+        const uint matrixOffset = 110;
+        writer.Write((ushort)entryCount);
+        WriteIfdEntry(writer, 256, 4, 1, (uint)width);
+        WriteIfdEntry(writer, 257, 4, 1, (uint)height);
+        WriteIfdEntry(writer, 259, 3, 1, 1);
+        WriteIfdEntry(writer, 322, 4, 1, 256);
+        WriteIfdEntry(writer, 323, 4, 1, 256);
+        WriteIfdEntry(writer, 324, 4, 1, 5000);
+        WriteIfdEntry(writer, 325, 4, 1, 1000);
+        WriteIfdEntry(writer, 34264, 12, 16, matrixOffset);
+        writer.Write((uint)0);
+
+        // Row-major 4x4 raster-to-model matrix: x=originX+scaleX*i, y=originY-scaleY*j.
+        writer.Write(scaleX); writer.Write(0d); writer.Write(0d); writer.Write(originX);
+        writer.Write(0d); writer.Write(-scaleY); writer.Write(0d); writer.Write(originY);
+        writer.Write(0d); writer.Write(0d); writer.Write(1d); writer.Write(0d);
+        writer.Write(0d); writer.Write(0d); writer.Write(0d); writer.Write(1d);
         return ms.ToArray();
     }
 
@@ -545,6 +719,25 @@ public class CogMetadataExtractorTests
         writer.Write(0.0);         // Z
 
         return ms.ToArray();
+    }
+
+    [Theory]
+    [InlineData(258, 16)]
+    [InlineData(339, 2)]
+    public async Task ReadMetadataAsync_MixedSampleLayout_RejectsInsteadOfMislabelingBands(ushort tag, ushort secondValue)
+    {
+        var tiff = BuildSyntheticCogBytesWithInlineShortArrays(16, 16, 8, 1, 2);
+        var count = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(tiff.AsSpan(8));
+        for (var i = 0; i < count; i++)
+        {
+            var entry = 10 + i * 12;
+            if (System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(tiff.AsSpan(entry)) == tag)
+            {
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(tiff.AsSpan(entry + 10), secondValue);
+            }
+        }
+        var act = () => new CogMetadataExtractor().ReadMetadataAsync(new InMemoryRangeReader(tiff), "bucket", "mixed.tif");
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*mixed sample*");
     }
 
     private static void WriteIfdEntry(BinaryWriter writer, ushort tag, ushort type, uint count, uint valueOrOffset)

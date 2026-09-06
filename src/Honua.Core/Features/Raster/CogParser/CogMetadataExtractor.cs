@@ -53,6 +53,11 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         double xMin = 0, yMin = 0, xMax = 0, yMax = 0;
         double pixelScaleX = 0, pixelScaleY = 0;
         bool hasPixelScale = false;
+        double[]? modelTransformation = null;
+        double tiepointI = 0, tiepointJ = 0;
+        int rasterType = 1; // RasterPixelIsArea is the GeoTIFF default.
+        int photometricInterpretation = 1, planarConfiguration = 1;
+        string? noData = null;
 
         while (currentOffset > 0 && levelIndex < MaxOverviewLevels)
         {
@@ -98,6 +103,29 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             {
                 switch (entry.Tag)
                 {
+                    case TiffConstants.TagJpegTables:
+                        // Tile ranges cannot be advertised as standalone JPEGs when their
+                        // decoding tables live outside the tile. Reject before persisting
+                        // metadata or returning a payload until table assembly is supported.
+                        throw new InvalidDataException("COG sources declaring shared JPEGTables are not supported for direct tile serving.");
+                    case TiffConstants.TagPhotometricInterpretation when levelIndex == 0:
+                        photometricInterpretation = (int)entry.ValueOrOffset;
+                        break;
+                    case 284 when levelIndex == 0: // PlanarConfiguration
+                        planarConfiguration = (int)entry.ValueOrOffset;
+                        break;
+                    case 42113 when levelIndex == 0: // GDAL_NODATA
+                        if (entry.Type != TiffConstants.TypeAscii || entry.Count is < 1 or > 128)
+                        {
+                            throw new InvalidDataException("Invalid COG nodata tag.");
+                        }
+                        var noDataBytes = entry.IsInline
+                            ? parser.ReadInlineIntArray(entry.ValueOrOffset, (int)entry.Count, entry.Type)
+                                .Select(value => (byte)value).ToArray()
+                            : await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset,
+                                (int)entry.Count, cancellationToken).ConfigureAwait(false);
+                        noData = System.Text.Encoding.ASCII.GetString(noDataBytes).TrimEnd('\0');
+                        break;
                     case TiffConstants.TagImageWidth:
                         ifdWidth = (int)entry.ValueOrOffset;
                         break;
@@ -133,6 +161,10 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                             if (bpsData.Length > 0)
                             {
                                 bitsPerSample = bpsData[0];
+                                if (bpsData.Any(value => value != bpsData[0]))
+                                {
+                                    throw new InvalidDataException("COG tiles with mixed sample widths are not supported.");
+                                }
                             }
                         }
                         break;
@@ -144,18 +176,28 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                             if (sfData.Length > 0)
                             {
                                 sampleFormat = (ushort)sfData[0];
+                                if (sfData.Any(value => value != sfData[0]))
+                                {
+                                    throw new InvalidDataException("COG tiles with mixed sample formats are not supported.");
+                                }
                             }
                         }
                         break;
                     case TiffConstants.TagGeoKeyDirectoryTag when levelIndex == 0:
-                        srid = await ExtractSridFromGeoKeysAsync(reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
+                        (srid, rasterType) = await ExtractGeoKeysAsync(
+                            reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
                         break;
                     case TiffConstants.TagModelTiepointTag when levelIndex == 0:
-                        (xMin, yMax) = await ExtractTiepointAsync(reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
+                        (tiepointI, tiepointJ, xMin, yMax) = await ExtractTiepointAsync(
+                            reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
                         break;
                     case TiffConstants.TagModelPixelScaleTag when levelIndex == 0:
                         (pixelScaleX, pixelScaleY) = await ExtractPixelScaleAsync(reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
                         hasPixelScale = true;
+                        break;
+                    case TiffConstants.TagModelTransformationTag when levelIndex == 0:
+                        modelTransformation = await ExtractModelTransformationAsync(
+                            reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
                         break;
                 }
             }
@@ -174,13 +216,58 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                 // Classify pixel type now that both BitsPerSample and SampleFormat are collected.
                 pixelType = ClassifyPixelType(bitsPerSample, sampleFormat);
 
+                // Compute extent from the affine GeoTIFF transform. The direct tile path is
+                // intentionally north-up only; accepting a rotated/sheared transform while
+                // dropping its off-diagonal terms would silently serve the wrong pixels.
+                if (modelTransformation is { Length: 16 })
+                {
+                    if (modelTransformation.Any(value => !double.IsFinite(value))
+                        || modelTransformation[1] != 0 || modelTransformation[4] != 0
+                        || modelTransformation[2] != 0 || modelTransformation[6] != 0
+                        || modelTransformation[12] != 0 || modelTransformation[13] != 0
+                        || modelTransformation[14] != 0 || modelTransformation[15] != 1
+                        || modelTransformation[0] <= 0
+                        || modelTransformation[5] >= 0)
+                    {
+                        throw new InvalidDataException(
+                            "COG ModelTransformation declares a rotated, sheared, or non-north-up grid, which direct tile serving cannot align safely.");
+                    }
+
+                    xMin = modelTransformation[3];
+                    yMax = modelTransformation[7];
+                    pixelScaleX = modelTransformation[0];
+                    pixelScaleY = -modelTransformation[5];
+                    hasPixelScale = true;
+                }
+
                 // Compute extent from tiepoint + scale.
                 // Both tags are now fully collected regardless of IFD entry order
                 // (tag 33550 PixelScale sorts before 33922 Tiepoint in TIFF spec).
                 if (hasPixelScale && width > 0 && height > 0)
                 {
+                    if (modelTransformation is null)
+                    {
+                        xMin -= tiepointI * pixelScaleX;
+                        yMax += tiepointJ * pixelScaleY;
+                    }
+
+                    // RasterPixelIsPoint's tiepoint is the pixel centre. Normalize it to
+                    // the upper-left pixel corner before persisting the extent, otherwise
+                    // GoogleMapsCompatible tile alignment is shifted by half a pixel.
+                    if (rasterType == 2)
+                    {
+                        xMin -= pixelScaleX / 2d;
+                        yMax += pixelScaleY / 2d;
+                    }
+
                     xMax = xMin + pixelScaleX * width;
                     yMin = yMax - pixelScaleY * height;
+                    if (!double.IsFinite(xMin) || !double.IsFinite(yMax)
+                        || !double.IsFinite(xMax) || !double.IsFinite(yMin)
+                        || pixelScaleX <= 0 || pixelScaleY <= 0)
+                    {
+                        throw new InvalidDataException("COG georeferencing does not describe a finite north-up grid.");
+                    }
                 }
                 // Exact-zero check is intentional and safe here: xMax/xMin are
                 // declared with a literal 0 default (line above) and are only
@@ -228,7 +315,8 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             tileWidth, tileHeight,
             overviewLevels.ToArray(),
             new RasterExtent { XMin = xMin, YMin = yMin, XMax = xMax, YMax = yMax, Srid = srid },
-            bitsPerSample, predictor, parser.IsLittleEndian);
+            bitsPerSample, predictor, parser.IsLittleEndian,
+            photometricInterpretation, planarConfiguration, noData);
     }
 
     private static async Task<long[]> ReadLongArrayFromEntryAsync(
@@ -285,19 +373,19 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         return checked((int)(entry.Count * TiffConstants.GetTypeSize(entry.Type)));
     }
 
-    private static async Task<int> ExtractSridFromGeoKeysAsync(
+    private static async Task<(int Srid, int RasterType)> ExtractGeoKeysAsync(
         ICloudRangeReader reader, string bucket, string key,
         IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
     {
         if (entry.Count < 4)
         {
-            return 0;
+            return (0, 1);
         }
 
         byte[] geoKeyData;
         if (entry.IsInline)
         {
-            return 0; // GeoKey directory is always external for meaningful content
+            return (0, 1); // GeoKey directory is always external for meaningful content
         }
 
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
@@ -308,6 +396,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         var numKeys = ReadUInt16(geoKeyData, 6, parser.IsLittleEndian);
         int geographicSrid = 0;
         int projectedSrid = 0;
+        var rasterType = 1;
 
         for (var i = 0; i < numKeys; i++)
         {
@@ -332,20 +421,24 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                 {
                     geographicSrid = value;
                 }
+                else if (keyId == TiffConstants.GeoKeyRasterTypeGeoKey)
+                {
+                    rasterType = value;
+                }
             }
         }
 
         // Prefer projected CRS (e.g. EPSG:3857) when present; fall back to geographic (e.g. EPSG:4326).
-        return projectedSrid > 0 ? projectedSrid : geographicSrid;
+        return (projectedSrid > 0 ? projectedSrid : geographicSrid, rasterType);
     }
 
-    private static async Task<(double X, double Y)> ExtractTiepointAsync(
+    private static async Task<(double I, double J, double X, double Y)> ExtractTiepointAsync(
         ICloudRangeReader reader, string bucket, string key,
         IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
     {
         if (entry.Count < 6)
         {
-            return (0, 0);
+            return (0, 0, 0, 0);
         }
 
         if (entry.Type != TiffConstants.TypeDouble)
@@ -353,7 +446,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             // Geo-referencing tags MUST use DOUBLE (type 12) so all coordinate reads are
             // at fixed 8-byte offsets. A non-DOUBLE type produces an undersized buffer
             // that would overflow data.Slice(offset) — return the zero origin instead.
-            return (0, 0);
+            return (0, 0, 0, 0);
         }
 
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
@@ -362,7 +455,35 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         // Tiepoint: I, J, K, X, Y, Z — we want X (index 3) and Y (index 4)
         var x = ReadDouble(data, 24, parser.IsLittleEndian);
         var y = ReadDouble(data, 32, parser.IsLittleEndian);
-        return (x, y);
+        var i = ReadDouble(data, 0, parser.IsLittleEndian);
+        var j = ReadDouble(data, 8, parser.IsLittleEndian);
+        return (i, j, x, y);
+    }
+
+    private static async Task<double[]?> ExtractModelTransformationAsync(
+        ICloudRangeReader reader, string bucket, string key,
+        IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
+    {
+        if (entry.Count != 16 || entry.Type != TiffConstants.TypeDouble || entry.IsInline)
+        {
+            throw new InvalidDataException(
+                "COG ModelTransformationTag must contain sixteen external DOUBLE values.");
+        }
+
+        var totalBytes = GetValidatedExternalArrayByteCount(entry);
+        var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
+        if (data.Length < 16 * sizeof(double))
+        {
+            throw new InvalidDataException("COG ModelTransformationTag data is truncated.");
+        }
+
+        var values = new double[16];
+        for (var i = 0; i < values.Length; i++)
+        {
+            values[i] = ReadDouble(data, i * sizeof(double), parser.IsLittleEndian);
+        }
+
+        return values;
     }
 
     private static async Task<(double ScaleX, double ScaleY)> ExtractPixelScaleAsync(
@@ -405,7 +526,8 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         {
             TiffConstants.SampleFormatFloat => "float",
             TiffConstants.SampleFormatSigned => "int",
-            _ => "uint"
+            TiffConstants.SampleFormatUnsigned => "uint",
+            _ => throw new InvalidDataException("COG SampleFormat must be unsigned integer, signed integer, or IEEE floating point; complex and undefined samples are unsupported.")
         };
         return $"{prefix}{bitsPerSample}";
     }

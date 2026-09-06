@@ -14,11 +14,12 @@ namespace Honua.Server.Features.Protocols.Cog;
 
 /// <summary>
 /// Resolves tile coordinates to cloud range reads for direct COG tile serving.
-/// Uses a three-tier metadata cache: in-memory → database → cloud scan.
+/// Caches parsed metadata in memory under the cloud object ETag and persists scan summaries.
 /// </summary>
 internal sealed class CogTileResolver : ICogTileResolver
 {
     private static readonly TimeSpan MetadataCacheDuration = TimeSpan.FromMinutes(30);
+    internal const int MaxCompressedTileBytes = 128 * 1024 * 1024;
 
     /// <summary>
     /// Builds the memory-cache key for a registration's COG metadata.
@@ -55,7 +56,7 @@ internal sealed class CogTileResolver : ICogTileResolver
         int level,
         int row,
         int col,
-        RasterFormat format, // Not yet used — tiles are served in native COG compression (JPEG passthrough / DEFLATE).
+        RasterFormat format,
         CancellationToken cancellationToken = default)
     {
         var reader = _rangeReaders.FirstOrDefault(r => r.Provider == registration.Provider);
@@ -64,9 +65,24 @@ internal sealed class CogTileResolver : ICogTileResolver
             throw new InvalidOperationException($"No range reader configured for provider {registration.Provider}.");
         }
 
+        // Pin every metadata/tile read to the current object identity. The registration stores
+        // the logical catalog binding, not a mutable object ETag, so a HEAD is required even
+        // when the parsed IFD is cached.
+        var objectMetadata = await reader.GetObjectMetadataAsync(
+            registration.Bucket, registration.ObjectKey, cancellationToken).ConfigureAwait(false);
+        if (objectMetadata.SizeBytes <= 0 || string.IsNullOrWhiteSpace(objectMetadata.ETag))
+        {
+            CogLog.MetadataScanFailed(
+                _logger,
+                new InvalidDataException("COG object has no usable ETag or size for a pinned tile read."),
+                registration.Id);
+            return null;
+        }
+
         // Tier 1: In-memory metadata cache
         var cacheKey = MetadataCacheKey(registration.Id);
-        var (metadata, metadataSource) = await GetOrLoadMetadataAsync(cacheKey, registration, reader, cancellationToken).ConfigureAwait(false);
+        var (metadata, metadataSource) = await GetOrLoadMetadataAsync(
+            cacheKey, registration, reader, objectMetadata.ETag, cancellationToken).ConfigureAwait(false);
 
         // Skip COGs with unsupported compression rather than throwing.
         // The foreach loop in GetTileForLayerAsync will try the next COG.
@@ -95,16 +111,28 @@ internal sealed class CogTileResolver : ICogTileResolver
         var offset = overviewLevel.TileOffsets[tileIndex];
         var length = overviewLevel.TileByteCounts[tileIndex];
 
-        if (offset == 0 || length == 0)
+        if (offset <= 0 || length <= 0)
         {
             return null; // Empty tile
+        }
+
+        if (length > MaxCompressedTileBytes
+            || offset > objectMetadata.SizeBytes
+            || length > objectMetadata.SizeBytes - offset)
+        {
+            CogLog.CogTileNotFound(_logger, registration.Id, level, row, col);
+            return null;
         }
 
         // Single range read for the tile data
         var tileData = await reader.ReadRangeAsync(
             registration.Bucket, registration.ObjectKey,
-            offset, length,
+            offset, length, objectMetadata.ETag,
             cancellationToken).ConfigureAwait(false);
+        if (tileData.Length != length)
+        {
+            return null;
+        }
 
         // Decompress based on compression type, reversing the tile's predictor when it declares one.
         var layout = new TilePixelLayout(
@@ -113,7 +141,36 @@ internal sealed class CogTileResolver : ICogTileResolver
             metadata.BitsPerSample,
             metadata.Predictor,
             metadata.IsLittleEndian);
+        // The decoder's 128 MiB ceiling also accommodates codecs whose frame size is
+        // unknown (ZSTD reports a window bound). Encoders require the exact sample length.
         var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout);
+
+        if (format == RasterFormat.PNG && contentType == "application/octet-stream")
+        {
+            var png = CogTileEncoder.EncodePng(decompressedData, metadata);
+            if (png is not null)
+            {
+                decompressedData = png;
+                contentType = "image/png";
+            }
+        }
+        else if (format is RasterFormat.TIFF or RasterFormat.COG && contentType == "application/octet-stream")
+        {
+            var bounds = TileMath.GetTileBounds(col, row, level);
+            var tiff = CogTiffTileEncoder.Encode(decompressedData, metadata, new RasterExtent
+            {
+                XMin = bounds.XMin,
+                YMin = bounds.YMin,
+                XMax = bounds.XMax,
+                YMax = bounds.YMax,
+                Srid = 3857
+            });
+            if (tiff is not null)
+            {
+                decompressedData = tiff;
+                contentType = "image/tiff";
+            }
+        }
 
         if (!CanServeRequestedFormat(format, contentType))
         {
@@ -196,36 +253,27 @@ internal sealed class CogTileResolver : ICogTileResolver
         string cacheKey,
         CogRegistration registration,
         ICloudRangeReader reader,
+        string expectedETag,
         CancellationToken cancellationToken)
     {
-        if (_cache.TryGetValue(cacheKey, out CogMetadata? cached) && cached != null)
+        if (_cache.TryGetValue(cacheKey, out CachedCogMetadata? cached)
+            && cached is not null
+            && string.Equals(cached.ETag, expectedETag, StringComparison.Ordinal))
         {
-            return (cached, "memory");
+            return (cached.Metadata, "memory");
         }
 
-        // Tier 2: Database cache — only use if overview levels have tile offsets.
-        // PHASE-1: The DB currently stores overview summaries (level, width, height)
-        // but not tile offsets; ifd_cache is always null. This tier activates once
-        // IFD cache serialization is implemented (entries with empty TileOffsets
-        // fall through to cloud scan).
-        if (registration.Metadata is { OverviewLevels.Length: > 0 } &&
-            registration.Metadata.OverviewLevels[0].TileOffsets.Length > 0)
-        {
-            _cache.Set(cacheKey, registration.Metadata, new MemoryCacheEntryOptions
-            {
-                SlidingExpiration = MetadataCacheDuration
-            });
-            return (registration.Metadata, "database");
-        }
-
-        // Tier 3: Cloud scan
+        // Scan the current object: persisted summaries have no pinned identity or tile offsets.
         var metadata = await _metadataReader.ReadMetadataAsync(
-            reader, registration.Bucket, registration.ObjectKey, cancellationToken).ConfigureAwait(false);
+            new CogPinnedRangeReader(reader, expectedETag),
+            registration.Bucket,
+            registration.ObjectKey,
+            cancellationToken).ConfigureAwait(false);
 
         // Persist to database
         await _cogStore.UpdateMetadataAsync(registration.Id, metadata, ifdCache: null, cancellationToken).ConfigureAwait(false);
 
-        _cache.Set(cacheKey, metadata, new MemoryCacheEntryOptions
+        _cache.Set(cacheKey, new CachedCogMetadata(metadata, expectedETag), new MemoryCacheEntryOptions
         {
             SlidingExpiration = MetadataCacheDuration
         });
@@ -354,4 +402,7 @@ internal sealed class CogTileResolver : ICogTileResolver
         RasterFormat.Raw => contentType == "application/octet-stream",
         _ => false
     };
+
+    private sealed record CachedCogMetadata(CogMetadata Metadata, string ETag);
+
 }

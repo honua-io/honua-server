@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.Cog.Models;
 using Honua.Infrastructure.Authentication;
@@ -184,16 +185,27 @@ internal static class CogEndpoints
 
         try
         {
-            var metadata = await metadataReader.ReadMetadataAsync(reader, registration.Bucket, registration.ObjectKey, cancellationToken);
+            var objectMetadata = await reader.GetObjectMetadataAsync(
+                registration.Bucket, registration.ObjectKey, cancellationToken);
+            if (objectMetadata.SizeBytes <= 0 || string.IsNullOrWhiteSpace(objectMetadata.ETag))
+            {
+                throw new InvalidDataException("COG metadata refresh requires a non-empty object with an ETag.");
+            }
+
+            var metadata = await metadataReader.ReadMetadataAsync(
+                new CogPinnedRangeReader(reader, objectMetadata.ETag),
+                registration.Bucket,
+                registration.ObjectKey,
+                cancellationToken);
 
             // Warn about non-web-mercator CRS
-            if (metadata.Srid is not (3857 or 4326) and > 0)
+            if (metadata.Srid != 3857)
             {
                 CogLog.NonWebMercatorCrs(logger, id, metadata.Srid);
             }
 
             // Warn about unsupported compression
-            if (metadata.Compression is not ("JPEG" or "DEFLATE" or "NONE" or ""))
+            if (!TileDecompressor.IsSupported(metadata.Compression))
             {
                 CogLog.UnsupportedCompression(logger, metadata.Compression, id);
             }
@@ -223,8 +235,7 @@ internal static class CogEndpoints
     }
 
     /// <summary>
-    /// Returns true when the Metadata v2 graph contains any publication whose service-local layer
-    /// index matches the supplied id.
+    /// Returns true only for a unique routable publication matching the service-local layer index.
     /// </summary>
     private static async Task<bool> LayerPublicationExistsAsync(
         IMetadataV2GraphProvider graphProvider,
@@ -232,8 +243,7 @@ internal static class CogEndpoints
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return snapshot.Graph.Publications.Any(publication =>
-            publication.LayerIndex == layerId && snapshot.IsRoutable(publication));
+        return CogPublicationBinding.Resolve(snapshot, layerId) is not null;
     }
 
     private static CogRegistrationResponse ToResponse(CogRegistration reg) => new()
@@ -254,4 +264,5 @@ internal static class CogEndpoints
         MetadataScannedAt = reg.MetadataScannedAt,
         CreatedAt = reg.CreatedAt
     };
+
 }
