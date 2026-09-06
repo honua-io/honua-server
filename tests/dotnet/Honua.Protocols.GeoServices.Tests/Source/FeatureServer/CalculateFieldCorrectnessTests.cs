@@ -35,7 +35,8 @@ public sealed class CalculateFieldCorrectnessTests : IAsyncLifetime
     {
         await using var connection = new NpgsqlConnection(_fixture.Postgres.ConnectionString);
         await connection.OpenAsync();
-        var schema = new NpgsqlCommandBuilder().QuoteIdentifier(_fixture.CurrentSchema!);
+        using var identifierBuilder = new NpgsqlCommandBuilder();
+        var schema = identifierBuilder.QuoteIdentifier(_fixture.CurrentSchema!);
         await using (var seed = new NpgsqlCommand($$"""
             INSERT INTO {{schema}}.features(objectid, layer_id, attributes) VALUES
             (73901, 0, '{"name":"alpha","category":"selected","population":7,"area_sq_km":1.5}'),

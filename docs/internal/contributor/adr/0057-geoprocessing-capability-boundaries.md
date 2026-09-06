@@ -128,10 +128,11 @@ photogrammetry worker.
 - **Bundling third-party analysis libraries into SDKs as a re-exported engine.**
   Interop helpers are allowed; wrapping geopandas/PySAL/scikit-learn as a Honua
   GP engine is not.
-- **True kriging and inferential spatial statistics** (GWR, Moran's cluster/
-  outlier) beyond what is already tracked (kriging is library-gated in
-  honua-io/honua-server#2141; HotSpot Gi*/KDE in #2142) — deferred past first
-  release.
+- **Additional kriging models and inferential spatial statistics** (GWR,
+  Moran's cluster/outlier) beyond the catalog remain deferred. Ruling B
+  (2026-09-05) supersedes the earlier blanket kriging deferral: #3932 admits
+  bounded ordinary kriging with an isotropic linear, zero-nugget model in the
+  native worker, with independent numerical execution proofs.
 
 ## Consequences
 
