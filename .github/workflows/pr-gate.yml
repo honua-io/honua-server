@@ -255,6 +255,15 @@ jobs:
             --filter 'FullyQualifiedName~CalculateFieldCorrectnessTests' \
             --logger 'trx;LogFileName=calculate-field-execution-proof.trx' \
             --results-directory tests/TestResults
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          ns = {'t': 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}
+          for name, minimum in [('raster', 26), ('geometry-format', 1), ('calculate-field', 1)]:
+              counters = ET.parse(f'tests/TestResults/{name}-execution-proof.trx').find('.//t:Counters', ns)
+              assert counters is not None, f'{name}: missing test counters'
+              total = int(counters.get('total', '0'))
+              assert total >= minimum and int(counters.get('passed', '0')) == total, f'{name}: missing, failed or skipped execution proof'
+          PY
 
       - name: Upload catalog execution proofs
         if: always()
