@@ -22,7 +22,7 @@
 
 # --- build stage: publish the harness + warm the NuGet cache + sanity-build sample ---
 # Pinned .NET SDK (do NOT use a floating tag).
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
@@ -97,7 +97,7 @@ RUN cd /tmp/gdalprobe && dotnet run -c Release -p:NuGetAudit=false
 # --- runtime stage: GDAL-full base + the .NET SDK + git + the warm cache --------------
 # Pinned GDAL "ubuntu-full" base (matches the python image's base family). It ships the
 # full GDAL driver set; .NET tools that shell out to gdal* or P/Invoke GDAL get it here.
-ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4
+ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4@sha256:5828162cffed3af330034ae0c3ada30deb1cfdaecf37585f96ed0924f1d1dfb7
 FROM ${GDAL_BASE_IMAGE} AS runtime
 
 ARG DOTNET_SDK_CHANNEL=10.0
