@@ -80,6 +80,16 @@ public sealed class PostgresFixture : IAsyncLifetime
                         await using var cmd = conn.CreateCommand();
                         cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
                         await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        // Test hosts skip application migrations. Execute the owning
+                        // production receipt DDL once under the shared initialization
+                        // lock so every protocol fixture gets the durable delta store.
+                        var assembly = typeof(Program).Assembly;
+                        var migration = assembly.GetManifestResourceNames().Single(name =>
+                            name.EndsWith("113_AddDurableQuerySnapshots.sql", StringComparison.Ordinal));
+                        await using var sql = assembly.GetManifestResourceStream(migration)!;
+                        using var reader = new StreamReader(sql);
+                        cmd.CommandText = "CREATE SCHEMA IF NOT EXISTS honua;\n" + await reader.ReadToEndAsync().ConfigureAwait(false);
+                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                     }).ConfigureAwait(false);
 
                     SharedState.SharedInitialized = true;
