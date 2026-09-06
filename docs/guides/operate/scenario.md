@@ -9,7 +9,7 @@ owns the model session. Console is an optional independent inspector/approver.
 The infrastructure control plane provisions the placement; the server control
 plane configures resources and governs registered operations.
 
-> **Pre-cut runbook, not a certification receipt.** The September 5 source
+> **Pre-cut runbook, not a certification receipt.** The September 6 source
 > review establishes route/tool contracts. Exact 2026.1 candidate replay is
 > still required. The platform manifest calls itself a working snapshot, and
 > [release #231](https://github.com/honua-io/honua-release/issues/231) owns the
@@ -106,6 +106,13 @@ and assert the blocked reason plus unchanged proposal/actuator counts.
 Restore that backend and wait for complete fresh evidence before retrying.
 The [live outage harness contract](evidence-posture.md#live-outagerecovery-proof)
 defines the controls; they are test-harness endpoints, not product routes.
+
+The [executed Windows outage receipt](evidence/3475-windows-outage.json)
+already demonstrates this suppression for an isolated alert-dispatch source:
+zero new proposals and unchanged dispatch rows, followed by fresh recovery.
+Its `candidateQualification=false` is intentional. It does not replace this
+deployment/readiness scenario, prove partial/unverified deployment sources,
+or promote customer alerting beyond Preview.
 
 ## 4. Propose, poll, and approve separately
 
