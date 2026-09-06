@@ -48,6 +48,8 @@ internal sealed partial class StreamingFileImportService
         // Replace uses one physical staging name per logical target. Hold a session-scoped
         // advisory lock across the complete read/load/swap so a concurrent request cannot drop
         // or promote the other request's staging table (#4003).
+        // New-target-only imports share that lock so replacement cannot remove a target
+        // between its atomic creation and the final imported batch (#4002).
         ImportAdvisoryLock? replaceLock = null;
         try
         {
