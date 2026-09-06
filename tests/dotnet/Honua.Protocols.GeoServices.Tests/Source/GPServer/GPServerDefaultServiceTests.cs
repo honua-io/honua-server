@@ -189,7 +189,8 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
             if (taskName == "Merge")
             {
                 submitDoc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
-                submitDoc.RootElement.GetProperty("error").GetProperty("message").GetString().Should().Contain("compatible geometry types");
+                submitDoc.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+                    .Should().Contain(detail => detail.GetString()!.Contains("compatible geometry types", StringComparison.Ordinal));
                 submitDoc.RootElement.TryGetProperty("jobId", out _).Should().BeFalse();
                 return;
             }

@@ -91,6 +91,15 @@ internal static class GPServerEsriInputTranslation
                     continue;
                 }
 
+                // Canonical GeoJSON has its own discriminator and also contains a features array.
+                // Preserve it for source.geojson's inline reader instead of treating it as Esri JSON.
+                if (root.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String &&
+                    type.GetString() == "FeatureCollection")
+                {
+                    translated[key] = value;
+                    continue;
+                }
+
                 // FeatureSet (GPFeatureRecordSetLayer / GPRecordSet): { "features": [...], "geometryType": "...", "spatialReference": {...} }
                 if (root.TryGetProperty("features", out var featuresProp) &&
                     featuresProp.ValueKind == JsonValueKind.Array)

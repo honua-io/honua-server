@@ -151,6 +151,16 @@ public sealed class EsriFeatureSetExecutionTests
         action.Should().Throw<GeoprocessingValidationException>().WithMessage("*single geometry type*");
     }
 
+    [UnitTest]
+    public void Input_CanonicalGeoJsonCollection_IsPreservedForInlineReader()
+    {
+        const string json = """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"canonical"},"geometry":{"type":"Point","coordinates":[-100,40,12]}}]}""";
+        var translated = GPServerEsriInputTranslation.Translate(new Dictionary<string, string> { ["inline"] = json });
+        translated.CapabilityMessage.Should().BeNull();
+        translated.Translated.Should().BeFalse();
+        translated.Inputs["inline"].Should().Be(json);
+    }
+
     [Theory]
     [InlineData(ArtifactKind.File)]
     [InlineData(ArtifactKind.Raster)]
