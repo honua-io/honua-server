@@ -48,28 +48,6 @@ The same catalog is exposed Esri-style for ArcGIS clients: `GET /rest/services/{
 
 The standard `submitJob` / `jobs/{jobId}` / `jobs/{jobId}/results/{paramName}` / `jobs/{jobId}/cancel` operations drive the same job runtime. Successful jobs advertise their named result parameters, and the per-parameter result route reads the stored result-package value and Esri data type. A fresh instance ships a default `geoprocessing` service so the facade works out of the box — e.g. `GET /rest/services/geoprocessing/GPServer` — and every published service also exposes GPServer (so `{serviceId}` can be any service you have published). To turn the default service off, set `Geoprocessing:SeedDefaultService=false` (env `HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false`). Deterministic single-geometry tasks (the `geometry.*` family and `conversion.geometry-format`) also accept the synchronous `execute` route (`POST`/`GET /rest/services/{serviceId}/GPServer/geometry.buffer/execute`), which runs the task inline through that same runtime and returns the Esri execute envelope (`results` + `messages`) on the same request. Async-only tasks reject `execute` with a 400 capability message pointing back at `submitJob`.
 
-Layer-scoped task parameters published as `GPFeatureRecordSetLayer`, including the
-`input` and `clip` parameters of `Clip`, accept an Esri FeatureSet JSON object in
-the form parameter. Supply `features` with `attributes` and Esri `geometry`
-objects, plus the collection's `spatialReference`. Every feature and attribute row
-is retained. Z ordinates are supported; measured FeatureSets are rejected explicitly
-because the canonical GeoJSON collection format cannot preserve M ordinates.
-Single-geometry tasks still require one geometry and do not flatten multiple
-features into a single geometry.
-
-GP result `value` follows the
-[Esri data-type contract](https://developers.arcgis.com/rest/services-reference/enterprise/gp-data-types/).
-Inline vector outputs return a FeatureSet object with `fields`, `features`,
-`geometryType`, `spatialReference`, and dimensional flags. Table outputs return
-records with attributes. Stored feature, raster, and file outputs return an object
-such as `{"url":"https://example.test/result"}`. Both synchronous `execute` and
-asynchronous result retrieval use these shapes.
-Empty results retain the input-derived fields and geometry type. Canonical GeoJSON inputs use
-WGS 84 when no explicit working reference is supplied; equivalent Esri Web Mercator WKIDs are
-normalized before comparison. Merge rejects incompatible geometry types before creating a job.
-An unavailable artifact remains an explicit fallback label rather than a fictitious download URL.
-
-
 ## Verify
 
 Run `GET /ogc/processes/jobs/{jobId}` again in the explorer.

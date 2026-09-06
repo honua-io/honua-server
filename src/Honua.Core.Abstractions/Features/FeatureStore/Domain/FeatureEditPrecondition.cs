@@ -3,6 +3,7 @@
 
 using System.Buffers;
 using System.Collections;
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -38,6 +39,13 @@ public readonly record struct FeatureEditPrecondition
     /// a row inserted under the same object ID causes a typed precondition failure.
     /// </summary>
     public bool ExpectedRowAbsent { get; init; }
+
+    /// <summary>
+    /// Request-scoped fields excluded from the read snapshot. The provider resolves this
+    /// policy before writing and preserves omitted masked attributes from the locked row.
+    /// Protocol adapters leave this empty; it is not a client-supplied projection.
+    /// </summary>
+    public ImmutableArray<string> MaskedFields { get; init; }
 }
 
 /// <summary>
@@ -51,6 +59,15 @@ public readonly record struct FeatureEditPrecondition
 /// </summary>
 public static class FeatureStateToken
 {
+    /// <summary>
+    /// Gets the original provider read token, including attributes removed by field
+    /// security, or computes it when the snapshot has not been security-projected.
+    /// Use this on the read snapshot before merging an edit; writers independently
+    /// compute the token from the complete locked row.
+    /// </summary>
+    public static string FromReadSnapshot(Feature feature)
+        => feature.ReadStateToken ?? Compute(feature);
+
     /// <summary>
     /// Computes the canonical state token for the supplied feature.
     /// </summary>

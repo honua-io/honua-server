@@ -31,7 +31,27 @@ public enum DurableJobSubstrateCause
     /// store is present without a runnable queue, so submissions would persist and never drain.
     /// </summary>
     RuntimeIncomplete,
+
+    /// <summary>Redis policy could not be read, so durability cannot be established.</summary>
+    RedisAttestationUnavailable,
+
+    /// <summary>Redis persistence is disabled.</summary>
+    RedisPersistenceDisabled,
+
+    /// <summary>Redis does not expose an accepted acknowledged-write persistence policy.</summary>
+    RedisWritePolicyUnsafe,
+
+    /// <summary>Redis may evict durable control-plane keys under memory pressure.</summary>
+    RedisEvictionPolicyUnsafe,
 }
+
+/// <summary>Machine-observed Redis durability facts safe to publish as release evidence.</summary>
+public sealed record RedisDurabilityAttestation(
+    string Endpoint,
+    string PersistenceMode,
+    string AcknowledgedWritePolicy,
+    string EvictionPolicy,
+    DateTimeOffset ObservedAt);
 
 /// <summary>
 /// Startup-resolved facts about the Redis-backed durable job substrate, captured once by the
@@ -61,6 +81,12 @@ public sealed class DurableJobSubstrateOptions
     /// </summary>
     public bool RedisEntitled { get; set; }
 
+    /// <summary>The accepted startup attestation, or <see langword="null"/> when Redis is unsafe.</summary>
+    public RedisDurabilityAttestation? RedisDurabilityAttestation { get; set; }
+
+    /// <summary>Typed reason an attempted Redis durability attestation was rejected.</summary>
+    public DurableJobSubstrateCause? RedisDurabilityFailure { get; set; }
+
     /// <summary>
     /// Classifies why the substrate is unavailable, given whether the composed runtime actually
     /// resolved a durable job store and a runnable queue.
@@ -72,7 +98,9 @@ public sealed class DurableJobSubstrateOptions
     {
         if (jobStorePresent && jobQueuePresent)
         {
-            return DurableJobSubstrateCause.Available;
+            return RedisDurabilityAttestation is not null
+                ? DurableJobSubstrateCause.Available
+                : RedisDurabilityFailure ?? DurableJobSubstrateCause.RedisAttestationUnavailable;
         }
 
         if (!RedisConfigured)
@@ -81,7 +109,7 @@ public sealed class DurableJobSubstrateOptions
         }
 
         return RedisEntitled
-            ? DurableJobSubstrateCause.RuntimeIncomplete
+            ? RedisDurabilityFailure ?? DurableJobSubstrateCause.RuntimeIncomplete
             : DurableJobSubstrateCause.RedisNotEntitled;
     }
 }

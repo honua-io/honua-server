@@ -405,13 +405,14 @@ internal sealed class GeometryServiceHandler(
                 GeometryType = geomType,
                 InSR = inputSrid,
                 OutSR = outputSrid,
-                // Explicit geographic operations execute through ST_TransformPipeline.
-                // With no requested operation, retain PROJ's available SRID-only choice.
-                // Projected endpoints require a composed CRS/operation pipeline.
+                // PostGIS' text overload treats this string as a target CRS, not as a
+                // stand-alone coordinate-operation pipeline. Preserve the catalog selection
+                // for pair/direction validation, but use ordinary SRID projection whenever
+                // the operation is non-identity or an endpoint is projected; PROJ then picks
+                // the best available operation instead of failing to parse a pipeline as a CRS.
                 DatumTransformation = transformationInSr == inputSrid &&
                                       transformationOutSr == outputSrid &&
-                                      (!string.IsNullOrWhiteSpace(transformationValue) ||
-                                       datumSelection is { ProjPipeline: "+proj=noop" })
+                                      datumSelection is { ProjPipeline: "+proj=noop" }
                     ? datumSelection
                     : null
             };

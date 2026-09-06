@@ -251,9 +251,10 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
         {
             Log.PostGisFallbackExtent(_logger, fromSrid, toSrid);
 
-            // Execute selected pipelines as coordinate operations, not CRS definitions.
+            // Honor an explicit datum-transformation pipeline via the 3-argument
+            // ST_Transform overload; otherwise let PROJ pick its default pipeline.
             string TransformOf(string pointExpression) => selection?.ProjPipeline is { Length: > 0 }
-                ? $"ST_TransformPipeline({pointExpression}, @pipeline, @toSrid)"
+                ? $"ST_Transform({pointExpression}, @pipeline, @toSrid)"
                 : $"ST_Transform({pointExpression}, @toSrid)";
 
             var transformExpression = TransformOf("geom");
@@ -346,7 +347,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             AddParameter(command, "@sampleSegments", ExtentSampleSegmentsPerEdge);
             if (selection?.ProjPipeline is { Length: > 0 } pipeline)
             {
-                AddParameter(command, "@pipeline", ProjPipelineInverter.Orient(pipeline, selection!.TransformForward));
+                AddParameter(command, "@pipeline", pipeline);
             }
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -391,9 +392,10 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
                 .ConfigureAwait(false);
             await using var command = connection.CreateCommand();
 
-            // Execute selected pipelines as coordinate operations, not CRS definitions.
+            // Honor an explicit datum-transformation pipeline via the 3-argument
+            // ST_Transform overload; otherwise let PROJ pick its default pipeline.
             var transformExpression = selection?.ProjPipeline is { Length: > 0 }
-                ? "ST_TransformPipeline(ST_SetSRID(ST_MakePoint(@x, @y), @fromSrid), @pipeline, @toSrid)"
+                ? "ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @fromSrid), @pipeline, @toSrid)"
                 : "ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @fromSrid), @toSrid)";
 
             command.CommandText = $"""
@@ -409,7 +411,7 @@ internal sealed partial class PostGisCoordinateTransformService : ICoordinateTra
             AddParameter(command, "@toSrid", toSrid);
             if (selection?.ProjPipeline is { Length: > 0 } pipeline)
             {
-                AddParameter(command, "@pipeline", ProjPipelineInverter.Orient(pipeline, selection!.TransformForward));
+                AddParameter(command, "@pipeline", pipeline);
             }
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
