@@ -18,6 +18,10 @@
 
   <ItemGroup>
     <None Update="Fixtures\RasterProof\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures\Proximity\*.tif" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Testcontainers" />

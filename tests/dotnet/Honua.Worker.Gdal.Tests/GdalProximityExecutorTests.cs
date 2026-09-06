@@ -57,7 +57,9 @@ public sealed class GdalProximityExecutorTests
             context.Artifacts.Single().Should().StartWith("data:image/tiff");
 
             var invocation = runner.Invocations.Single();
-            invocation.Tool.Should().Be("gdal_proximity.py");
+            invocation.Tool.Should().Be("python3");
+            invocation.Arguments[0].Should().EndWith("gdal_euclidean_distance.py");
+            invocation.Arguments.Should().ContainInOrder("-nodata", "-9999");
             invocation.Arguments.Should().ContainInOrder("-distunits", "GEO");
             invocation.Arguments.Should().ContainInOrder("-maxdist", "500");
             invocation.Arguments.Should().ContainInOrder("-values", "1,2");
