@@ -238,12 +238,27 @@ jobs:
             --logger 'trx;LogFileName=raster-execution-proof.trx' \
             --results-directory tests/TestResults
 
-      - name: Upload raster execution proof
+      - name: Prove hosted geometry-format and calculate-field execution
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        timeout-minutes: 10
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release --no-restore -maxcpucount:4 \
+            --filter 'FullyQualifiedName~GeometryFormat_AllTargets' \
+            --logger 'trx;LogFileName=geometry-format-execution-proof.trx' \
+            --results-directory tests/TestResults
+          dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj \
+            --configuration Release --no-restore -maxcpucount:4 \
+            --filter 'FullyQualifiedName~CalculateFieldCorrectnessTests' \
+            --logger 'trx;LogFileName=calculate-field-execution-proof.trx' \
+            --results-directory tests/TestResults
+
+      - name: Upload catalog execution proofs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: raster-execution-proof
-          path: tests/TestResults/raster-execution-proof.trx
+          name: catalog-execution-proofs
+          path: tests/TestResults/*-execution-proof.trx
           if-no-files-found: warn
 
       - name: Await Testcontainers PostGIS pre-pull
