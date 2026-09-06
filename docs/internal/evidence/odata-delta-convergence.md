@@ -56,3 +56,11 @@ After the initial build, the corrected PostgreSQL receipt store was rebuilt and
 the focused tests reused unchanged project outputs with `BuildProjectReferences=false`.
 The result is retained locally as `proofs-3872-results/odata-delta-3.trx` (9m08s).
 This includes explicit rejection of empty delta tokens and legacy snapshot cursors.
+
+The subsequent native Windows full architecture run passed all 287 cases with
+zero failures or skips after regenerating the feature catalog through the
+`FeatureCatalogEmitter` test (1 passed). Both completed on 2026-09-06 using
+the Release assemblies built with warnings as errors and `-maxcpucount:4`.
+The architecture result is retained as `proofs-3872-results/architecture-delta.trx`
+(3m29s). This validates integration operation attributes and committed catalog
+parity; the review-follow-up delta execution cases require their own receipt.
