@@ -101,3 +101,5 @@ Ordering/duplicate depth, HA and proxy routing, Redis failover, broker outage re
 saturation/backpressure, and the 24–72 hour soak are 2026.2 operational-graduation rows. They
 remain valuable evidence but are deliberately not required to ship realtime as Preview in
 2026.1 and cannot be submitted as aliases for a Preview-floor row.
+
+The subsequent native Windows focused FeatureServer/OData authorization run passed all 13 tests with zero failures or skips in 4m08s (ealtime-auth-6.trx). This run includes actual portal expiry/revocation, OData tenant concealment and resume, first-event cursor capture, and the cancellation/denial regression. Production and test dependencies were rebuilt in Release with warnings as errors and -maxcpucount:4.
