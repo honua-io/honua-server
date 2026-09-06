@@ -178,7 +178,10 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
         var existing = await store.CreateRuleAsync(Rule(_service));
         var zone = await store.CreateZoneAsync(new AlertZoneDefinition
         {
-            ZoneId = 0, ServiceId = _service, ZoneName = "original", IsActive = true,
+            ZoneId = 0,
+            ServiceId = _service,
+            ZoneName = "original",
+            IsActive = true,
             GeometrySrid = 4326,
             Geometry = new NetTopologySuite.IO.WKTReader().Read("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))").AsBinary()
         });
@@ -224,7 +227,10 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
         var rule = await store.CreateRuleAsync(Rule(_service) with { IsActive = action != "alert_rule.enable" });
         var zone = await store.CreateZoneAsync(new AlertZoneDefinition
         {
-            ZoneId = 0, ServiceId = _service, ZoneName = "original", IsActive = true,
+            ZoneId = 0,
+            ServiceId = _service,
+            ZoneName = "original",
+            IsActive = true,
             GeometrySrid = 4326,
             Geometry = new NetTopologySuite.IO.WKTReader().Read("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))").AsBinary()
         });
@@ -282,23 +288,41 @@ public sealed class AlertPreviewFloorTests : IAsyncLifetime
 
     private object ZonePayload(string name) => new
     {
-        serviceId = _service, zoneName = name,
-        wkt = "POLYGON((0 0,0 2,2 2,2 0,0 0))", srid = 4326, isActive = true
+        serviceId = _service,
+        zoneName = name,
+        wkt = "POLYGON((0 0,0 2,2 2,2 0,0 0))",
+        srid = 4326,
+        isActive = true
     };
 
     private object RulePayload(string name, long? zoneId) => new
     {
-        serviceId = _service, layerId = 1, zoneId, ruleName = name, triggerType = zoneId.HasValue ? "enter" : "threshold",
-        conditionsJson = "{\"field\":\"speed\",\"operator\":\">\",\"value\":30}", cooldownSeconds = 60,
-        severity = "warning", editionRequired = "pro", channels = new[] { "webhook" }, isActive = true
+        serviceId = _service,
+        layerId = 1,
+        zoneId,
+        ruleName = name,
+        triggerType = zoneId.HasValue ? "enter" : "threshold",
+        conditionsJson = "{\"field\":\"speed\",\"operator\":\">\",\"value\":30}",
+        cooldownSeconds = 60,
+        severity = "warning",
+        editionRequired = "pro",
+        channels = new[] { "webhook" },
+        isActive = true
     };
 
     private static AlertRuleDefinition Rule(string service) => new()
     {
-        RuleId = 0, ServiceId = service, LayerId = 1, RuleName = "original", TriggerType = AlertTriggerType.Threshold,
-        ConditionsJson = "{\"field\":\"speed\",\"operator\":\">\",\"value\":30}", CooldownSeconds = 60,
-        Severity = AlertSeverity.Warning, EditionRequired = AlertEdition.Pro,
-        Channels = ImmutableArray.Create(AlertChannelType.Webhook), IsActive = true
+        RuleId = 0,
+        ServiceId = service,
+        LayerId = 1,
+        RuleName = "original",
+        TriggerType = AlertTriggerType.Threshold,
+        ConditionsJson = "{\"field\":\"speed\",\"operator\":\">\",\"value\":30}",
+        CooldownSeconds = 60,
+        Severity = AlertSeverity.Warning,
+        EditionRequired = AlertEdition.Pro,
+        Channels = ImmutableArray.Create(AlertChannelType.Webhook),
+        IsActive = true
     };
 
     private static async Task<long> ReadIdAsync(HttpResponseMessage response, string property)
