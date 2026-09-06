@@ -10,6 +10,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -157,9 +158,7 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
 
         var crossDetail = await _bob.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/replicas/{aliceReplica}");
-        crossDetail.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "principal B must not read principal A's replica by id; body was {0}",
-            await crossDetail.Content.ReadAsStringAsync());
+        await AssertReplicaMaskedAsync(crossDetail, aliceReplica);
 
         var ownDetail = await _alice.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/replicas/{aliceReplica}");
@@ -216,17 +215,20 @@ public sealed class ReplicaOwnershipEndpointTests : IAsyncLifetime
     /// Asserts a cross-principal replica request was masked: the response must not be a success
     /// and must not disclose the replica. The handlers answer <c>404</c> deliberately.
     /// </summary>
+    /// <summary>
+    /// Asserts a cross-principal replica request was masked. The handlers answer "not found"
+    /// deliberately, and this surface signals it the GeoServices way — HTTP 200 carrying an
+    /// <c>error</c> envelope with code 404 — so the assertion is on the envelope, not on the
+    /// transport status.
+    /// </summary>
     private static async Task AssertReplicaMaskedAsync(HttpResponseMessage response, string replicaId)
     {
+        await response.AssertGeoServicesErrorAsync(404);
+
         var body = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
-            "a replica owned by another principal is masked rather than acknowledged; got {0} for replica {1} with body {2}",
-            response.StatusCode,
-            replicaId,
-            body.Length > 500 ? body[..500] : body);
-
         body.Should().NotContain("\"success\":true", "the request must not have been carried out");
+        body.Should().NotContain(replicaId,
+            "a masked replica must not be echoed back to a principal that does not own it");
     }
 
     private async Task<HttpClient> CreateScopedWriteClientAsync(string keyName)

@@ -908,8 +908,11 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         persisted!.Value.ResolvedAt.Should().NotBeNull();
         var expectedResolvedAt = persisted.Value.ResolvedAt!.Value;
 
-        // Eight recoveries all judge the same claim abandoned at the same instant.
+        // Eight recoveries all judge the same abandoned claim expired at the same instant. The
+        // CAS is bound to the claim being replaced — same holder, same action, same timestamp —
+        // and only refreshes resolved_at, so every racer passes the SAME resolvedBy.
         const int recoveryCount = 8;
+        const string abandonedBy = "abandoned-resolver";
         var newResolvedAt = DateTimeOffset.UtcNow;
         using var gate = new SemaphoreSlim(0, recoveryCount);
         var recoveries = Enumerable.Range(0, recoveryCount).Select(async index =>
@@ -917,10 +920,10 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             await gate.WaitAsync();
             return await repository.TryTakeOverClaimAsync(
                 seeded.ConflictId,
-                $"recovery-{index}",
+                abandonedBy,
                 ReplicaConflictResolutionAction.AcceptClient,
                 expectedResolvedAt,
-                newResolvedAt.AddMilliseconds(index),
+                newResolvedAt.AddMilliseconds(index + 1),
                 CancellationToken.None);
         }).ToArray();
         gate.Release(recoveryCount);
@@ -930,23 +933,22 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             1,
             "taking over an abandoned claim re-dispatches the resolution write, so it must be single-winner");
 
-        // The winner owns the row, and its claim timestamp has moved off the expected value —
-        // which is what makes every subsequent takeover with the old precondition fail.
+        // The claim's timestamp has moved off the expected value — which is what fences the
+        // previous holder and makes every later takeover with the old precondition fail.
         var afterTakeover = await repository.GetAsync(seeded.ConflictId);
-        afterTakeover!.Value.ResolvedBy.Should().StartWith("recovery-");
-        afterTakeover.Value.ResolvedAt.Should().NotBe(expectedResolvedAt);
+        afterTakeover!.Value.ResolvedAt.Should().NotBe(expectedResolvedAt);
 
         // A late recovery still holding the stale precondition must lose, not clobber the winner.
         var lateLoser = await repository.TryTakeOverClaimAsync(
             seeded.ConflictId,
-            "recovery-late",
+            abandonedBy,
             ReplicaConflictResolutionAction.AcceptClient,
             expectedResolvedAt,
-            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow.AddMinutes(1),
             CancellationToken.None);
         lateLoser.Should().BeFalse();
-        (await repository.GetAsync(seeded.ConflictId))!.Value.ResolvedBy
-            .Should().Be(afterTakeover.Value.ResolvedBy, "a stale precondition must not steal the claim");
+        (await repository.GetAsync(seeded.ConflictId))!.Value.ResolvedAt
+            .Should().Be(afterTakeover.Value.ResolvedAt, "a stale precondition must not move the claim again");
     }
 
     /// <summary>
@@ -973,16 +975,21 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         });
         var firstClaim = (await repository.GetAsync(seeded.ConflictId))!.Value.ResolvedAt!.Value;
 
-        // Recovery replaces the abandoned claim.
+        // Recovery refreshes the abandoned claim's lease, moving its timestamp forward.
+        var replacementAt = DateTimeOffset.UtcNow;
         (await repository.TryTakeOverClaimAsync(
             seeded.ConflictId,
-            "second-resolver",
+            "first-resolver",
             ReplicaConflictResolutionAction.KeepServer,
             firstClaim,
-            DateTimeOffset.UtcNow,
+            replacementAt,
             CancellationToken.None)).Should().BeTrue();
 
-        // The original resolver, unaware, now tries to release the claim it thinks it holds.
+        var after = await repository.GetAsync(seeded.ConflictId);
+        after!.Value.ResolvedAt.Should().NotBe(firstClaim, "the takeover must have moved the lease");
+
+        // The original attempt, unaware it was recovered, now tries to release the claim it
+        // thinks it holds — with the OLD timestamp.
         var staleRelease = await repository.TryReleaseClaimAsync(
             seeded.ConflictId,
             "first-resolver",
@@ -991,14 +998,14 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             CancellationToken.None);
 
         staleRelease.Should().BeFalse(
-            "releasing on a stale claim would leave the replacement resolver writing with no ownership");
-        var after = await repository.GetAsync(seeded.ConflictId);
-        after!.Value.ResolvedBy.Should().Be("second-resolver");
+            "releasing on a stale claim would leave the recovered attempt writing with no ownership");
+        (await repository.GetAsync(seeded.ConflictId))!.Value.ResolvedAt
+            .Should().Be(after.Value.ResolvedAt, "a stale release must not clear the live claim");
 
-        // The current holder can release its own claim.
+        // The current lease holder can release its own claim.
         (await repository.TryReleaseClaimAsync(
             seeded.ConflictId,
-            "second-resolver",
+            "first-resolver",
             ReplicaConflictResolutionAction.KeepServer,
             after.Value.ResolvedAt!.Value,
             CancellationToken.None)).Should().BeTrue();
