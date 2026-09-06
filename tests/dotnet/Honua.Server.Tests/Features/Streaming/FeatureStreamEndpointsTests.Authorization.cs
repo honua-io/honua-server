@@ -43,7 +43,7 @@ public sealed partial class FeatureStreamEndpointsTests
         var schema = new NpgsqlCommandBuilder().QuoteIdentifier(fixture.CurrentSchema!);
         await using (var seed = new NpgsqlCommand($$"""
             INSERT INTO {{schema}}.features(objectid, layer_id, attributes)
-            VALUES (73011, 0, '{"name":"before-renewal"}'), (73011, 1, '{"name":"tenant-b-secret"}');
+            VALUES (73011, 0, '{"name":"before-renewal"}'), (73012, 1, '{"name":"tenant-b-secret"}');
             """, connection))
         {
             await seed.ExecuteNonQueryAsync(ct);
@@ -62,7 +62,7 @@ public sealed partial class FeatureStreamEndpointsTests
             return await fixture.Client.SendAsync(request, ct);
         }
         var credential = await IssueAsync(expire ? TimeSpan.FromSeconds(30) : TimeSpan.FromMinutes(2));
-        using var baselineResponse = await PollAsync("/odata/Features(0)?$filter=ObjectId%20eq%2073011", credential.Token);
+        using var baselineResponse = await PollAsync("/odata/Features(0)?$filter=ObjectId%20eq%2073011%20or%20ObjectId%20eq%2073012", credential.Token);
         baselineResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var baseline = JsonDocument.Parse(await baselineResponse.Content.ReadAsStringAsync(ct));
         baseline.RootElement.GetProperty("value").GetArrayLength().Should().Be(1);
@@ -80,10 +80,14 @@ public sealed partial class FeatureStreamEndpointsTests
         await using (var update = new NpgsqlCommand($$"""
             UPDATE {{schema}}.features SET attributes = '{"name":"after-renewal"}', updated_at = CURRENT_TIMESTAMP
             WHERE layer_id = 0 AND objectid = 73011;
+            UPDATE {{schema}}.features SET attributes = '{"name":"tenant-b-secret-after"}', updated_at = CURRENT_TIMESTAMP
+            WHERE layer_id = 1 AND objectid = 73012;
             """, connection))
         {
             await update.ExecuteNonQueryAsync(ct);
         }
+        using var deniedAfterMutation = await PollAsync(deltaPath, credential.Token);
+        deniedAfterMutation.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         var replacement = await IssueAsync(TimeSpan.FromMinutes(1));
         using var resumed = await PollAsync(deltaPath, replacement.Token);
         resumed.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -174,7 +178,7 @@ public sealed partial class FeatureStreamEndpointsTests
         if (webSocket)
         {
             using var socket = await ConnectAsync(credential.Token, anchor.Cursor);
-            _ = await ReceiveWebSocketJsonAsync(socket, ct);
+            (await ReceiveWebSocketJsonAsync(socket, ct)).GetRawText().Should().NotContain("tenant-b");
             await PublishAsync(73001);
             JsonElement frame;
             do { frame = await ReceiveWebSocketJsonAsync(socket, ct); frame.GetRawText().Should().NotContain("tenant-b-secret"); }
@@ -206,7 +210,7 @@ public sealed partial class FeatureStreamEndpointsTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var stream = await response.Content.ReadAsStreamAsync(ct);
             using var reader = new StreamReader(stream);
-            _ = await ReadNextSseEventAsync(reader, ct);
+            (await ReadNextSseEventAsync(reader, ct)).Data.GetRawText().Should().NotContain("tenant-b");
             await PublishAsync(73001);
             SseEvent frame;
             do { frame = await ReadNextSseEventAsync(reader, ct); frame.Data.GetRawText().Should().NotContain("tenant-b-secret"); } while (frame.EventName != "feature-change");

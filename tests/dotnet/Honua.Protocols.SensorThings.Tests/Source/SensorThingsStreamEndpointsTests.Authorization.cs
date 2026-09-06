@@ -43,15 +43,15 @@ public sealed partial class SensorThingsStreamEndpointsTests
     [Endpoint("GET /sta/v1.1/ObservationsStream")]
     public async Task ObservationsStream_RealPortalCredential_TerminatesOnExpiryOrRevocation(bool webSocket, bool expire)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         var ct = timeout.Token;
         var issuer = _fixture.GetService<IPortalTokenIssuer>();
         const string referer = "https://observation-proof.example/";
-        async Task<PortalTokenIssuance> IssueAsync() => await issuer.IssueAsync(
+        async Task<PortalTokenIssuance> IssueAsync(bool longLived = false) => await issuer.IssueAsync(
             new PortalTokenIssueRequest("sta-proof", "STA proof", "tenant-a", ["reader"],
                 PortalTokenClientType.Referer, referer,
-                DateTimeOffset.UtcNow.AddSeconds(expire ? 30 : 90)), ct);
-        var credential = await IssueAsync();
+                DateTimeOffset.UtcNow.AddSeconds(expire && !longLived ? 45 : 120)), ct);
+        PortalTokenIssuance credential;
         string Path(string token) => $"/sta/v1.1/ObservationsStream?datastreamId=1&token={token}";
         using var tenantA = _fixture.CreateAdminClient();
         tenantA.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-a");
@@ -77,6 +77,21 @@ public sealed partial class SensorThingsStreamEndpointsTests
         {
             if (!expire) { await issuer.RevokeAsync(credential.Token, ct); }
         }
+        async Task<JsonDocument> ReadObservationAsync(WebSocket socket)
+        {
+            while (true)
+            {
+                var frame = await ReadSocketFrameAsync(socket, ct);
+                if (frame.RootElement.TryGetProperty("result", out _)) { return frame; }
+                frame.RootElement.TryGetProperty("code", out _).Should().BeFalse("authorization cannot end before the marked observation");
+                frame.RootElement.GetRawText().Should().NotContain("tenant-b");
+                frame.Dispose();
+            }
+        }
+        // Warm real ingestion/authentication paths before starting the credential's
+        // clock; startup/JIT latency is not part of a connected expiry scenario.
+        _ = await PublishAsync(0.125);
+        credential = await IssueAsync();
         using var bound = CancellationTokenSource.CreateLinkedTokenSource(ct);
         void SetBound() => bound.CancelAfter(expire
             ? credential.ExpiresAt - DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5)
@@ -88,7 +103,7 @@ public sealed partial class SensorThingsStreamEndpointsTests
             using var connected = await ReadSocketFrameAsync(socket, ct);
             connected.RootElement.GetProperty("status").GetString().Should().Be("connected");
             var expectedId = await PublishAsync(73.25);
-            using var observation = await ReadSocketFrameAsync(socket, ct);
+            using var observation = await ReadObservationAsync(socket);
             observation.RootElement.GetProperty("result").GetDouble().Should().Be(73.25);
             observation.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(expectedId);
             await InvalidateAsync();
@@ -136,12 +151,12 @@ public sealed partial class SensorThingsStreamEndpointsTests
 
         // STA has a live-only contract: replacement establishes a new subscription,
         // then observes a newly committed value rather than claiming replay support.
-        var replacement = await IssueAsync();
+        var replacement = await IssueAsync(longLived: true);
         using var resumed = await ConnectAsync(replacement.Token);
         using var handshake = await ReadSocketFrameAsync(resumed, ct);
         handshake.RootElement.GetProperty("status").GetString().Should().Be("connected");
         var replacementId = await PublishAsync(91.75);
-        using var replacementObservation = await ReadSocketFrameAsync(resumed, ct);
+        using var replacementObservation = await ReadObservationAsync(resumed);
         replacementObservation.RootElement.GetProperty("result").GetDouble().Should().Be(91.75);
         replacementObservation.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(replacementId);
     }

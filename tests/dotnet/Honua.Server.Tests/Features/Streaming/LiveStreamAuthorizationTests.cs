@@ -9,6 +9,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using System.Security.Claims;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -41,6 +42,15 @@ public sealed class LiveStreamAuthorizationTests
                 return ValueTask.FromResult<object?>(Results.Empty);
             });
         admitted.Should().BeTrue("a framework-normalized scheme must resolve to its registered authentication handler");
+        var identity = (ClaimsIdentity)context.User.Identity!;
+        foreach (var claim in identity.FindAll(CanonicalSecurityActor.AuthenticationSchemeClaim).ToArray()) { identity.RemoveClaim(claim); }
+        admitted = false;
+        await new LiveStreamAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(context), _ =>
+        {
+            admitted = true;
+            return ValueTask.FromResult<object?>(Results.Empty);
+        });
+        admitted.Should().BeTrue("a synthetic authorization ticket must not hide an otherwise registered handler on a tenantless principal");
 
         await issuer.RevokeAsync(token.Token, CancellationToken.None);
         (await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme)).Succeeded
