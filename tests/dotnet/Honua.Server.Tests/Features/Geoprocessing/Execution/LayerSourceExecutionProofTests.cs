@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Db.Postgres.Features.Geoprocessing;
 using Honua.Geoprocessing;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.ControlPlane;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit;
@@ -110,7 +111,7 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
     {
         var store = _fixture.GetService<IStreamingFeatureStore>();
         store.GetType().Assembly.GetName().Name.Should().Be("Honua.Postgres");
-        return new ServiceCollection().AddSingleton<IDagFeatureSource>(new HonuaLayerDagSource(store)).BuildServiceProvider();
+        return new ServiceCollection().AddSingleton<IDagFeatureSource>(new HonuaLayerDagSource(store, _fixture.GetService<IMetadataV2GraphProvider>())).BuildServiceProvider();
     }
 
     private static IOptionsMonitor<GeoprocessingExecutorOptions> ExecutorOptions()
