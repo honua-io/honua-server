@@ -47,13 +47,14 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
     [InlineData("Clip", false)]
     [InlineData("Clip", true)]
     [InlineData("Merge", false)]
-    [InlineData("source.geojson", false)]
+    [InlineData("canonical-geojson", false)]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
     public async Task DefaultGpService_DrivesRealExecutorToEsriFeatureSetResult(string taskName, bool disjoint)
     {
+        var routeTask = taskName == "canonical-geojson" ? "Clip" : taskName;
         await DeleteControlPlaneKeysAsync(redis.ConnectionString);
 
         // A graph containing a service of exactly the seeded shape (name, GPServer
@@ -170,17 +171,22 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
                     ["merge"] = """{"features":[{"attributes":{"name":"polygon"},"geometry":{"rings":[[[0,0],[0,4],[4,4],[4,0],[0,0]]]}}]}"""
                 };
             }
-            if (taskName == "source.geojson")
+            if (taskName == "canonical-geojson")
             {
                 inputs = new Dictionary<string, string>
                 {
-                    ["inline"] = """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-100,40,12]},"properties":{"name":"canonical"}}]}"""
+                    // source.geojson is workflow-only. Exercise the canonical representation with
+                    // executable Clip: this known point lies strictly inside the known mask.
+                    ["input"] = "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+                        """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-100,40,12]},"properties":{"name":"canonical"}}]}""")),
+                    ["clip"] = "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(
+                        """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[-101,39],[-101,41],[-99,41],[-99,39],[-101,39]]]},"properties":{}}]}"""))
                 };
             }
             using var content = new FormUrlEncodedContent(inputs);
 
             using var submit = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/{taskName}/submitJob",
+                $"/rest/services/{ServiceId}/GPServer/{routeTask}/submitJob",
                 content);
 
             submit.StatusCode.Should().Be(HttpStatusCode.OK,
@@ -200,13 +206,13 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
             jobId.Should().NotBeNullOrWhiteSpace();
             submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
 
-            using var terminal = await PollUntilSucceededAsync(client, taskName, jobId!);
+            using var terminal = await PollUntilSucceededAsync(client, routeTask, jobId!);
             terminal.RootElement.GetProperty("results").GetProperty("outputFeatureLayer")
                 .GetProperty("paramUrl").GetString()
                 .Should().Be("results/outputFeatureLayer");
 
             using var result = await client.GetAsync(
-                $"/rest/services/{ServiceId}/GPServer/{taskName}/jobs/{jobId}/results/outputFeatureLayer?f=json");
+                $"/rest/services/{ServiceId}/GPServer/{routeTask}/jobs/{jobId}/results/outputFeatureLayer?f=json");
 
             result.StatusCode.Should().Be(HttpStatusCode.OK);
             using var resultDoc = JsonDocument.Parse(await result.Content.ReadAsStringAsync());
@@ -215,7 +221,7 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
             resultRoot.GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
             var value = resultRoot.GetProperty("value");
             value.GetProperty("geometryType").GetString().Should().Be(
-                taskName == "source.geojson" ? "esriGeometryPoint" : "esriGeometryPolygon");
+                taskName == "canonical-geojson" ? "esriGeometryPoint" : "esriGeometryPolygon");
             value.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
             if (disjoint)
             {
@@ -227,7 +233,7 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
                 return;
             }
             var feature = value.GetProperty("features").EnumerateArray().Single();
-            if (taskName == "source.geojson")
+            if (taskName == "canonical-geojson")
             {
                 feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-100);
                 feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(40);
