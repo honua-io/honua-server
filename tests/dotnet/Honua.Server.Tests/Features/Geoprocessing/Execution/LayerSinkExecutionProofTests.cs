@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.ControlPlane;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Geoprocessing;
 using Honua.Geoprocessing;
