@@ -682,6 +682,25 @@ public class CogMetadataExtractorTests
         return ms.ToArray();
     }
 
+    [Theory]
+    [InlineData(258, 16)]
+    [InlineData(339, 2)]
+    public async Task ReadMetadataAsync_MixedSampleLayout_RejectsInsteadOfMislabelingBands(ushort tag, ushort secondValue)
+    {
+        var tiff = BuildSyntheticCogBytesWithInlineShortArrays(16, 16, 8, 1, 2);
+        var count = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(tiff.AsSpan(8));
+        for (var i = 0; i < count; i++)
+        {
+            var entry = 10 + i * 12;
+            if (System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(tiff.AsSpan(entry)) == tag)
+            {
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(tiff.AsSpan(entry + 10), secondValue);
+            }
+        }
+        var act = () => new CogMetadataExtractor().ReadMetadataAsync(new InMemoryRangeReader(tiff), "bucket", "mixed.tif");
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*mixed sample*");
+    }
+
     private static void WriteIfdEntry(BinaryWriter writer, ushort tag, ushort type, uint count, uint valueOrOffset)
     {
         writer.Write(tag);

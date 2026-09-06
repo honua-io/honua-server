@@ -156,6 +156,10 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                             if (bpsData.Length > 0)
                             {
                                 bitsPerSample = bpsData[0];
+                                if (bpsData.Any(value => value != bpsData[0]))
+                                {
+                                    throw new InvalidDataException("COG tiles with mixed sample widths are not supported.");
+                                }
                             }
                         }
                         break;
@@ -167,6 +171,10 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                             if (sfData.Length > 0)
                             {
                                 sampleFormat = (ushort)sfData[0];
+                                if (sfData.Any(value => value != sfData[0]))
+                                {
+                                    throw new InvalidDataException("COG tiles with mixed sample formats are not supported.");
+                                }
                             }
                         }
                         break;
