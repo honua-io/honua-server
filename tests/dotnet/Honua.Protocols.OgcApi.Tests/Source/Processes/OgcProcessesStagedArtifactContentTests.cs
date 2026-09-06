@@ -44,10 +44,23 @@ public sealed class OgcProcessesStagedArtifactContentTests
     public OgcProcessesStagedArtifactContentTests(OgcProcessesStagedArtifactContentTestsFixture fixture)
         => _fixture = fixture;
 
+    /// <summary>
+    /// Artifact <em>streaming</em> for an opaque staged payload — not raster evidence
+    /// (honua-server#4400).
+    /// </summary>
+    /// <remarks>
+    /// The staged object here is 32 KiB of deterministic synthetic bytes with no GeoTIFF
+    /// framing; the fixture's descriptor stamps <c>ProducingEngine = "gdal-worker"</c> because
+    /// the streaming route reads that field, not because GDAL produced anything. This test
+    /// proves the content route streams the staged object with the declared media type and an
+    /// ETag. It must NOT be counted as a <c>raster.*</c> execution receipt: those live in
+    /// <c>Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs</c>, which drives production
+    /// executors against the pinned worker image with analytical cell oracles.
+    /// </remarks>
     [IntegrationTest]
     [Operation(Operations.JobResults)]
     [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
-    public async Task ArtifactContent_SucceededJob_StreamsStagedObject()
+    public async Task ArtifactContent_SucceededJob_StreamsOpaqueStagedPayloadWithDeclaredMediaType()
     {
         var response = await _fixture.App.Client.GetAsync(
             $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId}/artifacts/0/content");
@@ -57,6 +70,11 @@ public sealed class OgcProcessesStagedArtifactContentTests
         var payload = await response.Content.ReadAsByteArrayAsync();
         payload.Should().Equal(_fixture.StagedPayload);
         response.Headers.ETag.Should().NotBeNull();
+
+        // #4400: pin the fact that this payload is NOT a GeoTIFF, so nobody can later read the
+        // image/tiff content type above as evidence that a raster was produced.
+        payload.Should().NotStartWith([(byte)'I', (byte)'I', 0x2A, 0x00]);
+        payload.Should().NotStartWith([(byte)'M', (byte)'M', 0x00, 0x2A]);
     }
 
     [IntegrationTest]
@@ -336,6 +354,8 @@ public sealed class OgcProcessesStagedArtifactStoreUnavailableTestsFixture : IAs
                 MediaType = "image/tiff",
                 Checksum = new RasterChecksum("sha256", new string('a', 64)),
             },
+            // #4400: a descriptor field the streaming route reads, NOT a claim that GDAL ran.
+            // The staged payload is synthetic (see CreatePayload).
             ProducingEngine = RasterOutputContract.GdalWorkerEngine,
             Provider = CloudStorageProvider.Local,
             StoreReference = "gp-outputs",
@@ -428,6 +448,8 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
             AttemptNumber = 1,
             OutputName = "outputRaster",
             Content = content,
+            // #4400: a descriptor field the streaming route reads, NOT a claim that GDAL ran.
+            // The staged payload is synthetic (see CreatePayload).
             ProducingEngine = RasterOutputContract.GdalWorkerEngine,
             Provider = store.Provider,
             StoreReference = store.StoreReference,
@@ -532,6 +554,12 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
         }
     }
 
+    /// <summary>
+    /// 32 KiB of deterministic synthetic bytes. Deliberately NOT a GeoTIFF: this fixture backs
+    /// artifact-streaming and volume-restore tests, and the descriptors that reference it carry
+    /// <c>ProducingEngine = "gdal-worker"</c> only because the streaming route reads that field.
+    /// Nothing here is raster-execution evidence (honua-server#4400).
+    /// </summary>
     private static byte[] CreatePayload()
     {
         return Enumerable.Range(0, 32768).Select(index => (byte)((index * 31 + 7) % 256)).ToArray();

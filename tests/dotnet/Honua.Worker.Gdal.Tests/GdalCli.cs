@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
@@ -124,6 +126,72 @@ internal static class GdalCli
                 .ConfigureAwait(false);
         }
         return File.ReadAllBytes(demPath);
+    }
+
+    /// <summary>
+    /// Elevation burned into <see cref="GenerateSampleDemAsync"/>'s 16x16 Float32 raster. The
+    /// surface is constant, which is what makes an analytical slope/aspect oracle possible
+    /// (honua-server#4400).
+    /// </summary>
+    public const double SampleDemConstantElevation = 100.0;
+
+    /// <summary>
+    /// Reads band-1 statistics from a GeoTIFF with <c>gdalinfo -json -stats</c>, so a test can
+    /// assert produced cell values instead of magic bytes. Returns <c>null</c> when
+    /// <c>gdalinfo</c> is unavailable and the CLI is not required.
+    /// </summary>
+    public static async Task<(double Minimum, double Maximum)?> TryReadBandStatisticsAsync(
+        byte[] geoTiff,
+        string scratch)
+    {
+        if (!Available("gdalinfo") && !RequireCli)
+        {
+            return null;
+        }
+
+        Directory.CreateDirectory(scratch);
+        var path = Path.Join(scratch, $"stats-{Guid.NewGuid():N}.tif");
+        await File.WriteAllBytesAsync(path, geoTiff).ConfigureAwait(false);
+
+        var stdout = await RunCapturingAsync("gdalinfo", ["-json", "-stats", path], scratch).ConfigureAwait(false);
+        using var document = JsonDocument.Parse(stdout);
+        var band = document.RootElement.GetProperty("bands").EnumerateArray().First();
+        var metadata = band.GetProperty("metadata").GetProperty(string.Empty);
+
+        var minimum = double.Parse(
+            metadata.GetProperty("STATISTICS_MINIMUM").GetString()!, CultureInfo.InvariantCulture);
+        var maximum = double.Parse(
+            metadata.GetProperty("STATISTICS_MAXIMUM").GetString()!, CultureInfo.InvariantCulture);
+        return (minimum, maximum);
+    }
+
+    private static async Task<string> RunCapturingAsync(string tool, IReadOnlyList<string> args, string scratch)
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo(tool)
+        {
+            WorkingDirectory = scratch,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+
+        foreach (var arg in args)
+        {
+            startInfo.ArgumentList.Add(arg);
+        }
+
+        using var process = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException($"Failed to start '{tool}'.");
+        var stdout = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+        var stderr = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
+        await process.WaitForExitAsync().ConfigureAwait(false);
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"'{tool}' exited {process.ExitCode}: {stderr}");
+        }
+
+        return stdout;
     }
 
     private static async Task RunOrThrowAsync(string tool, IReadOnlyList<string> args, string scratch)

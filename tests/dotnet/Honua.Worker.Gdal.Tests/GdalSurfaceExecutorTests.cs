@@ -299,10 +299,21 @@ public sealed class GdalSurfaceExecutorTests
         }
     }
 
+    /// <summary>
+    /// Real <c>gdaldem slope</c> with an analytical value oracle (honua-server#4400).
+    /// </summary>
+    /// <remarks>
+    /// This test's entire oracle used to be <c>data:image/tiff</c> plus the <c>II</c>/<c>MM</c>
+    /// magic bytes, so anyone auditing by name read "reconciles against source" as a decoded
+    /// receipt when nothing was reconciled. The sample DEM is a 16x16 Float32 raster burned to a
+    /// single constant elevation, so the slope of every cell is exactly zero — a value oracle
+    /// derived from the input, not a snapshot of the output. A pass-through, a wrong band, or a
+    /// slope computed from the wrong source all break it.
+    /// </remarks>
     [GdalCliFact("gdaldem")]
     [Protocol(ProtocolNames.TestQuality)]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Slope_WithRealGdaldem_ProducesGeoTiff_AndReconcilesAgainstSource()
+    public async Task Slope_WithRealGdaldem_OverConstantDem_ProducesZeroSlopeEverywhere()
     {
         var scratch = NewScratch();
         var executor = new GdalSurfaceJobExecutor(
@@ -332,6 +343,17 @@ public sealed class GdalSurfaceExecutorTests
             payload.Should().HaveCountGreaterThan(4);
             (payload[0] == 0x49 && payload[1] == 0x49 || payload[0] == 0x4D && payload[1] == 0x4D)
                 .Should().BeTrue("output must be a real GeoTIFF");
+
+            // #4400: the value oracle. The source DEM is constant at
+            // GdalCli.SampleDemConstantElevation, so slope must be identically zero. Without
+            // this the assertions above pass for any GeoTIFF gdaldem happens to emit.
+            var statistics = await GdalCli.TryReadBandStatisticsAsync(payload, scratch).ConfigureAwait(false);
+            statistics.Should().NotBeNull(
+                "gdalinfo ships with the same gdal-bin package as gdaldem, so the oracle must be computable");
+            statistics!.Value.Minimum.Should().BeApproximately(
+                0.0, 1e-6, "slope over a constant surface is zero everywhere");
+            statistics.Value.Maximum.Should().BeApproximately(
+                0.0, 1e-6, "slope over a constant surface is zero everywhere");
         }
         finally
         {
