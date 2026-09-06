@@ -896,7 +896,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         await repository.UpsertAsync(claimed!.Value with
         {
             Status = ReplicaConflictStatus.Pending,
-            ResolutionAction = ReplicaConflictResolutionAction.KeepClient,
+            ResolutionAction = ReplicaConflictResolutionAction.AcceptClient,
             ResolvedBy = "abandoned-resolver",
             ResolvedAt = abandonedAt,
         });
@@ -918,7 +918,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             return await repository.TryTakeOverClaimAsync(
                 seeded.ConflictId,
                 $"recovery-{index}",
-                ReplicaConflictResolutionAction.KeepClient,
+                ReplicaConflictResolutionAction.AcceptClient,
                 expectedResolvedAt,
                 newResolvedAt.AddMilliseconds(index),
                 CancellationToken.None);
@@ -940,7 +940,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         var lateLoser = await repository.TryTakeOverClaimAsync(
             seeded.ConflictId,
             "recovery-late",
-            ReplicaConflictResolutionAction.KeepClient,
+            ReplicaConflictResolutionAction.AcceptClient,
             expectedResolvedAt,
             DateTimeOffset.UtcNow,
             CancellationToken.None);
