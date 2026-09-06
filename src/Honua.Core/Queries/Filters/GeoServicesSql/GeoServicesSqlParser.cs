@@ -1289,7 +1289,11 @@ public sealed class GeoServicesSqlParser
 
         private void AddToken(TokenType type, object? literal)
         {
-            var text = _source[_start.._current];
+            // Identifier readers consume Lexeme, so use the decoded name from
+            // the lexer instead of retaining SQL quote/bracket delimiters.
+            var text = type == TokenType.Identifier && literal is string identifier
+                ? identifier
+                : _source[_start.._current];
             _tokens.Add(new Token(type, text, literal, _start));
         }
     }
