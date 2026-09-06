@@ -85,11 +85,11 @@ public sealed class ChangeTrackingBaselineDeltaTests : IAsyncLifetime
             new Honua.Core.Features.FeatureStore.Domain.FeatureQuery { Limit = 1 },
             CancellationToken.None);
 
-        if (seeded.Items.Length == 0)
-        {
-            // No seeded features in the test layer — nothing to baseline; the contract is vacuously held.
-            return;
-        }
+        // #4405: this used to `return` when the layer was empty, so a fixture that stopped
+        // seeding turned the whole contract into a silent pass. The seeded layer is a
+        // precondition of the test, not an optional input — assert it.
+        seeded.Items.Should().NotBeEmpty(
+            "the test layer must be seeded for a gen-0 baseline scan to prove anything");
 
         var changes = await changeTracker.GetChangesSinceAsync(0, [WebAppFixture.TestLayerId]);
         changes.Should().NotBeEmpty(

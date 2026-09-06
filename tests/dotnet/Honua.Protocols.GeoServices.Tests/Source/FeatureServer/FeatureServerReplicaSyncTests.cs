@@ -267,6 +267,16 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
 
         using var extractDoc = JsonDocument.Parse(await extractResponse.Content.ReadAsStringAsync());
         var layerChanges = extractDoc.RootElement.GetProperty("layerChanges");
+
+        // #4405: the loop below asserted nothing when layerChanges was empty, so a response that
+        // reported no layers at all passed as "excluded its own edits". Require the replica's
+        // layer to be present before asserting its counts.
+        layerChanges.GetArrayLength().Should().BeGreaterThan(0,
+            "extractChanges must report the replica's layers for the exclusion assertions to bite");
+        layerChanges.EnumerateArray()
+            .Select(layer => layer.GetProperty("id").GetInt32())
+            .Should().Contain(WebAppFixture.TestLayerId);
+
         foreach (var layer in layerChanges.EnumerateArray())
         {
             layer.GetProperty("adds").GetInt32().Should().Be(0, "the replica must not receive its own just-applied edits back");

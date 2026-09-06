@@ -388,6 +388,26 @@ internal static partial class FeatureServerEndpoints
         var layersParam = GetValueString(values, "layers");
         var syncModel = GetValueString(values, "syncModel") ?? "perReplica";
 
+        // honua-server#4405: `returnAttachments` was accepted and silently ignored — a
+        // client asking for an attachment-carrying replica got one without attachments and
+        // no indication of it. Attachment replication is not implemented for 2026.1, so the
+        // request is rejected rather than quietly downgraded.
+        if (!TryParseBoolValue(values, "returnAttachments", false, out var returnAttachments, out var returnAttachmentsError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid returnAttachments parameter",
+                [returnAttachmentsError ?? "returnAttachments must be a boolean value."]);
+        }
+
+        if (returnAttachments)
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "returnAttachments is not supported",
+                ["This server does not replicate attachments. Omit returnAttachments or pass returnAttachments=false, and synchronize attachments through the FeatureServer attachment endpoints."]);
+        }
+
         if (!TryResolveReplicaLayerIdsV2(
                 context,
                 service,

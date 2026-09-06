@@ -31,6 +31,12 @@ public sealed class CreateReplicaRequest
     /// <summary>
     /// Return attachments with the replica.
     /// </summary>
+    /// <remarks>
+    /// Not supported. This server does not replicate attachments; <c>createReplica</c>
+    /// rejects <c>returnAttachments=true</c> with a 400 rather than silently producing a
+    /// replica without them (honua-server#4405). The property is retained so the Esri
+    /// request shape still binds.
+    /// </remarks>
     [JsonPropertyName("returnAttachments")]
     public bool ReturnAttachments { get; set; }
 
