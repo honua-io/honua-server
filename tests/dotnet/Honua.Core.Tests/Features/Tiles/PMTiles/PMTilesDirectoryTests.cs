@@ -191,15 +191,18 @@ public class PMTilesDirectoryTests
 
         entries.Should().HaveCount(3);
 
-        // Verify each entry can locate its tile data
-        var expectedTiles = new[] { tile0, tile1, tile2 };
-        // Entries are sorted by Hilbert tile ID
-        var sortedTileIds = new[]
+        // honua-server#4397: this used to look up the expected tile by payload LENGTH, so a writer
+        // that stored every tile at the wrong coordinate passed as long as the lengths were
+        // distinct. Match on the Hilbert tile id derived from z/x/y instead.
+        var expectedByTileId = new Dictionary<ulong, byte[]>
         {
-            HilbertCurve.XYZToTileId(0, 0, 0),
-            HilbertCurve.XYZToTileId(1, 0, 0),
-            HilbertCurve.XYZToTileId(1, 1, 0),
+            [HilbertCurve.XYZToTileId(0, 0, 0)] = tile0,
+            [HilbertCurve.XYZToTileId(1, 0, 0)] = tile1,
+            [HilbertCurve.XYZToTileId(1, 1, 0)] = tile2,
         };
+
+        // Entries are sorted by Hilbert tile ID
+        var sortedTileIds = expectedByTileId.Keys.ToArray();
         Array.Sort(sortedTileIds);
 
         for (var i = 0; i < entries.Length; i++)
@@ -210,10 +213,9 @@ public class PMTilesDirectoryTests
             var tileLength = (int)entries[i].Length;
             var tileData = archiveBytes.AsSpan(tileOffset, tileLength).ToArray();
 
-            // Find expected tile by matching length (each test tile has unique length)
-            var expectedTile = expectedTiles.First(t => t.Length == tileLength);
+            var expectedTile = expectedByTileId[entries[i].TileId];
             tileData.Should().BeEquivalentTo(expectedTile,
-                $"tile at entry {i} (tileId={entries[i].TileId}) should match expected data");
+                $"the bytes at tileId={entries[i].TileId} must be that coordinate's tile");
         }
     }
 }
