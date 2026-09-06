@@ -120,7 +120,19 @@ public sealed class GdalRasterAdmissionExecutorTests
     public async Task MapAlgebra_NormalRaster_Succeeds()
     {
         var normal = Convert.ToBase64String(TiffHeaderBuilder.Classic(512, 512, bands: 3));
-        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("calc-tif"));
+        var runner = new FakeGdalCommandRunner((tool, args, _) =>
+        {
+            if (tool == "gdalinfo")
+            {
+                return new GdalCommandResult { ExitCode = 0, StandardOutput = "{}" };
+            }
+            if (tool == "python3")
+            {
+                return new GdalCommandResult { ExitCode = 0, StandardOutput = "255" };
+            }
+            File.WriteAllBytes(args[^1], Encoding.UTF8.GetBytes("calc-tif"));
+            return new GdalCommandResult { ExitCode = 0 };
+        });
         var scratch = GdalCli.NewScratch(ScratchSuite);
         var executor = new GdalRasterMapAlgebraJobExecutor(
             runner, GdalJobFactory.Options(scratch), NullLogger<GdalRasterMapAlgebraJobExecutor>.Instance);
