@@ -19,16 +19,26 @@ using Honua.TestKit;
 using NetTopologySuite.IO;
 using Npgsql;
 using NSubstitute;
+using System.Collections.Immutable;
+using Honua.Core.Features.Authorization.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 [Collection("Database")]
 [Trait("Category", "CopyFeaturesExecutionProof")]
-public sealed class CopyFeaturesExecutionProofTests : IAsyncLifetime
+public sealed partial class CopyFeaturesExecutionProofTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureServices(_ => { });
+    private readonly WebAppFixture _fixture;
+    private readonly IFieldMaskSource _masks = Substitute.For<IFieldMaskSource>();
     private int _sourceId;
     private MetadataV2Resource _sourceResource = null!;
+
+    public CopyFeaturesExecutionProofTests()
+    {
+        _masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>()).Returns(ImmutableArray<string>.Empty);
+        _fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(_masks));
+    }
 
     public async Task InitializeAsync()
     {
