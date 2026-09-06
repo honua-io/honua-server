@@ -16,7 +16,7 @@ namespace Honua.Worker.Gdal.Tests;
 
 /// <summary>Real production executors and pinned native GDAL, with analytical cell oracles.</summary>
 [Trait("Category", "RasterExecutionProof")]
-public sealed class RasterExecutionProofTests : IDisposable
+public sealed partial class RasterExecutionProofTests : IDisposable
 {
     private const double NoData = -9999;
     private static readonly string Image = ReadProductionImage();
@@ -349,6 +349,7 @@ public sealed class RasterExecutionProofTests : IDisposable
             "raster.resample" => new GdalRasterResampleJobExecutor(_runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
             "raster.interpolate-idw" => new GdalRasterInterpolateJobExecutor(_runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
             "raster.histogram" => new GdalRasterStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterStatisticsJobExecutor>.Instance),
+            "conversion.rasterize" => new GdalRasterizeJobExecutor(_runner, options, NullLogger<GdalRasterizeJobExecutor>.Instance),
             _ => throw new ArgumentOutOfRangeException(nameof(id))
         };
         var job = GdalJobFactory.Job(id, inputs);
