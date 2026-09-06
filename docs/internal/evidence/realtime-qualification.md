@@ -37,10 +37,49 @@ python3 scripts/conformance/realtime/qualify_candidate.py \
 ```
 
 The 2026.1 Preview denominator covers feature-stream baseline completion, resume/gap detection,
-partition recovery, token expiry, and tenant isolation for SSE, WebSocket, and OData; OData
+partition recovery, token expiry, explicit token revocation, tenant isolation, and changed-tenant
+resume rejection for SSE, WebSocket, and OData; OData
 lossless state convergence; and separate SensorThings SSE/WebSocket loss recovery, token expiry,
 and tenant isolation. Missing, failed, skipped, stale, replayed, fixture, aliased, or identity-
 unbound rows reject the ledger with cell-specific reasons.
+
+## Live authorization floor (#3871)
+
+Feature and SensorThings streams require an authenticated credential. They revalidate the
+admitted authentication scheme in a fresh dependency scope every second; the existing
+request's cached authentication result is never reused. A validation timeout, revocation
+observed by the configured issuer, expiry, or changed identity/role/tenant claims ends the
+subscription. JWT replay admission remains a connect-time check; periodic verification of
+the same admitted token still validates signature, expiry, issuer, and configured credential
+policy. External issuer revocation is observable only through the configured authenticator;
+the built-in portal-token issuer supports explicit revocation through its backing store.
+
+The qualification bound is five seconds from expiry or committed revocation. SSE ends with
+`event: status` and `{"status":"error","code":"authorization-ended"}`. WebSocket emits
+close code `1008` with reason `authorization-ended`. A client reconnects with a replacement
+credential and its last delivered cursor; subscription filters and tenant visibility are
+evaluated again before replay. A revoked credential never becomes a replacement token.
+
+Every `token-expiry`, `token-revocation`, `tenant-isolation`, and `tenant-scope-change` row
+must retain an `authorization` object containing the SHA-256 issuer/configuration fingerprint,
+two distinct `tenantIds`, unique injected `mutationIds`, RFC3339 `issuedAt`/`expiresAt`, and
+timestamped `observations` with raw frames or HTTP responses. Raw observations must fall
+inside the source workflow execution. Expiry/revocation rows also retain `terminatedAt`,
+`enforcementBoundMilliseconds` (at most 5000), and `terminationReason` (`authorization-ended`
+for SSE/WS, `unauthorized` for OData); revocation rows retain `revokedAt`. The transcript must
+cover both sides of the applicable expiry/revocation boundary, and termination must meet
+the declared bound. Credentials themselves must not be retained in the receipt.
+
+Required assertion IDs are `no-cross-tenant-payload` and `invalid-credentials-rejected`;
+expiry/revocation also require `old-credential-terminated` and `replacement-resume`, and
+changed-scope rows require `changed-scope-rejected`. A generic successful assertion, an
+expiry row standing in for revocation, or a green projection without raw observations cannot
+qualify the candidate. The source SDK workflow must produce this expanded denominator.
+
+Local hosted tests use real portal-token issuance/revocation and isolated Postgres fixtures,
+with development authentication bypass disabled. These are regression evidence. They do
+not replace the exact-candidate image/SDK/issuer receipt described above; until the candidate
+is cut and that receipt is available, candidate qualification remains rejected.
 
 Ordering/duplicate depth, HA and proxy routing, Redis failover, broker outage recovery,
 saturation/backpressure, and the 24–72 hour soak are 2026.2 operational-graduation rows. They
