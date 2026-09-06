@@ -84,10 +84,20 @@ internal static class GPServerEsriOutputTranslation
             }
             writer.WriteStartArray("fields");
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var inferredOid = inferred.GetProperty("objectIdFieldName").GetString();
             foreach (var field in inferred.GetProperty("fields").EnumerateArray())
             {
-                names.Add(field.GetProperty("name").GetString()!);
-                field.WriteTo(writer);
+                var name = field.GetProperty("name").GetString()!;
+                names.Add(name);
+                var declaredType = name == inferredOid ? null : GetDeclaredFieldType(declared?.RootElement, name);
+                if (declaredType is not null)
+                {
+                    WriteField(writer, name, declaredType);
+                }
+                else
+                {
+                    field.WriteTo(writer);
+                }
             }
             if (declared?.RootElement.TryGetProperty("fields", out var fields) == true)
             {
@@ -120,12 +130,12 @@ internal static class GPServerEsriOutputTranslation
             {
                 foreach (var property in properties.EnumerateObject())
                 {
-                    var type = property.Value.ValueKind switch
+                    var type = GetDeclaredFieldType(schema, property.Name) ?? (property.Value.ValueKind switch
                     {
                         JsonValueKind.Number => "esriFieldTypeDouble",
                         JsonValueKind.True or JsonValueKind.False => "esriFieldTypeSmallInteger",
                         _ => "esriFieldTypeString"
-                    };
+                    });
                     if (!fields.ContainsKey(property.Name) || property.Value.ValueKind != JsonValueKind.Null)
                     {
                         fields[property.Name] = type;
@@ -233,6 +243,23 @@ internal static class GPServerEsriOutputTranslation
         }
         writer.WriteEndArray();
         writer.WriteEndObject();
+    }
+
+    private static string? GetDeclaredFieldType(JsonElement? schema, string name)
+    {
+        if (schema is { } declared && declared.TryGetProperty("fields", out var fields))
+        {
+            foreach (var field in fields.EnumerateArray())
+            {
+                if (string.Equals(field.GetProperty("name").GetString(), name, StringComparison.OrdinalIgnoreCase))
+                {
+                    var type = field.GetProperty("type").GetString();
+                    // Output identity is synthesized separately; retain input OIDs as ordinary integers.
+                    return type == "esriFieldTypeOID" ? "esriFieldTypeInteger" : type;
+                }
+            }
+        }
+        return null;
     }
 
     private static void WriteField(Utf8JsonWriter writer, string name, string type)

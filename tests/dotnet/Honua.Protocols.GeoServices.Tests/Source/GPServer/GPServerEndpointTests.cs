@@ -983,6 +983,38 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
+    public async Task JobResult_WithEnvOutSR_TableRetainsWorkingSpatialReference()
+    {
+        var resultFixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IGeoprocessingJobService>();
+            services.AddSingleton<IGeoprocessingJobService>(OutSrResultBackedGeoprocessingJobService.Table());
+        });
+        await resultFixture.InitializeAsync();
+        try
+        {
+            using var client = resultFixture.CreateAdminClient();
+            var response = await client.GetAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/gp-outsr-job/results/outputTable?f=json");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+            root.GetProperty("dataType").GetString().Should().Be("GPRecordSet");
+            var value = root.GetProperty("value");
+            value.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+            value.GetProperty("features").GetArrayLength().Should().Be(1);
+            value.GetProperty("features")[0].GetProperty("attributes").GetProperty("total").GetInt32().Should().Be(12);
+            value.GetProperty("features")[0].GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Null);
+        }
+        finally
+        {
+            await resultFixture.DisposeAsync();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Cancel Job
     // -----------------------------------------------------------------------
@@ -1809,13 +1841,13 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         private readonly ExecutionJobRecord _job;
         private readonly AnalysisResultPackage _results;
 
-        private OutSrResultBackedGeoprocessingJobService(bool includeWorkingSr)
+        private OutSrResultBackedGeoprocessingJobService(bool includeWorkingSr, ArtifactKind kind = ArtifactKind.FeatureLayer)
         {
             var parameters = new Dictionary<string, string>
             {
                 ["gpserver.serviceId"] = ServiceId,
                 ["gpserver.taskName"] = "geometry.buffer",
-                ["gpserver.output.0"] = "outputFeatureLayer",
+                ["gpserver.output.0"] = kind == ArtifactKind.Table ? "outputTable" : "outputFeatureLayer",
                 ["gpserver.env.outSR"] = "3857"
             };
             if (includeWorkingSr)
@@ -1848,9 +1880,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                     new ArtifactRef
                     {
                         ArtifactId = "art-outsr-1",
-                        Kind = ArtifactKind.FeatureLayer,
+                        Kind = kind,
                         Label = "Buffered Output",
-                        Uri = PointDataUri
+                        Uri = kind == ArtifactKind.Table
+                            ? GeoJsonDataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(
+                                "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"properties\":{\"total\":12},\"geometry\":null}]}"))
+                            : PointDataUri
                     }
                 ],
                 workspaceRefs: [],
@@ -1865,6 +1900,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         public static OutSrResultBackedGeoprocessingJobService Reprojectable() => new(includeWorkingSr: true);
 
         public static OutSrResultBackedGeoprocessingJobService UnknownWorkingSr() => new(includeWorkingSr: false);
+
+        public static OutSrResultBackedGeoprocessingJobService Table() => new(includeWorkingSr: true, ArtifactKind.Table);
 
         public Task<GeoprocessingJobListPage> ListJobsAsync(
             GeoprocessingJobListFilter filter,

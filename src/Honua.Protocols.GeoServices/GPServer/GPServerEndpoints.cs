@@ -1090,7 +1090,7 @@ internal static class GPServerEndpoints
             {
                 ParamName = publishedName,
                 DataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
-                Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job),
+                Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job, artifact.Kind),
                     job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
             };
 
@@ -1808,10 +1808,11 @@ internal static class GPServerEndpoints
         return derivedSrid ?? 0;
     }
 
-    private static int ResolveResultSrid(ExecutionJobRecord job)
+    private static int ResolveResultSrid(ExecutionJobRecord job, ArtifactKind kind)
     {
         var parameters = job.Spec.Parameters;
-        var raw = parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerOutSr)
+        var raw = (kind == ArtifactKind.FeatureLayer
+            ? parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerOutSr) : null)
             ?? parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkingSr);
         return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) ? srid : 0;
     }
