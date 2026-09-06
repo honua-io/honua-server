@@ -359,15 +359,23 @@ public sealed class PatchConcurrencyTests
             var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
             mask.Fields = ImmutableArray.Create("population");
             var readUrl = protocol == "ogc" ? $"/ogc/features/collections/0/items/{id}" : $"/odata/Features(LayerId=0,ObjectId={id})";
-            using var originalRead = await fixture.Client.GetAsync(readUrl);
-            Assert.True(originalRead.IsSuccessStatusCode);
-            var originalEtag = originalRead.Headers.ETag!.ToString();
+            async Task<string> ReadConditionEtagAsync()
+            {
+                if (protocol == "ogc")
+                {
+                    var feature = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+                    return Honua.Protocols.Ogc.Api.Features.Services.OgcFeatureEntityTag.Compute(
+                        feature, fixture.GetService<Honua.Infrastructure.Caching.IETagService>());
+                }
+                using var read = await fixture.Client.GetAsync(readUrl);
+                Assert.True(read.IsSuccessStatusCode);
+                return read.Headers.ETag!.ToString();
+            }
+            var originalEtag = await ReadConditionEtagAsync();
             using var futureRequest = CreatePatch(protocol != "ogc", id, changeName: false);
             using var futureResponse = await fixture.Client.SendAsync(futureRequest);
             Assert.True(futureResponse.IsSuccessStatusCode);
-            using var futureRead = await fixture.Client.GetAsync(readUrl);
-            Assert.True(futureRead.IsSuccessStatusCode);
-            var futureEtag = futureRead.Headers.ETag!.ToString();
+            var futureEtag = await ReadConditionEtagAsync();
             Assert.NotEqual(originalEtag, futureEtag);
             await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original);
 
@@ -381,7 +389,12 @@ public sealed class PatchConcurrencyTests
             var pending = fixture.Client.SendAsync(request);
             try
             {
-                await barrier.Reached.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                var firstCompleted = await Task.WhenAny(barrier.Reached.Task, pending).WaitAsync(TimeSpan.FromSeconds(30));
+                if (firstCompleted == pending)
+                {
+                    using var earlyResponse = await pending;
+                    Assert.Fail($"Request did not reach the write barrier: {earlyResponse.StatusCode} {await earlyResponse.Content.ReadAsStringAsync()}");
+                }
                 using var secondRequest = CreatePatch(protocol != "ogc", id, changeName: false);
                 using var secondResponse = await fixture.Client.SendAsync(secondRequest);
                 Assert.True(secondResponse.IsSuccessStatusCode, await secondResponse.Content.ReadAsStringAsync());
