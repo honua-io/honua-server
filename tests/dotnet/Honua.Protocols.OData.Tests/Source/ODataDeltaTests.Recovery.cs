@@ -11,6 +11,7 @@ using Honua.Protocols.OData;
 using Honua.Protocols.OData.Services;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
@@ -18,6 +19,8 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 public sealed partial class ODataDeltaTests
 {
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.ODataV4, "DeltaTracking")]
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Delta_BaselinePollAndRejectedQuery_RecordQueryTelemetry()
     {
@@ -63,6 +66,8 @@ public sealed partial class ODataDeltaTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.ODataV4, "DeltaTracking")]
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Delta_BoundedCrossNodeClockSkew_ContinuesDurableBaseline()
     {
@@ -88,6 +93,8 @@ public sealed partial class ODataDeltaTests
     }
 
     [IntegrationTheory]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.ODataV4, "DeltaTracking")]
     [InlineData("expired", HttpStatusCode.Gone, "DeltaTokenExpired")]
     [InlineData("future", HttpStatusCode.Gone, "DeltaTokenExpired")]
     [InlineData("missing", HttpStatusCode.Gone, "DeltaTokenExpired")]
