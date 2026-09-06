@@ -38,6 +38,12 @@ category with the pinned production GDAL image; absent Docker/native tools fail.
 
 ## Hosted managed checkpoint
 
+After integrating trunk, the full native Release build and canonical catalog
+emitter passed (1 test, 18s). The full architecture suite passed **287 tests**,
+zero failures/skips, in **2m26s** (`gp-architecture-final.trx`). The full solution
+formatter passed. A trunk cache-test analyzer finding was corrected by using its
+concrete inferred type; every cache assertion was retained.
+
 The native Windows Release hosted suite passed **174 tests**, zero failures/skips,
 in **55s** (`gp-managed-proofs-1.trx`), including the real geometry-format job and
 the imagery inference/georeferencing regression guards. The calculate-field
