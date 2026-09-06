@@ -897,7 +897,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             var root = doc.RootElement;
             root.GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
             root.GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
-            root.GetProperty("value").GetString().Should().Be("https://example.test/artifacts/output.geojson");
+            root.GetProperty("value").GetProperty("url").GetString().Should().Be("https://example.test/artifacts/output.geojson");
         }
         finally
         {
@@ -934,16 +934,14 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var root = doc.RootElement;
             root.TryGetProperty("error", out _).Should().BeFalse("env:outSR must be honored, not error");
-            var value = root.GetProperty("value").GetString();
-            value.Should().StartWith(GeoJsonDataUriPrefix);
-
-            // The served geometry must be reprojected 4326 -> 3857 (Web Mercator
-            // magnitude), not the original WGS 84 coordinates [1, 2].
-            var base64 = value![GeoJsonDataUriPrefix.Length..];
-            using var feature = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(base64)));
-            var coords = feature.RootElement.GetProperty("geometry").GetProperty("coordinates");
-            Math.Abs(coords[0].GetDouble()).Should().BeGreaterThan(1000.0,
-                "lon 1.0 in EPSG:4326 reprojects to ~111319 in EPSG:3857");
+            var value = root.GetProperty("value");
+            value.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+            var geometry = value.GetProperty("features")[0].GetProperty("geometry");
+            // Spherical Mercator formula, independently computed for longitude 1, latitude 2.
+            const double radius = 6378137;
+            geometry.GetProperty("x").GetDouble().Should().BeApproximately(radius * Math.PI / 180, 1e-6);
+            geometry.GetProperty("y").GetDouble().Should().BeApproximately(
+                radius * Math.Log(Math.Tan(Math.PI / 4 + Math.PI / 180)), 1e-6);
         }
         finally
         {
@@ -978,6 +976,38 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             doc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+        }
+        finally
+        {
+            await resultFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
+    public async Task JobResult_WithEnvOutSR_TableRetainsWorkingSpatialReference()
+    {
+        var resultFixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IGeoprocessingJobService>();
+            services.AddSingleton<IGeoprocessingJobService>(OutSrResultBackedGeoprocessingJobService.Table());
+        });
+        await resultFixture.InitializeAsync();
+        try
+        {
+            using var client = resultFixture.CreateAdminClient();
+            var response = await client.GetAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/gp-outsr-job/results/outputTable?f=json");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+            root.GetProperty("dataType").GetString().Should().Be("GPRecordSet");
+            var value = root.GetProperty("value");
+            value.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+            value.GetProperty("features").GetArrayLength().Should().Be(1);
+            value.GetProperty("features")[0].GetProperty("attributes").GetProperty("total").GetInt32().Should().Be(12);
+            value.GetProperty("features")[0].GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Null);
         }
         finally
         {
@@ -1811,13 +1841,13 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         private readonly ExecutionJobRecord _job;
         private readonly AnalysisResultPackage _results;
 
-        private OutSrResultBackedGeoprocessingJobService(bool includeWorkingSr)
+        private OutSrResultBackedGeoprocessingJobService(bool includeWorkingSr, ArtifactKind kind = ArtifactKind.FeatureLayer)
         {
             var parameters = new Dictionary<string, string>
             {
                 ["gpserver.serviceId"] = ServiceId,
                 ["gpserver.taskName"] = "geometry.buffer",
-                ["gpserver.output.0"] = "outputFeatureLayer",
+                ["gpserver.output.0"] = kind == ArtifactKind.Table ? "outputTable" : "outputFeatureLayer",
                 ["gpserver.env.outSR"] = "3857"
             };
             if (includeWorkingSr)
@@ -1850,9 +1880,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                     new ArtifactRef
                     {
                         ArtifactId = "art-outsr-1",
-                        Kind = ArtifactKind.FeatureLayer,
+                        Kind = kind,
                         Label = "Buffered Output",
-                        Uri = PointDataUri
+                        Uri = kind == ArtifactKind.Table
+                            ? GeoJsonDataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(
+                                "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"properties\":{\"total\":12},\"geometry\":null}]}"))
+                            : PointDataUri
                     }
                 ],
                 workspaceRefs: [],
@@ -1867,6 +1900,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         public static OutSrResultBackedGeoprocessingJobService Reprojectable() => new(includeWorkingSr: true);
 
         public static OutSrResultBackedGeoprocessingJobService UnknownWorkingSr() => new(includeWorkingSr: false);
+
+        public static OutSrResultBackedGeoprocessingJobService Table() => new(includeWorkingSr: true, ArtifactKind.Table);
 
         public Task<GeoprocessingJobListPage> ListJobsAsync(
             GeoprocessingJobListFilter filter,
