@@ -149,7 +149,8 @@ internal sealed partial class GdalPolygonizeJobExecutor(
             await context.ReportProgressAsync(40, "Running gdal_polygonize", cancellationToken).ConfigureAwait(false);
 
             return await GdalToolExecution.RunAndPublishAsync(
-                eightConnected ? new ValidPolygonRunner(runner, context, opts.MaxArtifactBytes) : runner,
+                eightConnected ? new ValidPolygonRunner(runner, context,
+                    context is GdalStagedOutputContext ? opts.MaxStagedArtifactBytes : opts.MaxArtifactBytes) : runner,
                 context, opts, logger, job.OperationId,
                 "gdal_polygonize.py", args, workspace, outputPath,
                 GeoJsonContentType, "Polygonized vector",
@@ -180,7 +181,7 @@ internal sealed partial class GdalPolygonizeJobExecutor(
             }
             if (new FileInfo(raw).Length > maxBytes)
             {
-                return new GdalCommandResult { ExitCode = 1, StandardError = "Polygonized output exceeds MaxArtifactBytes." };
+                return new GdalCommandResult { ExitCode = 1, StandardError = "Polygonized output exceeds the configured output byte limit." };
             }
 
             var valid = Path.Join(workingDirectory, "valid.geojson");
