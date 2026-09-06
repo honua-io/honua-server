@@ -246,6 +246,24 @@ jobs:
           path: tests/TestResults/raster-execution-proof.trx
           if-no-files-found: warn
 
+      - name: Prove layer source projection and sink execution
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        timeout-minutes: 15
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release -maxcpucount:4 \
+            --filter 'Category=LayerExecutionProof' \
+            --logger 'trx;LogFileName=layer-execution-proof.trx' \
+            --results-directory tests/TestResults
+
+      - name: Upload layer execution proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: layer-execution-proof
+          path: tests/TestResults/layer-execution-proof.trx
+          if-no-files-found: warn
+
       - name: Await Testcontainers PostGIS pre-pull
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         env:
