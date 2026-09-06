@@ -195,7 +195,8 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         await context.ReportProgressAsync(80, "Encoding source artifact", cancellationToken).ConfigureAwait(false);
 
         var payload = FeatureCollectionArtifact.WriteFeatureCollection(features, _processId,
-            request.OutputSrid is { } outputSrid ? [("srid", outputSrid)] : null);
+            (_processId is "source.honua-layer" or "source.esri-featureserver")
+                && request.OutputSrid is { } outputSrid ? [("srid", outputSrid)] : null);
         if (payload.Length > maxBytes)
         {
             return JobExecutionResult.Failed(
