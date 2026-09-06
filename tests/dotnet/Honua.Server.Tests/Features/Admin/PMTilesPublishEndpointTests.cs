@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Tiles.PMTiles;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -117,6 +118,121 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
         var bytes = await rangeResponse.Content.ReadAsByteArrayAsync();
         bytes.Length.Should().Be(7);
         bytes[..7].Should().BeEquivalentTo("PMTiles"u8.ToArray(), "PMTiles archive header should appear at offset 0");
+    }
+
+    /// <summary>
+    /// Range coverage for an <em>interior</em> tile window, not the seven-byte magic prefix
+    /// (honua-server#4397).
+    /// </summary>
+    /// <remarks>
+    /// The existing 206 test requests bytes 0-6 and asserts they spell "PMTiles", which proves the
+    /// route honours <c>Range</c> but says nothing about whether a range landing on real tile data
+    /// returns the right bytes — the thing every PMTiles client actually does. This walks the
+    /// served archive's header and root directory to compute one tile's absolute byte window, then
+    /// asks for exactly that window over HTTP and compares the returned bytes with that tile's
+    /// bytes in the whole-archive download.
+    /// </remarks>
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
+    public async Task PMTilesProxy_InteriorTileRange_ReturnsExactlyThatTilesBytes()
+    {
+        var artifactId = await PublishArchiveAsync();
+
+        var whole = await _client.GetByteArrayAsync($"/api/v1/tiles/pmtiles/{artifactId}");
+        whole.Length.Should().BeGreaterThan(PMTilesHeader.HeaderSize);
+
+        var header = PMTilesHeader.ReadFrom(whole);
+        var rootRaw = whole.AsSpan(
+            checked((int)header.RootDirectoryOffset),
+            checked((int)header.RootDirectoryLength)).ToArray();
+        var entries = PMTilesDirectory.DeserializeEntries(
+            PMTilesDirectory.Decompress(rootRaw, header.InternalCompression));
+
+        var entry = entries.FirstOrDefault(candidate => candidate.RunLength > 0 && candidate.Length > 0);
+        entry.Length.Should().BeGreaterThan(0, "the published archive must contain at least one tile");
+
+        var start = checked((long)(header.TileDataOffset + entry.Offset));
+        var end = start + entry.Length - 1;
+        start.Should().BeGreaterThan(
+            PMTilesHeader.HeaderSize,
+            "the window under test must be interior tile data, not the header prefix");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/tiles/pmtiles/{artifactId}");
+        request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(start, end);
+
+        using var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+        var contentRange = response.Content.Headers.ContentRange;
+        contentRange.Should().NotBeNull();
+        contentRange!.Unit.Should().Be("bytes");
+        contentRange.From.Should().Be(start);
+        contentRange.To.Should().Be(end);
+        contentRange.Length.Should().Be(whole.Length,
+            "Content-Range must report the full archive length so a client can plan further reads");
+
+        var ranged = await response.Content.ReadAsByteArrayAsync();
+        var expected = whole.AsSpan(checked((int)start), checked((int)entry.Length)).ToArray();
+        ranged.Should().Equal(expected, "a ranged read must return exactly that tile's bytes");
+
+        // And the bytes really are a tile: the published archive stores MVT, so a tile that
+        // decompresses (when compressed) must be non-empty payload rather than padding.
+        var payload = header.TileCompression == PMTilesCompression.None
+            ? ranged
+            : PMTilesDirectory.Decompress(ranged, header.TileCompression);
+        payload.Should().NotBeEmpty();
+    }
+
+    /// <summary>
+    /// The archive the proxy serves must be the archive on disk, byte for byte — otherwise a
+    /// client that range-reads it computes offsets against something the server never sent
+    /// (honua-server#4397).
+    /// </summary>
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
+    public async Task PMTilesProxy_ServedArchive_IsReadableAsAWholePMTilesArchive()
+    {
+        var artifactId = await PublishArchiveAsync();
+
+        var whole = await _client.GetByteArrayAsync($"/api/v1/tiles/pmtiles/{artifactId}");
+
+        // Parse the served bytes the way an independent reader would: magic, then header, then
+        // the root directory, then a tile located by coordinate.
+        whole[..7].Should().Equal("PMTiles"u8.ToArray());
+
+        var header = PMTilesHeader.ReadFrom(whole);
+        header.TileType.Should().Be(PMTilesTileType.Mvt, "the published archive must declare MVT tiles");
+        header.AddressedTilesCount.Should().BeGreaterThan(0);
+        checked((int)(header.TileDataOffset + header.TileDataLength)).Should().BeLessThanOrEqualTo(
+            whole.Length, "the served archive must contain the whole tile-data section it declares");
+
+        var rootRaw = whole.AsSpan(
+            checked((int)header.RootDirectoryOffset),
+            checked((int)header.RootDirectoryLength)).ToArray();
+        var entries = PMTilesDirectory.DeserializeEntries(
+            PMTilesDirectory.Decompress(rootRaw, header.InternalCompression));
+        entries.Should().NotBeEmpty("the served archive must expose a readable root directory");
+
+        // Every directory entry must address bytes that are actually present in what was served.
+        foreach (var entry in entries.Where(candidate => candidate.RunLength > 0))
+        {
+            var end = header.TileDataOffset + entry.Offset + entry.Length;
+            end.Should().BeLessThanOrEqualTo((ulong)whole.Length,
+                "entry for tileId {0} addresses bytes past the end of the served archive", entry.TileId);
+        }
+    }
+
+    private async Task<string> PublishArchiveAsync()
+    {
+        var jobId = await StartPublishJobAsync();
+        var (status, finalJson) = await WaitForJobCompletionAsync(jobId);
+        status.Should().Be(OperationStatus.Completed, "publish job must complete to exercise the proxy");
+
+        var artifactId = GetPropertyCaseInsensitive(
+            GetPropertyCaseInsensitive(finalJson!.RootElement, "publishedArtifact"),
+            "artifactId").GetString()!;
+        finalJson.Dispose();
+        return artifactId;
     }
 
     [IntegrationTest]
