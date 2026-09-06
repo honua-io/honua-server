@@ -4,6 +4,8 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Xunit.Sdk;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Db.Postgres.Features.Geoprocessing;
@@ -64,7 +66,7 @@ public sealed class WfsExecutionProofTests
             {
                 type = "Feature", id = r.Id,
                 geometry = new { type = "Point", coordinates = new[] { r.X, r.Y, r.Z } },
-                properties = new { key = r.Id, name = r.Name, active = r.Active }
+                properties = new { key = r.Id, serial = 9007199254740993L + r.Id, name = r.Name, active = r.Active }
             });
             // Deliberately cap below requested count to catch premature termination.
             return Results.Json(new { type = "FeatureCollection", numberMatched = numberMatched ? (int?)filtered.Length : null, features });
@@ -77,7 +79,19 @@ public sealed class WfsExecutionProofTests
         using var output = await RemoteSourceProof.Execute(provider, "source.wfs",
             ("serviceUrl", "https://8.8.8.8/wfs"), ("typeName", "survey:points"),
             ("where", "active = true"), ("bbox", "0,0,10,10"), ("pageSize", "2"));
-        var features = output.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        AssertFeatures(output.RootElement);
+        var wrong = JsonNode.Parse(output.RootElement.GetRawText())!;
+        // A duplicate page is valid GeoJSON but violates completeness and uniqueness.
+        wrong["features"]![2] = wrong["features"]![1]!.DeepClone();
+        using var duplicatePage = JsonDocument.Parse(wrong.ToJsonString());
+        Action rejectDuplicate = () => AssertFeatures(duplicatePage.RootElement);
+        rejectDuplicate.Should().Throw<XunitException>();
+        starts.Should().Equal(numberMatched ? [0, 1, 2] : new[] { 0, 1, 2, 3 });
+    }
+
+    private static void AssertFeatures(JsonElement root)
+    {
+        var features = root.GetProperty("features").EnumerateArray().ToArray();
         features.Should().HaveCount(3);
         features.Select(f => f.GetProperty("properties").GetProperty("key").GetInt32()).Should().Equal(11, 12, 13);
         double[][] coordinates = [[1, 2, 3.25], [3, 4, -1.5], [5, 6, 9.75]];
@@ -89,8 +103,8 @@ public sealed class WfsExecutionProofTests
                 .Should().Equal(coordinates[i]);
             features[i].GetProperty("properties").GetProperty("name").GetString().Should().Be(names[i]);
             features[i].GetProperty("properties").GetProperty("active").GetBoolean().Should().BeTrue();
+            features[i].GetProperty("properties").GetProperty("serial").GetInt64().Should().Be(9007199254741004L + i);
         }
-        starts.Should().Equal(numberMatched ? [0, 1, 2] : new[] { 0, 1, 2, 3 });
     }
 
     // Remap only the HTTP transport to the real local fixture server. The production
