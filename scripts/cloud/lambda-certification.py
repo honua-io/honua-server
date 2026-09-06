@@ -44,6 +44,8 @@ def config(function, qualifier=None):
 
 
 def inputs():
+    require(os.environ["HONUA_LAMBDA_CERT_DENIED_KEY"] != os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"],
+            "Denied principal must differ from the administrator")
     function = os.environ["REALAWS_CERT_LAMBDA_FUNCTION"]
     alias = os.environ["REALAWS_CERT_LAMBDA_ALIAS"]
     require(re.fullmatch(r"honua-cert-cert-[A-Za-z0-9_-]+", function), "Standing function outside cert namespace")
@@ -82,10 +84,10 @@ def admin_key():
     return os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
 
 
-def invoke(function, path, *, method="GET", query=None, body=None, authenticated=True, expected_version=None):
+def invoke(function, path, *, method="GET", query=None, body=None, authenticated=True, api_key=None, expected_version=None):
     headers = {"accept": "application/json", "host": urlsplit(os.environ["HONUA_LAMBDA_WRITE_BASE_URL"]).netloc}
-    if authenticated:
-        headers["x-api-key"] = admin_key()
+    if api_key is not None or authenticated:
+        headers["x-api-key"] = api_key if api_key is not None else admin_key()
     if body is not None:
         headers["content-type"] = "application/x-www-form-urlencoded"
     event = {"version": "2.0", "routeKey": f"{method} {path}", "rawPath": path,
@@ -144,6 +146,11 @@ def smoke(function, expected_version=None):
             "Authorization denial leaked records")
     require(all(not isinstance(value, (dict, list)) for value in denial.values()),
             "Authorization denial contains structured records")
+    # This is authorization, not merely a missing-credential challenge: a valid
+    # pre-existing read:layers key must authenticate and receive the documented 403.
+    status, denial, _ = invoke(function, "/api/v1/admin/api-keys",
+                               api_key=os.environ["HONUA_LAMBDA_CERT_DENIED_KEY"], **common)
+    require(status == 403 and denial == "", "Scoped principal must receive an empty HTTP 403 (zero records)")
     write_path = "/rest/services/test_service/FeatureServer/10"
     marker = "honua-certrun-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"]
     # Resolve by our unique marker during finally too, including ambiguous create responses.
@@ -175,7 +182,7 @@ def smoke(function, expected_version=None):
     return {"result": "pass", "migrations": {"status": "succeeded", "pendingScripts": 0, "upgradeRequired": False},
             "fixture": {"name": "client-compat-v1", "sha256": fingerprint(FIXTURE.read_text()), "expectedRows": 10, "actualRows": 10, "namesVerified": True},
             "write": {"createdRows": 1, "readBackRows": 1, "deletedRows": 1, "remainingRows": 0, "distinctWriteUrl": True},
-            "authorization": {"principal": "anonymous", "operation": "GET /api/v1/admin/api-keys", "expectedStatus": 401, "actualStatus": 401, "records": 0},
+            "authorization": {"principal": "scoped-api-key", "operation": "GET /api/v1/admin/api-keys", "expectedStatus": 403, "actualStatus": 403, "records": 0, "anonymousStatus": 401},
             "executedVersion": expected_version or "$LATEST"}
 
 

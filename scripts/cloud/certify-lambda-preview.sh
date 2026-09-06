@@ -17,6 +17,7 @@ required=(
   HONUA_LAMBDA_WRITE_BASE_URL
   HONUA_DEMO_BASE_URL
   HONUA_LAMBDA_CERT_ADMIN_KEY
+  HONUA_LAMBDA_CERT_DENIED_KEY
   AWS_REGION
   HONUA_LAMBDA_SOURCE_DIGEST
   HONUA_LAMBDA_SERVER_REVISION
@@ -186,7 +187,10 @@ create_json="$(aws lambda create-function \
   --vpc-config "file://$scratch/vpc.json" \
   --memory-size 1024 \
   --timeout 60 \
-  --tags "honua-cert-run=${run_token}" "honua-purpose=lambda-preview-certification")"
+  --tags "honua-cert-run=${run_token}" "honua-purpose=lambda-preview-certification" 2>"$scratch/create-error.log")" || {
+  echo "Lambda create failed (configuration diagnostics suppressed)" >&2
+  exit 5
+}
 function_created=true
 function_arn="$(jq -er '.FunctionArn' <<<"$create_json")"
 aws lambda wait function-active-v2 --function-name "$function_name"

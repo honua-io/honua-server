@@ -23,6 +23,7 @@ Keep the existing image/revision/repository/execution-role inputs. Supply:
 | `REALAWS_CERT_LAMBDA_ALIAS` repo variable | Standing published, unweighted certification alias. |
 | `REALAWS_CERT_LAMBDA_WRITE_BASE_URL` repo variable | Function URL belonging to that exact alias; verified through AWS before any writes. |
 | `HONUA_DEMO_BASE_URL` repo variable | Demo read URL. Matching write/read hosts, including case, port and trailing-slash variants, are refused. |
+| `REALAWS_CERT_DENIED_KEY` cert secret | Valid, pre-existing scoped API key with only `read:layers`, as in `AdminApiKeyEndpointsTests.GenuinelyScopedApiKey_IsDeniedAdminEndpoint`. It must authenticate but lack admin rights. |
 | `REALAWS_CERT_ADMIN_KEY` cert secret | Admin key for the standing certification function and its cloned configuration. Never stored in evidence. |
 
 The ephemeral function inherits the standing function's PostGIS connection/secret
@@ -52,7 +53,8 @@ drifted fixture data fails the run.
 2. Require migration status `succeeded`, ready, no failure, available plan, no
    upgrade and zero pending scripts. Query exactly ten named fixture records.
 3. Require an anonymous principal's `GET /api/v1/admin/api-keys` to return the
-   documented admin Problem Details 401 with zero records. Create one uniquely
+   documented admin Problem Details 401 with zero records, and a valid scoped
+   principal to receive HTTP 403 with an empty body (zero records). Create one uniquely
    named feature, read its ID and value through the API, delete it, and verify
    absence. An ambiguous create response also triggers marker-scoped cleanup.
 4. Prove the baseline alias serves. Update only standing `$LATEST` code and publish
@@ -80,7 +82,7 @@ alias, so requests do not depend on public ingress or redirect behavior.
 - `serving.deployed`, `.baseline`, `.candidate`, `.rollback`: migration assertions;
   fixture name/hash, expected/actual row count and name verification; created,
   read-back, deleted and remaining row counts; distinct write target; denial
-  principal/operation/expected and actual status/zero records; executed version.
+  principal/operation/expected and actual status/zero records, anonymous 401; executed version.
 - `serving.alias.beforeVersion`, `.afterVersion`, `.rollbackVersion`.
 - `serving.teardown.candidateVersionDeleted`, `.standingLatestRestored`.
 

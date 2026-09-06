@@ -142,12 +142,15 @@ elif route.endswith("/migrations"):
     if fail == "migration-pending": body["pendingScripts"] = ["001"]
     if fail == "migration-plan": body["planAvailable"] = False
 elif route == "/api/v1/admin/api-keys":
-    assert "x-api-key" not in event["headers"]
     status = 200 if fail == "denial-status" else 401
     body = {"status":401, "type":"https://honua.io/problems/admin"}
     if fail == "denial-body": body["status"] = 403
     if fail == "denial-records": body["data"] = [{"key":"leaked"}]
     if fail == "denial-nested": body["unexpectedExtension"] = {"records":[{"key":"leaked"}]}
+    if "x-api-key" in event["headers"]:
+        assert event["headers"]["x-api-key"] == "offline-scoped-key"
+        status = 401 if fail == "scoped-unauthenticated" else 200 if fail == "scoped-allowed" else 403
+        body = {"records":[1]} if fail == "scoped-records" else ""
 elif route.endswith("/0/query"):
     if "returnCountOnly" in event["rawQueryString"]: body = {"count":9 if fail == "query" else 10}
     else: body = {"features":[{"attributes":{"name":n}} for n in ["alpha","beta","gamma","delta","epsilon","zeta","eta","theta","iota","lambda"]]}
@@ -190,13 +193,15 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
             env = {**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"], "STUB_STATE": str(state_path),
                    "STUB_FAIL": failure, "HONUA_LAMBDA_SOURCE_IMAGE": "ghcr.io/honua-io/honua-server:nightly-lambda-aot-test-amd64",
                    "HONUA_LAMBDA_SOURCE_DIGEST": "sha256:" + "a" * 64, "HONUA_LAMBDA_SERVER_REVISION": "a" * 40,
-                   "HONUA_LAMBDA_ARCHITECTURE": "x86_64", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
+                   "HONUA_LAMBDA_CERT_DENIED_KEY": "offline-scoped-key", "HONUA_LAMBDA_ARCHITECTURE": "x86_64", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
                    "AWS_REGION": "us-east-1", "REALAWS_CERT_LAMBDA_FUNCTION": "honua-cert-cert-server",
                    "REALAWS_CERT_LAMBDA_ALIAS": "live", "HONUA_LAMBDA_CERT_ADMIN_KEY": "offline-sensitive-canary",
                    "HONUA_LAMBDA_WRITE_BASE_URL": "https://cert.lambda-url.us-east-1.on.aws",
                    "HONUA_DEMO_BASE_URL": "https://demo.invalid", "HONUA_LAMBDA_PREVIEW_RECEIPT": str(directory / "receipt.json"),
                    "HONUA_LAMBDA_PREVIEW_REPOSITORY": "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-lambda-preview",
                    "HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN": "arn:aws:iam::123456789012:role/cert", **overrides}
+            # A stale success must be invalidated even when required inputs are absent.
+            (directory / "receipt.json").write_text('{"result":"pass"}')
             result = subprocess.run(["bash", str(SCRIPT_PATH)], env=env, capture_output=True, text=True, timeout=45)
             receipt_path = directory / "receipt.json"
             receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
@@ -217,7 +222,8 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 for phase in ("deployed", "baseline", "candidate", "rollback"):
                     self.assertEqual(10, serving[phase]["fixture"]["actualRows"])
                     self.assertEqual(0, serving[phase]["write"]["remainingRows"])
-                    self.assertEqual(401, serving[phase]["authorization"]["actualStatus"])
+                    self.assertEqual(403, serving[phase]["authorization"]["actualStatus"])
+                    self.assertEqual(401, serving[phase]["authorization"]["anonymousStatus"])
                 self.assertEqual(["shift", "rollback"], state["backend"])
                 self.assertEqual(["8"], state["deleted_versions"])
                 self.assertEqual(original, state["image"])
@@ -228,7 +234,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                         "skip-config", "missing-db", "resolved-image", "health-status", "health-body", "invoke",
                         "report", "cold-start", "cold-zero", "cloudwatch", "migrations", "migration-pending", "migration-plan",
                         "query", "fixture-names", "create", "readback", "delete", "delete-remains",
-                        "denial-status", "denial-body", "denial-records", "denial-nested", "executed-version", "weighted",
+                        "denial-status", "denial-body", "denial-records", "denial-nested", "scoped-unauthenticated", "scoped-allowed", "scoped-records", "executed-version", "weighted",
                         "function-delete", "log-delete", "version-delete", "ownership"):
             with self.subTest(failure=failure):
                 result, receipt, state, _ = self.run_lane(failure)
@@ -273,7 +279,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
 
     def test_missing_required_inputs_fail(self):
         for name in ("HONUA_LAMBDA_ARCHITECTURE", "REALAWS_CERT_LAMBDA_FUNCTION", "REALAWS_CERT_LAMBDA_ALIAS",
-                     "HONUA_DEMO_BASE_URL", "HONUA_LAMBDA_CERT_ADMIN_KEY"):
+                     "HONUA_DEMO_BASE_URL", "HONUA_LAMBDA_CERT_ADMIN_KEY", "HONUA_LAMBDA_CERT_DENIED_KEY"):
             with self.subTest(name=name):
                 result, receipt, state, _ = self.run_lane(**{name: ""})
                 self.assertNotEqual(0, result.returncode)
