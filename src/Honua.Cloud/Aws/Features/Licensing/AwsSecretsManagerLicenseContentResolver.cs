@@ -79,7 +79,7 @@ internal sealed class AwsSecretsManagerLicenseContentResolver : ILicenseContentS
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Fail safe: the license pipeline degrades to Community when the secret
+            // Fail safe: the license pipeline rejects paid-tier startup when the secret
             // cannot be fetched (missing IAM grant, wrong region, deleted secret, etc.).
             AwsLicenseLog.SecretFetchFailed(_logger, ex.GetType().Name);
             return null;

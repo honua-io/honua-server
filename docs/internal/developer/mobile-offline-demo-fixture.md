@@ -93,3 +93,18 @@ There is not yet a server-native portable offline package manifest endpoint dist
 
 - a stable manifest route and response shape for `packageId`, source layer IDs, bbox, field schema, page size, cache policy, and conflict token fields;
 - whether optimistic conflict rejection is enforced server-side on `sync_version`/generation mismatch or detected by the SDK sync engine after pulling server state.
+
+### Replica upload envelopes and download acknowledgements
+
+`synchronizeReplica` accepts Esri per-layer `features: {adds, updates, deleteIds}` envelopes,
+as well as the existing flat operation arrays and the flat `deleteIds` alias. Empty attachment
+collections are accepted; nonempty attachment operations return an explicit unsupported error.
+Ambiguous mixtures of nested and flat feature operations are rejected before applying edits.
+
+Upload-only synchronization retains the last acknowledged download generation, including the
+response `serverGen`. A later `extractChanges` or download synchronization therefore receives
+other clients' pending edits even after repeated uploads. Migration 112 records upload provenance
+in the change log within each feature transaction. The download feed excludes that replica's own upload rows before collapsing foreign
+operations; other replicas still receive those uploads, and a later partial upload cannot hide an
+earlier foreign edit to the same object. Existing history is retained with an unknown (null) origin. This correctness fix does
+not change offline sync's PREVIEW release status.

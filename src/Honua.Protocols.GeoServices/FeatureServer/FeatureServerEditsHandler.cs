@@ -174,7 +174,7 @@ internal sealed class FeatureServerEditsHandler(
 
             // Resolve the target branch version (#1272, ADR-0051). Absent / SDE.DEFAULT resolves to
             // VersionContext.Default — the byte-identical non-versioned write path. A named version
-            // is Enterprise-gated and Postgres-only.
+            // is Pro-gated and Postgres-only.
             var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
                 httpContext, request.GdbVersion, cancellationToken).ConfigureAwait(false);
             if (versionError != null)
@@ -304,24 +304,37 @@ internal sealed class FeatureServerEditsHandler(
                 heldReservationToken = reservationToken;
             }
 
-            // Process edit operations
-            var editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, editPrincipal, cancellationToken);
-
-            // Run Enterprise plugin validators + before-edit hooks over the resolved features (#347).
-            // Rejected features are removed from the write set and marked failed in their response
-            // slots; with rollbackOnFailure this fails the whole request below. No-op (and skipped
-            // entirely) when no plugins are licensed/registered.
-            await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
-                .ConfigureAwait(false);
-
-            // Handle validation errors with rollback if needed
-            if (editContext.HasValidationErrors && request.RollbackOnFailure)
+            // Partial updates are assembled from a read snapshot. Guard ordinary single-row
+            // updates with that snapshot's token, then re-read, merge and validate again only
+            // after a confirmed precondition failure. Never retry an ambiguous commit or a
+            // caller-supplied precondition, and never replay a multi-operation request.
+            var retryStaleUpdate = request.Updates is { Length: 1 } &&
+                request.Adds is not { Length: > 0 } && request.Deletes is not { Length: > 0 } &&
+                request.Preconditions.IsDefaultOrEmpty && versionContext is not { IsDefault: false };
+            EditOperationContext editContext;
+            FeatureEditResult editResult;
+            for (var attempt = 0; ; attempt++)
             {
-                return CreateRollbackResponse(editContext, serviceId, layerId);
-            }
+                editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, editPrincipal, cancellationToken);
+                editContext.GuardUpdateSnapshot = retryStaleUpdate;
+                await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
+                    .ConfigureAwait(false);
+                if (editContext.HasValidationErrors && request.RollbackOnFailure)
+                {
+                    return CreateRollbackResponse(editContext, serviceId, layerId);
+                }
 
-            // Execute edits in the database
-            var editResult = await ExecuteEdits(storageLayerId.Value, resource, editContext, request, serviceId, versionContext, writeOutcome, cancellationToken);
+                editResult = await ExecuteEdits(storageLayerId.Value, resource, editContext, request, serviceId, versionContext, writeOutcome, cancellationToken);
+                writeOutcome.MayHaveCommitted = editResult.MayHaveCommitted;
+                if (!retryStaleUpdate || attempt >= 15 || editResult.MayHaveCommitted ||
+                    editResult.UpdateResults is not { Length: 1 } ||
+                    editResult.UpdateResults[0].ErrorCode != EditOperationResult.PreconditionFailedErrorCode)
+                {
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(5 * (attempt + 1)), cancellationToken).ConfigureAwait(false);
+            }
             var editCommittedRows = !editResult.WasRolledBack &&
                 (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0;
 
@@ -648,6 +661,11 @@ internal sealed class FeatureServerEditsHandler(
                 // that could never execute; access .Value.Id directly instead.
                 var internalObjectId = existingFeature.Value.Id;
                 context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
+                context.UpdateSnapshotPreconditions[internalObjectId] = new FeatureEditPrecondition
+                {
+                    ObjectId = internalObjectId,
+                    ExpectedStateToken = FeatureStateToken.Compute(existingFeature.Value)
+                };
                 // Capture request intent BEFORE BuildFeatureFromGeoServicesAsync runs;
                 // that helper preserves existingFeature.Geometry when update.Geometry is
                 // null, so the post-merge feature's WKB cannot distinguish an attribute-
@@ -881,6 +899,14 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
+
+        if (context.GuardUpdateSnapshot)
+        {
+            editBatch = editBatch with
+            {
+                Preconditions = editBatch.Updates.Select(feature => context.UpdateSnapshotPreconditions[feature.Id]).ToImmutableArray()
+            };
+        }
 
         // Server-side optimistic-concurrency preconditions, when the caller supplied them. The writer
         // re-checks each token against the locked row inside the write transaction, so a concurrent
@@ -1398,6 +1424,8 @@ internal sealed class FeatureServerEditsHandler(
         /// </summary>
         public List<bool> CreateGeometryChanged { get; } = new();
         public List<Feature> UpdateFeatures { get; } = new();
+        public bool GuardUpdateSnapshot { get; set; }
+        public Dictionary<long, FeatureEditPrecondition> UpdateSnapshotPreconditions { get; } = new();
         public List<int> UpdateIndexes { get; } = new();
         public List<long> UpdateObjectIds { get; } = new();
         /// <summary>

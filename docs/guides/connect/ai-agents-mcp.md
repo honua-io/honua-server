@@ -179,6 +179,25 @@ it never widens call-time authorization.
 
 Membership is derived from the live catalog, so an eligible server operation that appears (or disappears) at runtime joins or leaves the view with no client or SDK source-list edit. Runtime-published members are appended after the static ones so a mid-conversation `notifications/tools/list_changed` refresh does not re-sort the `tools` array and invalidate a host's prompt cache.
 
+### Release qualification
+
+The descriptor budget and discovery tests establish the server contract. A
+release-certifying terminal-model run must additionally consume the entire
+`setup` view without forcing a specific tool choice, execute real calls in an
+isolated namespace, and verify saved and reopened map/dashboard state. Record
+the view revision, membership and descriptor digests, measured UTF-8 descriptor
+bytes, estimated tokens, candidate image digest, and installed client versions.
+These measurements describe the complete descriptor array, including its JSON
+brackets and separators; the token estimate is the byte count divided by four.
+
+Run the [terminal-model canary](https://github.com/honua-io/honua-release/blob/trunk/.github/workflows/terminal-model-canary.yml)
+with a green deterministic journey receipt for the same candidate and the
+configured candidate proxy, model, and trusted public signing manifest. Missing
+configuration, skipped calls, a direct provider call, or a receipt for another
+candidate cannot qualify this workflow. The exact-candidate canary remains
+outstanding until that immutable candidate exists and this run passes; local
+discovery tests do not establish model selection or saved-state execution.
+
 ## Pagination
 
 The list methods (`tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`) are paginated per MCP 2025-03-26: when more entries remain the result carries an opaque `nextCursor`; pass it back as `params.cursor` to fetch the next page. A single-page result omits `nextCursor`. Treat cursors as opaque and echo them verbatim; an invalid or expired cursor returns JSON-RPC `-32602` invalid-params. Large `resources/read` documents (job results, catalogs) are chunked the same way — each page's `text` concatenates per `uri` to rebuild the full document, with `nextCursor` pointing at the next chunk.

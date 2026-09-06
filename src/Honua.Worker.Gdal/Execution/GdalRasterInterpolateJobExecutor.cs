@@ -246,7 +246,10 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
             return false;
         }
 
-        var spec = $"invdist:power={FormatDouble(power)}:smoothing={FormatDouble(smoothing)}";
+        // Explicit NaN both marks empty searches and preserves legitimate zero
+        // source/interpolated values. An omitted nodata option fills holes with
+        // zero without declaring band nodata metadata.
+        var spec = $"invdist:power={FormatDouble(power)}:smoothing={FormatDouble(smoothing)}:nodata=nan";
 
         if (GdalJobInputReader.TryGetInput(parameters, "radius", out var radiusRaw)
             && !string.IsNullOrWhiteSpace(radiusRaw))

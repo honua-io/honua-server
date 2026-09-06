@@ -328,7 +328,7 @@ internal static class StartupConfigurationHelpers
     /// (honua-server#1755) — and honors the dev-only <c>Licensing:DevGrantEdition</c> override
     /// outside Production (honua-server#1787).
     /// </summary>
-    private static async Task<LicenseSnapshot> LoadBootstrapLicenseSnapshotAsync(
+    internal static async Task<LicenseSnapshot> LoadBootstrapLicenseSnapshotAsync(
         IConfiguration configuration,
         IHostEnvironment environment)
     {

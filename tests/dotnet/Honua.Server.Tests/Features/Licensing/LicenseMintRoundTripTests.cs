@@ -48,10 +48,12 @@ public sealed class LicenseMintRoundTripTests
         snapshot.Edition.Should().Be(HonuaEdition.Pro);
         snapshot.LicenseId.Should().Be("lic-mint-pro");
         snapshot.LicensedTo.Should().Be("Mint RoundTrip Operator");
-        // Pro defaults grant every catalog feature at or below Pro and gate Enterprise features.
+        // Pro defaults grant core branch versioning and every other catalog feature at or below Pro,
+        // while Enterprise-only features such as the plugin SDK remain gated.
         snapshot.HasEntitlement(FeatureCatalog.FeatureServerEditsKey).Should().BeTrue();
         snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
-        snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeFalse();
+        snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeTrue();
+        snapshot.HasEntitlement(FeatureCatalog.AiApprovalWorkflowsKey).Should().BeFalse();
         snapshot.HasEntitlement(FeatureCatalog.PluginSdkKey).Should().BeFalse();
     }
 
@@ -74,6 +76,7 @@ public sealed class LicenseMintRoundTripTests
         snapshot.ValidationState.Should().Be(LicenseValidationState.Valid);
         snapshot.Edition.Should().Be(HonuaEdition.Enterprise);
         snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeTrue();
+        snapshot.HasEntitlement(FeatureCatalog.AiApprovalWorkflowsKey).Should().BeTrue();
         snapshot.HasEntitlement(FeatureCatalog.PluginSdkKey).Should().BeTrue();
         snapshot.ExpiresAt.Should().BeNull("a perpetual license omits expiresAt");
     }
@@ -99,6 +102,8 @@ public sealed class LicenseMintRoundTripTests
         snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
         snapshot.HasEntitlement("staticmap.high-dpi").Should().BeTrue();
         snapshot.HasEntitlement("analytics.spatial-join").Should().BeFalse();
+        snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeFalse();
+        snapshot.HasEntitlement(FeatureCatalog.AiApprovalWorkflowsKey).Should().BeFalse();
     }
 
     [UnitTest]
@@ -225,7 +230,7 @@ public sealed class LicenseMintRoundTripTests
         // Flip one byte of the envelope's base64url payload to simulate tampering.
         var tampered = TamperPayloadByte(result.EnvelopeJson);
 
-        var snapshot = await ValidateAsync(tampered, keyPair.PublicKeyTrustedKeySetting());
+        var snapshot = await ValidateAsync(tampered, keyPair.PublicKeyTrustedKeySetting(), rejected: true);
 
         snapshot.IsValid.Should().BeFalse();
         snapshot.ValidationState.Should().Be(LicenseValidationState.InvalidSignature);
@@ -248,7 +253,7 @@ public sealed class LicenseMintRoundTripTests
             signingKeyPair);
 
         // Trust a different public key under the same keyId — signature must fail.
-        var snapshot = await ValidateAsync(result.EnvelopeJson, otherKeyPair.PublicKeyTrustedKeySetting());
+        var snapshot = await ValidateAsync(result.EnvelopeJson, otherKeyPair.PublicKeyTrustedKeySetting(), rejected: true);
 
         snapshot.IsValid.Should().BeFalse();
         snapshot.ValidationState.Should().Be(LicenseValidationState.InvalidSignature);
@@ -294,7 +299,7 @@ public sealed class LicenseMintRoundTripTests
         // Wait past expiry so the runtime sees a valid signature but a past expiresAt.
         await Task.Delay(TimeSpan.FromMilliseconds(1500));
 
-        var snapshot = await ValidateAsync(result.EnvelopeJson, keyPair.PublicKeyTrustedKeySetting());
+        var snapshot = await ValidateAsync(result.EnvelopeJson, keyPair.PublicKeyTrustedKeySetting(), rejected: true);
 
         snapshot.IsValid.Should().BeFalse();
         snapshot.ValidationState.Should().Be(LicenseValidationState.Expired);
@@ -311,7 +316,7 @@ public sealed class LicenseMintRoundTripTests
         reconstructed.PublicKeyTrustedKeySetting().Should().Be(keyPair.PublicKeyTrustedKeySetting());
     }
 
-    private static async Task<LicenseSnapshot> ValidateAsync(byte[] envelopeJson, string trustedKeySetting)
+    private static async Task<LicenseSnapshot> ValidateAsync(byte[] envelopeJson, string trustedKeySetting, bool rejected = false)
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
@@ -331,8 +336,18 @@ public sealed class LicenseMintRoundTripTests
             Options.Create(options),
             new BouncyCastleEd25519Verifier(),
             NullLogger<FileBackedLicenseService>.Instance);
-        await service.StartAsync(CancellationToken.None);
-        return service.GetSnapshot();
+        if (rejected)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
+        }
+        else
+        {
+            await service.StartAsync(CancellationToken.None);
+        }
+        var snapshot = service.GetSnapshot();
+        await service.StopAsync(CancellationToken.None);
+        service.Dispose();
+        return snapshot;
     }
 
     private static byte[] TamperPayloadByte(byte[] envelopeJson)

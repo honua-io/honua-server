@@ -1,6 +1,6 @@
 # Studio MCP tools
 
-The pinned server candidate publishes 17 typed Studio tools through `/mcp`.
+The server publishes 17 typed Studio tools through `/mcp`.
 This tool plane is executable independently of the browser Studio preview.
 
 | Tool | Semantics |
@@ -24,7 +24,11 @@ This tool plane is executable independently of the browser Studio preview.
 | `honua_studio_propose_publication` | Record publication intent for governance. |
 
 Every mutation that accepts `generation` uses optimistic concurrency. A stale
-generation returns `failed_precondition`; fetch the draft, reconcile against
-its new generation, and retry once. Do not loop blindly. Publication is not a
+generation returns `failed_precondition` with the owner-authorized snapshot's
+`currentGeneration`. Fetch the draft again and reconcile the intended mutation:
+retry only when it remains valid and non-conflicting. A conflict requires explicit
+resolution; the server never blindly replays a mutation. Dashboard drafts use
+the same composition editor, whole-document validation, and durable lifecycle
+as map/app drafts. Publication is not a
 canvas mutation, and the end-to-end approval/public URL journey remains
 blocked by [#3304](https://github.com/honua-io/honua-server/issues/3304).

@@ -513,12 +513,25 @@ def test_policy_generation_ignores_routing_irrelevant_workflow_edits() -> None:
 
         observer = root / MODULE.NATIVE_WORKFLOW
         observer.write_text(
-            observer.read_text(encoding="utf-8") + "\n# collection semantics revision\n",
+            observer.read_text(encoding="utf-8").replace(
+                "name: Native Image Impact Observation",
+                "name: Native Image Impact Observation (label revision)",
+                1,
+            ),
             encoding="utf-8",
         )
         changed_observer = MODULE.current_blobs(root)
+        assert changed_observer["native_observer"] != original["native_observer"]
         assert changed_observer["policy_generation_sha256"] != original["policy_generation_sha256"]
         observer.write_bytes((REPOSITORY_ROOT / MODULE.NATIVE_WORKFLOW).read_bytes())
+        resolver = root / "scripts/ci/trusted-pr-workflow-run.js"
+        resolver.write_text(
+            resolver.read_text(encoding="utf-8") + "\n// eligibility semantics revision\n",
+            encoding="utf-8",
+        )
+        changed_resolver = MODULE.current_blobs(root)
+        assert changed_resolver["policy_generation_sha256"] != original["policy_generation_sha256"]
+        resolver.write_bytes((REPOSITORY_ROOT / "scripts/ci/trusted-pr-workflow-run.js").read_bytes())
         classifier = root / "scripts/ci/native-image-impact.py"
         classifier.write_text(
             classifier.read_text(encoding="utf-8") + "\n# routing policy revision\n",

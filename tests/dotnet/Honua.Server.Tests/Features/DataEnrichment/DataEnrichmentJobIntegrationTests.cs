@@ -669,16 +669,12 @@ public sealed class DataEnrichmentJobIntegrationTests(RedisFixture redis)
     private static JsonElement DecodeOutputFeatureCollection(JsonDocument resultsDoc)
     {
         var output = resultsDoc.RootElement.GetProperty("outputFeatureLayer");
-        output.GetProperty("kind").GetString().Should().Be("FeatureLayer");
-        output.GetProperty("type").GetString().Should().Be("application/geo+json");
+        output.GetProperty("mediaType").GetString().Should().Be("application/geo+json");
+        output.TryGetProperty("href", out _).Should().BeFalse();
 
-        var href = output.GetProperty("href").GetString();
-        href.Should().NotBeNull();
-        href!.Should().StartWith(DataUriPrefix);
-
-        var bytes = Convert.FromBase64String(href[DataUriPrefix.Length..]);
-        using var doc = JsonDocument.Parse(bytes);
-        var collection = doc.RootElement.Clone();
+        // Catalog document results carry the advertised OGC qualified value.
+        var collection = output.GetProperty("value").Clone();
+        collection.ValueKind.Should().Be(JsonValueKind.Object);
         collection.GetProperty("type").GetString().Should().Be("FeatureCollection");
         collection.GetProperty("processId").GetString().Should().Be(ProcessId);
         return collection;

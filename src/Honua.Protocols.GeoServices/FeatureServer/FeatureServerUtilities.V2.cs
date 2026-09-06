@@ -45,7 +45,7 @@ internal static partial class FeatureServerEndpoints
     /// <param name="queryLimits">Query limits for the service.</param>
     /// <param name="supportsGeobufOutput">Whether the runtime supports geobuf output.</param>
     /// <param name="supportsAttachmentUploads">Whether attachment uploads are wired up.</param>
-    /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Enterprise entitlement).</param>
+    /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Pro entitlement).</param>
     /// <param name="offlineSyncEnabled">Whether disconnected-sync routes are enabled by lifecycle configuration.</param>
     private static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,

@@ -24,7 +24,7 @@ public static class StudioCompositionBodyEditor
 {
     /// <summary>Package families whose composition body the editor understands.</summary>
     public static readonly IReadOnlyCollection<StudioPackageFamily> CompositionEligibleFamilies =
-        new[] { StudioPackageFamily.Map, StudioPackageFamily.App };
+        new[] { StudioPackageFamily.Map, StudioPackageFamily.App, StudioPackageFamily.Dashboard };
 
     /// <summary>
     /// Throws <see cref="StudioCompositionFamilyException"/> when <paramref name="family"/>

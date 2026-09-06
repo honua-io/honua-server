@@ -484,7 +484,7 @@ internal static partial class FeatureServerEndpoints
 
         // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
         // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path; a named version is
-        // Enterprise-gated and Postgres-only.
+        // Pro-gated and Postgres-only.
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         return await editsHandler.HandleApplyEditsAsync(

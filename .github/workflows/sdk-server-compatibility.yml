@@ -6,12 +6,12 @@ name: SDK Server Compatibility
   workflow_dispatch:
     inputs:
       server_current_ref:
-        description: 'Optional override for the current server matrix ref. Use a commit SHA for release-candidate evidence.'
+        description: 'Optional override for the current server matrix ref. Use a commit SHA for preview-tier evidence.'
         required: false
         default: HEAD
         type: string
       server_current_image:
-        description: 'Optional exact server image. Release certification requires image@sha256 and records it in evidence.'
+        description: 'Optional exact server image. Preview certification requires image@sha256 and records it in evidence.'
         required: false
         default: ''
         type: string
@@ -21,7 +21,7 @@ name: SDK Server Compatibility
         default: false
         type: boolean
       release_certification:
-        description: 'Require exact current-only source SHA plus immutable candidate image and retain release evidence.'
+        description: 'Require exact current-only source SHA plus immutable candidate image and retain preview evidence.'
         required: false
         default: false
         type: boolean
@@ -33,8 +33,8 @@ permissions:
   packages: read
 
 concurrency:
-  group: sdk-server-compatibility-${{ github.ref }}
-  cancel-in-progress: true
+  group: sdk-server-compatibility-${{ github.ref }}-${{ inputs.release_certification && github.run_id || 'compatibility' }}
+  cancel-in-progress: ${{ inputs.release_certification != true }}
 
 env:
   DOTNET_VERSION: '10.0.x'
@@ -109,6 +109,7 @@ jobs:
   sdk-compat-matrix:
     name: ${{ matrix.server_label }} x ${{ matrix.sdk_label }} (${{ matrix.cell_status }})
     needs: load-matrix
+    if: inputs.release_certification != true
     runs-on: ubuntu-latest
     timeout-minutes: 75
     continue-on-error: ${{ matrix.expected_supported == false }}
@@ -650,12 +651,133 @@ jobs:
           echo "::error::Supported SDK/server compatibility cell failed: ${{ matrix.server_label }} x ${{ matrix.sdk_label }}"
           exit 1
 
+  sdk-release-certification:
+    name: Published SDKs x preview HTTP base-seed
+    needs: load-matrix
+    if: inputs.release_certification == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout certification producer
+        uses: actions/checkout@v7.0.1
+
+      - name: Reject coordinate drift
+        shell: bash
+        env:
+          SERVER_IMAGE: ${{ inputs.server_current_image }}
+          SERVER_SOURCE_SHA: ${{ inputs.server_current_ref }}
+        run: |
+          set -euo pipefail
+          manifest=docs/developer/sdk-release-certification.json
+          [ "$SERVER_IMAGE" = "$(jq -r '.candidate.image' "$manifest")" ] || {
+            echo '::error::preview image differs from the reviewed candidate coordinate'
+            exit 1
+          }
+          [ "${SERVER_SOURCE_SHA,,}" = "$(jq -r '.candidate.sourceSha' "$manifest")" ] || {
+            echo '::error::preview source SHA differs from the reviewed image source pin'
+            exit 1
+          }
+          docker pull "$SERVER_IMAGE"
+          image_revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$SERVER_IMAGE")"
+          [ "${image_revision,,}" = "${SERVER_SOURCE_SHA,,}" ] || {
+            echo "::error::candidate image revision ${image_revision:-<missing>} differs from source SHA $SERVER_SOURCE_SHA"
+            exit 1
+          }
+
+      - name: Materialize candidate seed
+        shell: bash
+        env:
+          SERVER_SOURCE_SHA: ${{ inputs.server_current_ref }}
+        run: |
+          set -euo pipefail
+          git show "$SERVER_SOURCE_SHA:tests/seed/base-schema.sql" > "$RUNNER_TEMP/sdk-release-base-schema.sql"
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Start preview HTTP base-seed server
+        uses: ./.github/actions/setup-honua-server
+        with:
+          server-image: ${{ inputs.server_current_image }}
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          base-seed-path: ${{ runner.temp }}/sdk-release-base-schema.sql
+          log-path: logs/honua-server-sdk-release.log
+        env:
+          NuGetAudit: false
+          WarningsNotAsErrors: NU1901;NU1902;NU1903;NU1904
+
+      # Runs BEFORE the certification so a producer that has stopped enforcing
+      # the governed facet set fails here, with a named assertion, instead of
+      # emitting a fragment nobody can trust.
+      - name: Verify certification fragment builder
+        shell: bash
+        run: python3 scripts/ci/build-sdk-release-certification.test.py
+
+      - name: Run clean public-registry SDK certification
+        id: release-certification
+        continue-on-error: true
+        shell: bash
+        run: bash scripts/ci/run-sdk-release-certification.sh
+
+      - name: Upload normalized fragment, report, and traces
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sdk-release-certification-${{ github.run_id }}
+          path: |
+            results/sdk-release-certification/
+            logs/honua-server-sdk-release.log
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Enforce preview result after retaining findings
+        if: always()
+        shell: bash
+        run: |
+          test -f results/sdk-release-certification/fragment.json
+          jq -e '.tier == "preview" and .profile == "preview-http-baseseed"' results/sdk-release-certification/fragment.json >/dev/null
+          jq -e '.operation_scope == {complete:true,expected:99,observed:99}' results/sdk-release-certification/fragment.json >/dev/null
+          # Cell completeness is not facet completeness. The governed honua-sdks
+          # roster row requires seven scenario facets; a fragment whose probes
+          # only covered the positive path must stay red no matter how many of
+          # the 99 cells report pass.
+          jq -e '.facet_scope.complete == true' results/sdk-release-certification/fragment.json >/dev/null
+          jq -e '.passed == true' results/sdk-release-certification/report.json >/dev/null
+
   compatibility-report:
     name: Publish SDK Compatibility Table
     needs:
       - load-matrix
       - sdk-compat-matrix
-    if: always()
+    if: always() && inputs.release_certification != true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

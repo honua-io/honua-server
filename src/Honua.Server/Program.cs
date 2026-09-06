@@ -118,6 +118,11 @@ StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, buil
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
+// Validate the declared paid deployment before registering or starting any data workers,
+// including deployments without Redis (whose cache probe otherwise skips license bootstrap).
+await StartupConfigurationHelpers.LoadBootstrapLicenseSnapshotAsync(builder.Configuration, builder.Environment);
+// Start the license hosted service before any workload execution or reconciliation service.
+builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
 // Resolve aws:secretsmanager: Redis connection-string references before anything below reads
 // ConnectionStrings:redis — the multiplexer wiring a few lines down runs ahead of
 // WebApplicationBuilder.Build(), so it cannot use the DI-registered IConnectionSecretResolver
@@ -660,10 +665,6 @@ builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
-// ---- Extracted: licensing + identity-provider HTTP clients (Startup/LicensingRegistration.cs)
-builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
-// ---- End extracted block
-
 // Edition guardrail ladder (#1691): resolves DirectExecute/RequiresApproval/Blocked
 // per (operation class x edition). Fails closed for unknown classes outside dev.
 builder.Services.Configure<Honua.Core.Features.Guardrails.GuardrailLadderOptions>(
@@ -678,6 +679,10 @@ builder.Services.AddSingleton<Honua.Core.Features.Guardrails.Abstractions.IGuard
     Honua.Core.Features.Guardrails.DefaultGuardrailLadder>();
 
 // Register configuration documentation service for self-documenting admin endpoint
+// Admin startup connectivity diagnostics require the shared secret provider even when
+// offline sync and other experimental surfaces are disabled (#4008).
+Honua.Infrastructure.Configuration.ConfigurationServiceExtensions.AddSecretManagement(
+    builder.Services, builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.TryAddScoped<IConsoleJobService, ConsoleJobService>();
@@ -1339,6 +1344,9 @@ app.UseGlobalExceptionHandling();
 // untouched. Runs after global exception handling so thrown exceptions keep their
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
+
+// Paid deployments stop every data surface at expiry, including cached reads and exports.
+app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();
 
 // A configured deployment profile is a fail-closed HTTP surface allowlist backed by the
 // drift-gated feature catalog. With no profile configured this middleware is inert.

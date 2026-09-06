@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
@@ -111,7 +112,8 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<System.Threading.Channels.Channel<string>>(),
                 sp.GetRequiredService<IServiceScopeFactory>(),
                 sp.GetRequiredService<ILogger<ExportJobService>>(),
-                sp.GetService<IConnectionMultiplexer>()));
+                sp.GetService<IConnectionMultiplexer>(),
+                licensePolicy: sp.GetRequiredService<ILicenseOperationPolicy>()));
         services.AddHostedService<ExportBackgroundService>();
 
         // Resumable generated tile-cache seed/warm generation checkpoint store (#2661). Durable
@@ -143,7 +145,8 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<IOptions<LimitsOptions>>(),
                 sp.GetRequiredService<ILogger<TileOperationJobService>>(),
                 sp.GetService<IConnectionMultiplexer>(),
-                sp.GetService<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>()));
+                sp.GetService<Honua.Core.Features.Tiles.ITileCacheGenerationCheckpointStore>(),
+                sp.GetRequiredService<ILicenseOperationPolicy>()));
         services.Configure<TileCacheWarmingOptions>(
             configuration.GetSection(TileCacheWarmingOptions.SectionName));
         services.AddHostedService<TileCacheWarmingHostedService>();
