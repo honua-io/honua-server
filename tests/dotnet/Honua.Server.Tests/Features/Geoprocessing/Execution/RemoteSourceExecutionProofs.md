@@ -6,7 +6,8 @@ the validated public numeric URL to the local server; the production SSRF guard
 is retained. The fixture contains selected rows plus wrong-type, inactive and
 out-of-bounds rows. It applies type, CQL filter and bbox, caps each page below the
 requested count, and independently expects keys 11, 12, 13 with exact XYZ and
-Unicode/null/boolean attributes. Cases with and without `numberMatched` prove
+Unicode/null/boolean attributes and an Int64 identifier above 2^53. A valid
+GeoJSON with a duplicated page must fail the same content oracle. Cases with and without `numberMatched` prove
 termination without short-page truncation or duplication. `where` is the optional
 [CQL_FILTER WFS extension](https://docs.geoserver.org/main/en/user/services/wfs/vendor/),
 so the upstream WFS must support that extension when a predicate is requested.

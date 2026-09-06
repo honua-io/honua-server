@@ -15,6 +15,7 @@ using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
+/// <summary>Real registered external PostGIS execution with predicate, watermark, and spatial oracles.</summary>
 [Collection("Database")]
 [Trait("Category", "RemoteSourceExecutionProof")]
 public sealed class PostgisSourceExecutionProofTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>

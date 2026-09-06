@@ -18,6 +18,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
+/// <summary>Real paged WFS execution with independent feature and ordinate assertions.</summary>
 [Trait("Category", "RemoteSourceExecutionProof")]
 public sealed class WfsExecutionProofTests
 {
