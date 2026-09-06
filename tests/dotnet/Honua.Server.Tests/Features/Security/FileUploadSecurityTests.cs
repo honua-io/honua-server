@@ -14,6 +14,14 @@ namespace Honua.Server.Tests.Features.Security;
 /// Tests for file upload security validation.
 /// Validates path traversal prevention, malicious file detection, and content validation.
 /// </summary>
+/// <remarks>
+/// These are pure unit tests over the static validators in <c>FileUploadSecurity</c>: no test
+/// here issues an HTTP request. Every method used to carry
+/// <c>[Endpoint("POST .../addAttachment")]</c>, which made any coverage table derived from
+/// <c>[Endpoint]</c> attributes credit <c>addAttachment</c> with 19 endpoint tests it does not
+/// have. The annotations were removed rather than the tests (honua-server#4404); real
+/// <c>addAttachment</c> endpoint coverage lives in <c>AttachmentEndpointTests</c>.
+/// </remarks>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FileUploadSecurityTests
 {
@@ -21,7 +29,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateFileName_WithPathTraversal_RejectsFile()
     {
         // Arrange - path traversal attempts
@@ -47,7 +54,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateFileName_WithNullBytes_RejectsFile()
     {
         // Arrange - null byte injection
@@ -70,7 +76,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateFileName_WithDangerousExtensions_RejectsFile()
     {
         // Arrange - executable extensions
@@ -96,7 +101,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateFileName_WithSafeNames_AcceptsFile()
     {
         // Arrange - safe file names
@@ -126,7 +130,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void SanitizeFileName_RemovesPathComponents()
     {
         // Arrange
@@ -143,7 +146,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void SanitizeFileName_RemovesDangerousCharacters()
     {
         // Arrange
@@ -163,7 +165,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void SanitizeFileName_TruncatesLongNames()
     {
         // Arrange
@@ -178,7 +179,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void SanitizeFileName_HandlesEmptyInput()
     {
         // Act
@@ -198,7 +198,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateMimeType_WithAllowedTypes_Succeeds()
     {
         // Arrange - allowed MIME types for geospatial data
@@ -223,7 +222,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateMimeType_WithDisallowedTypes_Fails()
     {
         // Arrange - potentially dangerous MIME types
@@ -251,7 +249,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateFileSize_WithZeroSize_Fails()
     {
         // Act
@@ -264,7 +261,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateFileSize_WithNegativeSize_Fails()
     {
         // Act
@@ -276,7 +272,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateFileSize_WithOversizedFile_Fails()
     {
         // Arrange - 200MB file (over 100MB limit)
@@ -292,7 +287,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateFileSize_WithValidSize_Succeeds()
     {
         // Arrange - 5MB file
@@ -311,7 +305,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task ValidateFileContentAsync_WithScanLimit_DetectsContentBeyondPrefix()
     {
         // Arrange
@@ -329,7 +322,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task ValidateFileContentAsync_WithLargerScanLimit_DetectsContent()
     {
         // Arrange
@@ -346,7 +338,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void FileUploadSecurityOptions_BindsFromEnvironmentVariables()
     {
         const string envKey = "FileUploadSecurity__MaxSecurityScanSizeBytes";
@@ -377,7 +368,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateFileExtension_WithGeospatialExtensions_Succeeds()
     {
         // Arrange
@@ -402,7 +392,6 @@ public sealed class FileUploadSecurityTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("POST /rest/services/{id}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public void ValidateFileExtension_WithNoExtension_Fails()
     {
         // Act

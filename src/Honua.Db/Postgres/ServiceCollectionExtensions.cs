@@ -15,6 +15,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.AutoDocs;
 using Honua.Core.Features.Import;
 using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.Attachments.Services;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
@@ -236,6 +237,11 @@ internal static class ServiceCollectionExtensions
         // the result is cached statically after the first successful check, assuming single-database deployment)
         services.AddScoped<IH3CapabilityChecker, PostgresH3CapabilityChecker>();
 
+        // Attachment writes span object storage and the metadata table with no shared
+        // transaction, so the compensating paths need somewhere to report an object that
+        // outlived its row. TryAdd so a host can substitute a durable ledger.
+        services.TryAddSingleton<IAttachmentOrphanLedger, LoggingAttachmentOrphanLedger>();
+
         // Register attachment store implementation (metadata tables live in the honua schema)
         services.AddScoped<IAttachmentStore>(serviceProvider =>
             new PostgresAttachmentStore(
@@ -244,7 +250,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
                 schemaName: string.IsNullOrWhiteSpace(configuration["Attachments:Schema"])
                     ? "honua"
-                    : configuration["Attachments:Schema"]));
+                    : configuration["Attachments:Schema"],
+                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>()));
 
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
 
