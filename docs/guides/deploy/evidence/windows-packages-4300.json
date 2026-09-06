@@ -1,16 +1,17 @@
 {
   "kind": "pre-cut-windows-published-package-rehearsal",
-  "observedAt": "2026-09-06T04:49:03.9693032Z",
+  "observedAt": "2026-09-06T05:15:36.1178735Z",
   "exactCandidateQualification": false,
   "cleanMachineQualification": false,
   "environment": "Native Windows PowerShell, Python 3.13, Docker Desktop engine 29.6.2; new installation directory, virtual environment, Compose project and volumes on an existing Windows host",
-  "documentRevision": "bda77e187",
+  "documentRevision": "3816380af",
   "command": "scripts/docs-validation/validate-windows-packages.ps1 -WorkDirectory C:/Users/mike/honua-io",
   "exitCode": 0,
   "image": "ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9",
   "imageSourceRevision": "5a657b9eaed7cdeac915d584ad58c028a52ca61e",
   "anonymousImagePull": true,
-  "clients": ["honua-admin==0.1.8", "honua-sdk==0.1.11"],
+  "clients": ["honua-admin==0.1.8", "honua-sdk==0.1.11", "mcp==2.1.1"],
+  "importSurface": "honua_ingest_dataset MCP tool via published mcp client",
   "clientSource": "https://pypi.org/simple, wheels only, isolated virtual environment",
   "freshInstall": true,
   "readinessHttpStatus": 200,
@@ -41,7 +42,8 @@
   "documentationChecks": {
     "powershellBlocksParse": true,
     "relativeLinksAndAnchors": true,
-    "exampleSurfaces": true
+    "exampleSurfaces": true,
+    "pythonOptimizedCorruptionCasesRejected": 9
   },
   "remaining": "Repeat on a clean Windows machine against the signed release lock's exact candidate image and compatible client pins after the cut; this receipt is not release qualification."
 }

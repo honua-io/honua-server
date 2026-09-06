@@ -26,7 +26,7 @@ published [MCP transport client 2.1.1](https://pypi.org/project/mcp/2.1.1/).
 
 **This is not a qualified 2026.1 candidate.** At the cut, obtain the immutable
 server digest and compatible client versions from the signed customer release
-lock supplied with the release, update these three pins together, and repeat
+lock supplied with the release, update the server and Honua client pins together, and repeat
 this entire journey on a clean Windows machine. The
 [historical 2026.1 manifest download](https://github.com/honua-io/honua-release/releases/download/honua-2026.1/finalized-manifest.yaml)
 belongs to the superseded prerelease; do not use it as the new candidate lock.
