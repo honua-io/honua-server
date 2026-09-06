@@ -66,6 +66,8 @@ public sealed partial class ODataDeltaTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.ODataV4, "DeltaTracking")]
     [Endpoint("GET /odata/Features({layerId})")]
     public async Task Delta_BoundedCrossNodeClockSkew_ContinuesDurableBaseline()
     {
