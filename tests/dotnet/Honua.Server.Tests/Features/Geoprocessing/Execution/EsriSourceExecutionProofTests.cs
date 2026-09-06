@@ -1,4 +1,4 @@
-﻿// Copyright (c) Honua. All rights reserved.
+// Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
@@ -10,6 +10,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Migration.Services;
 using Honua.Db.Postgres.Features.Geoprocessing;
+using Honua.Geoprocessing;
+using Honua.ControlPlane;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.WebUtilities;
