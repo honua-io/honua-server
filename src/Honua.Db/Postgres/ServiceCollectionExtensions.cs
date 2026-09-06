@@ -795,7 +795,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILogger<EsriFeatureServerDagSource>>()));
         services.AddScoped<IDagFeatureSource, HonuaLayerDagSource>(serviceProvider =>
             new HonuaLayerDagSource(
-                serviceProvider.GetRequiredService<IStreamingFeatureStore>()));
+                serviceProvider.GetRequiredService<IStreamingFeatureStore>(),
+                serviceProvider.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>()));
         services.AddScoped<IDagFeatureSource, ExternalPostgisDagSource>(_ =>
             new ExternalPostgisDagSource());
 
