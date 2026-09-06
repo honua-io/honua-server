@@ -90,4 +90,42 @@ public sealed class OperateSloEvaluatorTests
         view.NodeLocalRetainedTail!.RetainedHttpSuccessRatio.Should().BeApproximately(0.95, 1e-9);
         view.NodeLocalRetainedTail.IsPlatformSli.Should().BeFalse();
     }
+
+    [Fact]
+    public void Evaluate_UnequalOverflowingReplicaTailsAndRestart_NeverClaimsPlatformAvailability()
+    {
+        var options = new OperateSloOptions { Availability = new AvailabilityOptions { Target = 0.99 } };
+        var busyReplica = new ServingLatencyAggregator(TimeSpan.FromSeconds(300), 4096, () => 0);
+        var quietReplica = new ServingLatencyAggregator(TimeSpan.FromSeconds(300), 4096, () => 0);
+        // Known ledger: 5,000 successes then 100 HTTP failures on A; 10 successes on B.
+        // The reservoir keeps only 3,996 successes and 100 failures on A.
+        for (var i = 0; i < 5100; i++)
+        {
+            busyReplica.Record("featureserver", 1, i < 5000 ? 200 : 500);
+        }
+
+        for (var i = 0; i < 10; i++)
+        {
+            quietReplica.Record("featureserver", 1, 200);
+        }
+
+        var busy = OperateSloEvaluator.Evaluate(options, busyReplica.GetSnapshot());
+        var quiet = OperateSloEvaluator.Evaluate(options, quietReplica.GetSnapshot());
+        var restarted = OperateSloEvaluator.Evaluate(options,
+            new ServingLatencyAggregator(TimeSpan.FromSeconds(300), 4096, () => 0).GetSnapshot());
+
+        busy.NodeLocalRetainedTail.RetainedRequestCount.Should().Be(4096);
+        busy.NodeLocalRetainedTail.TotalRecordedSinceReset.Should().Be(5100);
+        busy.NodeLocalRetainedTail.OverwrittenSampleCount.Should().Be(1004);
+        busy.NodeLocalRetainedTail.RetainedHttpServerErrorCount.Should().Be(100);
+        busy.NodeLocalRetainedTail.RetainedHttpSuccessRatio.Should().BeApproximately(3996d / 4096, 1e-12);
+        quiet.NodeLocalRetainedTail.RetainedRequestCount.Should().Be(10);
+        restarted.NodeLocalRetainedTail.RetainedRequestCount.Should().Be(0);
+        foreach (var view in new[] { busy, quiet, restarted })
+        {
+            view.Availability.Should().BeNull();
+            view.Configured.Should().BeFalse();
+            view.NodeLocalRetainedTail.IsPlatformSli.Should().BeFalse();
+        }
+    }
 }

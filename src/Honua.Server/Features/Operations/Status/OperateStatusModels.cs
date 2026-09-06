@@ -335,7 +335,7 @@ public sealed class OperateTelemetryBackendView
 /// <summary>Platform SLO posture plus a non-authoritative node-local retained-tail diagnostic.</summary>
 public sealed class OperateSloView
 {
-    /// <summary>Gets a value indicating whether an availability SLO target is configured.</summary>
+    /// <summary>Gets whether a qualifying distributed availability SLO source is configured.</summary>
     [JsonPropertyName("configured")]
     public required bool Configured { get; init; }
 
@@ -363,7 +363,7 @@ public sealed class OperateSloAvailabilityView
     [JsonPropertyName("target")]
     public required double Target { get; init; }
 
-    /// <summary>Gets the evaluation window in seconds (the in-process serving-latency aggregator's window).</summary>
+    /// <summary>Gets the distributed query's exact evaluation window in seconds.</summary>
     [JsonPropertyName("windowSeconds")]
     public required double WindowSeconds { get; init; }
 
@@ -371,7 +371,7 @@ public sealed class OperateSloAvailabilityView
     [JsonPropertyName("requestCount")]
     public required long RequestCount { get; init; }
 
-    /// <summary>Gets the server-error count (HTTP status &gt;= 500) observed over the window.</summary>
+    /// <summary>Gets all failed serving outcomes, including in-band failures, over the query window.</summary>
     [JsonPropertyName("errorCount")]
     public required long ErrorCount { get; init; }
 
