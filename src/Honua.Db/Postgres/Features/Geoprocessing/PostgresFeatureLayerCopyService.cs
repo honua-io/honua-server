@@ -53,7 +53,12 @@ internal sealed class PostgresFeatureLayerCopyService(
             ?? throw new InvalidOperationException("Source layer has no spatial reference.");
         var geometryField = resource.Spatial.PrimaryGeometryField ?? "geometry";
         var masked = fieldMasks is null ? [] : await fieldMasks.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
-        var schemaFields = resource.SchemaFields.Where(f => !masked.Contains(f.Name, StringComparer.OrdinalIgnoreCase)).ToArray();
+        // Keep field references valid while representing redacted values as NULL.
+        // The primary key is populated from the canonical feature identity below.
+        var schemaFields = resource.SchemaFields.Select(f =>
+            masked.Contains(f.Name, StringComparer.OrdinalIgnoreCase) && !f.SemanticRoles.Contains("id.primary")
+                ? f with { Nullable = true }
+                : f).ToArray();
         var fields = schemaFields.Where(f => f.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)).ToArray();
         var primary = fields.Single(f => f.SemanticRoles.Contains("id.primary")).Name;
         var table = "gp_copy_" + Guid.NewGuid().ToString("N");
@@ -142,9 +147,6 @@ internal sealed class PostgresFeatureLayerCopyService(
             StorageBindingIds = targetResource.StorageBindingIds,
             PrimaryStorageBindingId = targetResource.PrimaryStorageBindingId,
                 SchemaFields = schemaFields,
-                Display = resource.Display is { DisplayField: { } displayField } && masked.Contains(displayField, StringComparer.OrdinalIgnoreCase)
-                    ? resource.Display with { DisplayField = targetResource.Display?.DisplayField }
-                    : resource.Display,
             Spatial = resource.Spatial! with { Bbox = targetResource.Spatial?.Bbox, StorageCrs = resource.Spatial!.SpatialReference },
             Temporal = resource.Temporal is null ? null : resource.Temporal with { Extent = null },
             Relationships = [],
