@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Licensing.Domain;
@@ -771,7 +772,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             await using var command = connection.CreateCommand();
             command.CommandText = """
                 UPDATE features
-                SET attributes = COALESCE(attributes, '{}'::jsonb) || jsonb_build_object('__tenant_id', 'hidden')
+                SET attributes = COALESCE(attributes, '{}'::jsonb) || jsonb_build_object('__tenant_id', 'hidden', 'nullable_value', NULL)
                 WHERE layer_id = @layerId;
                 """;
             command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
@@ -786,6 +787,38 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         content.Should().Contain("attributes");
         content.Should().NotContain("__tenant_id");
         content.Should().NotContain("hidden");
+
+        // QGIS's native JSON identify reader requires GeoJSON, not the former
+        // FeatureInfoResponse envelope, and reads values from properties.
+        using var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().NotBeEmpty();
+        foreach (var feature in features)
+        {
+            feature.GetProperty("type").GetString().Should().Be("Feature");
+            feature.GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Null);
+            var properties = feature.GetProperty("properties");
+            properties.GetProperty("nullable_value").ValueKind.Should().Be(JsonValueKind.Null);
+            properties.GetRawText().Should().Be(feature.GetProperty("attributes").GetRawText());
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_JsonWithNoMatches_ReturnsEmptyFeatureCollection()
+    {
+        const string filter = "<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>does-not-exist</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=application/json&I=41&J=74&FILTER={Uri.EscapeDataString(filter)}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        using var json = JsonDocument.Parse(content);
+        json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        json.RootElement.GetProperty("features").GetArrayLength().Should().Be(0);
     }
 
     [IntegrationTest]
