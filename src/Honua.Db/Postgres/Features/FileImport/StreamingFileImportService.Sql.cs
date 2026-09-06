@@ -89,6 +89,31 @@ internal sealed partial class StreamingFileImportService
         return GetAllowedTableName(tableName);
     }
 
+    /// <summary>
+    /// Atomically reserves a new import target. CREATE without IF NOT EXISTS rejects both
+    /// existing targets and concurrent creators before any live row or metadata is changed.
+    /// The append helper subsequently installs the normal import indexes.
+    /// </summary>
+    private static async Task CreateNewTableAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        int targetSrid,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand($"""
+            CREATE SCHEMA IF NOT EXISTS {QuoteIdentifier(schemaName)};
+            CREATE TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} (
+                id SERIAL PRIMARY KEY,
+                geometry GEOMETRY(Geometry, {targetSrid.ToString(System.Globalization.CultureInfo.InvariantCulture)}),
+                properties JSONB,
+                created_at TIMESTAMPTZ DEFAULT NOW());
+            """, connection, transaction);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     private static async Task CreateTableAsync(
         NpgsqlConnection connection,
         string schemaName,

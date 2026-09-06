@@ -111,7 +111,9 @@ public sealed record ImportRequest
     /// <remarks>
     /// Preserved for backward compatibility. When <see cref="LoadMode"/> is left at its
     /// default, <see langword="true"/> selects replace and <see langword="false"/> selects
-    /// append so an existing target is never silently destroyed.
+    /// a new-target-only load. An existing target is rejected without changing its rows
+    /// or metadata. Select <see cref="ImportLoadMode.Append"/> or
+    /// <see cref="ImportLoadMode.Upsert"/> explicitly to update an existing target.
     /// </remarks>
     public bool OverwriteExisting { get; init; }
 
@@ -140,6 +142,8 @@ public sealed record ImportRequest
     /// The resolved load mode, reconciling the legacy <see cref="OverwriteExisting"/> flag
     /// with the explicit <see cref="LoadMode"/>. <see cref="LoadMode"/> wins when it is set
     /// to a non-default value; otherwise <see cref="OverwriteExisting"/> selects replace.
+    /// The default non-overwrite path uses the append writer only after atomically creating
+    /// a new target; it must never append to an existing table.
     /// </summary>
     public ImportLoadMode EffectiveLoadMode =>
         LoadMode != ImportLoadMode.Replace
