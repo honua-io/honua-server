@@ -78,3 +78,6 @@ Release promise: the entire built-in GP catalog is GA in 2026.1, including
 conversion output correctness. Exact-candidate execution/storage qualification
 consumes #3848 and native-worker canary coordination consumes #3857 after the
 candidate cut; local/PR head proofs do not claim to qualify an uncut digest.
+
+Windows focused verification: 14 passed, 0 failed, 0 skipped after the topology fix.
+Initial run: 8 passed, 1 failed specifically on invalid eight-connected topology.
