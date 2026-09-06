@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -59,8 +61,10 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         // honua-server#4396: the response substring above proves the import *reported* success.
         // Read the persisted rows back and assert the values the fixture actually wrote, so an
         // import that committed the wrong geometry, dropped the attributes or reprojected the
-        // point cannot pass.
-        var rows = await ReadImportedRowsAsync("geoparquet_import_test");
+        // point cannot pass. The import stages into a provider-chosen physical table
+        // (honua_data.imported_geoparquet_import_test), which the response reports through
+        // physicalTableName/schema -- use those rather than the caller-supplied logical name.
+        var rows = await ReadImportedRowsAsync(responseContent);
         var row = rows.Should().ContainSingle().Subject;
         row.ObjectId.Should().Be(1L);
         row.Name.Should().Be("Test Feature");
@@ -249,51 +253,83 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Reads back the rows the import committed.
+    /// Reads back the rows the import committed, using the physical location the import itself
+    /// reported.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// honua-server#4396 asks for a readback "through the public API". The file-import surface
     /// creates a raw table and does <em>not</em> register a service layer (there is no
     /// layer-registration call anywhere in <c>src/Honua.Import</c>), so there is no public read
     /// route for an imported table to go through. This reads the committed rows directly, which
     /// is still a readback of persisted state rather than an assertion about the response body.
+    /// </para>
+    /// <para>
+    /// Two provider details drive the query shape and must not be guessed at:
+    /// <c>StreamingFileImportService.GetAllowedTableName</c> stages into
+    /// <c>imported_&lt;table&gt;</c> inside the operational schema, and
+    /// <c>honua.create_import_table</c> materializes only
+    /// <c>(id, geometry, properties JSONB, created_at)</c> — source attributes such as
+    /// <c>objectid</c> and <c>name</c> live inside <c>properties</c>, not as physical columns.
+    /// The physical identifiers are taken from <c>ImportResult.PhysicalTableName</c>/
+    /// <c>ImportResult.Schema</c> on the response so the test tracks the provider rather than
+    /// re-deriving its naming convention.
+    /// </para>
     /// </remarks>
-    private async Task<IReadOnlyList<ImportedRow>> ReadImportedRowsAsync(string tableName)
+    private async Task<IReadOnlyList<ImportedRow>> ReadImportedRowsAsync(string importResponseJson)
     {
+        using var document = JsonDocument.Parse(importResponseJson);
+        var root = document.RootElement;
+
+        root.TryGetProperty("physicalTableName", out var physicalTableElement).Should().BeTrue(
+            "the import response must report the physical staging table it created");
+        root.TryGetProperty("schema", out var schemaElement).Should().BeTrue(
+            "the import response must report the schema that owns the physical staging table");
+
+        var physicalTableName = physicalTableElement.GetString();
+        var schema = schemaElement.GetString();
+        physicalTableName.Should().NotBeNullOrWhiteSpace();
+        schema.Should().NotBeNullOrWhiteSpace();
+
         var reader = new WKBReader();
         var rows = new List<ImportedRow>();
 
         await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
 
-        // The import chooses its own target schema, so resolve where the table actually landed
-        // rather than assuming; a missing table is itself a failure worth reporting clearly.
-        string? schema;
-        await using (var locate = connection.CreateCommand())
+        // A response that names a table the import never created is itself a failure, and one
+        // worth reporting as such rather than as an opaque "relation does not exist".
+        await using (var exists = connection.CreateCommand())
         {
-            locate.CommandText = """
-                SELECT table_schema
-                FROM information_schema.tables
-                WHERE table_name = @table
-                ORDER BY (table_schema = current_schema()) DESC, table_schema
-                LIMIT 1
+            exists.CommandText = """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_class AS relation
+                    INNER JOIN pg_catalog.pg_namespace AS namespace
+                        ON namespace.oid = relation.relnamespace
+                    WHERE namespace.nspname = @schema
+                      AND relation.relname = @table)
                 """;
-            locate.Parameters.AddWithValue("table", tableName);
-            schema = (string?)await locate.ExecuteScalarAsync();
+            exists.Parameters.AddWithValue("schema", schema!);
+            exists.Parameters.AddWithValue("table", physicalTableName!);
+            ((bool?)await exists.ExecuteScalarAsync()).Should().BeTrue(
+                "the import reported physical table '{0}'.'{1}', so it must exist",
+                schema,
+                physicalTableName);
         }
 
-        schema.Should().NotBeNull("the import must have created table '{0}'", tableName);
-
         await using var command = connection.CreateCommand();
-        // Both identifiers are resolved from the catalog / a test-owned literal, never user input.
+        // Both identifiers come from the server's own response, never from client input, and the
+        // attribute keys are read as JSONB values rather than interpolated identifiers.
         command.CommandText =
-            $"SELECT objectid, name, ST_AsEWKB(geometry) FROM \"{schema}\".\"{tableName}\" ORDER BY objectid";
+            "SELECT properties ->> 'objectid', properties ->> 'name', ST_AsEWKB(geometry) "
+            + $"FROM \"{schema}\".\"{physicalTableName}\" ORDER BY id";
 
         await using var result = await command.ExecuteReaderAsync();
         while (await result.ReadAsync())
         {
             var geometry = result.IsDBNull(2) ? null : reader.Read((byte[])result.GetValue(2));
             rows.Add(new ImportedRow(
-                result.IsDBNull(0) ? null : result.GetInt64(0),
+                result.IsDBNull(0) ? null : long.Parse(result.GetString(0), CultureInfo.InvariantCulture),
                 result.IsDBNull(1) ? null : result.GetString(1),
                 geometry));
         }
