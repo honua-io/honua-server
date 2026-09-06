@@ -6,12 +6,10 @@ using System.Globalization;
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -62,12 +60,12 @@ public sealed class PdalPointCloudRealCliTests
             // assertions below would still pass — the per-point decode is what catches that.
             lazBytes.Length.Should().BeGreaterThan(0);
 
+            // The PRODUCTION executor over the PRODUCTION runner. On the image lane that
+            // runner is DockerGdalCommandRunner, so `pdal translate` runs inside the worker
+            // image built by this workflow (see GdalCli.CreatePdalRunner) — no Ubuntu release
+            // ships a `pdal` package, so a host CLI is not an option there.
             var executor = new PdalPointCloudConvertJobExecutor(
-                new ProcessGdalCommandRunner(
-                    Options.Create(new GdalHardeningOptions()),
-                    Options.Create(new AwsS3Options()),
-                    Options.Create(new AzureBlobOptions()),
-                    NullLogger<ProcessGdalCommandRunner>.Instance),
+                GdalCli.CreatePdalRunner(),
                 GdalJobFactory.Options(scratch),
                 NullLogger<PdalPointCloudConvertJobExecutor>.Instance);
 
