@@ -31,6 +31,71 @@ Owning issue: [#3395](https://github.com/honua-io/honua-server/issues/3395) - pa
 
 #3387 remains the single capability-applicability authority. This roster classifies client identities only: which clients exist, their status, activation state, tier, runtime, licensing, and evidence producer. It deliberately declares no capability-level denominator. #3387 joins to this file by `id` whenever a capability decision names a canonical external client, so client identity has exactly one home and the capability denominator has exactly one home.
 
+## 2026.1 bounded-roster qualification disposition
+
+Audit: 2026-09-06, server `010a3c0196336eeac4eedd1fbdd1cab4129ff0db`,
+[release requirements revision `2026-08-29-complete.11`](https://github.com/honua-io/honua-release/blob/ffc92bc348e155fbd80b6ac6d44721fb9e632561/certification/protocol-certification-requirements.v1.json).
+This is the acceptance-criterion handoff for
+[server #3434](https://github.com/honua-io/honua-server/issues/3434), not a certification receipt.
+The release promise is that supported 2026.1 external-client operations execute
+correctly against the exact released server bytes, with complete, identity-bound
+positive and applicable negative evidence. Missing evidence still blocks that promise.
+
+The release repository owns operation selection and the final verdict under
+[release #157](https://github.com/honua-io/honua-release/issues/157) and
+[release #158](https://github.com/honua-io/honua-release/issues/158).
+Neither this roster's activation flag nor a green server unit-test run overrides
+an operation required by that frozen profile. A planned client cannot count as a
+pass; if the release profile requires it, its missing producer remains a blocking
+cell until the governed profile resolves the discrepancy.
+
+### Observed input mismatch
+
+The [audited manifest](https://github.com/honua-io/honua-release/blob/ffc92bc348e155fbd80b6ac6d44721fb9e632561/platform-manifest.yaml)
+labels itself a `candidate-manifest-snapshot`. It selects server
+`4ca8326f37b3225315033ee58e1a652e231992df`, image
+`sha256:571395718765a499d8e25e069ded7bb8d990dd784e9f1e6bef4fd2b8322f2508`,
+and cut time `2026-08-30T22:01:33Z`. Its
+[pinned ledger](https://github.com/honua-io/honua-evidence/blob/c595f9d6c01e9e31aa46d460506950378f14ad85/data/protocol-certification.v1.json)
+selects server `e3ab87cebb7bf2d32c4e8cdb145f8d626b864d8e`, image
+`sha256:d7a45c871bf318b4882ec8e1c32004803e6d0210246be30120751f05dee1a14d`,
+and cut time `2026-08-21T15:13:36Z`. Those identities differ in all three fields.
+
+The following counts are exact-name rows in those audited inputs, **not a new
+2026.1 activation denominator**. Operation IDs and scenario facets remain in the
+linked requirements JSON; version sets here do not imply interchangeable versions.
+
+| Canonical client | Required version values in audited catalog | Catalog rows | Pinned ledger result |
+|---|---|---:|---|
+| QGIS | 3.40 | 23 | 23 skipped |
+| GDAL | 3.8.4, 3.13.3, 3.14.0 | 8 | 8 skipped |
+| GDAL/OGR | 3.8.4 | 11 | 11 skipped |
+| MapLibre GL JS | 5.7, 6.5.0 | 10 | 10 skipped |
+| OWSLib | 0.36.0 | 6 | 6 skipped |
+| PySTAC-Client | 0.9.0 | 1 | 1 skipped |
+
+### Acceptance criteria and remaining work
+
+| #3434 criterion | Disposition |
+|---|---|
+| Frozen operation/client/version profile | The linked release catalog enumerates operations and versions. Reconciliation with the supported maturity profile remains pre-cut work: for example its QGIS 3.40 requirement differs from this roster's 3.44.13 runtime policy. Do not silently accept a different version or demote supported operations. |
+| Public client APIs against immutable image and #3393 fixture/config/auth digests | Released to exact-candidate qualification: the final cut image and its bound fixture/config/auth tuple do not yet exist. The working-snapshot ledger above cannot satisfy this criterion. |
+| Complete identity and durable receipt fields | Schema/producer preparation remains pre-cut work. Fresh execution receipts with cut ID, server/client integrity, fixture/config/auth revisions, operation ID, target, timestamps and durable URI must be produced after the final tuple exists. Historical catalog rows are not receipts. |
+| Positive and applicable credential, role/scope, tenant-isolation, pagination/limit, metadata and media/schema cases | Required cells must execute against that same tuple. Candidate execution is released for the same reason; producer coverage gaps remain pre-cut obligations. Multi-tenancy Preview does not waive applicable isolation denial checks. |
+| Reject missing/skipped/stale/mismatched/source-built required cells | Required at intake and final release validation. The 59 skipped rows and mismatched identity above are non-passing evidence. Do not rebind this ledger as a substitute for execution. |
+| Explicit planned/excluded rows | Retained in the roster below with target/rationale. They neither pass nor enlarge the bounded release roster. A conflict with a required release operation must be resolved explicitly by the release-owned profile. |
+| No duplicate OWSLib/PySTAC producers | Reuse `owslib` and `pystac` in `client-interop-nightly.yml`, their `docker/client-compat` harnesses and `py-owslib` / `py-pystac` bindings. #3386 and #3392 must not add parallel producers for the same cells. |
+
+At qualification, use one immutable local Docker target for the full matrix;
+cloud lanes consume the slim deployment-parity subset. Join licensed ArcGIS
+receipts from [honua-esri-compat #74](https://github.com/honua-io/honua-esri-compat/issues/74)
+and [#75](https://github.com/honua-io/honua-esri-compat/issues/75) by evidence reference.
+Do not substitute the ArcGIS stub for a licensed client. Reaggregate fresh receipts
+in honua-evidence, then atomically bind the reviewed ledger commit, requirements
+revision and byte digest in honua-release. #3434 stays open until this handoff is
+executed; releasing candidate-dependent criteria is not a pass or a waiver of
+pre-cut producer/profile work.
+
 ## Count reconciliation
 
 | Count | Value |
