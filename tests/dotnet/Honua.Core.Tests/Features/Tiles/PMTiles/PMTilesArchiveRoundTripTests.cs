@@ -76,19 +76,24 @@ public class PMTilesArchiveRoundTripTests
     [Fact]
     public async Task WriteAsync_ArchiveLargerThanTheRootDirectory_ResolvesTilesThroughALeafDirectory()
     {
-        // Zoom 7 has 128x128 tiles; a full row plus enough columns pushes the entry count past
-        // what the 16 KiB root-directory window can hold, forcing PMTilesDirectory.BuildDirectories
-        // down its leaf-directory branch — a path no test had ever exercised.
-        const int zoom = 7;
-        const int side = 128;
+        // PMTilesDirectory.BuildDirectories only considers the single-root path when the entry
+        // count is at or below its 16384 cap, so 16512 entries takes the leaf-directory branch
+        // deterministically rather than depending on how well the root happens to compress.
+        // That branch had never been exercised by any test.
+        const int zoom = 8;
+        const int xCount = 129;
+        const int yCount = 128;
         var writer = new PMTilesWriter(PMTilesCompression.Gzip, PMTilesCompression.Gzip);
-        for (var x = 0; x < side; x++)
+        for (var x = 0; x < xCount; x++)
         {
-            for (var y = 0; y < side; y++)
+            for (var y = 0; y < yCount; y++)
             {
                 writer.AddTile(zoom, x, y, MiniMvt.Encode($"l{x}-{y}", featureX: x, featureY: y));
             }
         }
+
+        writer.TileCount.Should().BeGreaterThan(
+            16384, "the leaf-directory branch is only taken past the root entry cap");
 
         var archive = await WriteArchiveAsync(writer, minZoom: zoom, maxZoom: zoom);
         var header = PMTilesHeader.ReadFrom(archive);
@@ -98,9 +103,9 @@ public class PMTilesArchiveRoundTripTests
 
         var reader = new ArchiveReader(archive, header);
 
-        // A tile from the far end of the Hilbert ordering: reachable only by following a root
+        // Tiles from both ends of the Hilbert ordering: reachable only by following a root
         // pointer into a leaf directory.
-        foreach (var (x, y) in new[] { (0, 0), (63, 64), (127, 127) })
+        foreach (var (x, y) in new[] { (0, 0), (63, 64), (128, 127) })
         {
             var stored = reader.ReadTile(zoom, x, y);
             stored.Should().NotBeNull("tile {0}/{1}/{2} must resolve through the leaf directory", zoom, x, y);
@@ -111,8 +116,10 @@ public class PMTilesArchiveRoundTripTests
             decoded.PointY.Should().Be(y);
         }
 
-        // And a tile that was never added must not resolve to some other tile's bytes.
-        reader.ReadTile(zoom, side, 0).Should().BeNull();
+        // And a coordinate that was never added must not resolve to some other tile's bytes.
+        // (A lower zoom, because every tile at `zoom` was added; an out-of-range x at `zoom`
+        // would be rejected by HilbertCurve rather than reaching the directory.)
+        reader.ReadTile(zoom - 1, 0, 0).Should().BeNull();
     }
 
     private static async Task<byte[]> WriteArchiveAsync(PMTilesWriter writer, byte minZoom, byte maxZoom)
