@@ -30,8 +30,14 @@ public class ZarrTileRendererTests
     /// renderer that swapped the X/Y strides renders a visibly different image. The former
     /// <c>r + c</c> fixture was invariant under transposition on a square grid, which made the
     /// spatial mapping unassertable.
+    /// <para>
+    /// The ramp is evaluated in <see cref="float"/> rather than widening an <see cref="int"/>
+    /// product, so no integer multiplication is converted to floating point. Every value the
+    /// fixture produces (<c>0</c>..<c>77</c>, both operands bounded by <see cref="GridSize"/>) is
+    /// exactly representable, so the grid is unchanged.
+    /// </para>
     /// </remarks>
-    private static float Sample(int row, int col) => (row * 10) + col;
+    private static float Sample(int row, int col) => (row * 10f) + col;
 
     /// <summary>
     /// The rendered tile's pixels, not just its framing (honua-server#4395).
