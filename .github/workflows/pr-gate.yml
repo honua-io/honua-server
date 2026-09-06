@@ -252,6 +252,24 @@ jobs:
           PREPULL_AWAIT_TIMEOUT_SECONDS: '120'
         run: scripts/ci/prepull-testcontainers-postgis.sh --await
 
+      - name: Prove copy-features execution against PostGIS
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        timeout-minutes: 15
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release -maxcpucount:4 \
+            --filter 'Category=CopyFeaturesExecutionProof' \
+            --logger 'trx;LogFileName=copy-features-execution-proof.trx' \
+            --results-directory tests/TestResults
+
+      - name: Upload copy-features execution proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: copy-features-execution-proof
+          path: tests/TestResults/copy-features-execution-proof.trx
+          if-no-files-found: warn
+
       - name: Honua.Server boot + migrations smoke
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         run: timeout 175s scripts/ci/server-boot-smoke.sh

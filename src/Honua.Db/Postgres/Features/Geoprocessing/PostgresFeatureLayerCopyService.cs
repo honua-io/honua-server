@@ -9,6 +9,7 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -21,7 +22,7 @@ namespace Honua.Db.Postgres.Features.Geoprocessing;
 
 /// <summary>Materializes a canonical filtered stream and publishes an independent typed layer.</summary>
 internal sealed class PostgresFeatureLayerCopyService(
-    IStreamingFeatureStore source,
+    FeatureProviderQueryRouter router,
     IAdoNetDatabaseConnectionProvider connections,
     IMetadataV2GraphStore metadata,
     ILayerPublishingService publisher) : IFeatureLayerCopyService
@@ -39,7 +40,12 @@ internal sealed class PostgresFeatureLayerCopyService(
             throw new InvalidOperationException("Source layer does not exist.");
         }
         var publication = snapshot.Graph.Publications.First(p => p.ResourceId == resource.Metadata.Id && snapshot.IsRoutable(p));
-        var serviceName = snapshot.Index.ServicesById[publication.ServiceId].Metadata.Name;
+        var service = snapshot.Index.ServicesById[publication.ServiceId];
+        var serviceName = service.Metadata.Name;
+        var reader = await router.ResolveReaderAsync(snapshot, service, resource, publication,
+            sourceLayerId, FeatureProviderReadOperation.Query, cancellationToken).ConfigureAwait(false);
+        var source = reader as IStreamingFeatureStore
+            ?? throw new InvalidOperationException("Source provider does not support streaming copy.");
         var srid = resource.Spatial?.SpatialReference?.ResolveSrid()
             ?? throw new InvalidOperationException("Source layer has no spatial reference.");
         var geometryField = resource.Spatial?.PrimaryGeometryField ?? "geometry";
@@ -115,7 +121,7 @@ internal sealed class PostgresFeatureLayerCopyService(
                 UpdatedAt = DateTimeOffset.UtcNow, Annotations = annotations },
             StorageBindingIds = targetResource.StorageBindingIds,
             PrimaryStorageBindingId = targetResource.PrimaryStorageBindingId,
-            Spatial = resource.Spatial with { Bbox = targetResource.Spatial?.Bbox },
+            Spatial = resource.Spatial! with { Bbox = targetResource.Spatial?.Bbox },
             Relationships = [], Status = targetResource.Status
         };
         await metadata.SaveAsync(current.Graph with
