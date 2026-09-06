@@ -1,5 +1,9 @@
 # Go from zero to a map in your browser
 
+For a native Windows installation from registry packages, follow
+[Windows: install published packages](windows-packages.md). That journey needs
+no checkout, source build, Bash, or GitHub Packages credentials.
+
 You'll have Honua running in Docker with a published dataset rendered in a browser map in about 10 minutes.
 
 **Prerequisites:** Docker with Compose v2, `git`, GitHub CLI authenticated with package-read access, and Python 3.11 or later.
