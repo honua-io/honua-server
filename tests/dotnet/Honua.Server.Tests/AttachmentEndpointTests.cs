@@ -724,7 +724,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var payload = BuildBinaryPayload(4096);
         var expectedHash = Convert.ToHexString(SHA256.HashData(payload));
 
-        var attachmentId = await AddAttachmentAsync(payload, "roundtrip.bin", "application/octet-stream");
+        var attachmentId = await AddAttachmentAsync(payload, "roundtrip.png", BinaryContentType);
 
         var downloaded = await DownloadAttachmentBytesAsync(attachmentId);
         downloaded.Should().HaveCount(payload.Length, "a truncated object must not pass");
@@ -735,8 +735,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         // drifted size cannot make a size filter lie.
         var info = await GetAttachmentInfoAsync(attachmentId);
         info.Size.Should().Be(payload.Length);
-        info.ContentType.Should().Be("application/octet-stream");
-        info.Name.Should().Be("roundtrip.bin");
+        info.ContentType.Should().Be(BinaryContentType);
+        info.Name.Should().Be("roundtrip.png");
     }
 
     /// <summary>
@@ -750,7 +750,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task DeleteAttachments_RemovesTheMetadataRowAndTheStoredObject()
     {
         var payload = BuildBinaryPayload(512);
-        var attachmentId = await AddAttachmentAsync(payload, "doomed.bin", "application/octet-stream");
+        var attachmentId = await AddAttachmentAsync(payload, "doomed.png", BinaryContentType);
 
         // Capture the storage path while the row still exists; after the delete there is no
         // way to learn which object should have gone.
@@ -843,8 +843,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var second = BuildBinaryPayload(2048, seed: 29);
 
         var uploads = await Task.WhenAll(
-            AddAttachmentAsync(first, "concurrent-a.bin", "application/octet-stream"),
-            AddAttachmentAsync(second, "concurrent-b.bin", "application/octet-stream"));
+            AddAttachmentAsync(first, "concurrent-a.png", BinaryContentType),
+            AddAttachmentAsync(second, "concurrent-b.png", BinaryContentType));
 
         uploads.Should().OnlyHaveUniqueItems("two concurrent uploads must not share one attachment id");
 
@@ -867,7 +867,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task AddAttachment_RacingADeleteOnTheSameFeature_LeavesBothStoresConsistent()
     {
         var doomed = BuildBinaryPayload(768, seed: 41);
-        var doomedId = await AddAttachmentAsync(doomed, "racing-doomed.bin", "application/octet-stream");
+        var doomedId = await AddAttachmentAsync(doomed, "racing-doomed.png", BinaryContentType);
         var doomedPath = await GetStoragePathAsync(doomedId);
 
         var arriving = BuildBinaryPayload(1536, seed: 53);
@@ -878,7 +878,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             { new StringContent(doomedId.ToString(CultureInfo.InvariantCulture)), "attachmentIds" }
         };
 
-        var uploadTask = AddAttachmentAsync(arriving, "racing-arriving.bin", "application/octet-stream");
+        var uploadTask = AddAttachmentAsync(arriving, "racing-arriving.png", BinaryContentType);
         var deleteTask = _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", deleteForm);
 
@@ -978,10 +978,23 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result!.AttachmentInfos.Should().BeEmpty();
     }
     /// <summary>
+    /// Media type used for the binary round-trip payloads. The upload validator's default
+    /// allowlist is <c>image/*,application/pdf</c> (<c>LimitsOptions.AllowedMimeTypes</c>), so an
+    /// <c>application/octet-stream</c> upload is rejected before it ever reaches storage.
+    /// </summary>
+    private const string BinaryContentType = "image/png";
+
+    /// <summary>
     /// Deterministic binary payload: not valid UTF-8, contains NUL/CR/LF, and is a pure
     /// function of (length, seed) so an expected value can be recomputed rather than
     /// snapshotted from the server's own output.
     /// </summary>
+    /// <remarks>
+    /// It opens with the PNG signature, which is both what makes the declared
+    /// <see cref="BinaryContentType"/> honest and a built-in tripwire: the signature itself
+    /// contains <c>0x0D 0x0A 0x1A 0x0A</c>, so any newline translation or text round-trip
+    /// corrupts it. The bytes immediately after it force a NUL and a 0xFF as well.
+    /// </remarks>
     private static byte[] BuildBinaryPayload(int length, int seed = 7)
     {
         var payload = new byte[length];
@@ -990,13 +1003,12 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             payload[index] = (byte)((index * 37 + seed * 101 + (index % 13)) % 256);
         }
 
-        // Force the bytes that a text or newline-translating codepath would corrupt.
-        if (length >= 4)
+        ReadOnlySpan<byte> pngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        if (length >= pngSignature.Length + 2)
         {
-            payload[0] = 0x00;
-            payload[1] = 0xFF;
-            payload[2] = 0x0D;
-            payload[3] = 0x0A;
+            pngSignature.CopyTo(payload);
+            payload[pngSignature.Length] = 0x00;
+            payload[pngSignature.Length + 1] = 0xFF;
         }
 
         return payload;
