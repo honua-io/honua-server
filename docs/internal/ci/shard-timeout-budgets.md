@@ -635,3 +635,150 @@ p90 into the next audit.
 `.github/ci-shards.json` records the pre-split ownership in
 `shard_partitions`, so `scripts/ci/check-server-test-shard-coverage.py` fails if
 any class the old filters claimed ends up orphaned or double-owned.
+
+## STAC Protocol capacity split (2026-09-06, #3204)
+
+Trunk went red at `959a830` with `Server Tests (STAC Protocol)` at exit 124 on
+**both attempts** of run
+[`34039679229`](https://github.com/honua-io/honua-server/actions/runs/34039679229):
+
+```text
+##[error]HONUA_SHARD_CAPACITY_EXHAUSTED shard='STAC Protocol' hit its 15m test
+budget while still producing output 4s ago. This is shard capacity exhaustion,
+not a hang, and it is not attributable to any single change: raise
+test_timeout_minutes/timeout_minutes or split the shard in .github/ci-shards.json.
+##[error]Server test shard 'STAC Protocol' timed out after 15 minute(s).
+Filter: ((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac)&Tier!=Slow)&Tier!=Fast
+```
+
+Attempt 1 (job `101504134560`) built locally and reported **no failing test** —
+it was killed mid-run at the cap. Attempt 2 (job `101509249930`) reproduced the
+same exhaustion. No landing between the last green run and `959a830` touched
+this shard: #4450 changed `.github/ci-shards.json` but not the `STAC Protocol`
+entry, and #4451 touched `ExecutionQualification*` and `RedisFixture` only.
+
+### Evidence: the shard was already over the warn line, and it is fully serial
+
+The last green run of the shard,
+[`34034090781`](https://github.com/honua-io/honua-server/actions/runs/34034090781)
+at `58d45bc`, wrote this `timing.json`:
+
+```json
+{"duration_seconds":766,"timeout_seconds":900,"headroom_ratio":0.8511,
+ "capacity_status":"low_headroom","idle_seconds_at_exit":5,"timed_out":false}
+```
+
+`low_headroom` is the "defect to schedule" signal from the policy above; the
+shard tipped over on the next run rather than growing into a cap it had room
+for. `scripts/ci/summarize-trx-class-intervals.py` over that run's TRX reports
+`summed/whole = 0.98 (serial - spans are additive)`: **136 tests occupy 755s of
+wall with 19s of total idle and no two classes overlapping.** Every class in the
+assembly carries `[Collection("Database")]`, the one collection still declared
+`DisableParallelization`, and the five heavy ones construct a `WebAppFixture`
+per *case* (class-level `IAsyncLifetime`), so a case costs ~9.4s of host
+construction that cannot overlap with anything else. Class placement is
+therefore directly additive and a split moves whole intervals.
+
+### The split
+
+`STAC Items and Collections` takes the two heaviest classes; `STAC Protocol`
+keeps the rest. Both budgets are unchanged at inner 15 / job 25.
+
+| Class | Span (min) | Cases | From | To |
+|---|---:|---:|---|---|
+| `StacCollectionsTests` | 3.00 | 18 | STAC Protocol | **STAC Items and Collections** |
+| `StacItemsTests` | 2.81 | 19 | STAC Protocol | **STAC Items and Collections** |
+
+| Shard | Measured p90 | Change | Projected | Inner cap | Projected / cap |
+|---|---:|---|---:|---:|---:|
+| STAC Protocol | 15.0 (exit 124) | −`StacItemsTests`, −`StacCollectionsTests` | ≤ 6.5 | 15 | ≤ 43% |
+| STAC Items and Collections | — (new) | +2 classes | ~5.8 + startup | 15 | ~43% |
+
+Both bounds are exact rather than modelled: after the move each shard's test set
+is a strict subset of what run `34034090781` executed in 12.8 min on a serial
+timeline, so neither can run longer than its share of that span. Even at the
+1.35x runner contention the failing attempt measured (128 tests in 900s against
+136 in 755s), both stay under the 70% target. Fold the observed p90s into the
+next audit.
+
+### The split's one hazard: the hosted Blazor content root
+
+Two shards on the same `csproj` change the build topology. `ci.yml` sorts the
+matrix by `-dispatch_rank` and `scripts/ci/server-test-shard-cache.sh` makes the
+first selected shard for a project the exact-head cache **writer**; every later
+sibling materializes the writer's packaged payload instead of building
+(`plan-server-test-reuse-benchmark.py` calls the same relationship a "producer"
+with "reused consumers").
+
+`scripts/ci/package-server-test-binaries.sh` stages only the *test project's*
+`bin/` and `obj/`. `Honua.Server.staticwebassets.runtime.json` in that output
+resolves `/samples/stac-ops/` from six content roots, and two of them are build
+outputs of a **different** project:
+
+```text
+samples/Honua.StacOpsDemo/wwwroot/                       <- source, always present
+samples/Honua.StacOpsDemo/bin/Release/net10.0/wwwroot/   <- build output, NOT packaged
+samples/Honua.StacOpsDemo/obj/Release/net10.0/compressed/ <- build output, NOT packaged
+```
+
+That is exactly what attempt 2 of `34039679229` showed. It materialized the
+payload (`REASON: exact_cache_hit`, `Build server test binaries` skipped) and
+`StacOpsDemoEndpointTests.GetStacOpsDemoFrameworkAsset_WhenDemoEnabled_ReturnsStaticFile`
+failed with `Expected ... HttpStatusCode.OK ... but found HttpStatusCode.NotFound`
+on `/samples/stac-ops/_framework/blazor.webassembly.js`, while
+`GetStacOpsDemo_ServesHostedSampleShell` passed — `index.html` comes from the
+source content root, the 420 files under `_framework/` do not. The same four
+tests all passed on the building attempt 1.
+
+That defect predates this split (any rerun of the single shard hit it) and is
+tracked separately as #4453, not fixed here. What the split must not do is promote it from a rerun-only
+failure to an attempt-1 failure, so `StacOpsDemoEndpointTests` stays on the
+higher-`dispatch_rank` shard, which is the writer and therefore the one shard
+that still builds on attempt 1. It is only attempt 1 that this buys:
+`server-test-shard-cache.sh` tests `run_attempt > 1` *before* the writer
+designation, so on a rerun the writer materializes the payload like everyone
+else and the class 404s again exactly as attempt 2 did. Ranking cannot fix the
+rerun case; #4453 has to. `scripts/ci/validate-ci-router.sh` pins both halves of
+what ranking *can* hold: the class's owning shard, and that shard being the
+top-ranked one for its `csproj`.
+
+### Local verification of the split
+
+Both post-split filters were run on the lane box with
+`scripts/ci/run-server-test-shard.sh` (the same script CI runs), Release,
+testcontainers Postgres, while four other lanes were building — so these are
+pessimistic numbers against a dedicated CI runner:
+
+| Shard | Tests | Result | Test time | % of 15m cap |
+|---|---:|---|---:|---:|
+| STAC Protocol | 99 | 98 passed, 1 environmental (below) | 9.37 min | 62% |
+| STAC Items and Collections | 37 | 37 passed | 7.91 min | 53% |
+
+`99 + 37 = 136`, the exact test count the pre-split shard ran on the last green
+run `34034090781`, so the split neither drops nor duplicates a case. Even at
+these contended local timings both shards clear the 15m cap with more than 20%
+headroom; the CI projections above (43% and 39%) are the expected steady state.
+
+`scripts/ci/summarize-trx-class-intervals.py` over the two local TRX files
+independently reproduces the serial premise this split relies on —
+`summed/whole = 0.99 (serial - spans are additive)` — and ranks the classes:
+
+```text
+ span p50  key
+     4.59  StacSearchTests
+     4.01  StacCollectionsTests
+     3.90  StacItemsTests
+     2.06  StacProviderNeutralRoutingTests
+     1.74  StacPagingRegressionTests
+     0.54  StacTemporalSearchRegressionTests
+```
+
+The one failure was
+`StacSearchTests.SearchPost_WithInvalidThreeDimensionalBbox_ReturnsBadRequest`
+throwing `InvalidOperationException : PostGIS preflight check failed` out of
+host construction, not out of a STAC assertion. It is local Docker contention,
+not a split effect: its GET twin
+`SearchGet_WithInvalidThreeDimensionalBbox_ReturnsBadRequest` passed in the same
+run, `PostGIS preflight check passed` appears repeatedly around it, the class
+sits on the same shard before and after the split, and CI attempt 1 at this same
+`959a830` reported no failing test at all.
