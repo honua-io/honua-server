@@ -463,8 +463,8 @@ public sealed class PatchConcurrencyTests
                 else
                 {
                     Assert.NotNull(stored);
-                    Assert.Equal(45678L, Convert.ToInt64(stored.Value.Attributes["population"], CultureInfo.InvariantCulture));
-                    Assert.Equal(secondMethod == "PUT" ? "replacement" : "changed name", stored.Value.Attributes["name"]);
+                    Assert.Equal(45678L, Convert.ToInt64(stored!.Value.Attributes["population"], CultureInfo.InvariantCulture));
+                    Assert.Equal(secondMethod == "PUT" ? "replacement" : "changed name", stored!.Value.Attributes["name"]);
                 }
             }
             else
