@@ -22,18 +22,21 @@ namespace Honua.Server.Tests.Features.Certification;
 /// </para>
 /// <para>
 /// Rather than freeze a hand-maintained list, this derives the truth from the repository: a lane is
-/// implemented when its CITE suite has both a <c>docker/cite/&lt;suite&gt;</c> composition and a
-/// <c>scripts/conformance/cite/run-cite-&lt;suite&gt;-tests.sh</c> runner. Building one of the
-/// absent lanes therefore makes this test fail until the ledger is updated to claim it, and
-/// deleting a runner makes it fail until the ledger stops claiming it.
+/// implemented when its CITE suite has a <c>docker/cite/&lt;suite&gt;</c> composition — the
+/// artifact a runner cannot execute without. Building one of the absent lanes therefore makes this
+/// test fail until the ledger is updated to claim it, and deleting a composition makes it fail
+/// until the ledger stops claiming it.
 /// </para>
 /// </remarks>
 [Trait("Tier", "Fast")]
 public sealed class CiteProtocolRequirementsLedgerTests
 {
     /// <summary>
-    /// Maps a ledger <c>surface</c> to the CITE suite directory that certifies it. Surfaces absent
-    /// from this map have no runner and must be declared absent in the ledger.
+    /// Maps a ledger <c>surface</c> to the <c>docker/cite</c> suite directory that certifies it.
+    /// Surfaces absent from this map have no CITE composition and must be declared absent in the
+    /// ledger. Note the ledger's <c>wms</c>/<c>wmts</c> surfaces are certified by the versioned
+    /// compositions (<c>wms13</c>, <c>wmts10</c>), whose runner scripts are named without the
+    /// version suffix.
     /// </summary>
     private static readonly Dictionary<string, string> SuiteBySurface = new(StringComparer.Ordinal)
     {
@@ -77,7 +80,7 @@ public sealed class CiteProtocolRequirementsLedgerTests
     }
 
     [Fact]
-    public void EveryLaneDeclaredImplemented_HasARunnerAndACompositionInThisRepository()
+    public void EveryLaneDeclaredImplemented_HasACiteCompositionInThisRepository()
     {
         foreach (var requirement in CiteRequirements.Where(IsImplemented))
         {
@@ -88,15 +91,12 @@ public sealed class CiteProtocolRequirementsLedgerTests
                 $"{key} claims an implemented CITE lane, so its surface must map to a CITE suite");
 
             Directory.Exists(RepositoryPaths.Resolve("docker", "cite", suite!)).Should().BeTrue(
-                $"{key} claims an implemented lane, so docker/cite/{suite} must exist");
-            File.Exists(RepositoryPaths.Resolve("scripts", "conformance", "cite", $"run-cite-{suite}-tests.sh"))
-                .Should().BeTrue(
-                    $"{key} claims an implemented lane, so its runner script must exist");
+                $"{key} claims an implemented lane, so its CITE composition docker/cite/{suite} must exist");
         }
     }
 
     [Fact]
-    public void EveryLaneWithoutARunner_IsDeclaredAbsentWithAReason()
+    public void EveryLaneWithoutACiteComposition_IsDeclaredAbsentWithAReason()
     {
         foreach (var requirement in CiteRequirements)
         {
@@ -110,7 +110,7 @@ public sealed class CiteProtocolRequirementsLedgerTests
             }
 
             IsImplemented(requirement).Should().BeFalse(
-                $"{key} has no CITE runner in this repository, so the ledger must not claim one — " +
+                $"{key} has no CITE composition in this repository, so the ledger must not claim a lane — " +
                 "a declared lane that does not exist must not be counted as evidence");
             requirement.GetProperty("cite_lane_absence_reason").GetString().Should().NotBeNullOrWhiteSpace(
                 $"{key} must record why its declared lane is absent");

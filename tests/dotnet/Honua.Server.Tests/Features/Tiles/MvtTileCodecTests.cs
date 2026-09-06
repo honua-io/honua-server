@@ -19,7 +19,7 @@ public sealed class MvtTileCodecTests
     /// One layer named <c>l</c>, extent 4096, one POINT feature at (5, 6) with <c>name=a</c>,
     /// encoded field by field from the specification:
     /// <code>
-    /// 1A 26                            Tile.layers, length 38
+    /// 1A 22                            Tile.layers, length 34
     ///   78 02                          Layer.version = 2
     ///   0A 01 6C                       Layer.name = "l"
     ///   12 0D                          Layer.features, length 13
@@ -34,7 +34,7 @@ public sealed class MvtTileCodecTests
     /// </summary>
     private static readonly byte[] HandEncodedTile =
     [
-        0x1A, 0x26,
+        0x1A, 0x22,
         0x78, 0x02,
         0x0A, 0x01, 0x6C,
         0x12, 0x0D,

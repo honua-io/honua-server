@@ -165,8 +165,11 @@ public sealed class ExternalFormatCorpusReaderTests
         for (var i = 0; i < ExpectedSites.Length; i++)
         {
             var point = features[i].Geometry.Should().BeOfType<Point>().Subject;
-            point.X.Should().BeApproximately(ExpectedSites[i].X, 1e-9);
-            point.Y.Should().BeApproximately(ExpectedSites[i].Y, 1e-9);
+            // FileGDB stores coordinates as scaled integers on a fixed grid, so the round trip is
+            // exact only to the grid resolution (~1e-9 degrees here). The tolerance is still eight
+            // orders of magnitude tighter than any transposition, sign error or truncated digit.
+            point.X.Should().BeApproximately(ExpectedSites[i].X, 1e-7);
+            point.Y.Should().BeApproximately(ExpectedSites[i].Y, 1e-7);
             features[i].Attributes["site_name"].Should().Be(ExpectedSites[i].Name);
         }
     }

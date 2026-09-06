@@ -43,14 +43,39 @@ public sealed class CsvExportFidelityTests
             [Row(point, ImmutableDictionary<string, object?>.Empty.Add("name", "mercator"))],
             [new ExportField("name", ExportFieldType.String, true)]);
 
-        var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        csv.Should().StartWith(
+            "\uFEFF",
+            "the writer emits a UTF-8 BOM, which spreadsheet clients rely on and stricter parsers " +
+            "must be told about — nothing asserted it before");
+
+        var lines = csv.TrimStart('\uFEFF').Split('\n', StringSplitOptions.RemoveEmptyEntries);
         lines[0].Should().Be("name,WKT");
         lines[1].Should().Be(
-            "mercator,\"POINT (-13629378.29 4544069.28)\"",
-            "the geometry cell is bare WKT — no SRID= prefix, no CRS column, and no sidecar file");
+            "mercator,POINT (-13629378.29 4544069.28)",
+            "the geometry cell is bare WKT — no SRID= prefix, no CRS column, and no sidecar file. " +
+            "A point's WKT contains no comma, so it is not quoted either");
 
         csv.Should().NotContain("SRID", "recording the loss: the exported CSV carries no CRS at all");
         csv.Should().NotContain("3857");
+    }
+
+    /// <summary>
+    /// A multi-vertex geometry's WKT contains commas, so the cell must be quoted or the row's
+    /// column count changes — the failure mode that made the delimiter import fixtures interesting.
+    /// </summary>
+    [Fact]
+    public async Task WriteAsync_GeometryWktContainingCommas_IsQuoted()
+    {
+        var factory = new GeometryFactory(new PrecisionModel(), 4326);
+        var line = factory.CreateLineString([new Coordinate(-1, -2), new Coordinate(3, 4)]);
+
+        var csv = await ExportAsync(
+            [Row(line, ImmutableDictionary<string, object?>.Empty.Add("name", "route"))],
+            [new ExportField("name", ExportFieldType.String, true)]);
+
+        csv.TrimStart('\uFEFF').Split('\n', StringSplitOptions.RemoveEmptyEntries)[1].Should().Be(
+            "route,\"LINESTRING (-1 -2, 3 4)\"",
+            "a WKT containing a comma must be quoted so the row keeps two columns");
     }
 
     /// <summary>
@@ -68,7 +93,7 @@ public sealed class CsvExportFidelityTests
             [Row(point, ImmutableDictionary<string, object?>.Empty.Add("name", "mercator"))],
             [new ExportField("name", ExportFieldType.String, true)]);
 
-        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv.TrimStart('\uFEFF')));
         var readBack = new List<NetTopologySuite.Features.IFeature>();
         await foreach (var feature in Honua.Core.Features.FileImport.Services.CsvFormatReader
                            .ReadStreamingAsync(stream, CancellationToken.None))
@@ -117,7 +142,7 @@ public sealed class CsvExportFidelityTests
                 new ExportField("missing", ExportFieldType.String, true)
             ]);
 
-        var row = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries)[1];
+        var row = csv.TrimStart('\uFEFF').Split('\n', StringSplitOptions.RemoveEmptyEntries)[1];
         var cells = SplitCsvRow(row);
 
         cells[0].Should().Be("2026-01-15T08:30:45.0000000Z", "DateTime uses the round-trip \"O\" format");
