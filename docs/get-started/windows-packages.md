@@ -31,6 +31,13 @@ belongs to the superseded prerelease; do not use it as the new candidate lock.
 Exact-candidate qualification remains tracked in
 [#4300](https://github.com/honua-io/honua-server/issues/4300).
 
+The [pre-cut Windows receipt](../guides/deploy/evidence/windows-packages-4300.json)
+records successful fresh-volume startup, anonymous denial, authenticated admin
+access, import/publish/query, restart readback, container-recreation readback,
+and scoped teardown with these packages. It used an existing Windows host with
+a new installation directory and virtual environment, not a clean-machine RC
+qualification.
+
 ## 1. Create a private, isolated installation
 
 Choose an unused loopback port if `18080` is occupied. Keep this PowerShell
