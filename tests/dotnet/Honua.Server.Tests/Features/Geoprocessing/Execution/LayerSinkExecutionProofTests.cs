@@ -19,7 +19,6 @@ using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
@@ -30,8 +29,9 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 [Collection("Database")]
 [Trait("Category", "LayerExecutionProof")]
-[Protocol(TestProtocols.OgcApiProcesses)]
-[Operation(Operations.ProcessExecution)]
+// These contracts exercise shared executors and storage directly, without an HTTP adapter.
+[Protocol(TestProtocols.Infrastructure)]
+[Operation(Operations.ContractTesting)]
 public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureServices(_ => { });
@@ -71,7 +71,6 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task HonuaLayerSink_AppendThenKeyedUpsert_ReadsExactCommittedGeometryAttributesAndReceipts()
     {
         var appended = await Run("append", "append-batch", """
@@ -99,7 +98,6 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task HonuaLayerSink_FailingRow_RollsBackKeyDeletionAndAllInsertedRows()
     {
         var failed = await Run("upsert", "failed-batch", """

@@ -18,7 +18,6 @@ using Honua.ControlPlane;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -30,8 +29,9 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 [Collection("Database")]
 [Trait("Category", "LayerExecutionProof")]
-[Protocol(TestProtocols.OgcApiProcesses)]
-[Operation(Operations.ProcessExecution)]
+// These contracts exercise shared executors and storage directly, without an HTTP adapter.
+[Protocol(TestProtocols.Infrastructure)]
+[Operation(Operations.ContractTesting)]
 public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureServices(_ => { });
@@ -60,7 +60,6 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task FeatureProject_RealCatalogLayer_PublishesAnalyticalMercatorCoordinatesAndSrid()
     {
         using var provider = SourceServices();
@@ -78,7 +77,6 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task HonuaLayerSource_RealCatalogFilterBboxAndFields_PublishesExactProjectedSelection()
     {
         using var provider = SourceServices();
@@ -91,7 +89,7 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
         output.RootElement.GetProperty("srid").GetInt32().Should().Be(3857);
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task HonuaLayerSource_AdvertisedCrsDiffersFromStorage_UsesCanonicalStoragePrecedence(bool bindingOverridesResource)
