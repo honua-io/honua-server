@@ -54,6 +54,8 @@ in **55s** (`gp-managed-proofs-1.trx`), including the real geometry-format job a
 the imagery inference/georeferencing regression guards. The calculate-field
 PostGIS/HTTP proof passed **1 test**, zero failures/skips, in **36s**
 (`gp-calculate-proofs-1.trx`). Both receipts are in `proofs-gp-results`.
+The integrated calculate-field rerun also passed **1 test**, zero failures/skips,
+in **44s** (`gp-calculate-final.trx`).
 
 - `conversion.geometry-format` executes all four targets against a polygon with
   an independently specified 10-by-8 shell and 4-by-3 hole: area 68, exact rings,
