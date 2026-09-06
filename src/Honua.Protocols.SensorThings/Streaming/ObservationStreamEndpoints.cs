@@ -6,6 +6,8 @@ using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -28,6 +30,7 @@ internal static class ObservationStreamEndpoints
     public static IEndpointRouteBuilder MapSensorThingsStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/sta/v1.1/ObservationsStream", HandleStream)
+            .AddEndpointFilter<LiveStreamAuthorizationFilter>()
             .WithDisplayName("STA Observation Stream")
             .WithName("StaObservationStream")
             .WithSummary("Stream new Observations in real time (SSE or WebSocket)")
@@ -51,6 +54,20 @@ internal static class ObservationStreamEndpoints
         [FromServices] ObservationStreamSessionManager sessionManager,
         [FromServices] ObservationStreamScope scope)
     {
+        var tenant = context.RequestServices.GetService<ITenantContext>();
+        if (!context.User.IsInRole("admin") && (string.IsNullOrWhiteSpace(scope.TenantId)
+            || tenant?.Source != TenantContextSource.Claim))
+        {
+            return StandardErrorHelpers.CreateForbidden(context,
+                "Observation subscriptions require a resolved tenant scope.");
+        }
+
+        if (context.Request.Query.ContainsKey("cursor") || context.Request.Headers.ContainsKey("Last-Event-ID"))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Observation subscriptions are live-only and cannot replay a supplied cursor.");
+        }
+
         long? datastreamId = null;
         if (context.Request.Query.TryGetValue("datastreamId", out var raw) &&
             long.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))

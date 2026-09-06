@@ -559,3 +559,79 @@ classes from a shard already at 8% utilisation, and `Server Features Misc` sheds
 four from a 61% shard, so neither needs a re-base. Fold the observed
 `server-tests-raster-serving` p90 into the table above at the next audit
 (`scripts/ci/audit-shard-headroom.py`).
+
+## Core and Cloud Contracts capacity split (2026-09-06, #4451)
+
+Trunk went red at `3c4a8cd` with `Server Tests (Core and Cloud Contracts)` at
+exit 124: `HONUA_SHARD_CAPACITY_EXHAUSTED`, 1561s against the 26-minute inner
+cap, 4 idle seconds at exit, every test that ran passed. The newer tip
+`470dd1b` reproduced it ([`34028070097`](https://github.com/honua-io/honua-server/actions/runs/34028070097),
+1562s). This is a capacity failure, not a defect in a landing.
+
+### Evidence: one class, and it is serialized
+
+The last passing run of the shard,
+[`34022872366`](https://github.com/honua-io/honua-server/actions/runs/34022872366)
+at `010a3c0`, took **1041s (17.4 min, 67% of cap)**. Only two commits separate
+it from the first red run, and diffing the console results of the two shard logs
+shows the red run executed **exactly the same 442 tests plus 15 cases of one new
+class** — `PatchConcurrencyTests`, added by #4354 — and was killed while still
+inside it.
+
+`PatchConcurrencyTests` carries `[Collection("Database")]`, the one
+database-backed collection still declared `DisableParallelization` (see
+`tests/dotnet/Honua.Server.Tests/DatabaseCollection.cs`; #1359 moved the rest of
+the Core classes onto the parallel `Database.*` siblings). Its cases therefore
+run strictly one at a time and add their full duration to whichever shard owns
+them instead of overlapping with it. Both timeout runs measure the same rate:
+
+| Run | Cases completed | Wall span | Per case | Projected 40 cases |
+|---|---:|---:|---:|---:|
+| `34025905230` | 15 of 40 | 246.6s | 16.4s | 10.9 min |
+| `34028070097` | 26 of 40 | 422.3s | 16.2s | 10.8 min |
+
+Adding ~10.9 min of serial work to a shard that already sat at 17.4 min of a
+26-minute cap cannot fit under any placement, which is why the class moves
+rather than the budget.
+
+### The split
+
+`Core Mutation Concurrency` (inner 20, job 30 — the standard gap of 10) takes
+`PatchConcurrencyTests` alone. Four further classes leave `Core and Cloud
+Contracts` for shards that already have headroom, so the remainder keeps margin
+under the runner contention both red runs ran into. Per-class spans are from
+`scripts/ci/summarize-trx-class-intervals.py` over the last passing run's TRX;
+the shard columns are `scripts/ci/audit-shard-headroom.py` over run
+`34025905230`.
+
+| Class | Span (min) | Collection | From | To |
+|---|---:|---|---|---|
+| `PatchConcurrencyTests` | 10.9 (projected) | `Database` (serial) | Core and Cloud Contracts | **Core Mutation Concurrency** |
+| `CrsTransformationCorrectnessTests` | 4.38 | `Database.CoreSpatial` | Core and Cloud Contracts | Core Attachments and Records |
+| `AdvancedSpatialQueryTests` | 3.56 | `Database.CoreSpatial` | Core and Cloud Contracts | Core Endpoints |
+| `ApiSurfaceComplianceTests` | 1.90 | `Database` (serial) | Core and Cloud Contracts | STAC and API Governance |
+| `TestQualityValidationTests` | 0.90 | `Database` (serial) | Core and Cloud Contracts | STAC and API Governance |
+
+Projected headroom, taking every receiving shard's cost as fully additive (the
+pessimistic bound — three of the four moved classes are on parallel sibling
+collections and will overlap with their new shard's work):
+
+| Shard | Measured p90 | Change | Projected | Inner cap | Projected / cap |
+|---|---:|---|---:|---:|---:|
+| Core and Cloud Contracts | 26.0 (exit 124) | −5 classes, incl. all 10.9 min of serial patch work | ≤ 17.4 | 26 | ≤ 67% |
+| Core Mutation Concurrency | — (new) | +`PatchConcurrencyTests` | ~12.5 | 20 | ~63% |
+| Core Endpoints | 18.9 | +`AdvancedSpatialQueryTests` | ≤ 22.5 | 32 | ≤ 70% |
+| Core Attachments and Records | 10.9 | +`CrsTransformationCorrectnessTests` | ≤ 15.3 | 26 | ≤ 59% |
+| STAC and API Governance | 3.5 | +2 governance classes | ≤ 6.3 | 20 | ≤ 32% |
+
+The `Core and Cloud Contracts` bound is exact rather than modelled: after the
+move its test set is a strict subset of what run `34022872366` executed in
+17.4 min, so it cannot run longer. `Core Mutation Concurrency` is a new matrix
+entry with no measured p90 — its 20/30 budget is the projected 10.9 min class
+span plus the ~1.5 min of `dotnet test` startup, discovery and container warm-up
+that separates a shard's `timing.json` wall from its TRX span. Fold its observed
+p90 into the next audit.
+
+`.github/ci-shards.json` records the pre-split ownership in
+`shard_partitions`, so `scripts/ci/check-server-test-shard-coverage.py` fails if
+any class the old filters claimed ends up orphaned or double-owned.

@@ -218,6 +218,17 @@
         "Server Features Streaming Endpoints",
         "Server Features Miscellaneous"
       ]
+    },
+    {
+      "name": "Core and API Governance capacity rebalance",
+      "filter": "((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))|(FullyQualifiedName~FeatureServerEndpointTests)|(FullyQualifiedName~AttachmentEndpointTests|FullyQualifiedName~PostgresAttachmentStoreTests|FullyQualifiedName~QueryRelatedRecordsEndpointTests|FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~LimitsEnforcementTests)|(FullyQualifiedName~Honua.Server.Tests.Features.API)",
+      "children": [
+        "Core and Cloud Contracts",
+        "Core Endpoints",
+        "Core Attachments and Records",
+        "STAC and API Governance",
+        "Core Mutation Concurrency"
+      ]
     }
   ],
   "shards": [
@@ -227,19 +238,20 @@
       "dispatch_rank": 26.3,
       "artifact_suffix": "core-endpoints",
       "log_name": "server-tests-core-endpoints",
-      "_comment": "ADR-0037 finer-sharding: carved from Core. Isolates the FeatureServerEndpointTests classes (the ~114-test FeatureServerEndpointTests plus the related StreamingFeatureServerEndpointTests) — the dominant driver of the old ~46m Core monolith. Bare substring selector mirrors the Core catch-all's bare !~FeatureServerEndpointTests exclusion so the two stay a clean partition (a qualified selector would orphan StreamingFeatureServerEndpointTests).",
+      "_comment": "ADR-0037 finer-sharding: carved from Core. Isolates the FeatureServerEndpointTests classes (the ~114-test FeatureServerEndpointTests plus the related StreamingFeatureServerEndpointTests) — the dominant driver of the old ~46m Core monolith. Bare substring selector mirrors the Core catch-all's bare !~FeatureServerEndpointTests exclusion so the two stay a clean partition (a qualified selector would orphan StreamingFeatureServerEndpointTests). September 2026 capacity rebalance: owns AdvancedSpatialQueryTests from Core and Cloud Contracts; whole-class move with unchanged budgets.",
       "timeout_minutes": 42,
       "test_timeout_minutes": 32,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~FeatureServerEndpointTests",
+      "filter": "FullyQualifiedName~FeatureServerEndpointTests|FullyQualifiedName~Honua.Server.Tests.AdvancedSpatialQueryTests",
       "paths": [
         "src/Honua.Core/Features/Metadata/",
         "src/Honua.Db/Postgres/Features/Metadata/",
         "tests/dotnet/Honua.Server.Tests/Helpers/",
         "tests/dotnet/Honua.Server.Tests/TestData/",
-        "tests/dotnet/Honua.Server.Tests/FeatureServerEndpointTests.cs"
+        "tests/dotnet/Honua.Server.Tests/FeatureServerEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs"
       ]
     },
     {
@@ -248,13 +260,13 @@
       "dispatch_rank": 17.2,
       "artifact_suffix": "core-attachments-records",
       "log_name": "server-tests-core-attachments-records",
-      "_comment": "ADR-0037 finer-sharding: carved from Core. Selects the attachment, related-records, OGC features and limits endpoint classes (all unique root-namespace class names). Complementary with the Core catch-all.",
+      "_comment": "ADR-0037 finer-sharding: carved from Core. Selects the attachment, related-records, OGC features and limits endpoint classes (all unique root-namespace class names). Complementary with the Core catch-all. September 2026 capacity rebalance: owns CrsTransformationCorrectnessTests from Core and Cloud Contracts; whole-class move with unchanged budgets.",
       "timeout_minutes": 36,
       "test_timeout_minutes": 26,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~AttachmentEndpointTests|FullyQualifiedName~PostgresAttachmentStoreTests|FullyQualifiedName~QueryRelatedRecordsEndpointTests|FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~LimitsEnforcementTests",
+      "filter": "FullyQualifiedName~AttachmentEndpointTests|FullyQualifiedName~PostgresAttachmentStoreTests|FullyQualifiedName~QueryRelatedRecordsEndpointTests|FullyQualifiedName~OgcFeaturesEndpointTests|FullyQualifiedName~LimitsEnforcementTests|FullyQualifiedName~Honua.Server.Tests.CrsTransformationCorrectnessTests",
       "paths": [
         "src/Honua.Core/Features/Metadata/",
         "src/Honua.Db/Postgres/Features/Metadata/",
@@ -264,7 +276,8 @@
         "tests/dotnet/Honua.Server.Tests/PostgresAttachmentStoreTests.cs",
         "tests/dotnet/Honua.Server.Tests/QueryRelatedRecordsEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/OgcFeaturesEndpointTests.cs",
-        "tests/dotnet/Honua.Server.Tests/LimitsEnforcementTests.cs"
+        "tests/dotnet/Honua.Server.Tests/LimitsEnforcementTests.cs",
+        "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs"
       ]
     },
     {
@@ -273,13 +286,13 @@
       "dispatch_rank": 16.7,
       "artifact_suffix": "core-cloud-contracts",
       "log_name": "server-tests-core-cloud-contracts",
-      "_comment": "Round-2 offline TRX rebalance (#3770): folds the 1.9m-p90 Cloud/Contract micro-shard into Core; same Honua.Server.Tests assembly, placement only.",
+      "_comment": "September 2026 capacity rebalance (runs 34025905230 and 34028070097). #4354 added PatchConcurrencyTests to the serialized [Collection(\"Database\")], whose 40 cases run one at a time at ~16.3s each — about 10.9 minutes appended to whichever shard owns them — and the shard went from a passing 17.4m (run 34022872366) to exit 124 at the 26m cap with the class still running. PatchConcurrencyTests moves to Core Mutation Concurrency; CrsTransformationCorrectnessTests moves to Core Attachments and Records, AdvancedSpatialQueryTests to Core Endpoints, and ApiSurfaceComplianceTests plus TestQualityValidationTests to STAC and API Governance so the remainder keeps headroom under the runner contention seen in the failing runs. The catch-all and the 26-minute budget are unchanged; the Core partition guards lossless ownership.",
       "timeout_minutes": 36,
       "test_timeout_minutes": 26,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "(FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.))",
+      "filter": "(((((FullyQualifiedName!~Honua.Server.Tests.Features.&FullyQualifiedName!~Honua.Server.Tests.Import.&FullyQualifiedName!~Honua.Server.Tests.Performance.&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.&FullyQualifiedName!~Honua.Server.Tests.Admin.&FullyQualifiedName!~Honua.Server.Tests.Infrastructure.&FullyQualifiedName!~Honua.Server.Tests.Cloud.&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Cog&FullyQualifiedName!~Honua.Server.Tests.Contract.&FullyQualifiedName!~Honua.Server.Tests.AdminEndpointTests&FullyQualifiedName!~FeatureServerEndpointTests&FullyQualifiedName!~AttachmentEndpointTests&FullyQualifiedName!~PostgresAttachmentStoreTests&FullyQualifiedName!~QueryRelatedRecordsEndpointTests&FullyQualifiedName!~OgcFeaturesEndpointTests&FullyQualifiedName!~LimitsEnforcementTests)|((FullyQualifiedName~Honua.Server.Tests.Cloud.|FullyQualifiedName~Honua.Server.Tests.Contract.)|(FullyQualifiedName~Honua.Server.Tests.Performance.)|(FullyQualifiedName~Honua.Server.Tests.Comprehensive.)))&FullyQualifiedName!~Honua.Server.Tests.CrsTransformationCorrectnessTests)&FullyQualifiedName!~Honua.Server.Tests.AdvancedSpatialQueryTests)&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests)&FullyQualifiedName!~Honua.Server.Tests.Comprehensive.TestQualityValidationTests&FullyQualifiedName!~Honua.Server.Tests.PatchConcurrencyTests",
       "paths": [
         "src/Honua.Core/Features/Metadata/",
         "src/Honua.Core/Features/Publishing/",
@@ -290,12 +303,10 @@
         "src/Honua.Server/Migrations/082_CreatePromotionStores.sql",
         "src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql",
         "src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql",
-        "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs",
         "tests/dotnet/Honua.Server.Tests/ApiExplorerEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Cloud/",
-        "tests/dotnet/Honua.Server.Tests/Comprehensive/",
+        "tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
         "tests/dotnet/Honua.Server.Tests/Contract/",
-        "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs",
         "tests/dotnet/Honua.Server.Tests/DatabaseMigrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/HealthEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/HealthEndpointsTests.cs",
@@ -639,14 +650,17 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.API",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.API|FullyQualifiedName~Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests|FullyQualifiedName~Honua.Server.Tests.Comprehensive.TestQualityValidationTests",
       "_paths_comment": "#2693: the exact ImageServer endpoint-registry fragment is bounded protocol registration; pair its ImageServer owner with this API-governance projection without widening other EndpointRegistry fragments.",
       "paths": [
         "src/Honua.Protocols.Stac/",
         "src/Honua.Server/EndpointRegistry.ImageServer.cs",
         "tests/dotnet/Honua.Server.Tests/Features/API/",
-        "src/Honua.Core/Features/Validation/"
-      ]
+        "src/Honua.Core/Features/Validation/",
+        "tests/dotnet/Honua.Server.Tests/Comprehensive/ApiSurfaceComplianceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Comprehensive/TestQualityValidationTests.cs"
+      ],
+      "_comment": "September 2026 capacity rebalance (run 34025905230): owns the whole ApiSurfaceComplianceTests and TestQualityValidationTests classes from Core and Cloud Contracts, alongside API governance; unchanged 20-minute budget."
     },
     {
       "name": "OData Core",
@@ -735,6 +749,23 @@
         "src/Honua.Hosting/Features/Services/"
       ],
       "_comment": "Round-2 offline TRX split (#3770): pagination/spatial half of the 30.1m-p90 parent."
+    },
+    {
+      "name": "Core Mutation Concurrency",
+      "shard_name": "Core Mutation Concurrency",
+      "dispatch_rank": 13.7,
+      "artifact_suffix": "core-mutation-concurrency",
+      "log_name": "server-tests-core-mutation-concurrency",
+      "_comment": "September 2026 capacity split of Core and Cloud Contracts (runs 34025905230, 34028070097). PatchConcurrencyTests arrived with #4354 under [Collection(\"Database\")] \u2014 the one database collection still declared DisableParallelization \u2014 so its cases execute strictly one at a time and add their full duration to whichever shard owns them rather than overlapping with it. Measured on the two timeout runs: 15 of 40 cases in 246.6s on 34025905230 (16.4s per case) and 26 of 40 in 422.3s on 34028070097 (16.2s per case), the class still running when the 26m cap fired both times \u2014 about 10.9 minutes for all 40. Isolating the class follows the shard_budget_policy preference for an evidence-driven split over a cap increase, and gives the write-path concurrency family room to grow without re-saturating Core and Cloud Contracts.",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.PatchConcurrencyTests",
+      "paths": [
+        "tests/dotnet/Honua.Server.Tests/PatchConcurrencyTests.cs"
+      ]
     },
     {
       "name": "OData Mutations and Batch",
