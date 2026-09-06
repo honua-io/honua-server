@@ -27,6 +27,96 @@ public sealed class StudioDraftOperationRuntimeTests
         descriptor.ApprovalModel.Should().Be(OperationApprovalModel.StudioPublishRequest);
     }
 
+    [UnitTest]
+    public async Task PublicationRequestValidation_RejectsMismatchedContentHashBeforeActuation()
+    {
+        var itemId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetVersionAsync(itemId, versionId, Arg.Any<CancellationToken>()).Returns(
+            new StudioContentVersion
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                VersionNumber = 1,
+                PackageKey = "parcels",
+                ContentHash = "saved-hash",
+                Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
+                Validation = StudioValidationSummary.NotValidated,
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+        lifecycle.GetPointersAsync(itemId, Arg.Any<CancellationToken>()).Returns(
+            new StudioContentItemPointers { ItemId = itemId, CurrentVersionId = versionId });
+        var validator = Substitute.For<IStudioPackageValidator>();
+        validator.ValidatePublicationIntent(Arg.Any<StudioPublicationIntent?>()).Returns(
+            new StudioValidationSummary { Status = StudioPackageValidationStatus.Valid });
+        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System, validator);
+        var payload = JsonSerializer.Serialize(
+            new StudioPublicationRequestPayload
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                ContentHash = "wrong-hash",
+                Intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
+            },
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+
+        var act = () => executor.ValidateAsync(Request(StudioDraftOperations.CreatePublicationRequest, payload));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*content hash*");
+        await lifecycle.DidNotReceiveWithAnyArgs().CreatePublicationRequestAsync(
+            default, default, default, default, default, default);
+    }
+
+    [UnitTest]
+    public async Task PublicationRequestActuation_RejectsInvalidSavedVersion()
+    {
+        var itemId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetVersionAsync(itemId, versionId, Arg.Any<CancellationToken>()).Returns(
+            new StudioContentVersion
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                VersionNumber = 1,
+                PackageKey = "parcels",
+                ContentHash = "saved-hash",
+                Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
+                Validation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Invalid },
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+        lifecycle.CreatePublicationRequestAsync(
+                itemId, versionId, Arg.Any<StudioPublicationIntent?>(), Arg.Any<string?>(),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new StudioPublicationRequest
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = itemId,
+                VersionId = versionId,
+                Status = StudioPublicationRequestStatus.Rejected,
+                Validation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Invalid },
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var payload = JsonSerializer.Serialize(
+            new StudioPublicationRequestPayload
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                ContentHash = "saved-hash",
+            },
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+
+        var handle = await executor.SubmitAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, payload),
+            Context("rejected-publication"));
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.ResourceIds.Should().NotContainKey("activeUrl");
+    }
+
     [Theory]
     [InlineData(StudioDraftOperations.Validate)]
     [InlineData(StudioDraftOperations.PreviewPlan)]

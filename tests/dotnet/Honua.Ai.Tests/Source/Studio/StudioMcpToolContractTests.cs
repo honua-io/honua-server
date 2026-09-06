@@ -103,36 +103,77 @@ public sealed class StudioMcpToolContractTests
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
-    public async Task ProposePublication_NeverCallsVersionOrPointerMovingLifecycleMembers()
+    public async Task ProposePublication_BindsSavedVersionToCanonicalProposalIdentity()
     {
-        var draft = BuildDraft(StudioPackageFamily.Map, generation: 1);
-        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
-        _lifecycleService
-            .UpdateDraftAsync(DraftId, Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
-            .Returns(draft with { Generation = 2 });
+        var itemId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
+        const string contentHash = "sealed-hash";
+        _lifecycleService.GetVersionAsync(itemId, versionId, Arg.Any<CancellationToken>()).Returns(
+            new StudioContentVersion
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                VersionNumber = 1,
+                PackageKey = "parcels",
+                ContentHash = contentHash,
+                Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
+                Validation = StudioValidationSummary.NotValidated,
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+        _lifecycleService.GetPointersAsync(itemId, Arg.Any<CancellationToken>()).Returns(
+            new StudioContentItemPointers { ItemId = itemId, CurrentVersionId = versionId, OwnerId = "test-user" });
+        var runtime = Substitute.For<IStudioDraftMutationRuntime>();
+        var now = DateTimeOffset.UtcNow;
+        runtime.CreatePublicationRequestAsync(
+                itemId, versionId, contentHash, Arg.Any<StudioPublicationIntent?>(), Arg.Any<string?>(),
+                Arg.Any<string?>(), Arg.Any<StudioDraftMutationContext>(), Arg.Any<CancellationToken>())
+            .Returns(new StudioDraftMutationReceipt<StudioPublicationRequest>
+            {
+                Operation = new OperationHandle
+                {
+                    OperationInstanceId = "opinst-studio-publish",
+                    OperationId = "studio.content.create-publication-request",
+                    CorrelationId = "corr-studio-publish",
+                    AuditId = "audit-studio-publish",
+                    ProposalId = "proposal-studio-publish",
+                    Status = OperationHandleStatus.RequiresApproval,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                },
+            });
 
         var tool = new ProposeStudioPublicationTool(_jobService, NullLogger<ProposeStudioPublicationTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
-            new McpStudioProposePublicationArgument { DraftId = DraftId, Generation = 1, Route = "/studio/parcels" },
+            new McpStudioProposePublicationArgument
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                ContentHash = contentHash,
+                Route = "/studio/parcels",
+                Visibility = "organization",
+            },
             StudioMcpJsonContext.Default.McpStudioProposePublicationArgument);
 
-        var result = await tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(_lifecycleService);
+            services.AddSingleton(runtime);
+            McpTestFactory.AddAllowingStudioAuthorization(services);
+        });
+        var result = await tool.InvokeAsync(context, arguments, CancellationToken.None);
 
         result.IsError.Should().BeFalse();
         var structuredContent = result.StructuredContent
             ?? throw new InvalidOperationException("Expected structured MCP content.");
-        structuredContent.GetProperty("recorded").GetBoolean().Should().BeTrue();
+        structuredContent.GetProperty("operationInstanceId").GetString().Should().Be("opinst-studio-publish");
+        structuredContent.GetProperty("proposalId").GetString().Should().Be("proposal-studio-publish");
+        structuredContent.GetProperty("proposalUri").GetString().Should().Be("honua://proposals/proposal-studio-publish");
+        structuredContent.GetProperty("status").GetString().Should().Be("AwaitingApproval");
         structuredContent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
-
-        // Structural proof: this tool never touches the version/publish-request/
-        // rollback surface — only the ordinary generation-checked draft update.
-        await _lifecycleService.DidNotReceive().CreatePublicationRequestAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<StudioPublicationIntent?>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
-        await _lifecycleService.DidNotReceive().SaveDraftAsVersionAsync(
-            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<long?>(), Arg.Any<CancellationToken>());
-        await _lifecycleService.DidNotReceive().RollbackAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<StudioRollbackPointer>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
-        await _lifecycleService.DidNotReceive().DeleteDraftAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await runtime.Received(1).CreatePublicationRequestAsync(
+            itemId, versionId, contentHash,
+            Arg.Is<StudioPublicationIntent>(intent => intent.Route == "/studio/parcels" && intent.Visibility == "organization"),
+            Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<StudioDraftMutationContext>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

@@ -98,11 +98,12 @@ yet:
   and lifecycle/status client remain open in
   [honua-sdk-js#1397](https://github.com/honua-io/honua-sdk-js/issues/1397) and
   [honua-sdk-js#1398](https://github.com/honua-io/honua-sdk-js/issues/1398).
-- **Governed Studio publication:** `honua_studio_propose_publication` records
-  intent only. [#3304](https://github.com/honua-io/honua-server/issues/3304)
-  still blocks the bridge from that intent to the canonical proposal/approval
-  lifecycle. The typed deploy and release proposal tools do not substitute for
-  a Studio publication proposal.
+- **Governed Studio publication:** save the draft as an immutable version, then
+  call `honua_studio_propose_publication` with its `itemId`, `versionId`, and
+  `contentHash` plus the requested `route` and `visibility`. The tool returns
+  durable proposal, operation, and audit identities. A separate authorized
+  principal must approve it; poll the returned `proposalUri` for final status
+  and the active URL.
 - **Separate-principal approval and replay:** the durable canonical operation
   envelope/bridge remains open in
   [#3411](https://github.com/honua-io/honua-server/issues/3411); OAuth identity
