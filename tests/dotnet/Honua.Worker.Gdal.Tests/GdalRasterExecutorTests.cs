@@ -409,8 +409,20 @@ public sealed class GdalRasterExecutorTests
     // raster.zonal-statistics
     // -------------------------------------------------------------------------
 
+    /// <summary>
+    /// Proves the <c>gdalinfo</c> aggregate <em>parser</em>, not the statistic
+    /// (honua-server#4400).
+    /// </summary>
+    /// <remarks>
+    /// The count/mean/min/max/sum asserted below are parsed out of
+    /// <c>ZonalGdalinfoFixture</c>, a hand-authored <c>gdalinfo</c> stdout string this test
+    /// itself provides through <c>FakeGdalCommandRunner</c>. Nothing computes a zonal statistic
+    /// here. The executed receipt for <c>raster.zonal-statistics</c> is
+    /// <c>RasterExecutionProofTests</c>, which runs the production executor against the pinned
+    /// GDAL image with hand-derived aggregates.
+    /// </remarks>
     [UnitTest]
-    public async Task ZonalStatistics_OneZone_PublishesScalarWithAggregatesPerZone()
+    public async Task ZonalStatistics_OneZone_ParsesGdalinfoAggregatesIntoPerZoneScalar()
     {
         // First call is the clip (gdalwarp), second is the stats (gdalinfo).
         // The fake runner needs to be able to write a non-empty clipped file

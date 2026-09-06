@@ -124,8 +124,17 @@ public sealed class ImageryInferenceJobExecutorTests
         result.ErrorMessage.Should().Contain("vertex");
     }
 
+    /// <summary>
+    /// Proves the artifact <em>pass-through</em>, not inference (honua-server#4400).
+    /// </summary>
+    /// <remarks>
+    /// <c>ClassifiedGeoTiff</c> is this test's own fixture, served back by a stub HTTP handler;
+    /// no inference backend runs. What is proven is that the executor publishes the backend's
+    /// bytes unmodified, which is a real contract — but it is not a receipt that any model
+    /// produced them.
+    /// </remarks>
     [UnitTest]
-    public async Task ExecuteAsync_RasterOutput_PublishesGeoTiffArtifactPreservingBackendBytes()
+    public async Task ExecuteAsync_RasterOutput_PublishesTheBackendResponseBytesUnmodified()
     {
         var handler = new StubHttpHandler(_ => RasterResponse(ClassifiedGeoTiff));
         var executor = CreateExecutor(handler, provider: "http", apiKey: "test-key");
