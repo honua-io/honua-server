@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using DotNet.Testcontainers.Configurations;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Db.Postgres.Features.GeometryService;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -33,9 +34,11 @@ public sealed class DatumGridPostgresFixture : IAsyncDisposable
             .WithEnvironment("PROJ_NETWORK", "OFF")
             // Prepare this root-owned directory before the image drops to postgres.
             .WithEntrypoint("/bin/sh", "-c")
-            .WithCommand("mkdir -p /opt/honua-datum-proj && " +
+            // PostgreSqlBuilder appends its own postgres flags by default. Replace
+            // them so sh receives this script as its first and only command.
+            .WithCommand(new OverwriteEnumerable<string>(["mkdir -p /opt/honua-datum-proj && " +
                 "cp /usr/share/proj/proj.db /opt/honua-datum-proj/proj.db && " +
-                "exec /usr/local/bin/docker-entrypoint.sh postgres");
+                "exec /usr/local/bin/docker-entrypoint.sh postgres"]));
         if (includeNadconGrid)
         {
             await using var resource = typeof(DatumGridPostgresFixture).Assembly.GetManifestResourceStream(
