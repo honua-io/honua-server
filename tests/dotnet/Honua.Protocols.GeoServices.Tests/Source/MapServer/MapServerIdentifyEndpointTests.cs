@@ -60,6 +60,83 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         identify.Results!.Length.Should().BeGreaterThan(0);
     }
 
+    // QGIS 3.44.3 and Esri's Identify documentation use unquoted x/y keys (#4520).
+    [IntegrationTheory]
+    [InlineData("{x: -122.5, y: 37.5}", false)]
+    [InlineData("{x: -122.5, y: 37.5}", true)]
+    [InlineData("{y:37.5,x:-122.5}", false)]
+    [InlineData("{y:37.5,x:-122.5}", true)]
+    [InlineData("{ x : -1.225e2 , y : 3.75e1 }", false)]
+    [InlineData("{ x : -1.225e2 , y : 3.75e1 }", true)]
+    [InlineData("{\"x\":-122.5,\"y\":37.5}", false)]
+    [InlineData("{\"x\":-122.5,\"y\":37.5}", true)]
+    [InlineData("-122.5,37.5", false)]
+    [InlineData("-122.5,37.5", true)]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_PointLiteralMatchesQuotedJson(string geometry, bool usePost)
+    {
+        using var expected = await RequestAsync("{\"x\":-122.5,\"y\":37.5}");
+        var expectedResults = expected.RootElement.GetProperty("results");
+        expectedResults.GetArrayLength().Should().Be(1);
+        var expectedPoint = expectedResults[0].GetProperty("geometry");
+        expectedPoint.GetProperty("x").GetDouble().Should().Be(-122.5);
+        expectedPoint.GetProperty("y").GetDouble().Should().Be(37.5);
+
+        using var actual = await RequestAsync(geometry);
+        actual.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            $"documented point syntax must return a feature: {actual.RootElement}");
+        actual.RootElement.GetProperty("results").GetRawText().Should().Be(expectedResults.GetRawText(),
+            "equivalent point encodings must preserve exact feature identity, attributes, geometry and CRS");
+
+        async Task<JsonDocument> RequestAsync(string value)
+        {
+            var parameters = new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["geometry"] = value,
+                ["geometryType"] = "esriGeometryPoint",
+                ["layers"] = "all:0",
+                ["tolerance"] = "10",
+                ["mapExtent"] = "-122.52,37.48,-122.48,37.52",
+                ["imageDisplay"] = "1000,1000,96"
+            };
+            using var payload = new FormUrlEncodedContent(parameters);
+            var url = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify";
+            using var response = usePost
+                ? await Fixture.Client.PostAsync(url, payload)
+                : await Fixture.Client.GetAsync(url + "?" + await payload.ReadAsStringAsync());
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            return JsonDocument.Parse(content);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("{x:NaN,y:37.5}")]
+    [InlineData("{x:Infinity,y:37.5}")]
+    [InlineData("{x:1e999,y:37.5}")]
+    [InlineData("{x:-122.5,x:0,y:37.5}")]
+    [InlineData("{x:-122.5}")]
+    [InlineData("{x:-122.5,y:37.5,unknown:1}")]
+    [InlineData("{x:-122.5,y:37.5};anything()")]
+    [InlineData("{x:(-122.5),y:37.5}")]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_PointLiteralRejectsInvalidInput(string geometry)
+    {
+        using var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify" +
+            $"?geometry={Uri.EscapeDataString(geometry)}&geometryType=esriGeometryPoint" +
+            "&mapExtent=-123,37,-122,38&imageDisplay=1000,1000,96&f=json");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+        document.RootElement.TryGetProperty("results", out _).Should().BeFalse();
+    }
+
     [IntegrationTheory]
     [InlineData("esriGeometryEnvelope", "{\"xmin\":-122.51,\"ymin\":37.504,\"xmax\":-122.49,\"ymax\":37.506}")]
     [InlineData("esriGeometryMultipoint", "{\"points\":[[-122.5,37.505]]}")]
