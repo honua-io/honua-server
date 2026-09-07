@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
@@ -224,7 +225,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 Validation = secondVersion.Validation,
                 RequestedBy = "tester",
                 CreatedAt = DateTimeOffset.UtcNow,
-            });
+            }, expectedCurrentVersionId: secondVersion.VersionId);
             publication.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
 
             var rollback = await store.RollbackAsync(
@@ -338,6 +339,81 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    // honua-server#3980: the published-pointer move must carry the approval's expected
+    // current_version_id as a SQL predicate inside the request-insert transaction, so a version
+    // saved after validation makes the UPDATE match zero rows and rolls the whole request back.
+    [IntegrationTest]
+    public async Task PackageStore_PublicationRequestWithStaleExpectedCurrentVersion_RollsBackAndConflicts()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var created = await store.CreateDraftAsync(BuildDraft("1=1", "cas-publish-query"));
+            var approved = await store.CreateVersionAsync(created, "first save", "tester");
+
+            // The concurrent draft save that lands between validation and actuation.
+            var updated = await store.UpdateDraftAsync(created with
+            {
+                Envelope = BuildEnvelope("POPULATION > 1000"),
+                Generation = created.Generation,
+            });
+            updated.Should().NotBeNull();
+            var superseding = await store.CreateVersionAsync(updated!, "second save", "tester");
+            superseding.VersionId.Should().NotBe(approved.VersionId);
+
+            var staleRequestId = Guid.NewGuid();
+            var act = async () => await store.CreatePublicationRequestAsync(new StudioPublicationRequest
+            {
+                RequestId = staleRequestId,
+                ItemId = approved.ItemId,
+                VersionId = approved.VersionId,
+                Intent = approved.Envelope.PublicationIntent,
+                Status = StudioPublicationRequestStatus.Accepted,
+                Validation = approved.Validation,
+                RequestedBy = "tester",
+                CreatedAt = DateTimeOffset.UtcNow,
+            }, expectedCurrentVersionId: approved.VersionId);
+
+            var conflict = await act.Should().ThrowAsync<StudioPublicationPointerConflictException>();
+            conflict.Which.ExpectedCurrentVersionId.Should().Be(approved.VersionId);
+            conflict.Which.ActualCurrentVersionId.Should().Be(superseding.VersionId);
+
+            var pointers = await store.GetPointersAsync(approved.ItemId);
+            pointers.Should().NotBeNull();
+            pointers!.PublishedVersionId.Should().BeNull("the stale approved version must never publish");
+            pointers.CurrentVersionId.Should().Be(superseding.VersionId);
+            // The insert shares the failed UPDATE's transaction, so the request row rolls back too.
+            var persisted = await store.GetPublicationRequestAsync(
+                approved.ItemId, approved.VersionId, staleRequestId);
+            persisted.Should().BeNull();
+
+            // Same schema, same item: the predicate still lets the current version publish.
+            var accepted = await store.CreatePublicationRequestAsync(new StudioPublicationRequest
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = superseding.ItemId,
+                VersionId = superseding.VersionId,
+                Intent = superseding.Envelope.PublicationIntent,
+                Status = StudioPublicationRequestStatus.Accepted,
+                Validation = superseding.Validation,
+                RequestedBy = "tester",
+                CreatedAt = DateTimeOffset.UtcNow,
+            }, expectedCurrentVersionId: superseding.VersionId);
+
+            accepted.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+            var advanced = await store.GetPointersAsync(superseding.ItemId);
+            advanced!.PublishedVersionId.Should().Be(superseding.VersionId);
+            advanced.CurrentVersionId.Should().Be(superseding.VersionId);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     public async Task PackageStore_PublicationRequestWithForeignVersion_RejectsOwnershipMismatch()
     {
@@ -362,7 +438,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 Validation = secondVersion.Validation,
                 RequestedBy = "tester",
                 CreatedAt = DateTimeOffset.UtcNow,
-            });
+            }, expectedCurrentVersionId: firstVersion.VersionId);
 
             await act.Should().ThrowAsync<KeyNotFoundException>()
                 .WithMessage("Studio content version was not found.");
@@ -398,7 +474,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 Validation = version.Validation,
                 RequestedBy = "tester",
                 CreatedAt = DateTimeOffset.UtcNow,
-            });
+            }, expectedCurrentVersionId: version.VersionId);
 
             request.Status.Should().Be(StudioPublicationRequestStatus.Pending);
             var pointers = await store.GetPointersAsync(version.ItemId);
@@ -473,7 +549,7 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                 Validation = version.Validation,
                 RequestedBy = "alice",
                 CreatedAt = DateTimeOffset.UtcNow,
-            });
+            }, expectedCurrentVersionId: version.VersionId);
 
             var byOwner = await store.ListContentItemsAsync(new StudioContentItemQuery { OwnerId = "bob" });
             byOwner.Items.Should().ContainSingle(i => i.ItemId == draftOnly.ItemId);

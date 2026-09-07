@@ -150,6 +150,10 @@ internal static partial class PackageReviewEndpoints
         var publication = await lifecycle.CreatePublicationRequestAsync(
             version.ItemId,
             version.VersionId,
+            // honua-server#3980: this handler just saved version.VersionId as the item's current
+            // version, so that is the pointer the publish is authorized against; a concurrent save
+            // moves it and must fail the publish rather than publish the stale version.
+            expectedCurrentVersionId: version.VersionId,
             request.Intent,
             request.WarningAcknowledgement,
             actor,

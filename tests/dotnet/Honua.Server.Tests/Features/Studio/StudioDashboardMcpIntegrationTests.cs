@@ -6,6 +6,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Guardrails;
+using Honua.Core.Features.Guardrails.Abstractions;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
@@ -14,8 +18,10 @@ using Honua.Db.Postgres.Features.Studio;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -24,11 +30,18 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
+    private readonly RedisFixture _redis = new();
     private readonly string _studioSchema = $"dashboard_{Guid.NewGuid():N}";
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
     {
+        await _redis.InitializeAsync();
+        _fixture.ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
+            builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+        });
         _fixture.ConfigureServices(services =>
         {
             services.RemoveAll<IStudioPackageStore>();
@@ -60,6 +73,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         _client.Dispose();
         await _fixture.Postgres.DropSchemaAsync(_studioSchema);
         await _fixture.DisposeAsync();
+        await _redis.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -240,11 +254,27 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             var lifecycle = reader.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
             reader.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
                 .Should().Be(StudioPackagePersistenceMode.Durable);
+
+            // Composition is complete. Enable the operator's approval guardrail
+            // on the proposing host before submitting the immutable publication intent.
+            _fixture.Services.GetRequiredService<IOptions<GuardrailLadderOptions>>().Value
+                .Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
+            _fixture.Services.GetRequiredService<IGuardrailLadder>().Resolve(OperationClass.StudioDraftMutation)
+                .Tier.Should().Be(GuardrailTier.RequiresApproval);
             var intent = await CallAsync("propose_publication",
-                $$"""{"draftId":"{{reopened.DraftId}}","generation":{{reopened.Generation}},"route":"/studio/dashboard-fixture","visibility":"private"}""");
-            intent.GetProperty("recorded").GetBoolean().Should().BeTrue();
+                $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"/studio/dashboard-fixture","visibility":"personal"}""");
+            intent.GetProperty("status").GetString().Should().Be("AwaitingApproval");
             intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
-            (await lifecycle.GetPointersAsync(version.ItemId))!.PublishedVersionId.Should().BeNull();
+            intent.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace();
+            intent.GetProperty("proposalUri").GetString()
+                .Should().Be($"honua://proposals/{intent.GetProperty("proposalId").GetString()}");
+            var proposalStore = _fixture.Services.GetRequiredService<IOperationProposalStore>();
+            var proposal = await proposalStore.GetAsync(intent.GetProperty("proposalId").GetString()!);
+            proposal.Should().NotBeNull();
+            proposal!.OperationId.Should().Be("studio.content.create-publication-request");
+            var pointers = await lifecycle.GetPointersAsync(version.ItemId);
+            pointers!.CurrentVersionId.Should().Be(version.VersionId);
+            pointers.PublishedVersionId.Should().BeNull();
             (await lifecycle.GetVersionAsync(version.ItemId, version.VersionId))!.ContentHash.Should().Be(expectedHash);
         }
         finally

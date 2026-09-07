@@ -191,16 +191,21 @@ sequence; do not invent tool names or claim this stage completed.
 [SDK #1398](https://github.com/honua-io/honua-sdk-js/issues/1398) own the
 server-discovered routing and lifecycle client.
 
-## 7. Govern publication and report the final URL (blocked bridge)
+## 7. Govern publication and report the final URL
 
-`honua_studio_propose_publication` currently records intent on a draft.
-It does **not** save a version, return an executable publication proposal or
-move a public pointer. Do not pass a draft ID to the approval command.
-[#3304](https://github.com/honua-io/honua-server/issues/3304) must bridge the
-immutable saved version/hash to the canonical proposal runtime first.
+Save the draft as an immutable version, then call
+`honua_studio_propose_publication` with its `itemId`, `versionId`, and
+`contentHash` plus the requested `route` and `visibility`. The tool submits
+that immutable binding to the canonical proposal runtime and returns durable
+proposal, operation, and audit identities plus a `proposalUri`. It does not
+save a version or move the published pointer before approval succeeds.
+Do not pass a draft ID to the approval command.
 
-Once that bridge is available on the candidate, submit the saved version,
-retain its returned proposal ID and poll from the proposer session. The
+Verify that the pinned candidate exposes this contract before submitting.
+The source bridge is not an exact-candidate end-to-end execution receipt;
+retain the save/reopen and candidate replay requirements above. Poll the
+returned `proposalUri` from the proposer session. A separate authorized
+principal must approve the proposal. The
 human reviews the immutable version/hash, target route, visibility, risk,
 diff and policy. For a real canonical proposal, the approval command is:
 

@@ -444,6 +444,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 createdAt,
                 updateCurrent: true,
                 updatePublished: false,
+                expectedCurrentVersionId: null,
                 cancellationToken).ConfigureAwait(false);
 
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
@@ -838,6 +839,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 
     public async Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
+        Guid? expectedCurrentVersionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -881,6 +883,13 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 
             if (request.Status == StudioPublicationRequestStatus.Accepted)
             {
+                // honua-server#3980: the published-pointer move carries the approval's
+                // expected current_version_id as a SQL predicate, evaluated in the same
+                // transaction as the request insert. Under Read Committed the UPDATE row lock
+                // makes this a genuine compare-and-set: a draft saved after the proposal was
+                // validated commits a new current_version_id, the predicate then matches zero
+                // rows, and the whole request rolls back as a typed conflict instead of
+                // publishing a version the reviewer never approved as current.
                 await UpdatePointersAsync(
                     connection,
                     transaction,
@@ -891,6 +900,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                     request.CreatedAt,
                     updateCurrent: false,
                     updatePublished: true,
+                    expectedCurrentVersionId,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -983,6 +993,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 now,
                 updateCurrent,
                 updatePublished,
+                expectedCurrentVersionId: null,
                 cancellationToken).ConfigureAwait(false);
 
             var pointers = await GetPointersAsync(connection, transaction, itemId, cancellationToken).ConfigureAwait(false)
@@ -1137,17 +1148,23 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         DateTimeOffset updatedAt,
         bool updateCurrent,
         bool updatePublished,
+        Guid? expectedCurrentVersionId,
         CancellationToken cancellationToken)
     {
         var currentClause = updateCurrent ? "current_version_id = @current_version_id," : string.Empty;
         var publishedClause = updatePublished ? "published_version_id = @published_version_id," : string.Empty;
+        // Compare-and-set predicate (honua-server#3980). Only appended when the caller supplies an
+        // expectation, so pointer writes with no approved-pointer contract keep their prior SQL.
+        var expectedClause = expectedCurrentVersionId is null
+            ? string.Empty
+            : " AND current_version_id = @expected_current_version_id";
         var sql = $"""
             UPDATE {_itemsTable}
             SET {currentClause}
                 {publishedClause}
                 updated_by = @updated_by,
                 updated_at = @updated_at
-            WHERE item_id = @item_id
+            WHERE item_id = @item_id{expectedClause}
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@item_id", itemId);
@@ -1155,11 +1172,62 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@published_version_id", (object?)publishedVersionId ?? DBNull.Value);
         command.Parameters.AddWithValue("@updated_by", (object?)actorId ?? DBNull.Value);
         command.Parameters.AddWithValue("@updated_at", updatedAt);
+        if (expectedCurrentVersionId is { } expectedCurrent)
+        {
+            command.Parameters.AddWithValue("@expected_current_version_id", expectedCurrent);
+        }
+
         var rows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        if (rows == 0)
+        if (rows != 0)
+        {
+            return;
+        }
+
+        if (expectedCurrentVersionId is null)
         {
             throw new KeyNotFoundException("Studio content item was not found.");
         }
+
+        // Zero rows with a CAS predicate is ambiguous: either the item vanished or its pointer
+        // moved. Re-read inside the same transaction so the caller gets the right typed failure.
+        var actualCurrentVersionId = await ReadCurrentVersionIdAsync(
+            connection, transaction, itemId, cancellationToken).ConfigureAwait(false);
+        if (actualCurrentVersionId is null && !await ItemExistsAsync(
+                connection, transaction, itemId, cancellationToken).ConfigureAwait(false))
+        {
+            throw new KeyNotFoundException("Studio content item was not found.");
+        }
+
+        throw new StudioPublicationPointerConflictException(itemId, expectedCurrentVersionId, actualCurrentVersionId);
+    }
+
+    private async Task<Guid?> ReadCurrentVersionIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            $"SELECT current_version_id FROM {_itemsTable} WHERE item_id = @item_id",
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("@item_id", itemId);
+        var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return value is Guid current ? current : null;
+    }
+
+    private async Task<bool> ItemExistsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            $"SELECT 1 FROM {_itemsTable} WHERE item_id = @item_id",
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("@item_id", itemId);
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
 
     private async Task InsertCheckpointVersionAsync(
