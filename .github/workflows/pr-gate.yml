@@ -37,6 +37,14 @@ env:
   # Keep synchronized with review-gate.yml; the admission validator fails on
   # drift. Rollback is the inverse one-line change back to `observe`.
   REVIEW_FIRST_MODE: observe
+  # Promotion switch for the report-only affected-shard detector below. `report`
+  # publishes the verdict and concludes success; `enforce` fails the
+  # `PR Gate / Affected shards` context on a red shard. See the block comment on
+  # the `affected-shards-select` job for the measurement that gates the flip.
+  AFFECTED_SHARDS_MODE: report
+  # Hard fan-out bound for that lane. A `run_all` router answer is 71 shard
+  # jobs; this is what keeps the lane a detector instead of a second matrix.
+  AFFECTED_SHARDS_CAP: '6'
 
 jobs:
   format:
@@ -315,6 +323,316 @@ jobs:
             if (reviewGate?.state !== 'success') {
               core.setFailed(`Exact-head Review Gate is ${reviewGate?.state || 'missing'}.`);
             }
+
+  # ---------------------------------------------------------------------------
+  # AFFECTED SHARD FAMILIES (#3204 / #3213). REPORT-ONLY.
+  #
+  # THE PROBLEM. `PR Gate` above is a lean subset: build + fast unit +
+  # architecture. The 71 server-test shard families in `.github/ci-shards.json`
+  # run per trunk tip in the trailing matrix (p50 44 / p90 65 min, plus a rerun
+  # to classify), so a shard regression is found AFTER the merge that caused it.
+  # On 2026-09-07 trunk was red ~15 of the previous 24 hours, and every real
+  # regression in that window -- Console/Alerts (#4489), Tiles/Replica
+  # (#4463/#4465), Caching/Styling (#4466) -- was in a shard whose own `paths`
+  # the offending PR had touched. The routing information needed to catch them
+  # pre-merge already existed; nothing on the pull request consumed it.
+  #
+  # WHAT THIS LANE DOES. `affected-shards-select` asks the SAME ADR-0037 router
+  # the trailing matrix uses (scripts/ci/honua-server-targeted-tests.sh) which
+  # shard families claim the diff, narrows a `run_all` answer by the ADR-0043
+  # reverse-dependency closure (scripts/ci/compute-affected-projects.sh, which
+  # is what maps a changed SOURCE project to the TEST projects that consume it),
+  # ranks largest-impact first, and truncates to AFFECTED_SHARDS_CAP families.
+  # `affected-shard` then runs each one through scripts/ci/run-server-test-shard.sh
+  # -- the same runner, the same `.github/ci-shards.json` filter, and the same
+  # inner/outer budgets as ci.yml::server-tests -- so a red here is a red there.
+  #
+  # WHY THE CAP IS NOT NEGOTIABLE. A `run_all` answer is 71 shard jobs. Fanning
+  # that out per pull request is the 2026-06-18 runner-starvation spiral that
+  # #2865 removed and that ./.github/actions/lean-gate is written to avoid. This
+  # lane is a DETECTOR with a fixed budget, not a second full matrix: it buys a
+  # bounded probability of catching the regression pre-merge, and the trailing
+  # matrix stays the complete backstop. Do not raise the cap to "cover more".
+  #
+  # WHY IT IS REPORT-ONLY, AND HOW IT GETS PROMOTED. `AFFECTED_SHARDS_MODE`
+  # starts at `report`: the per-shard test failure is swallowed at the step (the
+  # ci.yml advisory-shard pattern -- a red check-run on a non-required job still
+  # forces the pull request to UNSTABLE and stalls the clean-only merge train),
+  # and the aggregate context `PR Gate / Affected shards` publishes the verdict
+  # in its step summary and as HONUA_AFFECTED_SHARD_* annotations while
+  # concluding success.
+  #
+  #   PROMOTION RULE: make this context required when its FALSE-RED rate over 7
+  #   days of runs is < 2%. A false red is a run that emits
+  #   HONUA_AFFECTED_SHARD_RED for a head whose change did not in fact break
+  #   that shard -- flake, cross-shard interference, or an environment
+  #   difference from ci.yml::server-tests. Measure it by collecting the
+  #   annotations from this context across the window and reconciling each red
+  #   against the same shard's result in the trailing matrix for the merge
+  #   commit. Promotion is then TWO audited changes: flip AFFECTED_SHARDS_MODE
+  #   to `enforce` here, and add `PR Gate / Affected shards` to branch
+  #   protection. Rollback is the inverse one-line flip. Below 2% is the bar
+  #   because this lane costs a bounded fan-out on every product-code PR;
+  #   a noisier detector spends that budget re-running green shards by hand.
+  #
+  # If the measurement says the false-red rate is too high, leaving
+  # AFFECTED_SHARDS_MODE at `report` is a successful measurement, not a failed
+  # change.
+  # ---------------------------------------------------------------------------
+  affected-shards-select:
+    name: PR Gate / Affected shards (select)
+    # pull_request only: the selection diffs against HEAD^1, and only the
+    # refs/pull/N/merge ref has the base-branch tip as its first parent. The
+    # same reasoning scopes scripts/ci/compute-lean-gate-build-scope.sh.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      skip: ${{ steps.select.outputs.skip }}
+      reason: ${{ steps.select.outputs.reason }}
+      selected_count: ${{ steps.select.outputs.selected_count }}
+      matrix_include: ${{ steps.select.outputs.matrix_include }}
+    steps:
+      # Same shape as the `format` job's admission failure. `rerun-failed-jobs`
+      # releases only jobs that FAILED attempt 1, so a job that quietly
+      # succeeded by skipping its steps would never execute on the enforced
+      # attempt 2 -- and the shards it selects would never run at all.
+      - name: Await exact-head review
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
+        run: |
+          echo "Admission passed; exact-head review has not released shard selection yet."
+          exit 1
+
+      # fetch-depth 2 for the same reason the required job documents above: the
+      # checked-out ref is refs/pull/N/merge and its FIRST PARENT is the current
+      # tip of the base branch, which is the diff base both the router and the
+      # affected-projects closure are computed against.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Select affected shard families
+        id: select
+        env:
+          CAP: ${{ env.AFFECTED_SHARDS_CAP }}
+        run: |
+          python3 scripts/ci/compute-affected-shards.py \
+            --cap "${CAP}" \
+            --github-output \
+            --json "${RUNNER_TEMP}/affected-shards.json" \
+            --summary "${RUNNER_TEMP}/affected-shards.md"
+          cat "${RUNNER_TEMP}/affected-shards.md" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload selection receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-gate-affected-shards-selection
+          path: ${{ runner.temp }}/affected-shards.json
+          if-no-files-found: warn
+
+  affected-shard:
+    name: PR Gate / Affected shard (${{ matrix.shard_name }})
+    # An `include:` that evaluates to `[]` is a workflow error ("matrix vector
+    # 'include' does not contain any values"), so the empty selection is
+    # short-circuited here, before the strategy is expanded, rather than by the
+    # selector emitting a sentinel entry.
+    if: >-
+      github.event_name == 'pull_request'
+      && needs.affected-shards-select.outputs.skip != 'true'
+      && needs.affected-shards-select.outputs.matrix_include != '[]'
+    needs: affected-shards-select
+    runs-on: ubuntu-latest
+    # The shard's OWN outer budget from .github/ci-shards.json, exactly as
+    # ci.yml::server-tests applies it. Substituting a flat cap here would make
+    # this lane time out on shards the trailing matrix runs comfortably, which
+    # is precisely the false red the promotion rule measures.
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.affected-shards-select.outputs.matrix_include) }}
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: false
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
+      HONUA_TEST_CONFIGURATION: Release
+      HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Start freeing disk space
+        run: scripts/ci/server-test-shard-free-disk.sh
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Wait for free disk space
+        run: scripts/ci/server-test-shard-free-disk.sh --await
+
+      # Deliberately NOT wired to the exact-head shard cache
+      # (scripts/ci/server-test-shard-cache.sh). That cache designates the
+      # highest-dispatch_rank shard of a project as the writer and has every
+      # sibling materialize its payload; on a hit the payload is missing another
+      # project's build outputs, which is the open #4453 defect. A detector lane
+      # whose job is to make a red mean something must not import a known source
+      # of false reds. Each shard here restores and builds its own project.
+      - name: Restore
+        env:
+          SHARD_CSPROJ: ${{ matrix.csproj }}
+        run: scripts/ci/dotnet-restore-retry.sh "${SHARD_CSPROJ}"
+
+      - name: Create Test Results Directory
+        run: mkdir -p ./tests/TestResults
+
+      - name: Build server test binaries
+        timeout-minutes: 20
+        env:
+          SHARD_CSPROJ: ${{ matrix.csproj }}
+        run: |
+          dotnet build "${SHARD_CSPROJ}" \
+            --no-restore \
+            --configuration Release \
+            -graphBuild \
+            /p:RunAnalyzers=false
+
+      # continue-on-error, always: the test failure is the SIGNAL this lane
+      # exists to publish, and it is published by the aggregate context below.
+      # Letting it fail the matrix job would put a red check-run on the pull
+      # request for a non-required lane, which forces mergeStateStatus to
+      # UNSTABLE and stalls the clean-only merge train -- the exact regression
+      # ci.yml::server-tests documents for advisory shards. Promotion changes
+      # AFFECTED_SHARDS_MODE below, never this.
+      - name: Run affected shard
+        id: shard
+        continue-on-error: true
+        env:
+          HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
+          HONUA_SERVER_TEST_FILTER: ${{ matrix.filter }}
+          HONUA_SERVER_TEST_LOG_NAME: ${{ matrix.log_name }}
+          HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
+          HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
+          HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
+          HONUA_SERVER_TEST_CONFIGURATION: Release
+          HONUA_SERVER_TEST_CSPROJ: ${{ matrix.csproj }}
+        run: scripts/ci/run-server-test-shard.sh
+
+      # The timing artifact run-server-test-shard.sh writes is what the
+      # aggregate context reads; a shard that never produced one is reported as
+      # infrastructure, not as a shard red.
+      - name: Upload affected shard results
+        if: always()
+        uses: actions/upload-artifact@v7
+        timeout-minutes: 3
+        with:
+          name: pr-gate-affected-shard-${{ matrix.artifact_suffix }}
+          path: tests/TestResults/
+          retention-days: 7
+
+  affected-shards:
+    # The single stable context for this lane. Report-only until the promotion
+    # rule at the top of this block is satisfied; NOT in `required.needs`.
+    name: PR Gate / Affected shards
+    if: always() && github.event_name == 'pull_request'
+    needs: [affected-shards-select, affected-shard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download affected shard receipts
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: pr-gate-affected-shard-*
+          path: shard-results
+          merge-multiple: true
+
+      - name: Report affected-shard verdict
+        env:
+          MODE: ${{ env.AFFECTED_SHARDS_MODE }}
+          SELECT_RESULT: ${{ needs.affected-shards-select.result }}
+          SELECT_SKIP: ${{ needs.affected-shards-select.outputs.skip }}
+          SELECT_REASON: ${{ needs.affected-shards-select.outputs.reason }}
+          SELECT_COUNT: ${{ needs.affected-shards-select.outputs.selected_count }}
+          SHARDS_RESULT: ${{ needs.affected-shard.result }}
+        run: |
+          set -euo pipefail
+
+          note() { printf '%s\n' "$1" >> "${GITHUB_STEP_SUMMARY}"; }
+          note '### PR Gate / Affected shards'
+          note ''
+          note "- Mode: \`${MODE}\` (report-only until the promotion rule in pr-gate.yml is met)"
+          note "- Selection: \`${SELECT_REASON:-unavailable}\` (\`${SELECT_COUNT:-0}\` shard families)"
+
+          if [[ "${SELECT_RESULT}" != "success" ]]; then
+            note "- Verdict: \`selection_${SELECT_RESULT}\` — no shard evidence for this head."
+            echo "::warning::HONUA_AFFECTED_SHARD_UNAVAILABLE selection concluded '${SELECT_RESULT}'."
+            exit 0
+          fi
+          if [[ "${SELECT_SKIP}" == "true" ]]; then
+            note "- Verdict: \`skipped\` — nothing in this diff can move a server-test shard."
+            exit 0
+          fi
+
+          shopt -s nullglob
+          timings=(shard-results/*.timing.json)
+          if [[ ${#timings[@]} -eq 0 ]]; then
+            note "- Verdict: \`no_receipts\` — shard jobs concluded \`${SHARDS_RESULT}\` without a timing artifact."
+            note '  A shard that fails before its test step (restore, build, runner disk) produces no'
+            note '  receipt; that is an infrastructure failure of this lane, not a shard regression.'
+            echo "::warning::HONUA_AFFECTED_SHARD_INFRA shard jobs concluded '${SHARDS_RESULT}' with no timing receipt."
+            exit 0
+          fi
+
+          note ''
+          note '| Shard | Status | Duration | Budget used | Capacity |'
+          note '|---|---|---:|---:|---|'
+          red=0
+          for timing in "${timings[@]}"; do
+            shard=$(jq -r '.shard' "${timing}")
+            status=$(jq -r '.status' "${timing}")
+            duration=$(jq -r '.duration_seconds' "${timing}")
+            budget=$(jq -r 'if .headroom_ratio == null then "n/a" else ((.headroom_ratio * 1000 | round) / 10 | tostring) + "%" end' "${timing}")
+            capacity=$(jq -r '.capacity_status' "${timing}")
+            note "| ${shard} | \`${status}\` | ${duration}s | ${budget} | \`${capacity}\` |"
+            if [[ "${status}" != "passed" ]]; then
+              red=$((red + 1))
+              echo "::error::HONUA_AFFECTED_SHARD_RED shard='${shard}' status='${status}' — this shard family is red on the pull-request head. The trailing matrix will report the same failure on trunk after this merges."
+            fi
+          done
+
+          note ''
+          if [[ "${red}" -eq 0 ]]; then
+            note "- Verdict: \`green\` — all ${#timings[@]} selected shard families passed on this head."
+            echo "::notice::HONUA_AFFECTED_SHARD_GREEN ${#timings[@]} selected shard families passed."
+            exit 0
+          fi
+
+          note "- Verdict: \`red\` — ${red} of ${#timings[@]} selected shard families failed on this head."
+          if [[ "${MODE}" == "enforce" ]]; then
+            echo "::error::PR Gate / Affected shards: ${red} shard families are red on this head."
+            exit 1
+          fi
+          note '  Reported only: `AFFECTED_SHARDS_MODE` is `report`, so this context stays green while'
+          note '  the false-red rate is measured. Treat the rows above as a pre-merge prediction of the'
+          note '  trailing matrix and fix them before landing.'
+          exit 0
 
   required:
     # Keep the exact branch-protection context stable while both independent

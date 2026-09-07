@@ -500,11 +500,15 @@ def test_policy_generation_ignores_routing_irrelevant_workflow_edits() -> None:
             shutil.copyfile(REPOSITORY_ROOT / relative, target)
         original = MODULE.current_blobs(root)
 
+        # An APPENDED comment, not a substitution: this used to bump a pinned
+        # `actions/checkout@v7.0.1` to `v7.0.2`, and when #4483 repinned the
+        # action to the floating `@v7` the replacement silently became a no-op.
+        # The blob then did not change, and the assertion below failed on trunk
+        # for a reason that had nothing to do with routing policy. The mutation
+        # only has to be routing-irrelevant and guaranteed to alter the file.
         workflow = root / MODULE.SERVING_WORKFLOW
         workflow.write_text(
-            workflow.read_text(encoding="utf-8").replace(
-                "actions/checkout@v7.0.1", "actions/checkout@v7.0.2", 1
-            ),
+            workflow.read_text(encoding="utf-8") + "\n# routing-irrelevant edit\n",
             encoding="utf-8",
         )
         irrelevant = MODULE.current_blobs(root)
