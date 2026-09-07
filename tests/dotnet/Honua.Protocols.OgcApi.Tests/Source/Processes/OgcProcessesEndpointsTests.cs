@@ -166,7 +166,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var processes = json.RootElement.GetProperty("processes").EnumerateArray().ToArray();
-        processes.Should().HaveCount(80, "the canonical plan process plus all 79 catalog Job processes are projected once");
+        processes.Should().HaveCount(81, "the canonical plan process plus all 80 catalog Job processes are projected once");
 
         var first = processes[0];
         first.GetProperty("id").GetString().Should().Be("honua-geoprocessing");
@@ -179,6 +179,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         ids.Should().Contain([
             "geometry.buffer",
             "analytics.spatial-join",
+            "data-management.copy-features",
             "proximity.near",
             "statistics.summarize",
             "transform.reproject"]);

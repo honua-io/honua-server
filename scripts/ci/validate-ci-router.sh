@@ -176,6 +176,17 @@ jq -e '
 ' .github/ci-shards.json >/dev/null \
   || { echo "::error::a targeted_override_prefixes entry references an unknown shard name" >&2; exit 1; }
 
+# The PR Gate affected-shard detector selects from this same shard map, so a
+# routing edit that stops a feature namespace selecting its owning shard has to
+# fail here rather than quietly shrinking the pre-merge detector. Offline: no
+# git, no network, no dotnet.
+echo "Validating PR Gate affected-shard selection..."
+if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-shards.py
+else
+  echo "⚠️  Skipping PR Gate affected-shard selection (no working Python 3)."
+fi
+
 echo "Checking shell script syntax..."
 scripts/ci/validate-shell-syntax.sh
 
@@ -384,6 +395,30 @@ assert_descriptor \
   "targeted" \
   "false" \
   "GeoServices MapServer"
+assert_descriptor \
+  "mapserver-source-split-export" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerExportEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices MapServer Export"
+assert_descriptor \
+  "mapserver-source-split-identify" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerIdentifyEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices MapServer Identify"
+assert_descriptor \
+  "mapserver-source-split-shared-export" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTestBase.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices MapServer Export"
+assert_descriptor \
+  "mapserver-source-split-shared-identify" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTestBase.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices MapServer Identify"
 # The MapServer minor classes moved into an existing shard rather than a new one;
 # that shard must now be selected by a MapServer diff.
 assert_descriptor \
@@ -1521,6 +1556,14 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices MapServer" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices MapServer Export" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices MapServer Identify" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \

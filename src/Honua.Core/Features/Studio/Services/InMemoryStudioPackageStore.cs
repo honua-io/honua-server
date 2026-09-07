@@ -474,6 +474,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
     /// <inheritdoc />
     public Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
+        Guid? expectedCurrentVersionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -490,6 +491,23 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             if (version is null)
             {
                 throw new KeyNotFoundException("Studio content version was not found.");
+            }
+
+            // honua-server#3980: the caller validated the proposal against the item's current
+            // pointer outside this lock, so re-compare here -- inside the same lock that performs
+            // the published-pointer write -- before anything is persisted. A draft saved in the
+            // meantime moves current_version_id and must fail the proposal rather than publish a
+            // version the reviewer never approved as current.
+            if (expectedCurrentVersionId is { } expectedCurrent &&
+                request.Status == StudioPublicationRequestStatus.Accepted)
+            {
+                var actualCurrent = _items.TryGetValue(request.ItemId, out var pointerItem)
+                    ? pointerItem.CurrentVersionId
+                    : null;
+                if (actualCurrent != expectedCurrent)
+                {
+                    throw new StudioPublicationPointerConflictException(request.ItemId, expectedCurrent, actualCurrent);
+                }
             }
 
             _publicationRequests.Add(request.RequestId, request);

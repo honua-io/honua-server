@@ -18,4 +18,5 @@ node --test \
   scripts/ci/review-gate-snapshot.test.js \
   scripts/ci/review-catchup.test.js \
   scripts/ci/claude-review-dedupe.test.js \
-  scripts/ci/claude-review-lane.test.js
+  scripts/ci/claude-review-lane.test.js \
+  scripts/ci/review-stale-shed.test.js

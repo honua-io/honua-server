@@ -33,6 +33,13 @@ namespace Honua.Db.Postgres.Features.Migration;
 [JsonSerializable(typeof(double))]
 [JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(bool))]
+// honua-server#4419: DateTime was the one temporal type missing here while DateTimeOffset,
+// DateOnly, TimeOnly and TimeSpan were all registered (and Honua.Import's sibling context does
+// register it). A shapefile's DBF date field surfaces as a System.DateTime, so serializing the
+// property bag threw and EVERY row of such an import failed — while the response still reported
+// success with featureCount 0 and a generic "rows failed" warning. No test read an imported
+// shapefile back, so the loss was invisible.
+[JsonSerializable(typeof(DateTime))]
 [JsonSerializable(typeof(DateTimeOffset))]
 [JsonSerializable(typeof(byte[]))]
 [JsonSerializable(typeof(TimeOnly))]

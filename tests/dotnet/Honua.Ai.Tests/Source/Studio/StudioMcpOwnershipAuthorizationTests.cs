@@ -42,6 +42,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
 
     private static readonly Guid DraftId = Guid.Parse("51515151-5151-5151-5151-515151515151");
     private static readonly Guid ItemId = Guid.Parse("61616161-6161-6161-6161-616161616161");
+    private static readonly Guid VersionId = Guid.Parse("71717171-7171-7171-7171-717171717171");
 
     [Theory]
     [InlineData(DraftToolFamily.Read, CallerKind.Anonymous)]
@@ -83,6 +84,9 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         var draft = BuildDraft(Alice);
         var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
         lifecycle.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        lifecycle.GetVersionAsync(ItemId, VersionId, Arg.Any<CancellationToken>()).Returns(BuildVersion(Alice));
+        lifecycle.GetPointersAsync(ItemId, Arg.Any<CancellationToken>()).Returns(
+            new StudioContentItemPointers { ItemId = ItemId, CurrentVersionId = VersionId, OwnerId = Alice });
         lifecycle.UpdateDraftAsync(
                 DraftId,
                 Arg.Any<UpdateStudioPackageDraftCommand>(),
@@ -109,13 +113,16 @@ public sealed class StudioMcpOwnershipAuthorizationTests
                 Arg.Any<ClaimsPrincipal>(),
                 Arg.Any<OperatorAuthorizationRequest>(),
                 Arg.Any<CancellationToken>())
-            .Returns(AccessDecision.Allowed("delegate grant"));
+            .Returns(callerKind is CallerKind.Owner or CallerKind.DelegatedOperator
+                ? AccessDecision.Allowed("delegate grant")
+                : AccessDecision.Forbidden("no delegate grant"));
         var authorization = BuildAuthorization(evaluator);
         var context = BuildContext(callerKind, lifecycle, validator, authorization);
         var (tool, arguments) = BuildInvocation(family, jobService);
 
         var act = () => tool.InvokeAsync(context, arguments, CancellationToken.None);
-        var allowed = callerKind is CallerKind.Owner or CallerKind.Admin;
+        var allowed = callerKind is CallerKind.Owner or CallerKind.Admin
+            || (family == DraftToolFamily.PublicationProposal && callerKind == CallerKind.DelegatedOperator);
 
         if (allowed)
         {
@@ -123,10 +130,11 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             result.IsError.Should().BeFalse();
 
             authorization.Calls.Should().ContainSingle();
-            var call = authorization.Calls.Single();
+            var call = authorization.Calls.Last();
             call.Operation.Should().Be(ExpectedStudioOperation(family));
             call.ResourceOwnerId.Should().Be(Alice);
-            call.ResourceId.Should().Be(DraftId.ToString("D"));
+            call.ResourceId.Should().Be(
+                family == DraftToolFamily.PublicationProposal ? ItemId.ToString("D") : DraftId.ToString("D"));
         }
         else
         {
@@ -176,11 +184,21 @@ public sealed class StudioMcpOwnershipAuthorizationTests
                 Arg.Any<CancellationToken>());
         }
 
-        if (callerKind == CallerKind.DelegatedOperator)
+        if (callerKind == CallerKind.DelegatedOperator
+            && family != DraftToolFamily.PublicationProposal)
         {
             await evaluator.DidNotReceive().EvaluateAsync(
                 Arg.Any<ClaimsPrincipal>(),
                 Arg.Any<OperatorAuthorizationRequest>(),
+                Arg.Any<CancellationToken>());
+        }
+        else if (callerKind == CallerKind.DelegatedOperator)
+        {
+            await evaluator.Received(1).EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Is<OperatorAuthorizationRequest>(request =>
+                    request.ResourceId == ItemId.ToString("D")
+                    && request.Operation == OperatorOperation.Publish),
                 Arg.Any<CancellationToken>());
         }
     }
@@ -588,7 +606,6 @@ public sealed class StudioMcpOwnershipAuthorizationTests
     [Theory]
     [InlineData(DraftToolFamily.Update)]
     [InlineData(DraftToolFamily.Composition)]
-    [InlineData(DraftToolFamily.PublicationProposal)]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_*")]
     public async Task MutationFamily_FutureGeneration_DoesNotCrossAuthorizedSnapshot(
@@ -661,7 +678,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             DraftToolFamily.PublicationProposal =>
                 (new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
                     McpTestFactory.ParseJson(
-                        $$"""{"draftId":"{{DraftId:D}}","generation":{{generation}},"route":"/studio/owner-map"}""")),
+                        $$"""{"itemId":"{{ItemId:D}}","versionId":"{{VersionId:D}}","contentHash":"sealed-owner-map","route":"/studio/owner-map","visibility":"organization"}""")),
             _ => throw new ArgumentOutOfRangeException(nameof(family), family, null),
         };
 
@@ -669,6 +686,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
     {
         DraftToolFamily.Read => StudioAuthorizationOperation.ReadDraft,
         DraftToolFamily.Validate or DraftToolFamily.Preview => StudioAuthorizationOperation.ValidateDraft,
+        DraftToolFamily.PublicationProposal => StudioAuthorizationOperation.PublishRequest,
         _ => StudioAuthorizationOperation.UpdateDraft,
     };
 
@@ -754,6 +772,19 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             UpdatedAt = DateTimeOffset.UnixEpoch,
         };
     }
+
+    private static StudioContentVersion BuildVersion(string? ownerId) => new()
+    {
+        ItemId = ItemId,
+        VersionId = VersionId,
+        VersionNumber = 1,
+        PackageKey = "owner-map",
+        OwnerId = ownerId,
+        ContentHash = "sealed-owner-map",
+        Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
+        Validation = StudioValidationSummary.NotValidated,
+        CreatedAt = DateTimeOffset.UnixEpoch,
+    };
 
     public enum DraftToolFamily
     {

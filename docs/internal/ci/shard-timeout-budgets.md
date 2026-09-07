@@ -77,9 +77,41 @@ parent at 88% while `ImageServerEndpointsTests` alone was a 24.1 min union.
 
 **A single test class can be the floor.** When one class already exceeds 75% of
 the shard's cap, no whole-class move reaches the target and the follow-up is to
-split the class in source. That is the open state of `GeoServices MapServer`
-(`MapServerEndpointTests`, 22.9 min of a 29 min cap) and `Core Endpoints`
+split the class in source. `Core Endpoints` remains in that state
 (`FeatureServerEndpointTests`, 24.6 min of a 32 min cap).
+
+`GeoServices MapServer` previously had the same floor: `MapServerEndpointTests`
+occupied 22.9 min of a 29 min cap. Run 34150993948 subsequently exhausted that
+cap after 1743 seconds while still producing output (2 seconds idle), leaving
+no completed TRX. The source split in #4533 preserves its 123 test methods and
+141 parameterized cases across three classes: metadata/query/legend in the
+existing shard (52 cases), export/tile-package/KML in `GeoServices MapServer
+Export` (57 cases), and identify/find in `GeoServices MapServer Identify`
+(32 cases). All use the same per-test lifecycle and cleanup. The two sibling
+shards retain the original 29-minute test and 39-minute job caps. The minor
+MapServer classes still belong to `GeoServices Geometry VectorTile and
+Versioning`; its catch-all excludes all three endpoint classes.
+
+Full CI [run 34163714144](https://github.com/honua-io/honua-server/actions/runs/34163714144)
+on source `a6b9a4d552e2fe2d95ab0fb4c523a51023f5df5e` completed all three
+partitions with 141 passes and no skipped cases. TRX method identities and
+parameter-case counts match all 123 original methods exactly. The recorded
+test wall times include fixture setup and cleanup:
+
+| Partition | Passed / total | Test wall time | Utilization of unchanged 29-minute cap |
+|---|---|---|---|
+| Metadata/query/legend | 52 / 52 | 300 seconds | 17.24% |
+| Export/tile-package/KML | 57 / 57 | 315 seconds | 18.10% |
+| Identify/find | 32 / 32 | 160 seconds | 9.20% |
+
+Each timing artifact reports `capacity_status: ok`, exit 0, and no timeout or
+kill escalation. These are single-run measurements, not a p90 estimate. The
+source-bound hashes and normalization provenance are retained in the
+[verification record](mapserver-shard-capacity-20260907.json). Wider CI is not
+claimed green: the original source has the expected generated-catalog drift
+plus separate Studio/export/import failures requiring attribution. Later
+tests, including the QGIS point-literal regressions in #4523, must be included
+when assessing their final branch.
 
 ## Signals
 

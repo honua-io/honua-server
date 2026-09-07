@@ -364,17 +364,14 @@ internal static class StudioMcpSchemas
     private const string ProposePublicationArgumentSchemaJson = """
         {
           "type": "object",
-          "required": ["draftId", "generation"],
+          "required": ["itemId", "versionId", "contentHash", "route", "visibility"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
-            "route": { "type": "string", "maxLength": 200, "description": "Proposed target route key." },
-            "visibility": { "type": "string", "maxLength": 100, "description": "Proposed visibility target." },
-            "embed": { "type": "boolean", "description": "Whether embedding should be enabled if published." },
-            "service": { "type": "string", "maxLength": 200, "description": "Proposed service publication hint." },
-            "schedule": { "type": "string", "maxLength": 200, "description": "Proposed schedule expression or key." },
-            "job": { "type": "string", "maxLength": 200, "description": "Proposed job publication hint." },
+            "itemId": { "type": "string", "format": "uuid", "description": "Studio content item id." },
+            "versionId": { "type": "string", "format": "uuid", "description": "Exact immutable saved version id." },
+            "contentHash": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Exact content hash returned when the version was saved." },
+            "route": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Requested target route key." },
+            "visibility": { "type": "string", "minLength": 1, "maxLength": 100, "description": "Requested visibility target." },
             "note": { "type": "string", "maxLength": 2000, "description": "Human-readable rationale recorded for reviewer context." }
           }
         }

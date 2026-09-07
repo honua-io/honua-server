@@ -1,0 +1,8 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature",
+      "properties": { "route_id": 11, "route_name": "bay-crossing" },
+      "geometry": { "type": "LineString", "coordinates": [[-122.4194, 37.7749], [-122.3, 37.8], [-122.2711, 37.8044]] } }
+  ]
+}

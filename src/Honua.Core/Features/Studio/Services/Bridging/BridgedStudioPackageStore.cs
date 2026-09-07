@@ -213,6 +213,7 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
     /// <inheritdoc />
     public async Task<StudioPublicationRequest> CreatePublicationRequestAsync(
         StudioPublicationRequest request,
+        Guid? expectedCurrentVersionId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -220,10 +221,24 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         var bridged = await ResolveBridgedPointersAsync(request.ItemId, cancellationToken).ConfigureAwait(false);
         if (bridged is not null)
         {
+            // honua-server#3980: a bridged family keeps its pointers in the native store, so the
+            // compare-and-set is asserted against the pointers just resolved from it. The native
+            // store owns the final write; this check stops an approval whose current pointer has
+            // already moved from reaching PublishAsync at all.
+            if (expectedCurrentVersionId is { } expectedCurrent &&
+                request.Status == StudioPublicationRequestStatus.Accepted &&
+                bridged.Pointers.CurrentVersionId != expectedCurrent)
+            {
+                throw new StudioPublicationPointerConflictException(
+                    request.ItemId, expectedCurrent, bridged.Pointers.CurrentVersionId);
+            }
+
             return await bridged.Bridge.PublishAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
-        return await _inner.CreatePublicationRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        return await _inner
+            .CreatePublicationRequestAsync(request, expectedCurrentVersionId, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />
