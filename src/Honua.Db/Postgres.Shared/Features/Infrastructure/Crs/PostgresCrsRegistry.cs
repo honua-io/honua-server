@@ -21,12 +21,15 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
     private const string EpsgPrefix = "EPSG:";
     private const string SridPrefix = "SRID=";
 
+    // The built-in definitions answer 4326/3857 without touching spatial_ref_sys, so they must
+    // carry the same WKT the catalog would have returned; without it every WKT consumer
+    // (shapefile .prj, GeoPackage gpkg_spatial_ref_sys) got null for the two commonest SRIDs.
     private static readonly CrsDefinition _crs84Definition =
-        new(Crs84Uri, 4326, AxisOrder.EastNorth, true);
+        new(Crs84Uri, 4326, AxisOrder.EastNorth, true) { Wkt = WellKnownCrsWkt.Epsg4326 };
     private static readonly CrsDefinition _epsg4326Definition =
-        new($"{EpsgUriPrefix}4326", 4326, AxisOrder.NorthEast, true);
+        new($"{EpsgUriPrefix}4326", 4326, AxisOrder.NorthEast, true) { Wkt = WellKnownCrsWkt.Epsg4326 };
     private static readonly CrsDefinition _epsg3857Definition =
-        new($"{EpsgUriPrefix}3857", 3857, AxisOrder.EastNorth, false);
+        new($"{EpsgUriPrefix}3857", 3857, AxisOrder.EastNorth, false) { Wkt = WellKnownCrsWkt.Epsg3857 };
     private static readonly TimeSpan _cacheRetention = TimeSpan.FromHours(24);
     private const int MaxCacheEntries = 10000;
 
