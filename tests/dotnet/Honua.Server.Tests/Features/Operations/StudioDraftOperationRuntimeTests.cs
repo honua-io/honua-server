@@ -50,10 +50,7 @@ public sealed class StudioDraftOperationRuntimeTests
             });
         lifecycle.GetPointersAsync(itemId, Arg.Any<CancellationToken>()).Returns(
             new StudioContentItemPointers { ItemId = itemId, CurrentVersionId = versionId });
-        var validator = Substitute.For<IStudioPackageValidator>();
-        validator.ValidatePublicationIntent(Arg.Any<StudioPublicationIntent?>()).Returns(
-            new StudioValidationSummary { Status = StudioPackageValidationStatus.Valid });
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System, validator);
+        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
         var payload = JsonSerializer.Serialize(
             new StudioPublicationRequestPayload
             {
