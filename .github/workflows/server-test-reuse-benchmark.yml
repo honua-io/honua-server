@@ -56,7 +56,7 @@ jobs:
             --output benchmark-plan.json \
             --github-output "${GITHUB_OUTPUT}"
       - name: Upload immutable benchmark plan
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-benchmark-plan-${{ github.run_id }}
           path: benchmark-plan.json
@@ -140,7 +140,7 @@ jobs:
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
       - name: Upload immutable same-run payload
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: server-test-${{ github.sha }}-${{ matrix.project_suffix }}
           path: payload/
@@ -159,7 +159,7 @@ jobs:
             metrics/producer-${{ matrix.identity }}.json > metrics/updated.json
           mv metrics/updated.json metrics/producer-${{ matrix.identity }}.json
       - name: Upload producer metrics
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-metrics-producer-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
           path: metrics/
@@ -224,7 +224,7 @@ jobs:
             '.job_elapsed_ms=$job_elapsed_ms' metrics/baseline-${{ matrix.identity }}.json > metrics/updated.json
           mv metrics/updated.json metrics/baseline-${{ matrix.identity }}.json
       - name: Upload baseline metrics and TRX evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-metrics-baseline-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
           path: metrics/
@@ -323,7 +323,7 @@ jobs:
             metrics/consumer-artifact-${{ matrix.identity }}.json > metrics/updated.json
           mv metrics/updated.json metrics/consumer-artifact-${{ matrix.identity }}.json
       - name: Upload reuse metrics and TRX evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-metrics-consumer-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
           path: metrics/
@@ -378,7 +378,7 @@ jobs:
       - name: Preserve raw metrics
         run: cp -a raw-metrics evidence/raw-metrics
       - name: Upload raw and summarized reuse evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: server-test-reuse-evidence-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           path: evidence/

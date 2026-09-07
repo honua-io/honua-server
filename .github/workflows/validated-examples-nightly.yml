@@ -35,7 +35,7 @@ jobs:
         run: |
           docker ps -a >> validated-examples-${{ matrix.scenario }}.txt
           docker compose ls >> validated-examples-${{ matrix.scenario }}.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: validated-examples-${{ matrix.scenario }}

@@ -27,7 +27,7 @@ jobs:
         run: bash scripts/docs-validation/validate-quickstart.sh
       - name: Upload validation evidence
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: docs-quickstart-validation
           path: artifacts/docs-validation/quickstart/
