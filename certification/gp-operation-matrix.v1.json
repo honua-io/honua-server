@@ -908,6 +908,11 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
           "test": "Rasterize_CellSizeMode_CentresTheGridOnTheLayerEnvelope",
           "assertion": "cellSize path pins the half-cell-expanded grid, the burn-value domain and strictly interior/exterior cells."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "RasterizeOracle_AllTouchedInsteadOfCentreContainment_IsRejected",
+          "assertion": "Demonstrated negatives: real gdal_rasterize -at produces a valid GeoTIFF on the identical grid whose burned set follows all-touched instead of pixel-centre containment, and the attribute burn produces one on the identical grid where a fixed burn value was requested. The frozen oracles reject both."
         }
       ]
     },
