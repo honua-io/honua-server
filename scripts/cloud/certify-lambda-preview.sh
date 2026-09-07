@@ -396,6 +396,9 @@ if [[ "$resolved_image" != "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" ]]
 fi
 
 payload='{"version":"2.0","routeKey":"GET /healthz/live","rawPath":"/healthz/live","rawQueryString":"","headers":{"accept":"application/json","host":"lambda-cert.invalid"},"requestContext":{"http":{"method":"GET","path":"/healthz/live","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"honua-lambda-preview-cert"}},"isBase64Encoded":false}'
+# Bound the CloudWatch evidence query to this invoke (milliseconds, with slack
+# for clock skew between the runner and the service).
+invoke_started_ms=$(( $(date +%s) * 1000 - 120000 ))
 invoke_meta="$(aws lambda invoke --function-name "$function_name" --cli-binary-format raw-in-base64-out \
   --invocation-type RequestResponse --log-type Tail --payload "$payload" "$scratch/response.json")"
 if [[ "$(jq -r '.StatusCode' <<<"$invoke_meta")" != "200" || "$(jq -r '.FunctionError // empty' <<<"$invoke_meta")" != "" ]]; then
@@ -452,10 +455,17 @@ fi
 # init-in-invoke; give delivery three minutes, bounded, and on timeout say what
 # the group held (stream and event counts only, never log content) so the next
 # failure is diagnosable from the job log.
+# The CLI paginates filter-log-events and prints one `length(events)` per page,
+# so an unbounded query answers "0\n0\n3\n0" and never matches a single number:
+# the fourteenth live run (34088093441) held 220 events and still exited 10.
+# Bound the query to this invoke and sum the pages.
+count_events() {
+  aws logs filter-log-events --log-group-name "$log_group" --start-time "$invoke_started_ms" "$@" \
+    --query 'length(events)' --output text | awk '{ total += $1 } END { print total + 0 }'
+}
 cloudwatch_verified=false
 for _ in {1..36}; do
-  event_count="$(aws logs filter-log-events --log-group-name "$log_group" \
-    --filter-pattern "\"${request_id}\"" --query 'length(events)' --output text)"
+  event_count="$(count_events --filter-pattern "\"${request_id}\"")"
   if [[ "$event_count" =~ ^[1-9][0-9]*$ ]]; then
     cloudwatch_verified=true
     break
@@ -466,8 +476,7 @@ if ! $cloudwatch_verified; then
   echo "matching invocation evidence did not arrive in CloudWatch Logs" >&2
   stream_count="$(aws logs describe-log-streams --log-group-name "$log_group" \
     --query 'length(logStreams)' --output text 2>/dev/null)" || stream_count="unknown"
-  any_events="$(aws logs filter-log-events --log-group-name "$log_group" \
-    --query 'length(events)' --output text 2>/dev/null)" || any_events="unknown"
+  any_events="$(count_events 2>/dev/null)" || any_events="unknown"
   echo "cloudwatch-evidence: log-streams=${stream_count} events-in-group=${any_events} request-id-fingerprint=$(fingerprint "$request_id")" >&2
   exit 10
 fi
