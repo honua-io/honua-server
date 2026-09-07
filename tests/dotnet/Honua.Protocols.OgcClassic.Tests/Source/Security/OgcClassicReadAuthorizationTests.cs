@@ -149,9 +149,6 @@ public sealed class OgcClassicReadAuthorizationTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetFeatureInfo_WithReadAccess_ReturnsSeededAttributes()
     {
-        // I=41 / J=74 over the worldwide CRS:84 bbox at 256x256 lands on seeded objectid 1
-        // (-122.5, 37.5), so the granted principal really does receive attribute data - which
-        // is exactly what the denials above must withhold.
         RestrictLayerToReaders();
         using var client = _fixture.CreateClientAs(GrantedPrincipal, ReaderRole);
 
@@ -159,7 +156,8 @@ public sealed class OgcClassicReadAuthorizationTests : IAsyncLifetime
 
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-        body.Should().Contain(SeededFeatureName);
+        body.Should().Contain("name=" + SeededFeatureName);
+        body.Should().Contain("Layer=");
     }
 
     #endregion
@@ -292,10 +290,14 @@ public sealed class OgcClassicReadAuthorizationTests : IAsyncLifetime
            $"&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}" +
            "&STYLES=&FORMAT=image/png&TRANSPARENT=true";
 
+    // A 0.2 x 0.2 degree CRS:84 window centred on seeded objectid 1 (-122.5, 37.5), sampled at
+    // its centre pixel. No other seeded point falls inside it, so an authorized
+    // GetFeatureInfo here returns that row's attributes and nothing else - which is precisely
+    // the disclosure the denied cases must not produce.
     private static string GetFeatureInfoUrl()
         => $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0" +
-           $"&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}" +
-           $"&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=41&J=74";
+           $"&BBOX=-122.6,37.4,-122.4,37.6&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}" +
+           $"&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=128&J=128";
 
     private static string GetTileUrl()
         => $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0" +
