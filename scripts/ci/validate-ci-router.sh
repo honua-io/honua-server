@@ -292,10 +292,16 @@ assert_exact_shards \
   "core-capacity-CrsTransformationCorrectnessTests" \
   "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs" \
   '["Core Attachments and Records"]'
+# The September 2026 headroom rebalance moved AdvancedSpatialQueryTests (and
+# StreamingFeatureServerEndpointTests) out of `Core Endpoints` into their own
+# shard, because #4450 putting them here is what pushed Core Endpoints to 82% of
+# its budget. Both children sit on the same source tree, so a change to the class
+# must still select BOTH — a one-shard answer would mean half the pair stopped
+# running on a diff that touches it.
 assert_exact_shards \
   "core-capacity-AdvancedSpatialQueryTests" \
   "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs" \
-  '["Core Endpoints"]'
+  '["Core Endpoints","Core Spatial Query and Streaming"]'
 # The STAC capacity split leaves both children on the same source tree, so a
 # change under it must still select BOTH of them (a one-shard answer here would
 # mean half the STAC assembly stopped running on a STAC diff).
@@ -307,6 +313,77 @@ assert_exact_shards \
   "stac-capacity-split-source" \
   "src/Honua.Protocols.Stac/StacEndpoints.cs" \
   '["STAC Protocol","STAC Items and Collections","STAC and API Governance"]'
+# --- September 2026 shard-headroom rebalance (#3204) -----------------------
+# Every capacity split below leaves both children on the same source tree, so a
+# change under that tree must select BOTH children. A one-shard answer here would
+# mean the split silently halved what runs on a diff that touches it. These use
+# `assert_exact_shards` where the source tree belongs to a single protocol test
+# project, and `assert_descriptor` where the file also sits under the broad
+# Honua.Server.Tests path prefixes that several catch-all shards already claim.
+assert_exact_shards \
+  "headroom-split-migration-source-imports" \
+  "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs" \
+  '["Migration","Migration Source Imports"]'
+assert_exact_shards \
+  "headroom-split-cloud-streaming-import" \
+  "tests/dotnet/Honua.Server.Tests/Import/StreamingImportTests.cs" \
+  '["Cloud and Streaming Import","File and Raster Import"]'
+assert_exact_shards \
+  "headroom-split-geoservices-catalog" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs" \
+  '["GeoServices Catalog","GeoServices ImageServer"]'
+assert_exact_shards \
+  "headroom-split-mapserver-dynamic" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerDynamicJoinTests.cs" \
+  '["GeoServices MapServer","GeoServices MapServer Dynamic and Tiles"]'
+assert_exact_shards \
+  "headroom-split-odata-errors" \
+  "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataErrorHandlingTests.cs" \
+  '["OData Core","OData Errors and Conformance"]'
+assert_exact_shards \
+  "headroom-split-mcp-auth" \
+  "tests/dotnet/Honua.Ai.Tests/Source/McpBearerAuthenticationTests.cs" \
+  '["MCP Authentication and Governance","MCP and Sessions"]'
+# Honua.Server.Tests classes: assert the NEW child is selected (the broad
+# Features/ path prefixes legitimately add the catch-all shards as well).
+assert_descriptor \
+  "headroom-split-studio-packaging" \
+  "tests/dotnet/Honua.Server.Tests/Features/Studio/StudioPackageEndpointsTests.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Studio Packaging"
+assert_descriptor \
+  "headroom-split-identity-mobile" \
+  "tests/dotnet/Honua.Server.Tests/Features/Identity/ScimProvisioningEndpointsTests.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Identity and Mobile"
+assert_descriptor \
+  "headroom-split-capabilities" \
+  "tests/dotnet/Honua.Server.Tests/Features/Capabilities/CapabilityManifestEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Capabilities"
+assert_descriptor \
+  "headroom-split-elevation-terrain" \
+  "tests/dotnet/Honua.Server.Tests/Features/Protocols/Elevation/ElevationEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "Elevation and Terrain Analysis"
+assert_descriptor \
+  "headroom-split-ogc-processes" \
+  "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/OgcProcessesDismissJobTests.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Processes"
+# The parents of each split must still be selected by their own source tree.
+assert_descriptor \
+  "headroom-split-parent-mapserver" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices MapServer"
+
 assert_descriptor \
   "ci-shards-only" \
   ".github/ci-shards.json" \
@@ -1319,7 +1396,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.AdvancedSpatialQueryTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core Endpoints" \
+    "Core Spatial Query and Streaming" \
   --assert-owner \
     "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1347,6 +1424,133 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Protocols.Stac.StacOpsDemoEndpointTests" \
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
     "STAC Protocol" \
+  `# #3204 September 2026 shard-headroom rebalance: pin one class on each side of` \
+  `# every capacity split, so a later filter edit cannot quietly move a heavy` \
+  `# class back onto the shard the split took it off (or orphan it entirely).` \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Studio Packaging" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Analytics Studio Export and Reporting" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Identity and Mobile" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Identity and Mobile" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Collaboration.Sessions.CollaborationLiveCoEditingTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Collaboration Mobile and Identity" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.GeoservicesImportEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Migration Source Imports" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.GeoServerImportEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Migration Source Imports" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Migration" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.StreamingImportTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Cloud and Streaming Import" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.GeoParquetImportTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Cloud and Streaming Import" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.RasterImportEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "File and Raster Import" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Capabilities" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Data Enrichment and Capabilities" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Elevation.ElevationEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Elevation and Terrain Analysis" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Terrain.TerrainEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Elevation and Terrain Analysis" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Cog.CogEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Raster Serving Scene Geometry and Terrain" \
+  --assert-owner \
+    "Honua.Server.Tests.StreamingFeatureServerEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core Spatial Query and Streaming" \
+  --assert-owner \
+    "Honua.Server.Tests.FeatureServerEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core Endpoints" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Streaming.FeatureStreamAdmissionTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Streaming Endpoints" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices Catalog" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices ImageServer" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices MapServer Dynamic and Tiles" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices MapServer" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.OData.ODataErrorHandlingTests" \
+    "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
+    "OData Errors and Conformance" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests" \
+    "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
+    "OData Core" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.OData.ODataFilterFunctionTests" \
+    "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
+    "OData Pagination and Spatial" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.OData.ODataFilterMatrixTests" \
+    "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
+    "OData Advanced and Filters" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDismissJobTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Processes" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Tiles Coverages and Processes" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP Authentication and Governance" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
