@@ -239,11 +239,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            return await PersistFailureAsync(
-                    envelope,
-                    $"Operation validation failed ({ex.GetType().Name}).",
-                    cancellationToken)
-                .ConfigureAwait(false);
+            return await PersistValidationRejectionAsync(envelope, ex, cancellationToken).ConfigureAwait(false);
         }
 
         if (!validation.IsValid)
@@ -463,16 +459,62 @@ public sealed class OperationDispatcher : IOperationInvoker
         }
     }
 
+    /// <summary>
+    /// Persists a rejection raised by <see cref="IOperationExecutor.ValidateAsync"/>. A validation
+    /// throw is the executor refusing the request, and when the operation requires approval it is
+    /// the ONLY refusal a caller ever sees — the dispatcher stops here and never reaches
+    /// <see cref="IOperationExecutor.SubmitAsync"/>. It therefore carries the same
+    /// <c>errorKind</c> taxonomy the executors attach after actuation, so callers classify it as a
+    /// client error (400/404/409) instead of an opaque internal failure. Anything outside that
+    /// taxonomy stays a sanitized internal failure with no detail and no exception message.
+    /// </summary>
+    private Task<OperationHandle> PersistValidationRejectionAsync(
+        OperationHandle envelope,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        var errorKind = exception switch
+        {
+            ArgumentException => "argument",
+            KeyNotFoundException => "not-found",
+            InvalidOperationException => "conflict",
+            _ => null,
+        };
+
+        if (errorKind is null)
+        {
+            return PersistFailureAsync(
+                envelope,
+                $"Operation validation failed ({exception.GetType().Name}).",
+                cancellationToken);
+        }
+
+        return PersistFailureAsync(
+            envelope,
+            exception.Message,
+            cancellationToken,
+            new OperationResultSummary
+            {
+                Summary = exception.Message,
+                Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["errorKind"] = errorKind,
+                },
+            });
+    }
+
     private async Task<OperationHandle> PersistFailureAsync(
         OperationHandle envelope,
         string reason,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        OperationResultSummary? result = null)
     {
         var failed = envelope with
         {
             Status = OperationHandleStatus.Failed,
             UpdatedAt = _clock.GetUtcNow(),
             Reason = reason,
+            Result = result ?? envelope.Result,
         };
         try
         {

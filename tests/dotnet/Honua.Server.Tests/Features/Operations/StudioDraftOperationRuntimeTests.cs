@@ -50,7 +50,10 @@ public sealed class StudioDraftOperationRuntimeTests
             });
         lifecycle.GetPointersAsync(itemId, Arg.Any<CancellationToken>()).Returns(
             new StudioContentItemPointers { ItemId = itemId, CurrentVersionId = versionId });
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var validator = Substitute.For<IStudioPackageValidator>();
+        validator.ValidatePublicationIntent(Arg.Any<StudioPublicationIntent?>()).Returns(
+            new StudioValidationSummary { Status = StudioPackageValidationStatus.Valid });
+        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System, validator);
         var payload = JsonSerializer.Serialize(
             new StudioPublicationRequestPayload
             {
@@ -125,8 +128,10 @@ public sealed class StudioDraftOperationRuntimeTests
     public async Task PublicationRequestActuation_DraftSavedAfterValidation_ConflictsInsteadOfPublishingStaleVersion()
     {
         var store = new InMemoryStudioPackageStore();
-        var lifecycle = BuildLifecycle(store);
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var services = BuildStudioServices(store);
+        var lifecycle = services.GetRequiredService<IStudioPackageLifecycleService>();
+        var executor = new StudioCreatePublicationRequestExecutor(
+            lifecycle, TimeProvider.System, services.GetRequiredService<IStudioPackageValidator>());
         var approved = await SaveFirstVersionAsync(lifecycle);
         var payload = PublicationPayload(approved);
 
@@ -157,8 +162,10 @@ public sealed class StudioDraftOperationRuntimeTests
     public async Task PublicationRequestActuation_CurrentPointerUnchanged_AdvancesPublishedPointer()
     {
         var store = new InMemoryStudioPackageStore();
-        var lifecycle = BuildLifecycle(store);
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var services = BuildStudioServices(store);
+        var lifecycle = services.GetRequiredService<IStudioPackageLifecycleService>();
+        var executor = new StudioCreatePublicationRequestExecutor(
+            lifecycle, TimeProvider.System, services.GetRequiredService<IStudioPackageValidator>());
         var approved = await SaveFirstVersionAsync(lifecycle);
         var payload = PublicationPayload(approved);
 
@@ -177,12 +184,12 @@ public sealed class StudioDraftOperationRuntimeTests
         pointers.CurrentVersionId.Should().Be(approved.VersionId);
     }
 
-    private static IStudioPackageLifecycleService BuildLifecycle(IStudioPackageStore store)
+    private static IServiceProvider BuildStudioServices(IStudioPackageStore store)
     {
         var services = new ServiceCollection();
         services.AddSingleton(store);
         services.AddStudioPackageLifecycle();
-        return services.BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+        return services.BuildServiceProvider();
     }
 
     private static async Task<StudioContentVersion> SaveFirstVersionAsync(IStudioPackageLifecycleService lifecycle)
@@ -451,6 +458,53 @@ public sealed class StudioDraftOperationRuntimeTests
         bridge.Context!.ScopeGoverned.Should().BeTrue();
         bridge.Context.RecognizedScopes.Should().Equal("honua.mcp.delete");
         await lifecycle.DidNotReceiveWithAnyArgs().DeleteDraftAsync(default, default);
+    }
+
+    // honua-server#3980 review (PR #4535): under an approval-requiring policy the dispatcher
+    // stops after ValidateAsync and persists a proposal without ever calling SubmitAsync, so an
+    // invalid publication intent must be refused in the pre-policy path -- and that refusal has
+    // to carry the shared argument taxonomy, or StudioPackageEndpoints.MutationDecision reports
+    // it as an opaque 500 instead of the promised 400 diagnostics.
+    [UnitTest]
+    public async Task PublicationRequestValidation_InvalidIntent_RejectsWithArgumentTaxonomyBeforeApprovalRouting()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var services = BuildStudioServices(store);
+        var lifecycle = services.GetRequiredService<IStudioPackageLifecycleService>();
+        var executor = new StudioCreatePublicationRequestExecutor(
+            lifecycle, TimeProvider.System, services.GetRequiredService<IStudioPackageValidator>());
+        var bridge = new DurableApprovalBridge();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [executor],
+            new RequireApprovalPolicy(),
+            TimeProvider.System,
+            approvalBridge: bridge,
+            instanceStore: new VolatileOperationInstanceStore(),
+            auditLog: new VolatileOperationAuditLog());
+        var approved = await SaveFirstVersionAsync(lifecycle);
+        var payload = JsonSerializer.Serialize(
+            new StudioPublicationRequestPayload
+            {
+                ItemId = approved.ItemId,
+                VersionId = approved.VersionId,
+                ContentHash = approved.ContentHash,
+                // A relative route: the validator's studio.publication.route.invalid diagnostic.
+                Intent = new StudioPublicationIntent { Route = "relative", Visibility = "organization" },
+                ActorId = "studio-author",
+            },
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+
+        var handle = await dispatcher.SubmitAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, payload),
+            new OperationPolicyContext { PrincipalId = "studio-author" });
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Result!.Details["errorKind"].Should().Be("argument");
+        handle.Reason.Should().Be("Publication intent is invalid: route must start with '/'.");
+        bridge.Request.Should().BeNull("an invalid intent must never reach approval routing");
+        var pointers = await store.GetPointersAsync(approved.ItemId);
+        pointers!.PublishedVersionId.Should().BeNull();
     }
 
     [UnitTest]

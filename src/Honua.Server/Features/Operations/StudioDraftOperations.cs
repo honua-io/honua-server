@@ -407,7 +407,8 @@ internal sealed class StudioSaveVersionExecutor(IStudioPackageLifecycleService l
 
 internal sealed class StudioCreatePublicationRequestExecutor(
     IStudioPackageLifecycleService lifecycle,
-    TimeProvider clock)
+    TimeProvider clock,
+    IStudioPackageValidator validator)
     : StudioDraftMutationExecutor<StudioPublicationRequestPayload, StudioPublicationRequest>(lifecycle, clock)
 {
     public override string OperationId => StudioDraftOperations.CreatePublicationRequest;
@@ -434,18 +435,22 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             throw new InvalidOperationException("The supplied content hash does not match the saved Studio version.");
         }
 
-        // honua-server#3980 follow-up: the publication intent is deliberately NOT re-validated
-        // here. IStudioPackageLifecycleService.CreatePublicationRequestAsync is the single
-        // authority for intent validity and raises an ArgumentException carrying the validator
-        // diagnostics ("Publication intent is invalid: route must start with '/'."), which
-        // SubmitAsync classifies as errorKind=argument so REST answers 400 with those
-        // diagnostics. A rejection raised from ValidateAsync cannot carry that taxonomy --
-        // OperationDispatcher turns every pre-actuation throw into a bare Failed envelope with
-        // no errorKind -- so duplicating the check here only downgraded an actionable 400 into
-        // an opaque 500. The version, pointer and content-hash bindings above stay: they guard
-        // the approve-then-replay window and have no equivalent downstream (their own throws
-        // still surface as 500 for the same dispatcher reason -- classifying pre-actuation
-        // rejections is tracked separately, outside this trunk-red repair).
+        // honua-server#3980: the intent must be rejected here, before policy routing. When
+        // StudioDraftMutation requires approval the dispatcher stops after ValidateAsync and
+        // persists a proposal without ever calling SubmitAsync, so leaving the check to
+        // actuation would accept an invalid intent as 202 and only surface it after a human
+        // approved and replayed it. The message is rendered from the validator diagnostics with
+        // the same StudioValidationMessage.Format the lifecycle service uses, so the actuation
+        // and pre-actuation rejections are byte-identical
+        // ("Publication intent is invalid: route must start with '/'."), and
+        // OperationDispatcher classifies the ArgumentException as errorKind=argument so REST
+        // answers 400 with those diagnostics.
+        var intentValidation = validator.ValidatePublicationIntent(payload.Intent);
+        if (intentValidation.Status == StudioPackageValidationStatus.Invalid)
+        {
+            throw new ArgumentException(
+                StudioValidationMessage.Format("Publication intent is invalid", intentValidation.Diagnostics));
+        }
 
         return new OperationValidation
         {

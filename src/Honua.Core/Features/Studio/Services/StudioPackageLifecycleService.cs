@@ -652,14 +652,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     private static string FormatValidationFailure(
         string prefix,
         IReadOnlyList<StudioValidationDiagnostic> diagnostics)
-    {
-        if (diagnostics.Count == 0)
-        {
-            return prefix + ".";
-        }
-
-        return prefix + ": " + string.Join("; ", diagnostics.Select(static diagnostic => diagnostic.Message));
-    }
+        => StudioValidationMessage.Format(prefix, diagnostics);
 
     private static bool JsonEqualDependencies(
         IReadOnlyList<StudioPackageDependency> left,
