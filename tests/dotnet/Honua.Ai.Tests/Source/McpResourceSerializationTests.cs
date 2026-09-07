@@ -325,10 +325,15 @@ public sealed class McpResourceSerializationTests
             .Single(process => process.GetProperty("processId").GetString() == "imagery.classify");
         imagery.GetProperty("configurationDependency").GetString().Should().Be("Geoprocessing:ImageryInference");
 
+        // Kriging executes on the bundled NumPy backend inside the native worker (#3932),
+        // so it is a Job whose only remaining dependency is a native-worker deployment.
         var kriging = processes.EnumerateArray()
             .Single(process => process.GetProperty("processId").GetString() == "raster.interpolate-kriging");
-        kriging.GetProperty("executionKind").GetString().Should().Be("Unavailable");
-        kriging.GetProperty("executionCapabilityReason").GetString().Should().Contain("kriging");
+        kriging.GetProperty("executionKind").GetString().Should().Be("Job");
+        kriging.GetProperty("configurationDependency").GetString().Should().Be("runtime-profile:native");
+        processes.EnumerateArray()
+            .Should().NotContain(process => process.GetProperty("executionKind").GetString() == "Unavailable",
+                "the catalog no longer advertises any process it cannot execute");
         body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
     }
 
