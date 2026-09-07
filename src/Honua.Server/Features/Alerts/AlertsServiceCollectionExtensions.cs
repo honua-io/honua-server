@@ -5,6 +5,8 @@ using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Abstractions;
+using Honua.Server.Features.Alerts;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
@@ -82,6 +84,14 @@ internal static class AlertsServiceCollectionExtensions
         services.AddSingleton<AlertDispatchBackgroundService>();
         services.AddSingleton<IAlertDispatchHealth>(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
         services.AddHostedService(sp => sp.GetRequiredService<AlertDispatchBackgroundService>());
+
+        // Alert domain audit outbox (#3865). Registered unconditionally: the operator
+        // lifecycle endpoints are mapped regardless of the geofence capability flag,
+        // and an unreconciled audit intent is a control-plane integrity gap whether or
+        // not the evaluation pipeline is running.
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<AlertAuditOutboxCompleter>();
+        services.AddHostedService<AlertAuditOutboxReconciler>();
 
         return services;
     }
