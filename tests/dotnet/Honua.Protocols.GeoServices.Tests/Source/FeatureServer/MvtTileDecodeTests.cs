@@ -133,15 +133,18 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
             $"every clipped ordinate must lie within the tile extent plus its {Buffer}-unit buffer");
         points.Should().OnlyContain(point => point.Y >= -Buffer - 1 && point.Y <= Extent + Buffer + 1);
 
-        // The source line spans roughly 3 tiles; the clipped one must be cut back to the buffered
-        // tile, so its span cannot exceed the buffered width.
-        var span = points.Max(point => point.X) - points.Min(point => point.X);
-        span.Should().BeLessThanOrEqualTo(
-            Extent + (2 * Buffer) + 2,
-            "the line must be cut at the buffer, not carried through at full length");
-        span.Should().BeGreaterThan(
-            Extent - 2,
-            "the line crosses the whole tile, so the clipped result must still span it");
+        // The source line spans roughly three tiles, so a correctly buffered clip cuts it at
+        // exactly -buffer and extent+buffer. Asserting the span alone would also be satisfied by a
+        // clip to the plain [0, extent] box — i.e. by TileBuffer being ignored or regressed to
+        // zero — so pin both endpoints to the buffer itself.
+        ((double)points.Min(point => point.X)).Should().BeApproximately(
+            -Buffer,
+            2d,
+            $"the western end must be cut at the {Buffer}-unit buffer, not at the tile edge");
+        ((double)points.Max(point => point.X)).Should().BeApproximately(
+            Extent + Buffer,
+            2d,
+            $"the eastern end must be cut at extent + {Buffer}, not at the tile edge");
     }
 
     [IntegrationTest]
@@ -150,31 +153,77 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
     {
         // TileOptions.SimplifyZoom defaults to 10 and TileMath.GetSimplificationTolerance(8) is
         // 500 m. Only the scalar tolerance lookup was tested; nothing asserted that simplification
-        // actually reduces vertices, or that it preserves the feature and its endpoints.
+        // actually reduces vertices, or that it preserves the feature and its attributes.
+        //
+        // Comparing z=14 with z=8 would not isolate it: one z=8 tile unit is ~38 m, so
+        // ST_AsMVTGeom's own quantization collapses nearby vertices whether or not simplification
+        // runs. Both sides of this comparison are therefore the SAME z=8 tile over the same
+        // geometry, differing only in whether SimplifyZoom is configured — so any vertex reduction
+        // is attributable to ST_SimplifyPreserveTopology alone.
         const double lon = -122.4194;
         const double lat = 37.7749;
         const int sourceVertices = 400;
         var wkt = TileGeometry.DenseZigZagWkt(lon, lat, sourceVertices);
-        await SeedAsync("mvt-dense", wkt);
-
+        var (x, y) = TileGeometry.TileOf(lon, lat, 8);
         var filter = "where=" + Uri.EscapeDataString("name='mvt-dense'");
-        var (detailedX, detailedY) = TileGeometry.TileOf(lon, lat, 14);
-        var detailed = await DecodeTileAsync(14, detailedX, detailedY, filter);
-        var detailedPoints = detailed.Layer("layer").Features.Should().ContainSingle().Subject.Points.Count();
 
-        var (coarseX, coarseY) = TileGeometry.TileOf(lon, lat, 8);
-        var coarse = await DecodeTileAsync(8, coarseX, coarseY, filter);
-        var coarseFeature = coarse.Layer("layer").Features.Should().ContainSingle(
+        await SeedAsync("mvt-dense", wkt);
+        var simplified = await DecodeTileAsync(8, x, y, filter);
+
+        await using var unsimplifiedFixture = new UnsimplifiedFixture();
+        await unsimplifiedFixture.InitializeAsync();
+        await unsimplifiedFixture.SeedAsync("mvt-dense", wkt);
+        var unsimplified = MvtTileDecoder.Decode(
+            await unsimplifiedFixture.GetTileAsync(8, x, y, filter));
+
+        var simplifiedFeature = simplified.Layer("layer").Features.Should().ContainSingle(
             "simplification must not drop the feature").Subject;
-        var coarsePoints = coarseFeature.Points.ToArray();
+        var unsimplifiedFeature = unsimplified.Layer("layer").Features.Should().ContainSingle().Subject;
 
-        coarsePoints.Length.Should().BeLessThan(
-            detailedPoints,
-            "z=8 is at or below SimplifyZoom, so ST_SimplifyPreserveTopology must reduce the vertex count");
-        coarsePoints.Length.Should().BeGreaterThanOrEqualTo(
+        simplifiedFeature.Points.Count().Should().BeLessThan(
+            unsimplifiedFeature.Points.Count(),
+            "z=8 is at or below SimplifyZoom, so ST_SimplifyPreserveTopology must reduce the vertex " +
+            "count relative to the identical tile rendered with simplification disabled");
+        simplifiedFeature.Points.Should().HaveCountGreaterThanOrEqualTo(
             2, "a simplified line must remain a line");
-        coarseFeature.Attributes.Should().ContainKey("name").WhoseValue.Should().Be(
+        simplifiedFeature.Attributes.Should().ContainKey("name").WhoseValue.Should().Be(
             "mvt-dense", "simplification must not disturb attributes");
+    }
+
+    /// <summary>
+    /// A second host with <c>TileOptions:SimplifyZoom</c> below every zoom level, so the same tile
+    /// is rendered without <c>ST_SimplifyPreserveTopology</c> and the A/B above isolates it.
+    /// </summary>
+    private sealed class UnsimplifiedFixture : IAsyncDisposable
+    {
+        private readonly WebAppFixture _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseSetting("TileOptions:SimplifyZoom", "-1"));
+
+        public Task InitializeAsync() => _fixture.InitializeAsync();
+
+        public async Task SeedAsync(string name, string wkt)
+        {
+            var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+            await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO features (layer_id, geometry, attributes)
+                VALUES (@layerId, ST_SetSRID(ST_GeomFromText(@wkt), 4326), jsonb_build_object('name', @name));
+                """;
+            command.Parameters.AddWithValue("layerId", LayerId);
+            command.Parameters.AddWithValue("wkt", wkt);
+            command.Parameters.AddWithValue("name", name);
+            (await command.ExecuteNonQueryAsync()).Should().Be(1);
+        }
+
+        public async Task<byte[]> GetTileAsync(int z, int x, int y, string query)
+        {
+            using var response = await _fixture.Client.GetAsync($"/tiles/{LayerId}/{z}/{x}/{y}.mvt?{query}");
+            response.Be200Ok();
+            return await response.Content.ReadAsByteArrayAsync();
+        }
+
+        public async ValueTask DisposeAsync() => await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]
