@@ -88,6 +88,13 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
                 Enabled = true
             });
 
+        // calculate is a bulk field UPDATE, and the shared FeatureServer edit pipeline
+        // rejects an edit kind the publication never advertised (#4073). PublishLayerAsync
+        // advertises the read-only default (Query/Extract), so without this the proof would
+        // only ever exercise the capability guard and never calculate itself. Declare exactly
+        // the operation calculate needs on top of the published defaults — not Create/Delete.
+        _fixture.EnableV2ServiceEditingCapabilities(_serviceName, ["Query", "Extract", "Update"]);
+
         _routeLayerId = await ResolveRouteLayerIdAsync();
     }
 
@@ -104,9 +111,7 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
                  {"field":"label","sqlExpression":"UPPER(label) || '-C'"}]
                 """);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        using var document = ParseSuccessfulCalculate(response);
         document.RootElement.GetProperty("updatedFeatureCount").GetInt32().Should().Be(
             3, "exactly the three rows with score >= 20 match the filter");
 
@@ -128,9 +133,9 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
             where: "id = 3",
             calcExpression: """[{"field":"note","value":"recalculated"}]""");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        document.RootElement.GetProperty("updatedFeatureCount").GetInt32().Should().Be(1);
+        using var document = ParseSuccessfulCalculate(response);
+        document.RootElement.GetProperty("updatedFeatureCount").GetInt32().Should().Be(
+            1, "only the row named by the filter may be updated");
 
         await AssertRowsAsync(
         [
@@ -148,7 +153,7 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
             where: "1=1",
             calcExpression: """[{"field":"score","sqlExpression":"(SELECT score FROM calcproof)"}]""");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+        AssertRejected(response, "Unsupported expression for field 'score'",
             "a subquery is outside the calculate expression allow-list");
 
         // The rejection must be total: no row may carry a partial write.
@@ -162,7 +167,8 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
             where: "1=1",
             calcExpression: """[{"field":"not_a_field","value":"x"}]""");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        AssertRejected(response, "Field 'not_a_field' does not exist in layer",
+            "calculate may only target a field the layer schema declares");
         await AssertRowsAsync(SeedRows);
     }
 
@@ -180,9 +186,7 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
                  {"field":"label","sqlExpression":"UPPER(label) || '-C'"}]
                 """);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        using var document = ParseSuccessfulCalculate(response);
         document.RootElement.GetProperty("updatedFeatureCount").GetInt32().Should().Be(4);
 
         // The frozen post-state of the score >= 20 proof rejects it: row 1 was
@@ -252,7 +256,15 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         }
     }
 
-    private async Task<HttpResponseMessage> PostCalculateAsync(string where, string calcExpression)
+    /// <summary>
+    /// The transport status and raw body of one calculate call. The body is carried so
+    /// every assertion below can report it: a rejection envelope and a success envelope
+    /// are both HTTP 200, so without the body a wrong-shaped response surfaces only as a
+    /// bare <see cref="KeyNotFoundException"/> on a missing property.
+    /// </summary>
+    private readonly record struct CalculateOutcome(HttpStatusCode Status, string Body);
+
+    private async Task<CalculateOutcome> PostCalculateAsync(string where, string calcExpression)
     {
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -261,8 +273,50 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
             ["calcExpression"] = calcExpression
         });
 
-        return await _fixture.Client.PostAsync(
+        using var response = await _fixture.Client.PostAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_routeLayerId}/calculate", content);
+        return new CalculateOutcome(response.StatusCode, await response.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>
+    /// Asserts that calculate returned the success envelope and hands back the parsed
+    /// document. The caller owns the returned <see cref="JsonDocument"/>.
+    /// </summary>
+    private static JsonDocument ParseSuccessfulCalculate(CalculateOutcome outcome)
+    {
+        outcome.Status.Should().Be(HttpStatusCode.OK);
+
+        var document = JsonDocument.Parse(outcome.Body);
+        document.RootElement.TryGetProperty("success", out var success).Should().BeTrue(
+            "calculate must answer with the CalculateResponse envelope, but the body was: {0}", outcome.Body);
+        success.GetBoolean().Should().BeTrue("the body was: {0}", outcome.Body);
+        return document;
+    }
+
+    /// <summary>
+    /// Asserts a calculate rejection. PA-070/PA-117: every GeoServices response — errors
+    /// included — is HTTP 200, and the rejection travels in the body as
+    /// <c>{"error":{"code":400,...}}</c>. Asserting the body code AND the reason is
+    /// strictly stronger than asserting a transport status this protocol never emits:
+    /// it pins which guard fired, not merely that something failed.
+    /// </summary>
+    private static void AssertRejected(CalculateOutcome outcome, string expectedReason, string because)
+    {
+        outcome.Status.Should().Be(HttpStatusCode.OK,
+            "GeoServices signals errors in the body, never the transport status (PA-070/PA-117)");
+
+        using var document = JsonDocument.Parse(outcome.Body);
+        document.RootElement.TryGetProperty("success", out _).Should().BeFalse(
+            "a rejected calculate must not report a success envelope, but the body was: {0}", outcome.Body);
+
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400, because);
+
+        var details = error.TryGetProperty("details", out var detailsElement)
+            && detailsElement.ValueKind == JsonValueKind.Array
+                ? string.Join(" | ", detailsElement.EnumerateArray().Select(detail => detail.GetString()))
+                : string.Empty;
+        details.Should().Contain(expectedReason, because);
     }
 
     /// <summary>
