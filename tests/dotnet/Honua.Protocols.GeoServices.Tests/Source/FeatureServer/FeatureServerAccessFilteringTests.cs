@@ -126,7 +126,7 @@ public sealed class FeatureServerAccessFilteringTests
         }
     }
 
-    private static IReadOnlyList<long> ReadObjectIds(string body)
+    private static List<long> ReadObjectIds(string body)
     {
         if (string.IsNullOrWhiteSpace(body))
         {

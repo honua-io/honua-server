@@ -14,6 +14,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Npgsql;
 using DomainAccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
@@ -283,7 +284,7 @@ public sealed class DeniedPrincipalZeroRecordsTests
     /// is not a success-shaped payload carries no records, which is exactly what the
     /// denial case asserts.
     /// </summary>
-    private static IReadOnlyList<long> ReadRecordIds(string surface, string body)
+    private static List<long> ReadRecordIds(string surface, string body)
     {
         if (string.IsNullOrWhiteSpace(body))
         {
@@ -318,7 +319,7 @@ public sealed class DeniedPrincipalZeroRecordsTests
         }
     }
 
-    private static IReadOnlyList<long> ReadFeatureServerIds(JsonElement root)
+    private static List<long> ReadFeatureServerIds(JsonElement root)
     {
         if (!root.TryGetProperty("features", out var features) || features.ValueKind != JsonValueKind.Array)
         {
@@ -338,7 +339,7 @@ public sealed class DeniedPrincipalZeroRecordsTests
         return ids;
     }
 
-    private static IReadOnlyList<long> ReadOgcFeatureIds(JsonElement root)
+    private static List<long> ReadOgcFeatureIds(JsonElement root)
     {
         if (!root.TryGetProperty("features", out var features) || features.ValueKind != JsonValueKind.Array)
         {
@@ -363,7 +364,7 @@ public sealed class DeniedPrincipalZeroRecordsTests
         return ids;
     }
 
-    private static IReadOnlyList<long> ReadODataIds(JsonElement root)
+    private static List<long> ReadODataIds(JsonElement root)
     {
         if (!root.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Array)
         {
