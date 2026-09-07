@@ -148,7 +148,8 @@ public sealed class ODataAuthorizationTests : IAsyncLifetime
         list.StatusCode.Should().Be(HttpStatusCode.OK);
         using var collection = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
         var count = collection.RootElement.GetProperty("value").GetArrayLength();
-        count.Should().Be(10, "all ten seeded cities must be present before and after a denial");
+        // tests/seed/odata.yaml seeds objectids 1-15 on layer 0.
+        count.Should().Be(15, "all fifteen seeded cities must be present before and after a denial");
         using var response = await client.GetAsync("/odata/Features(LayerId=0,ObjectId=1)");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var target = await response.Content.ReadAsStringAsync();
