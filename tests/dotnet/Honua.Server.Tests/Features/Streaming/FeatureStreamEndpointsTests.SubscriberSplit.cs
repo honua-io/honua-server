@@ -222,14 +222,16 @@ public sealed partial class FeatureStreamEndpointsTests
     private sealed class SplitStream : IAsyncDisposable
     {
         private readonly WebSocket? _socket;
+        private readonly HttpClient? _client;
         private readonly HttpResponseMessage? _response;
         private readonly Stream? _stream;
         private readonly StreamReader? _reader;
 
         private SplitStream(WebSocket socket) => _socket = socket;
 
-        private SplitStream(HttpResponseMessage response, Stream stream, StreamReader reader)
+        private SplitStream(HttpClient client, HttpResponseMessage response, Stream stream, StreamReader reader)
         {
+            _client = client;
             _response = response;
             _stream = stream;
             _reader = reader;
@@ -237,8 +239,8 @@ public sealed partial class FeatureStreamEndpointsTests
 
         public static SplitStream ForSocket(WebSocket socket) => new(socket);
 
-        public static SplitStream ForSse(HttpResponseMessage response, Stream stream, StreamReader reader)
-            => new(response, stream, reader);
+        public static SplitStream ForSse(HttpClient client, HttpResponseMessage response, Stream stream, StreamReader reader)
+            => new(client, response, stream, reader);
 
         /// <summary>Reads the next frame of any type from the underlying transport.</summary>
         public async Task<(string? EventName, JsonElement Data)> NextAsync(CancellationToken cancellationToken)
@@ -259,6 +261,7 @@ public sealed partial class FeatureStreamEndpointsTests
             _reader?.Dispose();
             _stream?.Dispose();
             _response?.Dispose();
+            _client?.Dispose();
             return ValueTask.CompletedTask;
         }
     }
@@ -289,15 +292,26 @@ public sealed partial class FeatureStreamEndpointsTests
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.Referrer = new Uri(SplitReferer);
         request.Headers.Accept.ParseAdd("text/event-stream");
-        var response = await fixture.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.StatusCode.Should().Be(
-            System.Net.HttpStatusCode.OK,
-            "both subscribers must be admitted; only what they RECEIVE may differ: {0}",
-            await response.Content.ReadAsStringAsync(cancellationToken));
+
+        // A dedicated client per subscriber: the fixture's shared client can carry an ambient
+        // admin credential, and each subscriber must be authenticated only by its own token.
+        var client = fixture.CreateClient();
+        var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+        // Read the body only when the admission failed. An SSE body never ends, so evaluating it
+        // as an assertion argument would block until the test's timeout fired.
+        if (response.StatusCode != System.Net.HttpStatusCode.OK)
+        {
+            var failure = await response.Content.ReadAsStringAsync(cancellationToken);
+            response.StatusCode.Should().Be(
+                System.Net.HttpStatusCode.OK,
+                "both subscribers must be admitted; only what they RECEIVE may differ: {0}",
+                failure);
+        }
 
         var body = await response.Content.ReadAsStreamAsync(cancellationToken);
         var reader = new StreamReader(body);
-        var sse = SplitStream.ForSse(response, body, reader);
+        var sse = SplitStream.ForSse(client, response, body, reader);
         _ = await sse.NextAsync(cancellationToken);
         return sse;
     }
