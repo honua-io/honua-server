@@ -58,9 +58,17 @@ ARTIFACT_PRODUCERS = {
     "3d-tiles": "honua",         # TilesetDocumentWriter via artifact-gen
     "stac": "honua",             # live server
     "cloud-native": "honua",     # JS clients against live server artifacts
-    "cog": "third-party-fixture",        # rio_cogeo.cog_translate
+    "cog": "honua",              # CogMetadataExtractor -> CogTiffTileEncoder transcode
     "zarr": "third-party-fixture",       # xarray.to_zarr
     "hdf5-netcdf": "third-party-fixture",  # xarray.to_netcdf
+}
+
+# Per-cell overrides for surfaces whose rows do not share one producer. The Zarr
+# surface is mixed: the canonical clients still read the `xarray.to_zarr` store
+# (third-party), while the subset-transcode cell validates the array Honua's own
+# `ZarrSubsetReader` decoded out of it.
+ARTIFACT_PRODUCER_OVERRIDES = {
+    ("zarr", "subset-transcode", "xarray"): "honua",
 }
 
 NON_HONUA_PRODUCER_GAP = (
@@ -210,15 +218,31 @@ FORMAT_BUDGET_PROFILES = {
             "content_count": 1,
         },
     ),
+    # The COG cells validate `honua.cog.tif`: the base-level north-west tile of
+    # `canonical.webmercator.cog.tif`, read by `CogMetadataExtractor` over HTTP range
+    # requests and re-encoded by `CogTiffTileEncoder`. The expectations below are
+    # derived from the fixture's declared sample formula — value(row, col) = row * 512
+    # + col over a 512x512 source, nodata at (3, 7) — not from a snapshot of a previous
+    # run, so a transcode that dropped the predictor, mis-sliced the tile, or lost the
+    # nodata tag fails them.
     "cog": _budget_profile(
         max_requests=32,
         max_transferred_bytes=16_777_216,
         max_full_object_downloads=0,
         min_range_requests=1,
-        required_metadata=["crs", "dimensions", "band_count", "nodata", "overview_count"],
+        required_metadata=[
+            "crs", "dimensions", "band_count", "nodata", "overview_count",
+            "bounds", "samples", "pixel_mismatches",
+        ],
         expected_metadata={
-            "crs": "EPSG:4326", "dimensions": [256, 256], "band_count": 1,
-            "nodata": -9999.0, "overview_count": 3,
+            "crs": "EPSG:3857", "dimensions": [256, 256], "band_count": 1,
+            "nodata": -9999.0, "overview_count": 0,
+            "bounds": [-20037508.342789244, 0.0, 0.0, 20037508.342789244],
+            "samples": {
+                "0,0": 0.0, "0,255": 255.0, "255,0": 130560.0,
+                "255,255": 130815.0, "3,7": -9999.0,
+            },
+            "pixel_mismatches": 0,
         },
     ),
     "flatgeobuf": _budget_profile(
@@ -304,6 +328,28 @@ FORMAT_BUDGET_PROFILES = {
         expected_metadata={
             "zarr_format": 2, "shape": [4, 8, 16], "chunks": [1, 4, 4],
             "dtype": "<f4", "chunk_count": 32,
+        },
+    ),
+    # The Honua subset-transcode cell. `temperature[1:3, 2:6, 4:12]` starts and stops
+    # off a chunk boundary on every axis, so a reader that widened the request to whole
+    # chunks returns the wrong shape, and chunk pruning is observable: the request
+    # touches 8 of the array's 32 chunks. A read that pulled the whole array would need
+    # at least 32 chunk objects plus its metadata documents and blow the whole-object
+    # budget. The value oracle is doubled: Honua's decoded samples must equal both the
+    # fixture's declared formula and xarray's own slice of the same store.
+    "zarr-honua-subset": _budget_profile(
+        max_requests=64,
+        max_transferred_bytes=1_048_576,
+        max_full_object_downloads=24,
+        min_range_requests=0,
+        required_metadata=[
+            "variable", "subset_shape", "dtype", "chunk_objects_read", "chunk_objects_total",
+            "formula_mismatches", "xarray_mismatches",
+        ],
+        expected_metadata={
+            "variable": "temperature", "subset_shape": [2, 4, 8], "dtype": "<f4",
+            "chunk_objects_read": 8, "chunk_objects_total": 32,
+            "formula_mismatches": 0, "xarray_mismatches": 0,
         },
     ),
 }
@@ -395,6 +441,9 @@ GOVERNED_ASSIGNMENTS = {
     ("zarr", "store-read", "fsspec"): _assignment(
         "2026.7.0", "fsspec-zarr", ("positive", "metadata", "range-efficiency"),
         "zarr-v2", "format.zarr", "zarr"),
+    ("zarr", "subset-transcode", "xarray"): _assignment(
+        "2026.7.0", "honua-zarr-transcode", ("positive", "metadata", "crs-axis", "range-efficiency"),
+        "zarr-v2", "format.zarr", "zarr-honua-subset"),
 }
 
 
@@ -427,6 +476,30 @@ def _run(*command: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, check=True, capture_output=True, text=True)
 
 
+def _consumer_evidence(args: argparse.Namespace) -> dict:
+    """
+    Returns what the artifact generator recorded while Honua read the canonical inputs.
+
+    #4398: the range-efficiency budgets had nothing measuring them because nothing in
+    the lane observed Honua's cloud-native reads. The generator now drives
+    `CogMetadataExtractor` and `ZarrSubsetReader` through an HTTP origin that counts
+    requests, ranged requests, whole-object pulls and bytes; this is that receipt.
+    """
+    evidence = getattr(args, "consumer_evidence", None)
+    if not isinstance(evidence, dict):
+        raise ValueError(
+            "honua-consumer-evidence.json is missing; the lane cannot attribute the "
+            "COG and Zarr cells to Honua or measure their range budgets")
+    return evidence
+
+
+def _consumer_transfer(args: argparse.Namespace, surface: str) -> dict:
+    surface_evidence = _consumer_evidence(args).get(surface)
+    if not isinstance(surface_evidence, dict):
+        raise ValueError(f"honua-consumer-evidence.json records no {surface} read")
+    return dict(surface_evidence.get("observed_transfer") or {})
+
+
 FAILURE_IDENTITIES = {
     "validate_geoparquet": ("geoparquet", "feature-read", "PyArrow"),
     "validate_flatgeobuf": ("flatgeobuf", "feature-read", "Pyogrio"),
@@ -434,6 +507,7 @@ FAILURE_IDENTITIES = {
     "validate_cog": ("cog", "window-read", "Rasterio"),
     "validate_hdf5_netcdf": ("hdf5-netcdf", "metadata-statistics", "h5py"),
     "validate_zarr": ("zarr", "multidimensional-subset", "xarray"),
+    "validate_honua_zarr_subset": ("zarr", "subset-transcode", "xarray"),
     "validate_stac": ("stac", "collection-discovery", "PySTAC-Client"),
     "validate_javascript": ("cloud-native", "javascript-client-validation", "Node.js"),
 }
@@ -538,7 +612,11 @@ def _apply_producer_attribution(observation: dict) -> None:
     evidence. Recording ``honua_in_loop`` on every row means a downstream consumer
     of the fragment can tell the two kinds of cell apart without reading this script.
     """
-    producer = ARTIFACT_PRODUCERS.get(observation["surface"], "third-party-fixture")
+    identity = (
+        observation["surface"], observation["operation"], observation["canonical_client"],
+    )
+    producer = ARTIFACT_PRODUCER_OVERRIDES.get(
+        identity, ARTIFACT_PRODUCERS.get(observation["surface"], "third-party-fixture"))
     observation["artifact_producer"] = producer
     observation["honua_in_loop"] = producer == "honua"
     if not observation["honua_in_loop"] and observation["result"] == "pass":
@@ -832,28 +910,65 @@ def _normalize_crs(raw) -> str | None:
     return str(raw)
 
 
+def _expected_transcoded_tile():
+    """
+    Recomputes the tile Honua must have transcoded, from the fixture's declared formula.
+
+    `generate-canonical-fixtures.py` writes `canonical.webmercator.cog.tif` as
+    value(row, col) = row * 512 + col with a single nodata cell at (3, 7); Honua reads
+    its base-level north-west 256x256 tile and re-encodes it. Deriving the oracle from
+    the formula rather than from a stored copy of a previous run is what makes this a
+    proof: a snapshot would agree with whatever the transcode last produced.
+    """
+    import numpy
+
+    expected = numpy.arange(512 * 512, dtype=numpy.float32).reshape(512, 512)[:256, :256].copy()
+    expected[3, 7] = -9999.0
+    return expected
+
+
 def validate_cog(path: Path, args: argparse.Namespace) -> list[dict]:
+    """
+    Validates the COG **Honua transcoded**, not the fixture a third party wrote.
+
+    #4398: this cell used to open `canonical.cog.tif` — `rio_cogeo.cog_translate`
+    output — so rasterio, rio-cogeo and GDAL were validating Python's own file and no
+    Honua code was in the loop. `path` is now `honua.cog.tif`, produced by
+    `CogMetadataExtractor` + `TileDecompressor` + `CogTiffTileEncoder` reading the
+    third-party fixture over counted HTTP range requests.
+    """
+    import numpy
     import rasterio
-    from rasterio.windows import Window
     from rio_cogeo.cogeo import cog_validate
 
     observations: list[dict] = []
 
     metadata_seen: dict[str, Any] = {}
+    transfer = _consumer_transfer(args, "cog")
 
     def rasterio_check() -> None:
+        expected = _expected_transcoded_tile()
         with rasterio.open(path) as dataset:
             if dataset.driver != "GTiff" or dataset.crs is None or dataset.count < 1:
                 raise ValueError("Rasterio did not recover a georeferenced COG")
-            if dataset.read(1, window=Window(0, 0, 16, 16)).size != 256:
-                raise ValueError("Rasterio window read returned an unexpected shape")
+            pixels = dataset.read(1)
+            bounds = dataset.bounds
             metadata_seen.update({
                 "crs": _normalize_crs(dataset.crs),
                 "dimensions": [dataset.width, dataset.height],
                 "band_count": dataset.count,
                 "nodata": dataset.nodata,
                 "overview_count": len(dataset.overviews(1)),
+                "bounds": [bounds.left, bounds.bottom, bounds.right, bounds.top],
             })
+        if pixels.shape != expected.shape:
+            raise ValueError(
+                f"Honua transcoded a {pixels.shape} tile, expected {expected.shape}")
+        metadata_seen["pixel_mismatches"] = int(numpy.count_nonzero(pixels != expected))
+        metadata_seen["samples"] = {
+            f"{row},{col}": float(pixels[row, col])
+            for row, col in ((0, 0), (0, 255), (255, 0), (255, 255), (3, 7))
+        }
 
     def rio_cogeo_check() -> None:
         valid, errors, _warnings = cog_validate(path, strict=True)
@@ -866,9 +981,74 @@ def validate_cog(path: Path, args: argparse.Namespace) -> list[dict]:
 
     _collect_client(
         observations, "cog", "window-read", "Rasterio", "rasterio-cog", args, rasterio_check,
-        unbound=True, observed_metadata=metadata_seen)
-    _collect_client(observations, "cog", "structure-validate", "rio-cogeo", "rio-cogeo", args, rio_cogeo_check, unbound=True)
-    _collect_client(observations, "cog", "dataset-read", "GDAL", "gdal-cog", args, gdal_check, unbound=True)
+        observed_metadata=metadata_seen, observed_transfer=transfer)
+    _collect_client(
+        observations, "cog", "structure-validate", "rio-cogeo", "rio-cogeo", args, rio_cogeo_check,
+        observed_metadata=metadata_seen, observed_transfer=transfer)
+    _collect_client(
+        observations, "cog", "dataset-read", "GDAL", "gdal-cog", args, gdal_check,
+        observed_metadata=metadata_seen)
+    return observations
+
+
+def validate_honua_zarr_subset(path: Path, args: argparse.Namespace) -> list[dict]:
+    """
+    Validates the Zarr subset **Honua decoded** out of the canonical store.
+
+    #4398: the Zarr cells read the store `xarray.to_zarr` wrote, so they were consumer
+    evidence for xarray. Honua does not write Zarr, so the artifact it can be held to is
+    what its `ZarrSubsetReader` decodes. `honua-consumer-evidence.json` carries those
+    samples plus the chunk objects and bytes the read cost; this cell checks them
+    against two oracles that were computed without Honua: the fixture's declared
+    formula, and xarray's own slice of the same store.
+    """
+    import numpy
+    import xarray
+
+    evidence = _consumer_evidence(args)
+    zarr_evidence = evidence.get("zarr")
+    if not isinstance(zarr_evidence, dict):
+        raise ValueError(
+            "honua-consumer-evidence.json carries no Zarr subset; the artifact generator "
+            "did not drive Honua's Zarr reader")
+
+    observed: dict[str, Any] = {}
+    transfer = dict(zarr_evidence.get("observed_transfer") or {})
+
+    def honua_subset_check() -> None:
+        start = list(zarr_evidence["start"])
+        stop = list(zarr_evidence["stop"])
+        shape = list(zarr_evidence["shape"])
+        values = numpy.asarray(zarr_evidence["values"], dtype=numpy.float32)
+        if values.size != int(numpy.prod(shape)):
+            raise ValueError(
+                f"Honua returned {values.size} samples for a subset of shape {shape}")
+        decoded = values.reshape(shape)
+
+        # Oracle 1: the fixture's declared formula, value(t, y, x) = t*128 + y*16 + x.
+        formula = numpy.arange(4 * 8 * 16, dtype=numpy.float32).reshape(4, 8, 16)
+        expected = formula[start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]]
+        observed["formula_mismatches"] = int(numpy.count_nonzero(decoded != expected))
+
+        # Oracle 2: an independent implementation reading the same store.
+        with xarray.open_zarr(path, chunks=None, consolidated=True) as dataset:
+            reference = dataset[zarr_evidence["variable"]].values[
+                start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]]
+        observed["xarray_mismatches"] = int(numpy.count_nonzero(decoded != reference))
+
+        chunk_reads = zarr_evidence.get("chunk_reads") or {}
+        observed.update({
+            "variable": zarr_evidence["variable"],
+            "subset_shape": shape,
+            "dtype": zarr_evidence["data_type"],
+            "chunk_objects_read": chunk_reads.get("chunk_objects_read"),
+            "chunk_objects_total": chunk_reads.get("chunk_objects_total"),
+        })
+
+    observations: list[dict] = []
+    _collect_client(
+        observations, "zarr", "subset-transcode", "xarray", "honua-zarr-transcode",
+        args, honua_subset_check, observed_metadata=observed, observed_transfer=transfer)
     return observations
 
 
@@ -1029,17 +1209,75 @@ def validate_javascript(path: Path, args: argparse.Namespace) -> list[dict]:
     return observations
 
 
+NOT_RUN_GAP = (
+    "This governed cell did not execute in this run, so it produced no evidence; a "
+    "cell that is absent from the roster is not a cell that passed."
+)
+
+
+def _append_unexecuted_cells(observations: list[dict], args: argparse.Namespace) -> list[dict]:
+    """
+    Gives every governed cell a row, whether or not it ran (#4398).
+
+    A validator that threw before reaching a client, or a lane step that never
+    started, used to leave the identity simply absent from the fragment. Absence is
+    indistinguishable from success to anything counting passes, so each missing
+    identity is emitted as an explicit non-passing row that names why.
+    """
+    executed = {
+        (row["surface"], row["operation"], row["canonical_client"]) for row in observations
+    }
+    for row in observations:
+        row["executed"] = True
+    started = _now()
+    for identity, assignment in GOVERNED_ASSIGNMENTS.items():
+        if identity in executed:
+            continue
+        surface, operation, client = identity
+        # The governed version, not the CLIENTS pin: several governed clients are
+        # browser/CLI validators that carry no entry there, and a cell that never ran
+        # has no detected version to report anyway.
+        row = _observation(
+            surface, operation, client, assignment.lane, started, args, assignment.version)
+        row["executed"] = False
+        row["result"] = "skip"
+        row["skip_reason"] = NOT_RUN_GAP
+        row["evidence_digest"] = None
+        row["evidence_receipt"] = None
+        row["facet_results"] = None
+        row["evidence_uri"] = None
+        row["client_lane"] = assignment.lane
+        row["scenario_facets"] = list(assignment.facets)
+        row["contract_revision"] = assignment.contract_revision
+        row["auth_policy_revision"] = "anonymous-v1"
+        row["budget_profile"] = assignment.budget_profile
+        _apply_producer_attribution(row)
+        observations.append(row)
+    return observations
+
+
+def _cell_name(observation: dict) -> str:
+    """Names one certification cell exactly. Surfaces alone are ambiguous: the Zarr
+    surface holds both third-party store reads and Honua's subset transcode."""
+    return "/".join((
+        observation["surface"], observation["operation"], observation["canonical_client"],
+    ))
+
+
 def _scope_disposition(observations: list[dict]) -> str:
     """States exactly which governed cells this run could and could not certify."""
     passed = sum(observation["result"] == "pass" for observation in observations)
     total = len(observations)
-    third_party = sorted({
-        observation["surface"] for observation in observations
+    third_party = sorted(
+        _cell_name(observation) for observation in observations
         if not observation.get("honua_in_loop")
-    })
+    )
+    not_run = sum(observation.get("executed", True) is False for observation in observations)
     if passed == total and total:
         return f"All {total} governed CNG observations met their declared budget profile."
     detail = f"{passed} of {total} governed CNG observations met their declared budget profile."
+    if not_run:
+        detail += f" {not_run} governed cell(s) did not execute in this run."
     if third_party:
         detail += (
             " The "
@@ -1063,18 +1301,28 @@ def main() -> int:
     parser.add_argument("--base-url", required=True)
     args = parser.parse_args()
     args.evidence_digest = _digest_evidence(args.artifacts, args.native_results)
+    # The generator's receipt for Honua's own COG/Zarr reads. Loaded before any cell
+    # runs so a lane that skipped the generator fails loudly rather than quietly
+    # reverting to validating third-party output (#4398).
+    consumer_evidence_path = args.artifacts / "honua-consumer-evidence.json"
+    args.consumer_evidence = (
+        json.loads(consumer_evidence_path.read_text(encoding="utf-8"))
+        if consumer_evidence_path.exists()
+        else None
+    )
 
     observations: list[dict] = []
     _collect(observations, validate_native_results, args.native_results, args)
     _collect(observations, validate_geoparquet, args.artifacts / "cng.parquet", args)
     _collect(observations, validate_flatgeobuf, args.artifacts / "cng.fgb", args)
     _collect(observations, validate_pmtiles, args.artifacts / "honua.pmtiles", args)
-    _collect(observations, validate_cog, args.artifacts / "canonical.cog.tif", args, _mark_unbound)
+    _collect(observations, validate_cog, args.artifacts / "honua.cog.tif", args)
     _collect(observations, validate_hdf5_netcdf, args.artifacts / "canonical.nc", args, _mark_unbound)
     _collect(observations, validate_zarr, args.artifacts / "canonical.zarr", args, _mark_unbound)
+    _collect(observations, validate_honua_zarr_subset, args.artifacts / "canonical.zarr", args)
     _collect(observations, validate_stac, args.base_url, args)
     _collect(observations, validate_javascript, args.artifacts, args)
-    observations = _normalize_observations(observations, args)
+    observations = _append_unexecuted_cells(_normalize_observations(observations, args), args)
     fragment = {
         "schema": "honua.protocol-certification-fragment/v1",
         "producer": "honua-server-cng",
@@ -1096,14 +1344,27 @@ def main() -> int:
         # artifact was produced by third-party tooling are counted separately here and
         # can never carry result=pass.
         "producer_attribution": {
-            "honua_in_loop": sorted({
-                observation["surface"] for observation in observations
+            "honua_in_loop": sorted(
+                _cell_name(observation) for observation in observations
                 if observation.get("honua_in_loop")
-            }),
-            "third_party_fixture": sorted({
-                observation["surface"] for observation in observations
+            ),
+            "third_party_fixture": sorted(
+                _cell_name(observation) for observation in observations
                 if not observation.get("honua_in_loop")
-            }),
+            ),
+        },
+        # #4398: the receipt half of "the lane records which cells executed". Reading
+        # `observations` alone cannot distinguish a cell that ran and was skipped from
+        # one that never ran; this states both, and counts only passes as passes.
+        "cell_receipt": {
+            "governed_cells": len(GOVERNED_ASSIGNMENTS),
+            "executed": sum(observation.get("executed", False) for observation in observations),
+            "passed": sum(observation["result"] == "pass" for observation in observations),
+            "not_run": sorted(
+                "/".join((observation["surface"], observation["operation"],
+                          observation["canonical_client"]))
+                for observation in observations if not observation.get("executed", False)
+            ),
         },
         "observations": observations,
     }

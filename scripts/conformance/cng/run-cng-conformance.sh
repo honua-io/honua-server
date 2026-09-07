@@ -9,14 +9,21 @@
 #   FlatGeobuf        FeatureServer f=fgb        -> ogrinfo -al -so (read-back)
 #   PMTiles v3        PMTilesWriter (generated)  -> pmtiles verify
 #   3D Tiles 1.1      Tileset+GLB (generated)    -> 3d-tiles-validator (+ gltf_validator)
+#   COG (GeoTIFF)     CogTiffTileEncoder tile    -> rasterio / rio-cogeo / gdalinfo
 #
 # GeoParquet and FlatGeobuf are fetched live from a store-backed FeatureServer
-# ('cng', seeded into PostgreSQL); PMTiles and 3D Tiles are produced by driving
-# honua's own writers through the bundled artifact generator.
+# ('cng', seeded into PostgreSQL); PMTiles, 3D Tiles and the transcoded COG tile
+# are produced by driving honua's own writers and readers through the bundled
+# artifact generator.
 #
-# COG, HDF5/netCDF, and Zarr are supported consumer surfaces. Deterministic
-# inputs for their canonical-client checks are generated in this lane and
-# normalized by validate-canonical-artifacts.py. COPC remains roadmap-only.
+# COG and Zarr are consumer surfaces: honua reads them, it does not publish them.
+# The deterministic third-party inputs generated here are therefore *inputs*, not
+# evidence. honua-server#4398: the lane used to validate those inputs directly,
+# which made the COG and Zarr cells python validating python's own output. The
+# artifact generator now reads them back through honua's production
+# CogMetadataExtractor / ZarrSubsetReader over counted HTTP range requests, and the
+# canonical clients validate what honua emitted. HDF5/netCDF stays an input-only
+# diagnostic and COPC remains roadmap-only.
 
 set -uo pipefail
 
@@ -49,10 +56,12 @@ GEOPARQUET_STATUS=2
 FLATGEOBUF_STATUS=2
 PMTILES_STATUS=2
 TILES_STATUS=2
+CONSUMER_STATUS=2
 GEOPARQUET_DETAIL="not run"
 FLATGEOBUF_DETAIL="not run"
 PMTILES_DETAIL="not run"
 TILES_DETAIL="not run"
+CONSUMER_DETAIL="not run"
 
 echo -e "${BLUE}Cloud-Native-Geospatial (CNG) Conformance${NC}"
 echo "==========================================="
@@ -133,6 +142,7 @@ preflight_python_fixture_dependencies() {
     if python3 - <<'PY'
 import h5netcdf
 import dask
+import numcodecs
 import numpy
 import rasterio
 import rio_cogeo
@@ -146,7 +156,7 @@ PY
     cat >&2 <<'EOF'
 The canonical CNG fixture generator is missing pinned Python dependencies.
 Install them before running this standalone harness:
-  python3 -m pip install dask==2026.7.1 h5netcdf==1.8.1 numpy==2.5.2 rasterio==1.5.1 rio-cogeo==7.0.2 xarray==2026.7.0 zarr==3.3.0
+  python3 -m pip install dask==2026.7.1 h5netcdf==1.8.1 numcodecs==0.16.5 numpy==2.5.2 rasterio==1.5.1 rio-cogeo==7.0.2 xarray==2026.7.0 zarr==3.3.0
 EOF
     return 1
 }
@@ -298,21 +308,60 @@ validate_3dtiles() {
     fi
 }
 
+validate_honua_consumer_artifacts() {
+    echo -e "\n${BLUE}[Consumer] honua COG transcode + Zarr subset -> canonical oracles${NC}"
+    # honua-server#4398: without these artifacts the COG and Zarr certification cells
+    # have nothing honua-produced to validate and silently revert to grading
+    # rio_cogeo's and xarray's own output. Gate the lane on their existence here so a
+    # generator failure is a lane failure, not a quietly weaker fragment.
+    local tif="$ARTIFACTS_DIR/honua.cog.tif"
+    local evidence="$ARTIFACTS_DIR/honua-consumer-evidence.json"
+    if [[ "$ARTIFACT_GEN_STATUS" -ne 0 ]]; then
+        CONSUMER_STATUS=1
+        CONSUMER_DETAIL="artifact generator exited ${ARTIFACT_GEN_STATUS}"
+        echo -e "${RED}${CONSUMER_DETAIL}${NC}"
+        return
+    fi
+    if [[ ! -s "$tif" || ! -s "$evidence" ]]; then
+        CONSUMER_STATUS=1
+        CONSUMER_DETAIL="artifact generator did not emit honua.cog.tif and honua-consumer-evidence.json"
+        echo -e "${RED}${CONSUMER_DETAIL}${NC}"
+        return
+    fi
+    local ranged full
+    ranged=$(jq -r '.cog.observed_transfer.range_requests // 0' "$evidence")
+    full=$(jq -r '.cog.observed_transfer.full_object_downloads // 1' "$evidence")
+    if [[ "$ranged" -lt 1 || "$full" -ne 0 ]]; then
+        CONSUMER_STATUS=1
+        CONSUMER_DETAIL="honua read the source COG with ${ranged} range request(s) and ${full} whole-object download(s)"
+        echo -e "${RED}${CONSUMER_DETAIL}${NC}"
+        return
+    fi
+    CONSUMER_STATUS=0
+    CONSUMER_DETAIL="honua transcoded honua.cog.tif and decoded a Zarr subset over ${ranged} range request(s), 0 whole-object downloads"
+    echo -e "${GREEN}${CONSUMER_DETAIL}${NC}"
+}
+
 # --- Orchestration --------------------------------------------------------
 
 install_tools
 preflight_python_fixture_dependencies || exit 1
 
-echo -e "${YELLOW}Generating honua-produced PMTiles + 3D Tiles artifacts...${NC}"
-dotnet run --project scripts/conformance/cng/artifact-gen/Honua.Cng.ArtifactGen.csproj \
-    -c Release -- "$ARTIFACTS_DIR" 2>&1 | tee "$RESULTS_DIR/artifact-gen.log"
-
+# Inputs first: the artifact generator consumes the canonical COG and Zarr through
+# honua's own readers, so they must exist before it runs.
 echo -e "${YELLOW}Generating canonical COG, HDF5/netCDF, and Zarr inputs...${NC}"
 if ! python3 scripts/conformance/cng/generate-canonical-fixtures.py --output "$ARTIFACTS_DIR" \
     2>&1 | tee "$RESULTS_DIR/canonical-fixture-gen.log"; then
     echo -e "${RED}Canonical input fixture generation failed${NC}"
     exit 1
 fi
+
+echo -e "${YELLOW}Generating honua-produced PMTiles, 3D Tiles and COG-transcode artifacts...${NC}"
+# `pipefail` is already set at the top of this script, so this captures the
+# generator's own exit status rather than tee's.
+dotnet run --project scripts/conformance/cng/artifact-gen/Honua.Cng.ArtifactGen.csproj \
+    -c Release -- "$ARTIFACTS_DIR" "$ARTIFACTS_DIR" 2>&1 | tee "$RESULTS_DIR/artifact-gen.log"
+ARTIFACT_GEN_STATUS=$?
 
 if ! bring_up_stack; then
     echo -e "${RED}Failed to bring up the CNG stack; live-format validation cannot run${NC}"
@@ -323,6 +372,7 @@ fi
 
 validate_pmtiles
 validate_3dtiles
+validate_honua_consumer_artifacts
 
 # --- Summary --------------------------------------------------------------
 
@@ -351,15 +401,23 @@ cat > "$SUMMARY_FILE" << EOF
 | FlatGeobuf | FeatureServer \`f=fgb\` | \`ogrinfo -al -so\` | $(status_label $FLATGEOBUF_STATUS) | $FLATGEOBUF_DETAIL |
 | PMTiles v3 | \`PMTilesWriter\` | \`pmtiles verify\` | $(status_label $PMTILES_STATUS) | $PMTILES_DETAIL |
 | 3D Tiles 1.1 | \`TilesetDocumentWriter\` + \`GeometryTileBuilder\` | \`3d-tiles-validator\` + \`gltf_validator\` | $(status_label $TILES_STATUS) | $TILES_DETAIL |
+| COG / Zarr consumer | \`CogTiffTileEncoder\` + \`ZarrSubsetReader\` | range-read accounting + canonical oracles | $(status_label $CONSUMER_STATUS) | $CONSUMER_DETAIL |
 
 ## Consumer-format validation
 
-The normalized canonical-client phase validates deterministic COG, HDF5/netCDF,
-and Zarr inputs. These are not producer rows because Honua consumes or
-transcodes them instead of returning them from the tested endpoints.
+COG and Zarr are consumer surfaces: Honua reads them, it does not publish them.
+The canonical COG and Zarr files this lane generates are therefore third-party
+*inputs*. Honua reads them back through \`CogMetadataExtractor\` and
+\`ZarrSubsetReader\` over HTTP range requests, and the canonical clients grade
+what Honua emitted — \`honua.cog.tif\` and the decoded Zarr subset recorded in
+\`honua-consumer-evidence.json\` (honua-server#4398).
 
-- **COG** — exportImage emits plain GeoTIFF; \`format=cog\` is rejected.
-- **Zarr / GeoZarr** — read/transcode only.
+- **COG** — exportImage emits plain GeoTIFF; \`format=cog\` is rejected. The
+  certification cells validate the transcoded tile, not the input fixture.
+- **Zarr / GeoZarr** — read/transcode only; the certified cell is the decoded
+  subset, checked against the fixture's declared formula and xarray's own slice.
+- **HDF5 / netCDF** — input-only diagnostic; no Honua-produced artifact, so its
+  cells cannot pass.
 - **COPC** — read/transcode only.
 EOF
 
@@ -369,7 +427,7 @@ cat "$SUMMARY_FILE"
 # Fail the lane if any hard-gated format did not pass. A "not run" outcome is
 # also a failure: supported formats cannot be certified by skipped validators.
 OVERALL=0
-for s in $GEOPARQUET_STATUS $FLATGEOBUF_STATUS $PMTILES_STATUS $TILES_STATUS; do
+for s in $GEOPARQUET_STATUS $FLATGEOBUF_STATUS $PMTILES_STATUS $TILES_STATUS $CONSUMER_STATUS; do
     if [[ "$s" != "0" ]]; then
         OVERALL=1
     fi

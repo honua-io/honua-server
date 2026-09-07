@@ -27,20 +27,21 @@ def args() -> Namespace:
 
 class CanonicalArtifactEvidenceTests(unittest.TestCase):
     def test_every_governed_format_assignment_has_a_budget_profile(self):
-        self.assertEqual(23, len(MODULE.GOVERNED_ASSIGNMENTS))
+        self.assertEqual(24, len(MODULE.GOVERNED_ASSIGNMENTS))
         for identity, assignment in MODULE.GOVERNED_ASSIGNMENTS.items():
             self.assertIn(assignment.budget_profile, MODULE.FORMAT_BUDGET_PROFILES)
             self.assertEqual(f"format.{identity[0]}", assignment.capability_key)
 
     def test_third_party_produced_artifact_can_never_pass(self):
-        """#4398: the COG cell validates rio_cogeo's own output, so however clean the
-        canonical client read is, the row cannot be Honua cloud-native evidence."""
+        """#4398: the Zarr store cells read what `xarray.to_zarr` wrote, so however
+        clean the canonical client read is, the row cannot be Honua cloud-native
+        evidence."""
         started = "2026-08-21T00:00:00Z"
         row = MODULE._observation(
-            "cog", "window-read", "Rasterio", "diagnostic", started, args()
+            "zarr", "array-read", "zarr", "diagnostic", started, args()
         )
         # Even with every declared metadata oracle satisfied, the producer bars a pass.
-        row["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"])
+        row["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["zarr"]["expected_metadata"])
 
         normalized = MODULE._normalize_observations([row], args())
 
@@ -50,29 +51,182 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertEqual("third-party-fixture", normalized[0]["artifact_producer"])
         self.assertIsNone(normalized[0]["evidence_receipt"])
 
+    def test_honua_transcoded_cog_passes_with_a_real_evidence_digest(self):
+        """#4398: `honua.cog.tif` is produced by CogMetadataExtractor +
+        CogTiffTileEncoder, so the COG cells are Honua evidence and — once every
+        declared oracle and the measured range budget are met — must actually pass."""
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "cog", "window-read", "Rasterio", "rasterio-cog", started, args()
+        )
+        row["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"])
+        row["observed_transfer"] = {
+            "requests": 8, "range_requests": 8, "full_object_downloads": 0,
+            "transferred_bytes": 82_420,
+        }
+
+        normalized = MODULE._normalize_observations([row], args())
+
+        self.assertEqual("pass", normalized[0]["result"])
+        self.assertTrue(normalized[0]["honua_in_loop"])
+        self.assertEqual("honua", normalized[0]["artifact_producer"])
+        self.assertEqual(args().evidence_digest, normalized[0]["evidence_digest"])
+        self.assertTrue(normalized[0]["budget_results"]["met"])
+
+    def test_cog_oracle_rejects_a_valid_but_wrong_transcode(self):
+        """A well-formed GeoTIFF cut from the wrong tile, or one that lost the nodata
+        cell, still reads cleanly in rasterio. The declared samples must reject it."""
+        expected = MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"]
+        measured = {
+            "requests": 8, "range_requests": 8, "full_object_downloads": 0,
+            "transferred_bytes": 82_420,
+        }
+        for corruption in (
+            {"samples": dict(expected["samples"], **{"3,7": 1543.0})},
+            {"samples": dict(expected["samples"], **{"0,0": 256.0})},
+            {"pixel_mismatches": 1},
+            {"crs": "EPSG:4326"},
+            {"dimensions": [512, 512]},
+        ):
+            with self.subTest(corruption=sorted(corruption)):
+                started = "2026-08-21T00:00:00Z"
+                row = MODULE._observation(
+                    "cog", "window-read", "Rasterio", "rasterio-cog", started, args()
+                )
+                row["observed_metadata"] = dict(expected, **corruption)
+                row["observed_transfer"] = dict(measured)
+
+                normalized = MODULE._normalize_observations([row], args())
+
+                self.assertEqual("skip", normalized[0]["result"])
+                self.assertIsNone(normalized[0]["evidence_digest"])
+
+    def test_cog_range_budget_rejects_a_whole_object_read(self):
+        """Reading the entire object and slicing locally produces a byte-identical
+        tile. Range-efficient cloud-native access is the claim, so the observed
+        traffic has to carry it."""
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "cog", "structure-validate", "rio-cogeo", "rio-cogeo", started, args()
+        )
+        row["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"])
+        row["observed_transfer"] = {
+            "requests": 1, "range_requests": 0, "full_object_downloads": 1,
+            "transferred_bytes": 360_368,
+        }
+
+        normalized = MODULE._normalize_observations([row], args())
+
+        self.assertEqual("skip", normalized[0]["result"])
+        self.assertIn("full-object downloads", normalized[0]["skip_reason"])
+        self.assertIn("range requests", normalized[0]["skip_reason"])
+
+    def test_zarr_subset_transcode_is_honua_evidence_and_prunes_chunks(self):
+        """#4398: Honua does not write Zarr, so the artifact it can be held to is what
+        `ZarrSubsetReader` decodes. That cell is Honua's, and a read that pulled the
+        whole array instead of the 8 chunks the subset touches must not pass."""
+        started = "2026-08-21T00:00:00Z"
+        expected = MODULE.FORMAT_BUDGET_PROFILES["zarr-honua-subset"]["expected_metadata"]
+        measured = {
+            "requests": 38, "range_requests": 0, "full_object_downloads": 19,
+            "transferred_bytes": 3_386,
+        }
+
+        def row(metadata, transfer):
+            observation = MODULE._observation(
+                "zarr", "subset-transcode", "xarray", "honua-zarr-transcode", started, args()
+            )
+            observation["observed_metadata"] = metadata
+            observation["observed_transfer"] = transfer
+            return observation
+
+        passing = MODULE._normalize_observations([row(dict(expected), dict(measured))], args())[0]
+        self.assertEqual("pass", passing["result"])
+        self.assertTrue(passing["honua_in_loop"])
+        self.assertEqual("honua", passing["artifact_producer"])
+
+        whole_array = MODULE._normalize_observations(
+            [row(dict(expected, chunk_objects_read=32),
+                 dict(measured, full_object_downloads=43, requests=86))],
+            args(),
+        )[0]
+        self.assertEqual("skip", whole_array["result"])
+        self.assertIn("chunk_objects_read", whole_array["skip_reason"])
+        self.assertIn("full-object downloads", whole_array["skip_reason"])
+
+        wrong_values = MODULE._normalize_observations(
+            [row(dict(expected, formula_mismatches=3), dict(measured))], args())[0]
+        self.assertEqual("skip", wrong_values["result"])
+        self.assertIn("formula_mismatches", wrong_values["skip_reason"])
+
     def test_scope_disposition_names_the_third_party_cells(self):
         """The fragment's own disposition must state which cells cannot support the
-        claim, so a downstream GA citation cannot read it as cloud-native proof."""
+        claim, so a downstream GA citation cannot read it as cloud-native proof. Cells,
+        not surfaces: Zarr holds both third-party store reads and Honua's transcode."""
+        def row(surface, operation, client, result, honua, executed=True):
+            return {
+                "surface": surface, "operation": operation, "canonical_client": client,
+                "result": result, "honua_in_loop": honua, "executed": executed,
+            }
+
         rows = [
-            {"surface": "cog", "result": "skip", "honua_in_loop": False},
-            {"surface": "zarr", "result": "skip", "honua_in_loop": False},
-            {"surface": "pmtiles", "result": "pass", "honua_in_loop": True},
+            row("hdf5-netcdf", "dataset-read", "h5py", "skip", False),
+            row("zarr", "array-read", "zarr", "skip", False),
+            row("zarr", "subset-transcode", "xarray", "pass", True),
+            row("cog", "window-read", "Rasterio", "pass", True),
+            row("pmtiles", "producer-validate", "Tippecanoe", "skip", True, executed=False),
         ]
 
         disposition = MODULE._scope_disposition(rows)
 
-        self.assertIn("1 of 3", disposition)
-        self.assertIn("cog", disposition)
-        self.assertIn("zarr", disposition)
+        self.assertIn("2 of 5", disposition)
+        self.assertIn("zarr/array-read/zarr", disposition)
+        self.assertIn("hdf5-netcdf/dataset-read/h5py", disposition)
+        self.assertNotIn("zarr/subset-transcode/xarray", disposition)
+        self.assertIn("1 governed cell(s) did not execute", disposition)
         self.assertIn("not by Honua", disposition)
 
+    def test_a_cell_that_never_ran_is_reported_as_non_passing(self):
+        """#4398: an absent identity is indistinguishable from a passing one to
+        anything counting passes, so every governed cell gets an explicit row."""
+        started = "2026-08-21T00:00:00Z"
+        ran = MODULE._observation(
+            "cog", "window-read", "Rasterio", "rasterio-cog", started, args())
+        ran["result"] = "pass"
+
+        rows = MODULE._append_unexecuted_cells([ran], args())
+
+        self.assertEqual(len(MODULE.GOVERNED_ASSIGNMENTS), len(rows))
+        self.assertTrue(rows[0]["executed"])
+        synthesized = [row for row in rows if not row["executed"]]
+        self.assertEqual(len(MODULE.GOVERNED_ASSIGNMENTS) - 1, len(synthesized))
+        for row in synthesized:
+            self.assertNotEqual("pass", row["result"])
+            self.assertEqual(MODULE.NOT_RUN_GAP, row["skip_reason"])
+            self.assertIsNone(row["evidence_digest"])
+
     def test_every_governed_surface_declares_a_producer(self):
-        for surface, _operation, _client in MODULE.GOVERNED_ASSIGNMENTS:
-            self.assertIn(
-                surface,
-                MODULE.ARTIFACT_PRODUCERS,
-                f"surface '{surface}' has no declared artifact producer",
+        for identity in MODULE.GOVERNED_ASSIGNMENTS:
+            self.assertTrue(
+                identity in MODULE.ARTIFACT_PRODUCER_OVERRIDES
+                or identity[0] in MODULE.ARTIFACT_PRODUCERS,
+                f"cell '{identity}' has no declared artifact producer",
             )
+
+    def test_consumer_evidence_is_required_before_any_cog_or_zarr_cell_runs(self):
+        """A lane that skipped the artifact generator must fail loudly. Silently
+        falling back would restore exactly the false proof #4398 was filed for."""
+        with self.assertRaises(ValueError) as missing:
+            MODULE._consumer_evidence(Namespace(consumer_evidence=None))
+        self.assertIn("honua-consumer-evidence.json", str(missing.exception))
+
+        with self.assertRaises(ValueError) as empty:
+            MODULE._consumer_transfer(Namespace(consumer_evidence={"zarr": {}}), "cog")
+        self.assertIn("no cog read", str(empty.exception))
+
+        transfer = MODULE._consumer_transfer(
+            Namespace(consumer_evidence={"cog": {"observed_transfer": {"requests": 8}}}), "cog")
+        self.assertEqual({"requests": 8}, transfer)
 
     def test_unmeasured_budget_names_the_oracle_it_could_not_prove(self):
         """The blanket BUDGET_EVIDENCE_GAP rewrite is retired: a cell that measured
@@ -171,8 +325,16 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertIn("reshape(4, 8, 16)", fixture_source)
         self.assertIn('("time", "y", "x")', fixture_source)
         self.assertIn('"chunksizes": (1, 4, 4)', fixture_source)
-        self.assertIn("overview_level=3", fixture_source)
-        self.assertIn("nodata=-9999.0", fixture_source)
+        self.assertIn("overview_level=1", fixture_source)
+        self.assertIn("nodata=NODATA", fixture_source)
+        self.assertIn("NODATA = -9999.0", fixture_source)
+        # #4398: the Web Mercator source Honua transcodes, and the zlib codec its
+        # Zarr subset reader can decode. Without either, the COG and Zarr cells
+        # would silently fall back to validating third-party output.
+        self.assertIn('crs="EPSG:3857"', fixture_source)
+        self.assertIn("WEB_MERCATOR_BLOCK = 256", fixture_source)
+        self.assertIn("numcodecs.Zlib", fixture_source)
+        self.assertIn("HonuaConsumerArtifacts.GenerateAsync", artifact_source)
         self.assertIn("for (var z = 0; z <= 2; z++)", artifact_source)
         self.assertIn('tileContentUris: ["content/0.glb"]', artifact_source)
         self.assertIn("maxHeightMeters: 100.0", artifact_source)

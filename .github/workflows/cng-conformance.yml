@@ -140,6 +140,7 @@ jobs:
             geopandas==1.1.4 \
             h5netcdf==1.8.1 \
             h5py==3.16.0 \
+            numcodecs==0.16.5 \
             numpy==2.5.2 \
             pyarrow==25.0.1 \
             pyogrio==0.13.0 \
