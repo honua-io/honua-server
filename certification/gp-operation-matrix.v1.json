@@ -827,8 +827,8 @@
         },
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryFormatConversionExecutionProofTests.cs",
-          "test": "Oracle_DroppedHoleOrSwappedAxes_AreRejectedEvenThoughTheOutputParses",
-          "assertion": "Demonstrated negatives: real conversions of a hole-dropped polygon and an axis-transposed copy produce valid, parseable outputs in the requested encodings; the frozen ring/hole/ordinate oracle rejects both."
+          "test": "Oracle_DroppedHoleOrShiftedOrdinates_AreRejectedEvenThoughTheOutputParses",
+          "assertion": "Demonstrated negatives: real conversions of a hole-dropped polygon and a translated copy produce valid, parseable outputs in the requested encodings - the translated one keeps ring count, winding and area, exactly as a silent reprojection would - and the frozen ring/hole/ordinate oracle rejects both."
         }
       ],
       "entryPoint": "job"
