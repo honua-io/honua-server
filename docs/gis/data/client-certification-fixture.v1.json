@@ -8,7 +8,7 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:0a0919c3b92b55387d7186f6c4427f01b7594752b50f7e4b31927ddb40516126",
+  "fixtureRevision": "sha256:5d4255077b525fccb4071098241390bda39e35bb3ed3c323819c45fa96a0738e",
   "serverConfigRevision": "sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a",
   "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
@@ -41,7 +41,7 @@
     {
       "path": "tests/seed/client-compat-v1.sql",
       "role": "fixture",
-      "sha256": "sha256:a4fe7d292c9e3f309a0358ab40641a0eebd0eead5d53894343aa427877c096b7",
+      "sha256": "sha256:538537661f80fc46fb8cdc3f18c29b74cec192be15277d7bed0a046195d85757",
       "purpose": "Canonical vector seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, canonical layer 0, ten read fixtures, and isolated WFS-T mutation layers 10-12."
     },
     {
@@ -53,13 +53,13 @@
     {
       "path": "tests/seed/portal-compat.yaml",
       "role": "fixture",
-      "sha256": "sha256:4119618c30d96b5b0e3b04d38dcf12a908b6d5cdcaa10c67f57a5578ee45ec52",
+      "sha256": "sha256:8a15f04566db39eadf7a2a784711cf8666ee298b238dbe2b665856936717c654",
       "purpose": "Authorization seed: the public/org/private Portal tier ladder (services portal_public/portal_org/portal_private, layers 3000/3001/3002)."
     },
     {
       "path": "tests/seed/client-compat-auth-wave1.yaml",
       "role": "fixture",
-      "sha256": "sha256:18618d6c59ffc00652f60009b6fece8ba283872ce89e3db0525b3a3bef1bc7ea",
+      "sha256": "sha256:fc4ea80ab3b8d607c7b298e326d08dc00fef9e2d6dba82a13c1037cf9f100d6b",
       "purpose": "Certification auth breadth seed: protected vector and WMS mirrors used for API-key and OIDC bearer parity against the anonymous baselines."
     },
     {
@@ -4025,7 +4025,7 @@
     "producer": "tests/python/shared/cert_envelope.py::build_lane_runtime",
     "currentValues": {
       "fixture_revision": {
-        "value": "sha256:a4fe7d292c9e3f309a0358ab40641a0eebd0eead5d53894343aa427877c096b7",
+        "value": "sha256:538537661f80fc46fb8cdc3f18c29b74cec192be15277d7bed0a046195d85757",
         "boundTo": "inputs[tests/seed/client-compat-v1.sql].sha256",
         "convergenceTarget": "fixtureRevision",
         "gapId": "receipt-binding-uses-per-file-digests"
