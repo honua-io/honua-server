@@ -2013,7 +2013,11 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
 
         using var document = JsonDocument.Parse(body);
-        var results = document.RootElement[0].GetProperty(resultsProperty);
+        // Service-level applyEdits answers with ServiceApplyEditsResponse: an object carrying
+        // `editResults`, one entry per layer, each with all three per-layer result arrays.
+        var editResults = document.RootElement.GetProperty("editResults");
+        editResults.GetArrayLength().Should().Be(1, "the edit targets exactly one layer; body: {0}", body);
+        var results = editResults[0].GetProperty(resultsProperty);
         results.GetArrayLength().Should().Be(1, "the edit must produce exactly one result; body: {0}", body);
         var result = results[0];
         result.GetProperty("success").GetBoolean().Should().BeTrue("body: {0}", body);
