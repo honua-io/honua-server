@@ -251,8 +251,10 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
         _ => geometry
     };
 
+    // The upcast targets Geometry.Reverse(); LinearRing's override of it carries
+    // [Obsolete("Call Geometry.Reverse()")] in NetTopologySuite.
     private static LinearRing OrientRing(LinearRing ring, bool counterClockwise) =>
-        ring.IsCCW == counterClockwise ? ring : (LinearRing)ring.Reverse();
+        ring.IsCCW == counterClockwise ? ring : (LinearRing)((Geometry)ring).Reverse();
 
     /// <summary>
     /// Whether ANY coordinate in the geometry carries a finite ordinate. Inspecting
@@ -260,19 +262,10 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
     /// when the first one happens to be 2D — including a mixed-dimension collection
     /// whose first member is planar.
     /// </summary>
-    private static bool HasOrdinate(Geometry geometry, Ordinate ordinate)
-    {
-        foreach (var coordinate in geometry.Coordinates)
-        {
-            var value = ordinate == Ordinate.Z ? coordinate.Z : coordinate.M;
-            if (!double.IsNaN(value))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    private static bool HasOrdinate(Geometry geometry, Ordinate ordinate) =>
+        geometry.Coordinates
+            .Select(coordinate => ordinate == Ordinate.Z ? coordinate.Z : coordinate.M)
+            .Any(value => !double.IsNaN(value));
 
     private static bool TryReadInputs(
         IReadOnlyDictionary<string, string> parameters,
