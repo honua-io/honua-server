@@ -289,6 +289,15 @@ jobs:
             --logger 'trx;LogFileName=layer-execution-proof.trx' \
             --results-directory tests/TestResults
 
+          # imagery.classify (#3935) delegates inference to a model server. The
+          # proof stands one up on loopback and runs the committed classifier in
+          # the same pinned image, so it belongs to this Docker-bearing step.
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release -maxcpucount:4 \
+            --filter 'Category=ImageryClassifyExecutionProof' \
+            --logger 'trx;LogFileName=imagery-classify-execution-proof.trx' \
+            --results-directory tests/TestResults
+
       - name: Prove the raster execution cases ran, not skipped
         # honua-server#4401. The step above is on the REQUIRED gate, but
         # `dotnet test` exits 0 when a --filter matches nothing and when every
@@ -393,6 +402,14 @@ jobs:
             echo "::error::no [GdalCliFact] case passed — real-GDAL coverage has left the required path"
             exit 1
           fi
+
+      - name: Upload imagery classify execution proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: imagery-classify-execution-proof
+          path: tests/TestResults/imagery-classify-execution-proof.trx
+          if-no-files-found: warn
 
       - name: Upload raster execution proof
         if: always()

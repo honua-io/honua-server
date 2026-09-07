@@ -741,7 +741,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "InterpolateKriging_SamplePoints_ReproducesSampleValuesExactly",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production kriging executor with pinned real GDAL; the decoded cell centred on the interior sample reproduces its observed value, and the surface declares no nodata — the exactness property that distinguishes kriging from a smoother."
+          "assertion": "Required PR Gate executes the production kriging executor with pinned real GDAL; the decoded cell centred on the interior sample reproduces its observed value, and the surface declares no nodata \u2014 the exactness property that distinguishes kriging from a smoother."
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
@@ -811,19 +811,22 @@
     },
     {
       "processId": "imagery.classify",
-      "status": "partially-proven",
+      "status": "proven",
       "entryPoint": "job",
       "evidence": [
         {
-          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImageryInferenceJobExecutorTests.cs",
-          "test": "ExecuteAsync_RasterOutput_PublishesTheBackendResponseBytesUnmodified",
-          "assertion": "Real adapter/validation with simulated backend bytes; no inference correctness."
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImageryClassifyExecutionProofTests.cs",
+          "test": "Classify_RealSceneThroughARealModelServer_MatchesTheFrozenClassOracle",
+          "fixturePath": "tests/dotnet/Honua.Server.Tests/TestData/ImageryClassify",
+          "assertion": "Required PR Gate runs the production executor and the real HTTP inference adapter over a loopback model server that executes a committed minimum-distance-to-mean classifier (NumPy) on the posted scene inside the pinned production GDAL image. The decoded classification GeoTIFF is asserted against a frozen 16-pixel class map and per-class counts derived from the committed scene signatures, plus model identity, task, forwarded source CRS, band count, grid alignment and CRS."
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImageryClassifyExecutionProofTests.cs",
+          "test": "ClassifyOracle_ADifferentCommittedModel_IsRejectedEvenThoughTheOutputIsWellFormed",
+          "fixturePath": "tests/dotnet/Honua.Server.Tests/TestData/ImageryClassify",
+          "assertion": "Demonstrated negative: the same scene through the same real classifier with a committed rotated-class model yields a valid, aligned, single-band GeoTIFF carrying legal class ids; the frozen class oracle rejects it."
         }
-      ],
-      "gap": {
-        "issue": "https://github.com/honua-io/honua-server/issues/3935",
-        "missing": "Real raster plus deterministic production model/backend classification oracle."
-      }
+      ]
     },
     {
       "processId": "conversion.geometry-format",
