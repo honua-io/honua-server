@@ -133,8 +133,8 @@ in EPSG:4326 with a numeric `dn` attribute:
 | --- | ---: | --- |
 | `west` | 7 | x[0, 3] y[0, 3] |
 | `east` | 3 | x[3, 5] y[0, 2] |
-| `sliver-below-centre` | 9 | x[0.6, 2.4] y[2.6, 2.9] |
 | `sliver-over-centre` | 8 | x[0.6, 2.4] y[2.4, 2.9] |
+| `sliver-below-centre` | 9 | x[0.6, 2.4] y[2.6, 2.9] |
 
 The layer envelope is x[0, 5] y[0, 3], so a 5x3 `width`/`height` request produces
 1x1 cells whose centres sit at x 0.5/1.5/2.5/3.5/4.5 and y 2.5/1.5/0.5. No centre
@@ -148,3 +148,10 @@ row of centres at y = 2.5, which is what makes the sub-pixel edge assertion
 meaningful: the 2.4 sliver claims exactly the centre (1.5, 2.5) and the 2.6 sliver
 claims no centre at all, so `dn = 9` must appear nowhere in the output. Their
 x range likewise excludes the centres at 0.5 and 2.5 by 0.1 units.
+
+Feature ORDER matters and is deliberate. `gdal_rasterize` burns in feature order, so
+the no-centre sliver is written last: an implementation that wrongly burned it leaves
+`dn = 9` visible instead of having it overwritten by a later feature, which is what
+makes its absence evidence rather than an artefact of draw order. The `-at`
+(all-touched) negative confirms the discrimination from the other side - it burns the
+no-centre sliver and `dn = 9` claims the whole top row.

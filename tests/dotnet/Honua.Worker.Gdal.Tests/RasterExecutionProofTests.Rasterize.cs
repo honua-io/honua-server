@@ -33,8 +33,12 @@ public sealed partial class RasterExecutionProofTests
     // Fixture ordinates (see rasterize-parcels.geojson):
     //   west  dn=7 covers x[0,3] y[0,3]
     //   east  dn=3 covers x[3,5] y[0,2]
-    //   sliver-below-centre dn=9 covers x[0.6,2.4] y[2.6,2.9] — contains NO centre
     //   sliver-over-centre  dn=8 covers x[0.6,2.4] y[2.4,2.9] — contains only (1.5,2.5)
+    //   sliver-below-centre dn=9 covers x[0.6,2.4] y[2.6,2.9] — contains NO centre
+    // The no-centre sliver is LAST in the fixture on purpose: gdal_rasterize burns in
+    // feature order, so it is the last writer over the cells it would touch. An
+    // implementation that wrongly burned it therefore leaves dn=9 visible instead of
+    // having it overwritten by the sliver drawn after it.
     // Row-major from the top row (y centre 2.5) down.
     private static readonly double[] ExpectedAttributeCells =
     [
@@ -101,7 +105,9 @@ public sealed partial class RasterExecutionProofTests
         cells[1].Should().Be(8, "the sliver crossing the centre must win that pixel");
 
         // 'sliver-below-centre' spans y[2.6,2.9] — 0.1 above the same centre — and
-        // must burn nothing at all, so dn=9 appears nowhere in the raster.
+        // must burn nothing at all. It is the fixture's LAST feature, so a wrong burn
+        // would survive as dn=9 rather than being overwritten; its absence is therefore
+        // real evidence, not an artefact of draw order.
         cells.Should().NotContain(9, "a polygon that contains no pixel centre burns nothing");
 
         // Both slivers span x[0.6,2.4], which excludes the centres at 0.5 and 2.5:
@@ -125,8 +131,12 @@ public sealed partial class RasterExecutionProofTests
 
         var band = output.GetProperty("bands")[0];
         band.GetProperty("type").GetString().Should().Be("Float64");
-        // Without an explicit nodata the tool leaves the untouched background at 0
-        // and reports 0 as the nodata value, so background cells read as invalid.
+        // Without an explicit nodata the tool leaves the untouched background at 0 AND
+        // declares 0 as the band's nodata value, so background cells read as invalid.
+        // Verified against the pinned digest: `gdal_rasterize -of GTiff -burn 5 -tr 1 1`
+        // emits a band whose nodata metadata is 0, not absent.
+        band.GetProperty("nodata").ValueKind.Should().Be(JsonValueKind.Number,
+            "the cellSize path still declares a nodata sentinel");
         band.GetProperty("nodata").GetDouble().Should().Be(0);
 
         var cells = band.GetProperty("values").EnumerateArray().Select(value => value.GetDouble()).ToArray();
@@ -184,11 +194,12 @@ public sealed partial class RasterExecutionProofTests
         AssertGrid(wrong, 5, 3, 4326, [0, 1, 0, 3, 0, -1], 1);
         var cells = wrong.GetProperty("bands")[0].GetProperty("values")
             .EnumerateArray().Select(value => value.GetDouble()).ToArray();
-        // The slivers span x[0.6, 2.4], which does not reach the centres at x 0.5 and
-        // 2.5. All-touched gives them those pixels anyway, so dn = 8 replaces west's
-        // 7 in the two cells the centre rule leaves alone.
-        cells[0].Should().Be(8, "all-touched claims a pixel whose centre is 0.1 outside the sliver");
-        cells[2].Should().Be(8, "all-touched claims a pixel whose centre is 0.1 outside the sliver");
+        // All-touched burns 'sliver-below-centre', which contains no pixel centre at
+        // all, and it is the fixture's last feature, so its dn = 9 claims the whole top
+        // row. Centre containment never writes 9 anywhere.
+        cells[0].Should().Be(9, "all-touched burns a polygon that contains no pixel centre");
+        cells[1].Should().Be(9, "all-touched burns a polygon that contains no pixel centre");
+        cells[2].Should().Be(9, "all-touched burns a polygon that contains no pixel centre");
 
         Action assert = () => AssertBand(wrong, 0, ExpectedAttributeCells, type: "Float64", nodata: RasterizeNoData);
         assert.Should().Throw<XunitException>("the centre-containment oracle must reject an all-touched burn");
