@@ -486,6 +486,8 @@ public sealed class ServingImageBoundaryTests
             "scripts/docker/restore-dotnet-with-github-packages.sh",
             "scripts/ci/verify-serving-image-boundary.py",
             "tests/dotnet/Honua.Worker.Gdal.Tests/ProductionWorkerContainerHandoffTests.cs",
+            "tests/dotnet/Honua.Worker.Gdal.Tests/PdalPointCloudRealCliTests.cs",
+            "tests/dotnet/Honua.Worker.Gdal.Tests/GdalCli.cs",
             "tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj",
             ".github/actions/setup-dotnet-ci/**",
             ".github/workflows/worker-gdal-image.yml");
