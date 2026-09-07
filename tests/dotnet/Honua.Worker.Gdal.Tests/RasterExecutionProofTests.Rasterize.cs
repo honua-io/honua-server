@@ -4,6 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Xunit;
+using Xunit.Sdk;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -143,6 +144,54 @@ public sealed partial class RasterExecutionProofTests
         Cell(cells, column: 4, row: 2).Should().Be(5, "(4,1) is strictly inside east");
         Cell(cells, column: 4, row: 0).Should().Be(0, "(4,3) is outside west and above east");
         Cell(cells, column: 5, row: 0).Should().Be(0, "(5,3) is outside west and above east");
+    }
+
+    [Fact]
+    public async Task RasterizeOracle_AttributeBurnSubstitutedForTheFixedBurnValue_IsRejected()
+    {
+        // A plausible wrong-but-well-formed rasterize result: the same extent, grid,
+        // CRS, band type and nodata, produced by real gdal_rasterize — but burning
+        // the per-feature attribute where the caller asked for one fixed value.
+        var wrong = await ExecuteRaster(
+            "conversion.rasterize",
+            ("source", Input("rasterize-parcels.geojson")),
+            ("attribute", "dn"),
+            ("width", "5"),
+            ("height", "3"),
+            ("nodata", RasterizeNoData.ToString("R", System.Globalization.CultureInfo.InvariantCulture)));
+
+        AssertGrid(wrong, 5, 3, 4326, [0, 1, 0, 3, 0, -1], 1);
+
+        Action assert = () => AssertBand(wrong, 0, ExpectedBurnCells, type: "Float64", nodata: RasterizeNoData);
+        assert.Should().Throw<XunitException>("the burn-value oracle must reject an attribute burn")
+            .Which.Message.Should().Contain("cell 0");
+    }
+
+    [Fact]
+    public async Task RasterizeOracle_AllTouchedInsteadOfCentreContainment_IsRejected()
+    {
+        // The other plausible substitution: burning every pixel a polygon TOUCHES
+        // instead of every pixel whose centre it contains. Real gdal_rasterize -at
+        // produces it, so the output is a valid GeoTIFF on the identical grid with
+        // the identical nodata sentinel — only the burned set is wrong.
+        Directory.CreateDirectory(_scratch);
+        File.Copy(Fixture("rasterize-parcels.geojson"), Path.Join(_scratch, "parcels.geojson"), overwrite: true);
+        await Run("gdal_rasterize", [
+            "-of", "GTiff", "-a_nodata", "-9999", "-a", "dn", "-at", "-ts", "5", "3",
+            "parcels.geojson", "all-touched.tif"]);
+        var wrong = await Decode(await File.ReadAllBytesAsync(Path.Join(_scratch, "all-touched.tif")));
+
+        AssertGrid(wrong, 5, 3, 4326, [0, 1, 0, 3, 0, -1], 1);
+        var cells = wrong.GetProperty("bands")[0].GetProperty("values")
+            .EnumerateArray().Select(value => value.GetDouble()).ToArray();
+        // The slivers span x[0.6, 2.4], which does not reach the centres at x 0.5 and
+        // 2.5. All-touched gives them those pixels anyway, so dn = 8 replaces west's
+        // 7 in the two cells the centre rule leaves alone.
+        cells[0].Should().Be(8, "all-touched claims a pixel whose centre is 0.1 outside the sliver");
+        cells[2].Should().Be(8, "all-touched claims a pixel whose centre is 0.1 outside the sliver");
+
+        Action assert = () => AssertBand(wrong, 0, ExpectedAttributeCells, type: "Float64", nodata: RasterizeNoData);
+        assert.Should().Throw<XunitException>("the centre-containment oracle must reject an all-touched burn");
     }
 
     private static double Cell(double[] cells, int column, int row) => cells[(row * 6) + column];
