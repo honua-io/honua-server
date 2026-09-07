@@ -176,6 +176,17 @@ jq -e '
 ' .github/ci-shards.json >/dev/null \
   || { echo "::error::a targeted_override_prefixes entry references an unknown shard name" >&2; exit 1; }
 
+# The PR Gate affected-shard detector selects from this same shard map, so a
+# routing edit that stops a feature namespace selecting its owning shard has to
+# fail here rather than quietly shrinking the pre-merge detector. Offline: no
+# git, no network, no dotnet.
+echo "Validating PR Gate affected-shard selection..."
+if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-shards.py
+else
+  echo "⚠️  Skipping PR Gate affected-shard selection (no working Python 3)."
+fi
+
 echo "Checking shell script syntax..."
 scripts/ci/validate-shell-syntax.sh
 

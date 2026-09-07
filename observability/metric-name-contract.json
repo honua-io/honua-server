@@ -135,6 +135,13 @@
       "source": "src/Honua.Ai/Features/AnalysisContent/AnalysisContentTelemetry.cs"
     },
     {
+      "instrument": "honua.attachments.orphans",
+      "kind": "Counter",
+      "unit": "{object}",
+      "series": ["honua_attachments_orphans_total"],
+      "source": "src/Honua.Core/Features/Attachments/Services/LoggingAttachmentOrphanLedger.cs"
+    },
+    {
       "instrument": "honua.audit.chain_broken",
       "kind": "ObservableGauge",
       "unit": "{state}",

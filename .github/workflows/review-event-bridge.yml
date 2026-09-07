@@ -29,19 +29,34 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
+            const shed = async reason => {
+              core.notice(`superseded: ${reason}`);
+              core.summary.addRaw(`Shed superseded review event: ${reason}`, true);
+              await core.summary.write();
+              core.setOutput('superseded', 'true');
+              // workflow_run consumers cannot read step outputs, and GitHub offers
+              // no conclusion filter on the `workflow_run` trigger. A non-success
+              // conclusion is the only signal review-gate.yml's job-level `if` can
+              // read, so this stays `setFailed` rather than a neutral exit. The
+              // bridge is inert and read-only; a red run here withholds a latency
+              // hint and nothing else.
+              core.setFailed('Superseded review event; trusted notification suppressed.');
+            };
+
             const prNumber = context.payload.pull_request.number;
             const eventHead = context.payload.review?.commit_id ||
               context.payload.comment?.commit_id;
             const { data: pull } = await github.rest.pulls.get({
               ...context.repo, pull_number: prNumber,
             });
+            // Shed the closed subject one hop earlier than review-gate.yml does, so
+            // a review comment on a merged pull request never creates a trusted run.
+            if (pull.state !== 'open') {
+              return shed(`PR #${prNumber} is ${pull.state}; the trusted gate has nothing left to attest`);
+            }
             if (pull.head.sha !== eventHead) {
-              core.notice(
-                `superseded: event subject ${eventHead} is not current head ${pull.head.sha} for PR #${prNumber}`);
-              core.setOutput('superseded', 'true');
-              // workflow_run consumers cannot read step outputs. Publish a
-              // non-success conclusion so the trusted gate can skip its job.
-              core.setFailed('Superseded review event; trusted notification suppressed.');
+              return shed(
+                `event subject ${eventHead} is not current head ${pull.head.sha} for PR #${prNumber}`);
             }
 
       - name: Record review event

@@ -414,7 +414,14 @@ scan_authorities() {
     source="$(normalized_source "${file}")"
     reject_ansi=0
     case "${rel}" in *.sh|*.bash|*.zsh|*.yml|*.yaml) reject_ansi=1 ;; esac
-    if source_has_forbidden_authority "${source}" "${reject_ansi}"; then
+    # Report the ANSI-C rejection in its own words. It is a blanket ban on
+    # $'...' in shell sources -- the construct can spell a command verb past
+    # this scanner -- so a file with no merge primitive at all can trip it, and
+    # "merge-capable primitive" sends the reader hunting for a push that is not
+    # there.
+    if [[ "${reject_ansi}" == "1" ]] && source_has_ansi_construct "${source}"; then
+      echo "forbidden ANSI-C quoting (\$'...') in ${rel}; rewrite it without \$'...'" >&2; found=1
+    elif source_has_forbidden_authority "${source}" "${reject_ansi}"; then
       echo "forbidden merge-capable primitive in ${rel}" >&2; found=1
     fi
     if ! is_dispatch_allowlisted "${rel}" && grep -Eiq "${live_dispatch}" <<<"${source}"; then

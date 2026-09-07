@@ -66,11 +66,11 @@ public sealed class StudioMcpOwnershipAuthorizationGuardTests
                     $"Registered Studio tool '{type}' must have an auditable source declaration.");
             }
 
-            if (type == "CreateStudioDraftTool")
+            if (type is "CreateStudioDraftTool" or "ProposeStudioPublicationTool")
             {
                 ExtractClassBody(resolvedDeclaration.Source, resolvedDeclaration.Index)
                     .Should().Contain("EnsureStudioAuthorizedAsync(",
-                        "creation must authorize a resolved caller/existing item owner before persistence");
+                        "item-scoped operations must authorize a resolved caller/existing item owner before persistence");
                 continue;
             }
 

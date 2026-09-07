@@ -18,7 +18,7 @@ mkdir -p "${receipt_root}"
 
 case "${lane}" in
   lifecycle)
-    declared_scenarios=(topology sync async cancel-claimed cancel-native-process-started \
+    declared_scenarios=(topology output-store-attestation sync async cancel-claimed cancel-native-process-started \
       cancel-output-bytes-written-unpublished cancel-artifact-reference-published-terminal-cas-pending \
       idempotency retry timeout-cooperative timeout-ignoring \
       restart-worker-accepted restart-worker-running restart-worker-terminal restart-worker-results-read \
@@ -122,6 +122,57 @@ require_digest() {
 }
 
 compose() { docker compose --project-name "${project_name}" -f "${compose_file}" "$@"; }
+
+# The topology file is the single source of truth for the store contract: the
+# provisioner is driven from the same declarations the containers bind, so a
+# marker can never be written for a contract no host actually resolves.
+compose_staging_value() {
+  # Staging settings are scalars: the first colon separates the key from values
+  # such as durations that carry their own colons, and quoting is incidental.
+  grep -m1 -E "^[[:space:]]*Geoprocessing__OutputStaging__$1:" "${compose_file}" | cut -d: -f2- | tr -d '" '
+}
+
+provision_output_store() {
+  local declared computed marker
+  local -a arguments
+  declared="$(compose_staging_value ConfigurationDigest)"
+  [[ -n "${declared}" ]] || {
+    preflight_failure="the topology does not declare an output store configuration digest"
+    return 1
+  }
+  marker="${object_root}/.honua-gp-store.json"
+  if [[ -e "${marker}" ]]; then
+    # Re-run against a retained volume: read the contract already attested there
+    # rather than declaring a second one over durable bytes.
+    computed="$(jq -r '.ConfigurationDigest // empty' "${marker}" 2>/dev/null)"
+  else
+    arguments=(
+      --root-path "${object_root}"
+      --store-reference "$(compose_staging_value StoreReference)"
+      --persistence-class "$(compose_staging_value PersistenceClass)"
+      --backup-identity "$(compose_staging_value BackupIdentity)"
+      --backup-store-references "$(compose_staging_value BackupStoreReferences__0)"
+      --key-prefix "$(compose_staging_value KeyPrefix)"
+      --max-inline-artifact-bytes "$(compose_staging_value MaxInlineArtifactBytes)"
+      --read-lease-duration "$(compose_staging_value ReadLeaseDuration)"
+      --sweep-interval "$(compose_staging_value SweepInterval)"
+      --sweep-grace "$(compose_staging_value SweepGrace)"
+      --orphan-retention "$(compose_staging_value OrphanRetention)"
+    )
+    computed="$("${repo_root}/scripts/operations/initialize-gp-output-store.sh" "${arguments[@]}")" || {
+      preflight_failure="the shared output volume could not be provisioned from the declared store contract"
+      return 1
+    }
+    chmod 644 "${marker}"
+  fi
+  # An independent SHA-256 of the same canonical form the runtime recomputes:
+  # a mismatch here is a topology defect, not a container that failed to boot.
+  [[ "${computed}" == "${declared}" ]] || {
+    preflight_failure="provisioned store digest ${computed} does not match the topology's declared ${declared}"
+    return 1
+  }
+}
+
 auth_curl() { curl --fail-with-body --silent --show-error -H "X-API-Key: ${api_key}" "$@"; }
 tenant_curl() { local token="$1"; shift; curl --silent --show-error -H "Authorization: Bearer ${token}" "$@"; }
 
@@ -412,6 +463,179 @@ result_digest() {
   jq -n --arg sha "${digest}" --argjson bytes "${bytes}" '{sha256:$sha,bytes:$bytes}' > "${scenario_state_file}"
   rm -f "${tmp}"
   printf '%s' "${digest}"
+}
+
+# Canonicalizes an OGC results document with the requesting host's own origin
+# replaced by a fixed token, so two hosts sharing one store compare equal on the
+# durable descriptor while any change to a link's path still fails the compare.
+normalized_descriptor() {
+  jq -cS --arg base "$2" 'walk(if type == "string" and startswith($base)
+    then "{host}" + .[($base | length):] else . end)' <<<"$1"
+}
+
+# Deployment qualification for referenced output staging (#3900). Proves the
+# candidate rejects an unattested container-local directory, publishes
+# credential-free store evidence, and keeps staged bytes byte-identical when
+# every producer and consumer container is replaced rather than restarted.
+run_output_store_attestation() {
+  local scenario=output-store-attestation job terminal state declared
+  local ephemeral_root ephemeral_log ephemeral_code attestation
+  local before_ids after_ids objects worker_before worker_after worker_attestation
+  local content_before content_after sha_before sha_after descriptor_before descriptor_after
+  local -a rejection
+
+  declared="$(compose_staging_value ConfigurationDigest)"
+
+  # An existing directory that is not the attested shared mount stands in for
+  # container-local ephemeral storage: the server must refuse it, and must not
+  # quietly provision it into a supported store.
+  ephemeral_root="${receipt_root}/.unattested-store"
+  rm -rf "${ephemeral_root}"; mkdir -p "${ephemeral_root}"; chmod 777 "${ephemeral_root}"
+  ephemeral_log="$(mktemp)"
+  rejection=(
+    run --rm --no-deps -T
+    -v "${ephemeral_root}:/var/lib/honua/gp-unattested"
+    -e Geoprocessing__OutputStaging__LocalRootPath=/var/lib/honua/gp-unattested
+    server
+  )
+  timeout 180 docker compose --project-name "${project_name}" -f "${compose_file}" "${rejection[@]}" > "${ephemeral_log}" 2>&1
+  ephemeral_code=$?
+  if (( ephemeral_code == 0 )); then
+    rm -f "${ephemeral_log}"
+    write_receipt "${scenario}" fail "FINDING: an unattested container-local directory satisfied the supported-store precondition"
+    return 1
+  fi
+  if ! grep -qi attestation "${ephemeral_log}"; then
+    rm -f "${ephemeral_log}"
+    write_receipt "${scenario}" fail "FINDING: unattested store rejection did not name the missing attestation"
+    return 1
+  fi
+  rm -f "${ephemeral_log}"
+  if [[ -n "$(find "${ephemeral_root}" -mindepth 1 -print -quit 2>/dev/null)" ]]; then
+    write_receipt "${scenario}" fail "FINDING: the rejected store root was provisioned by the server"
+    return 1
+  fi
+  rm -rf "${ephemeral_root}"
+
+  # Credential-free evidence for the release and DR record, path-free by contract.
+  # Structured sinks render the same event with and without quoted values.
+  attestation="$(compose logs server 2>/dev/null | grep -o 'GP output store attestation: .*' | tr -d '"' | tail -1)"
+  if [[ -z "${attestation}" || "${attestation}" != *"configurationDigest=${declared}"* ]]; then
+    write_receipt "${scenario}" fail "FINDING: the runtime did not publish the declared store attestation"
+    return 1
+  fi
+  if [[ "${attestation}" == *"$(compose_staging_value LocalRootPath)"* ]]; then
+    write_receipt "${scenario}" fail "FINDING: the store attestation disclosed a mount path"
+    return 1
+  fi
+
+  # A referenced output: MaxInlineArtifactBytes is 1 KiB, so this stages bytes.
+  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || {
+    write_receipt "${scenario}" fail "submission failed"; return 1; }
+  terminal="$(wait_terminal "${job}")" || {
+    write_receipt "${scenario}" fail "FINDING: staged output job did not reach a terminal state" "${job}"; return 1; }
+  state="$(jq -r '.status' <<<"${terminal}")"
+  [[ "${state}" == successful ]] || {
+    write_receipt "${scenario}" fail "unexpected terminal state" "${job}" "${state}"; return 1; }
+  objects="$(object_file_count "${job}")"
+  (( objects > 0 )) || {
+    write_receipt "${scenario}" fail "FINDING: output was not staged by reference on the shared volume" "${job}" "${state}"
+    return 1
+  }
+
+  content_before="$(mktemp)"
+  auth_curl "${base_url}/api/geoprocessing/jobs/${job}/artifacts/0/content" > "${content_before}" || {
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: staged artifact was unreadable through the normal server read path" "${job}" "${state}"
+    return 1
+  }
+  sha_before="$(sha256sum "${content_before}" | cut -d' ' -f1)"
+  descriptor_before="$(auth_curl "${base_url}/ogc/processes/jobs/${job}/results")" || {
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: staged output descriptor was unreadable" "${job}" "${state}"
+    return 1
+  }
+
+  # Replacement, not restart: every server and worker container is destroyed and
+  # recreated, so only the shared volume can carry these bytes across.
+  before_ids="$(compose ps -q server server-peer worker | LC_ALL=C sort | paste -sd, -)"
+  worker_before="$(compose ps -q worker | head -1)"
+  record_disruption store replacement before-replace
+  compose up -d --force-recreate server server-peer worker >/dev/null || {
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "replacement containers failed to start" "${job}" "${state}"; return 1; }
+  wait_ready && wait_peer_ready || {
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: the replaced topology did not become ready against the attested store" "${job}" "${state}"
+    return 1
+  }
+  record_disruption store replacement after-replace
+  after_ids="$(compose ps -q server server-peer worker | LC_ALL=C sort | paste -sd, -)"
+  if [[ -z "${before_ids}" || "${before_ids}" == "${after_ids}" ]]; then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: containers were restarted rather than replaced" "${job}" "${state}"
+    return 1
+  fi
+  # The worker has no health check and the read path below does not need it, so
+  # an aggregate identity change could otherwise pass with the replacement worker
+  # dead on its own store attestation. Assert the producer explicitly.
+  worker_after="$(compose ps -q worker | head -1)"
+  if [[ -z "${worker_before}" || -z "${worker_after}" || "${worker_before}" == "${worker_after}" ]]; then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: the worker was not replaced" "${job}" "${state}"
+    return 1
+  fi
+  # The worker publishes its attestation as it starts, concurrently with the
+  # servers this scenario already waited on; poll rather than sample once.
+  worker_attestation=""
+  for _ in $(seq 1 60); do
+    [[ "$(docker inspect -f '{{.State.Running}}' "${worker_after}" 2>/dev/null)" == true ]] || break
+    worker_attestation="$(docker logs "${worker_after}" 2>&1 | grep -o 'GP output store attestation: .*' | tr -d '"' | tail -1)"
+    [[ -z "${worker_attestation}" ]] || break
+    sleep 1
+  done
+  if [[ "$(docker inspect -f '{{.State.Running}}' "${worker_after}" 2>/dev/null)" != true ]]; then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: the replacement worker did not stay up against the attested store" "${job}" "${state}"
+    return 1
+  fi
+  if [[ "${worker_attestation}" != *"configurationDigest=${declared}"* ]]; then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: the replacement worker did not resolve the declared store identity" "${job}" "${state}"
+    return 1
+  fi
+
+  # Read back through a replacement host that never produced these bytes.
+  content_after="$(mktemp)"
+  auth_curl "${peer_url}/api/geoprocessing/jobs/${job}/artifacts/0/content" > "${content_after}" || {
+    rm -f "${content_before}" "${content_after}"
+    write_receipt "${scenario}" fail "FINDING: staged artifact was lost across server and worker replacement" "${job}" "${state}"
+    return 1
+  }
+  sha_after="$(sha256sum "${content_after}" | cut -d' ' -f1)"
+  descriptor_after="$(auth_curl "${peer_url}/ogc/processes/jobs/${job}/results")" || {
+    rm -f "${content_before}" "${content_after}"
+    write_receipt "${scenario}" fail "FINDING: staged output descriptor was lost across replacement" "${job}" "${state}"
+    return 1
+  }
+  if ! cmp -s "${content_before}" "${content_after}"; then
+    rm -f "${content_before}" "${content_after}"
+    write_receipt "${scenario}" fail "FINDING: staged output bytes changed across server and worker replacement" "${job}" "${state}"
+    return 1
+  fi
+  rm -f "${content_before}" "${content_after}"
+  [[ "${sha_before}" == "${sha_after}" ]] || {
+    write_receipt "${scenario}" fail "FINDING: staged output checksum changed across replacement" "${job}" "${state}"; return 1; }
+  # Staged artifact links are built from the requesting host's own base URL, so
+  # the same durable descriptor renders a different origin on the peer. Normalize
+  # the origin away and compare everything else — ids, kinds, titles, content
+  # types and the artifact route path — exactly.
+  [[ "$(normalized_descriptor "${descriptor_before}" "${base_url}")" \
+     == "$(normalized_descriptor "${descriptor_after}" "${peer_url}")" ]] || {
+    write_receipt "${scenario}" fail "FINDING: staged output descriptor changed across replacement" "${job}" "${state}"; return 1; }
+
+  set_scenario_evidence "$(jq -n --arg digest "${declared}" --arg attestation "${attestation}" --arg worker_attestation "${worker_attestation}" --arg sha_before "${sha_before}" --arg sha_after "${sha_after}" --arg before_ids "${before_ids}" --arg after_ids "${after_ids}" --argjson objects "${objects}" --argjson descriptor "$(normalized_descriptor "${descriptor_after}" "${peer_url}")" '{store:{configuration_digest:$digest,attestation:$attestation,worker_attestation:$worker_attestation},unattested_root:{accepted:false,self_provisioned:false},staged_objects:$objects,replacement:{before_container_ids:$before_ids,after_container_ids:$after_ids},artifact:{sha256_before:$sha_before,sha256_after:$sha_after,descriptor_after_host_normalized:$descriptor}}')"
+  write_receipt "${scenario}" pass "" "${job}" "${state}" "${sha_after}"
 }
 
 run_sync() {
@@ -807,6 +1031,9 @@ run_topology() {
   if [[ "${HONUA_GP_SKIP_PULL:-false}" != true ]]; then
     compose pull || { preflight_failure="candidate image pull failed"; return 1; }
   fi
+  # Referenced output staging is fail-closed: without an attested volume the
+  # candidate cannot reach readiness at all, so provision before the first start.
+  provision_output_store || return 1
   compose up -d || { preflight_failure="candidate topology failed to start"; return 1; }
   wait_ready && wait_peer_ready || { preflight_failure="topology did not become ready"; return 1; }
   read_running_identity || { preflight_failure="candidate identity could not be read from running containers"; return 1; }
@@ -929,6 +1156,7 @@ else
   }
   if [[ -z "${preflight_failure}" ]]; then
     if [[ "${lane}" == lifecycle ]]; then
+      run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
       run_scenario sync run_sync || failures=$((failures + 1))
       run_scenario async run_async_baseline || failures=$((failures + 1))
       export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification

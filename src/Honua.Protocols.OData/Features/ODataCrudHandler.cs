@@ -5,12 +5,15 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Collaboration.FeatureLocks;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Validation;
@@ -566,6 +569,20 @@ internal sealed class ODataCrudHandler(
             return providerWriteError;
         }
 
+        // Collaborative-editing lease enforcement (#4402): a feature another editor
+        // holds a lease on cannot be replaced or merged out from under them, on this surface as
+        // much as on GeoServices applyEdits and OGC API Features.
+        var lockConflict = await EvaluateVisibleFeatureLockAsync(
+            context, layerValidation, layerId, objectId, "update", effectiveToken).ConfigureAwait(false);
+        if (lockConflict is not null)
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "FeatureLocked",
+                lockConflict,
+                statusCode: 423);
+        }
+
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
@@ -694,6 +711,20 @@ internal sealed class ODataCrudHandler(
         if (providerWriteError is not null)
         {
             return providerWriteError;
+        }
+
+        // Collaborative-editing lease enforcement (#4402): a feature another editor
+        // holds a lease on cannot be deleted out from under them, on this surface as
+        // much as on GeoServices applyEdits and OGC API Features.
+        var lockConflict = await EvaluateVisibleFeatureLockAsync(
+            context, layerValidation, layerId, objectId, "delete", effectiveToken).ConfigureAwait(false);
+        if (lockConflict is not null)
+        {
+            return ODataUtilityService.CreateODataError(
+                context,
+                "FeatureLocked",
+                lockConflict,
+                statusCode: 423);
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -899,6 +930,50 @@ internal sealed class ODataCrudHandler(
             ODataProtocolConstants.ProtocolName,
             operation,
             cancellationToken);
+
+    /// <summary>
+    /// Evaluates the collaborative-editing lease for a feature the caller can actually see,
+    /// returning the client-facing conflict description or <see langword="null"/> to proceed.
+    /// </summary>
+    /// <remarks>
+    /// The row-visibility read is the point. A lease is keyed on identifiers a caller can
+    /// guess, so answering "423, locked by Alice" for an id the caller may not read would
+    /// turn the lock surface into an existence oracle and leak the holder's identity —
+    /// row-level security hides those rows behind an indistinguishable 404, and this must
+    /// not undo that. Missing or hidden rows therefore fall through to the normal path,
+    /// which reports the same 404 it always did. The read only happens when a lease exists
+    /// somewhere, so the uncontended path is unchanged.
+    /// </remarks>
+    private static async Task<string?> EvaluateVisibleFeatureLockAsync(
+        HttpContext context,
+        LayerValidationHelpers.MetadataV2ValidationResult layerValidation,
+        int layerId,
+        long objectId,
+        string operation,
+        CancellationToken cancellationToken)
+    {
+        var locks = context.RequestServices.GetService<IFeatureLockService>();
+        if (!await FeatureEditLockEnforcement.IsEvaluationRequiredAsync(locks, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var reader = context.RequestServices.GetService<IFeatureReader>();
+        if (reader is not null && !(await reader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false)).HasValue)
+        {
+            return null;
+        }
+
+        var conflict = await FeatureEditLockEnforcement.EvaluateRequestAsync(
+            context,
+            FeatureEditLockEnforcement.ResolveServiceName(layerValidation.Service, layerValidation.Publication),
+            FeatureEditLockEnforcement.ResolveLayerId(layerValidation.Publication, layerId),
+            objectId,
+            operation,
+            cancellationToken).ConfigureAwait(false);
+
+        return conflict is null ? null : FeatureEditLockEnforcement.Describe(conflict);
+    }
 
     private static int ResolveLayerSrid(LayerValidationHelpers.MetadataV2ValidationResult layerValidation)
         => layerValidation.Resource!.ReadSrid() ?? SpatialReference.WGS84.ToSrid();

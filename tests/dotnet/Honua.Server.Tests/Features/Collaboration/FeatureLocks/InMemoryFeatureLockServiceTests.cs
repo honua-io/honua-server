@@ -190,6 +190,39 @@ public sealed class InMemoryFeatureLockServiceTests
         document.RootElement.GetProperty("Lock").GetProperty("Holder").GetProperty("HolderId").GetString().Should().Be("alice");
     }
 
+    [UnitTest]
+    [Operation(Operations.Update)]
+    public async Task HasAnyActiveLeasesAsync_TracksWhetherEnforcementMustEvaluatePerFeature()
+    {
+        // Write paths skip per-feature guard evaluation when this reports false (#4402), so a
+        // wrong false would silently disable lease enforcement for the whole request. It must
+        // flip to true the moment a lease exists and back once it is released.
+        var service = new InMemoryFeatureLockService(new MutableTimeProvider(Instant()));
+
+        (await service.HasAnyActiveLeasesAsync()).Should().BeFalse();
+
+        await service.ClaimAsync(Feature, Alice, LeaseDuration, FeatureLockAccessContext.AuthorizedWrite);
+        (await service.HasAnyActiveLeasesAsync()).Should().BeTrue();
+
+        await service.ReleaseAsync(Feature, Alice, FeatureLockAccessContext.AuthorizedWrite);
+        (await service.HasAnyActiveLeasesAsync()).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    public async Task HasAnyActiveLeasesAsync_AfterExpiryAndPrune_ReportsNoLeases()
+    {
+        var clock = new MutableTimeProvider(Instant());
+        var service = new InMemoryFeatureLockService(clock);
+        await service.ClaimAsync(Feature, Alice, LeaseDuration, FeatureLockAccessContext.AuthorizedWrite);
+
+        clock.Advance(LeaseDuration + TimeSpan.FromSeconds(1));
+        (await service.PruneExpiredAsync()).Should().Be(1);
+
+        (await service.HasAnyActiveLeasesAsync()).Should().BeFalse();
+        (await service.GetActiveLeaseAsync(Feature)).Should().BeNull();
+    }
+
     private static DateTimeOffset Instant()
         => new(2026, 5, 11, 10, 0, 0, TimeSpan.Zero);
 

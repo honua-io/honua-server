@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Validation.Abstractions;
@@ -26,7 +27,9 @@ internal sealed class FeatureServerEditsDependencies
         IHttpContextAccessor httpContextAccessor,
         FeatureMutationEventService mutationEventService,
         IPluginEditPipeline pluginPipeline,
-        IApplyEditsIdempotencyStore idempotencyStore)
+        IApplyEditsIdempotencyStore idempotencyStore,
+        IFeatureEditGuard editGuard,
+        IFeatureLockService featureLocks)
     {
         ResourceValidator = resourceValidator ?? throw new ArgumentNullException(nameof(resourceValidator));
         FeatureWriter = featureWriter ?? throw new ArgumentNullException(nameof(featureWriter));
@@ -40,6 +43,8 @@ internal sealed class FeatureServerEditsDependencies
         MutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
         PluginPipeline = pluginPipeline ?? throw new ArgumentNullException(nameof(pluginPipeline));
         IdempotencyStore = idempotencyStore ?? throw new ArgumentNullException(nameof(idempotencyStore));
+        EditGuard = editGuard ?? throw new ArgumentNullException(nameof(editGuard));
+        FeatureLocks = featureLocks ?? throw new ArgumentNullException(nameof(featureLocks));
     }
 
     public IResourceValidator ResourceValidator { get; }
@@ -54,4 +59,17 @@ internal sealed class FeatureServerEditsDependencies
     public FeatureMutationEventService MutationEventService { get; }
     public IPluginEditPipeline PluginPipeline { get; }
     public IApplyEditsIdempotencyStore IdempotencyStore { get; }
+
+    /// <summary>
+    /// Collaborative-editing guard consulted before an update or delete mutates a
+    /// feature, so a lease handed out by <c>/collaboration/feature-locks</c> is
+    /// binding on the GeoServices write path (#4402).
+    /// </summary>
+    public IFeatureEditGuard EditGuard { get; }
+
+    /// <summary>
+    /// Lease store, used only for the per-request "is anything locked at all?" probe
+    /// that lets an uncontended batch skip per-feature guard evaluation.
+    /// </summary>
+    public IFeatureLockService FeatureLocks { get; }
 }

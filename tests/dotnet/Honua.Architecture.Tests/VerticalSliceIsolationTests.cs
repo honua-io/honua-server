@@ -118,6 +118,13 @@ public sealed class VerticalSliceIsolationTests
                                 // unified capability registry, shared by the protocol
                                 // assemblies and Server so neither owns the gate logic.
             "Caching",          // Lives in Honua.Hosting under the preserved namespace.
+            "Collaboration",    // Hosting-resident FeatureEditLockEnforcement: the single seam
+                                // every feature-write surface consults before mutating a feature
+                                // so a collaborative-editing lease is binding (#4402). Shared by
+                                // three protocol assemblies (GeoServices FeatureServer, OGC API
+                                // Features, OData), so it cannot live in any one of them; the
+                                // /feature-locks endpoints stay in
+                                // Honua.Server/Features/Collaboration.
             "Compression",
             "Configuration",
             "Coordination",

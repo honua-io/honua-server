@@ -24,18 +24,55 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICloudFileStorage _fileStorage;
     private readonly ILogger<PostgresAttachmentStore> _logger;
+    private readonly IAttachmentOrphanLedger? _orphanLedger;
     private readonly string _tableName;
 
     public PostgresAttachmentStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ICloudFileStorage fileStorage,
         ILogger<PostgresAttachmentStore> logger,
-        string? schemaName = null)
+        string? schemaName = null,
+        IAttachmentOrphanLedger? orphanLedger = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _fileStorage = fileStorage ?? throw new ArgumentNullException(nameof(fileStorage));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _orphanLedger = orphanLedger;
         _tableName = Infrastructure.SchemaSearchPath.QualifyTable("attachments", schemaName);
+    }
+
+    /// <summary>
+    /// Records a storage object that outlived its metadata row, so the divergence is
+    /// enumerable and alertable rather than only logged. Never throws: an orphan record
+    /// must not mask the original failure nor fail an otherwise successful delete.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not cancellable. Every call site is a failure or cancellation path, so
+    /// the caller's token is frequently already canceled; honouring it would discard the
+    /// only evidence that the two stores diverged.
+    /// </remarks>
+    private async Task RecordOrphanAsync(
+        string storagePath,
+        int layerId,
+        long featureId,
+        AttachmentOrphanKind kind,
+        string? reason)
+    {
+        if (_orphanLedger == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _orphanLedger.RecordAsync(
+                new AttachmentOrphan(storagePath, layerId, featureId, kind, DateTimeOffset.UtcNow, reason),
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            AttachmentLog.AttachmentCleanupFailed(_logger, ex, storagePath);
+        }
     }
 
     public async Task<Attachment?> GetAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
@@ -228,26 +265,55 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
                     var deleted = await _fileStorage.DeleteAsync(existing.StoragePath, cancellationToken).ConfigureAwait(false);
                     if (!deleted)
                     {
+                        // ICloudFileStorage.DeleteAsync defines false as "file was not found",
+                        // so the superseded object is already gone and the two stores agree.
+                        // Nothing to reconcile: log it, but do not report an orphan.
                         AttachmentLog.AttachmentFileMissing(_logger, existing.StoragePath, layerId, featureId);
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (OperationCanceledException ex)
+                {
+                    // The update is already committed and the row no longer names this object,
+                    // so a cancellation here leaks it exactly as a storage failure would.
+                    await RecordOrphanAsync(
+                        existing.StoragePath,
+                        layerId,
+                        featureId,
+                        AttachmentOrphanKind.UndeletedObject,
+                        $"superseded-object delete was canceled after the metadata update committed ({ex.GetType().Name})").ConfigureAwait(false);
+                    throw;
+                }
+                catch (Exception ex)
                 {
                     AttachmentLog.AttachmentFileDeleteFailed(_logger, ex, existing.StoragePath);
+                    await RecordOrphanAsync(
+                        existing.StoragePath,
+                        layerId,
+                        featureId,
+                        AttachmentOrphanKind.UndeletedObject,
+                        ex.Message).ConfigureAwait(false);
                 }
             }
 
             return updated;
         }
-        catch
+        catch (Exception updateException)
         {
             try
             {
+                // A false result means the object was not found, so the upload left nothing
+                // behind and the compensation is complete; only a failure leaks an object.
                 await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 AttachmentLog.AttachmentCleanupFailed(_logger, ex, uploadResult.File.FileId);
+                await RecordOrphanAsync(
+                    uploadResult.File.FileId,
+                    layerId,
+                    featureId,
+                    AttachmentOrphanKind.ObjectWithoutMetadata,
+                    $"replace metadata update failed ({updateException.GetType().Name}) and compensating delete failed ({ex.Message})").ConfigureAwait(false);
             }
 
             throw;
@@ -278,12 +344,34 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
             var deleted = await _fileStorage.DeleteAsync(storagePath, cancellationToken);
             if (!deleted)
             {
+                // ICloudFileStorage.DeleteAsync defines false as "file was not found". The row
+                // is gone and so is the object, so the two stores agree and there is nothing to
+                // reconcile — recording an orphan here would be a false positive.
                 AttachmentLog.AttachmentFileMissing(_logger, storagePath, layerId, featureId);
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException ex)
+        {
+            // The row was committed away before storage deletion began, so a cancellation
+            // mid-delete leaves an object nothing references. Record it before rethrowing:
+            // this is exactly the divergence the ledger exists to surface.
+            await RecordOrphanAsync(
+                storagePath,
+                layerId,
+                featureId,
+                AttachmentOrphanKind.UndeletedObject,
+                $"storage delete was canceled after the metadata row was committed away ({ex.GetType().Name})").ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception ex)
         {
             AttachmentLog.AttachmentFileDeleteFailed(_logger, ex, storagePath);
+            await RecordOrphanAsync(
+                storagePath,
+                layerId,
+                featureId,
+                AttachmentOrphanKind.UndeletedObject,
+                ex.Message).ConfigureAwait(false);
         }
 
         return true;
@@ -327,17 +415,27 @@ internal sealed class PostgresAttachmentStore : IAttachmentStore
         {
             return await CreateAsync(layerId, featureId, attachment, cancellationToken);
         }
-        catch
+        catch (Exception insertException)
         {
             try
             {
                 // Best-effort compensating cleanup of the orphaned uploaded file after the metadata
                 // insert failed; a cleanup failure must not mask the original exception being rethrown.
+                // A false result means the object was not found, so nothing survived the failed
+                // insert; only a throwing cleanup leaves an object with no row.
                 await _fileStorage.DeleteAsync(uploadResult.File.FileId, cancellationToken);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 AttachmentLog.AttachmentCleanupFailed(_logger, ex, uploadResult.File.FileId);
+
+                // Both halves failed: the object is live and no row will ever reference it.
+                await RecordOrphanAsync(
+                    uploadResult.File.FileId,
+                    layerId,
+                    featureId,
+                    AttachmentOrphanKind.ObjectWithoutMetadata,
+                    $"metadata insert failed ({insertException.GetType().Name}) and compensating delete failed ({ex.Message})").ConfigureAwait(false);
             }
 
             throw;

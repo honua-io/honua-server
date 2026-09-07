@@ -60,6 +60,11 @@ services:
       Geoprocessing__OutputStaging__StoreReference: qualification
       Geoprocessing__OutputStaging__LocalRootPath: /var/lib/honua/gp-outputs
       Geoprocessing__OutputStaging__KeyPrefix: gp/outputs
+      Geoprocessing__OutputStaging__PersistenceClass: shared-persistent
+      Geoprocessing__OutputStaging__BackupIdentity: gp-qualification-backup
+      Geoprocessing__OutputStaging__BackupStoreReferences__0: qualification
+      Geoprocessing__OutputStaging__ConfigurationDigest: bb6a13a6b7970d85b518145569fd6470eb6940524ced24fa0994fa1d391f4041
+      Geoprocessing__OutputStaging__ReadLeaseDuration: 00:15:00
       Geoprocessing__OutputStaging__MaxInlineArtifactBytes: "1024"
       Geoprocessing__OutputStaging__SweepInterval: 00:00:01
       Geoprocessing__OutputStaging__SweepGrace: 00:00:01
@@ -106,6 +111,11 @@ services:
       Geoprocessing__OutputStaging__StoreReference: qualification
       Geoprocessing__OutputStaging__LocalRootPath: /var/lib/honua/gp-outputs
       Geoprocessing__OutputStaging__KeyPrefix: gp/outputs
+      Geoprocessing__OutputStaging__PersistenceClass: shared-persistent
+      Geoprocessing__OutputStaging__BackupIdentity: gp-qualification-backup
+      Geoprocessing__OutputStaging__BackupStoreReferences__0: qualification
+      Geoprocessing__OutputStaging__ConfigurationDigest: bb6a13a6b7970d85b518145569fd6470eb6940524ced24fa0994fa1d391f4041
+      Geoprocessing__OutputStaging__ReadLeaseDuration: 00:15:00
       Geoprocessing__OutputStaging__MaxInlineArtifactBytes: "1024"
       Geoprocessing__OutputStaging__SweepInterval: 00:00:01
       Geoprocessing__OutputStaging__SweepGrace: 00:00:01

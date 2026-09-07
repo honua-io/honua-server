@@ -75,8 +75,28 @@ public interface IStudioPackageStore
     /// </summary>
     Task<StudioPackageDraftListResult> ListDraftsAsync(StudioPackageDraftQuery query, CancellationToken cancellationToken = default);
 
-    /// <summary>Creates a persisted publication request for an immutable version.</summary>
-    Task<StudioPublicationRequest> CreatePublicationRequestAsync(StudioPublicationRequest request, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Creates a persisted publication request for an immutable version and, when the request is
+    /// accepted, advances the item's published pointer.
+    /// </summary>
+    /// <param name="request">The publication request to persist.</param>
+    /// <param name="expectedCurrentVersionId">
+    /// Compare-and-set precondition (honua-server#3980): the item's <c>current_version_id</c> as
+    /// observed when the proposal was validated/approved. Implementations must compare it against
+    /// the live pointer <em>atomically with</em> the published-pointer update, so a draft saved
+    /// between validation and actuation cannot publish a version the reviewer never approved as
+    /// current. <see langword="null"/> waives the precondition and is reserved for callers that
+    /// have no approved pointer expectation to assert.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="StudioPublicationPointerConflictException">
+    /// The item's current pointer no longer equals <paramref name="expectedCurrentVersionId"/>;
+    /// nothing is persisted.
+    /// </exception>
+    Task<StudioPublicationRequest> CreatePublicationRequestAsync(
+        StudioPublicationRequest request,
+        Guid? expectedCurrentVersionId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Gets one persisted publication request for an immutable version.</summary>
     Task<StudioPublicationRequest?> GetPublicationRequestAsync(
@@ -93,6 +113,42 @@ public interface IStudioPackageStore
         string? actorId,
         string? reason,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Raised when a publication request cannot advance an item's published pointer because the
+/// item's current pointer no longer equals the version the approval validated
+/// (honua-server#3980). Derives from <see cref="InvalidOperationException"/> so it flows through
+/// the existing Studio conflict mapping (<c>409 Conflict</c> on the REST surface, a failed
+/// operation handle with <c>errorKind=conflict</c> on the durable operation runtime).
+/// </summary>
+public sealed class StudioPublicationPointerConflictException : InvalidOperationException
+{
+    /// <summary>Initializes the conflict with the observed and expected pointers.</summary>
+    public StudioPublicationPointerConflictException(Guid itemId, Guid? expectedCurrentVersionId, Guid? actualCurrentVersionId)
+        : base(
+            $"Studio content item '{itemId:D}' advanced past the approved version; " +
+            $"expected current version '{Describe(expectedCurrentVersionId)}' but found '{Describe(actualCurrentVersionId)}'. " +
+            "Re-validate the publication proposal against the current version and retry.")
+    {
+        ItemId = itemId;
+        ExpectedCurrentVersionId = expectedCurrentVersionId;
+        ActualCurrentVersionId = actualCurrentVersionId;
+    }
+
+    /// <summary>Content item whose pointer moved.</summary>
+    public Guid ItemId { get; }
+
+    /// <summary>Current version the approval validated against.</summary>
+    public Guid? ExpectedCurrentVersionId { get; }
+
+    /// <summary>
+    /// Current version observed at actuation, or <see langword="null"/> when the durable store
+    /// rejected the compare-and-set without reporting the winning pointer.
+    /// </summary>
+    public Guid? ActualCurrentVersionId { get; }
+
+    private static string Describe(Guid? versionId) => versionId?.ToString("D") ?? "(none)";
 }
 
 /// <summary>
@@ -221,9 +277,23 @@ public interface IStudioPackageLifecycleService
     Task<StudioVersionComparison?> CompareVersionsAsync(Guid itemId, Guid leftVersionId, Guid rightVersionId, CancellationToken cancellationToken = default);
 
     /// <summary>Creates a publication request for an immutable version.</summary>
+    /// <param name="itemId">Content item identifier.</param>
+    /// <param name="versionId">Immutable version requested for publication.</param>
+    /// <param name="expectedCurrentVersionId">
+    /// Compare-and-set precondition passed through to
+    /// <see cref="IStudioPackageStore.CreatePublicationRequestAsync"/> (honua-server#3980).
+    /// </param>
+    /// <param name="intent">Publication intent override.</param>
+    /// <param name="warningAcknowledgement">Optional acknowledgement for validation warnings.</param>
+    /// <param name="actorId">Requesting actor.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="StudioPublicationPointerConflictException">
+    /// The item's current pointer moved after the proposal was validated.
+    /// </exception>
     Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
         Guid itemId,
         Guid versionId,
+        Guid? expectedCurrentVersionId,
         StudioPublicationIntent? intent,
         string? warningAcknowledgement,
         string? actorId,
