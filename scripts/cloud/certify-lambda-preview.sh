@@ -427,26 +427,6 @@ if [[ -z "$request_id" ]]; then
   exit 9
 fi
 
-# A cold start reports its Init Duration on the REPORT line when the runtime
-# initialized inside Lambda's init window. When initialization exceeds that
-# window (the twelfth live run: ~21 s to resolve secrets and open the database
-# over the VPC, the runtime re-runs it during the first invoke and the only
-# Init Duration is on an INIT_REPORT line with "Phase: invoke". Both are cold
-# starts of this exact function; record which phase carried it so the
-# operating envelope is visible in the receipt. An INIT_REPORT whose Status is
-# error or timeout is not evidence of a served cold start.
-cold_start_phase="init"
-cold_start_ms="$(sed -nE 's/^REPORT .*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$tail_log" | tail -n 1)"
-if [[ -z "$cold_start_ms" ]]; then
-  init_report="$(grep -E '^INIT_REPORT[[:space:]].*Init Duration: ' <<<"$tail_log" | grep -vE 'Status: (error|timeout)' | tail -n 1 || true)"
-  cold_start_ms="$(sed -nE 's/^INIT_REPORT[[:space:]].*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$init_report")"
-  cold_start_phase="$(sed -nE 's/.*Phase: ([a-z]+).*/\1/p' <<<"$init_report")"
-  cold_start_phase="${cold_start_phase:-invoke}"
-fi
-if [[ -z "$cold_start_ms" ]] || ! awk -v value="$cold_start_ms" 'BEGIN { exit !(value > 0) }'; then
-  echo "first invoke REPORT/INIT_REPORT has no positive cold-start Init Duration" >&2
-  exit 14
-fi
 
 # CloudWatch delivery for a fresh function's first invoke lags: the thirteenth
 # live run (34084763377) created its log stream at +0s, the first query ran at
@@ -481,6 +461,44 @@ if ! $cloudwatch_verified; then
   exit 10
 fi
 
+# A cold start reports its Init Duration on the REPORT line when the runtime
+# initialized inside Lambda's init window. When initialization exceeds that
+# window (~21 s here to resolve secrets and open the database over the VPC),
+# the runtime re-runs it during the first invoke and the only Init Duration is
+# on an INIT_REPORT line with "Phase: invoke". The invoke's 4 KB log tail does
+# not always reach back to that line (the fifteenth live run, 34090714626), so
+# read the same evidence from CloudWatch Logs once delivery is verified, and
+# keep the tail as the fast path. An INIT_REPORT whose Status is error or
+# timeout is not evidence of a served cold start.
+cold_start_from_lines() {
+  local lines="$1" ms phase init_report
+  ms="$(sed -nE 's/^REPORT .*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$lines" | tail -n 1)"
+  phase="init"
+  if [[ -z "$ms" ]]; then
+    init_report="$(grep -E '^INIT_REPORT[[:space:]].*Init Duration: ' <<<"$lines" | grep -vE 'Status: (error|timeout)' | tail -n 1 || true)"
+    ms="$(sed -nE 's/^INIT_REPORT[[:space:]].*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$init_report")"
+    phase="$(sed -nE 's/.*Phase: ([a-z]+).*/\1/p' <<<"$init_report")"
+    phase="${phase:-invoke}"
+  fi
+  [[ -n "$ms" ]] && printf '%s %s\n' "$ms" "$phase"
+}
+platform_lines() {
+  # JSON output aggregates every page; text output would split them.
+  aws logs filter-log-events --log-group-name "$log_group" --start-time "$invoke_started_ms" \
+    --filter-pattern "$1" --query 'events[].message' --output json | jq -r '.[]?'
+}
+cold_start_source="tail"
+read -r cold_start_ms cold_start_phase < <(cold_start_from_lines "$tail_log") || true
+if [[ -z "${cold_start_ms:-}" ]]; then
+  cold_start_source="cloudwatch"
+  read -r cold_start_ms cold_start_phase < <(cold_start_from_lines "$(platform_lines REPORT; platform_lines INIT_REPORT)") || true
+fi
+if [[ -z "${cold_start_ms:-}" ]] || ! awk -v value="$cold_start_ms" 'BEGIN { exit !(value > 0) }'; then
+  echo "first invoke REPORT/INIT_REPORT has no positive cold-start Init Duration (tail and CloudWatch)" >&2
+  echo "cold-start-evidence: tail-bytes=${#tail_log} tail-has-init-report=$(grep -cE '^INIT_REPORT' <<<"$tail_log" || true) tail-has-report=$(grep -cE '^REPORT ' <<<"$tail_log" || true)" >&2
+  exit 14
+fi
+
 python3 "$script_dir/lambda-certification.py" certify "$scratch" "$function_name" "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}"
 serving_proof="$(cat "$scratch/serving.json")"
 
@@ -505,6 +523,7 @@ jq -n \
   --arg architecture "$HONUA_LAMBDA_ARCHITECTURE" \
   --argjson cold_start_ms "$cold_start_ms" \
   --arg cold_start_phase "$cold_start_phase" \
+  --arg cold_start_source "$cold_start_source" \
   --argjson serving "$serving_proof" \
   --arg schema "honua.lambda-preview-certification/v1" \
   --arg server_revision "$HONUA_LAMBDA_SERVER_REVISION" \
@@ -520,7 +539,7 @@ jq -n \
   --arg function_fingerprint "$(fingerprint "$function_name")" \
   --arg request_fingerprint "$(fingerprint "$request_id")" \
   --arg run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${GITHUB_RUN_ID}" \
-  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourcePlatformDigest:$source_platform_digest,sourceConfigDigest:$source_config_digest,sourceRootfsFingerprint:$source_rootfs_fingerprint,ecrDigest:$ecr_digest,mirrorOutcome:$mirror_outcome,repositoryFingerprint:$repository_fingerprint,mirrorTool:"crane",configDigestPreserved:true,rootfsPreserved:true,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,coldStartInitPhase:$cold_start_phase,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
+  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourcePlatformDigest:$source_platform_digest,sourceConfigDigest:$source_config_digest,sourceRootfsFingerprint:$source_rootfs_fingerprint,ecrDigest:$ecr_digest,mirrorOutcome:$mirror_outcome,repositoryFingerprint:$repository_fingerprint,mirrorTool:"crane",configDigestPreserved:true,rootfsPreserved:true,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,coldStartInitPhase:$cold_start_phase,coldStartEvidenceSource:$cold_start_source,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
   > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
 
 jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourcePlatformDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourceConfigDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.mirrorOutcome | test("^(pushed|skipped-existing|replaced-stale)$")) and .artifact.configDigestPreserved and .artifact.rootfsPreserved and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and .verification.coldStartInitDurationMs > 0' \

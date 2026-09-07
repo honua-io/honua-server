@@ -134,6 +134,9 @@ alias, so requests do not depend on public ingress or redirect behavior.
   `artifact.configDigestPreserved` and `artifact.rootfsPreserved`: the byte-exactness proof.
 - `artifact.mirrorOutcome`: `pushed`, `skipped-existing` or `replaced-stale` — what the mirror step
   did about the immutable candidate tag.
+- `verification.coldStartEvidenceSource`: `tail` when the invoke's own log tail carried the cold-start line,
+  `cloudwatch` when it was read back from the function's log group after delivery was verified (the
+  4 KB tail does not always reach the INIT_REPORT line).
 - `verification.coldStartInitDurationMs` and `verification.coldStartInitPhase`: the observed
   first-invoke Init Duration and the phase that carried it (`init` from the REPORT line, or
   `invoke` from the INIT_REPORT line when initialization exceeded Lambda's init window and
