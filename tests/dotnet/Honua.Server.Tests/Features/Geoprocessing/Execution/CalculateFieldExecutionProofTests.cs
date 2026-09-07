@@ -9,8 +9,6 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
-using Honua.TestKit.Attributes;
-using Honua.TestKit.Constants;
 using Npgsql;
 using Xunit;
 using Xunit.Sdk;
@@ -30,7 +28,6 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// snapshot of what calculate produced.
 /// </summary>
 [Collection("Database")]
-[Protocol(TestProtocols.FeatureServer)]
 [Trait("Category", "CalculateFieldExecutionProof")]
 public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
 {
@@ -95,9 +92,7 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [IntegrationTest]
-    [Operation(Operations.Update)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Fact]
     public async Task Calculate_FilteredRows_WritesExactValuesAndLeavesExcludedRowsUntouched()
     {
         // score * 2 + 1 and UPPER(label) || '-C' over the rows with score >= 20.
@@ -125,9 +120,7 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         ]);
     }
 
-    [IntegrationTest]
-    [Operation(Operations.Update)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Fact]
     public async Task Calculate_ObjectIdSelection_UpdatesOnlyTheNamedFeature()
     {
         var response = await PostCalculateAsync(
@@ -147,9 +140,7 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         ]);
     }
 
-    [IntegrationTest]
-    [Operation(Operations.Update)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Fact]
     public async Task Calculate_UnsupportedExpression_IsRejectedAndChangesNothing()
     {
         var response = await PostCalculateAsync(
@@ -163,9 +154,7 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         await AssertRowsAsync(SeedRows);
     }
 
-    [IntegrationTest]
-    [Operation(Operations.Update)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Fact]
     public async Task Calculate_UnknownField_IsRejectedAndChangesNothing()
     {
         var response = await PostCalculateAsync(
@@ -176,9 +165,7 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         await AssertRowsAsync(SeedRows);
     }
 
-    [IntegrationTest]
-    [Operation(Operations.Update)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [Fact]
     public async Task Oracle_CalculateThatIgnoresTheFilter_IsRejected()
     {
         // A plausible wrong-but-well-formed calculate: the real route, the real
