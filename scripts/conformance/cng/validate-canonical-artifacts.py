@@ -961,6 +961,27 @@ def validate_javascript(path: Path, args: argparse.Namespace) -> list[dict]:
     return observations
 
 
+def _scope_disposition(observations: list[dict]) -> str:
+    """States exactly which governed cells this run could and could not certify."""
+    passed = sum(observation["result"] == "pass" for observation in observations)
+    total = len(observations)
+    third_party = sorted({
+        observation["surface"] for observation in observations
+        if not observation.get("honua_in_loop")
+    })
+    if passed == total and total:
+        return f"All {total} governed CNG observations met their declared budget profile."
+    detail = f"{passed} of {total} governed CNG observations met their declared budget profile."
+    if third_party:
+        detail += (
+            " The "
+            + ", ".join(third_party)
+            + " cells validate artifacts produced by third-party tooling, not by Honua, "
+            "and cannot support a Honua cloud-native claim (honua-server#4398)."
+        )
+    return detail
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifacts", required=True, type=Path)
@@ -996,9 +1017,25 @@ def main() -> int:
             "cut_at": args.candidate_cut_at,
         },
         "operation_scope": {
-            "complete": False,
+            "complete": all(
+                observation["result"] == "pass" for observation in observations
+            ),
             "owner_issue": "https://github.com/honua-io/honua-server/issues/3377",
-            "disposition": "Budget-complete governed CNG observations are not yet emitted.",
+            "disposition": _scope_disposition(observations),
+        },
+        # #4398: a consumer of this fragment must be able to tell, without reading this
+        # script, which cells could ever support a Honua cloud-native claim. Rows whose
+        # artifact was produced by third-party tooling are counted separately here and
+        # can never carry result=pass.
+        "producer_attribution": {
+            "honua_in_loop": sorted({
+                observation["surface"] for observation in observations
+                if observation.get("honua_in_loop")
+            }),
+            "third_party_fixture": sorted({
+                observation["surface"] for observation in observations
+                if not observation.get("honua_in_loop")
+            }),
         },
         "observations": observations,
     }

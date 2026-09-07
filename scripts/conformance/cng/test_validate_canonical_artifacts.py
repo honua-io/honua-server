@@ -50,6 +50,22 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertEqual("third-party-fixture", normalized[0]["artifact_producer"])
         self.assertIsNone(normalized[0]["evidence_receipt"])
 
+    def test_scope_disposition_names_the_third_party_cells(self):
+        """The fragment's own disposition must state which cells cannot support the
+        claim, so a downstream GA citation cannot read it as cloud-native proof."""
+        rows = [
+            {"surface": "cog", "result": "skip", "honua_in_loop": False},
+            {"surface": "zarr", "result": "skip", "honua_in_loop": False},
+            {"surface": "pmtiles", "result": "pass", "honua_in_loop": True},
+        ]
+
+        disposition = MODULE._scope_disposition(rows)
+
+        self.assertIn("1 of 3", disposition)
+        self.assertIn("cog", disposition)
+        self.assertIn("zarr", disposition)
+        self.assertIn("not by Honua", disposition)
+
     def test_every_governed_surface_declares_a_producer(self):
         for surface, _operation, _client in MODULE.GOVERNED_ASSIGNMENTS:
             self.assertIn(
