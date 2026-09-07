@@ -33,8 +33,8 @@ public sealed class CatalogExecutableConformanceTests
         definitions.Should().HaveCount(98);
         definitions.Should().OnlyHaveUniqueItems(process => process.ProcessId);
         definitions.Should().NotContain(process => process.ExecutionKind == ProcessExecutionKind.Unclassified);
-        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(79);
-        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(6);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(80);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(5);
         definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.WorkflowOnly).Should().Be(12);
         definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Unavailable).Should().Be(1);
     }
@@ -221,6 +221,7 @@ public sealed class CatalogExecutableConformanceTests
             new ManagedHotSpotExecutor(monitor),
             new LayerBufferAggregateExecutor(scopeFactory, monitor, NullLogger<LayerBufferAggregateExecutor>.Instance),
             new LayerFeatureProjectExecutor(scopeFactory, monitor, NullLogger<LayerFeatureProjectExecutor>.Instance),
+            new CopyFeaturesExecutor(scopeFactory, monitor, NullLogger<CopyFeaturesExecutor>.Instance),
             new LayerDissolveExecutor(scopeFactory, monitor, NullLogger<LayerDissolveExecutor>.Instance),
             new LayerSimplifyExecutor(scopeFactory, monitor, NullLogger<LayerSimplifyExecutor>.Instance),
             new LayerSpatialJoinExecutor(scopeFactory, monitor, NullLogger<LayerSpatialJoinExecutor>.Instance),

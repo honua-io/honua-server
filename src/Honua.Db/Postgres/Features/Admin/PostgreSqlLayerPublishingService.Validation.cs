@@ -223,7 +223,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     private static void AddGeometryHealthChecks(
         GeometryHealth? health,
-        List<TablePublishValidationCheck> checks)
+        List<TablePublishValidationCheck> checks,
+        bool allowEmptyTable)
     {
         if (health is not { } value)
         {
@@ -231,7 +232,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return;
         }
 
-        if (value.FeatureCount == 0)
+        if (value.FeatureCount == 0 && !allowEmptyTable)
         {
             checks.Add(Error("feature-count", "Source table is empty."));
         }

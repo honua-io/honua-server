@@ -164,6 +164,8 @@ internal static class ServiceCollectionExtensions
         // Postgres provider, so the sink.honua-layer executor can load into a named catalog
         // layer via the catalog NpgsqlDataSource. Absent in lean deployments, where the
         // executor fails the node closed with a clear message.
+        services.TryAddScoped<Honua.Core.Features.Geoprocessing.Abstractions.IFeatureLayerCopyService,
+            Features.Geoprocessing.PostgresFeatureLayerCopyService>();
         services.TryAddSingleton<Honua.Core.Features.Geoprocessing.Abstractions.IHonuaLayerSink>(
             serviceProvider => new Features.Geoprocessing.PostgresHonuaLayerSink(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>()));
