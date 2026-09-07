@@ -26,12 +26,6 @@ namespace Honua.Worker.Gdal.Execution;
 internal static class KrigingGridInputs
 {
     /// <summary>
-    /// Parses a GeoJSON <c>FeatureCollection</c> of points into kriging samples. The
-    /// interpolated value is read from <paramref name="zField"/> when supplied, and from
-    /// the geometry's Z ordinate otherwise (the same contract <c>gdal_grid -zfield</c>
-    /// applies to <c>raster.interpolate-idw</c>).
-    /// </summary>
-    /// <summary>
     /// Largest sample magnitude accepted for <c>raster.interpolate-kriging</c>. The bound
     /// exists because the AAIGrid payload is fixed-point text, so serialized size scales
     /// with value magnitude; 1e12 keeps a full-size grid's text bounded while covering
@@ -39,6 +33,12 @@ internal static class KrigingGridInputs
     /// </summary>
     internal const double MaxAbsSampleValue = 1e12;
 
+    /// <summary>
+    /// Parses a GeoJSON <c>FeatureCollection</c> of points into kriging samples. The
+    /// interpolated value is read from <paramref name="zField"/> when supplied, and from
+    /// the geometry's Z ordinate otherwise (the same contract <c>gdal_grid -zfield</c>
+    /// applies to <c>raster.interpolate-idw</c>).
+    /// </summary>
     public static bool TryReadSamples(
         byte[] geoJsonBytes,
         string? zField,

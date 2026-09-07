@@ -138,6 +138,8 @@ public sealed class ProcessEntryPointAdvertisementTests
             Title = "Undeclared",
             Description = "Job kind and async modes, but no declared entry point.",
             Category = "test",
+            Parameters = [],
+            OutputArtifactKinds = [],
             ExecutionKind = ProcessExecutionKind.Job,
             SupportedExecutionModes = ProcessExecutionModes.Async,
             SupportedEntryPoints = ProcessEntryPoints.None
