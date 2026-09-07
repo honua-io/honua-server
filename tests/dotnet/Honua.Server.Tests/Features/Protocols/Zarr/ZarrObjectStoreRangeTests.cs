@@ -164,8 +164,8 @@ public sealed class ZarrObjectStoreRangeTests
             xMax: 180,
             yMax: 90);
 
-    private static ICloudRangeReader CreateRangeReader(AwsS3Options options)
-        => new AwsS3RangeReader(CreateClient(options));
+    private static AwsS3RangeReader CreateRangeReader(AwsS3Options options)
+        => new(CreateClient(options));
 
     private static async Task UploadAsync(AwsS3Options options, Dictionary<string, byte[]> objects)
     {
