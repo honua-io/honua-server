@@ -551,21 +551,51 @@ public sealed class ProcessCatalogSurfaceRasterTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Validator_RasterInterpolateKriging_WithPoints_PassesValidation_AsFlaggedButShapeValid()
+    public void Validator_RasterInterpolateKriging_WithGridAndVariogram_PassesValidation()
     {
-        // Kriging is flagged unsupported at execution, but a shape-valid plan must
-        // still pass submit-time validation so the worker can surface the
-        // unsupported-dependency message as a job failure (not a submit rejection).
+        // Kriging executes on the bundled NumPy backend (#3932). It solves per
+        // target cell against a caller-supplied variogram, so the grid and the
+        // range are required and the whole plan must validate at submit time.
         var plan = CreateSingleStepPlan(
             "raster.interpolate-kriging",
             new Dictionary<string, string>
             {
                 ["points"] = StubBase64,
+                ["width"] = "32",
+                ["height"] = "24",
+                ["variogramModel"] = "spherical",
+                ["range"] = "500",
+                ["sill"] = "2",
+                ["nugget"] = "0.25",
             });
 
         var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
 
         violations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_RasterInterpolateKriging_WithAnIllPosedVariogram_ProducesViolations()
+    {
+        var plan = CreateSingleStepPlan(
+            "raster.interpolate-kriging",
+            new Dictionary<string, string>
+            {
+                ["points"] = StubBase64,
+                ["width"] = "32",
+                ["height"] = "24",
+                ["variogramModel"] = "matern",
+                ["range"] = "500",
+                ["sill"] = "1",
+                ["nugget"] = "1",
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v => v.FieldPath == "steps[s1].inputs.variogramModel");
+        violations.Should().Contain(v => v.FieldPath == "steps[s1].inputs.sill");
     }
 
     [UnitTest]

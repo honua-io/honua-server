@@ -917,13 +917,21 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         new ProcessDefinition
         {
             ProcessId = "raster.interpolate-kriging",
-            Title = "Interpolate (Kriging)",
-            Description = "FLAGGED / UNSUPPORTED in this build: kriging interpolation requires a kriging-capable numerical backend that the worker image does not bundle (stock GDAL gdal_grid has no kriging algorithm). The process is advertised so callers can discover the limitation; a submitted job FAILS with a clear message rather than silently substituting a different algorithm. Use raster.interpolate-idw for inverse-distance-weighted interpolation.",
+            Title = "Interpolate (Ordinary Kriging)",
+            Description = "Interpolates a continuous raster surface from scattered points using ORDINARY KRIGING with a caller-supplied variogram. Executed out-of-process by the heavyweight GDAL worker: stock GDAL has no kriging algorithm, so the worker routes the solve to the bundled NumPy numerical backend while OGR reads the point layer and its CRS and the GTiff driver writes the surface. Reads a base64-encoded GeoJSON point FeatureCollection from 'points'; publishes a two-band Float64 GeoTIFF as a data-URI artifact — band 1 the prediction, band 2 the kriging standard error. Ordinary kriging is an exact interpolator: at a sample location the prediction reproduces the sample and the standard error is zero. The dense solve is O(n^3) in the sample count, so the point layer is capped; use 'raster.interpolate-idw' for very large scattered sets.",
             Category = "raster",
             Parameters =
             [
-                Param("points", "Points", "Source points as a base64-encoded GeoJSON FeatureCollection.", ProcessParameterValueType.Text, required: true),
-                Param("zField", "Z Field", "Attribute name holding the value to interpolate.", ProcessParameterValueType.Text),
+                Param("points", "Points", "Source points as a base64-encoded GeoJSON FeatureCollection. Required by the native worker execution path.", ProcessParameterValueType.Text, required: true),
+                Param("zField", "Z Field", "Attribute name holding the value to interpolate. When omitted, the geometry Z coordinate is used.", ProcessParameterValueType.Text),
+                Param("width", "Width", "Output raster width in pixels. Must be > 0 and supplied together with 'height'. Required: kriging solves per target cell, so there is no implicit default surface size.", ProcessParameterValueType.WholeNumber, required: true),
+                Param("height", "Height", "Output raster height in pixels. Must be > 0 and supplied together with 'width'.", ProcessParameterValueType.WholeNumber, required: true),
+                Param("variogramModel", "Variogram Model", "Isotropic semivariogram model. Allowed values: spherical, exponential, gaussian. Defaults to spherical. The exponential and gaussian models use the practical-range convention (gamma reaches 95% of the sill at the range).", ProcessParameterValueType.Text, defaultValue: "spherical",
+                    allowedValues: ProcessValueDomains.KrigingVariogramModel),
+                Param("range", "Variogram Range", "Variogram range in georeferenced units. Must be > 0. Required: kriging has no defensible default correlation length.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("sill", "Variogram Sill", "TOTAL variogram sill (nugget included). Must be > the nugget. Defaults to 1; the prediction is invariant to a common scaling of sill and nugget, which only rescales the kriging variance.", ProcessParameterValueType.FloatingPoint, defaultValue: "1"),
+                Param("nugget", "Variogram Nugget", "Variogram nugget. Must be >= 0 and < the sill. Defaults to 0. gamma(0) stays 0 regardless, so the surface remains an exact interpolator at the samples.", ProcessParameterValueType.FloatingPoint, defaultValue: "0"),
+                Param("nodata", "NoData", "NoData sentinel declared on both output bands. Accepts a finite number or 'nan'. Defaults to 'nan'.", ProcessParameterValueType.Text, defaultValue: "nan"),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native

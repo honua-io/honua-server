@@ -119,6 +119,12 @@ internal static class ProcessValueDomains
     ];
 
     /// <summary>
+    /// Isotropic semivariogram models the bundled ordinary-kriging backend
+    /// implements for <c>raster.interpolate-kriging</c>.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> KrigingVariogramModel = ["spherical", "exponential", "gaussian"];
+
+    /// <summary>
     /// Overlap operators <c>raster.mosaic</c> can express through gdalwarp source ordering.
     /// Statistical operators are not available on the native worker and stay rejected.
     /// </summary>

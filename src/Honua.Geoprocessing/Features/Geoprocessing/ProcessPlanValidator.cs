@@ -61,6 +61,11 @@ internal static partial class ProcessPlanValidator
     private static readonly HashSet<string> RasterMosaicOperatorValues =
         new(ProcessValueDomains.RasterMosaicOperator, StringComparer.OrdinalIgnoreCase);
 
+    // Isotropic semivariogram models the bundled ordinary-kriging backend
+    // implements, so a plan accepted here is also accepted by the worker.
+    private static readonly HashSet<string> KrigingVariogramModelValues =
+        new(ProcessValueDomains.KrigingVariogramModel, StringComparer.OrdinalIgnoreCase);
+
     private static readonly HashSet<string> RasterFormatValues =
         new(ProcessValueDomains.RasterFormat, StringComparer.OrdinalIgnoreCase);
 
@@ -339,10 +344,7 @@ internal static partial class ProcessPlanValidator
                 ValidateRasterInterpolateIdwSemantics(step, violations);
                 break;
             case "raster.interpolate-kriging":
-                // Kriging remains shape-validated here so diagnostic tooling can
-                // describe malformed inputs. The catalog capability layer classifies
-                // it as Unavailable and the direct-submit validator rejects execution
-                // with the canonical operator-facing reason.
+                ValidateRasterInterpolateKrigingSemantics(step, violations);
                 break;
             case "raster.mosaic":
                 ValidateRasterMosaicSemantics(step, violations);
@@ -1310,6 +1312,45 @@ internal static partial class ProcessPlanValidator
         {
             AddRangeViolationIfNew(step, "width", "supply both 'width' and 'height' together to set the output grid size", violations);
         }
+    }
+
+    private static void ValidateRasterInterpolateKrigingSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // 'points', 'width', 'height' and 'range' are declared-required inputs
+        // enforced by the base type-validator; range-check the variogram here so a
+        // plan accepted at submit is also accepted by the worker (#3932).
+        RequireIntAtLeast(step, "width", 1, violations);
+        RequireIntAtLeast(step, "height", 1, violations);
+        RequirePositiveFiniteDouble(step, "range", violations);
+        RequirePositiveFiniteDouble(step, "sill", violations);
+        RequireNonNegativeFiniteDouble(step, "nugget", violations);
+
+        if (step.Inputs.TryGetValue("variogramModel", out var modelRaw)
+            && !string.IsNullOrWhiteSpace(modelRaw)
+            && !KrigingVariogramModelValues.Contains(modelRaw.Trim().ToLowerInvariant()))
+        {
+            AddEnumViolation(step, "variogramModel", modelRaw, "spherical, exponential, gaussian", violations);
+        }
+
+        // The nugget is the discontinuity at the origin, so it must sit strictly
+        // below the TOTAL sill or the model has no structured component at all.
+        if (TryReadDouble(step, "nugget", out var nugget)
+            && TryReadDouble(step, "sill", out var sill)
+            && sill <= nugget)
+        {
+            AddRangeViolationIfNew(step, "sill", "the variogram needs nugget < sill", violations);
+        }
+    }
+
+    private static bool TryReadDouble(AnalysisPlanStep step, string name, out double value)
+    {
+        value = 0d;
+        return step.Inputs.TryGetValue(name, out var raw)
+            && !string.IsNullOrWhiteSpace(raw)
+            && double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value)
+            && double.IsFinite(value);
     }
 
     private static void ValidateRasterMosaicSemantics(
