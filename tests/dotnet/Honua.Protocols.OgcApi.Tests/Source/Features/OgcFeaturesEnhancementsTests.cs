@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -467,8 +468,12 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithValidBbox_ReturnsFilteredFeatures()
     {
-        // Arrange - Use a worldwide bbox to ensure we get results
-        var bbox = "-180,-90,180,90";
+        // Arrange - a discriminating bbox, not the worldwide one. Seeded layer 0 points
+        // (tests/seed/server.yaml): 1 (-122.5, 37.5), 2 (-122.7, 37.7), 4 (-121.9, 37.3),
+        // 5 (-122.3, 37.8); 3 has no geometry. This envelope keeps 1 and 5 and excludes
+        // 2 on longitude (west of minX) and 4 on longitude (east of maxX), so a bbox that
+        // was parsed and then never applied returns 1, 2, 4, 5 and fails.
+        var bbox = "-122.6,37.4,-122.0,37.9";
 
         // Act
         var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
@@ -480,7 +485,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var json = JsonDocument.Parse(content);
 
         json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
-        json.RootElement.TryGetProperty("features", out _).Should().BeTrue();
+        FeatureIds(json).Should().Equal(1L, 5L);
     }
 
     [IntegrationTest]
@@ -509,7 +514,11 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         // spec-legal per OGC API Features Part 1; this 2D feature surface ignores the
         // vertical (minZ/maxZ) component and filters on the horizontal extent instead of
         // rejecting the request, so 3D-aware OGC/ArcGIS clients are not refused (#1987).
-        var bbox = "-180,-90,-10,180,90,10";
+        // The horizontal extent is the same envelope asserted by
+        // GetItems_WithValidBbox_ReturnsFilteredFeatures, so the test now shows the
+        // horizontal extent is actually *used* rather than merely accepted: a worldwide
+        // 6-element bbox would pass a shape-only assertion either way.
+        var bbox = "-122.6,37.4,-10,-122.0,37.9,10";
 
         // Act
         var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
@@ -521,7 +530,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         var json = JsonDocument.Parse(content);
 
         json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
-        json.RootElement.TryGetProperty("features", out _).Should().BeTrue();
+        FeatureIds(json).Should().Equal(1L, 5L);
     }
 
     [IntegrationTest]
@@ -562,8 +571,13 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithDatelineCrossingBbox_ReturnsResults()
     {
-        // Arrange - Crosses antimeridian (minX > maxX) while still covering sample data
-        var bbox = "170,-90,-50,90";
+        // Arrange - Crosses the antimeridian (minX > maxX), so the covered longitude band is
+        // [170, 180] union [-180, -122.4] and the covered latitude band is [37.4, 90].
+        // Against the seeded layer 0 points that keeps 1 (-122.5, 37.5) and 2 (-122.7, 37.7)
+        // and drops 5 (-122.3, 37.8) and 4 (-121.9, 37.3), both of which lie east of maxX.
+        // The previous "-50" maxX covered every seeded point, so NotBeEmpty() held for a
+        // wrapped box, an unwrapped box and an ignored box alike.
+        var bbox = "170,37.4,-122.4,90";
 
         // Act
         var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
@@ -573,8 +587,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
-        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        features.Should().NotBeEmpty();
+        FeatureIds(json).Should().Equal(1L, 2L);
     }
 
     [IntegrationTest]
@@ -608,6 +621,11 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
             return props.TryGetProperty("name", out var nameProp)
                 && string.Equals(nameProp.GetString(), name, StringComparison.Ordinal);
         }).Should().BeFalse();
+
+        // The worldwide bbox keeps every geometry-bearing seeded feature and drops the two
+        // rows without geometry (seeded objectid 3 and the row inserted above), so the
+        // exclusion cannot be an artifact of the whole result set being empty.
+        FeatureIds(json).Should().Equal(1L, 2L, 4L, 5L);
     }
 
     #endregion
@@ -1260,4 +1278,21 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     }
 
     #endregion
+
+    // Feature ids sorted ascending. OGC API Features only guarantees a page order when
+    // the query carries limit/offset or a spatial filter (FeatureQueryBuilder appends
+    // `ORDER BY objectid ASC` there, see RequiresStablePageOrder), so the bbox oracles
+    // compare sorted id sets rather than response order.
+    private static long[] FeatureIds(JsonDocument json)
+        => json.RootElement.GetProperty("features")
+            .EnumerateArray()
+            .Select(feature =>
+            {
+                var id = feature.GetProperty("id");
+                return id.ValueKind == JsonValueKind.String
+                    ? long.Parse(id.GetString()!, CultureInfo.InvariantCulture)
+                    : id.GetInt64();
+            })
+            .OrderBy(id => id)
+            .ToArray();
 }

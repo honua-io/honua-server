@@ -48,7 +48,11 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // Boise is the only 5-character name in the 15-city seed (tests/seed/odata.yaml).
+        // The per-row re-check below only rules out false positives; the id set is what
+        // rules out false negatives, and it is the assertion an empty result fails.
+        FeatureIds(features).Should().Equal(15L);
         foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
             attrs.GetProperty("name").GetString()!.Length.Should().Be(5);
@@ -67,7 +71,9 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // Only 'San Francisco' (13) and 'Salt Lake City' (14) exceed 12 characters.
+        FeatureIds(features).Should().Equal(1L, 8L);
         foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
             attrs.GetProperty("name").GetString()!.Length.Should().BeGreaterThan(12);
@@ -86,7 +92,10 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // San Francisco (1), San Diego (4) and San Jose (5) — and no other seeded city
+        // name starts with 'San'.
+        FeatureIds(features).Should().Equal(1L, 4L, 5L);
         foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
             attrs.GetProperty("name").GetString().Should().StartWith("San");
@@ -106,7 +115,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().ContainSingle();
+        FeatureIds(features).Should().Equal(9L);
         var attrs = ODataTestHelpers.ParseAttributes(features[0]);
         attrs.GetProperty("name").GetString().Should().Be("Denver");
     }
@@ -123,7 +132,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().ContainSingle();
+        FeatureIds(features).Should().Equal(1L);
         var attrs = ODataTestHelpers.ParseAttributes(features[0]);
         attrs.GetProperty("name").GetString().Should().Be("San Francisco");
     }
@@ -139,7 +148,10 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().HaveCountGreaterThan(1);
+
+        // The five California cities are objectids 1-5; the remaining ten rows carry a
+        // different state, or (Virtual City, 13) a null one.
+        FeatureIds(features).Should().Equal(1L, 2L, 3L, 4L, 5L);
         foreach (var attrs in features.Select(ODataTestHelpers.ParseAttributes))
         {
             attrs.GetProperty("state").GetString().Should().Be("California");
@@ -157,7 +169,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().ContainSingle();
+        FeatureIds(features).Should().Equal(9L);
         var attrs = ODataTestHelpers.ParseAttributes(features[0]);
         attrs.GetProperty("name").GetString().Should().Be("Denver");
     }
@@ -179,10 +191,16 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // `rating` is declared Double (tests/seed/odata.yaml), so the translator casts the
+        // JSONB text to `double precision` and PostgreSQL's round(double precision) breaks
+        // ties to even — San Diego's 4.5 rounds to 4, not 5. That leaves San Francisco
+        // (4.8), Denver (4.6) and Las Vegas (4.7). Tucson/Salt Lake City/Sacramento sit
+        // below 4.5 and Virtual City's rating is null.
+        FeatureIds(features).Should().Equal(1L, 9L, 11L);
         foreach (var rating in features.Select(f => ODataTestHelpers.ParseAttributes(f).GetProperty("rating").GetDouble()))
         {
-            Math.Round(rating, MidpointRounding.AwayFromZero).Should().Be(5);
+            Math.Round(rating, MidpointRounding.ToEven).Should().Be(5);
         }
     }
 
@@ -198,7 +216,10 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // Ratings in [3, 4): Sacramento 3.9, Salt Lake City 3.8, Tucson 3.7,
+        // Albuquerque 3.9.
+        FeatureIds(features).Should().Equal(3L, 8L, 12L, 14L);
         foreach (var rating in features.Select(f => ODataTestHelpers.ParseAttributes(f).GetProperty("rating").GetDouble()))
         {
             Math.Floor(rating).Should().Be(3);
@@ -217,7 +238,10 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // Ratings in (3, 4]: Sacramento 3.9, Salt Lake City 3.8, Phoenix 4.0,
+        // Tucson 3.7, Albuquerque 3.9.
+        FeatureIds(features).Should().Equal(3L, 8L, 10L, 12L, 14L);
         foreach (var rating in features.Select(f => ODataTestHelpers.ParseAttributes(f).GetProperty("rating").GetDouble()))
         {
             Math.Ceiling(rating).Should().Be(4);
@@ -237,7 +261,10 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // Ratings strictly greater than 4. Phoenix (exactly 4.0) and Virtual City (null)
+        // are excluded, as are the four sub-4 ratings.
+        FeatureIds(features).Should().Equal(1L, 2L, 4L, 5L, 6L, 7L, 9L, 11L, 15L);
         foreach (var rating in features.Select(f => ODataTestHelpers.ParseAttributes(f).GetProperty("rating").GetDouble()))
         {
             Math.Abs(rating).Should().BeGreaterThan(4);
@@ -262,7 +289,11 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // Only four seeded rows carry an event_date at all (objectids 1, 2, 3 and 5), so
+        // an ignored temporal function would return all fifteen. Inspecting features[0]
+        // alone passed whenever the expected row merely happened to sort first.
+        FeatureIds(features).Should().Equal(1L);
         var attrs = ODataTestHelpers.ParseAttributes(features[0]);
         attrs.GetProperty("name").GetString().Should().Be("San Francisco");
     }
@@ -279,7 +310,11 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // Only four seeded rows carry an event_date at all (objectids 1, 2, 3 and 5), so
+        // an ignored temporal function would return all fifteen. Inspecting features[0]
+        // alone passed whenever the expected row merely happened to sort first.
+        FeatureIds(features).Should().Equal(2L);
         var attrs = ODataTestHelpers.ParseAttributes(features[0]);
         attrs.GetProperty("name").GetString().Should().Be("Los Angeles");
     }
@@ -296,7 +331,11 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // Only four seeded rows carry an event_date at all (objectids 1, 2, 3 and 5), so
+        // an ignored temporal function would return all fifteen. Inspecting features[0]
+        // alone passed whenever the expected row merely happened to sort first.
+        FeatureIds(features).Should().Equal(2L);
         var attrs = ODataTestHelpers.ParseAttributes(features[0]);
         attrs.GetProperty("name").GetString().Should().Be("Los Angeles");
     }
@@ -313,7 +352,11 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // Only four seeded rows carry an event_date at all (objectids 1, 2, 3 and 5), so
+        // an ignored temporal function would return all fifteen. Inspecting features[0]
+        // alone passed whenever the expected row merely happened to sort first.
+        FeatureIds(features).Should().Equal(2L);
         var attrs = ODataTestHelpers.ParseAttributes(features[0]);
         attrs.GetProperty("name").GetString().Should().Be("Los Angeles");
     }
@@ -331,7 +374,11 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // Only four seeded rows carry an event_date at all (objectids 1, 2, 3 and 5), so
+        // an ignored temporal function would return all fifteen. Inspecting features[0]
+        // alone passed whenever the expected row merely happened to sort first.
+        FeatureIds(features).Should().Equal(5L);
         var attrs = ODataTestHelpers.ParseAttributes(features[0]);
         attrs.GetProperty("name").GetString().Should().Be("San Jose");
     }
@@ -348,7 +395,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().ContainSingle();
+        FeatureIds(features).Should().Equal(3L);
         var attrs = ODataTestHelpers.ParseAttributes(features[0]);
         attrs.GetProperty("name").GetString().Should().Be("Sacramento");
     }
@@ -365,7 +412,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().ContainSingle();
+        FeatureIds(features).Should().Equal(3L);
         var attrs = ODataTestHelpers.ParseAttributes(features[0]);
         attrs.GetProperty("name").GetString().Should().Be("Sacramento");
     }
@@ -386,6 +433,11 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
+
+        // 'Salt Lake City' (14) and 'Virtual City' (12) are the only names containing
+        // 'City'; both are longer than 10 characters, so the conjunction keeps both. With
+        // no id set this test also passed on an empty result.
+        FeatureIds(features).Should().Equal(8L, 13L);
         foreach (var name in features.Select(f => ODataTestHelpers.ParseAttributes(f).GetProperty("name").GetString()!))
         {
             name.Should().Contain("City");
@@ -405,7 +457,10 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var features = await ParseFeaturesAsync(response);
-        features.Should().NotBeEmpty();
+
+        // Los Angeles (1213.9) and Phoenix (1341.0) are the only two seeded areas above
+        // 1000 km²; the next largest is San Diego at 964.5.
+        FeatureIds(features).Should().Equal(2L, 10L);
         foreach (var area in features.Select(f => ODataTestHelpers.ParseAttributes(f).GetProperty("area_sq_km").GetDouble()))
         {
             Math.Floor(area).Should().BeGreaterThan(1000);
@@ -415,6 +470,25 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
     #endregion
 
     #region Helpers
+
+    /// <summary>
+    /// Object ids of the returned rows, ascending. The seed is a fixed 15-city table, so
+    /// every filter in this file has an id set that can be worked out by reading
+    /// <c>tests/seed/odata.yaml</c> — which is what makes these oracles reject a filter
+    /// that returns too few rows as well as one that returns too many.
+    /// </summary>
+    private static long[] FeatureIds(IEnumerable<JsonElement> features)
+        => features.Select(ReadObjectId).OrderBy(id => id).ToArray();
+
+    private static long ReadObjectId(JsonElement feature)
+    {
+        if (feature.TryGetProperty("ObjectId", out var objectId) && objectId.ValueKind == JsonValueKind.Number)
+        {
+            return objectId.GetInt64();
+        }
+
+        return ODataTestHelpers.ParseAttributes(feature).GetProperty("objectid").GetInt64();
+    }
 
     private static async Task<List<JsonElement>> ParseFeaturesAsync(HttpResponseMessage response)
     {

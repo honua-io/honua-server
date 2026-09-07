@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -67,11 +68,12 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
 
-        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        features.Length.Should().BeLessThanOrEqualTo(2);
-
-        var numberReturned = json.RootElement.GetProperty("numberReturned").GetInt32();
-        numberReturned.Should().BeLessThanOrEqualTo(2);
+        // limit sets FeatureQuery.Limit, which makes FeatureQueryBuilder append the
+        // stable `ORDER BY objectid ASC` page order (RequiresStablePageOrder), so the
+        // first page of the seeded layer is exactly objectids 1 and 2 — not "at most
+        // two rows", which a limit that was parsed and then dropped also satisfies.
+        FeatureIdsInResponseOrder(json).Should().Equal(1L, 2L);
+        json.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(2);
     }
 
     [IntegrationTest]
@@ -127,7 +129,7 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
     public async Task GetItems_WithOffset_ReturnsOffsetFeatures()
     {
         // Act
-        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestLayerId}/items?offset=1");
+        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestLayerId}/items?offset=1&limit=2");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -135,9 +137,13 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
 
-        // Should be valid GeoJSON FeatureCollection
         json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
-        json.RootElement.TryGetProperty("features", out _).Should().BeTrue();
+
+        // Offset 1 over the stable objectid page order skips seeded feature 1 and starts
+        // at 2. Asserting the shape only (the previous assertion) passes when the offset
+        // is parsed and then never applied.
+        FeatureIdsInResponseOrder(json).Should().Equal(2L, 3L);
+        json.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(2);
     }
 
     [IntegrationTest]
@@ -172,21 +178,14 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
 
         json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
 
-        // Features should be filtered (may be empty if no matches)
-        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        // The seed gives layer 0 five rows with distinct names (tests/seed/server.yaml);
+        // only objectid 1 is named 'Test Feature'. Asserting the exact id set fails both
+        // when the filter is ignored (1..5 returned) and when it over-restricts (nothing
+        // returned) — the previous foreach-over-the-result assertion passed on zero rows.
+        FeatureIds(json).Should().Equal(1L);
 
-        // If features exist, they should match the filter criteria.
-        foreach (var nameProperty in features
-                     .Select(feature =>
-                         feature.TryGetProperty("properties", out var properties) &&
-                         properties.TryGetProperty("name", out var name)
-                             ? (JsonElement?)name
-                             : null)
-                     .Where(name => name.HasValue)
-                     .Select(name => name.GetValueOrDefault()))
-        {
-            nameProperty.GetString().Should().Be("Test Feature");
-        }
+        var only = json.RootElement.GetProperty("features").EnumerateArray().Single();
+        only.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
     }
 
     [IntegrationTest]
@@ -247,8 +246,11 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithComplexCqlFilter_ReturnsFilteredFeatures()
     {
-        // Act - Use a more complex CQL2-Text filter
-        var filter = "name = 'Test Feature' AND category = 'test'";
+        // Act - Use a more complex CQL2-Text filter. Both conjuncts have to do work for
+        // the expected set to come back: category excludes the 'sample' rows 2 and 4, and
+        // the name inequality excludes row 1. Seed: 1 test/'Test Feature', 2 sample,
+        // 3 test/'Third Feature', 4 sample, 5 test/'Fifth Feature'.
+        var filter = "category = 'test' AND name <> 'Test Feature'";
         var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestLayerId}/items?filter={Uri.EscapeDataString(filter)}");
 
         // Assert
@@ -258,7 +260,17 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         var json = JsonDocument.Parse(content);
 
         json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
-        json.RootElement.TryGetProperty("features", out _).Should().BeTrue();
+
+        // Shape-only assertions (the previous `TryGetProperty("features")`) pass on a
+        // filter that returns everything and on one that returns nothing.
+        FeatureIds(json).Should().Equal(3L, 5L);
+        foreach (var properties in json.RootElement.GetProperty("features")
+                     .EnumerateArray()
+                     .Select(feature => feature.GetProperty("properties")))
+        {
+            properties.GetProperty("category").GetString().Should().Be("test");
+            properties.GetProperty("name").GetString().Should().NotBe("Test Feature");
+        }
     }
 
     [IntegrationTest]
@@ -274,10 +286,14 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);
 
-        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        features.Should().NotBeEmpty();
+        // Seeded categories: test = {1, 3, 5}, sample = {2, 4}. The per-row re-check below
+        // proves the absence of false positives; the id set proves the absence of false
+        // negatives, which an over-restrictive filter returning only feature 1 would hide.
+        FeatureIds(json).Should().Equal(1L, 3L, 5L);
 
-        foreach (var properties in features.Select(feature => feature.GetProperty("properties")))
+        foreach (var properties in json.RootElement.GetProperty("features")
+                     .EnumerateArray()
+                     .Select(feature => feature.GetProperty("properties")))
         {
             properties.GetProperty("category").GetString().Should().Be("test");
         }
@@ -309,24 +325,36 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithAllParameters_ReturnsProperlyFilteredAndPaginated()
     {
-        // Act - Combine filter, limit, and offset
+        // Act/Assert - Combine filter, limit and offset. category = 'test' matches seeded
+        // objectids 1, 3 and 5, so walking the three single-row pages must yield exactly
+        // that sequence in the stable objectid page order. The previous
+        // `BeLessThanOrEqualTo(1)` assertions passed on zero rows and never checked that
+        // the filter component was applied at all.
         var filter = "category = 'test'";
-        var response = await _fixture.Client.GetAsync(
-            $"/ogc/features/collections/{TestLayerId}/items?filter={Uri.EscapeDataString(filter)}&limit=1&offset=0");
+        var expectedPages = new[] { 1L, 3L, 5L };
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        for (var offset = 0; offset < expectedPages.Length; offset++)
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"/ogc/features/collections/{TestLayerId}/items?filter={Uri.EscapeDataString(filter)}&limit=1&offset={offset}");
 
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        features.Length.Should().BeLessThanOrEqualTo(1);
+            json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+            json.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(1);
+            json.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(expectedPages.Length);
+            FeatureIdsInResponseOrder(json).Should().Equal(expectedPages[offset]);
+        }
 
-        var numberReturned = json.RootElement.GetProperty("numberReturned").GetInt32();
-        numberReturned.Should().BeLessThanOrEqualTo(1);
+        // One page past the last match is empty, so the pager cannot be reporting a
+        // truncated-but-unfiltered set.
+        var pastEnd = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestLayerId}/items?filter={Uri.EscapeDataString(filter)}&limit=1&offset={expectedPages.Length}");
+        pastEnd.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonDocument.Parse(await pastEnd.Content.ReadAsStringAsync())
+            .RootElement.GetProperty("features").EnumerateArray().Should().BeEmpty();
     }
 
     [IntegrationTest]
@@ -453,5 +481,28 @@ public class OgcFeaturesItemsTests : IClassFixture<OgcFeaturesItemsTestsFixture>
             $"/ogc/features/collections/{TestLayerId}/items?sortby=name,,name");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    // Feature ids in the order the server returned them. Only pages that carry
+    // limit/offset or a spatial filter are ordered (FeatureQueryBuilder appends
+    // `ORDER BY objectid ASC` for those, see RequiresStablePageOrder), so this is used
+    // only for paged assertions; unordered result sets use FeatureIds.
+    private static long[] FeatureIdsInResponseOrder(JsonDocument json)
+        => json.RootElement.GetProperty("features")
+            .EnumerateArray()
+            .Select(ReadFeatureId)
+            .ToArray();
+
+    // Feature ids sorted ascending, for result sets the server is free to return in any
+    // order. Comparing a sorted id set is the assertion an ignored filter cannot satisfy.
+    private static long[] FeatureIds(JsonDocument json)
+        => FeatureIdsInResponseOrder(json).OrderBy(id => id).ToArray();
+
+    private static long ReadFeatureId(JsonElement feature)
+    {
+        var id = feature.GetProperty("id");
+        return id.ValueKind == JsonValueKind.String
+            ? long.Parse(id.GetString()!, CultureInfo.InvariantCulture)
+            : id.GetInt64();
     }
 }

@@ -313,13 +313,84 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithProjectedBboxCrs_AllowsProjectedRange()
     {
-        var bbox = "-20000000,-20000000,20000000,20000000";
-        var bboxCrs = "http://www.opengis.net/def/crs/EPSG/0/3857";
+        const string bboxCrs = "http://www.opengis.net/def/crs/EPSG/0/3857";
+
+        // Two points in the layer's own EPSG:3857, 400 km apart on the x axis and far from
+        // every other feature this class creates (which sit at x = 1000 and at the
+        // reprojected San Francisco point x = -13,627,665), so the narrow envelope below
+        // is disjoint from them regardless of the order the tests in this shared-fixture
+        // class run in.
+        var insideId = await CreateProjectedPointAsync(3_000_000, 2_000_000, "Projected BBox Inside");
+        var outsideId = await CreateProjectedPointAsync(3_400_000, 2_000_000, "Projected BBox Outside");
+
+        // A projected range well outside the ±180/±90 geographic domain is accepted rather
+        // than rejected as out of range (the original assertion of this test).
+        var worldResponse = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items" +
+            $"?bbox={Uri.EscapeDataString("-20000000,-20000000,20000000,20000000")}&bbox-crs={Uri.EscapeDataString(bboxCrs)}");
+        worldResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // ...and it is applied, not merely parsed: a 200 km × 200 km envelope centred on
+        // the first point keeps it and drops the second. Status-only assertions pass for a
+        // bbox-crs that is read and then discarded.
+        var bbox = "2900000,1900000,3100000,2100000";
         var response = await _fixture.Client.GetAsync(
             $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items" +
             $"?bbox={Uri.EscapeDataString(bbox)}&bbox-crs={Uri.EscapeDataString(bboxCrs)}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var collection = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            OgcJsonContext.Default.FeatureCollection);
+        collection.Should().NotBeNull();
+
+        var returnedIds = collection!.Features.Select(feature => NormalizeFeatureId(feature.Id)).ToArray();
+        returnedIds.Should().Equal(insideId);
+        returnedIds.Should().NotContain(outsideId);
+    }
+
+    /// <summary>
+    /// Creates a point on the EPSG:3857 point layer from literal projected ordinates and
+    /// returns its feature id. <c>Content-Crs</c> names the layer CRS, so the ordinates are
+    /// stored verbatim and the bbox oracle can be computed by hand.
+    /// </summary>
+    private async Task<long?> CreateProjectedPointAsync(double x, double y, string name)
+    {
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = string.Create(CultureInfo.InvariantCulture, $"[{x}, {y}]")
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = name
+            }
+        };
+
+        var json = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items")
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/geo+json")
+        };
+        request.Headers.TryAddWithoutValidation("Content-Crs", "<http://www.opengis.net/def/crs/EPSG/0/3857>");
+
+        var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var created = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(),
+            OgcJsonContext.Default.GeoJsonFeature);
+        created.Should().NotBeNull();
+
+        var id = NormalizeFeatureId(created!.Id);
+        id.Should().NotBeNull();
+        return id;
     }
 
     [IntegrationTest]
