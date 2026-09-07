@@ -124,7 +124,7 @@ internal static class HonuaConsumerArtifacts
                 ?? throw new InvalidOperationException(
                     "Honua's GeoTIFF tile encoder refused the decoded tile layout; the lane has no transcoded artifact to validate.");
 
-            var artifactPath = Path.Combine(outputDirectory, "honua.cog.tif");
+            var artifactPath = Path.Join(outputDirectory, "honua.cog.tif");
             await File.WriteAllBytesAsync(artifactPath, tiff).ConfigureAwait(false);
             Console.WriteLine(
                 $"Honua COG transcode: {artifactPath} ({tiff.Length} bytes, {metadata.TileWidth}x{metadata.TileHeight} EPSG:{metadata.Srid}) "

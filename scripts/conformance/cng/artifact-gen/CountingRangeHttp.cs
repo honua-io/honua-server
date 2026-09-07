@@ -157,9 +157,13 @@ internal sealed class LocalRangeHttpOrigin : IAsyncDisposable
                     await RespondAsync(stream, request.Value.Method, request.Value.Target, request.Value.Range)
                         .ConfigureAwait(false);
                 }
-                catch (IOException)
+                catch (IOException exception)
                 {
-                    // A client that hangs up mid-response is not a lane failure.
+                    // A client that hangs up mid-response is not a lane failure, but it
+                    // is worth seeing in the log next to the transfer counters it skews.
+                    await Console.Error.WriteLineAsync(
+                        $"cng-origin: connection dropped mid-response: {exception.Message}")
+                        .ConfigureAwait(false);
                 }
             }
         }
@@ -212,8 +216,14 @@ internal sealed class LocalRangeHttpOrigin : IAsyncDisposable
     private async Task RespondAsync(NetworkStream stream, string method, string target, string? range)
     {
         var relative = Uri.UnescapeDataString(target.Split('?')[0]).TrimStart('/');
-        var path = Path.GetFullPath(Path.Combine(_root.FullName, relative.Replace('/', Path.DirectorySeparatorChar)));
-        if (!path.StartsWith(_root.FullName, StringComparison.Ordinal) || !File.Exists(path))
+        // `Path.Join`, not `Path.Combine`: Combine silently discards the root when the
+        // second argument is itself rooted, which would let a request target outside
+        // the served directory. Rooted targets are rejected outright, and the resolved
+        // path is still required to stay under the root.
+        var path = Path.GetFullPath(Path.Join(_root.FullName, relative.Replace('/', Path.DirectorySeparatorChar)));
+        if (Path.IsPathRooted(relative)
+            || !path.StartsWith(_root.FullName + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || !File.Exists(path))
         {
             await WriteAsync(stream, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                 .ConfigureAwait(false);
@@ -292,6 +302,7 @@ internal sealed class LocalRangeHttpOrigin : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
+            // Expected: shutdown cancels the accept loop's pending AcceptTcpClientAsync.
         }
 
         _shutdown.Dispose();
