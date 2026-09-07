@@ -37,6 +37,7 @@ internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
             SELECT {Columns}
             FROM {_table}
             WHERE completed_at IS NULL
+              AND (claimed_until IS NULL OR claimed_until < now())
             ORDER BY outbox_id
             LIMIT @limit
             """;
@@ -67,6 +68,29 @@ internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
             ? AlertAuditOutboxMapper.Read(reader)
             : null;
+    }
+
+    public async Task<bool> TryClaimAsync(
+        long outboxId,
+        DateTimeOffset claimedUntil,
+        CancellationToken cancellationToken = default)
+    {
+        // A single conditional UPDATE is the fence: exactly one caller can move an
+        // unclaimed (or lease-expired) pending intent into a claimed state.
+        var sql = $"""
+            UPDATE {_table}
+            SET claimed_until = @claimed_until
+            WHERE outbox_id = @outbox_id
+              AND completed_at IS NULL
+              AND (claimed_until IS NULL OR claimed_until < now())
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("outbox_id", NpgsqlDbType.Bigint, outboxId);
+        command.Parameters.AddWithValue("claimed_until", NpgsqlDbType.TimestampTz, claimedUntil);
+
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
     }
 
     public async Task<bool> CompleteAsync(
@@ -102,7 +126,7 @@ internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
     {
         var sql = $"""
             UPDATE {_table}
-            SET attempts = attempts + 1, last_error = @last_error
+            SET attempts = attempts + 1, last_error = @last_error, claimed_until = NULL
             WHERE outbox_id = @outbox_id AND completed_at IS NULL
             """;
 

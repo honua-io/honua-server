@@ -20,7 +20,8 @@ public interface IAlertAuditOutbox
 {
     /// <summary>
     /// Returns pending intents oldest-first: those whose lifecycle mutation is
-    /// committed but whose domain audit record has not been written yet.
+    /// committed, whose domain audit record has not been written yet, and whose
+    /// completion lease (if any) has expired.
     /// </summary>
     /// <param name="limit">Maximum number of intents to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -34,6 +35,26 @@ public interface IAlertAuditOutbox
     /// <param name="outboxId">Intent identity.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<AlertAuditOutboxEntry?> GetAsync(long outboxId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Takes a bounded completion lease on a pending intent.
+    /// </summary>
+    /// <remarks>
+    /// A completer must hold the lease before it writes the intent's audit record,
+    /// so the request path and the reconciler - or two reconcilers - cannot both
+    /// write one. The lease expires so a claimant that dies does not strand the
+    /// intent; the residual duplicate window is a process death between the audit
+    /// write and <see cref="CompleteAsync"/>, which leaves two truthful records
+    /// rather than a missing one.
+    /// </remarks>
+    /// <param name="outboxId">Intent identity.</param>
+    /// <param name="claimedUntil">When the lease expires.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True when this caller now owns the intent's completion.</returns>
+    Task<bool> TryClaimAsync(
+        long outboxId,
+        DateTimeOffset claimedUntil,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Marks an intent completed against the durable audit identity that was

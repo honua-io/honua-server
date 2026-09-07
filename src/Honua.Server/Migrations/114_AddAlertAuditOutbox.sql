@@ -23,7 +23,12 @@ CREATE TABLE IF NOT EXISTS honua.alert_audit_outbox (
     audit_id         TEXT        NULL,
     completed_at     TIMESTAMPTZ NULL,
     attempts         INTEGER     NOT NULL DEFAULT 0,
-    last_error       TEXT        NULL
+    last_error       TEXT        NULL,
+    -- Completion lease. A completer claims an intent before writing its audit
+    -- record so the request path and the reconciler - or two reconcilers - cannot
+    -- both write one. The lease expires so a claimant that dies does not strand
+    -- the intent.
+    claimed_until    TIMESTAMPTZ NULL
 );
 
 COMMENT ON TABLE honua.alert_audit_outbox IS

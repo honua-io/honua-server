@@ -22,6 +22,12 @@ namespace Honua.Server.Features.Alerts;
 /// </remarks>
 internal sealed partial class AlertAuditOutboxCompleter
 {
+    /// <summary>
+    /// How long a completer owns an intent. Long enough for a slow audit sink,
+    /// short enough that a dead claimant is retried promptly.
+    /// </summary>
+    internal static readonly TimeSpan ClaimLease = TimeSpan.FromMinutes(2);
+
     private readonly IAuditLog _auditLog;
     private readonly IAlertAuditOutbox _outbox;
     private readonly TimeProvider _timeProvider;
@@ -61,6 +67,15 @@ internal sealed partial class AlertAuditOutboxCompleter
         if (intent.IsCompleted)
         {
             return true;
+        }
+
+        // Claim before writing: the request path and the reconciler both complete
+        // intents, and only the lease holder may write the domain audit record.
+        var now = _timeProvider.GetUtcNow();
+        if (!await _outbox.TryClaimAsync(intent.OutboxId, now + ClaimLease, cancellationToken).ConfigureAwait(false))
+        {
+            Log.AlreadyClaimed(_logger, intent.OutboxId, intent.Action);
+            return false;
         }
 
         var auditEvent = new AuditEvent
@@ -119,6 +134,10 @@ internal sealed partial class AlertAuditOutboxCompleter
         [LoggerMessage(9420, LogLevel.Error,
             "Alert domain audit intent {OutboxId} ({Action}) could not be recorded; it stays pending for reconciliation")]
         public static partial void AuditWriteFailed(ILogger logger, long outboxId, string action, Exception exception);
+
+        [LoggerMessage(9425, LogLevel.Debug,
+            "Alert domain audit intent {OutboxId} ({Action}) is already claimed by another completer")]
+        public static partial void AlreadyClaimed(ILogger logger, long outboxId, string action);
 
         [LoggerMessage(9421, LogLevel.Warning,
             "Alert domain audit intent {OutboxId} ({Action}) was not durably persisted; it stays pending for reconciliation")]
