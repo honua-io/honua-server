@@ -228,8 +228,11 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         // that the row was written. Re-read it.
         var persisted = await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, original.Id);
         Assert.NotNull(persisted);
+        if (persisted is not { } persistedRow)
+        {
+            throw new InvalidOperationException("GetAsync should have returned the updated attachment.");
+        }
 
-        var persistedRow = persisted.Value;
         Assert.Equal(updated.Filename, persistedRow.Filename);
         Assert.Equal(updated.ContentType, persistedRow.ContentType);
         Assert.Equal(updated.Keywords, persistedRow.Keywords);
