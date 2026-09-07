@@ -168,6 +168,7 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
             {
               "sourceUrl": "https://s3.amazonaws.com/bucket/zones.zip",
               "tableName": "{{tableName}}",
+              "sourceSrid": 3750,
               "overwriteExisting": true
             }
             """));
@@ -180,6 +181,13 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
         // success — and UploadUrl_MultiLayerFileGdbFromS3_FailsWithoutMergingLayers in this same
         // file proves a FAILED import also returns a payload containing the table name, so a
         // broken shapefile import passed this test unchanged.
+        //
+        // The request carries an explicit sourceSrid because the fixture's ESRI .prj declares
+        // NAD_1983_HARN_UTM_Zone_4N (EPSG:3750). CRS detection deliberately fails closed on
+        // datum-realization UTM names (#2743): their zone arithmetic differs from plain NAD83,
+        // and the ESRI WKT does not match spatial_ref_sys srtext verbatim, so the importer asks
+        // for the source SRID rather than guessing. The file-upload shapefile tests supply one
+        // for the same reason (ShapefileImportTestHelpers.CreateImportContent).
         using var document = JsonDocument.Parse(content);
         document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(content);
         document.RootElement.GetProperty("featureCount").GetInt64().Should().BeGreaterThan(0, content);
