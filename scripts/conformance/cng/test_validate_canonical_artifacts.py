@@ -403,8 +403,24 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         # Zarr subset reader can decode. Without either, the COG and Zarr cells
         # would silently fall back to validating third-party output.
         self.assertIn('crs="EPSG:3857"', fixture_source)
-        self.assertIn("WEB_MERCATOR_BLOCK = 256", fixture_source)
         self.assertIn("numcodecs.Zlib", fixture_source)
+        # The COG oracle recomputes the expected tile from these constants rather than
+        # importing them, so that a snapshot cannot stand in for a proof. That makes
+        # drift between the two a real risk: pin it here, in the cheap self-test job,
+        # instead of discovering it in the weekly lane.
+        self.assertIn("WEB_MERCATOR_SIZE = 512", fixture_source)
+        self.assertIn("WEB_MERCATOR_BLOCK = 256", fixture_source)
+        self.assertIn("NODATA_ROW, NODATA_COL = 3, 7", fixture_source)
+        self.assertIn("np.arange(WEB_MERCATOR_SIZE * WEB_MERCATOR_SIZE", fixture_source)
+        self.assertIn("pixels[NODATA_ROW, NODATA_COL] = NODATA", fixture_source)
+        expected_cog = MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"]
+        self.assertEqual([256, 256], expected_cog["dimensions"])
+        self.assertEqual(-9999.0, expected_cog["nodata"])
+        self.assertEqual(-9999.0, expected_cog["samples"]["3,7"])
+        # value(row, col) = row * 512 + col over the north-west quadrant.
+        for row, col in ((0, 0), (0, 255), (255, 0), (255, 255)):
+            self.assertEqual(
+                float(row * 512 + col), expected_cog["samples"][f"{row},{col}"])
         self.assertIn("HonuaConsumerArtifacts.GenerateAsync", artifact_source)
         self.assertIn("for (var z = 0; z <= 2; z++)", artifact_source)
         self.assertIn('tileContentUris: ["content/0.glb"]', artifact_source)
