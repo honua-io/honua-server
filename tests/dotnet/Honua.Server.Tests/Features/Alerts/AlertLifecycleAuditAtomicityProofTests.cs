@@ -133,6 +133,12 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         await _fixture.RestartHostAsync();
         _client = _fixture.CreateAdminClient();
         AssertReconcilerRunsOnStartup();
+
+        // The inline attempt that the fault rejected scheduled the intent's first retry
+        // 30 seconds out, so age the schedule rather than sleeping through it. This is
+        // the backoff elapsing, not the contract being relaxed: the intent is still
+        // pending, still uncompleted, and still has to be drained by the reconciler.
+        await ElapseOutboxBackoffAsync();
         await ReconcileAsync();
 
         var audits = await ReadAlertAuditRowsAsync(auditAction);
@@ -224,6 +230,23 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
             ? new { note = "proof", suppressUntil = DateTimeOffset.UtcNow.AddHours(1) }
             : (object)new { note = "proof" });
         return await _client.SendAsync(request);
+    }
+
+    /// <summary>
+    /// Brings a pending intent's retry schedule forward to now, so a proof does not have
+    /// to sleep out the completer's exponential backoff. Only the schedule moves — the
+    /// intent stays pending and uncompleted.
+    /// </summary>
+    private async Task ElapseOutboxBackoffAsync()
+    {
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand($"""
+            UPDATE "{_schema}".alert_audit_outbox
+            SET next_attempt_at = now()
+            WHERE event_id = @event_id AND completed_at IS NULL
+            """, connection);
+        command.Parameters.AddWithValue("event_id", _eventId);
+        await command.ExecuteNonQueryAsync();
     }
 
     /// <summary>
