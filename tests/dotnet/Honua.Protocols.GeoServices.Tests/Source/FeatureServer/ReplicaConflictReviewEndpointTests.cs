@@ -85,6 +85,22 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
     /// resolution now commits the resolved feature state through the shared edit pipeline (#2430) and
     /// therefore needs a row to write.
     /// </summary>
+    /// <summary>
+    /// Reads a conflict that the test has already seeded and asserts it is present, returning the
+    /// non-nullable record. The repository contract returns <c>ReplicaConflictRecord?</c>, so
+    /// reading through <c>.Value</c> at every call site both dereferences a nullable and turns a
+    /// missing row into an opaque <see cref="InvalidOperationException"/>; this fails on the
+    /// missing row instead, and hands back a value the rest of the assertion can use directly.
+    /// </summary>
+    private static async Task<ReplicaConflictRecord> GetRequiredConflictAsync(
+        IReplicaConflictRepository repository,
+        string conflictId)
+    {
+        var record = await repository.GetAsync(conflictId);
+        record.Should().NotBeNull($"conflict '{conflictId}' was seeded and must still be readable");
+        return record!.Value;
+    }
+
     private async Task<SeededConflict> SeedConflictAsync(
         string replicaId,
         ReplicaConflictType conflictType = ReplicaConflictType.Attribute,
@@ -882,7 +898,11 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
     /// through the real Postgres provider under genuine <c>Task.WhenAll</c> contention.
     /// </remarks>
     [IntegrationTest]
-    [Operation(Operations.ResolveReplicaConflict)]
+    // Repository-direct: this drives IReplicaConflictRepository's CAS against real Postgres
+    // rather than an HTTP route, so it carries the endpoint-exempt test-infrastructure
+    // operation instead of ResolveReplicaConflict (which requires an [Endpoint]). The resolve
+    // endpoint itself is proven by the [Endpoint]-annotated Resolve* tests above.
+    [Operation(Operations.TestInfrastructure)]
     public async Task TryTakeOverClaimAsync_ConcurrentRecoveriesOfOneExpiredClaim_ExactlyOneWins()
     {
         var replicaId = await CreateReplicaAsync("ClaimCasReplica");
@@ -891,9 +911,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
 
         // Stamp an abandoned claim: a resolver took the conflict and never finished.
         var abandonedAt = DateTimeOffset.UtcNow.AddMinutes(-30);
-        var claimed = await repository.GetAsync(seeded.ConflictId);
-        claimed.Should().NotBeNull();
-        await repository.UpsertAsync(claimed!.Value with
+        var claimed = await GetRequiredConflictAsync(repository, seeded.ConflictId);
+        await repository.UpsertAsync(claimed with
         {
             Status = ReplicaConflictStatus.Pending,
             ResolutionAction = ReplicaConflictResolutionAction.AcceptClient,
@@ -909,9 +928,9 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         // Round-trip the timestamp through the database before using it as the CAS
         // precondition: comparing against the in-memory value would silently pass a provider
         // that stores a lower-precision timestamp than it compares.
-        var persisted = await repository.GetAsync(seeded.ConflictId);
-        persisted!.Value.ResolvedAt.Should().NotBeNull();
-        var expectedResolvedAt = persisted.Value.ResolvedAt!.Value;
+        var persisted = await GetRequiredConflictAsync(repository, seeded.ConflictId);
+        persisted.ResolvedAt.Should().NotBeNull();
+        var expectedResolvedAt = persisted.ResolvedAt!.Value;
 
         // Eight recoveries all judge the same abandoned claim expired at the same instant. The
         // CAS is bound to the claim being replaced — same holder, same action, same timestamp —
@@ -940,8 +959,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
 
         // The claim's timestamp has moved off the expected value — which is what fences the
         // previous holder and makes every later takeover with the old precondition fail.
-        var afterTakeover = await repository.GetAsync(seeded.ConflictId);
-        afterTakeover!.Value.ResolvedAt.Should().NotBe(expectedResolvedAt);
+        var afterTakeover = await GetRequiredConflictAsync(repository, seeded.ConflictId);
+        afterTakeover.ResolvedAt.Should().NotBe(expectedResolvedAt);
 
         // A late recovery still holding the stale precondition must lose, not clobber the winner.
         var lateLoser = await repository.TryTakeOverClaimAsync(
@@ -952,8 +971,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             DateTimeOffset.UtcNow.AddMinutes(1),
             CancellationToken.None);
         lateLoser.Should().BeFalse();
-        (await repository.GetAsync(seeded.ConflictId))!.Value.ResolvedAt
-            .Should().Be(afterTakeover.Value.ResolvedAt, "a stale precondition must not move the claim again");
+        (await GetRequiredConflictAsync(repository, seeded.ConflictId)).ResolvedAt
+            .Should().Be(afterTakeover.ResolvedAt, "a stale precondition must not move the claim again");
     }
 
     /// <summary>
@@ -962,7 +981,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
     /// than clearing an ownership that is now live (honua-server#4405).
     /// </summary>
     [IntegrationTest]
-    [Operation(Operations.ResolveReplicaConflict)]
+    // Repository-direct, as above: endpoint-exempt test-infrastructure operation.
+    [Operation(Operations.TestInfrastructure)]
     public async Task TryReleaseClaimAsync_AfterTheClaimWasReplaced_DoesNotClearTheReplacement()
     {
         var replicaId = await CreateReplicaAsync("ClaimReleaseCasReplica");
@@ -970,8 +990,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         var repository = _fixture.GetService<IReplicaConflictRepository>();
 
         var firstClaimAt = DateTimeOffset.UtcNow.AddMinutes(-20);
-        var record = await repository.GetAsync(seeded.ConflictId);
-        await repository.UpsertAsync(record!.Value with
+        var record = await GetRequiredConflictAsync(repository, seeded.ConflictId);
+        await repository.UpsertAsync(record with
         {
             Status = ReplicaConflictStatus.Pending,
             ResolutionAction = ReplicaConflictResolutionAction.KeepServer,
@@ -983,7 +1003,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             // like the state recovery is meant to act on.
             FinalizationPending = true,
         });
-        var firstClaim = (await repository.GetAsync(seeded.ConflictId))!.Value.ResolvedAt!.Value;
+        var firstClaim = (await GetRequiredConflictAsync(repository, seeded.ConflictId)).ResolvedAt!.Value;
 
         // Recovery refreshes the abandoned claim's lease, moving its timestamp forward.
         var replacementAt = DateTimeOffset.UtcNow;
@@ -995,8 +1015,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             replacementAt,
             CancellationToken.None)).Should().BeTrue();
 
-        var after = await repository.GetAsync(seeded.ConflictId);
-        after!.Value.ResolvedAt.Should().NotBe(firstClaim, "the takeover must have moved the lease");
+        var after = await GetRequiredConflictAsync(repository, seeded.ConflictId);
+        after.ResolvedAt.Should().NotBe(firstClaim, "the takeover must have moved the lease");
 
         // The original attempt, unaware it was recovered, now tries to release the claim it
         // thinks it holds — with the OLD timestamp.
@@ -1009,15 +1029,15 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
 
         staleRelease.Should().BeFalse(
             "releasing on a stale claim would leave the recovered attempt writing with no ownership");
-        (await repository.GetAsync(seeded.ConflictId))!.Value.ResolvedAt
-            .Should().Be(after.Value.ResolvedAt, "a stale release must not clear the live claim");
+        (await GetRequiredConflictAsync(repository, seeded.ConflictId)).ResolvedAt
+            .Should().Be(after.ResolvedAt, "a stale release must not clear the live claim");
 
         // The current lease holder can release its own claim.
         (await repository.TryReleaseClaimAsync(
             seeded.ConflictId,
             "first-resolver",
             ReplicaConflictResolutionAction.KeepServer,
-            after.Value.ResolvedAt!.Value,
+            after.ResolvedAt!.Value,
             CancellationToken.None)).Should().BeTrue();
     }
 }
