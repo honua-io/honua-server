@@ -1,7 +1,9 @@
 """Executable tests for the GP qualification receipt boundary."""
 
 import json
+import math
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -14,6 +16,62 @@ STREAK = ROOT / "scripts/qualification/gp-canary-streak.sh"
 
 
 class GpQualificationHarnessTests(unittest.TestCase):
+    def test_result_semantics_follow_submitted_process_across_subshells(self):
+        source = HARNESS.read_text(encoding="utf-8")
+        functions = "\n".join(
+            re.search(rf"^{name}\(\) \{{\n.*?^\}}", source, re.M | re.S).group(0)
+            for name in (
+                "record_job_process", "job_process_of", "submit_async",
+                "verify_buffer_semantics", "result_digest",
+            )
+        )
+        point = {"type": "Point", "coordinates": [-122.4194, 37.7749]}
+        ring = [
+            [-122.4194 + math.cos(i * math.pi / 4), 37.7749 + math.sin(i * math.pi / 4)]
+            for i in range(8)
+        ]
+        ring.append(ring[0])
+        polygon = {"type": "Polygon", "coordinates": [ring]}
+        cases = [
+            ("gdal.ogr2ogr", scenario, point, 0, "not-applicable-gdal.ogr2ogr")
+            for scenario in ("duplicate-delivery", "retry", "stale-lease", "restart-worker-results-read")
+        ] + [
+            ("geometry.buffer", "async", polygon, 0, "verified"),
+            ("geometry.buffer", "native-looking-name", point, 1, "contains no Polygon"),
+        ]
+        for process, scenario, geometry, expected_code, semantics in cases:
+            with self.subTest(process=process, scenario=scenario), tempfile.TemporaryDirectory() as directory:
+                scratch = Path(directory)
+                (scratch / "result.json").write_text(json.dumps(geometry), encoding="utf-8")
+                script = functions + r'''
+set -uo pipefail
+job_process_root="$PWD"
+scenario_state_file="$PWD/state.json"
+payload='{}'
+base_url=http://unused
+auth_curl() {
+  if [[ "${*: -1}" == */execution ]]; then
+    printf '{"jobID":"job-1"}'
+  else
+    cat "$PWD/result.json"
+  fi
+}
+job="$(submit_async "$TEST_PROCESS" '{}')" || exit 2
+result_digest "$job"
+'''
+                completed = subprocess.run(
+                    ["bash", "-c", script], cwd=scratch,
+                    env={**os.environ, "TEST_PROCESS": process, "scenario_name": scenario,
+                         "HONUA_GP_VERIFY_BUFFER_SEMANTICS": "1"},
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(expected_code, completed.returncode, completed.stderr)
+                receipt = json.loads((scratch / "state.json").read_text(encoding="utf-8"))
+                self.assertEqual(process, receipt["process"])
+                self.assertIn(semantics, receipt["output_semantics"])
+                self.assertGreater(receipt["bytes"], 0)
+                self.assertEqual(64, len(receipt["sha256"]))
+
     def run_harness(self, lane, **overrides):
         with tempfile.TemporaryDirectory(prefix="gp-qualification-") as directory:
             environment = os.environ.copy()
