@@ -77,7 +77,11 @@ function_name="honua-certrun-lambda-${run_token}"
 log_group="/aws/lambda/${function_name}"
 source_repository="${HONUA_LAMBDA_SOURCE_IMAGE%%:*}"
 source_ref="${HONUA_LAMBDA_SOURCE_IMAGE}@${HONUA_LAMBDA_SOURCE_DIGEST}"
-target_tag="candidate-${HONUA_LAMBDA_SERVER_REVISION:0:12}-${HONUA_LAMBDA_SOURCE_DIGEST:7:12}"
+# The architecture is part of the tag because the supplied source digest may name a
+# multi-platform index: the same revision and pin certified for arm64 and for x86_64 mirror
+# different child manifests, and a shared tag would make each run read the other's artifact as a
+# stale mirror and delete it.
+target_tag="candidate-${HONUA_LAMBDA_SERVER_REVISION:0:12}-${HONUA_LAMBDA_SOURCE_DIGEST:7:12}-${HONUA_LAMBDA_ARCHITECTURE}"
 target_ref="${HONUA_LAMBDA_PREVIEW_REPOSITORY}:${target_tag}"
 repository_name="${HONUA_LAMBDA_PREVIEW_REPOSITORY#*/}"
 registry="${HONUA_LAMBDA_PREVIEW_REPOSITORY%%/*}"
@@ -260,12 +264,26 @@ if (( describe_status == 0 )); then
   fi
   existing_config=""
   existing_layers=""
-  if existing_manifest="$(ecr_manifest_for "imageDigest=$existing_digest" 2>/dev/null)"; then
-    existing_config="$(jq -r '.config.digest // empty' <<<"$existing_manifest" 2>/dev/null || true)"
-    existing_layers="$(jq -ce '[.layers[]?.digest]' <<<"$existing_manifest" 2>/dev/null || true)"
+  if [[ "$existing_digest" != "$source_platform_digest" ]]; then
+    # Fail closed: a manifest lookup that failed is not evidence that the tag holds a stale
+    # artifact, and must never be the reason a prior run's release artifact is deleted.
+    manifest_status=0
+    existing_manifest="$(ecr_manifest_for "imageDigest=$existing_digest" 2>"$scratch/batch-get-existing.log")" || manifest_status=$?
+    if (( manifest_status != 0 )); then
+      echo "ECR batch-get-image failed for the existing candidate tag" >&2
+      exit 3
+    fi
+    existing_config="$(jq -er '.config.digest' <<<"$existing_manifest")" || {
+      echo "ECR returned the existing candidate manifest without an exact config digest" >&2
+      exit 3
+    }
+    existing_layers="$(jq -ce '[.layers[].digest]' <<<"$existing_manifest")" || {
+      echo "ECR returned the existing candidate manifest without exact layer digests" >&2
+      exit 3
+    }
   fi
   if [[ "$existing_digest" == "$source_platform_digest" ]] ||
-     [[ -n "$existing_config" && "$existing_config" == "$source_config" && "$existing_layers" == "$source_layers" ]]; then
+     [[ "$existing_config" == "$source_config" && "$existing_layers" == "$source_layers" ]]; then
     # Already the exact source artifact. Pushing it again would only fail on the immutable tag; the
     # verification below still runs against what ECR actually holds, so nothing is taken on trust.
     mirror_outcome=skipped-existing

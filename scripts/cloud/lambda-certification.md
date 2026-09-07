@@ -67,6 +67,11 @@ The verification is therefore blob identity, never envelope identity:
   matching child fails the run (exit 3) rather than guessing.
 - A tag written by an earlier re-encoding mirror can never be accepted by a later run.
 
+The mirror tag is `candidate-<revision:12>-<source digest:12>-<architecture>`. The architecture is
+part of it because the pinned source digest may name a multi-platform index: certifying the same
+revision and pin for `arm64` and for `x86_64` mirrors two different child manifests, and a shared
+tag would make each run read the other's certified artifact as a stale mirror and delete it.
+
 The certification repository is **tag-immutable**, so a rerun for the same candidate cannot
 overwrite the tag a previous attempt wrote — the manifest `PUT` is rejected with `TAG_INVALID`.
 The lane therefore decides what to do with an existing tag before it pushes, and records the
@@ -84,8 +89,11 @@ The ECR copy is a mirror whose source of truth is the GHCR pin, so a tag holding
 a stale mirror artifact and is replaced rather than trusted; the delete is confined to the
 `honua-cert-cert-lambda-preview` repository and a `candidate-*` tag, and refuses anything outside
 that namespace (exit 95). A `DescribeImages` failure that is not `ImageNotFoundException` fails the
-run (exit 3) rather than being read as an absent tag, and a stale tag that could not be removed
-fails the run (exit 4) rather than being left for the verification to accept. Bootstrap must permit
+run (exit 3) rather than being read as an absent tag; a `BatchGetImage` failure, or a stored
+manifest without exact config and layer digests, likewise fails the run (exit 3) rather than
+reading as a blob mismatch, because a lookup that failed is not evidence that the tag holds a stale
+artifact and must never be the reason a prior run's artifact is deleted. A stale tag that could not
+be removed fails the run (exit 4) rather than being left for the verification to accept. Bootstrap must permit
 `ecr:DescribeImages` and `ecr:BatchDeleteImage` on that repository.
 
 ## Live proof

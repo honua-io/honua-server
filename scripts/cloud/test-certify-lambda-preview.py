@@ -117,7 +117,11 @@ if service == "ecr":
         s["ecr"] = None
         emit({"imageIds": [{"imageTag": arg("--image-ids").split("=", 1)[1]}], "failures": []})
     if op == "batch-get-image":
-        if not s["ecr"]: bad()
+        if not s["ecr"] or fail == "manifest-error":
+            if fail == "manifest-error":
+                print("An error occurred (AccessDeniedException) when calling the BatchGetImage "
+                      "operation: not authorized", file=sys.stderr)
+            bad()
         stored = {"config": {"digest": s["ecr"]["config"]},
                   "layers": [{"digest": d} for d in s["ecr"]["layers"]]}
         if fail == "mirror": stored["config"]["digest"] = "sha256:"+"f"*64
@@ -276,7 +280,7 @@ def as_ecr_schema2(manifest):
 
 
 # Derived by the lane from the pinned revision and source digest the offline run supplies.
-CANDIDATE_TAG = "candidate-" + "a" * 12 + "-" + "a" * 12
+CANDIDATE_TAG = "candidate-" + "a" * 12 + "-" + "a" * 12 + "-x86_64"
 
 
 class LambdaPreviewLaneContractTests(unittest.TestCase):
@@ -385,8 +389,9 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertEqual(exact["config"], receipt["artifact"]["sourceConfigDigest"])
 
     def test_immutable_tag_handling_fails_closed(self):
-        for failure, seeded in (("describe-error", None), ("stale-delete", {"digest": "sha256:" + "5" * 64,
-                                "config": "sha256:" + "f" * 64, "layers": ["sha256:" + "e" * 64], "rootfs": []})):
+        stale = {"digest": "sha256:" + "5" * 64, "config": "sha256:" + "f" * 64,
+                 "layers": ["sha256:" + "e" * 64], "rootfs": []}
+        for failure, seeded in (("describe-error", None), ("stale-delete", stale), ("manifest-error", stale)):
             with self.subTest(failure=failure):
                 result, receipt, state, _ = self.run_lane(failure, ecr=seeded)
                 self.assertNotEqual(0, result.returncode)
@@ -397,6 +402,26 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertIsNone(state["mirrored"])
                 self.assertFalse(any(call[:1] == ["crane"] for call in state["calls"]))
                 self.assertFalse(state["function"] or state["logs"] or state["row"])
+        # A manifest lookup that failed is not evidence of a stale artifact: nothing is deleted, and
+        # the seeded artifact the earlier certification handed off is still there.
+        _, _, state, _ = self.run_lane("manifest-error", ecr=stale)
+        self.assertEqual([], state["deleted_tags"])
+        self.assertEqual(stale, state["ecr"])
+
+    def test_candidate_tag_separates_the_two_supported_architectures(self):
+        """One multi-platform pin certified for both architectures must not share a mirror tag."""
+        tags = {}
+        for architecture in ("x86_64", "arm64"):
+            with self.subTest(architecture=architecture):
+                result, _, state, _ = self.run_lane(STUB_INDEX="index", HONUA_LAMBDA_ARCHITECTURE=architecture)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                addressed = {argument.split("=", 1)[1] for call in state["calls"] for argument in call
+                             if argument.startswith("imageTag=")}
+                copied = {call[3].rsplit(":", 1)[-1] for call in state["calls"] if call[:2] == ["crane", "copy"]}
+                self.assertEqual(1, len(addressed | copied), addressed | copied)
+                tags[architecture] = (addressed | copied).pop()
+                self.assertTrue(tags[architecture].endswith("-" + architecture), tags[architecture])
+        self.assertNotEqual(tags["x86_64"], tags["arm64"])
 
     def test_source_index_without_exactly_one_candidate_child_fails_closed(self):
         for mode in ("no-match", "ambiguous"):
