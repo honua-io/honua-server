@@ -10,6 +10,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Formats;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -79,6 +80,53 @@ public sealed class TileOperationJobServicePublishTests
         fields.EnumerateObject().Should().ContainSingle();
         fields.GetProperty(serviceScoped ? "requested_field" : "other_field").GetString()
             .Should().Be(serviceScoped ? "string" : "integer");
+
+        // honua-server#4421: the metadata assertions above describe what the archive CLAIMS to
+        // contain. Decode each declared tile so the payload is proven too — with the provider
+        // stubbed on four arbitrary bytes, as it was, this suite validated archives of junk.
+        AssertEveryArchivedTileDecodes(stub.LastUploadBytes!, header);
+    }
+
+    /// <summary>
+    /// Walks the archive's directories and decodes every declared tile slice as a PMTiles client
+    /// would address it. Decoding the tile-data section as one blob is not enough: concatenated
+    /// protobuf messages merge into a single valid message, so a wrong offset or length would still
+    /// "decode".
+    /// </summary>
+    private static void AssertEveryArchivedTileDecodes(byte[] archiveBytes, PMTilesHeader header)
+    {
+        header.TileType.Should().Be(PMTilesTileType.Mvt);
+
+        var root = PMTilesDirectory.DeserializeEntries(PMTilesDirectory.Decompress(
+            archiveBytes[(int)header.RootDirectoryOffset..(int)(header.RootDirectoryOffset + header.RootDirectoryLength)],
+            header.InternalCompression));
+
+        var tiles = new List<PMTilesEntry>();
+        foreach (var entry in root)
+        {
+            if (!entry.IsLeaf)
+            {
+                tiles.Add(entry);
+                continue;
+            }
+
+            var leafStart = (int)(header.LeafDirectoryOffset + entry.Offset);
+            tiles.AddRange(PMTilesDirectory.DeserializeEntries(PMTilesDirectory.Decompress(
+                archiveBytes[leafStart..(leafStart + (int)entry.Length)],
+                header.InternalCompression)));
+        }
+
+        tiles.Should().NotBeEmpty("a published archive must declare at least one tile");
+        foreach (var tile in tiles)
+        {
+            var start = (int)(header.TileDataOffset + tile.Offset);
+            var payload = PMTilesDirectory.Decompress(
+                archiveBytes[start..(start + (int)tile.Length)], header.TileCompression);
+            MvtTileDecoder.TryDecode(payload, out var decoded).Should().BeTrue(
+                $"the archived tile {tile.TileId} must be a decodable Mapbox Vector Tile");
+            decoded!.Layers.Should().NotBeEmpty();
+            decoded.FeatureCount.Should().BeGreaterThan(0);
+        }
     }
 
     [Fact]
@@ -497,7 +545,7 @@ public sealed class TileOperationJobServicePublishTests
                         Arg.Any<Honua.Core.Features.Tiles.GridGeometry?>(),
                         Arg.Any<CancellationToken>())
                     .Returns(
-                        Task.FromResult<byte[]?>([0x01, 0x02, 0x03, 0x04]),
+                        Task.FromResult<byte[]?>(MvtTileBuilder.Canonical()),
                         Task.FromException<byte[]?>(new InvalidOperationException("simulated tile fetch failure")));
             });
         var sut = CreateSut(serviceProvider);
@@ -673,6 +721,19 @@ public sealed class TileOperationJobServicePublishTests
             NullLogger<TileOperationJobService>.Instance);
     }
 
+    /// <summary>
+    /// Harness accessor for <see cref="TileCacheSeedCoverageTests"/>, which drives the same job
+    /// service through a seed operation. Reusing this composition keeps both suites on one wiring.
+    /// </summary>
+    internal static ServiceProvider BuildScopeForSeed(
+        StubCloudStorage stub,
+        Action<ITileProvider> configureTileProvider)
+        => BuildScope(stub, includeCloudStorage: true, configureTileProvider: configureTileProvider);
+
+    /// <summary>Harness accessor for <see cref="TileCacheSeedCoverageTests"/>.</summary>
+    internal static TileOperationJobService CreateSutForSeed(ServiceProvider serviceProvider)
+        => CreateSut(serviceProvider);
+
     private static ServiceProvider BuildScope(
         StubCloudStorage stub,
         bool includeCloudStorage,
@@ -714,7 +775,11 @@ public sealed class TileOperationJobServicePublishTests
                     Arg.Any<TileLimits>(),
                     Arg.Any<Honua.Core.Features.Tiles.GridGeometry?>(),
                     Arg.Any<CancellationToken>())
-                .Returns([0x01, 0x02, 0x03, 0x04]);
+                // honua-server#4421: this stub returned `[0x01, 0x02, 0x03, 0x04]`, which is not a
+                // Mapbox Vector Tile, so every "published PMTiles archive" this suite validated held
+                // four arbitrary bytes per tile. Push a real, decodable tile instead — it costs one
+                // call and lets the archive assertions read back what a client would actually get.
+                .Returns(MvtTileBuilder.Canonical());
         }
         services.AddSingleton(tileProvider);
 
@@ -736,7 +801,7 @@ public sealed class TileOperationJobServicePublishTests
         return services.BuildServiceProvider();
     }
 
-    private sealed class StubCloudStorage : ICloudFileStorage
+    internal sealed class StubCloudStorage : ICloudFileStorage
     {
         private readonly Dictionary<string, CloudFile> _files = new(StringComparer.Ordinal);
         private readonly Func<string, string?>? _presignedUrlOverride;
