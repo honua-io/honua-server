@@ -116,8 +116,27 @@ report_create_error() {
   done < <(grep -a '[^[:space:]]' "$scratch/create-error.log" | head -n 3)
 }
 
+# Deletion is only what GetFunction says is not there. The API distinguishes ResourceNotFoundException
+# from TooManyRequestsException, ServiceException, credential and network failures, but the CLI exits
+# nonzero for all of them alike; reading a bare nonzero as "gone" would let a throttle or an outage
+# during teardown publish a passing receipt while the run-namespaced function still exists.
+# Prints present, absent, or unknown; never treats unknown as absent.
+function_presence() {
+  local err rc=0
+  err="$(aws lambda get-function --function-name "$1" 2>&1 >/dev/null)" || rc=$?
+  if (( rc == 0 )); then
+    echo present
+  elif [[ "$err" == *ResourceNotFoundException* ]]; then
+    echo absent
+  else
+    printf 'get-function was indeterminate for the run function: %.200s\n' "${err//$'\n'/ }" >&2
+    echo unknown
+  fi
+}
+
 cleanup() {
   local status=$?
+  local deleted
   set +e
   if $function_created; then
     if [[ "$function_name" != honua-certrun-lambda-* ]]; then
@@ -134,12 +153,21 @@ cleanup() {
     fi
     aws lambda delete-function --function-name "$function_name" || status=11
     # The CLI has no function-not-exists waiter (ninth live run failed its
-    # teardown on exactly that); poll get-function until it is gone.
+    # teardown on exactly that); poll get-function until it reports the function
+    # not found. An indeterminate answer keeps polling — throttling and service
+    # errors are what the retries are for — and, if it never resolves, fails the
+    # run rather than recording a deletion nobody observed.
+    deleted=false
     for _i in $(seq 1 30); do
-      if ! aws lambda get-function --function-name "$function_name" >/dev/null 2>&1; then break; fi
+      case "$(function_presence "$function_name")" in
+        absent) deleted=true; break ;;
+      esac
       sleep 5
     done
-    if aws lambda get-function --function-name "$function_name" >/dev/null 2>&1; then status=11; fi
+    if ! $deleted; then
+      echo "teardown could not confirm the run function was deleted" >&2
+      status=11
+    fi
   fi
   if $log_group_created; then
     if [[ "$log_group" != /aws/lambda/honua-certrun-lambda-* ]]; then
@@ -352,8 +380,8 @@ trap - EXIT
 function_created=false
 log_group_created=false
 
-if aws lambda get-function --function-name "$function_name" >/dev/null 2>&1; then
-  echo "function still exists after teardown" >&2
+if [[ "$(function_presence "$function_name")" != "absent" ]]; then
+  echo "function still exists after teardown, or its absence could not be confirmed" >&2
   exit 11
 fi
 if [[ "$(aws logs describe-log-groups --log-group-name-prefix "$log_group" \

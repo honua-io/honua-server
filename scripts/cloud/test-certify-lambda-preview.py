@@ -33,9 +33,11 @@ def emit(value):
     if value is not None:
         print(value if isinstance(value, str) else json.dumps(value))
     sys.exit(0)
-def bad():
+def bad(message=None, code=1):
     path.write_text(json.dumps(s))
-    sys.exit(1)
+    if message:
+        print(message, file=sys.stderr)
+    sys.exit(code)
 s["calls"].append([name] + [x for x in args if not x.startswith("file://")])
 digest = "sha256:" + "b"*64
 repo = os.environ["HONUA_LAMBDA_PREVIEW_REPOSITORY"]
@@ -114,7 +116,14 @@ if op == "get-function-url-config": emit({"FunctionUrl": "https://cert.lambda-ur
 if op == "wait": emit(None)
 if op == "get-function":
     ephemeral = function.startswith("honua-certrun-")
-    if ephemeral and not s["function"]: bad()
+    if ephemeral and not s["function"]:
+        # GetFunction reports a missing function as ResourceNotFoundException, and a throttle or a
+        # service outage as something else entirely, over the same nonzero CLI exit.
+        if fail == "get-function-transient":
+            bad("An error occurred (TooManyRequestsException) when calling the GetFunction operation "
+                "(reached max retries: 2): Rate exceeded", 254)
+        bad("An error occurred (ResourceNotFoundException) when calling the GetFunction operation: "
+            "Function not found: arn:offline:ephemeral", 254)
     image = repo + "@" + digest if ephemeral else s["image"]
     if arg("--qualifier") == "8": image = repo + "@" + digest
     if ephemeral and fail == "resolved-image": image = "wrong"
@@ -338,7 +347,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                         "report", "cold-start", "cold-zero", "cloudwatch", "migrations", "migration-pending", "migration-plan",
                         "query", "fixture-names", "create", "readback", "delete", "delete-remains",
                         "denial-status", "denial-body", "denial-records", "denial-nested", "scoped-unauthenticated", "scoped-allowed", "scoped-records", "executed-version", "weighted",
-                        "function-delete", "log-delete", "version-delete", "ownership"):
+                        "function-delete", "log-delete", "version-delete", "ownership", "get-function-transient"):
             with self.subTest(failure=failure):
                 result, receipt, state, _ = self.run_lane(failure)
                 self.assertNotEqual(0, result.returncode, failure)
@@ -349,6 +358,21 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 if failure not in ("log-delete", "ownership"):
                     self.assertFalse(state["logs"], failure)
                 self.assertFalse(state["row"], failure)
+
+    def test_indeterminate_get_function_is_never_recorded_as_deletion(self):
+        """A throttle or service error during teardown must not publish teardown.functionDeleted."""
+        result, receipt, state, _ = self.run_lane("get-function-transient")
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotEqual("pass", receipt.get("result"))
+        self.assertNotIn("teardown", receipt)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        self.assertIn("get-function was indeterminate", result.stderr)
+        self.assertIn("TooManyRequestsException", result.stderr)
+        # Only the not-found answer completes the poll, so the retries were spent, not short-circuited.
+        polls = [call for call in state["calls"]
+                 if call[:2] == ["aws", "lambda"] and "get-function" in call
+                 and any(argument.startswith("honua-certrun-") for argument in call)]
+        self.assertGreater(len(polls), 30)
 
     def test_create_receives_the_standing_functions_vpc_configuration(self):
         """The ephemeral function reaches the cert PostGIS over the standing private networking."""
