@@ -92,11 +92,26 @@ shards retain the original 29-minute test and 39-minute job caps. The minor
 MapServer classes still belong to `GeoServices Geometry VectorTile and
 Versioning`; its catch-all excludes all three endpoint classes.
 
-Source counts and exact ownership do not prove timing headroom. Complete
-source-bound runs of all three partitions must establish the measured wall
-time and at least 25% headroom; verification remains pending until those
-artifacts are available. Later tests, including the QGIS point-literal
-regressions in #4523, must be included when assessing their final branch.
+Full CI [run 34163714144](https://github.com/honua-io/honua-server/actions/runs/34163714144)
+on source `a6b9a4d552e2fe2d95ab0fb4c523a51023f5df5e` completed all three
+partitions with 141 passes and no skipped cases. TRX method identities and
+parameter-case counts match all 123 original methods exactly. The recorded
+test wall times include fixture setup and cleanup:
+
+| Partition | Passed / total | Test wall time | Utilization of unchanged 29-minute cap |
+|---|---|---|---|
+| Metadata/query/legend | 52 / 52 | 300 seconds | 17.24% |
+| Export/tile-package/KML | 57 / 57 | 315 seconds | 18.10% |
+| Identify/find | 32 / 32 | 160 seconds | 9.20% |
+
+Each timing artifact reports `capacity_status: ok`, exit 0, and no timeout or
+kill escalation. These are single-run measurements, not a p90 estimate. The
+source-bound hashes and normalization provenance are retained in the
+[verification record](mapserver-shard-capacity-20260907.json). Wider CI is not
+claimed green: the original source has the expected generated-catalog drift
+plus separate Studio/export/import failures requiring attribution. Later
+tests, including the QGIS point-literal regressions in #4523, must be included
+when assessing their final branch.
 
 ## Signals
 
