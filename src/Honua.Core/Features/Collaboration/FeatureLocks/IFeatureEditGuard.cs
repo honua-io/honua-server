@@ -21,6 +21,16 @@ public enum FeatureEditConcurrencyPolicy
     RequireLock,
 
     /// <summary>
+    /// Every lease that has been handed out is binding, but taking a lease stays
+    /// optional: the edit is allowed unless <em>another</em> editor currently holds
+    /// an active lease on the feature. This is the policy Honua enforces on the
+    /// FeatureServer, OGC API Features and OData write paths (#4402) — it makes a
+    /// granted lease mean something on every write surface without forcing clients
+    /// that never claim one to change.
+    /// </summary>
+    HonorActiveLock,
+
+    /// <summary>
     /// The caller must supply an expected-version token that matches the version
     /// currently stored on the server. Stale tokens are rejected.
     /// </summary>

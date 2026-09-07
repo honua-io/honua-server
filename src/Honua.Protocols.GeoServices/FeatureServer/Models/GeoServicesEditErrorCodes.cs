@@ -64,10 +64,14 @@ public static class GeoServicesEditErrorCodes
 
     /// <summary>
     /// The feature is locked by another editor/session and cannot be modified right now. The
-    /// "lock/locked" class. Reserved for lock-aware writers: surfaced when a writer reports a
-    /// lock failure (HTTP 423 semantics). No writer in the default <c>applyEdits</c> path
-    /// produces feature locks today, but the code is part of the stable contract so lock-aware
-    /// providers map onto it without a client change.
+    /// "lock/locked" class (HTTP 423 semantics).
+    /// <para>
+    /// Produced by the default <c>applyEdits</c> path since #4402: an update or delete of a
+    /// feature another editor holds a collaborative-editing lease on
+    /// (<c>/api/v1/saved-maps/{mapId}/collaboration/feature-locks</c>) fails its slot with this
+    /// code and leaves the stored row untouched. Lock-aware providers that report a 423 from the
+    /// writer itself map onto the same code without a client change.
+    /// </para>
     /// </summary>
     public const int FeatureLocked = 1005;
 

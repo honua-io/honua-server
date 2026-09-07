@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Services;
@@ -53,6 +54,12 @@ internal static class ODataServiceCollectionExtensions
 
         services.TryAddScoped<IQueryProcessor, QueryProcessor>();
         services.TryAddScoped<IEditProcessor, EditProcessor>();
+
+        // Collaborative-editing lock enforcement (#4402). TryAdd so a host that also calls
+        // AddFeatureLockCollaboration shares one singleton lease store between the
+        // /collaboration/feature-locks endpoints and every write path that honours them.
+        services.TryAddSingleton<IFeatureLockService, InMemoryFeatureLockService>();
+        services.TryAddSingleton<IFeatureEditGuard, FeatureEditGuard>();
         services.TryAddScoped<IQueryParameterAdapter<ODataQueryParameters>, ODataQueryParameterAdapter>();
         services.TryAddScoped<IEditParameterAdapter<ODataEditRequest>, ODataEditParameterAdapter>();
 

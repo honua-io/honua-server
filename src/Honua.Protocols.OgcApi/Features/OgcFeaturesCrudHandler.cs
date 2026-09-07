@@ -262,6 +262,16 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var objectId = resolvedFeature.Value.ObjectId;
             var existing = resolvedFeature.Value.Feature;
 
+            // Collaborative-editing lease enforcement (#4402): a feature another editor
+            // holds a lease on cannot be deleted out from under them, on this surface as
+            // much as on GeoServices applyEdits.
+            if (await OgcFeatureLockGuard.RejectIfLockedAsync(
+                    context, layerValidation.Service, publication, layerId, objectId, "delete", cancellationToken)
+                    .ConfigureAwait(false) is { } lockedResult)
+            {
+                return lockedResult;
+            }
+
             // Validate If-Match precondition before executing the delete.  The pre-check
             // gives a fast 412 without an unnecessary write round-trip; the canonical state
             // token is re-validated inside the write transaction (see EnsurePreconditionSatisfiedAsync)
