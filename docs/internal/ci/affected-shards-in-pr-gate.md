@@ -192,12 +192,15 @@ measurement, not a failed change.
 `.github/ci-shards.json`, offline. It proves that a change under a uniquely
 owned feature namespace selects that namespace's shard (17 families), that a
 changed test file selects the shard whose filter runs it (70 families), that a
-class no shard would run on tier credits nobody, that the cap holds against a
-`run_all` answer, that a `run_all` answer narrows by the closure while a
-targeted one is never trimmed, that advisory shards stay out, and that matrix
-entries carry every field the shard job and runner consume. Each of those is
-paired with a failure injection, so a green run means the check is still
-load-bearing.
+class no shard would run on tier credits nobody, that a changed test falling
+through to the router's `no_path_match` default still selects the shard that
+runs it, that every root the shard map routes outside `src/`/`tests/dotnet/`
+counts as product code while the router's `infrastructure_paths` still do not,
+that the cap holds against a `run_all` answer, that a `run_all` answer narrows
+by the closure while a targeted one is never trimmed, that advisory shards stay
+out, and that matrix entries carry every field the shard job and runner
+consume. Each of those is paired with a failure injection, so a green run means
+the check is still load-bearing. It takes about a minute, offline.
 
 It runs in **both** places, and the PR one is the load-bearing one:
 `affected-shards-select` executes it before consuming the selector, and

@@ -593,7 +593,11 @@ jobs:
           note() { printf '%s\n' "$1" >> "${GITHUB_STEP_SUMMARY}"; }
           note '### PR Gate / Affected shards'
           note ''
-          note "- Mode: \`${MODE}\` (report-only until the promotion rule in pr-gate.yml is met)"
+          if [[ "${MODE}" == "enforce" ]]; then
+            note "- Mode: \`${MODE}\` (enforcing; see the promotion rule in pr-gate.yml)"
+          else
+            note "- Mode: \`${MODE}\` (report-only until the promotion rule in pr-gate.yml is met)"
+          fi
           note "- Selection: \`${SELECT_REASON:-unavailable}\` (\`${SELECT_COUNT:-0}\` shard families)"
 
           # MISSING EVIDENCE IS NOT A PASS ONCE THIS CONTEXT IS REQUIRED.
@@ -605,8 +609,11 @@ jobs:
           # and silently disable the required gate rather than blocking on it.
           # In `report` the behaviour is unchanged: warn, publish, pass.
           unavailable() {
-            local verdict="$1" explanation="$2" annotation="$3"
+            local verdict="$1" explanation="$2" annotation="$3" detail="${4:-}"
             note "- Verdict: \`${verdict}\` — ${explanation}"
+            if [[ -n "${detail}" ]]; then
+              note "  ${detail}"
+            fi
             if [[ "${MODE}" == "enforce" ]]; then
               note '  `AFFECTED_SHARDS_MODE` is `enforce`, so this required context fails closed on'
               note '  missing evidence rather than reporting a pass it cannot support.'
@@ -632,11 +639,10 @@ jobs:
           received=${#timings[@]}
           expected=${SELECT_COUNT:-0}
           if [[ "${received}" -eq 0 ]]; then
-            note '  A shard that fails before its test step (restore, build, runner disk) produces no'
-            note '  receipt; that is an infrastructure failure of this lane, not a shard regression.'
             unavailable "no_receipts" \
               "shard jobs concluded \`${SHARDS_RESULT}\` without a timing artifact." \
-              "shard jobs concluded '${SHARDS_RESULT}' with no timing receipt."
+              "shard jobs concluded '${SHARDS_RESULT}' with no timing receipt." \
+              "A shard that fails before its test step (restore, build, runner disk) produces no receipt; that is an infrastructure failure of this lane, not a shard regression."
           fi
 
           note ''
@@ -667,10 +673,10 @@ jobs:
           # evidence is still published, and after `red` is counted so a
           # confirmed red still reports as a red rather than as infrastructure.
           if [[ "${red}" -eq 0 && "${received}" -lt "${expected}" ]]; then
-            note "  \`${received}\` of \`${expected}\` selected shard families reported a receipt."
             unavailable "incomplete_receipts" \
-              "only ${received} of ${expected} selected shard families produced a timing receipt, so this head has no complete shard evidence." \
-              "shard jobs concluded '${SHARDS_RESULT}' with ${received}/${expected} timing receipts."
+              "only ${received} of ${expected} selected shard families produced a timing receipt." \
+              "shard jobs concluded '${SHARDS_RESULT}' with ${received}/${expected} timing receipts." \
+              "Every receipt received says \`passed\`, but the families that reported none are exactly the ones this lane spent runners to learn about, so this head has no complete shard evidence."
           fi
           if [[ "${red}" -eq 0 ]]; then
             note "- Verdict: \`green\` — all ${received} selected shard families passed on this head."

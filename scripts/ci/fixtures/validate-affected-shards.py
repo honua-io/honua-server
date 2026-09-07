@@ -452,6 +452,123 @@ def check_skip_paths() -> None:
         raise FixtureError(f"CI-only diff did not skip: {workflow_only['reason']}")
 
 
+def check_shard_owned_roots_are_product_code(config: dict[str, Any]) -> int:
+    """A diff limited to a shard INPUT outside `src/`/`tests/dotnet/` must run.
+
+    `.github/ci-shards.json` routes `observability/`, `samples/gp/` and
+    `tests/fixtures/toolbox-translation/` -- `SloMetricContractTests` reads
+    `observability/slo-metric-contract.json`, `ToolboxTranslationEndpointTests`
+    consumes the toolbox fixtures. A static `src/` + `tests/dotnet/` admission
+    test answered `no_product_code` for exactly those diffs, so the detector
+    ran nothing while the trailing matrix could still go red on them.
+
+    Derived from the live map: the assertion is that the admission test is
+    never narrower than the router it wraps, whatever the map currently routes.
+    """
+    outside = sorted(
+        {
+            prefix
+            for shard in config["shards"]
+            for prefix in shard.get("paths") or ()
+            if not prefix.startswith(selector.PRODUCT_CODE_PREFIXES)
+        }
+    )
+    if not outside:
+        raise FixtureError(
+            "no shard routes a path outside src/ or tests/dotnet/; this check has "
+            "stopped covering anything and the static prefixes would now suffice"
+        )
+
+    for prefix in outside:
+        probe = f"{prefix}AffectedShardsFixtureProbe.json" if prefix.endswith("/") else prefix
+        if not selector.has_product_code([probe], config):
+            raise FixtureError(
+                f"{probe!r} is routed by the shard map but was rejected as "
+                "'no product code', so the lane would select nothing for it"
+            )
+        result = run_selector([probe])
+        if result["skip"]:
+            raise FixtureError(
+                f"a diff limited to {probe!r} skipped with {result['reason']!r}"
+            )
+        if not result["shards"]:
+            raise FixtureError(f"a diff limited to {probe!r} selected no shard")
+
+    # Widening must not reach the router's run_all short-circuit. Every
+    # `infrastructure_paths` entry that is not ALREADY product code by the
+    # static floor (`tests/dotnet/Honua.TestKit/` is, and always was) has to
+    # stay out, or a workflow-only diff would spend the whole cap re-confirming
+    # trunk. check_skip_paths() asserts the same boundary from the far side.
+    for infrastructure in config.get("infrastructure_paths") or ():
+        if infrastructure.startswith(selector.PRODUCT_CODE_PREFIXES):
+            continue
+        if selector.has_product_code([f"{infrastructure}probe.txt"], config):
+            raise FixtureError(
+                f"infrastructure path {infrastructure!r} was admitted as product "
+                "code; a CI-only diff would spend the whole cap"
+            )
+    return len(outside)
+
+
+def check_unrouted_test_selects_its_owning_shard(config: dict[str, Any]) -> str:
+    """A changed test no `paths` entry claims must still select the shard that runs it.
+
+    `no_path_match` is the router's DEFAULT, not an ownership answer: it returns
+    `default_shards_when_no_match` for any file the map does not claim. Shard
+    `paths` list individual test FILES for the protocol-split projects, so a
+    changed test in one of them lands on that default -- naming the Core shard,
+    a different assembly entirely -- while the family that actually runs the
+    changed test is never selected.
+    """
+    coverage, classes = selector.load_shard_coverage(REPO_ROOT)
+    runnable = runnable_method_index(classes)
+
+    # Collected in memory first; only the survivors cost a router subprocess.
+    candidates: list[tuple[str, str]] = []
+    for fqn, entry in sorted(classes.items()):
+        # Protocol-split projects are where the `paths` map is file-granular.
+        if entry["csproj"] == selector.DEFAULT_TEST_PROJECT or not runnable[fqn]:
+            continue
+        owners = [
+            shard["name"]
+            for shard in config["shards"]
+            if selector.shard_test_project(shard) == entry["csproj"]
+            and any(
+                coverage.shard_claims(shard["filter"], f"{fqn}.{method}")
+                for method in runnable[fqn]
+            )
+        ]
+        # Only a class exactly one shard runs proves the owning shard was added.
+        if len(owners) == 1:
+            candidates.append((entry["src"][0], owners[0]))
+
+    for source, owner in candidates[:40]:
+        descriptor = router(config, [source])
+        if descriptor.get("reason") != "no_path_match":
+            continue
+        owners = [owner]
+
+        result = select_offline(config, [source], descriptor=descriptor, cap=6)
+        if owners[0] not in result["shards"]:
+            raise FixtureError(
+                f"changing {source!r} answers {descriptor['reason']!r} and did not "
+                f"select {owners[0]!r}, the only shard whose filter runs it; got "
+                f"{result['shards']}"
+            )
+        # The router's default is kept alongside, never replaced.
+        for name in descriptor["shards"]:
+            if name not in result["shards"]:
+                raise FixtureError(
+                    f"the router's {name!r} answer was dropped from the selection"
+                )
+        return source
+
+    raise FixtureError(
+        "no changed test in a protocol-split project falls through to "
+        "'no_path_match'; this check has stopped covering the routing gap"
+    )
+
+
 def check_failure_injections(config: dict[str, Any]) -> None:
     """Prove each check above rejects the specific defect it is written for.
 
@@ -507,6 +624,38 @@ def check_failure_injections(config: dict[str, Any]) -> None:
             selector.select = original
         raise FixtureError(f"the {label!r} check accepted a selector that breaks it")
     selector.select = original
+
+    # The product-code check runs ABOVE `select`, on has_product_code, so its
+    # injection is the pre-fix admission test: the static prefixes alone.
+    original_prefixes = selector.product_code_prefixes
+    selector.product_code_prefixes = lambda config: selector.PRODUCT_CODE_PREFIXES
+    try:
+        check_shard_owned_roots_are_product_code(config)
+    except FixtureError:
+        pass
+    else:
+        raise FixtureError(
+            "the shard-owned-roots check accepted an admission test narrower than "
+            "the routing map"
+        )
+    finally:
+        selector.product_code_prefixes = original_prefixes
+
+    # The `no_path_match` check depends on the ownership term feeding the
+    # candidate set, so its injection is an ownership walk that answers nothing.
+    original_hits = selector.count_test_class_hits
+    selector.count_test_class_hits = lambda root, config, changed_files: {}
+    try:
+        check_unrouted_test_selects_its_owning_shard(config)
+    except FixtureError:
+        pass
+    else:
+        raise FixtureError(
+            "the unrouted-test check accepted a selection that keeps only the "
+            "router's no_path_match default"
+        )
+    finally:
+        selector.count_test_class_hits = original_hits
 
     # The tier check runs below `select`, on count_test_class_hits, so its
     # injection is the pre-fix ownership walk: score every declared method
@@ -564,6 +713,8 @@ def main() -> int:
     check_largest_impact_first(config)
     owned = check_changed_test_file_selects_its_running_shard(config)
     tiered = check_non_runnable_tiers_are_not_credited(config)
+    unrouted = check_unrouted_test_selects_its_owning_shard(config)
+    roots = check_shard_owned_roots_are_product_code(config)
     check_run_all_narrows_by_affected_projects(config)
     check_targeted_answer_is_never_trimmed(config)
     check_advisory_shards_are_excluded(config)
@@ -574,6 +725,8 @@ def main() -> int:
         f"affected-shards=ok (namespace routing proven for {covered} and changed-test "
         f"ownership for {owned} of {len(config['shards'])} shard families; "
         f"tier exclusion proven on {tiered} non-runnable classes; "
+        f"unrouted-test ownership via {unrouted}; "
+        f"{roots} shard-owned roots outside src//tests-dotnet admitted; "
         f"cap={selector.DEFAULT_CAP})"
     )
     return 0
