@@ -3,7 +3,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.FileStorage;
@@ -93,9 +92,23 @@ internal static class GeoprocessingServiceCollectionExtensions
         // process-local store the dispatcher records into and an admin view ranks.
         services.TryAddSingleton<IProcessUsageTelemetry, InMemoryProcessUsageTelemetry>();
 
-        // Execution job store (ticket #722)
-        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer))
-            && services.Any(d => d.ServiceType == typeof(RedisDurabilityAttestation)))
+        // Execution job store (ticket #722).
+        //
+        // REGISTRATION CONTRACT (honua-server#4502): whenever a Redis multiplexer is composed,
+        // IExecutionJobStore IS resolvable — durability attestation decides what the server
+        // ADVERTISES, never whether the store exists. #4141 briefly gated this block on the
+        // accepted RedisDurabilityAttestation while every consumer of IExecutionJobStore stayed
+        // unconditional (the reconcilers, the backstop sweep, the event handler, the queue-depth
+        // collector, the metadata-release reconciler — all registered on `connectedRedis != null`
+        // in Program.cs), so a stock non-AOF Redis aborted ServiceProvider descriptor validation
+        // with 31 unresolved-service failures and exit 139 before the server bound a port.
+        //
+        // A rejected attestation now degrades instead: the same Redis-backed store is composed,
+        // Program.cs logs one warning naming the typed cause and its consequence, the capability
+        // manifest reports that cause rather than advertising 'jobs.runner'
+        // (DurableJobSubstrateOptions.Classify), and only an explicit Jobs:RequireDurableStore=true
+        // may turn the rejection into a typed startup refusal.
+        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
         {
             services.TryAddSingleton<IExecutionJobStore>(sp =>
                 new RedisExecutionJobStore(

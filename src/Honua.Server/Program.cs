@@ -224,6 +224,15 @@ var redisOutputCacheConfigured = ObservabilityServiceCollectionExtensions.Should
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 RedisDurabilityAttestation? redisDurabilityAttestation = null;
 DurableJobSubstrateCause? redisDurabilityFailure = null;
+string? redisDurabilityDetail = null;
+// honua-server#4502: an unattested durable substrate DEGRADES by default. Operators who would
+// rather not serve at all without a durable job store opt in here, and get a typed startup
+// refusal naming the cause instead of a wall of unresolved-service descriptor failures.
+var requireDurableJobStore = builder.Configuration
+    .GetSection(JobDurabilityOptions.SectionName)
+    .GetValue<bool>(nameof(JobDurabilityOptions.RequireDurableStore));
+builder.Services.Configure<JobDurabilityOptions>(
+    builder.Configuration.GetSection(JobDurabilityOptions.SectionName));
 
 // honua-release#202: record WHY the durable job substrate is or is not composed, so the typed
 // refusal and the capability manifest can give remediation that actually works. "Redis is
@@ -316,12 +325,31 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
             var durability = await RedisDurabilityAttestor.InspectAsync(connectedRedis);
             redisDurabilityAttestation = durability.Attestation;
             redisDurabilityFailure = durability.FailureCause;
+            redisDurabilityDetail = durability.FailureDetail;
 
-            // Redis is still usable for cache and non-job infrastructure, but only an
-            // accepted attestation may unlock the durable job registrations below.
+            // An accepted attestation publishes the machine-observed durability facts as a
+            // resolvable evidence object. A REJECTED one does not compose the durable job
+            // substrate out — that was honua-server#4502, where every consumer of
+            // IExecutionJobStore stayed registered while the store did not, and the process
+            // died in ServiceProvider validation before binding a port. The store is composed
+            // either way; what an unattested Redis changes is what the server ADVERTISES
+            // (DurableJobSubstrateOptions.Classify keeps returning the typed failure cause, so
+            // the capability manifest never claims 'jobs.runner') plus this one warning.
             if (redisCacheEntitled && durability.Attestation is not null)
             {
                 builder.Services.TryAddSingleton(durability.Attestation);
+            }
+            else if (redisCacheEntitled && durability.FailureCause is { } rejectedCause)
+            {
+                var rejectionDetail = durability.FailureDetail ?? "no detail reported";
+                var rejectionRemediation = DurableJobSubstrateRemediation.For(rejectedCause);
+                var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
+                ProgramLog.RedisDurabilityNotAttested(
+                    startupLogger,
+                    rejectedCause,
+                    rejectionDetail,
+                    DurableJobSubstrateRemediation.NonDurableConsequence,
+                    rejectionRemediation);
             }
         }
         else if (redisCacheEntitled)
@@ -342,8 +370,23 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
         redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
+        redisDurabilityDetail = ex.Message;
     }
 }
+
+// The ONE sanctioned way an unattested durable job substrate may stop this process
+// (honua-server#4502). Nothing else is allowed to: a rejected attestation otherwise degrades to
+// a composed-but-non-durable store, which is why the DI graph can no longer abort startup.
+DurableJobSubstrateStartupGate.EnsureSatisfied(
+    new DurableJobSubstrateOptions
+    {
+        RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString),
+        RedisEntitled = redisCacheEntitled,
+        RedisDurabilityAttestation = redisDurabilityAttestation,
+        RedisDurabilityFailure = redisDurabilityFailure,
+    },
+    requireDurableJobStore,
+    redisDurabilityDetail);
 
 // Configure Serilog for structured logging with AOT compatibility
 builder.Host.UseSerilog((context, services, config) =>

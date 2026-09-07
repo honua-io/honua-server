@@ -22,6 +22,8 @@ A single-node deployment with no Redis configured reports `Ready` — feature-ch
 | Exits with an options-validation error naming a `Limits` or `ControlPlane` setting | Out-of-range or malformed env value (validated at startup) | Correct the named variable; compare against [.env.example](../../../.env.example) |
 | Container restart loop, log shows migration failure | Database migration failed at startup | Fix DB connectivity/permissions; check `GET /api/v1/admin/observability/migrations` once up. `HONUA_SKIP_MIGRATIONS=true` defers (does not fix) the migration |
 | Starts but logs "connection string not configured" | `ConnectionStrings__DefaultConnection` missing | Set it; migrations and data access are skipped without it |
+| Starts but warns "Redis durability attestation was REJECTED" | Redis is reachable but its persistence policy does not protect acknowledged control-plane writes | Jobs still run, but non-durably. Fix the Redis policy — see [Redis durability](#redis-durability) |
+| Exits with "Jobs:RequireDurableStore is enabled, but the durable job substrate is not attested" | You opted in to requiring an attested durable job store and Redis did not attest | Fix the Redis policy per the message's remediation, or clear `Jobs__RequireDurableStore` to start non-durably |
 
 ## License failure mode
 
@@ -123,6 +125,60 @@ Do not disable rate limiting during an attack or raise every caller's limit to a
 | Import job fails on geometry | Invalid geometry or unsupported CRS in the source | Validate/fix geometries before import (`ST_MakeValid`), declare the correct source CRS |
 | Import accepted but job never progresses | Queued imports require Redis | Set `ConnectionStrings__Redis` and ensure Redis is reachable |
 | `503` on OGC Processes / GPServer job routes | Redis-backed durable job store not configured | Enable Redis; see [Scale and tune performance](scaling-and-performance.md) |
+| Jobs run, but the capability manifest reports `jobs.runner` unavailable | Redis is present but durability was not attested | See [Redis durability](#redis-durability); the manifest reports the typed cause |
+
+## Redis durability
+
+The durable job substrate stores acknowledged control-plane state (jobs, queue,
+execution logs) in Redis. At startup the server **inspects** the Redis
+persistence policy once and records a typed attestation. Attestation is accepted
+only when all three hold:
+
+| Redis setting | Required value | Why |
+|---|---|---|
+| `appendonly` | `yes` (and `INFO persistence` reports `aof_enabled:1`) | Acknowledged writes survive a restart |
+| `appendfsync` | `everysec` or `always` | An acknowledged write is not left only in the OS page cache |
+| `maxmemory-policy` | `noeviction` | Durable control-plane keys are never evicted under memory pressure |
+
+**A failed attestation degrades; it does not stop the server.** The job
+substrate is still composed and jobs still run — the server logs one warning
+naming the typed cause and its remediation, `RedisHealthCheck` reports
+`Degraded` with the same cause on the health roll-up, and the capability
+manifest withholds `jobs.runner` instead of advertising a durability guarantee
+it cannot make. `/healthz/ready` stays `Ready`, because depooling a node whose
+Redis merely has AOF off is a worse outcome than serving non-durably.
+
+Read the cause from the ops-health snapshot: the `redis` health entry reports
+`Degraded` with a description naming the typed cause, what running non-durable
+means, and the remediation. An MCP client reads it from the `honua://ops/health`
+resource; the same snapshot backs the comprehensive monitoring view. The typed
+causes are `RedisPersistenceDisabled`, `RedisWritePolicyUnsafe`,
+`RedisEvictionPolicyUnsafe`, `RedisAttestationUnavailable`,
+`RedisNotConfigured`, `RedisNotEntitled` and `RuntimeIncomplete`.
+
+The capabilities manifest agrees: `jobs.runner` reports `available: false` with
+`reasonCode: dependency-unavailable`, and `limits.job.durableJobRuntimeAvailable`
+is `false`, so nothing advertises a durability guarantee the deployment cannot
+make.
+
+A stock `redis:7-alpine` defaults to `appendonly no` and therefore never
+attests. Start it with the durable policy instead:
+
+```yaml
+redis:
+  image: redis:7-alpine
+  command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+```
+
+If your deployment must not serve at all without an attested durable store, opt
+in to a hard startup refusal:
+
+```bash
+Jobs__RequireDurableStore=true
+```
+
+With that set, a rejected attestation exits with a single typed startup error
+naming the cause and its remediation, rather than starting degraded.
 
 Recent jobs: `GET /api/v1/admin/import/jobs`; durable job detail and logs: `GET /api/v1/admin/jobs/{jobId}/logs`. For stuck workflow runs, see [Automate workflows](../query-analyze/automate-workflows.md).
 
