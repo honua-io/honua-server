@@ -80,12 +80,6 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Seeds a durable conflict record. Unless an explicit <paramref name="objectId"/> is supplied the
-    /// conflict is backed by a real feature created through the FeatureServer edit surface, because a
-    /// resolution now commits the resolved feature state through the shared edit pipeline (#2430) and
-    /// therefore needs a row to write.
-    /// </summary>
-    /// <summary>
     /// Reads a conflict that the test has already seeded and asserts it is present, returning the
     /// non-nullable record. The repository contract returns <c>ReplicaConflictRecord?</c>, so
     /// reading through <c>.Value</c> at every call site both dereferences a nullable and turns a
@@ -101,6 +95,12 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         return record!.Value;
     }
 
+    /// <summary>
+    /// Seeds a durable conflict record. Unless an explicit <paramref name="objectId"/> is supplied the
+    /// conflict is backed by a real feature created through the FeatureServer edit surface, because a
+    /// resolution now commits the resolved feature state through the shared edit pipeline (#2430) and
+    /// therefore needs a row to write.
+    /// </summary>
     private async Task<SeededConflict> SeedConflictAsync(
         string replicaId,
         ReplicaConflictType conflictType = ReplicaConflictType.Attribute,
