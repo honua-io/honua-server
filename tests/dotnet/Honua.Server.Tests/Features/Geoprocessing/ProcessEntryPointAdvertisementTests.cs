@@ -120,6 +120,43 @@ public sealed class ProcessEntryPointAdvertisementTests
         nodes.Should().OnlyContain(node => node.CapabilityFlags.Executable);
     }
 
+    /// <summary>
+    /// The declaration must be part of the callability predicate, not a parallel fact
+    /// about it. For the built-in catalog the two can never disagree, because
+    /// <c>Classify</c> derives the entry points from the execution kind — so this test
+    /// builds the disagreement by hand, which is exactly what a replacement
+    /// <c>IProcessCatalog</c> can supply. Without the declaration in the predicate, such
+    /// a definition is advertised and accepted on every job surface while its own public
+    /// metadata says it has no callable entry point.
+    /// </summary>
+    [UnitTest]
+    public void DefinitionDeclaringNoEntryPoint_IsNotCallable_EvenWhenItsKindAndModesSayJob()
+    {
+        var undeclared = new ProcessDefinition
+        {
+            ProcessId = "test.undeclared-entry-point",
+            Title = "Undeclared",
+            Description = "Job kind and async modes, but no declared entry point.",
+            Category = "test",
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Async,
+            SupportedEntryPoints = ProcessEntryPoints.None
+        };
+
+        ProcessExecutionEligibility.IsJobCallable(undeclared).Should().BeFalse(
+            "an operation that declares no entry point is callable nowhere, whatever its execution kind");
+        ProcessExecutionCapabilityCatalog.IsOgcCallable(undeclared).Should().BeFalse();
+        GPServerExecutionPolicy.IsJobCallable(undeclared).Should().BeFalse();
+        ProcessExecutionCapabilityCatalog.IsWorkflowComposable(undeclared).Should().BeFalse();
+
+        var workflowKindWithoutDeclaration = undeclared with
+        {
+            ProcessId = "test.undeclared-workflow-entry-point",
+            ExecutionKind = ProcessExecutionKind.WorkflowOnly
+        };
+        ProcessExecutionEligibility.IsWorkflowCallable(workflowKindWithoutDeclaration).Should().BeFalse();
+    }
+
     [UnitTest]
     public void ProtocolOnlyOperations_AreAdvertisedOnNoJobOrWorkflowSurface()
     {

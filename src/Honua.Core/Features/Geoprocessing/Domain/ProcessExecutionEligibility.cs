@@ -11,12 +11,23 @@ public static class ProcessExecutionEligibility
     /// <summary>
     /// Returns <see langword="true"/> when a process may be submitted to the shared
     /// asynchronous geoprocessing job runtime.
+    ///
+    /// <para>
+    /// The declared entry point is part of the predicate, not a parallel fact about it.
+    /// The capability catalog derives entry points from the
+    /// execution kind for the built-in catalog, so the two always agree there — but a
+    /// replacement <c>IProcessCatalog</c> supplies definitions directly, and one that
+    /// declared <see cref="ProcessExecutionKind.Job"/> while omitting
+    /// <see cref="ProcessEntryPoints.Job"/> would otherwise be advertised and accepted on
+    /// every job surface in contradiction of its own published metadata. Fail closed.
+    /// </para>
     /// </summary>
     public static bool IsJobCallable(ProcessDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
         return definition.ExecutionKind == ProcessExecutionKind.Job
-            && (definition.SupportedExecutionModes & ProcessExecutionModes.Async) != 0;
+            && (definition.SupportedExecutionModes & ProcessExecutionModes.Async) != 0
+            && Declares(definition, ProcessEntryPoints.Job);
     }
 
     /// <summary>
@@ -27,7 +38,8 @@ public static class ProcessExecutionEligibility
     {
         ArgumentNullException.ThrowIfNull(definition);
         return definition.ExecutionKind == ProcessExecutionKind.WorkflowOnly
-            && (definition.SupportedExecutionModes & ProcessExecutionModes.Async) != 0;
+            && (definition.SupportedExecutionModes & ProcessExecutionModes.Async) != 0
+            && Declares(definition, ProcessEntryPoints.Workflow);
     }
 
     /// <summary>

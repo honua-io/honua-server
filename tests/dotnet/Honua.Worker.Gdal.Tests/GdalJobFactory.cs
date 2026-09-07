@@ -56,7 +56,8 @@ internal static class GdalJobFactory
         int? maxZoneCount = null,
         long? maxZoneVertices = null,
         int? maxKrigingSamples = null,
-        long? maxKrigingCells = null)
+        long? maxKrigingCells = null,
+        long? maxKrigingPredictionWork = null)
     {
         var defaults = new GdalWorkerOptions();
         return new StaticOptionsMonitor<GdalWorkerOptions>(new GdalWorkerOptions
@@ -73,6 +74,7 @@ internal static class GdalJobFactory
             MaxZoneVertices = maxZoneVertices ?? defaults.MaxZoneVertices,
             MaxKrigingSamples = maxKrigingSamples ?? defaults.MaxKrigingSamples,
             MaxKrigingCells = maxKrigingCells ?? defaults.MaxKrigingCells,
+            MaxKrigingPredictionWork = maxKrigingPredictionWork ?? defaults.MaxKrigingPredictionWork,
         });
     }
 

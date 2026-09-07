@@ -311,6 +311,25 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
             return JobExecutionResult.Failed($"Invalid kriging inputs: {samplesError}");
         }
 
+        // COMBINED BUDGET. MaxKrigingSamples bounds the factorization and MaxKrigingCells
+        // bounds the output buffer, but the prediction pass costs their product, and both
+        // caps can be satisfied by a submission whose product is billions of evaluations.
+        // That work runs here, in managed code, before the GDAL child process (and its
+        // ToolTimeout) exists, so it is unbounded from the timeout's point of view. Refuse
+        // it up front with a message that names the actual budget.
+        var predictionWork = (long)samples.Count * width * height;
+        if (predictionWork > opts.MaxKrigingPredictionWork)
+        {
+            var workError = $"the request needs {predictionWork.ToString(CultureInfo.InvariantCulture)} "
+                + $"sample-cell evaluations ({samples.Count.ToString(CultureInfo.InvariantCulture)} samples "
+                + $"x {width.ToString(CultureInfo.InvariantCulture)}x{height.ToString(CultureInfo.InvariantCulture)} "
+                + $"cells), which exceeds the configured MaxKrigingPredictionWork="
+                + $"{opts.MaxKrigingPredictionWork.ToString(CultureInfo.InvariantCulture)}; "
+                + "reduce the output grid or thin the sample set";
+            Log.InvalidInputs(logger, job.OperationId, workError);
+            return JobExecutionResult.Failed($"Invalid kriging inputs: {workError}.");
+        }
+
         var variogram = OrdinaryKriging.FitDefaults(samples, model, nugget, sill, range);
         if (variogram.Sill < variogram.Nugget)
         {

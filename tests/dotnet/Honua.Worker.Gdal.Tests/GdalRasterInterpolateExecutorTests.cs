@@ -247,6 +247,77 @@ public sealed class GdalRasterInterpolateExecutorTests
         }
     }
 
+    /// <summary>
+    /// The sample cap and the cell cap can BOTH be satisfied by a request whose prediction
+    /// cost is their product. That work runs in managed code before the GDAL child process
+    /// exists, so ToolTimeout does not bound it; the combined budget must refuse it up front.
+    /// </summary>
+    [UnitTest]
+    public async Task Kriging_WithinBothIndividualCapsButOverTheCombinedBudget_FailsBeforeSolving()
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterInterpolateJobExecutor(
+            runner,
+            // 4 samples and a 100x100 grid are each well inside their own cap; the product
+            // (40,000 evaluations) is not inside a budget of 1,000.
+            GdalJobFactory.Options(scratch, maxKrigingSamples: 16, maxKrigingCells: 1_000_000, maxKrigingPredictionWork: 1_000),
+            NullLogger<GdalRasterInterpolateJobExecutor>.Instance);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.KrigingProcessId,
+                ("points", Base64(PointsGeoJson)),
+                ("zField", "value"),
+                ("width", "100"),
+                ("height", "100"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("MaxKrigingPredictionWork");
+            runner.Invocations.Should().BeEmpty("the budget must be refused before any solve or CLI work");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    /// <summary>
+    /// AAIGrid cells are fixed-point text, so serialized size scales with value magnitude.
+    /// A finite-but-astronomical sample must be refused at the boundary rather than
+    /// expanding into a multi-gigabyte document during the write.
+    /// </summary>
+    [UnitTest]
+    public async Task Kriging_SampleMagnitudeBeyondTheSupportedRange_FailsBeforeSolving()
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            const string astronomical = """
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","properties":{"value":1e300},"geometry":{"type":"Point","coordinates":[0,0]}},
+              {"type":"Feature","properties":{"value":2e300},"geometry":{"type":"Point","coordinates":[4,4]}}]}
+            """;
+            var job = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.KrigingProcessId,
+                ("points", Base64(astronomical)),
+                ("zField", "value"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("magnitude");
+            runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
     [UnitTest]
     public async Task Kriging_MoreSamplesThanTheConfiguredCap_FailsBeforeSolving()
     {
@@ -295,7 +366,8 @@ public sealed class GdalRasterInterpolateExecutorTests
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
             result.Status.Should().Be(ExecutionJobStatus.Failed);
-            result.ErrorMessage.Should().Contain("coincident sample points");
+            result.ErrorMessage.Should().Contain("share a location");
+            result.ErrorMessage.Should().NotContain("raise 'nugget'");
             runner.Invocations.Should().BeEmpty();
         }
         finally

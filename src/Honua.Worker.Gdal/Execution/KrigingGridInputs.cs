@@ -31,6 +31,14 @@ internal static class KrigingGridInputs
     /// the geometry's Z ordinate otherwise (the same contract <c>gdal_grid -zfield</c>
     /// applies to <c>raster.interpolate-idw</c>).
     /// </summary>
+    /// <summary>
+    /// Largest sample magnitude accepted for <c>raster.interpolate-kriging</c>. The bound
+    /// exists because the AAIGrid payload is fixed-point text, so serialized size scales
+    /// with value magnitude; 1e12 keeps a full-size grid's text bounded while covering
+    /// every physical quantity these surfaces interpolate.
+    /// </summary>
+    internal const double MaxAbsSampleValue = 1e12;
+
     public static bool TryReadSamples(
         byte[] geoJsonBytes,
         string? zField,
@@ -95,6 +103,20 @@ internal static class KrigingGridInputs
             else
             {
                 failure = "features carry no Z ordinate; supply 'zField' to name the attribute to interpolate";
+                return false;
+            }
+
+            // BOUND THE MAGNITUDE. AAIGrid is written in fixed-point notation (exponent
+            // notation is read inconsistently by AAIGrid consumers), so a cell's serialized
+            // width grows with the VALUE, not just the cell count: a finite but astronomical
+            // sample such as 1e300 yields a ~300-character cell, and a permitted grid then
+            // serializes to over a gigabyte of text. Refuse the input at the boundary rather
+            // than discovering it as an out-of-memory failure mid-write.
+            if (Math.Abs(value) > MaxAbsSampleValue)
+            {
+                failure = $"sample value {value.ToString("R", CultureInfo.InvariantCulture)} exceeds the "
+                    + $"supported magnitude {MaxAbsSampleValue.ToString("R", CultureInfo.InvariantCulture)}; "
+                    + "rescale the values (for example to different units) before interpolating";
                 return false;
             }
 
@@ -170,31 +192,38 @@ internal static class KrigingGridInputs
     {
         ArgumentNullException.ThrowIfNull(values);
 
-        var builder = new StringBuilder()
-            .Append("ncols ").Append(Format(grid.Width)).Append('\n')
-            .Append("nrows ").Append(Format(grid.Height)).Append('\n')
-            .Append("xllcorner ").Append(Format(grid.MinX)).Append('\n')
-            .Append("yllcorner ").Append(Format(grid.MinY)).Append('\n')
-            .Append("cellsize ").Append(Format(grid.CellWidth)).Append('\n');
+        // STREAM the payload. AAIGrid is a text format, so the serialized size is driven
+        // by per-cell digit count, not by a fixed stride: buffering the whole grid in a
+        // StringBuilder and then calling ToString() holds TWO full copies of a
+        // multi-hundred-megabyte document in managed memory before a single byte reaches
+        // the disk. Writing row by row keeps the working set to one row.
+        await using var writer = new StreamWriter(rasterPath, false, new UTF8Encoding(false));
+        await writer.WriteAsync("ncols " + Format(grid.Width) + "\n").ConfigureAwait(false);
+        await writer.WriteAsync("nrows " + Format(grid.Height) + "\n").ConfigureAwait(false);
+        await writer.WriteAsync("xllcorner " + Format(grid.MinX) + "\n").ConfigureAwait(false);
+        await writer.WriteAsync("yllcorner " + Format(grid.MinY) + "\n").ConfigureAwait(false);
+        await writer.WriteAsync("cellsize " + Format(grid.CellWidth) + "\n").ConfigureAwait(false);
 
+        var line = new StringBuilder();
         for (var row = 0; row < grid.Height; row++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            line.Clear();
             for (var column = 0; column < grid.Width; column++)
             {
                 if (column > 0)
                 {
-                    builder.Append(' ');
+                    line.Append(' ');
                 }
 
-                builder.Append(FormatCell(values[(row * grid.Width) + column]));
+                line.Append(FormatCell(values[(row * grid.Width) + column]));
             }
 
-            builder.Append('\n');
+            line.Append('\n');
+            await writer.WriteAsync(line.ToString()).ConfigureAwait(false);
         }
 
-        await File.WriteAllTextAsync(rasterPath, builder.ToString(), new UTF8Encoding(false), cancellationToken)
-            .ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -104,7 +104,37 @@ public sealed class OrdinaryKrigingTests
         var variogram = new Variogram(VariogramModel.Spherical, 0, 1, 4);
 
         OrdinaryKriging.TrySolve(duplicated, variogram, out _, out var failure).Should().BeFalse();
-        failure.Should().Contain("coincident sample points");
+        failure.Should().Contain("share a location");
+
+        // The message must not send the caller after a larger nugget: gamma(0) is zero by
+        // definition, so no nugget value separates duplicated rows.
+        failure.Should().NotContain("raise 'nugget'");
+    }
+
+    /// <summary>
+    /// Scale invariance. The bordered system mixes semivariances (magnitude ~ the sill,
+    /// i.e. the SQUARE of the value units) with the unbiasedness constraint's exact 1s,
+    /// so a singularity threshold taken from the largest matrix entry grows with the sill
+    /// while the constraint pivot does not. Under that rule the same two-point problem
+    /// solves in small units and is rejected as singular in large ones — a well-posed
+    /// elevation or concentration job failing purely because of its units.
+    /// </summary>
+    [Theory]
+    [InlineData(2d)]
+    [InlineData(2_000d)]
+    [InlineData(2_000_000d)]
+    [UnitTest]
+    public void TrySolve_WellSeparatedSamples_IsNotReportedSingularAtAnyValueScale(double high)
+    {
+        KrigingSample[] samples = [new(0, 0, 0), new(10, 0, high)];
+        var variogram = OrdinaryKriging.FitDefaults(samples, VariogramModel.Spherical, null, null, null);
+
+        OrdinaryKriging.TrySolve(samples, variogram, out var kriging, out var failure)
+            .Should().BeTrue($"a two-point system is well posed whatever the value scale (failure: '{failure}')");
+
+        // Exactness is the property that must survive the rescaling, not merely solvability.
+        kriging.Predict(0, 0).Should().BeApproximately(0d, Math.Abs(high) * 1e-9);
+        kriging.Predict(10, 0).Should().BeApproximately(high, Math.Abs(high) * 1e-9);
     }
 
     [UnitTest]
