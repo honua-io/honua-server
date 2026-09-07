@@ -21,8 +21,15 @@ namespace Honua.Server.Tests.Features.Security;
 /// <c>[Endpoint]</c> attributes credit <c>addAttachment</c> with 19 endpoint tests it does not
 /// have. The annotations were removed rather than the tests (honua-server#4404); real
 /// <c>addAttachment</c> endpoint coverage lives in <c>AttachmentEndpointTests</c>.
+/// <para>
+/// The class is tagged <c>TestQuality</c> rather than <c>FeatureServer</c> for the same reason:
+/// a suite that proves no endpoint must not claim a protocol surface, and
+/// <c>TestAttributeEnforcementTests.AllIntegrationTestMethods_MustHaveOperationAndEndpointAttributes</c>
+/// requires an <c>[Endpoint]</c> on every integration-test method whose effective protocol is a
+/// real protocol. Tier stays Integration, so the tests run exactly where they ran before.
+/// </para>
 /// </remarks>
-[Protocol(TestProtocols.FeatureServer)]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class FileUploadSecurityTests
 {
     #region File Name Validation
