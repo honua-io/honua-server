@@ -338,7 +338,11 @@ validate_honua_consumer_artifacts() {
         return
     fi
     CONSUMER_STATUS=0
-    CONSUMER_DETAIL="honua transcoded honua.cog.tif and decoded a Zarr subset over ${ranged} range request(s), 0 whole-object downloads"
+    # Structural only. The value oracles for these artifacts (exact pixels, decoded
+    # Zarr samples, coordinate axes, chunk pruning) live in
+    # validate-canonical-artifacts.py, which exits non-zero when a hard-gated cell
+    # does not pass; the workflow gates on that exit code too.
+    CONSUMER_DETAIL="honua transcoded honua.cog.tif and decoded a Zarr subset over ${ranged} range request(s), 0 whole-object downloads; value oracles graded by validate-canonical-artifacts.py"
     echo -e "${GREEN}${CONSUMER_DETAIL}${NC}"
 }
 
@@ -401,7 +405,7 @@ cat > "$SUMMARY_FILE" << EOF
 | FlatGeobuf | FeatureServer \`f=fgb\` | \`ogrinfo -al -so\` | $(status_label $FLATGEOBUF_STATUS) | $FLATGEOBUF_DETAIL |
 | PMTiles v3 | \`PMTilesWriter\` | \`pmtiles verify\` | $(status_label $PMTILES_STATUS) | $PMTILES_DETAIL |
 | 3D Tiles 1.1 | \`TilesetDocumentWriter\` + \`GeometryTileBuilder\` | \`3d-tiles-validator\` + \`gltf_validator\` | $(status_label $TILES_STATUS) | $TILES_DETAIL |
-| COG / Zarr consumer | \`CogTiffTileEncoder\` + \`ZarrSubsetReader\` | range-read accounting + canonical oracles | $(status_label $CONSUMER_STATUS) | $CONSUMER_DETAIL |
+| COG / Zarr consumer | \`CogTiffTileEncoder\` + \`ZarrSubsetReader\` | range-read accounting (value oracles in validate-canonical-artifacts.py) | $(status_label $CONSUMER_STATUS) | $CONSUMER_DETAIL |
 
 ## Consumer-format validation
 

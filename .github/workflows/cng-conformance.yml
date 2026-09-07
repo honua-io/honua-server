@@ -199,6 +199,7 @@ jobs:
             --native-results cng-results \
             --output cng-results/protocol-certification-fragment.json \
             --source-sha "$source_sha" \
+            --generator-source-sha "$GITHUB_SHA" \
             --image-digest "$image_digest" \
             --candidate-cut-at "$candidate_cut_at" \
             --fixture-revision "docker/cng/seed.sql@$source_sha" \

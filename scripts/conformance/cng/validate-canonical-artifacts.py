@@ -340,16 +340,22 @@ FORMAT_BUDGET_PROFILES = {
     "zarr-honua-subset": _budget_profile(
         max_requests=64,
         max_transferred_bytes=1_048_576,
-        max_full_object_downloads=24,
+        max_full_object_downloads=28,
         min_range_requests=0,
         required_metadata=[
             "variable", "subset_shape", "dtype", "chunk_objects_read", "chunk_objects_total",
-            "formula_mismatches", "xarray_mismatches",
+            "formula_mismatches", "xarray_mismatches", "dimension_names", "axis_mismatches",
         ],
         expected_metadata={
             "variable": "temperature", "subset_shape": [2, 4, 8], "dtype": "<f4",
             "chunk_objects_read": 8, "chunk_objects_total": 32,
             "formula_mismatches": 0, "xarray_mismatches": 0,
+            # Honua must associate the decoded block with the right dimensions in the
+            # right order, and read the CF coordinate arrays those dimensions index. A
+            # reader that transposed or reversed the spatial axes returns
+            # correct-looking samples against wrong coordinates.
+            "dimension_names": ["time", "y", "x"],
+            "axis_mismatches": 0,
         },
     ),
 }
@@ -441,8 +447,12 @@ GOVERNED_ASSIGNMENTS = {
     ("zarr", "store-read", "fsspec"): _assignment(
         "2026.7.0", "fsspec-zarr", ("positive", "metadata", "range-efficiency"),
         "zarr-v2", "format.zarr", "zarr"),
+    # No `crs-axis` facet: this cell checks the decoded values, the dimension order and
+    # the CF coordinate arrays, but the canonical Zarr fixture declares no CRS, so
+    # Honua legitimately reports SRID 0 and a conformance claim about CRS handling
+    # would not be earned by anything measured here.
     ("zarr", "subset-transcode", "xarray"): _assignment(
-        "2026.7.0", "honua-zarr-transcode", ("positive", "metadata", "crs-axis", "range-efficiency"),
+        "2026.7.0", "honua-zarr-transcode", ("positive", "metadata", "range-efficiency"),
         "zarr-v2", "format.zarr", "zarr-honua-subset"),
 }
 
@@ -463,7 +473,7 @@ def _observation(surface: str, operation: str, client: str, lane: str, started: 
         "result": "pass",
         "skip_reason": None,
         "source_sha": args.source_sha,
-        "producer_source_sha": args.source_sha,
+        "producer_source_sha": getattr(args, "generator_source_sha", None) or args.source_sha,
         "image_digest": args.image_digest,
         "fixture_revision": args.fixture_revision,
         "evidence_uri": args.evidence_uri,
@@ -664,7 +674,13 @@ def _normalize_observations(observations: list[dict], args: argparse.Namespace) 
             for facet in assignment.facets
         }
         observation["budget_profile"] = assignment.budget_profile
+        observation["hard_gated"] = identity in HARD_GATED_CELLS
         _apply_producer_attribution(observation)
+        if (identity in OFFLINE_GENERATED_CELLS and observation["result"] == "pass"
+                and observation["producer_source_sha"] != observation["source_sha"]):
+            observation["result"] = "skip"
+            observation["skip_reason"] = _generator_provenance_gap(
+                observation["producer_source_sha"], observation["source_sha"])
         if observation["result"] == "pass":
             # #4398: the blanket pass -> skip rewrite is retired. A cell that measured
             # its declared oracles now passes and carries a real evidence digest; a cell
@@ -1036,6 +1052,26 @@ def validate_honua_zarr_subset(path: Path, args: argparse.Namespace) -> list[dic
                 start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]]
         observed["xarray_mismatches"] = int(numpy.count_nonzero(decoded != reference))
 
+        # Oracle 3: the CF coordinate arrays Honua read for the dimensions the decoded
+        # block is indexed by, against the fixture's declared axis definitions.
+        axes = zarr_evidence.get("axes") or {}
+        expected_axes = {
+            "y": numpy.linspace(22.0, 18.0, 8),
+            "x": numpy.linspace(-160.0, -156.0, 16),
+        }
+        axis_mismatches = 0
+        for name, expected_axis in expected_axes.items():
+            read = axes.get(name)
+            if not isinstance(read, dict) or "values" not in read:
+                axis_mismatches += expected_axis.size
+                continue
+            values = numpy.asarray(read["values"], dtype=numpy.float64)
+            if values.shape != expected_axis.shape:
+                axis_mismatches += max(values.size, expected_axis.size)
+                continue
+            axis_mismatches += int(numpy.count_nonzero(
+                ~numpy.isclose(values, expected_axis, rtol=0.0, atol=1e-9)))
+
         chunk_reads = zarr_evidence.get("chunk_reads") or {}
         observed.update({
             "variable": zarr_evidence["variable"],
@@ -1043,6 +1079,8 @@ def validate_honua_zarr_subset(path: Path, args: argparse.Namespace) -> list[dic
             "dtype": zarr_evidence["data_type"],
             "chunk_objects_read": chunk_reads.get("chunk_objects_read"),
             "chunk_objects_total": chunk_reads.get("chunk_objects_total"),
+            "dimension_names": axes.get("dimension_names"),
+            "axis_mismatches": axis_mismatches,
         })
 
     observations: list[dict] = []
@@ -1209,6 +1247,44 @@ def validate_javascript(path: Path, args: argparse.Namespace) -> list[dict]:
     return observations
 
 
+# Cells the lane hard-gates: the artifacts Honua itself produced from the canonical
+# inputs, whose oracles this run can fully evaluate. Their budgets are assertions, so
+# an unmet one has to end the run non-zero. Without this, a wrong transcode or a
+# chunk-pruning regression turns the row into a `skip` and the lane still exits 0 —
+# the same "green lane, no evidence" shape #4398 was filed for.
+HARD_GATED_CELLS = frozenset({
+    ("cog", "window-read", "Rasterio"),
+    ("cog", "structure-validate", "rio-cogeo"),
+    ("cog", "dataset-read", "GDAL"),
+    ("zarr", "subset-transcode", "xarray"),
+})
+
+# Cells whose artifact is written offline by `scripts/conformance/cng/artifact-gen`
+# from the checked-out source, not served by the running server. On a candidate
+# dispatch the checkout and the candidate image can differ, and evidence produced by
+# different Honua code must not be stamped as the candidate's.
+OFFLINE_GENERATED_CELLS = frozenset({
+    identity for identity in (
+        ("3d-tiles", "browser-render", "CesiumJS"),
+        ("pmtiles", "archive-read", "pmtiles"),
+        ("pmtiles", "browser-archive-read", "PMTiles-browser-viewer"),
+        ("pmtiles", "producer-validate", "Tippecanoe"),
+        ("cog", "window-read", "Rasterio"),
+        ("cog", "structure-validate", "rio-cogeo"),
+        ("cog", "dataset-read", "GDAL"),
+        ("zarr", "subset-transcode", "xarray"),
+    )
+})
+
+
+def _generator_provenance_gap(producer_sha: str, candidate_sha: str) -> str:
+    return (
+        f"This artifact was generated from source {producer_sha} while the run is bound "
+        f"to candidate source {candidate_sha}; evidence produced by different Honua code "
+        "cannot be cited for the candidate."
+    )
+
+
 NOT_RUN_GAP = (
     "This governed cell did not execute in this run, so it produced no evidence; a "
     "cell that is absent from the roster is not a cell that passed."
@@ -1251,6 +1327,7 @@ def _append_unexecuted_cells(observations: list[dict], args: argparse.Namespace)
         row["contract_revision"] = assignment.contract_revision
         row["auth_policy_revision"] = "anonymous-v1"
         row["budget_profile"] = assignment.budget_profile
+        row["hard_gated"] = identity in HARD_GATED_CELLS
         _apply_producer_attribution(row)
         observations.append(row)
     return observations
@@ -1294,6 +1371,11 @@ def main() -> int:
     parser.add_argument("--native-results", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--source-sha", required=True)
+    # The source the offline artifact generator was built from. Equal to
+    # --source-sha on the scheduled lane; on a candidate dispatch the checkout
+    # and the candidate image can differ, and the offline cells must say so
+    # rather than being stamped with the candidate's identity.
+    parser.add_argument("--generator-source-sha", default=None)
     parser.add_argument("--image-digest", required=True)
     parser.add_argument("--candidate-cut-at", required=True)
     parser.add_argument("--fixture-revision", required=True)
@@ -1373,7 +1455,18 @@ def main() -> int:
     passed = sum(observation["result"] == "pass" for observation in observations)
     skipped = sum(observation["result"] == "skip" for observation in observations)
     print(f"canonical client observations: {passed} pass, {skipped} explicit gap")
-    return 1 if any(observation["result"] == "fail" for observation in observations) else 0
+    # A hard-gated cell that did not pass ends the run non-zero, whatever the reason:
+    # a failed client, an unmet value oracle, an exceeded range budget, or a cell that
+    # never executed. Failing only on `result == "fail"` would let a rejected transcode
+    # be recorded as a `skip` while the lane stayed green.
+    unmet = sorted(
+        _cell_name(observation) for observation in observations
+        if observation.get("hard_gated") and observation["result"] != "pass"
+    )
+    if unmet:
+        print("hard-gated cells did not pass: " + ", ".join(unmet))
+    return 1 if unmet or any(
+        observation["result"] == "fail" for observation in observations) else 0
 
 
 if __name__ == "__main__":

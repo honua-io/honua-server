@@ -213,6 +213,77 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
                 f"cell '{identity}' has no declared artifact producer",
             )
 
+    def test_hard_gated_cell_that_does_not_pass_fails_the_run(self):
+        """A rejected transcode becomes a `skip`, not a `fail`. Exiting non-zero only on
+        `fail` would leave the lane green while its own oracles rejected the artifact."""
+        started = "2026-08-21T00:00:00Z"
+        rows = []
+        for identity in MODULE.HARD_GATED_CELLS:
+            surface, operation, client = identity
+            row = MODULE._observation(
+                surface, operation, client, "lane", started, args(),
+                MODULE.GOVERNED_ASSIGNMENTS[identity].version)
+            profile = MODULE.FORMAT_BUDGET_PROFILES[
+                MODULE.GOVERNED_ASSIGNMENTS[identity].budget_profile]
+            row["observed_metadata"] = dict(profile["expected_metadata"])
+            row["observed_transfer"] = {
+                "requests": 8, "range_requests": 8, "full_object_downloads": 0,
+                "transferred_bytes": 82_420,
+            }
+            rows.append(row)
+
+        normalized = MODULE._normalize_observations(rows, args())
+        self.assertTrue(all(row["hard_gated"] for row in normalized))
+        self.assertTrue(all(row["result"] == "pass" for row in normalized))
+
+        # One unmet value oracle is enough to sink the run.
+        normalized[0]["result"] = "skip"
+        unmet = [
+            MODULE._cell_name(row) for row in normalized
+            if row.get("hard_gated") and row["result"] != "pass"
+        ]
+        self.assertEqual(1, len(unmet))
+
+    def test_offline_generated_evidence_is_refused_for_a_different_candidate(self):
+        """#4398 review: on a candidate dispatch the checkout and the candidate image can
+        differ, so artifact-gen output must not be stamped with the candidate's identity."""
+        started = "2026-08-21T00:00:00Z"
+        candidate = args()
+        candidate.generator_source_sha = "d" * 40
+        row = MODULE._observation(
+            "cog", "window-read", "Rasterio", "rasterio-cog", started, candidate)
+        row["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"])
+        row["observed_transfer"] = {
+            "requests": 8, "range_requests": 8, "full_object_downloads": 0,
+            "transferred_bytes": 82_420,
+        }
+
+        normalized = MODULE._normalize_observations([row], candidate)[0]
+
+        self.assertEqual("skip", normalized["result"])
+        self.assertIn("d" * 40, normalized["skip_reason"])
+        self.assertIn("different Honua code", normalized["skip_reason"])
+        self.assertIsNone(normalized["evidence_digest"])
+
+        # Same source on both sides — the scheduled lane — still passes.
+        aligned = args()
+        same = MODULE._observation(
+            "cog", "window-read", "Rasterio", "rasterio-cog", started, aligned)
+        same["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"])
+        same["observed_transfer"] = dict(row["observed_transfer"])
+        self.assertEqual("pass", MODULE._normalize_observations([same], aligned)[0]["result"])
+
+    def test_zarr_transcode_cell_claims_no_unmeasured_crs_facet(self):
+        """The canonical Zarr fixture declares no CRS, so a `crs-axis` conformance facet
+        on this cell would be unearned. What is measured is the axis oracle."""
+        assignment = MODULE.GOVERNED_ASSIGNMENTS[("zarr", "subset-transcode", "xarray")]
+        self.assertNotIn("crs-axis", assignment.facets)
+        expected = MODULE.FORMAT_BUDGET_PROFILES["zarr-honua-subset"]["expected_metadata"]
+        self.assertEqual(["time", "y", "x"], expected["dimension_names"])
+        self.assertEqual(0, expected["axis_mismatches"])
+        self.assertIn("axis_mismatches",
+                      MODULE.FORMAT_BUDGET_PROFILES["zarr-honua-subset"]["required_metadata"])
+
     def test_consumer_evidence_is_required_before_any_cog_or_zarr_cell_runs(self):
         """A lane that skipped the artifact generator must fail loudly. Silently
         falling back would restore exactly the false proof #4398 was filed for."""

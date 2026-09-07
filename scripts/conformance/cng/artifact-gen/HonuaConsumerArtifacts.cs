@@ -42,6 +42,9 @@ internal static class HonuaConsumerArtifacts
     internal static readonly int[] SubsetStart = [1, 2, 4];
     internal static readonly int[] SubsetStop = [3, 6, 12];
 
+    /// <summary>The fixture's spatial coordinate variables, in dimension order.</summary>
+    internal static readonly string[] SpatialAxes = ["y", "x"];
+
     /// <summary>
     /// Drives Honua's COG and Zarr readers over the canonical fixtures through a
     /// counting HTTP range origin, writes the transcoded COG tile, and returns the
@@ -187,7 +190,51 @@ internal static class HonuaConsumerArtifacts
                     new ZarrSubsetRequest { Variable = ZarrVariable, Start = SubsetStart, Stop = SubsetStop })
                 .ConfigureAwait(false);
 
-            var values = DecodeFloat32(subset.Data, subset.DataType);
+            var values = DecodeSamples(subset.Data, subset.DataType);
+
+            // Read the CF coordinate arrays for the data variable's own dimensions, so
+            // the oracle can check axis values and their order rather than only the
+            // data block. A reader that transposed or reversed the spatial axes returns
+            // correct-looking samples with wrong coordinates. The time axis is stored as
+            // CF-encoded int64 offsets and is out of scope here.
+            var axes = new JsonObject
+            {
+                ["dimension_names"] = ToJson(array.DimensionNames),
+                // What Honua's CF georeferencing resolution made of the store. Recorded
+                // as observed, not asserted: this fixture declares no CRS, so `srid` is
+                // legitimately 0 and the spatial dimension names may be unresolved.
+                ["spatial_x_dimension"] = store.SpatialXDimension,
+                ["spatial_y_dimension"] = store.SpatialYDimension,
+                ["temporal_dimension"] = store.TemporalDimension,
+                ["srid"] = store.Srid,
+            };
+            foreach (var axis in SpatialAxes)
+            {
+                var axisArray = store.Arrays.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Name, axis, StringComparison.Ordinal))
+                    ?? throw new InvalidDataException(
+                        $"Honua's Zarr reader did not discover the '{axis}' coordinate array.");
+                if (axisArray.Shape.Length != 1)
+                {
+                    throw new InvalidDataException(
+                        $"Coordinate array '{axis}' is not one-dimensional.");
+                }
+
+                var axisSubset = await new ZarrSubsetReader()
+                    .ReadSubsetAsync(
+                        reader,
+                        Bucket,
+                        ZarrRootKey,
+                        store,
+                        new ZarrSubsetRequest { Variable = axisArray.Name, Start = [0], Stop = [axisArray.Shape[0]] })
+                    .ConfigureAwait(false);
+                axes[axisArray.Name] = new JsonObject
+                {
+                    ["dtype"] = axisSubset.DataType,
+                    ["values"] = ToJson(DecodeSamples(axisSubset.Data, axisSubset.DataType)),
+                };
+            }
+
             var chunkObjects = counters.DistinctChunkObjects($"{ZarrRootKey}/{ZarrVariable}/");
             var totalChunks = 1L;
             for (var i = 0; i < array.Shape.Length; i++)
@@ -221,6 +268,7 @@ internal static class HonuaConsumerArtifacts
                     ["compressor"] = array.Compressor,
                     ["dimension_names"] = ToJson(array.DimensionNames),
                 },
+                ["axes"] = axes,
                 ["chunk_reads"] = new JsonObject
                 {
                     ["chunk_objects_read"] = chunkObjects,
@@ -232,24 +280,34 @@ internal static class HonuaConsumerArtifacts
         }
     }
 
-    private static double[] DecodeFloat32(byte[] data, string dataType)
+    /// <summary>
+    /// Decodes a little-endian float subset buffer. The data variable is float32 and
+    /// the CF coordinate axes are float64, so both widths are handled; anything else is
+    /// a fixture change the oracle downstream could not interpret.
+    /// </summary>
+    private static double[] DecodeSamples(byte[] data, string dataType)
     {
-        if (!string.Equals(dataType, "<f4", StringComparison.Ordinal))
+        var width = dataType switch
+        {
+            "<f4" => sizeof(float),
+            "<f8" => sizeof(double),
+            _ => throw new InvalidDataException(
+                $"The canonical Zarr fixture must be little-endian float32/float64; Honua read '{dataType}'."),
+        };
+
+        if (data.Length % width != 0)
         {
             throw new InvalidDataException(
-                $"The canonical Zarr fixture must be little-endian float32; Honua read '{dataType}'.");
+                $"Zarr subset payload of {data.Length} bytes is not a whole number of {dataType} samples.");
         }
 
-        if (data.Length % sizeof(float) != 0)
-        {
-            throw new InvalidDataException(
-                $"Zarr subset payload of {data.Length} bytes is not a whole number of float32 samples.");
-        }
-
-        var values = new double[data.Length / sizeof(float)];
+        var values = new double[data.Length / width];
         for (var i = 0; i < values.Length; i++)
         {
-            values[i] = BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(i * sizeof(float), sizeof(float)));
+            var span = data.AsSpan(i * width, width);
+            values[i] = width == sizeof(float)
+                ? BinaryPrimitives.ReadSingleLittleEndian(span)
+                : BinaryPrimitives.ReadDoubleLittleEndian(span);
         }
 
         return values;
