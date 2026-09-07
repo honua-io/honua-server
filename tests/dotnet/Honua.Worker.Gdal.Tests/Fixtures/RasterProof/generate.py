@@ -59,3 +59,9 @@ points = [{"type": "Feature", "properties": {"value": v}, "geometry": {"type": "
 (root / "points.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": points}) + "\n")
 points[-1]["properties"]["value"] = 0
 (root / "points-zero.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": points}) + "\n")
+# Two collinear samples: the ordinary-kriging weights for a two-point system have a
+# closed form, so the kriging proof can assert hand-derived cell values rather than
+# re-running the executor's own solver.
+pair = [{"type": "Feature", "properties": {"value": v}, "geometry": {"type": "Point", "coordinates": [x, y]}}
+        for x, y, v in [(0, 0, 10), (4, 0, 30)]]
+(root / "points-pair.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": pair}) + "\n")

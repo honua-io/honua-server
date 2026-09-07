@@ -158,4 +158,26 @@ internal sealed class GdalWorkerOptions
     /// </summary>
     [Range(1L, long.MaxValue, ErrorMessage = "MaxZoneVertices must be a positive vertex count")]
     public long MaxZoneVertices { get; set; } = 2_000_000L;
+
+    /// <summary>
+    /// Maximum number of sample points accepted in a <c>raster.interpolate-kriging</c>
+    /// payload. Ordinary kriging factors an (n+1)×(n+1) system once per job, so the
+    /// solve cost grows as n³ and an unbounded point set is a CPU DoS well inside the
+    /// per-invocation <see cref="ToolTimeout"/>. Default 1 024 points keeps that
+    /// factorization sub-second while covering realistic scattered-observation networks
+    /// (weather stations, soil samples, boreholes); denser inputs should be thinned or
+    /// tiled before submission (#3932).
+    /// </summary>
+    [Range(2, int.MaxValue, ErrorMessage = "MaxKrigingSamples must be at least 2 sample points")]
+    public int MaxKrigingSamples { get; set; } = 1_024;
+
+    /// <summary>
+    /// Maximum output cell count for <c>raster.interpolate-kriging</c>. The predicted
+    /// surface is materialized in managed memory before it is handed to GDAL, so kriging
+    /// carries a tighter bound than the shared <see cref="MaxRasterPixels"/> output-grid
+    /// cap that the <c>gdal_grid</c>-backed IDW path relies on. Default 4 000 000 cells
+    /// (a 2 000 × 2 000 surface ≈ 32 MiB of Double predictions) (#3932).
+    /// </summary>
+    [Range(1L, long.MaxValue, ErrorMessage = "MaxKrigingCells must be a positive cell count")]
+    public long MaxKrigingCells { get; set; } = 4_000_000L;
 }

@@ -165,7 +165,7 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public void ValidatePlan_WorkflowOnlyAndUnavailableProcesses_ReportCanonicalCapability()
+    public void ValidatePlan_WorkflowOnlyAndProtocolOnlyProcesses_ReportCanonicalCapability()
     {
         var workflowPlan = new AnalysisPlan
         {
@@ -182,17 +182,17 @@ public sealed class GeoprocessingJobServiceTests
                 }
             ]
         };
-        var unavailablePlan = new AnalysisPlan
+        var protocolOnlyPlan = new AnalysisPlan
         {
-            PlanId = "plan-unavailable",
-            IntentId = "intent-unavailable",
+            PlanId = "plan-protocol-only",
+            IntentId = "intent-protocol-only",
             Steps =
             [
                 new AnalysisPlanStep
                 {
-                    StepId = "kriging",
+                    StepId = "cluster",
                     Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "raster.interpolate-kriging",
+                    ProcessId = "analytics.cluster",
                     Inputs = new Dictionary<string, string>()
                 }
             ]
@@ -200,8 +200,51 @@ public sealed class GeoprocessingJobServiceTests
 
         _sut.ValidatePlan(workflowPlan, CreatePrincipal()).Violations
             .Should().Contain(violation => violation.Code == "WORKFLOW_ONLY_PROCESS");
-        _sut.ValidatePlan(unavailablePlan, CreatePrincipal()).Violations
-            .Should().Contain(violation => violation.Code == "PROCESS_UNAVAILABLE");
+        _sut.ValidatePlan(protocolOnlyPlan, CreatePrincipal()).Violations
+            .Should().Contain(violation => violation.Code == "SYNC_ONLY_PROCESS");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_UnavailableProcess_StaysFailClosed()
+    {
+        // The built-in catalog has no Unavailable entries — the entry-point ruling admits
+        // no advertised-but-unexecutable state (#4409) — but the submit path must still
+        // refuse one from a custom catalog rather than admitting an unclassified job.
+        var definition = new ProcessDefinition
+        {
+            ProcessId = "custom.unavailable",
+            Title = "Unavailable",
+            Description = "Test-only unavailable capability.",
+            Category = "custom",
+            Parameters = [],
+            OutputArtifactKinds = [],
+            ExecutionKind = ProcessExecutionKind.Unavailable,
+            SupportedExecutionModes = ProcessExecutionModes.None,
+            ExecutionCapabilityReason = "No backend is bundled in this build."
+        };
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.GetProcess(definition.ProcessId).Returns(definition);
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-unavailable",
+            IntentId = "intent-unavailable",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "unavailable",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = definition.ProcessId,
+                    Inputs = new Dictionary<string, string>()
+                }
+            ]
+        };
+
+        var (violations, _) = DirectSubmitPlanValidator.Evaluate(plan, catalog);
+
+        violations.Should().ContainSingle(violation => violation.Code == "PROCESS_UNAVAILABLE");
     }
 
     [UnitTest]
@@ -499,35 +542,6 @@ public sealed class GeoprocessingJobServiceTests
         job.OperationId.Should().NotBeNullOrWhiteSpace();
         job.Status.Should().Be(ExecutionJobStatus.Queued);
         job.Spec.Kind.Should().Be(ExecutionJobKind.Geoprocessing);
-    }
-
-    [UnitTest]
-    [Operation(Operations.Create)]
-    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_NonJobCapability_RejectsBeforeDurablePersistence()
-    {
-        var unavailablePlan = new AnalysisPlan
-        {
-            PlanId = "plan-unavailable",
-            IntentId = "intent-unavailable",
-            Steps =
-            [
-                new AnalysisPlanStep
-                {
-                    StepId = "kriging",
-                    Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "raster.interpolate-kriging",
-                    Inputs = new Dictionary<string, string>(),
-                },
-            ],
-        };
-
-        var act = () => _sut.SubmitJobAsync(unavailablePlan, null, CreatePrincipal());
-
-        await act.Should().ThrowAsync<GeoprocessingValidationException>()
-            .WithMessage("*PROCESS_UNAVAILABLE*");
-        await _jobStore.DidNotReceive().TryCreateAsync(
-            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
