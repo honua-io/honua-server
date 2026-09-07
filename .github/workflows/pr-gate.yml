@@ -112,6 +112,18 @@ jobs:
       - name: Verify terminal error receipt contract
         run: python3 scripts/certification/verify-terminal-error-receipts.py
 
+      # The bounded 2026.1 external-client roster (#3434). The mirror's producer
+      # claims are recomputed from expected-pairs.json and the committed baselines,
+      # so a lane that starts or stops emitting a governed pair fails here until the
+      # mirror is refreshed. The contract-tier verdict itself is expected to be red
+      # until the roster is certified, so the gate asserts the mirror is honest
+      # rather than asserting the roster is green.
+      - name: Verify bounded client-certification roster contract
+        run: |
+          python3 -m unittest \
+            scripts.certification.test_build_client_protocol_requirements \
+            scripts.certification.test_verify_client_certification_receipts
+
       - name: Verify review-first admission contract
         run: scripts/ci/validate-review-first-dispatch.sh
 

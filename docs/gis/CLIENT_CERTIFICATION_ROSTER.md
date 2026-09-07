@@ -9,6 +9,20 @@ The external Claude artifact that seeded this roster ([`https://claude.ai/code/a
 
 Owning issue: [#3395](https://github.com/honua-io/honua-server/issues/3395) - parent [#3389](https://github.com/honua-io/honua-server/issues/3389).
 
+### This roster is not the 2026.1 release denominator
+
+This roster answers "which clients exist, and what status does each hold here". It is
+deliberately broader than the set the 2026.1 release gate requires, and its `requiredTier`
+values are this repository's own nightly/release wiring.
+
+The frozen bounded roster the 2026.1 gate is scored against is
+[`certification/client-protocol-requirements.v1.json`](../../certification/client-protocol-requirements.v1.json)
+([#3434](https://github.com/honua-io/honua-server/issues/3434)) — 59 rows projected from the
+authoritative denominator in `honua-release`, naming every required external-client
+operation, client and pinned client version, plus whether a honua-server producer can emit a
+receipt that joins to it. A row being `active`/`activated` here does **not** make it a
+certified 2026.1 cell; only a joined, candidate-bound pass in that profile does.
+
 ## What a status means
 
 | Field | Meaning |
