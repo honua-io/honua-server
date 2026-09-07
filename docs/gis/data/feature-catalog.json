@@ -13165,6 +13165,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyEndpointsTests.Wfs11_GetFeature_TextXmlGml31SubtypeOutputFormat_ReturnsGml31FeatureCollection",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyEndpointsTests.Wfs11_GetFeature_UnknownType_ReturnsOws10ExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyEndpointsTests.Wfs11_GetFeature_UnsupportedSrsName_ReturnsOws10ExceptionReport",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyGeometryMetadataTests.GetFeature_GeometryMetadataWithoutSchemaField_PreservesGeometryAndControls",
         "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_WfsGetCapabilities_MatchesGetStatusWithEmptyBodyAndContentLength"
       ],
       "proof_ledger_surface": "wfs-2.0",
@@ -21340,7 +21341,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_WithXmlLockId_ReturnsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20MutationScenarioTests.Transaction_InsertUpdateReplaceDelete_RoundTripsEachState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20MutationScenarioTests.Transaction_InvalidInsertAndDelete_AreRejectedWithoutChangingStoredState",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyEndpointsTests.Wfs11_Post_GetFeature_XmlBody_ReturnsGml31FeatureCollection"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyEndpointsTests.Wfs11_Post_GetFeature_XmlBody_ReturnsGml31FeatureCollection",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyGeometryMetadataTests.GetFeature_GeometryMetadataWithoutSchemaField_PreservesGeometryAndControls"
       ],
       "proof_ledger_surface": "wfs-2.0",
       "maturity": "implemented",

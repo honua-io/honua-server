@@ -646,16 +646,17 @@ internal sealed partial class Wfs20Handler
 
     private static void WriteLegacyGeometryField(XmlWriter writer, string version, LayerQueryPlan plan, Feature feature)
     {
-        var geometryField = plan.Descriptor.Resource.FindPrimaryGeometryField();
-        if (geometryField is null || feature.Geometry is null)
+        var geometryPropertyName = ResolveGeometryPropertyName(plan.Descriptor.Resource);
+        if (geometryPropertyName is null || feature.Geometry is null)
         {
             return;
         }
 
+        var geometryField = plan.Descriptor.Resource.FindPrimaryGeometryField();
         writer.WriteStartElement(
-            GetFieldNamespacePrefix(plan.Descriptor, geometryField),
-            XmlConvert.EncodeLocalName(geometryField.Name),
-            GetFieldNamespaceUri(plan.Descriptor, geometryField));
+            geometryField is null ? plan.Descriptor.NamespacePrefix : GetFieldNamespacePrefix(plan.Descriptor, geometryField),
+            XmlConvert.EncodeLocalName(geometryPropertyName),
+            geometryField is null ? plan.Descriptor.NamespaceUri : GetFieldNamespaceUri(plan.Descriptor, geometryField));
         WriteLegacyGeometry(writer, version, plan, feature.Geometry);
         writer.WriteEndElement();
     }
