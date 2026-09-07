@@ -10,6 +10,12 @@ using System.Text.Json;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Plugins;
+using Honua.Plugins.Abstractions;
+using Honua.Server.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -123,6 +129,111 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             {
                 writer.GetProperty("reasonCode").GetString().Should().Be("unsupported");
             }
+        }
+
+        using var anonymous = fixture.CreateClient();
+        using var anonymousResponse = await anonymous.GetAsync("/api/v1/capabilities/manifest");
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
+        var implemented = anonymousDocument.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(row => row.GetProperty("category").GetString() is "format-read" or "format-write")
+            .Where(row => row.GetProperty("supported").GetBoolean()).ToArray();
+        implemented.Should().HaveCount(16);
+        foreach (var capability in implemented)
+        {
+            capability.GetProperty("available").GetBoolean().Should().BeFalse();
+            capability.GetProperty("reasonCode").GetString().Should().Be("insufficient-policy");
+        }
+
+        foreach (var adminRead in new[] { false, true })
+        {
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Role, adminRead ? AdminApiKeyPermission.ScopedAdminRole : "editor"),
+                 new Claim(AdminApiKeyPermission.PermissionClaimType, adminRead ? "admin:read" : "features:read")],
+                "ApiKey"));
+            var manifest = await fixture.GetService<ICapabilityManifestService>().GetManifestAsync(
+                new CapabilityManifestRequest(principal, null, TenantContextSource.Anonymous, null, null, true));
+            var formats = manifest.Capabilities.Where(row => row.Category is "format-read" or "format-write")
+                .Where(row => row.Supported).ToArray();
+            formats.Should().HaveCount(16);
+            foreach (var capability in formats)
+            {
+                capability.Available.Should().Be(adminRead && capability.Category == "format-write",
+                    "import is an admin POST and synchronous export is an admin GET");
+                if (!capability.Available) { capability.ReasonCode.Should().Be("insufficient-policy"); }
+            }
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_FileReadersWithoutImportService_ReportMissingDependency(bool fromRegistry)
+    {
+        await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry)
+            .ConfigureServices(services => services.RemoveAll<IFileImportService>());
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var readers = document.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(row => row.GetProperty("category").GetString() == "format-read").ToArray();
+        readers.Should().HaveCount(13);
+        foreach (var reader in readers)
+        {
+            reader.GetProperty("supported").GetBoolean().Should().BeTrue();
+            reader.GetProperty("available").GetBoolean().Should().BeFalse();
+            reader.GetProperty("reasonCode").GetString().Should().Be("dependency-unavailable");
+        }
+        GetCapability(document.RootElement, "format.write.csv").GetProperty("available").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, false)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_FilePluginWriters_UsesLicensedEnabledDiscovery(bool fromRegistry, bool enabled, bool licensed)
+    {
+        var formats = new[] { "gpx", "fixture-tsv" }.Select(id =>
+        {
+            var format = Substitute.For<IFeatureOutputFormat>();
+            format.FormatId.Returns(id);
+            format.MediaType.Returns("application/octet-stream");
+            format.FileExtension.Returns(id);
+            return format;
+        }).ToArray();
+        await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry,
+            edition: licensed ? HonuaEdition.Enterprise : HonuaEdition.Pro)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IFeatureOutputFormatRegistry>();
+                services.AddSingleton<IFeatureOutputFormatRegistry>(sp => new FeatureOutputFormatRegistry(
+                    formats, sp.GetRequiredService<ILicenseEntitlementService>(), Options.Create(new PluginOptions { Enabled = enabled })));
+            });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var writers = document.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(row => row.GetProperty("category").GetString() == "format-write").ToArray();
+        var active = enabled && licensed;
+        writers.Should().HaveCount(active ? 14 : 13);
+        writers.Select(row => row.GetProperty("id").GetString()).Should().OnlyHaveUniqueItems();
+        var gpx = GetCapability(document.RootElement, "format.write.gpx");
+        gpx.GetProperty("supported").GetBoolean().Should().Be(active);
+        gpx.GetProperty("available").GetBoolean().Should().Be(active);
+        gpx.GetProperty("lifecycle").GetString().Should().Be(active ? "implemented" : "planned");
+        writers.Any(row => row.GetProperty("id").GetString() == "format.write.fixture-tsv").Should().Be(active);
+        if (active)
+        {
+            GetCapability(document.RootElement, "format.write.fixture-tsv").GetProperty("available").GetBoolean().Should().BeTrue();
         }
     }
 

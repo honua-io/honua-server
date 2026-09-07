@@ -111,7 +111,7 @@ internal sealed class CapabilityManifestService(
         var capabilities = options.ManifestFromRegistry
             ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
-        capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext)];
+        capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
             : BuildPackages();
@@ -163,15 +163,38 @@ internal sealed class CapabilityManifestService(
         return manifest;
     }
 
-    private IEnumerable<CapabilityManifestCapability> BuildFileFormatCapabilities(CapabilityPolicyContext context)
+    private IEnumerable<CapabilityManifestCapability> BuildFileFormatCapabilities(
+        CapabilityPolicyContext context, ClaimsPrincipal principal)
     {
+        var plugins = runtimeInventory.ActiveOutputFormats
+            .ToDictionary(format => "format.write." + format.FormatId.ToLowerInvariant(), StringComparer.Ordinal);
+        var emitted = new HashSet<string>(StringComparer.Ordinal);
         foreach (var descriptor in capabilityRegistry.All.Where(d => d.Category is "format-read" or "format-write"))
         {
+            var read = descriptor.Category == "format-read";
+            var supported = descriptor.ImplementationStatus == CapabilityImplementationStatus.Served
+                || (!read && plugins.ContainsKey(descriptor.Id));
+            emitted.Add(descriptor.Id);
             yield return Capability(descriptor.Id, descriptor.Category, context,
-                maturity: descriptor.Maturity,
-                supported: descriptor.ImplementationStatus == CapabilityImplementationStatus.Served);
+                maturity: supported ? CapabilityMaturity.Implemented : descriptor.Maturity,
+                supported: supported,
+                configured: !read || runtimeInventory.HasFileImportService,
+                entitlementKey: read ? "import.file" : null,
+                requiresAuthentication: true,
+                callerAuthorized: CanUseFileFormats(principal, read),
+                unavailableReasonOverride: CapabilityReasonCodes.DependencyUnavailable);
+        }
+
+        foreach (var id in plugins.Keys.Order(StringComparer.Ordinal).Where(id => !emitted.Contains(id)))
+        {
+            yield return Capability(id, "format-write", context, requiresAuthentication: true,
+                callerAuthorized: CanUseFileFormats(principal, read: false));
         }
     }
+
+    private static bool CanUseFileFormats(ClaimsPrincipal principal, bool read) =>
+        (principal.IsInRole("admin") || principal.IsInRole(AdminApiKeyPermission.ScopedAdminRole))
+        && AdminApiKeyPermission.IsAuthorized(principal, read ? HttpMethods.Post : HttpMethods.Get);
 
     private async ValueTask<CapabilityManifestEnvironment> ResolveEnvironmentAsync(
         string? environment,
@@ -743,6 +766,7 @@ internal sealed class CapabilityManifestService(
         string[]? entitlementKeys = null,
         string? policyCapability = null,
         bool requiresAuthentication = false,
+        bool callerAuthorized = true,
         bool requiresEnvironment = false,
         bool requiresWorkspace = false,
         bool requiresDurableJobStore = false,
@@ -791,7 +815,7 @@ internal sealed class CapabilityManifestService(
             available = false;
             reasonCode = CapabilityReasonCodes.InsufficientPolicy;
         }
-        else if (requiresAuthentication && !context.Authenticated)
+        else if ((requiresAuthentication && !context.Authenticated) || !callerAuthorized)
         {
             available = false;
             reasonCode = CapabilityReasonCodes.InsufficientPolicy;
