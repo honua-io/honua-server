@@ -8,6 +8,8 @@ using FluentAssertions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Honua.Core.Features.Security.Domain;
@@ -18,6 +20,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
@@ -341,6 +344,14 @@ public sealed class FeatureServerAccessFilteringTests
             {
                 services.AddSingleton<IAttachmentStore, TestAttachmentStore>();
                 services.AddSingleton(serverLog);
+
+                // The RBAC fixture registers no data-source provider, and only the Postgres
+                // provider registers ICrsDetectionService — a mandatory scoped dependency of
+                // FeatureServerSpatialReferenceResolver. Without it the `query` route fails DI
+                // activation and answers 500 before any authorization decision is reachable,
+                // which is exactly what the sibling metadata-only tests never noticed. This is
+                // the same capability-scoped stub the DuckDB and MySQL providers register.
+                services.TryAddScoped<ICrsDetectionService, NoOpCrsDetectionService>();
             });
 }
 
