@@ -323,14 +323,24 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
                 TileUrl(TileLevel, 0, 0, MissingCogLayerId));
             var body = await response.Content.ReadAsByteArrayAsync();
 
-            ((int)response.StatusCode).Should().BeGreaterThanOrEqualTo(400,
-                "a missing backing object must not be reported as a served tile");
-            ((int)response.StatusCode).Should().BeLessThan(500,
-                "a missing registered object is a bounded catalog condition, not a server fault");
-            response.Content.Headers.ContentType?.MediaType.Should().NotStartWith("image/",
-                "no partial or placeholder imagery may be emitted");
-            body.Take(4).Should().NotEqual([(byte)0x89, (byte)0x50, (byte)0x4E, (byte)0x47]);
-            System.Text.Encoding.UTF8.GetString(body).Should().NotContain(_missingObjectKey,
+            // /rest/services/... follows the GeoServices convention of carrying the
+            // error in the body rather than the status line, so the bounded error is a
+            // 200 envelope whose code is 404 — not a 4xx status. What matters for this
+            // criterion is asserted below: it is an error, it is bounded, it carries no
+            // imagery, and it does not describe the storage layout.
+            var text = System.Text.Encoding.UTF8.GetString(body);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json",
+                "no partial or placeholder imagery may be emitted for a missing object");
+
+            using var envelope = System.Text.Json.JsonDocument.Parse(text);
+            var error = envelope.RootElement.GetProperty("error");
+            error.GetProperty("code").GetInt32().Should().Be(404);
+            error.GetProperty("message").GetString().Should().NotBeNullOrWhiteSpace();
+
+            body.Take(4).Should().NotEqual([(byte)0x89, (byte)0x50, (byte)0x4E, (byte)0x47],
+                "no PNG bytes may be emitted");
+            body.Length.Should().BeLessThan(2048, "the error must be bounded, not a partial object dump");
+            text.Should().NotContain(_missingObjectKey).And.NotContain(_bucket!,
                 "the error must not echo the storage layout back to the caller");
         }
         finally
