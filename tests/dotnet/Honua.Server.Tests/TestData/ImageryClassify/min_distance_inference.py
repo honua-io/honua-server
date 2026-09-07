@@ -48,7 +48,7 @@ def main(argv: list[str]) -> int:
     output.SetProjection(source.GetProjection())
     output.GetRasterBand(1).WriteArray(classified)
     output.FlushCache()
-    output = None
+    del output
 
     json.dump({"model": model["modelId"], "pixels": int(classified.size)}, sys.stdout)
     return 0
