@@ -49,10 +49,6 @@ jobs:
       pull-requests: read
     outputs:
       pr: ${{ steps.target.outputs.result }}
-      # The subject `attest` was admitted for. It re-checks this against the
-      # live head, because `attest` serializes and the subject can go stale
-      # while it queues.
-      head: ${{ steps.stale.outputs.subject_head }}
     steps:
       - name: Shed superseded review event
         id: stale
@@ -79,11 +75,6 @@ jobs:
             const eventHead = context.payload.workflow_run?.head_sha ||
               context.payload.pull_request?.head?.sha ||
               context.payload.client_payload?.head_sha;
-            // Carry the subject forward so the trusted job can re-decide
-            // staleness at the moment it actually starts. An issue_comment
-            // names no SHA and deliberately leaves this empty: its whole point
-            // is that review evidence moved under an unchanged head.
-            if (eventHead) core.setOutput('subject_head', eventHead);
             // Only the workflow_run association fallback needs a subject SHA. An
             // issue_comment carries no SHA but does name its pull request, so it
             // still reaches the closed-subject check below.
@@ -161,7 +152,6 @@ jobs:
         uses: actions/github-script@v9
         env:
           PR: ${{ needs.resolve.outputs.pr }}
-          SUBJECT_HEAD: ${{ needs.resolve.outputs.head }}
         with:
           script: |
             // THE SECOND STALENESS WINDOW. `resolve` already sheds an event whose
@@ -182,6 +172,19 @@ jobs:
             // fails nothing, and can only WITHHOLD an attestation. It can never
             // publish one, so it cannot admit a pull request that would otherwise
             // have been blocked. `reopened` re-fires this workflow.
+            //
+            // CLOSED IS THE ONLY STALENESS THIS JOB MAY SHED. A moved head must
+            // still be attested here, because this job is the fallback that keeps
+            // the live head covered. `resolve` uses ONE PR-wide
+            // `cancel-in-progress: true` group and GitHub guarantees no ordering
+            // within it, so a late-delivered event for an OLD head can cancel the
+            // resolver for the NEWEST head and then shed itself. The attestation
+            // already queued behind it is then the only thing left that will stamp
+            // the live head, and `Review Gate` is required at the exact current
+            // head. Shedding on a moved subject here would leave that head
+            // permanently unattested and the PR unmergeable until an unrelated
+            // comment or label event happened to wake the gate again. The steps
+            // below deliberately re-read the LIVE head rather than a bound subject.
             const shed = async reason => {
               core.notice(`superseded: ${reason}`);
               core.summary.addRaw(`Shed superseded review subject: ${reason}`, true);
@@ -190,21 +193,12 @@ jobs:
             };
 
             const prNumber = Number(process.env.PR);
-            const subjectHead = process.env.SUBJECT_HEAD || '';
             const { data: pull } = await github.rest.pulls.get({
               ...context.repo, pull_number: prNumber,
             });
             if (pull.state !== 'open') {
               return shed(
                 `PR #${prNumber} became ${pull.state} while this attestation queued`);
-            }
-            // A head that moved is always re-attested by its own `synchronize`
-            // event: the resolve concurrency group only ever cancels an OLDER run,
-            // so the newest head always reaches this job. An event that names no
-            // subject SHA binds to the live head instead and must not shed here.
-            if (subjectHead && pull.head.sha !== subjectHead) {
-              return shed(
-                `subject ${subjectHead} is no longer head ${pull.head.sha} for PR #${prNumber}`);
             }
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

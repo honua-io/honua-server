@@ -236,36 +236,31 @@ test('attest sheds a pull request that merged while the attestation queued', asy
   assert.match(result.notices.join('\n'), /PR #42 became closed while this attestation queued/);
 });
 
-test('attest sheds a subject the pull request has moved past', async () => {
-  const result = await runShed(ATTEST_SHED, {
-    env: { PR: '42', SUBJECT_HEAD: 'b'.repeat(40) },
-    pull: OPEN_PR,
-  });
-  assert.equal(result.superseded, true);
-  assert.match(result.notices.join('\n'), /subject b{40} is no longer head a{40}/);
-});
-
-test('attest still attests an event that names no subject SHA', async () => {
-  // issue_comment is the highest-volume review-gate trigger and carries no
-  // commit id. Its whole point is that review evidence moved under an unchanged
-  // head, so an empty subject must bind to the live head, never shed.
-  for (const SUBJECT_HEAD of ['', undefined]) {
-    const result = await runShed(ATTEST_SHED, {
-      env: { PR: '42', SUBJECT_HEAD },
-      pull: OPEN_PR,
-    });
-    assert.equal(
-      result.superseded, false, `shed on SUBJECT_HEAD=${JSON.stringify(SUBJECT_HEAD)}`);
-  }
-});
-
-test('attest admits an open pull request still sitting on its subject', async () => {
-  const result = await runShed(ATTEST_SHED, {
-    env: { PR: '42', SUBJECT_HEAD: 'a'.repeat(40) },
-    pull: OPEN_PR,
-  });
+test('attest NEVER sheds a moved head: it is the live-head fallback', async () => {
+  // Regression guard for the one thing this shed must not do. `resolve` uses a
+  // single PR-wide `cancel-in-progress: true` group and GitHub guarantees no
+  // ordering inside it, so a late-delivered event for an OLD head can cancel
+  // the resolver for the NEWEST head and then shed itself. The attestation
+  // already queued behind it is then the only thing left that will stamp the
+  // live head -- and `Review Gate` is required at the exact current head.
+  // Shedding on a moved subject here would leave that head permanently
+  // unattested and the PR unmergeable until an unrelated event woke the gate.
+  const result = await runShed(ATTEST_SHED, { env: { PR: '42' }, pull: OPEN_PR });
   assert.equal(result.superseded, false);
   assert.equal(result.failure, null);
+  // The shed may not grow a head comparison, and the job must not be handed a
+  // bound subject to compare against.
+  assert.doesNotMatch(ATTEST_SHED, /head\.sha|SUBJECT_HEAD|headRefOid/);
+  const gate = fs.readFileSync(path.join(WORKFLOWS, 'review-gate.yml'), 'utf8');
+  const attestJob = gate.slice(gate.indexOf('\n  attest:'));
+  assert.doesNotMatch(attestJob, /needs\.resolve\.outputs\.head/);
+});
+
+test('attest admits an open pull request', async () => {
+  const result = await runShed(ATTEST_SHED, { env: { PR: '42' }, pull: OPEN_PR });
+  assert.equal(result.superseded, false);
+  assert.equal(result.failure, null);
+  assert.equal(result.calls.pullsGet, 1);
 });
 
 test('the attest shed is neutral: no failure, no commit status, one summary line', async () => {
@@ -304,9 +299,6 @@ test('every paid step of the trusted attestation is behind the shed', () => {
       `"${marker}" runs before the shed decides`,
     );
   }
-  // The subject must survive the job boundary for the head comparison to exist.
-  assert.match(gate, /head: \$\{\{ steps\.stale\.outputs\.subject_head \}\}/);
-  assert.match(gate, /SUBJECT_HEAD: \$\{\{ needs\.resolve\.outputs\.head \}\}/);
 });
 
 // -- claude-review: decide the subject before paying for the trusted tree. ---
