@@ -29,6 +29,10 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 [Collection(RedisFixture.CollectionName)]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.ApplyEdits)]
+// Component-level tests of the at-most-once store that backs applyEdits: they exercise the Redis
+// reservation primitives directly rather than an HTTP route, which is what TestInfrastructure
+// records (and what exempts them from the [Endpoint] requirement).
+[Operation(Operations.TestInfrastructure)]
 public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
 {
     [IntegrationTest]
