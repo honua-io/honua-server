@@ -35,6 +35,11 @@ intentional divergence from Esri's lenient "ignore time" behavior (issue #1444):
 clients learn the layer has no temporal dimension instead of receiving a full,
 unfiltered result they believe is time-scoped.
 
+WMTS GetTile and GetFeatureInfo are a protocol-specific exception: when the
+layer does not advertise a time dimension, `TIME` is an unknown parameter and
+is ignored. Advertised dimensions still validate values and apply temporal
+filters. This follows [WMTS 1.0 sections 7.2.2.2 and 7.3.2.2](https://docs.ogc.org/is/07-057r7/07-057r7.pdf).
+
 ## Time parameter grammar
 
 The GeoServices `time=` parameter accepts:
@@ -54,7 +59,7 @@ when its `[startTimeField, endTimeField]` (using `endTimeField`, else
 
 OGC API Features (`datetime=`), STAC (`datetime`), OData time-window filters, and
 WMS/WMTS `TIME` map onto the same `TemporalFilter` and honor the same opt-in and
-interval rules.
+interval rules, subject to the WMTS unknown-parameter exception above.
 
 ## Endpoints
 

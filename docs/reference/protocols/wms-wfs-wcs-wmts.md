@@ -36,6 +36,19 @@ Axis-order quirk: WMS 1.3.0 `BBOX` follows the CRS-defined axis order (lat,lon f
 
 > Open `https://server.example.com/ogc/services/roads/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&CRS=EPSG:4326&BBOX=37.7,-122.5,37.9,-122.3&WIDTH=800&HEIGHT=600&FORMAT=image/png` in a browser.
 
+### GetFeatureInfo JSON
+
+`INFO_FORMAT=application/json` returns a GeoJSON `FeatureCollection`. Each result
+has `type: "Feature"`, a `properties` object containing visible attributes, and
+`geometry: null`: this identify response supplies attributes only. Null attribute
+values remain JSON null, and internal attributes are excluded. An empty result
+is a FeatureCollection with an empty features array.
+
+The `layer` and `attributes` members remain available as foreign members for
+existing consumers. The top-level type replaces the earlier `FeatureInfoResponse`
+value so native GeoJSON identify readers, including QGIS, can read the response.
+Consumers that explicitly match the old type must accept `FeatureCollection`.
+
 ### GetLegendGraphic
 
 `GetLegendGraphic` is not part of the WMS 1.3.0 core specification, but it is universally
@@ -123,6 +136,12 @@ operator ruling keeps non-security parity work deferred to release/2026.2.
 | `GetFeatureInfo` | Tile-coordinate identify with `I`/`J` and `INFOFORMAT`; resolves the requested gridset through the same `ITileMatrixSetRegistry` as `GetTile`, so the built-in `WebMercatorQuad`/`WorldCRS84Quad` gridsets and operator-defined custom gridsets are supported. The clicked pixel is mapped to a world coordinate using the gridset's own origin, cell size and matrix dimensions (WebMercatorQuad stays byte-identical to before); unsupported gridsets are rejected with `InvalidParameterValue`. |
 
 > Open `https://server.example.com/ogc/services/roads/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=0&STYLE=default&TILEMATRIXSET=EPSG:3857&TILEMATRIX=12&TILEROW=1586&TILECOL=655&FORMAT=image/png` in a browser.
+
+WMTS GetTile and GetFeatureInfo ignore unknown KVP parameters, including
+unadvertised `TIME` and `ELEVATION` dimensions. Known parameters and advertised
+dimension values remain validated. This permits client extras such as QGIS's
+`SLD_VERSION` and `TRANSPARENT` on a legend tile request without rejecting the
+tile. See [WMTS 1.0 sections 7.2.2.2 and 7.3.2.2](https://docs.ogc.org/is/07-057r7/07-057r7.pdf).
 
 ## Conformance
 

@@ -558,7 +558,7 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "Style", "Only STYLE=default is supported.");
         }
 
-        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, includeFeatureInfoParameters: false, out var dimensionError))
+        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, out var dimensionError))
         {
             return dimensionError;
         }
@@ -778,7 +778,7 @@ internal static class WmtsRequestHandlers
                 StatusCodes.Status501NotImplemented);
         }
 
-        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, includeFeatureInfoParameters: true, out var dimensionError))
+        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, out var dimensionError))
         {
             return dimensionError;
         }
@@ -1983,7 +1983,6 @@ internal static class WmtsRequestHandlers
         HttpContext context,
         IQueryCollection query,
         MetadataV2Resource resource,
-        bool includeFeatureInfoParameters,
         out IResult errorResult)
     {
         errorResult = Results.Empty;
@@ -1993,30 +1992,10 @@ internal static class WmtsRequestHandlers
         var dummyLayer = new WmtsLayer(resource, new MetadataV2Publication(), 0, string.Empty);
         var dimensions = GetWmtsDimensionDefinitions(dummyLayer);
 
-        // Reject unknown query keys (including dimension identifiers such as
-        // `time` or `elevation` that the layer does not advertise) even when
-        // the layer publishes no dimensions at all. Without this scan a
-        // non-time-aware layer would silently accept and ignore `time=` and
-        // diverge from the docs/contract that says such requests must return
-        // InvalidParameterValue.
-        var dimensionLookup = dimensions.ToDictionary(dimension => dimension.Identifier, StringComparer.OrdinalIgnoreCase);
-        foreach (var key in query.Keys)
-        {
-            if (IsKnownWmtsQueryParameter(key, includeFeatureInfoParameters))
-            {
-                continue;
-            }
-
-            if (!dimensionLookup.ContainsKey(key))
-            {
-                errorResult = CreateWmtsExceptionReport(context,
-                    "InvalidParameterValue",
-                    key,
-                    $"Unsupported parameter '{key}'.");
-                return false;
-            }
-        }
-
+        // WMTS 1.0 sections 7.2.2.2 and 7.3.2.2 require unknown KVP keys,
+        // including unadvertised dimensions, to be ignored. Validate only
+        // dimensions advertised for this layer; known operation parameters
+        // are validated by the request handlers.
         foreach (var dimension in dimensions)
         {
             if (!query.ContainsKey(dimension.Identifier))
@@ -2058,33 +2037,6 @@ internal static class WmtsRequestHandlers
         }
 
         return true;
-    }
-
-    private static bool IsKnownWmtsQueryParameter(string key, bool includeFeatureInfoParameters)
-    {
-        if (string.Equals(key, "SERVICE", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "REQUEST", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "VERSION", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "LAYER", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "STYLE", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "FORMAT", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILEMATRIXSET", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILEMATRIX", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILEROW", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILECOL", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (!includeFeatureInfoParameters)
-        {
-            return false;
-        }
-
-        return string.Equals(key, "I", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "J", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "INFOFORMAT", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "FEATURE_COUNT", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryResolveWmtsDimensionValue(
@@ -2170,8 +2122,8 @@ internal static class WmtsRequestHandlers
     /// matches the dimension that GetCapabilities advertises. CITE Terrain
     /// owns its own non-temporal "time" handling and is bypassed so existing
     /// CITE behavior is preserved. Resources without an opt-in temporal field
-    /// also bypass — those resources do not advertise the dimension and the
-    /// validator would have rejected an unknown parameter.
+    /// also bypass: their unadvertised time parameter is ignored as required
+    /// by the WMTS KVP binding.
     /// </summary>
     private static async Task<(TemporalFilter? Filter, IResult? Error)> TryBuildWmtsLayerTemporalFilterAsync(
         HttpContext context,
@@ -2259,8 +2211,8 @@ internal static class WmtsRequestHandlers
     /// Z-aware vector source yet (the Zarr datacube Z-slice render is the deferred Shape B
     /// follow-up). When the parameter is omitted the dimension's advertised default (100) is
     /// applied, matching the advertised contract. Layers that do not advertise an elevation
-    /// dimension (everything except CITE Terrain) never reach the resolve branch because the
-    /// validator would already have rejected an unknown <c>elevation</c> key.
+    /// dimension (everything except CITE Terrain) return no selection and ignore
+    /// an unknown <c>elevation</c> key as required by the WMTS KVP binding.
     /// </remarks>
     private static VerticalSelection? ResolveWmtsLayerVerticalSelection(WmtsLayer layer, IQueryCollection query)
     {

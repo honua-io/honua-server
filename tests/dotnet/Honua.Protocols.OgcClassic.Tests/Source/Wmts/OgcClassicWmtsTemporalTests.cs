@@ -108,49 +108,43 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
-    public async Task Wmts_GetTile_NonTimeAwareLayer_WithTime_ReturnsInvalidParameterValue()
+    public async Task Wmts_GetTile_NonTimeAwareLayer_WithTime_IgnoresTime()
     {
-        // Layers without configured TimeInfo do not advertise a time dimension
-        // (verified by Wmts_GetCapabilities_NonTimeAwareLayer_DoesNotAdvertiseTimeDimension).
-        // A GetTile request that supplies time= against such a layer must be
-        // rejected with InvalidParameterValue rather than silently ignored —
-        // otherwise the request appears to honor a temporal filter that the
-        // capabilities document never advertised.
+        // WMTS ignores dimensions that the layer does not advertise.
         await ClearLayerTemporalAsync();
 
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png&time=2024-06-15T12:00:00Z");
+        var url =
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0" +
+            $"&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad" +
+            "&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png";
+        var baseline = await _fixture.Client.GetAsync(url);
+        baseline.StatusCode.Should().Be(HttpStatusCode.OK);
+        var expected = await baseline.Content.ReadAsByteArrayAsync();
 
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("InvalidParameterValue");
-        content.Should().Contain("time");
+        var response = await _fixture.Client.GetAsync(url + "&time=2024-06-15T12:00:00Z");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        (await response.Content.ReadAsByteArrayAsync()).Should().Equal(expected);
     }
 
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
-    public async Task Wmts_GetFeatureInfo_NonTimeAwareLayer_WithTime_ReturnsInvalidParameterValue()
+    public async Task Wmts_GetFeatureInfo_NonTimeAwareLayer_WithTime_IgnoresTime()
     {
-        // Companion to the GetTile case: GetFeatureInfo must also reject time=
-        // on layers that do not advertise a time dimension. Both paths share
-        // the same TryValidateWmtsDimensionParameters validator, so a
-        // regression here would also be a regression for GetTile.
+        // WMTS ignores dimensions that the layer does not advertise.
         await ClearLayerTemporalAsync();
 
         var url =
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0" +
-            $"&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png" +
-            "&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=128&J=128" +
-            "&INFOFORMAT=application/json" +
-            "&time=2024-06-15T12:00:00Z";
+            $"&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad" +
+            "&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png&I=128&J=128&INFOFORMAT=application/json";
+        var baseline = await _fixture.Client.GetAsync(url);
+        baseline.StatusCode.Should().Be(HttpStatusCode.OK);
+        var expected = await baseline.Content.ReadAsByteArrayAsync();
 
-        var response = await _fixture.Client.GetAsync(url);
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("InvalidParameterValue");
-        content.Should().Contain("time");
+        var response = await _fixture.Client.GetAsync(url + "&time=2024-06-15T12:00:00Z");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        (await response.Content.ReadAsByteArrayAsync()).Should().Equal(expected);
     }
 
     [IntegrationTest]
@@ -295,44 +289,43 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
-    public async Task Wmts_GetTile_InvalidTimeInfo_WithTime_ReturnsInvalidParameterValue()
+    public async Task Wmts_GetTile_InvalidTimeInfo_WithTime_IgnoresTime()
     {
-        // Companion to the GetCapabilities case: when capabilities does not
-        // advertise a time dimension, a GetTile request that supplies time=
-        // must be rejected as an unknown query key by the dimension validator
-        // — same behavior as a layer with no TimeInfo at all. This proves the
-        // capabilities/runtime contract stays aligned even when layer metadata
-        // stores a misconfigured TimeInfo.
+        // WMTS ignores dimensions that the layer does not advertise.
         await ConfigureLayerWithInvalidTimeInfoAsync();
 
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png&time=2024-06-15T12:00:00Z");
+        var url =
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0" +
+            $"&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad" +
+            "&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png";
+        var baseline = await _fixture.Client.GetAsync(url);
+        baseline.StatusCode.Should().Be(HttpStatusCode.OK);
+        var expected = await baseline.Content.ReadAsByteArrayAsync();
 
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("InvalidParameterValue");
-        content.Should().Contain("time");
+        var response = await _fixture.Client.GetAsync(url + "&time=2024-06-15T12:00:00Z");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        (await response.Content.ReadAsByteArrayAsync()).Should().Equal(expected);
     }
 
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
-    public async Task Wmts_GetTile_NonTerrainLayer_WithElevation_ReturnsInvalidParameterValue()
+    public async Task Wmts_GetTile_NonTerrainLayer_WithElevation_IgnoresElevation()
     {
-        // Regression guard for #1792 Shape A: only the CITE Terrain layer advertises an
-        // `elevation` dimension. The dimension validator must continue to reject `elevation=`
-        // on any other layer as an unknown parameter, exactly as before — adding the
-        // elevation RESOLVER must not relax the advertise/validate contract. (elevation=400
-        // is also outside the advertised 100/200/300 set; on Terrain it would be
-        // InvalidParameterValue, on a non-Terrain layer it is an unknown parameter — both 400.)
+        // WMTS ignores dimensions that the layer does not advertise.
         await ClearLayerTemporalAsync();
 
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png&elevation=400");
+        var url =
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0" +
+            $"&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad" +
+            "&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png";
+        var baseline = await _fixture.Client.GetAsync(url);
+        baseline.StatusCode.Should().Be(HttpStatusCode.OK);
+        var expected = await baseline.Content.ReadAsByteArrayAsync();
 
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("InvalidParameterValue");
+        var response = await _fixture.Client.GetAsync(url + "&elevation=400");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        (await response.Content.ReadAsByteArrayAsync()).Should().Equal(expected);
     }
 
     [IntegrationTest]
