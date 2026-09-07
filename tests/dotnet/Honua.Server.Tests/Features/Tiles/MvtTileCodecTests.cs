@@ -129,4 +129,81 @@ public sealed class MvtTileCodecTests
         MvtTileDecoder.TryDecode(HandEncodedTile.AsSpan(0, HandEncodedTile.Length - 4).ToArray(), out _)
             .Should().BeFalse("a truncated payload must not decode as a shorter but valid tile");
     }
+
+    // The layer body of HandEncodedTile, field by field, so a nonconformant variant can be built by
+    // swapping one part out and re-deriving the enclosing length rather than by hand-counting bytes.
+    private static readonly byte[] LayerVersion = [0x78, 0x02];
+    private static readonly byte[] LayerName = [0x0A, 0x01, 0x6C];
+    private static readonly byte[] LayerFeature =
+        [0x12, 0x0D, 0x08, 0x01, 0x12, 0x02, 0x00, 0x00, 0x18, 0x01, 0x22, 0x03, 0x09, 0x0A, 0x0C];
+    private static readonly byte[] LayerKeys = [0x1A, 0x04, 0x6E, 0x61, 0x6D, 0x65];
+    private static readonly byte[] LayerExtent = [0x28, 0x80, 0x20];
+
+    [Fact]
+    public void Compose_WithTheSpecConformantParts_ReproducesTheHandEncodedTile()
+    {
+        // Proves the composer below and its length arithmetic, so a variant that fails to decode
+        // fails for the reason the test claims and not because its lengths were miscounted.
+        Layer(LayerVersion, LayerName, LayerFeature, LayerKeys, Value([0x0A, 0x01, 0x61]), LayerExtent)
+            .Should().Equal(HandEncodedTile);
+    }
+
+    [Fact]
+    public void Decode_LayerWithoutTheVersionField_Fails()
+    {
+        // vector_tile.proto marks `version` required. Defaulting the absent field to 0 would let a
+        // nonconformant layer report as a valid tile through every assertion that reads this decoder.
+        var payload = Layer(LayerName, LayerFeature, LayerKeys, Value([0x0A, 0x01, 0x61]), LayerExtent);
+
+        MvtTileDecoder.TryDecode(payload, out var tile).Should().BeFalse(
+            "a layer that omits field 15 is not a conformant vector tile");
+        tile.Should().BeNull();
+    }
+
+    [Fact]
+    public void Decode_ValueWithTrailingMalformedBytes_Fails()
+    {
+        // string_value = "a" followed by a tag whose length varint is missing. Returning at the
+        // first recognized field would leave these bytes unread and accept a payload that a
+        // conformant protobuf decoder rejects.
+        var payload = Layer(
+            LayerVersion, LayerName, LayerFeature, LayerKeys, Value([0x0A, 0x01, 0x61, 0x12]), LayerExtent);
+
+        MvtTileDecoder.TryDecode(payload, out _).Should().BeFalse(
+            "the whole Value submessage must be consumed, not abandoned at the first field");
+    }
+
+    [Fact]
+    public void Decode_ValueCarryingTwoValueFields_Fails()
+    {
+        // string_value = "a" plus bool_value = true. The spec defines Value as a variant: "exactly
+        // one of these values must be present in a value message".
+        var payload = Layer(
+            LayerVersion, LayerName, LayerFeature, LayerKeys, Value([0x0A, 0x01, 0x61, 0x38, 0x01]), LayerExtent);
+
+        MvtTileDecoder.TryDecode(payload, out _).Should().BeFalse(
+            "a Value carrying two value fields is not a conformant variant");
+    }
+
+    [Fact]
+    public void Decode_ValueCarryingNoValueField_Fails()
+    {
+        var payload = Layer(LayerVersion, LayerName, LayerFeature, LayerKeys, Value([]), LayerExtent);
+
+        MvtTileDecoder.TryDecode(payload, out _).Should().BeFalse(
+            "an empty Value submessage carries no attribute and is not a conformant variant");
+    }
+
+    /// <summary>Wraps <c>Value</c> submessage bytes as a <c>Layer.values</c> field (field 4).</summary>
+    private static byte[] Value(params byte[] body) => [0x22, checked((byte)body.Length), .. body];
+
+    /// <summary>
+    /// Wraps the supplied layer fields as a one-layer tile, deriving the <c>Tile.layers</c> length
+    /// from the parts. Every body here stays under 128 bytes, so the length is a one-byte varint.
+    /// </summary>
+    private static byte[] Layer(params byte[][] fields)
+    {
+        var body = fields.SelectMany(static field => field).ToArray();
+        return [0x1A, checked((byte)body.Length), .. body];
+    }
 }

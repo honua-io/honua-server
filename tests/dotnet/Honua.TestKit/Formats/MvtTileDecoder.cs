@@ -98,7 +98,7 @@ public static class MvtTileDecoder
     private static MvtLayer DecodeLayer(ReadOnlySpan<byte> payload)
     {
         string? name = null;
-        uint version = 0;
+        uint? version = null;
         uint extent = 4096;
         var keys = new List<string>();
         var values = new List<object?>();
@@ -139,6 +139,15 @@ public static class MvtTileDecoder
             throw new InvalidDataException("Vector tile layer has no name.");
         }
 
+        // vector_tile.proto marks `version` required; a layer that omits field 15 is nonconformant
+        // and no client is obliged to render it. Defaulting the field to 0 here would let such a
+        // payload pass every assertion that reads through this decoder, so reject it instead.
+        if (version is null)
+        {
+            throw new InvalidDataException(
+                $"Vector tile layer '{name}' omits the required version field (15).");
+        }
+
         if (extent == 0)
         {
             throw new InvalidDataException($"Vector tile layer '{name}' declares a zero extent.");
@@ -148,7 +157,7 @@ public static class MvtTileDecoder
             .Select(featurePayload => DecodeFeature(featurePayload, keys, values, name))
             .ToList();
 
-        return new MvtLayer(name, version, extent, features);
+        return new MvtLayer(name, version.Value, extent, features);
     }
 
     private static MvtFeature DecodeFeature(
@@ -279,8 +288,22 @@ public static class MvtTileDecoder
         return rings;
     }
 
+    /// <summary>
+    /// Decodes one <c>Value</c> submessage.
+    /// </summary>
+    /// <remarks>
+    /// The whole submessage is consumed rather than returning at the first recognized field:
+    /// returning early leaves any trailing bytes unread, so a <c>Value</c> that begins with a
+    /// valid field and then runs into truncated or malformed bytes would be accepted here while a
+    /// conformant protobuf decoder rejected the tile. The spec also defines <c>Value</c> as a
+    /// variant — "exactly one of these values must be present" — so a submessage carrying two
+    /// value fields, or none, is rejected.
+    /// </remarks>
     private static object? DecodeValue(ReadOnlySpan<byte> payload)
     {
+        object? value = null;
+        var found = 0;
+
         var reader = new ProtoReader(payload);
         while (!reader.IsAtEnd)
         {
@@ -288,26 +311,46 @@ public static class MvtTileDecoder
             switch (field)
             {
                 case 1 when wireType == 2:
-                    return Encoding.UTF8.GetString(reader.ReadLengthDelimited());
+                    value = Encoding.UTF8.GetString(reader.ReadLengthDelimited());
+                    found++;
+                    break;
                 case 2 when wireType == 5:
-                    return BinaryPrimitives.ReadSingleLittleEndian(reader.ReadFixed(4));
+                    value = BinaryPrimitives.ReadSingleLittleEndian(reader.ReadFixed(4));
+                    found++;
+                    break;
                 case 3 when wireType == 1:
-                    return BinaryPrimitives.ReadDoubleLittleEndian(reader.ReadFixed(8));
+                    value = BinaryPrimitives.ReadDoubleLittleEndian(reader.ReadFixed(8));
+                    found++;
+                    break;
                 case 4 when wireType == 0:
-                    return (long)reader.ReadVarint();
+                    value = (long)reader.ReadVarint();
+                    found++;
+                    break;
                 case 5 when wireType == 0:
-                    return reader.ReadVarint();
+                    value = reader.ReadVarint();
+                    found++;
+                    break;
                 case 6 when wireType == 0:
-                    return (long)ZigZag64(reader.ReadVarint());
+                    value = ZigZag64(reader.ReadVarint());
+                    found++;
+                    break;
                 case 7 when wireType == 0:
-                    return reader.ReadVarint() != 0;
+                    value = reader.ReadVarint() != 0;
+                    found++;
+                    break;
                 default:
                     reader.SkipField(wireType);
                     break;
             }
         }
 
-        return null;
+        if (found != 1)
+        {
+            throw new InvalidDataException(
+                $"Vector tile attribute value carries {found} value fields; the specification requires exactly one.");
+        }
+
+        return value;
     }
 
     private static void ReadPackedUInt32(ref ProtoReader reader, int wireType, List<uint> destination)

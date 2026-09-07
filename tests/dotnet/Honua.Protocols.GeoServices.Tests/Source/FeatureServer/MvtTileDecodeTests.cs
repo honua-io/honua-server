@@ -133,15 +133,20 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
             $"every clipped ordinate must lie within the tile extent plus its {Buffer}-unit buffer");
         points.Should().OnlyContain(point => point.Y >= -Buffer - 1 && point.Y <= Extent + Buffer + 1);
 
-        // The source line spans roughly 3 tiles; the clipped one must be cut back to the buffered
-        // tile, so its span cannot exceed the buffered width.
-        var span = points.Max(point => point.X) - points.Min(point => point.X);
-        span.Should().BeLessThanOrEqualTo(
-            Extent + (2 * Buffer) + 2,
-            "the line must be cut at the buffer, not carried through at full length");
-        span.Should().BeGreaterThan(
-            Extent - 2,
-            "the line crosses the whole tile, so the clipped result must still span it");
+        // The source line runs a full degree past the tile on both sides — far outside the buffered
+        // envelope — so clipping must land its endpoints on the buffer boundary itself, at -256 and
+        // 4096+256. Asserting the span instead would not distinguish the configured buffer from no
+        // buffer at all: a TileBuffer that regressed to 0 clips to [0, 4096], and a 4096-unit span
+        // satisfies both "at most the buffered width" and "at least the tile width". Pin the
+        // endpoints, which only the 256-unit buffered clip can produce.
+        points.Min(point => point.X).Should().BeInRange(
+            -Buffer - 1,
+            -Buffer + 1,
+            $"the clip must carry the line out to the -{Buffer} buffer edge, not stop at the tile edge");
+        points.Max(point => point.X).Should().BeInRange(
+            Extent + Buffer - 1,
+            Extent + Buffer + 1,
+            $"the clip must carry the line out to the {Extent + Buffer} buffer edge, not stop at the tile edge");
     }
 
     [IntegrationTest]
@@ -149,30 +154,63 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
     public async Task GetTile_AtLowZoom_SimplifiesTheGeometryWithoutDroppingTheFeature()
     {
         // TileOptions.SimplifyZoom defaults to 10 and TileMath.GetSimplificationTolerance(8) is
-        // 500 m. Only the scalar tolerance lookup was tested; nothing asserted that simplification
-        // actually reduces vertices, or that it preserves the feature and its endpoints.
-        const double lon = -122.4194;
-        const double lat = 37.7749;
-        const int sourceVertices = 400;
-        var wkt = TileGeometry.DenseZigZagWkt(lon, lat, sourceVertices);
-        await SeedAsync("mvt-dense", wkt);
+        // 500 m, applied by ST_SimplifyPreserveTopology in Web Mercator metres before
+        // ST_AsMVTGeom quantizes to tile units. Only the scalar tolerance lookup was tested;
+        // nothing asserted that simplification actually reduces vertices, or that it preserves the
+        // feature and its endpoints.
+        //
+        // The geometry is sized against both zooms so that quantization cannot stand in for
+        // simplification. One z=8 tile unit is ~38 m, so the zig-zag's +/-200 m excursions are ~5
+        // tile units either side of the axis and ~10 units peak to peak: ST_AsMVTGeom's snapping
+        // keeps them, while a 500 m Douglas-Peucker tolerance removes them. A vertex-count
+        // comparison alone would not have separated the two, because sub-metre wobble collapses
+        // under z=8 quantization whether or not simplification runs. z=11 is above SimplifyZoom,
+        // so it shows the same geometry unsimplified and anchors the comparison.
+        const int coarseZoom = 8;
+        const int detailedZoom = 11;
+        const int sourceVertices = 40;
+        const double amplitudeMetres = 200d;
+
+        var (detailedX, detailedY) = TileGeometry.TileOf(-122.4194, 37.7749, detailedZoom);
+        var (centreLon, centreLat) = TileGeometry.TileCentre(detailedX, detailedY, detailedZoom);
+        // 60% of the detailed tile's width, so the whole line lies inside both tiles and neither
+        // reading is confounded by clipping.
+        var lengthMetres = 0.6d * TileGeometry.TileSpanMetres(detailedZoom);
+        await SeedAsync(
+            "mvt-dense",
+            TileGeometry.ZigZagWkt(centreLon, centreLat, sourceVertices, lengthMetres, amplitudeMetres));
 
         var filter = "where=" + Uri.EscapeDataString("name='mvt-dense'");
-        var (detailedX, detailedY) = TileGeometry.TileOf(lon, lat, 14);
-        var detailed = await DecodeTileAsync(14, detailedX, detailedY, filter);
-        var detailedPoints = detailed.Layer("layer").Features.Should().ContainSingle().Subject.Points.Count();
 
-        var (coarseX, coarseY) = TileGeometry.TileOf(lon, lat, 8);
-        var coarse = await DecodeTileAsync(8, coarseX, coarseY, filter);
+        var detailed = await DecodeTileAsync(detailedZoom, detailedX, detailedY, filter);
+        var detailedPoints = detailed.Layer("layer").Features.Should().ContainSingle().Subject.Points.ToArray();
+        var detailedUnitMetres = TileGeometry.TileSpanMetres(detailedZoom) / Extent;
+        SpanOf(detailedPoints, static point => point.Y).Should().BeGreaterThan(
+            amplitudeMetres / detailedUnitMetres,
+            "z=11 is above SimplifyZoom, so no simplification runs and the zig-zag must survive " +
+            "quantization intact — this is the control the coarse tile is compared against");
+
+        var (coarseX, coarseY) = TileGeometry.TileOf(centreLon, centreLat, coarseZoom);
+        var coarse = await DecodeTileAsync(coarseZoom, coarseX, coarseY, filter);
         var coarseFeature = coarse.Layer("layer").Features.Should().ContainSingle(
             "simplification must not drop the feature").Subject;
         var coarsePoints = coarseFeature.Points.ToArray();
+        var coarseUnitMetres = TileGeometry.TileSpanMetres(coarseZoom) / Extent;
 
         coarsePoints.Length.Should().BeLessThan(
-            detailedPoints,
+            detailedPoints.Length,
             "z=8 is at or below SimplifyZoom, so ST_SimplifyPreserveTopology must reduce the vertex count");
         coarsePoints.Length.Should().BeGreaterThanOrEqualTo(
             2, "a simplified line must remain a line");
+        SpanOf(coarsePoints, static point => point.X).Should().BeGreaterThan(
+            0.8d * lengthMetres / coarseUnitMetres,
+            "simplification removes vertices, not the line: the result must still run the length of " +
+            "the source geometry");
+        SpanOf(coarsePoints, static point => point.Y).Should().BeLessThanOrEqualTo(
+            2d,
+            "the zig-zag's +/-200 m excursions are ~5 tile units either side of the axis at z=8, so " +
+            "quantization cannot flatten them — only the 500 m simplification tolerance can, which " +
+            "is what isolates this assertion from low-zoom rounding");
         coarseFeature.Attributes.Should().ContainKey("name").WhoseValue.Should().Be(
             "mvt-dense", "simplification must not disturb attributes");
     }
@@ -196,6 +234,10 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
     }
 
     private static string F(double value) => value.ToString("R", CultureInfo.InvariantCulture);
+
+    /// <summary>The extent of a decoded geometry along one ordinate, in tile units.</summary>
+    private static double SpanOf(IReadOnlyCollection<MvtPoint> points, Func<MvtPoint, long> ordinate)
+        => points.Max(ordinate) - points.Min(ordinate);
 
     private static string[] NamesOf(MvtTile tile)
         => [.. tile.Layer("layer").Features
@@ -261,28 +303,60 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
         public static (double X, double Y) ToTileSpace(
             double lon, double lat, int zoom, int tileX, int tileY, int extent)
         {
-            var n = 1 << zoom;
-            var tileSize = HalfWorld * 2d / n;
+            var tileSize = TileSpanMetres(zoom);
             var originX = -HalfWorld + (tileX * tileSize);
             var originY = HalfWorld - (tileY * tileSize);
-            var mercatorX = EarthRadius * lon * Math.PI / 180d;
-            var mercatorY = EarthRadius * Math.Log(Math.Tan((Math.PI / 4d) + (lat * Math.PI / 360d)));
+            var (mercatorX, mercatorY) = ToMercator(lon, lat);
             return ((mercatorX - originX) / tileSize * extent, (originY - mercatorY) / tileSize * extent);
         }
 
-        /// <summary>
-        /// A dense zig-zag line centred on the supplied point, with alternating sub-metre-scale
-        /// excursions that survive at high zoom and collapse under a 500 m tolerance.
-        /// </summary>
-        public static string DenseZigZagWkt(double lon, double lat, int vertices)
+        /// <summary>The width of one tile at the given zoom, in Web Mercator metres.</summary>
+        public static double TileSpanMetres(int zoom) => HalfWorld * 2d / (1 << zoom);
+
+        /// <summary>The centre of the given tile, in degrees.</summary>
+        public static (double Lon, double Lat) TileCentre(int x, int y, int zoom)
         {
+            var tileSize = TileSpanMetres(zoom);
+            return FromMercator(
+                -HalfWorld + ((x + 0.5d) * tileSize),
+                HalfWorld - ((y + 0.5d) * tileSize));
+        }
+
+        public static (double X, double Y) ToMercator(double lon, double lat)
+            => (EarthRadius * lon * Math.PI / 180d,
+                EarthRadius * Math.Log(Math.Tan((Math.PI / 4d) + (lat * Math.PI / 360d))));
+
+        public static (double Lon, double Lat) FromMercator(double x, double y)
+            => (x / EarthRadius * 180d / Math.PI,
+                ((2d * Math.Atan(Math.Exp(y / EarthRadius))) - (Math.PI / 2d)) * 180d / Math.PI);
+
+        /// <summary>
+        /// A zig-zag line centred on the supplied point, laid out in Web Mercator metres so its
+        /// dimensions can be compared directly against a zoom level's tile-unit size and against
+        /// the simplification tolerance, both of which are metric.
+        /// </summary>
+        /// <remarks>
+        /// The two endpoints sit on the axis while interior vertices alternate
+        /// <paramref name="amplitudeMetres"/> either side of it, so a Douglas-Peucker pass whose
+        /// tolerance exceeds the amplitude collapses the line to its endpoints and leaves no
+        /// residual excursion — which is what makes "the wobble is gone" a simplification signal
+        /// rather than a rounding artefact.
+        /// </remarks>
+        public static string ZigZagWkt(
+            double centreLon, double centreLat, int vertices, double lengthMetres, double amplitudeMetres)
+        {
+            var (centreX, centreY) = ToMercator(centreLon, centreLat);
+            var step = lengthMetres / (vertices - 1);
             var points = new List<string>(vertices);
             for (var i = 0; i < vertices; i++)
             {
-                var offset = i * 0.00002d;
-                var wobble = (i % 2 == 0 ? 1 : -1) * 0.000015d;
-                points.Add(
-                    $"{F(lon + offset)} {F(lat + wobble)}");
+                var wobble = i == 0 || i == vertices - 1
+                    ? 0d
+                    : (i % 2 == 0 ? amplitudeMetres : -amplitudeMetres);
+                var (lon, lat) = FromMercator(
+                    centreX - (lengthMetres / 2d) + (i * step),
+                    centreY + wobble);
+                points.Add($"{F(lon)} {F(lat)}");
             }
 
             return $"LINESTRING({string.Join(", ", points)})";

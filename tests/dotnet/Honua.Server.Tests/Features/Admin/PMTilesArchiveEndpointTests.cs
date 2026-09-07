@@ -77,7 +77,7 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
         finalStatus.Should().Be(
             OperationStatus.Completed,
             "the archive job must reach Completed — a failed job must fail this test, not skip its " +
-            $"assertions: {lastJson?.RootElement.ToString()}");
+            $"assertions: {lastJson?.RootElement}");
 
         var root = lastJson!.RootElement;
         GetPropertyCaseInsensitive(root, "operation").GetString().Should().Be("archive");
@@ -171,14 +171,32 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
 
         // honua-server#4421: every header assertion above passes on an archive whose tile data is
         // arbitrary bytes — `tileType == 1` is a declared byte, not a payload check. Decode the
-        // tile data so "the archive holds MVTs" is proven rather than declared.
-        var tileData = archiveBytes[(int)tileDataOffset..];
-        MvtTileDecoder.TryDecode(tileData, out var decoded).Should().BeTrue(
-            "the archived tile data must be a decodable Mapbox Vector Tile, since the header " +
-            "declares tile type 1 (MVT)");
-        decoded!.Layers.Should().NotBeEmpty();
-        decoded.FeatureCount.Should().BeGreaterThan(
-            0, "an archive of empty tiles proves nothing about the tile pipeline");
+        // tiles so "the archive holds MVTs" is proven rather than declared.
+        //
+        // Each directory entry is decoded separately, at the offset and length the directory
+        // declares, because that is the slice a PMTiles client fetches. Decoding the tile-data
+        // section as one buffer would not prove the same thing: concatenated protobuf messages
+        // decode as one merged message, so an entry whose offset or length is wrong still yields
+        // a section that parses while the tile a client extracts does not.
+        var tiles = PMTilesArchiveReader.ReadTiles(archiveBytes);
+        ((ulong)tiles.Count).Should().Be(
+            tileEntries, "every directory entry must resolve to a tile blob");
+        tiles.Should().NotBeEmpty();
+
+        foreach (var tile in tiles)
+        {
+            MvtTileDecoder.TryDecode(tile.Data, out var decoded).Should().BeTrue(
+                $"tile {tile.TileId} must decode as a Mapbox Vector Tile on its own, since the " +
+                "header declares tile type 1 (MVT) and a client slices exactly these bytes");
+            decoded!.Layers.Should().NotBeEmpty($"tile {tile.TileId} must declare at least one layer");
+            decoded.FeatureCount.Should().BeGreaterThan(
+                0,
+                $"tile {tile.TileId} carries no features — an archive of empty tiles proves nothing " +
+                "about the tile pipeline");
+        }
+
+        tiles.Sum(tile => tile.Data.Length).Should().BeGreaterThan(
+            0, "the decoded tiles must account for real bytes in the tile-data section");
     }
 
     private async Task<string> StartArchiveJobAsync()
