@@ -31,6 +31,7 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
 {
     private readonly StubAlertEventQuery _query = new();
     private readonly StubAlertLifecycleStore _lifecycle = new();
+    private readonly StubAlertAuditOutbox _outbox = new();
     private readonly CapturingAuditLog _audit = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
@@ -45,9 +46,11 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
 
                 services.RemoveAll<IAlertEventQuery>();
                 services.RemoveAll<IAlertLifecycleStore>();
+                services.RemoveAll<IAlertAuditOutbox>();
                 services.RemoveAll<IAuditLog>();
                 services.AddSingleton<IAlertEventQuery>(_query);
                 services.AddSingleton<IAlertLifecycleStore>(_lifecycle);
+                services.AddSingleton<IAlertAuditOutbox>(_outbox);
                 services.AddSingleton<IAuditLog>(_audit);
             });
     }
@@ -194,7 +197,11 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
 
     private sealed class StubAlertLifecycleStore : IAlertLifecycleStore
     {
+        private long _nextOutboxId = 1;
+
         public AlertEventLifecycle? Lifecycle { get; set; }
+
+        public List<AlertLifecycleCommand> Applied { get; } = new();
 
         public Task<AlertEventLifecycle?> GetAsync(long eventId, CancellationToken cancellationToken = default)
             => Task.FromResult(Lifecycle);
@@ -210,6 +217,62 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
         public Task<AlertEventLifecycle?> ResolveAsync(long eventId, string actor, string? note,
             DateTimeOffset resolvedAt, CancellationToken cancellationToken = default)
             => Task.FromResult(Lifecycle);
+
+        // Mirrors the atomic contract (#3865): a mutation always comes back with the
+        // durable audit intent that was written alongside it.
+        public Task<AlertLifecycleTransition> ApplyAsync(
+            AlertLifecycleCommand command, CancellationToken cancellationToken = default)
+        {
+            Applied.Add(command);
+            if (Lifecycle is null)
+            {
+                return Task.FromResult(new AlertLifecycleTransition { Lifecycle = null });
+            }
+
+            return Task.FromResult(new AlertLifecycleTransition
+            {
+                Lifecycle = Lifecycle,
+                Intent = new AlertAuditOutboxEntry
+                {
+                    OutboxId = _nextOutboxId++,
+                    EventId = command.EventId,
+                    Action = command.AuditAction,
+                    Actor = command.Actor,
+                    Note = command.Note,
+                    Details = command.Details,
+                    CorrelationId = command.CorrelationId,
+                    IdempotencyKey = command.IdempotencyKey,
+                    OccurredAt = command.OccurredAt,
+                }
+            });
+        }
+    }
+
+    private sealed class StubAlertAuditOutbox : IAlertAuditOutbox
+    {
+        public List<(long OutboxId, string AuditId)> Completed { get; } = new();
+
+        public Task<IReadOnlyList<AlertAuditOutboxEntry>> ListPendingAsync(
+            int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AlertAuditOutboxEntry>>(Array.Empty<AlertAuditOutboxEntry>());
+
+        public Task<AlertAuditOutboxEntry?> GetAsync(long outboxId, CancellationToken cancellationToken = default)
+            => Task.FromResult<AlertAuditOutboxEntry?>(null);
+
+        public Task<bool> TryClaimAsync(long outboxId, Guid claimToken, DateTimeOffset claimedUntil,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CompleteAsync(long outboxId, Guid claimToken, string auditId,
+            DateTimeOffset completedAt, CancellationToken cancellationToken = default)
+        {
+            Completed.Add((outboxId, auditId));
+            return Task.FromResult(true);
+        }
+
+        public Task RecordAttemptFailureAsync(long outboxId, string error,
+            DateTimeOffset nextAttemptAt, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private sealed class CapturingAuditLog : IAuditLog

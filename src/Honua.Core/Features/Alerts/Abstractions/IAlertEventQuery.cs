@@ -44,6 +44,35 @@ public interface IAlertLifecycleStore
     Task<AlertEventLifecycle?> GetAsync(long eventId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Applies a lifecycle mutation and its domain audit intent in ONE transaction.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the only safe way to mutate lifecycle state from an operator action.
+    /// The individual <see cref="AcknowledgeAsync"/> / <see cref="SuppressAsync"/> /
+    /// <see cref="ResolveAsync"/> methods write state alone, so a failure between
+    /// them and the audit call leaves an externally observable mutation with no
+    /// matching domain audit record (#3865). They remain for seeding and internal
+    /// callers that are not operator actions.
+    /// </para>
+    /// <para>
+    /// Idempotent on <see cref="AlertLifecycleCommand.IdempotencyKey"/>: replaying
+    /// the same operator action returns the existing transition with
+    /// <see cref="AlertLifecycleTransition.Replayed"/> set, so a retry never
+    /// produces a second lifecycle transition or a second audit action.
+    /// </para>
+    /// </remarks>
+    /// <param name="command">The mutation plus the audit intent that must accompany it.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<AlertLifecycleTransition> ApplyAsync(
+        AlertLifecycleCommand command,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            $"{GetType().Name} cannot apply an alert lifecycle mutation and its audit intent atomically. " +
+            "An operator lifecycle action must not run against a store that would leave the mutation " +
+            "observable without its domain audit record.");
+
+    /// <summary>
     /// Records an acknowledge action against an event.
     /// </summary>
     /// <param name="eventId">Event identifier.</param>
