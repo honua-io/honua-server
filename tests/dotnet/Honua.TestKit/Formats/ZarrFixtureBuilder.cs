@@ -8,13 +8,13 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 
-namespace Honua.Core.Tests.Raster.ZarrParser;
+namespace Honua.TestKit.Formats;
 
 /// <summary>
 /// Builds synthetic Zarr v2 store layouts for tests. Each fixture is returned as
 /// a path-to-bytes dictionary suitable for <see cref="InMemoryZarrRangeReader"/>.
 /// </summary>
-internal static class ZarrFixtureBuilder
+public static class ZarrFixtureBuilder
 {
     public static Dictionary<string, byte[]> BuildSingleVariableUncompressed(
         string root,

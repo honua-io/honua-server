@@ -8,13 +8,13 @@ using System.Threading.Tasks;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Core.Tests.Raster.ZarrParser;
+namespace Honua.TestKit.Formats;
 
 /// <summary>
 /// Test double simulating an object store keyed by full path. Returns
 /// <see cref="FileNotFoundException"/> for missing keys so callers can probe.
 /// </summary>
-internal sealed class InMemoryZarrRangeReader : ICloudRangeReader
+public sealed class InMemoryZarrRangeReader : ICloudRangeReader
 {
     private readonly Dictionary<string, byte[]> _objects;
 
