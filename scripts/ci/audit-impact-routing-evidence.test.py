@@ -500,11 +500,12 @@ def test_policy_generation_ignores_routing_irrelevant_workflow_edits() -> None:
             shutil.copyfile(REPOSITORY_ROOT / relative, target)
         original = MODULE.current_blobs(root)
 
+        # An operational edit to the serving workflow: appended rather than a pinned
+        # action bump, so a dependabot pin change cannot silently turn this mutation
+        # into a no-op and make the assertion below vacuous (#4483).
         workflow = root / MODULE.SERVING_WORKFLOW
         workflow.write_text(
-            workflow.read_text(encoding="utf-8").replace(
-                "actions/checkout@v7.0.1", "actions/checkout@v7.0.2", 1
-            ),
+            workflow.read_text(encoding="utf-8") + "\n# action pin revision\n",
             encoding="utf-8",
         )
         irrelevant = MODULE.current_blobs(root)
