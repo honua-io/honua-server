@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
