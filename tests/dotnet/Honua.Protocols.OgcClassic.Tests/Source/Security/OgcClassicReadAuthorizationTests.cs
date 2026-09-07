@@ -1,12 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -342,6 +342,9 @@ public sealed class OgcClassicReadAuthorizationTests : IAsyncLifetime
             BandCount = 1,
             PixelType = "32BF",
             Srid = 4326,
+            NoDataValue = -9999,
+            // 16x16 cells across a 0.3 x 0.3 degree extent: 0.01875 degrees per pixel.
+            GeoTransform = [-122.5, 0.01875, 0, 37.9, 0, -0.01875],
             Extent = new RasterExtent
             {
                 XMin = -122.5,
@@ -349,7 +352,9 @@ public sealed class OgcClassicReadAuthorizationTests : IAsyncLifetime
                 XMax = -122.2,
                 YMax = 37.9,
                 Srid = 4326
-            }
+            },
+            AcquisitionDate = DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture),
+            CreatedAt = DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture)
         };
 
         rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())

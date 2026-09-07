@@ -43,6 +43,8 @@ internal static class OgcClassicAuthorizationFixture
     /// <summary>A principal with no grant at all: authenticated, and entitled to nothing.</summary>
     public const string NoGrantRole = "ogc-no-grant";
 
+    private const string AdminApiKey = "test-ogc-classic-admin-key";
+
     public static WebAppFixture Create()
     {
         var roleStore = new GrantPerRoleStore(new Dictionary<string, PermissionGrant>(StringComparer.OrdinalIgnoreCase)
@@ -59,6 +61,9 @@ internal static class OgcClassicAuthorizationFixture
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
+                // Real authentication needs an admin credential configured, even though no
+                // test here presents one: the principals below arrive through TestAuthHandler.
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminApiKey);
 
                 builder.ConfigureAppConfiguration((_, configBuilder) =>
                 {

@@ -5,11 +5,9 @@ using System.Net;
 using System.Text;
 using System.Xml.Linq;
 using FluentAssertions;
-using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Security;
 
