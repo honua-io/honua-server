@@ -55,17 +55,20 @@ public sealed class DurableJobSubstrateRegistrationTests
     }
 
     [UnitTest]
-    public void AddGeoprocessing_RedisWithoutAttestedDurability_ExecutionJobConsumersValidate()
+    public void AddGeoprocessing_RedisWithoutAttestedDurability_ExecutionJobConsumerActivates()
     {
         var services = ComposeJobSubstrate(attested: false);
         RegisterExecutionJobConsumer(services);
+        using var provider = BuildProvider(services);
 
-        var provider = ValidateContainer(services);
+        var resolve = () => provider.GetRequiredService<IExecutionJobReconciler>();
 
-        provider.GetRequiredService<IExecutionJobReconciler>().Should().NotBeNull(
+        resolve.Should().NotThrow(
             "the reconciler is registered unconditionally by the composition root, so the "
-            + "store it injects must resolve on a non-attested Redis too");
-        provider.Dispose();
+            + "store it injects must resolve on a non-attested Redis too — this activation is "
+            + "the first of the 31 that threw 'Unable to resolve service for type "
+            + "IExecutionJobStore' and killed the process at startup (honua-server#4502)")
+            .Subject.Should().NotBeNull();
     }
 
     [UnitTest]
@@ -73,13 +76,12 @@ public sealed class DurableJobSubstrateRegistrationTests
     {
         var services = ComposeJobSubstrate(attested: true);
         RegisterExecutionJobConsumer(services);
-
-        var provider = ValidateContainer(services);
+        using var provider = BuildProvider(services);
 
         provider.GetRequiredService<IExecutionJobStore>().Should().NotBeNull(
             "the attested durable path from #4141 is unchanged");
         provider.GetRequiredService<IJobQueue>().Should().NotBeNull();
-        provider.Dispose();
+        provider.GetRequiredService<IExecutionJobReconciler>().Should().NotBeNull();
     }
 
     /// <summary>
@@ -206,18 +208,19 @@ public sealed class DurableJobSubstrateRegistrationTests
         services.AddSingleton<IExecutionJobReconciler, ExecutionJobReconciler>();
     }
 
-    private static ServiceProvider ValidateContainer(IServiceCollection services)
-    {
-        var build = () => services.BuildServiceProvider(new ServiceProviderOptions
-        {
-            ValidateOnBuild = true,
-            ValidateScopes = true,
-        });
-
-        return build.Should().NotThrow(
-            "the host fails to boot with ValidateOnBuild enabled (the Development default the "
-            + "release e2e harness runs under) when a registered consumer cannot resolve "
-            + "IExecutionJobStore")
-            .Subject;
-    }
+    /// <summary>
+    /// Builds the container with scope validation on, then lets each test resolve the specific
+    /// consumer it cares about.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately NOT <c>ValidateOnBuild</c>: that walks every descriptor
+    /// <c>AddGeoprocessing</c> contributes, most of which need the rest of the server composition
+    /// (authorization evaluators, metadata graph, file storage) that this focused fixture has no
+    /// business standing up. The #4502 failure is a resolution failure on one well-known
+    /// constructor graph, so resolving that graph reproduces it exactly — with the same
+    /// <c>Unable to resolve service for type 'IExecutionJobStore'</c> message the container
+    /// emitted 31 times at boot — without pulling in unrelated modules.
+    /// </remarks>
+    private static ServiceProvider BuildProvider(IServiceCollection services)
+        => services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 }
