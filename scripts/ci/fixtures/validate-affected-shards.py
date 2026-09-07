@@ -373,9 +373,6 @@ def check_failure_injections(config: dict[str, Any]) -> None:
     """
     original = selector.select
 
-    def patched(**kwargs):
-        return original(**kwargs)
-
     def ignores_the_cap(**kwargs):
         return original(**{**kwargs, "cap": len(kwargs["config"]["shards"])})
 

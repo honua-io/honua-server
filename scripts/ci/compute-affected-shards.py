@@ -120,6 +120,10 @@ DEFAULT_TEST_PROJECT = "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.cspro
 # tests/dotnet/ is IN on purpose: the shard filters select test classes by
 # fully-qualified name, so a test-only change is exactly the kind of diff that
 # turns a shard red without touching src/ at all.
+#
+# These two are the STATIC floor only. product_code_prefixes() below unions
+# them with the roots the shard map itself routes on, which is what keeps the
+# detector's own admission test from being narrower than the router it wraps.
 PRODUCT_CODE_PREFIXES = ("src/", "tests/dotnet/")
 
 # Fields ci.yml's `targeted-shards` job projects into its matrix. Kept in the
@@ -301,8 +305,40 @@ def count_path_hits(shard: dict[str, Any], changed_files: Sequence[str]) -> int:
     return sum(1 for changed in changed_files if changed.startswith(prefixes))
 
 
-def has_product_code(changed_files: Iterable[str]) -> bool:
-    return any(changed.startswith(PRODUCT_CODE_PREFIXES) for changed in changed_files)
+def product_code_prefixes(config: dict[str, Any]) -> tuple[str, ...]:
+    """`PRODUCT_CODE_PREFIXES` plus every root the shard map itself routes on.
+
+    `src/` and `tests/dotnet/` hold nearly all of the routable tree, but not
+    all of it: `.github/ci-shards.json` also routes `observability/`,
+    `samples/gp/` and `tests/fixtures/toolbox-translation/` -- shard INPUTS
+    that live outside both. `SloMetricContractTests` reads
+    `observability/slo-metric-contract.json` and `ToolboxTranslationEndpointTests`
+    consumes the toolbox fixtures, so a diff that edits only one of those can
+    turn the owning shard red on trunk while this admission test answers
+    `no_product_code` and the lane runs nothing. Deriving the set from the same
+    config the router reads is what stops the two drifting again the next time
+    a shard claims a new root.
+
+    `infrastructure_paths` is deliberately NOT unioned in. Those are the
+    router's run_all short-circuit (`.github/`, `Directory.*.props`,
+    `scripts/ci/`), and admitting a workflow-only diff as product code would
+    spend the whole cap re-confirming trunk on every CI edit. The fixture's
+    check_skip_paths() pins that boundary.
+    """
+    prefixes = set(PRODUCT_CODE_PREFIXES)
+    for shard in config.get("shards") or ():
+        prefixes.update(shard.get("paths") or ())
+    for override in config.get("targeted_override_prefixes") or ():
+        prefix = override.get("prefix")
+        if prefix:
+            prefixes.add(prefix)
+    prefixes.update(config.get("unmapped_source_run_all_prefixes") or ())
+    return tuple(sorted(prefixes))
+
+
+def has_product_code(changed_files: Iterable[str], config: dict[str, Any]) -> bool:
+    prefixes = product_code_prefixes(config)
+    return any(changed.startswith(prefixes) for changed in changed_files)
 
 
 def select(
@@ -355,6 +391,36 @@ def select(
         # dropping it would make this lane predict something else.
         candidates = router_shards
         candidate_reason = descriptor.get("reason") or "targeted"
+
+        # ...but `no_path_match` is not a targeted answer. It is the router's
+        # DEFAULT (`default_shards_when_no_match`, currently ["Core and Cloud
+        # Contracts"]) for a file no `paths` entry claims, so it says nothing
+        # about ownership. For a changed TEST file under a protocol-split
+        # project that matters: `tests/dotnet/Honua.Protocols.OData.Tests/Source/
+        # ODataFeatureProviderResolverTests.cs` is not listed by exact path, so
+        # the router answers with the Core shard while the shard that actually
+        # runs the changed test (`OData Core`, a different assembly entirely)
+        # is never selected.
+        #
+        # `test_class_hits` already answers exactly that question, and it
+        # answers it with the shard runner's own filter evaluator rather than a
+        # guess -- so a nonzero entry IS the owning shard. Add those, keeping
+        # the router's default alongside them.
+        #
+        # Only the ownership signal is used. Widening to the project closure
+        # instead would add every shard sharing the test assembly (~40 for the
+        # Honua.Server.Tests default), which the cap would then truncate by
+        # dispatch_rank -- six arbitrary shards, the exact meaningless verdict
+        # this module's FAIL-SAFE DIRECTION note refuses to publish.
+        if candidate_reason == "no_path_match":
+            owners = [
+                name
+                for name, hits in sorted((test_class_hits or {}).items())
+                if hits > 0 and name not in router_shards
+            ]
+            if owners:
+                candidates = router_shards + owners
+                candidate_reason = "no_path_match_plus_test_owners"
 
     # Advisory shards (ci.yml matrix.advisory) are the #1965 rotted buckets:
     # non-gating and currently always red. Including one would manufacture a
@@ -471,8 +537,8 @@ def render_summary(result: dict[str, Any]) -> str:
             f"No shards selected (`{result['reason']}`).",
             "",
             "This lane runs the trailing matrix's own shard families against the "
-            "diff so a shard regression is visible before the merge. Nothing in "
-            "this change can move one.",
+            + "diff so a shard regression is visible before the merge. Nothing in "
+            + "this change can move one.",
         ]
         return "\n".join(lines) + "\n"
 
@@ -501,7 +567,7 @@ def render_summary(result: dict[str, Any]) -> str:
             + ", ".join(f"`{name}`" for name in result["dropped"]),
             "",
             "The trailing matrix still runs these per trunk tip. The cap is what "
-            "keeps this lane a bounded detector instead of a second full fan-out.",
+            + "keeps this lane a bounded detector instead of a second full fan-out.",
         ]
     return "\n".join(lines) + "\n"
 
@@ -568,7 +634,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not changed_files:
         return emit(skipped("no_changed_files", cap=args.cap), config, args)
-    if not has_product_code(changed_files):
+    if not has_product_code(changed_files, config):
         return emit(
             skipped("no_product_code", cap=args.cap, changed_file_count=len(changed_files)),
             config,

@@ -411,6 +411,22 @@ jobs:
         with:
           fetch-depth: 2
 
+      # The selector, the shard map and this workflow are all PR-authored, and
+      # `scripts/ci/fixtures/validate-affected-shards.py` -- the fixture that
+      # proves a feature namespace still selects its owning shard, that the cap
+      # holds, that advisory shards stay out, and that each of those checks
+      # fails against its own injected defect -- otherwise runs ONLY in
+      # `ci.yml::ci-router-validation`, and ci.yml has no `pull_request`
+      # trigger (see its header). So without this step nothing validates the
+      # selector on the pull request that changes it: an under-scoped edit
+      # would make selection and aggregation both green and land, and only the
+      # trailing workflow would discover the broken fixture. AGENTS.md already
+      # treats a diff touching the selectors as unable to scope itself; the
+      # same reasoning applies to a lane consuming its own PR-authored
+      # selector. Offline (no network, no dotnet), so it costs seconds.
+      - name: Validate the shard selector before consuming it
+        run: python3 scripts/ci/fixtures/validate-affected-shards.py
+
       - name: Select affected shard families
         id: select
         env:
@@ -580,10 +596,31 @@ jobs:
           note "- Mode: \`${MODE}\` (report-only until the promotion rule in pr-gate.yml is met)"
           note "- Selection: \`${SELECT_REASON:-unavailable}\` (\`${SELECT_COUNT:-0}\` shard families)"
 
-          if [[ "${SELECT_RESULT}" != "success" ]]; then
-            note "- Verdict: \`selection_${SELECT_RESULT}\` — no shard evidence for this head."
-            echo "::warning::HONUA_AFFECTED_SHARD_UNAVAILABLE selection concluded '${SELECT_RESULT}'."
+          # MISSING EVIDENCE IS NOT A PASS ONCE THIS CONTEXT IS REQUIRED.
+          # Promotion is documented as exactly two changes -- flip
+          # AFFECTED_SHARDS_MODE to `enforce`, add this context to branch
+          # protection -- so every path that concludes "no evidence" has to be
+          # aware of the mode. Otherwise a selector crash, an invalid routing
+          # config, or shard jobs that die before their receipts would exit 0
+          # and silently disable the required gate rather than blocking on it.
+          # In `report` the behaviour is unchanged: warn, publish, pass.
+          unavailable() {
+            local verdict="$1" explanation="$2" annotation="$3"
+            note "- Verdict: \`${verdict}\` — ${explanation}"
+            if [[ "${MODE}" == "enforce" ]]; then
+              note '  `AFFECTED_SHARDS_MODE` is `enforce`, so this required context fails closed on'
+              note '  missing evidence rather than reporting a pass it cannot support.'
+              echo "::error::HONUA_AFFECTED_SHARD_UNAVAILABLE ${annotation}"
+              exit 1
+            fi
+            echo "::warning::HONUA_AFFECTED_SHARD_UNAVAILABLE ${annotation}"
             exit 0
+          }
+
+          if [[ "${SELECT_RESULT}" != "success" ]]; then
+            unavailable "selection_${SELECT_RESULT}" \
+              "no shard evidence for this head." \
+              "selection concluded '${SELECT_RESULT}'."
           fi
           if [[ "${SELECT_SKIP}" == "true" ]]; then
             note "- Verdict: \`skipped\` — nothing in this diff can move a server-test shard."
@@ -592,12 +629,14 @@ jobs:
 
           shopt -s nullglob
           timings=(shard-results/*.timing.json)
-          if [[ ${#timings[@]} -eq 0 ]]; then
-            note "- Verdict: \`no_receipts\` — shard jobs concluded \`${SHARDS_RESULT}\` without a timing artifact."
+          received=${#timings[@]}
+          expected=${SELECT_COUNT:-0}
+          if [[ "${received}" -eq 0 ]]; then
             note '  A shard that fails before its test step (restore, build, runner disk) produces no'
             note '  receipt; that is an infrastructure failure of this lane, not a shard regression.'
-            echo "::warning::HONUA_AFFECTED_SHARD_INFRA shard jobs concluded '${SHARDS_RESULT}' with no timing receipt."
-            exit 0
+            unavailable "no_receipts" \
+              "shard jobs concluded \`${SHARDS_RESULT}\` without a timing artifact." \
+              "shard jobs concluded '${SHARDS_RESULT}' with no timing receipt."
           fi
 
           note ''
@@ -618,13 +657,28 @@ jobs:
           done
 
           note ''
+          # A PARTIAL RECEIPT SET IS NOT GREEN. `timings` being non-empty only
+          # proves SOME selected shard reported; when one shard dies before
+          # run-server-test-shard.sh writes its timing file and another passes,
+          # every receipt present says `passed` and the naive check below would
+          # call that a clean prediction of the trailing matrix. It is not --
+          # the unreported family is exactly the one this lane was spending a
+          # runner to learn about. Checked AFTER the table so the partial
+          # evidence is still published, and after `red` is counted so a
+          # confirmed red still reports as a red rather than as infrastructure.
+          if [[ "${red}" -eq 0 && "${received}" -lt "${expected}" ]]; then
+            note "  \`${received}\` of \`${expected}\` selected shard families reported a receipt."
+            unavailable "incomplete_receipts" \
+              "only ${received} of ${expected} selected shard families produced a timing receipt, so this head has no complete shard evidence." \
+              "shard jobs concluded '${SHARDS_RESULT}' with ${received}/${expected} timing receipts."
+          fi
           if [[ "${red}" -eq 0 ]]; then
-            note "- Verdict: \`green\` — all ${#timings[@]} selected shard families passed on this head."
-            echo "::notice::HONUA_AFFECTED_SHARD_GREEN ${#timings[@]} selected shard families passed."
+            note "- Verdict: \`green\` — all ${received} selected shard families passed on this head."
+            echo "::notice::HONUA_AFFECTED_SHARD_GREEN ${received} selected shard families passed."
             exit 0
           fi
 
-          note "- Verdict: \`red\` — ${red} of ${#timings[@]} selected shard families failed on this head."
+          note "- Verdict: \`red\` — ${red} of ${received} selected shard families failed on this head."
           if [[ "${MODE}" == "enforce" ]]; then
             echo "::error::PR Gate / Affected shards: ${red} shard families are red on this head."
             exit 1
