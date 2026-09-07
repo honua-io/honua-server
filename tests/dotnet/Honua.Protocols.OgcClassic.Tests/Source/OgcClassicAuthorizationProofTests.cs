@@ -150,7 +150,7 @@ public sealed class OgcClassicAuthorizationProofTests : IAsyncLifetime
             "&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0";
 
         using var denied = await Outsider().GetAsync(url);
-        await AssertRefusedWithoutPayloadAsync(denied);
+        await AssertRefusedWithoutPayloadAsync(denied, HttpStatusCode.Forbidden);
 
         using var allowed = await Viewer().GetAsync(url);
         await AssertImageAsync(allowed);
@@ -168,7 +168,7 @@ public sealed class OgcClassicAuthorizationProofTests : IAsyncLifetime
             "&VERSION=2.0.1&COVERAGEID=0";
 
         using var denied = await Outsider().GetAsync(url);
-        var body = await AssertRefusedWithoutPayloadAsync(denied);
+        var body = await AssertWcsRefusedAsync(denied);
         body.Should().NotContain("CoverageDescription").And.NotContain("RectifiedGrid");
 
         using var allowed = await Viewer().GetAsync(url);
@@ -192,7 +192,7 @@ public sealed class OgcClassicAuthorizationProofTests : IAsyncLifetime
             "&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png&SUBSET=Long(-122.45,-122.40)&SUBSET=Lat(37.75,37.80)";
 
         using var denied = await Outsider().GetAsync(url);
-        await AssertRefusedWithoutPayloadAsync(denied);
+        await AssertWcsRefusedAsync(denied);
 
         using var allowed = await Viewer().GetAsync(url);
         await AssertImageAsync(allowed);
@@ -214,7 +214,7 @@ public sealed class OgcClassicAuthorizationProofTests : IAsyncLifetime
     /// </summary>
     private static async Task AssertWmsAccessDeniedAsync(HttpResponseMessage response)
     {
-        var body = await AssertRefusedWithoutPayloadAsync(response);
+        var body = await AssertRefusedWithoutPayloadAsync(response, HttpStatusCode.Forbidden);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         body.Should().Contain("ServiceExceptionReport").And.Contain("code=\"AccessDenied\"");
         XDocument.Parse(body).Descendants().Select(static element => element.Name.LocalName)
@@ -222,15 +222,35 @@ public sealed class OgcClassicAuthorizationProofTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// The shared half of every denial assertion: a 403, and a response that carries
-    /// no imagery, tile, coverage bytes or feature attributes.
+    /// WCS refuses differently from WMS and WMTS, and this asserts what it actually
+    /// does rather than what the other two do. The layer-scoped
+    /// <c>/rest/services/{id:int}/ImageServer/WCS</c> route resolves the coverage with
+    /// <c>failOnAccessDenied: false</c>, so a coverage the caller may not read is
+    /// reported as <c>NoSuchCoverage</c> — withheld and absent are deliberately
+    /// indistinguishable, the same posture the WFS read path takes. The security floor
+    /// asserted below is identical either way: no description, no coverage bytes, no
+    /// attribute data. Reporting these as AccessDenied instead is a separate,
+    /// presentational question and is not settled here.
     /// </summary>
-    private static async Task<string> AssertRefusedWithoutPayloadAsync(HttpResponseMessage response)
+    private static async Task<string> AssertWcsRefusedAsync(HttpResponseMessage response)
+    {
+        var body = await AssertRefusedWithoutPayloadAsync(response, HttpStatusCode.NotFound);
+        body.Should().Contain("ExceptionReport").And.Contain("NoSuchCoverage");
+        return body;
+    }
+
+    /// <summary>
+    /// The shared half of every denial assertion: the refusal status, and a response
+    /// that carries no imagery, tile, coverage bytes or feature attributes.
+    /// </summary>
+    private static async Task<string> AssertRefusedWithoutPayloadAsync(
+        HttpResponseMessage response,
+        HttpStatusCode expectedStatus)
     {
         var bytes = await response.Content.ReadAsByteArrayAsync();
         var body = Encoding.UTF8.GetString(bytes);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
+        response.StatusCode.Should().Be(expectedStatus, body);
         response.Content.Headers.ContentType?.MediaType.Should().NotStartWith("image/",
             "a refusal must not be served as imagery");
         bytes.Take(PngMagic.Length).Should().NotEqual(PngMagic, "no PNG may be emitted on a refusal");
