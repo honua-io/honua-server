@@ -122,7 +122,7 @@ public sealed class GeometryFormatConversionExecutionProofTests
     {
         var ewkt = await ConvertAsync(PolygonWithHoleWkbBase64, "ewkt");
         ewkt.Envelope!.Value.GetProperty("srid").GetInt32().Should().Be(0);
-        var value = ewkt.Envelope.GetProperty("value").GetString()!;
+        var value = ewkt.Envelope!.Value.GetProperty("value").GetString()!;
         value.Should().NotContain("SRID=", "a SRID-less input must not be labelled with a fabricated SRID");
         AssertPolygonContent(Decode(value, "ewkt"), "ewkt");
 
