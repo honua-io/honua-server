@@ -7435,7 +7435,14 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItems_WithDefaultCatalog_ReturnsServiceAndLayerRecords",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItems_WithFilters_ReturnsDeterministicSubsets",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItems_WithInvalidQuery_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItems_WithLimitAndOffset_ReturnsPagedLinks"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItems_WithLimitAndOffset_ReturnsPagedLinks",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_DatetimeIntervalAfterTheRecord_ExcludesIt",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_DatetimeIntervalBeforeTheRecord_ExcludesIt",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_DatetimeIntervalCoveringTheRecord_ReturnsIt",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_Datetime_StillKeepsRecordsThatHaveNoTemporalValue",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_OpenEndedDatetime_BoundsTheRecordOnOneSideOnly",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_QMatchesThePrefixedRecordId",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_QMatchesTheRecordTitle"
       ],
       "proof_ledger_surface": "ogc-api-records",
       "maturity": "implemented",
@@ -7455,7 +7462,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsDepthTests.RecordsEndpoints_WithUnknownCollection_ReturnNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItem_WithLayerRecordId_ReturnsRecordLinks",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItem_WithRetiredProtocolSibling_OmitsInactiveProtocolLink",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItem_WithUnknownRecordId_ReturnsNotFound"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetItem_WithUnknownRecordId_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItem_ReturnsTheDistinctTitleRatherThanTheName"
       ],
       "proof_ledger_surface": "ogc-api-records",
       "maturity": "implemented",
@@ -12774,6 +12782,12 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithTwoBoundCollections_InterleavesGlobalSortAcrossPageBoundaries",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithoutCollections_WhenAggregateCandidatesEqualCap_SucceedsAcrossBoundTargets",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WithoutCollections_WhenAggregateCandidatesExceedCap_ReturnsBadRequestWithoutFurtherReads",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchSpatialTemporalTests.SearchGet_BboxOnTheOtherSideOfTheWorld_ReturnsNeitherItem",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchSpatialTemporalTests.SearchGet_Bbox_ReturnsTheItemInsideAndExcludesTheOneOutside",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchSpatialTemporalTests.SearchGet_Collections_ExcludesItemsFromOtherCollections",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchSpatialTemporalTests.SearchGet_DatetimeInstant_MatchesOnlyTheItemAtThatInstant",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchSpatialTemporalTests.SearchGet_Datetime_ReturnsTheItemInsideTheIntervalAndExcludesTheOneOutside",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchSpatialTemporalTests.SearchGet_OpenEndedDatetime_ExcludesEverythingBeforeTheLowerBound",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_MissingPropertyIsNull_MatchesItem",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_OrBranchCanMatchWhenOtherPropertyIsMissing",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_PreservesAndOrNotNullTruthTable",
@@ -21070,6 +21084,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.OptionalCounts_PageAcrossCollectionsWithoutCounting",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchSpatialTemporalTests.SearchPost_IntersectsPoint_MatchesOnlyTheItemAtThatPoint",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchSpatialTemporalTests.SearchPost_IntersectsPolygonElsewhere_ReturnsNeitherItem",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchSpatialTemporalTests.SearchPost_IntersectsPolygon_ReturnsTheItemInsideAndExcludesTheOneOutside",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_AllItemsHaveStacFields",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WhenMorePagesExist_EmitsConformantPostNextLink",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithBbox_ReturnsFilteredResults",
