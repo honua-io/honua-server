@@ -20,6 +20,18 @@ Examples::
 
     # gate a collection of runs: non-zero exit if any shard is over the warn line
     scripts/ci/audit-shard-headroom.py --timings-dir ./artifacts --fail-on-warn
+
+    # the drain guard (#3204): fail when the LAST measured run of any shard spent
+    # more than 85% of its budget, before the next test-heavy PR pushes it over
+    scripts/ci/audit-shard-headroom.py --timings-dir ./artifacts \
+        --markdown --max-utilization 0.85
+
+`--fail-on-warn` and `--max-utilization` answer different questions.
+`--fail-on-warn` is retrospective and p90-based: it re-bases budgets from a
+collected history. `--max-utilization` is the forward-looking drain guard: it
+reads the SINGLE most recent run of each shard, which is what a PR gate has, and
+fails while the shard still fits — so the shard that is about to time out is
+named on the PR that fills it rather than on the next red trunk.
 """
 
 from __future__ import annotations
@@ -97,6 +109,36 @@ def censored_floor_minutes(record: dict) -> float | None:
     return None
 
 
+def sort_key(record: dict) -> str:
+    """Order records within a shard oldest-to-newest.
+
+    `started_at` is written by the shard runner as an ISO-8601 UTC stamp, so a
+    plain string sort is chronological. `completed_at` is the fallback for an
+    artifact that predates `started_at`; a record with neither sorts first, so a
+    stampless artifact can never be mistaken for the newest sample.
+    """
+    return str(record.get("started_at") or record.get("completed_at") or "")
+
+
+def observed_minutes(record: dict) -> float | None:
+    """The duration a single record proves, in minutes.
+
+    A timed-out record is censored: it proves the shard needed AT LEAST the cap
+    it was killed at, so the recorded budget is the honest number to report for
+    it. Using the raw `duration_seconds` of a killed run would understate the
+    shard by however far `timeout` truncated it, and a shard that timed out would
+    then report ~100% instead of tripping a >=100% guard.
+    """
+    if record.get("timed_out"):
+        floor = censored_floor_minutes(record)
+        if floor is not None:
+            return floor
+    duration = record.get("duration_seconds")
+    if isinstance(duration, (int, float)):
+        return float(duration) / 60.0
+    return None
+
+
 def load_timings(directory: Path) -> dict[str, list[dict]]:
     observations: dict[str, list[dict]] = {}
     for path in sorted(directory.rglob("*.timing.json")):
@@ -139,7 +181,15 @@ def audit(config: dict, observations: dict[str, list[dict]]) -> list[dict]:
             "reference_utilization": None,
             "status": "no_data",
             "recommended_test_timeout_minutes": cap_minutes,
+            "latest_minutes": None,
+            "latest_utilization": None,
         }
+        if records:
+            newest = max(records, key=sort_key)
+            latest = observed_minutes(newest)
+            if latest is not None:
+                row["latest_minutes"] = round(latest, 1)
+                row["latest_utilization"] = round(latest / cap_minutes, 3)
         if durations:
             row["p50"] = round(percentile(durations, 0.5), 1)
             row["p90"] = round(percentile(durations, 0.9), 1)
@@ -188,8 +238,8 @@ def audit(config: dict, observations: dict[str, list[dict]]) -> list[dict]:
 
 def render_markdown(rows: list[dict]) -> str:
     lines = [
-        "| Shard | Runs | Timeouts | p50 (min) | p90 (min) | Cap (min) | p90 / cap | Status | Recommended cap |",
-        "|---|---:|---:|---:|---:|---:|---:|---|---:|",
+        "| Shard | Runs | Timeouts | p50 (min) | p90 (min) | Last (min) | Cap (min) | p90 / cap | Last / cap | Status | Recommended cap |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|",
     ]
     for row in rows:
         utilization = "-" if row["utilization"] is None else f"{row['utilization'] * 100:.0f}%"
@@ -198,10 +248,13 @@ def render_markdown(rows: list[dict]) -> str:
             if row["recommended_test_timeout_minutes"] == row["test_timeout_minutes"]
             else str(row["recommended_test_timeout_minutes"])
         )
+        latest_utilization = (
+            "-" if row["latest_utilization"] is None else f"{row['latest_utilization'] * 100:.0f}%"
+        )
         lines.append(
             f"| {row['shard']} | {row['runs']} | {row['timeouts']} | {row['p50'] or '-'} | "
-            f"{row['p90'] or '-'} | {row['test_timeout_minutes']} | {utilization} | "
-            f"{row['status']} | {recommended} |"
+            f"{row['p90'] or '-'} | {row['latest_minutes'] or '-'} | {row['test_timeout_minutes']} | "
+            f"{utilization} | {latest_utilization} | {row['status']} | {recommended} |"
         )
     return "\n".join(lines)
 
@@ -220,6 +273,17 @@ def main(argv: list[str] | None = None) -> int:
         "--fail-on-warn",
         action="store_true",
         help="exit non-zero when any shard is at or above the configured warn utilization",
+    )
+    parser.add_argument(
+        "--max-utilization",
+        type=float,
+        default=None,
+        metavar="RATIO",
+        help=(
+            "drain guard (#3204): exit non-zero when any shard's LAST measured run spent "
+            "more than RATIO of its test budget (e.g. 0.85). Shards with no timing artifact "
+            "in --timings-dir are skipped, so a partial collection cannot fail the check."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -245,9 +309,32 @@ def main(argv: list[str] | None = None) -> int:
                 f"{row['recommended_test_timeout_minutes']}m",
                 file=sys.stderr,
             )
-        if args.fail_on_warn:
-            return 1
-    return 0
+
+    exit_code = 1 if (flagged and args.fail_on_warn) else 0
+
+    if args.max_utilization is not None:
+        # A shard with no artifact in this collection is not evidence of anything
+        # (a PR gate only runs the shards its diff selected), so it is skipped
+        # rather than treated as 0% or as a failure.
+        crowded = [
+            row
+            for row in rows
+            if row["latest_utilization"] is not None
+            and row["latest_utilization"] > args.max_utilization
+        ]
+        for row in crowded:
+            print(
+                f"::error::HONUA_SHARD_OVER_MAX_UTILIZATION shard='{row['shard']}' last run "
+                f"{row['latest_minutes']}m of its {row['test_timeout_minutes']}m budget "
+                f"({row['latest_utilization'] * 100:.0f}%, limit "
+                f"{args.max_utilization * 100:.0f}%). Move whole test classes out of this "
+                f"shard (or split it) — raising the budget is not the fix.",
+                file=sys.stderr,
+            )
+        if crowded:
+            exit_code = 1
+
+    return exit_code
 
 
 if __name__ == "__main__":

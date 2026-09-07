@@ -21,11 +21,47 @@ Each `Honua.Server.Tests` shard carries two timeouts:
 2. **Keep measured p90 at or below 70% of the test cap**
    (`shard_budget_policy.target_utilization`). The inner timeout exists to bound
    a genuine *hang*, not to bound normal test growth — a shard that legitimately
-   needs more time should be given a bigger budget or split, not left to fail
-   intermittently with `exit 124`.
+   needs more time should be split, not left to fail intermittently with
+   `exit 124`. (Historically this rule also allowed re-basing the budget upward;
+   rule 4 supersedes that.)
 3. **A passing shard at or above 80% of its budget is a defect to schedule**
    (`shard_budget_policy.warn_utilization`). `run-server-test-shard.sh` emits
    `::warning::HONUA_SHARD_LOW_HEADROOM` for that case.
+4. **Every shard keeps at least 25% headroom — measured utilization at or below
+   75% of its test cap — and the way to restore it is to move whole test classes
+   out, never to raise the cap.** Raising a cap converts a capacity problem into
+   a slower gate and buys one PR's worth of room; the drain of test-heavy
+   must-fix PRs then refills it. Three shards hit their cap in the 24 hours to
+   2026-09-07 — `Core and Cloud Contracts` (#4450), `STAC Protocol` (#4455) and
+   `Server Features Analytics Studio Export and Reporting` (run 34072577139) —
+   each of which had spent >85% of its budget on the run *before* it went red.
+   `scripts/ci/audit-shard-headroom.py --max-utilization 0.85` is the guard for
+   that window, and the PR gate runs it per shard as a non-required advisory step
+   (`Report shard headroom (advisory)` in `ci.yml`) that also prints the headroom
+   table to the job summary. It reads the **last** measured run, not a p90,
+   because a PR gate only has the one run it just produced; a shard that timed
+   out is scored at the cap it was killed at, not at the truncated duration.
+
+### Sizing a split
+
+Size splits with `scripts/ci/summarize-trx-class-intervals.py`, which measures
+per-class **union of `startTime`..`endTime` intervals**. Do not size them from
+the TRX `duration` sum: `duration` excludes fixture and collection setup and
+under-reports an integration shard by a factor of ~3. The union measure predicted
+the #4455 STAC split's post-split wall at 7.1 min against an actual 6.5-7.5 min.
+
+Read `summed/whole` first. At ~1.0 the shard is serial and class placement is
+directly additive, so moving a class moves its whole interval. Above that the
+shard runs collections in parallel, spans overlap, and the union of what remains
+is the honest (conservative) estimate of the residual — a Catalog-only split of
+`GeoServices ImageServer` was rejected on exactly that basis, because it left the
+parent at 88% while `ImageServerEndpointsTests` alone was a 24.1 min union.
+
+**A single test class can be the floor.** When one class already exceeds 75% of
+the shard's cap, no whole-class move reaches the target and the follow-up is to
+split the class in source. That is the open state of `GeoServices MapServer`
+(`MapServerEndpointTests`, 22.9 min of a 29 min cap) and `Core Endpoints`
+(`FeatureServerEndpointTests`, 24.6 min of a 32 min cap).
 
 ## Signals
 
@@ -782,3 +818,125 @@ not a split effect: its GET twin
 run, `PostGIS preflight check passed` appears repeatedly around it, the class
 sits on the same shard before and after the split, and CI attempt 1 at this same
 `959a830` reported no failing test at all.
+
+
+## Fleet-wide headroom rebalance (2026-09-07, #3204)
+
+Trunk went red at `3139aa7` on run
+[34072577139](https://github.com/honua-io/honua-server/actions/runs/34072577139):
+`Server Features Analytics Studio Export and Reporting` hit
+`HONUA_SHARD_CAPACITY_EXHAUSTED` at its 22 min budget with every executed test
+passing, after #4475 added export/capability cases to it. It was the third
+shard-budget red in 24 hours (`Core and Cloud Contracts` -> #4450, `STAC
+Protocol` -> #4455), so this pass audited **every** server-test shard instead of
+the one that failed.
+
+**Baseline.** p90 of the measured test-step duration per shard over the four
+full runs on the current config — 34054772215, 34058058911, 34066674166 and the
+red 34072577139 — with the timed-out shard scored at the cap it was killed at.
+Run 34022872366 is deliberately excluded: it predates #4450/#4455 and its
+pre-split durations would misreport `Core and Cloud Contracts` and `STAC
+Protocol`. **14 of 59 shards were at or above 75% of budget.**
+
+**Method.** Per-class union-of-intervals (see "Sizing a split" above), not the
+TRX `duration` sum. Splits were chosen to balance the two halves, and three
+candidate cuts were measured and rejected for leaving a child over the line:
+Catalog-only for `GeoServices ImageServer` (88%), Identity+Mobile together for
+`Server Features Collaboration Mobile and Identity` (73% next to 15%), and
+Processes-vs-Tiles for `OGC API Tiles Coverages and Processes` (77% either way,
+that shard being the most parallel of the set at `summed/whole` = 1.95).
+
+**Result.** 59 -> 71 shards: 12 new shards, plus four whole-class moves into
+existing shards with room (`GeoServices Geometry VectorTile and Versioning`,
+`Server Features Streaming Endpoints`, `OData Pagination and Spatial`) where a
+new runner job was not justified. **No budget was raised or lowered.** The
+longest shard drops from 31.9 min to a predicted 24.2 min, which also shortens
+the gate's critical path.
+
+Two shards remain above 75% and cannot be fixed by moving whole classes, because
+a single class is over the line on its own; splitting those classes in source is
+the follow-up:
+
+| Shard | Cap | Blocking class | Class union |
+|---|---:|---|---:|
+| `GeoServices MapServer` | 29m | `MapServerEndpointTests` (130 cases) | 22.9m (79%) |
+| `Core Endpoints` | 32m | `FeatureServerEndpointTests` (131 cases) | 24.6m (77%) |
+
+### Before / after
+
+"After" is the predicted union for shards this change touched, and the measured
+baseline carried forward for the shards it does not.
+
+| Shard | Before p90 | Cap | Before util | After (predicted) | Cap | After util |
+|---|---:|---:|---:|---:|---:|---:|
+| GeoServices MapServer | 24.6m | 29m | 85% | 22.9m | 29m | 79% ⚠️ |
+| Core Endpoints | 26.3m | 32m | 82% | 24.6m | 32m | 77% ⚠️ |
+| Security and Authorization | 21.4m | 30m | 71% | 21.4m | 30m | 71% |
+| GeoServices ImageServer | 31.9m | 35m | 91% | 24.2m | 35m | 69% |
+| Server Features Admin Operations Endpoints | 14.9m | 22m | 68% | 14.9m | 22m | 68% |
+| Scene | 19.5m | 30m | 65% | 19.5m | 30m | 65% |
+| FeatureServer Endpoints Query Services and Replication | 16.9m | 26m | 65% | 16.9m | 26m | 65% |
+| OGC API Features | 13.9m | 22m | 63% | 13.9m | 22m | 63% |
+| OData Core | 26.0m | 29m | 90% | 18.3m | 29m | 63% |
+| Elevation and Terrain Analysis **(new)** | — | — | — | 9.4m | 15m | 63% |
+| Server Features Admin Authorization | 13.8m | 22m | 63% | 13.8m | 22m | 63% |
+| WFS | 15.4m | 25m | 62% | 15.4m | 25m | 62% |
+| OGC API Tiles Coverages and Processes | 17.1m | 22m | 78% | 13.5m | 22m | 61% |
+| Operator Eval Harness | 12.3m | 20m | 61% | 12.3m | 20m | 61% |
+| OGC API Tiles Endpoints and CRS **(new)** | — | — | — | 13.4m | 22m | 61% |
+| Server Features Miscellaneous | 17.8m | 22m | 81% | 13.4m | 22m | 61% |
+| Geocoding | 9.0m | 15m | 60% | 9.0m | 15m | 60% |
+| OGC Classic Maps | 12.0m | 20m | 60% | 12.0m | 20m | 60% |
+| OData Advanced and Filters | 16.5m | 22m | 75% | 13.2m | 22m | 60% |
+| Caching File Storage Styling and Infrastructure | 17.9m | 30m | 60% | 17.9m | 30m | 60% |
+| GeoServices Catalog and ImageServer Support **(new)** | — | — | — | 10.7m | 18m | 59% |
+| Core Attachments and Records | 15.4m | 26m | 59% | 15.4m | 26m | 59% |
+| Server Features Streaming Endpoints | 12.5m | 22m | 57% | 13.0m | 22m | 59% |
+| File and Raster Import | 18.9m | 20m | 94% | 11.7m | 20m | 58% |
+| WFS Endpoints | 12.5m | 22m | 57% | 12.5m | 22m | 57% |
+| Server Features Collaboration Mobile and Identity | 21.2m | 22m | 96% | 12.1m | 22m | 55% |
+| GeoServices GPServer and NAServer | 11.8m | 22m | 54% | 11.8m | 22m | 54% |
+| STAC Protocol | 8.0m | 15m | 53% | 8.0m | 15m | 53% |
+| Migration Source Imports **(new)** | — | — | — | 13.2m | 25m | 53% |
+| Server Features Studio Packaging **(new)** | — | — | — | 11.5m | 22m | 52% |
+| Server Features Admin Authentication and Credentials | 11.5m | 22m | 52% | 11.5m | 22m | 52% |
+| Server Features Console and Alerts | 11.0m | 22m | 50% | 11.0m | 22m | 50% |
+| MCP and Sessions | 17.3m | 20m | 86% | 10.0m | 20m | 50% |
+| OGC API Maps and Tiles | 10.9m | 22m | 50% | 10.9m | 22m | 50% |
+| Admin & Infrastructure | 15.6m | 32m | 49% | 15.6m | 32m | 49% |
+| Migration | 27.4m | 29m | 95% | 14.0m | 29m | 48% |
+| MCP Authentication and Governance **(new)** | — | — | — | 7.2m | 15m | 48% |
+| Server Features Capabilities **(new)** | — | — | — | 10.4m | 22m | 47% |
+| Cloud and Streaming Import **(new)** | — | — | — | 7.0m | 15m | 47% |
+| Server Features Sharing | 10.3m | 22m | 47% | 10.3m | 22m | 47% |
+| Server Features Analytics Studio Export and Reporting | 22.0m | 22m | 100% | 10.2m | 22m | 46% |
+| Server Features Data Enrichment and Capabilities | 19.4m | 22m | 88% | 10.0m | 22m | 46% |
+| GeoServices Geometry VectorTile and Versioning | 9.1m | 24m | 38% | 10.5m | 24m | 44% |
+| OData Pagination and Spatial | 6.5m | 22m | 30% | 9.5m | 22m | 43% |
+| Server Features Identity **(new)** | — | — | — | 9.0m | 22m | 41% |
+| FeatureServer Tiles and Replica | 8.9m | 22m | 41% | 8.9m | 22m | 41% |
+| OGC Classic WMTS | 7.8m | 20m | 39% | 7.8m | 20m | 39% |
+| Server Features Admin Governance and Sharing | 8.4m | 22m | 38% | 8.4m | 22m | 38% |
+| OData Errors and Conformance **(new)** | — | — | — | 7.4m | 20m | 37% |
+| Server Features Spec Printing and Static Maps | 17.4m | 48m | 36% | 17.4m | 48m | 36% |
+| Server Features Admin Network and Jobs | 7.6m | 22m | 34% | 7.6m | 22m | 34% |
+| OData Mutations and Batch | 6.8m | 20m | 34% | 6.8m | 20m | 34% |
+| Core Spatial Query and Streaming **(new)** | — | — | — | 4.9m | 15m | 32% |
+| Server Features Admin Platform and Connections | 6.8m | 22m | 31% | 6.8m | 22m | 31% |
+| Server Features Admin Integrations and Automation | 6.8m | 22m | 31% | 6.8m | 22m | 31% |
+| Server Features Admin Catalog and Configuration | 6.6m | 22m | 30% | 6.6m | 22m | 30% |
+| SensorThings | 4.4m | 15m | 29% | 4.4m | 15m | 29% |
+| Raster Serving Scene Geometry and Terrain | 15.4m | 20m | 77% | 5.8m | 20m | 29% |
+| Server Features Admin Release Control | 6.3m | 22m | 29% | 6.3m | 22m | 29% |
+| FeatureServer Maintenance and Temporal | 6.3m | 22m | 29% | 6.3m | 22m | 29% |
+| Server Features Admin Runtime Operations | 6.3m | 22m | 29% | 6.3m | 22m | 29% |
+| Server Features Studio AI **(new)** | — | — | — | 4.2m | 15m | 28% |
+| STAC and API Governance | 5.4m | 20m | 27% | 5.4m | 20m | 27% |
+| STAC Items and Collections | 3.8m | 15m | 26% | 3.8m | 15m | 26% |
+| Server Features Streaming Snapshot and Conformance | 7.4m | 30m | 25% | 7.4m | 30m | 25% |
+| Server Features Admin Layer Management | 7.3m | 35m | 21% | 7.3m | 35m | 21% |
+| Server Features Admin Tiles and Scenes | 7.1m | 35m | 20% | 7.1m | 35m | 20% |
+| Core and Cloud Contracts | 5.1m | 26m | 20% | 5.1m | 26m | 20% |
+| Core Mutation Concurrency | 3.7m | 20m | 18% | 3.7m | 20m | 18% |
+| OData Client Certification | 4.0m | 25m | 16% | 4.0m | 25m | 16% |
+| GP Devkit CLI | 0.1m | 10m | 1% | 0.1m | 10m | 1% |

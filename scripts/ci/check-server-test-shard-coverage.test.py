@@ -536,7 +536,9 @@ def test_studio_dashboard_mcp_integration_has_one_server_assembly_owner() -> Non
         if (shard.get("csproj") or KNOWN) == classes[fqn]["csproj"]
         and MODULE._eval(MODULE._FilterParser(shard["filter"]).parse(), fqn)
     ]
-    assert owners == ["Server Features Analytics Studio Export and Reporting"], owners
+    # #3204 moved Features.Studio (and this fixture with it) to `Server Features
+    # Studio Packaging`; the parent kept Export/Reporting/SpatialAnalytics.
+    assert owners == ["Server Features Studio Packaging"], owners
 
 
 def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
@@ -547,7 +549,13 @@ def test_core_capacity_moves_have_exactly_one_server_assembly_owner() -> None:
     classes = MODULE.enumerate_test_classes()
     for name, owner in (
         ("CrsTransformationCorrectnessTests", "Core Attachments and Records"),
-        ("AdvancedSpatialQueryTests", "Core Endpoints"),
+        # #3204: AdvancedSpatialQueryTests moved off `Core Endpoints` again. #4450
+        # put it there, which took Core Endpoints to 82% of its budget; it now
+        # shares a shard with StreamingFeatureServerEndpointTests, leaving the
+        # 24.6m FeatureServerEndpointTests alone on the parent.
+        ("AdvancedSpatialQueryTests", "Core Spatial Query and Streaming"),
+        ("StreamingFeatureServerEndpointTests", "Core Spatial Query and Streaming"),
+        ("FeatureServerEndpointTests", "Core Endpoints"),
         ("Comprehensive.ApiSurfaceComplianceTests", "STAC and API Governance"),
         ("Comprehensive.TestQualityValidationTests", "STAC and API Governance"),
         ("PatchConcurrencyTests", "Core Mutation Concurrency"),

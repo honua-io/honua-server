@@ -1309,6 +1309,40 @@ jobs:
         run: |
           scripts/ci/run-server-test-shard.sh
 
+      # #3204 drain guard, ADVISORY. Three shards hit their test budget in 24
+      # hours (#4450, #4455, and Analytics Studio Export on run 34072577139).
+      # Every one of them was already spending >85% of its budget on the run
+      # BEFORE it went red, and nothing said so — the drain of test-heavy
+      # must-fix PRs kept adding cases until a shard tipped over on trunk.
+      # This step reads the shard's own timing artifact and prints its headroom
+      # so the PR that fills a shard is the PR that hears about it.
+      # continue-on-error keeps it non-required: the coordinator decides whether
+      # to make it blocking after a week of data.
+      - name: Report shard headroom (advisory)
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -uo pipefail
+          if ! ls tests/TestResults/*.timing.json >/dev/null 2>&1; then
+            echo "No timing artifact for this shard; nothing to report."
+            exit 0
+          fi
+          table=$(python3 scripts/ci/audit-shard-headroom.py \
+            --timings-dir tests/TestResults --markdown 2>/dev/null \
+            | grep -Ev '\| no_data \|')
+          printf '%s\n' "${table}"
+          {
+            echo "### Server test shard headroom"
+            echo
+            printf '%s\n' "${table}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          # Advisory: the annotation is the signal, the exit code stays 0 via
+          # continue-on-error above.
+          python3 scripts/ci/audit-shard-headroom.py \
+            --timings-dir tests/TestResults --max-utilization 0.85 >/dev/null
+
       - name: Upload Operator Eval Report
         if: ${{ always() && matrix.upload_operator_eval_report }}
         uses: actions/upload-artifact@v7.0.1
