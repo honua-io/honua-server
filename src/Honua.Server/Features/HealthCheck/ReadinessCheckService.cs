@@ -80,7 +80,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                 && _durableJobSubstrate.RedisDurabilityAttestation is null
                 && _durableJobSubstrate.RedisDurabilityFailure is { } durabilityCause)
             {
-                Log.HealthCheckExecuted(_logger, "DurableJobSubstrate", $"Degraded ({durabilityCause})", 0);
+                Log.DurableJobSubstrateDegraded(_logger, durabilityCause);
             }
 
             if (_migrationState.IsFailed)

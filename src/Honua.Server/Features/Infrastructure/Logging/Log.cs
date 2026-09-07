@@ -230,6 +230,21 @@ internal static partial class Log
     public static partial void HealthCheckExecuted(
         ILogger logger, string checkName, string status, double elapsedMs);
 
+    /// <summary>
+    /// Records that readiness observed an unattested durable job substrate (honua-server#4502).
+    /// This is a DEGRADATION, not a readiness failure: jobs still run, they are just not durable,
+    /// and the health-check roll-up plus the capability manifest carry the operator-facing
+    /// diagnosis. Typed so the cause is a structured field rather than an interpolated string.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="cause">The classified reason durability was not attested.</param>
+    [LoggerMessage(
+        EventId = 4021,
+        Level = LogLevel.Information,
+        Message = "Health check executed: DurableJobSubstrate = Degraded ({Cause}); jobs remain available but are not durable")]
+    public static partial void DurableJobSubstrateDegraded(
+        ILogger logger, Honua.Core.Features.Capabilities.DurableJobSubstrateCause cause);
+
     [LoggerMessage(
         EventId = 4030,
         Level = LogLevel.Debug,

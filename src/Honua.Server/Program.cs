@@ -341,13 +341,15 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
             }
             else if (redisCacheEntitled && durability.FailureCause is { } rejectedCause)
             {
+                var rejectionDetail = durability.FailureDetail ?? "no detail reported";
+                var rejectionRemediation = DurableJobSubstrateRemediation.For(rejectedCause);
                 var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
                 ProgramLog.RedisDurabilityNotAttested(
                     startupLogger,
                     rejectedCause,
-                    durability.FailureDetail ?? "no detail reported",
+                    rejectionDetail,
                     DurableJobSubstrateRemediation.NonDurableConsequence,
-                    DurableJobSubstrateRemediation.For(rejectedCause));
+                    rejectionRemediation);
             }
         }
         else if (redisCacheEntitled)

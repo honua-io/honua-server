@@ -314,8 +314,13 @@ internal sealed class RedisHealthCheck : IHealthCheck
                 && _durableJobSubstrate.RedisDurabilityAttestation is null
                 && _durableJobSubstrate.RedisDurabilityFailure is { } durabilityCause)
             {
+                // The description is what the ops-health snapshot (honua://ops/health) projects per
+                // entry, so it carries the whole diagnosis — cause, consequence, remediation — and
+                // not just a label an operator then has to go and decode.
                 return HealthCheckResult.Degraded(
-                    $"Redis durability is not attested. {DurableJobSubstrateRemediation.NonDurableConsequence}",
+                    $"Redis durability is not attested ({durabilityCause}). "
+                        + $"{DurableJobSubstrateRemediation.NonDurableConsequence} "
+                        + DurableJobSubstrateRemediation.For(durabilityCause),
                     data: new Dictionary<string, object>
                     {
                         ["cause"] = durabilityCause.ToString(),
