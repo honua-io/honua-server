@@ -11,8 +11,6 @@ using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.Geoprocessing.Inference;
-using Honua.TestKit.Attributes;
-using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -48,7 +46,6 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// grid fails them.
 /// </para>
 /// </summary>
-[Protocol(TestProtocols.OgcApiProcesses)]
 [Trait("Category", "ImageryClassifyExecutionProof")]
 public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
 {
@@ -84,9 +81,7 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
 
     public async Task DisposeAsync() => await _backend.DisposeAsync();
 
-    [IntegrationTest]
-    [Operation(Operations.ProcessExecution)]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Fact]
     public async Task Classify_RealSceneThroughARealModelServer_MatchesTheFrozenClassOracle()
     {
         var scene = await File.ReadAllBytesAsync(Fixture("classify-scene.tif"));
@@ -117,9 +112,7 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
         AssertClassMap(classified, ExpectedClasses);
     }
 
-    [IntegrationTest]
-    [Operation(Operations.ProcessExecution)]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Fact]
     public async Task ClassifyOracle_ADifferentCommittedModel_IsRejectedEvenThoughTheOutputIsWellFormed()
     {
         // A plausible wrong-but-well-formed classification: the same scene, the same
@@ -146,9 +139,7 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
         assert.Should().Throw<XunitException>("the frozen class oracle must reject a different model's output");
     }
 
-    [IntegrationTest]
-    [Operation(Operations.ProcessExecution)]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Fact]
     public async Task Classify_UnknownModelReference_FailsWithoutPublishingAnArtifact()
     {
         var scene = await File.ReadAllBytesAsync(Fixture("classify-scene.tif"));
