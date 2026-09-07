@@ -9,6 +9,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
+using Honua.TestKit.Helpers;
 using Npgsql;
 using Xunit;
 using Xunit.Sdk;

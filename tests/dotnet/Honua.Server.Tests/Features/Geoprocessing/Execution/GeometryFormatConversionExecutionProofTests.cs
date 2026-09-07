@@ -83,7 +83,7 @@ public sealed class GeometryFormatConversionExecutionProofTests
             var result = await ConvertAsync(PolygonWithHoleEwkbBase64, target);
 
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, $"target '{target}' is advertised");
-            var envelope = result.Envelope!;
+            var envelope = result.Envelope!.Value;
             envelope.GetProperty("type").GetString().Should().Be("GeometryFormatResult");
             envelope.GetProperty("processId").GetString().Should().Be("conversion.geometry-format");
             envelope.GetProperty("target").GetString().Should().Be(target);
@@ -101,16 +101,16 @@ public sealed class GeometryFormatConversionExecutionProofTests
     [UnitTest]
     public async Task EwktCarriesTheSrid_AndWktGeoJsonDoNot()
     {
-        var ewkt = (await ConvertAsync(PolygonWithHoleEwkbBase64, "ewkt")).Envelope!
+        var ewkt = (await ConvertAsync(PolygonWithHoleEwkbBase64, "ewkt")).Envelope!.Value
             .GetProperty("value").GetString()!;
         ewkt.Should().StartWith("SRID=4326;", "EWKT is the only text encoding that carries a SRID");
 
-        var wkt = (await ConvertAsync(PolygonWithHoleEwkbBase64, "wkt")).Envelope!
+        var wkt = (await ConvertAsync(PolygonWithHoleEwkbBase64, "wkt")).Envelope!.Value
             .GetProperty("value").GetString()!;
         wkt.Should().NotContain("SRID", "ISO WKT has no SRID member");
         wkt.Should().StartWith("POLYGON");
 
-        var geoJson = (await ConvertAsync(PolygonWithHoleEwkbBase64, "geojson")).Envelope!
+        var geoJson = (await ConvertAsync(PolygonWithHoleEwkbBase64, "geojson")).Envelope!.Value
             .GetProperty("value").GetString()!;
         using var geoJsonDoc = JsonDocument.Parse(geoJson);
         geoJsonDoc.RootElement.TryGetProperty("crs", out _).Should().BeFalse("RFC 7946 has no CRS member");
@@ -121,14 +121,14 @@ public sealed class GeometryFormatConversionExecutionProofTests
     public async Task PlainWkbInput_IsNotGivenAnInventedSrid()
     {
         var ewkt = await ConvertAsync(PolygonWithHoleWkbBase64, "ewkt");
-        ewkt.Envelope!.GetProperty("srid").GetInt32().Should().Be(0);
+        ewkt.Envelope!.Value.GetProperty("srid").GetInt32().Should().Be(0);
         var value = ewkt.Envelope.GetProperty("value").GetString()!;
         value.Should().NotContain("SRID=", "a SRID-less input must not be labelled with a fabricated SRID");
         AssertPolygonContent(Decode(value, "ewkt"), "ewkt");
 
         // The WKB round-trip of a SRID-less input stays plain WKB.
         var wkb = await ConvertAsync(PolygonWithHoleWkbBase64, "wkb");
-        var decoded = Decode(wkb.Envelope!.GetProperty("value").GetString()!, "wkb");
+        var decoded = Decode(wkb.Envelope!.Value.GetProperty("value").GetString()!, "wkb");
         decoded.SRID.Should().Be(0);
         AssertPolygonContent(decoded, "wkb");
     }
@@ -142,11 +142,12 @@ public sealed class GeometryFormatConversionExecutionProofTests
         // STANDARD WKB: a WKB-only consumer rejects PostGIS's SRID flag or misreads the
         // type word it sets. The SRID survives on the envelope, and 'ewkt' remains the
         // encoding that carries it inside the value.
-        wkb.Envelope!.GetProperty("srid").GetInt32().Should().Be(4326);
-        var bytes = Convert.FromBase64String(wkb.Envelope.GetProperty("value").GetString()!);
+        var envelope = wkb.Envelope!.Value;
+        envelope.GetProperty("srid").GetInt32().Should().Be(4326);
+        var bytes = Convert.FromBase64String(envelope.GetProperty("value").GetString()!);
         (bytes[4] & 0x20).Should().Be(0, "the EWKB SRID flag must not be set on a 'wkb' output");
 
-        var decoded = Decode(wkb.Envelope.GetProperty("value").GetString()!, "wkb");
+        var decoded = Decode(envelope.GetProperty("value").GetString()!, "wkb");
         decoded.SRID.Should().Be(0);
         AssertPolygonContent(decoded, "wkb");
     }
@@ -166,7 +167,7 @@ public sealed class GeometryFormatConversionExecutionProofTests
         // The same projected input is fine for the encodings that can carry its CRS.
         var ewkt = await ConvertAsync(WebMercatorPolygonEwkbBase64, "ewkt");
         ewkt.Status.Should().Be(ExecutionJobStatus.Succeeded);
-        ewkt.Envelope!.GetProperty("value").GetString().Should().StartWith("SRID=3857;");
+        ewkt.Envelope!.Value.GetProperty("value").GetString().Should().StartWith("SRID=3857;");
     }
 
     [UnitTest]
@@ -175,12 +176,13 @@ public sealed class GeometryFormatConversionExecutionProofTests
         // Clockwise-exterior polygons are common (Esri applyEdits, shapefile imports).
         // RFC 7946 section 3.1.6 fixes exterior rings counter-clockwise and holes
         // clockwise, and the raw NTS writer preserves whatever the input carried.
-        var geoJson = (await ConvertAsync(ClockwisePolygonWkbBase64, "geojson")).Envelope!
+        var geoJson = (await ConvertAsync(ClockwisePolygonWkbBase64, "geojson")).Envelope!.Value
             .GetProperty("value").GetString()!;
 
         var polygon = (Polygon)new GeoJsonReader().Read<Geometry>(geoJson);
         polygon.Shell.IsCCW.Should().BeTrue("RFC 7946 requires a counter-clockwise exterior ring");
-        polygon.GetInteriorRingN(0).IsCCW.Should().BeFalse("RFC 7946 requires clockwise holes");
+        NetTopologySuite.Algorithm.Orientation.IsCCW(polygon.GetInteriorRingN(0).CoordinateSequence)
+            .Should().BeFalse("RFC 7946 requires clockwise holes");
         AssertPolygonContent(polygon, "geojson");
     }
 
@@ -234,7 +236,7 @@ public sealed class GeometryFormatConversionExecutionProofTests
         // parseable value of the requested encoding on the same SRID.
         var filled = await ConvertAsync(FilledPolygonEwkbBase64, "wkt");
         filled.Status.Should().Be(ExecutionJobStatus.Succeeded);
-        var filledGeometry = Decode(filled.Envelope!.GetProperty("value").GetString()!, "wkt");
+        var filledGeometry = Decode(filled.Envelope!.Value.GetProperty("value").GetString()!, "wkt");
         filledGeometry.Should().BeOfType<Polygon>();
         filledGeometry.IsValid.Should().BeTrue("the substituted output is well formed, not corrupt");
 
@@ -244,7 +246,7 @@ public sealed class GeometryFormatConversionExecutionProofTests
 
         var swapped = await ConvertAsync(SwappedAxisPolygonEwkbBase64, "geojson");
         swapped.Status.Should().Be(ExecutionJobStatus.Succeeded);
-        var swappedGeometry = Decode(swapped.Envelope!.GetProperty("value").GetString()!, "geojson");
+        var swappedGeometry = Decode(swapped.Envelope!.Value.GetProperty("value").GetString()!, "geojson");
         // Ring counts and area survive an axis swap, so only the ordinates catch it.
         ((Polygon)swappedGeometry).NumInteriorRings.Should().Be(1);
         swappedGeometry.Area.Should().BeApproximately(ExpectedArea, 1e-9);
@@ -370,7 +372,7 @@ public sealed class GeometryFormatConversionExecutionProofTests
         return new ConversionOutcome(result.Status, result.ErrorMessage, published, envelope);
     }
 
-    private static IReadOnlyList<GeoprocessingValidationFailure> ValidatePlanTarget(string target)
+    private static List<GeoprocessingValidationFailure> ValidatePlanTarget(string target)
     {
         var plan = new AnalysisPlan
         {
