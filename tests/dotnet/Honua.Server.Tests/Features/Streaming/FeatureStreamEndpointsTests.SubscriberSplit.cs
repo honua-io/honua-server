@@ -274,14 +274,14 @@ public sealed partial class FeatureStreamEndpointsTests
     {
         if (webSocket)
         {
-            var client = fixture.CreateWebSocketClient();
-            var configure = client.ConfigureRequest;
-            client.ConfigureRequest = request =>
+            var socketClient = fixture.CreateWebSocketClient();
+            var configure = socketClient.ConfigureRequest;
+            socketClient.ConfigureRequest = request =>
             {
                 configure?.Invoke(request);
                 request.Headers.Referer = SplitReferer;
             };
-            var socket = await client.ConnectAsync(new Uri("ws://localhost" + path), cancellationToken);
+            var socket = await socketClient.ConnectAsync(new Uri("ws://localhost" + path), cancellationToken);
             var stream = SplitStream.ForSocket(socket);
 
             // Drain the connected/handshake frame so the first read below is a delivery.
