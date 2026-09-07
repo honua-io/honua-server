@@ -112,6 +112,17 @@ RECEIPT_CONTRACT = {
         "test_case_id", "status", "performed_by", "request_url", "exercised_capabilities",
     ],
     "resultStatusVocabulary": ["pass", "fail", "skip", "not_applicable"],
+    # Stricter than the governed consumer, deliberately. `deployment_target` is
+    # part of the governed cell identity, but the consumer takes it from the
+    # requirement rather than the receipt -- so a receipt executed in one context
+    # can satisfy a cell governed for another. honua-server receipts name their own
+    # target and the verifier joins on it.
+    "honuaAdditionalReleaseFields": ["deployment_target"],
+    "credentialQueryKeys": [
+        "access_token", "api_key", "apikey", "auth", "authorization", "code",
+        "id_token", "key", "password", "pwd", "refresh_token", "secret", "session",
+        "sig", "signature", "token", "x-api-key",
+    ],
     "joinRules": [
         "requirement.client_lane == envelope.runner_lane",
         "requirement.client_version == envelope.client_version",
@@ -176,6 +187,12 @@ def emitted_pairs(root: Path) -> dict[tuple[str, str], dict]:
     for baseline in sorted((root / BASELINE_ROOT_RELATIVE_PATH).glob("*/*.cert.json")):
         envelope = load_json(baseline)
         key = (envelope["client_lane"], envelope["protocol"])
+        if key in versions:
+            # Two baselines for one pair would let whichever path sorts last decide
+            # the frozen producer binding, silently and arbitrarily. Refuse instead.
+            raise SystemExit(
+                f"duplicate baseline for {key[0]}/{key[1]}: "
+                f"{versions[key][1]} and {baseline.relative_to(root).as_posix()}")
         versions[key] = (envelope["client_version"], baseline.relative_to(root).as_posix())
 
     pairs: dict[tuple[str, str], dict] = {}
@@ -240,9 +257,48 @@ def classify_producer(requirement: dict, pairs: dict[tuple[str, str], dict]) -> 
     return {"status": "present", "producer": producer, "reasonCode": None, "reason": None}
 
 
-def classify_denominator_join(requirement: dict) -> dict:
+def ambiguous_test_ids(requirements: list[dict]) -> dict[str, list[str]]:
+    """Test IDs that more than one governed row in the same lane/surface claims.
+
+    The consumer resolves a raw ``test_case_id`` to *exactly one* requirement and
+    rejects the receipt otherwise, so a shared ID makes every row that claims it
+    unjoinable. Rows are only rivals when a single receipt could reach both: the
+    receipt already narrows by ``(client_lane, client_version, surface)``, so an ID
+    reused across different lanes or surfaces is not a collision.
+    """
+    claimants: dict[tuple[str, str, str, str], list[str]] = {}
+    for requirement in requirements:
+        for test_id in requirement.get("test_ids") or ():
+            key = (
+                requirement["client_lane"], requirement["client_version"],
+                requirement["surface"], test_id)
+            claimants.setdefault(key, []).append(requirement["operation"])
+    collisions: dict[str, list[str]] = {}
+    for (_, _, _, test_id), operations in claimants.items():
+        if len(operations) > 1:
+            collisions.setdefault(test_id, []).extend(operations)
+    return {test_id: sorted(set(ops)) for test_id, ops in collisions.items()}
+
+
+def classify_denominator_join(requirement: dict, collisions: dict[str, list[str]] | None = None) -> dict:
     """Decide whether a receipt could resolve this governed row at all."""
+    collisions = collisions or {}
     test_ids = requirement.get("test_ids")
+    shared = sorted(set(test_ids or ()) & set(collisions))
+    if shared:
+        return {
+            "status": "unjoinable",
+            "testIds": list(test_ids or ()),
+            "reasonCode": "denominator-ambiguous-test-ids",
+            "reason": (
+                f"Test IDs {shared} are claimed by more than one governed row for the same "
+                f"client lane, version and surface (operations "
+                f"{sorted({op for test_id in shared for op in collisions[test_id]})}). The "
+                "client-interop-cert-v1 normalizer requires a result to resolve to exactly one "
+                "requirement and rejects the receipt otherwise, so neither row can be certified "
+                "until the denominator disambiguates them."
+            ),
+        }
     if not isinstance(test_ids, list) or not test_ids:
         return {
             "status": "unjoinable",
@@ -267,13 +323,17 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
         raise SystemExit("--upstream-revision must be a lowercase 40-character commit SHA")
 
     pairs = emitted_pairs(root)
+    bounded = [
+        governed for governed in upstream["requirements"]
+        if governed.get("canonical_client") in BOUNDED_ROSTER_CLIENTS
+    ]
+    collisions = ambiguous_test_ids(bounded)
+
     requirements = []
-    for governed in upstream["requirements"]:
-        if governed.get("canonical_client") not in BOUNDED_ROSTER_CLIENTS:
-            continue
+    for governed in bounded:
         row = dict(governed)
         producer = classify_producer(governed, pairs)
-        join = classify_denominator_join(governed)
+        join = classify_denominator_join(governed, collisions)
         row["receiptBinding"] = {
             "status": "implemented" if (
                 producer["status"] == "present" and join["status"] == "joinable") else "absent",

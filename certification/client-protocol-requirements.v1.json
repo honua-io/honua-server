@@ -1,6 +1,6 @@
 {
   "schema": "honua.client-certification-requirements/v1",
-  "revision": "2026-09-07-bounded-roster.1",
+  "revision": "2026-09-07-bounded-roster.2",
   "boundedRosterIssue": "https://github.com/honua-io/honua-server/issues/3434",
   "requirements_source": "honua-io/honua-release/certification/protocol-certification-requirements.v1.json",
   "requirements_source_revision": "4e229cfd2bfb83aa64416fbe5bf51b04f1cd1e52",
@@ -84,6 +84,28 @@
       "fail",
       "skip",
       "not_applicable"
+    ],
+    "honuaAdditionalReleaseFields": [
+      "deployment_target"
+    ],
+    "credentialQueryKeys": [
+      "access_token",
+      "api_key",
+      "apikey",
+      "auth",
+      "authorization",
+      "code",
+      "id_token",
+      "key",
+      "password",
+      "pwd",
+      "refresh_token",
+      "secret",
+      "session",
+      "sig",
+      "signature",
+      "token",
+      "x-api-key"
     ],
     "joinRules": [
       "requirement.client_lane == envelope.runner_lane",

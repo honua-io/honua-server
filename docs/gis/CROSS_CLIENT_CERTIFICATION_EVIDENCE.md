@@ -384,9 +384,18 @@ A release-tier receipt is the nightly envelope plus these bindings:
 | `client_id` | Governed canonical client name (for example `OWSLib`). Not interchangeable with the CI runner lane. |
 | `runner_lane` | The CI lane, carried separately from `client_id`. |
 | `protocol_profile` | The exercised wire contract profile. |
+| `deployment_target` | The governed execution context (`local-docker` for every bounded-roster row today). Stricter than the consumer, which reads the target from the requirement: naming it on the receipt stops evidence from one execution context certifying a cell governed for another. |
 | `results[].performed_by` | The application client that performed the request. A generic HTTP probe may not stand in for it. |
-| `results[].request_url` | Absolute, credential-free URL. `null` only for a `skip`, where no request was made. |
+| `results[].request_url` | Absolute URL carrying no credentials — neither in userinfo nor in a query parameter such as `?token=` or `?api_key=`. `null` only for a `skip`, where no request was made. |
 | `results[].exercised_capabilities` | The governed scenario facets the observation genuinely exercised. A `pass` may not claim a facet absent from this list. |
+
+The release lane supplies the bindings it alone knows through the environment:
+`HONUA_CANDIDATE_IMAGE_DIGEST`, `HONUA_PRODUCER_SOURCE_SHA`,
+`HONUA_AUTH_POLICY_REVISION`, `HONUA_DEPLOYMENT_TARGET`, and — because the governed
+denominator names *symbolic* revisions such as `docker/cng/seed.sql@<source_sha>` and
+`cog-1.0` rather than content digests, and the join compares them exactly —
+`HONUA_FIXTURE_REVISION` and `HONUA_SERVER_CONFIG_REVISION`. Every one of them is
+unset at nightly and developer tier, where the revisions stay content digests.
 
 Two differences from the nightly envelope are deliberate:
 
@@ -395,10 +404,13 @@ Two differences from the nightly envelope are deliberate:
   matrix documentation all use the hyphenated `not-applicable`. The translation
   happens once, in `build_release_receipt`, so the nightly contract is untouched.
 - **Omission over invention.** An observation that cannot name the request it
-  performed, or the facets it exercised, is omitted from the release receipt and
+  performed, that recorded a `client_identity` other than the governed client, or
+  that did not name the facets it exercised, is omitted from the release receipt and
   listed under `unsubstantiated`. The governed aggregator emits a requirement it
   sees no observation for as a `skip`, which the release gate fails closed on, so
   omission costs one cell; publishing a malformed row would cost the entire receipt.
+  `summary` is recomputed over what the receipt actually publishes, so an omitted
+  observation cannot leave a pass count the receipt does not support.
 
 `shared.cert_envelope.CertificationEvidenceCollector.build_release_receipt` produces
 these receipts and refuses to emit at all when the candidate bindings are missing or

@@ -116,6 +116,17 @@ class ReceiptContractTests(unittest.TestCase):
         ):
             self.assertIn(field, required)
 
+    def test_the_receipt_names_its_own_deployment_target(self):
+        # Stricter than the consumer, deliberately: deployment_target is part of
+        # the governed cell identity but the consumer reads it from the requirement.
+        self.assertEqual(["deployment_target"], self.contract["honuaAdditionalReleaseFields"])
+
+    def test_credential_bearing_query_keys_are_enumerated(self):
+        keys = self.contract["credentialQueryKeys"]
+        for key in ("token", "api_key", "access_token", "password"):
+            self.assertIn(key, keys)
+        self.assertEqual(sorted(set(keys)), sorted(keys))
+
     def test_every_result_must_carry_its_own_request_provenance(self):
         self.assertEqual(
             ["exercised_capabilities", "performed_by", "request_url", "status", "test_case_id"],
@@ -156,9 +167,30 @@ class ProducerBindingTests(unittest.TestCase):
             self.assertEqual(fresh["reasonCode"], stored["reasonCode"], row["capability_key"])
             self.assertEqual(fresh["reason"], stored["reason"], row["capability_key"])
 
+    def test_no_two_governed_rows_claim_the_same_test_id(self):
+        self.assertEqual({}, module.ambiguous_test_ids(MIRROR["requirements"]))
+
+    def test_duplicate_baselines_for_one_pair_refuse_to_generate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baselines = root / "tests" / "baselines" / "client-compat"
+            for producer in ("first", "second"):
+                (baselines / producer).mkdir(parents=True)
+                (baselines / producer / f"{producer}.cert.json").write_text(json.dumps({
+                    "client_lane": "py-owslib", "protocol": "ogc-features",
+                    "client_version": f"0.36.{producer == 'second'}"}), encoding="utf-8")
+            (baselines / "expected-pairs.json").write_text(json.dumps({
+                "expected_pairs": [{"client_lane": "py-owslib", "protocol": "ogc-features"}]}),
+                encoding="utf-8")
+
+            with self.assertRaises(SystemExit) as raised:
+                module.emitted_pairs(root)
+            self.assertIn("duplicate baseline", str(raised.exception))
+
     def test_stored_denominator_join_matches_a_fresh_classification(self):
+        collisions = module.ambiguous_test_ids(MIRROR["requirements"])
         for row in MIRROR["requirements"]:
-            fresh = module.classify_denominator_join(row)
+            fresh = module.classify_denominator_join(row, collisions)
             stored = row["receiptBinding"]["denominatorJoin"]
             self.assertEqual(fresh["status"], stored["status"], row["capability_key"])
             self.assertEqual(fresh["reasonCode"], stored["reasonCode"], row["capability_key"])
@@ -190,7 +222,7 @@ class ClassificationTests(unittest.TestCase):
     def row(self, **overrides) -> dict:
         value = {
             "client_lane": "py-owslib", "surface": "ogc-features", "client_version": "0.36.0",
-            "test_ids": ["CERT-DISC-01"],
+            "operation": "collections", "test_ids": ["CERT-DISC-01"],
         }
         value.update(overrides)
         return value
@@ -233,6 +265,36 @@ class ClassificationTests(unittest.TestCase):
         result = module.classify_producer(
             self.row(), self.pairs(("py-owslib", "ogc-features", None)))
         self.assertEqual("lane-not-baselined", result["reasonCode"])
+
+    def test_a_test_id_claimed_by_two_rivals_is_unjoinable(self):
+        rows = [
+            self.row(operation="collections", test_ids=["CERT-DISC-01"]),
+            self.row(operation="items", test_ids=["CERT-DISC-01", "CERT-QFLT-01"]),
+        ]
+        for value in rows:
+            value.setdefault("client_lane", "py-owslib")
+        collisions = module.ambiguous_test_ids(rows)
+
+        self.assertEqual({"CERT-DISC-01": ["collections", "items"]}, collisions)
+        for value in rows:
+            result = module.classify_denominator_join(value, collisions)
+            self.assertEqual("unjoinable", result["status"])
+            self.assertEqual("denominator-ambiguous-test-ids", result["reasonCode"])
+            self.assertIn("CERT-DISC-01", result["reason"])
+
+    def test_the_same_test_id_on_a_different_lane_or_surface_is_not_a_collision(self):
+        # A receipt is already narrowed by lane, version and surface, so an ID
+        # reused across them can still resolve to exactly one requirement.
+        rows = [
+            self.row(operation="collections"),
+            self.row(operation="collections", client_lane="qgis-ogc"),
+            self.row(operation="collections", surface="wfs"),
+            self.row(operation="collections", client_version="0.37.0"),
+        ]
+        self.assertEqual({}, module.ambiguous_test_ids(rows))
+        self.assertEqual(
+            "joinable",
+            module.classify_denominator_join(rows[0], module.ambiguous_test_ids(rows))["status"])
 
     def test_a_row_without_test_ids_is_unjoinable(self):
         for value in ([], None):

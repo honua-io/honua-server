@@ -47,7 +47,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 ROOT_MARKER = "Honua.sln"
 REQUIREMENTS_RELATIVE_PATH = "certification/client-protocol-requirements.v1.json"
@@ -66,6 +66,7 @@ REASON_CODES = (
     "producer-client-version-mismatch",
     "producer-lane-not-baselined",
     "denominator-unjoinable",
+    "denominator-ambiguous",
     "mirror-stale",
     "no-candidate",
     # release tier
@@ -80,6 +81,9 @@ REASON_CODES = (
     "revision-mismatch",
     "stale-observation",
     "ambiguous-cell",
+    "ambiguous-resolution",
+    "deployment-target-mismatch",
+    "receipt-rejected",
     "cell-skipped",
     "cell-failed",
     "provenance-missing",
@@ -109,6 +113,32 @@ def cell_id(requirement: dict) -> str:
     ))
 
 
+# Query parameters that commonly carry a secret. A receipt is an uploaded artifact,
+# so a URL bearing one of these must never be published -- and a client that
+# authenticates this way leaves `urlparse().username` unset, so the userinfo check
+# alone does not catch it.
+CREDENTIAL_QUERY_KEYS = frozenset({
+    "access_token", "api_key", "apikey", "auth", "authorization", "code",
+    "id_token", "key", "password", "pwd", "refresh_token", "secret", "session",
+    "sig", "signature", "token", "x-api-key",
+})
+
+
+def is_publishable_url(value: object) -> bool:
+    """An absolute HTTP(S) URL that carries no credential in userinfo or query."""
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+    if parsed.username is not None or parsed.password is not None:
+        return False
+    return not any(
+        key.strip().lower() in CREDENTIAL_QUERY_KEYS
+        for key, _ in parse_qsl(parsed.query, keep_blank_values=True)
+    )
+
+
 def parse_timestamp(value: str, field: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -133,11 +163,12 @@ def verify_contract(requirements: dict, root: Path) -> list[dict]:
     """
     builder = _load_builder(root)
     pairs = builder.emitted_pairs(root)
+    collisions = builder.ambiguous_test_ids(requirements["requirements"])
 
     verdicts = []
     for requirement in requirements["requirements"]:
         recomputed_producer = builder.classify_producer(requirement, pairs)
-        recomputed_join = builder.classify_denominator_join(requirement)
+        recomputed_join = builder.classify_denominator_join(requirement, collisions)
         stored = requirement["receiptBinding"]
 
         drift = []
@@ -169,7 +200,10 @@ def verify_contract(requirements: dict, root: Path) -> list[dict]:
                 recomputed_producer["reason"], "honua-io/honua-server"))
         if recomputed_join["status"] == "unjoinable":
             blockers.append(_blocker(
-                "denominator-unjoinable", recomputed_join["reason"], "honua-io/honua-release"))
+                "denominator-ambiguous"
+                if recomputed_join["reasonCode"] == "denominator-ambiguous-test-ids"
+                else "denominator-unjoinable",
+                recomputed_join["reason"], "honua-io/honua-release"))
 
         if not blockers:
             blockers.append(_blocker(
@@ -226,7 +260,11 @@ def _verdict(requirement: dict, result: str, blockers: list[dict] | None = None)
 def _envelope_defects(envelope: dict, contract: dict, candidate: dict) -> list[str]:
     """Every reason this envelope may not be admitted, as ``code: detail`` strings."""
     defects: list[str] = []
-    missing = [field for field in contract["requiredEnvelopeFields"] if field not in envelope]
+    required = [
+        *contract["requiredEnvelopeFields"],
+        *contract.get("honuaAdditionalReleaseFields", []),
+    ]
+    missing = [field for field in required if field not in envelope]
     if missing:
         defects.append(f"receipt-field-missing: envelope omits {sorted(missing)}")
         return defects
@@ -298,13 +336,10 @@ def _result_defects(result: dict, requirement: dict, envelope: dict, contract: d
     request_url = result["request_url"]
     if result["status"] == "skip" and request_url is None:
         pass
-    else:
-        parsed = urlparse(request_url) if isinstance(request_url, str) else None
-        if (
-            parsed is None or parsed.scheme not in {"http", "https"} or not parsed.netloc
-            or parsed.username is not None or parsed.password is not None
-        ):
-            defects.append("provenance-missing: request_url must be an absolute credential-free URL")
+    elif not is_publishable_url(request_url):
+        defects.append(
+            "provenance-missing: request_url must be an absolute URL carrying no credentials "
+            "in userinfo or query parameters")
 
     exercised = result["exercised_capabilities"]
     if not (
@@ -337,37 +372,147 @@ def _revision_defects(envelope: dict, requirement: dict, candidate: dict) -> lis
     return defects
 
 
+def admit_receipts(
+    requirements: dict, receipts: list[tuple[str, dict]], candidate: dict,
+) -> tuple[list[tuple[str, dict]], dict[str, list[str]]]:
+    """Split receipts into admitted and rejected, whole receipts at a time.
+
+    The governed consumer rejects an *entire* receipt the moment any one of its
+    results is malformed or unresolvable -- it never quietly keeps the good rows.
+    Admission therefore has to happen before any cell is joined; validating only
+    the result a cell happens to match would let a receipt carrying one valid row
+    and one malformed row certify that cell.
+    """
+    contract = requirements["receiptContract"]
+    admitted: list[tuple[str, dict]] = []
+    rejected: dict[str, list[str]] = {}
+
+    for name, envelope in receipts:
+        defects = _envelope_defects(envelope, contract, candidate)
+        if not any(defect.startswith(("receipt-field-missing", "malformed-envelope"))
+                   for defect in defects):
+            defects += _receipt_result_defects(envelope, requirements, contract, candidate)
+        if defects:
+            rejected[name] = defects
+        else:
+            admitted.append((name, envelope))
+    return admitted, rejected
+
+
+def _receipt_result_defects(
+    envelope: dict, requirements: dict, contract: dict, candidate: dict,
+) -> list[str]:
+    """Validate every result in one envelope against the rows it claims."""
+    defects: list[str] = []
+    rows = [
+        row for row in requirements["requirements"]
+        if row["client_lane"] == envelope.get("runner_lane")
+        and row["client_version"] == envelope.get("client_version")
+        and row["surface"] == envelope.get("protocol")
+    ]
+    for index, result in enumerate(
+        [*envelope.get("results", []), *envelope.get("extensions", [])]
+    ):
+        if not isinstance(result, dict):
+            defects.append(f"malformed-envelope: result {index} is not an object")
+            continue
+        if result.get("status") not in contract["resultStatusVocabulary"]:
+            defects.append(
+                f"status-not-governed: result {result.get('test_case_id')!r} has status "
+                f"{result.get('status')!r}, which is not one of "
+                f"{contract['resultStatusVocabulary']}; the governed consumer rejects the whole "
+                "receipt rather than reinterpreting it")
+            continue
+        if result["status"] == "not_applicable":
+            continue
+        claimed = [row for row in rows if result.get("test_case_id") in (row.get("test_ids") or ())]
+        if not claimed:
+            # A result outside the bounded roster is not this gate's business: the
+            # governed aggregator judges it against the full denominator.
+            continue
+        if len(claimed) > 1:
+            defects.append(
+                f"ambiguous-resolution: result {result['test_case_id']!r} resolves to "
+                f"{len(claimed)} governed requirements "
+                f"({sorted(row['operation'] for row in claimed)}); the consumer requires exactly one")
+            continue
+        defects += _revision_defects(envelope, claimed[0], candidate)
+        defects += _result_defects(result, claimed[0], envelope, contract)
+    return list(dict.fromkeys(defects))
+
+
 def verify_release(requirements: dict, receipts: list[tuple[str, dict]], candidate: dict) -> list[dict]:
     """Apply the governed join to real receipts and emit one verdict per governed row."""
-    contract = requirements["receiptContract"]
     verdicts: list[dict] = []
+    admitted, rejected = admit_receipts(requirements, receipts, candidate)
 
     for requirement in requirements["requirements"]:
+        binding = requirement["receiptBinding"]["denominatorJoin"]
         test_ids = set(requirement.get("test_ids") or ())
-        if not test_ids:
+        if not test_ids or binding["status"] == "unjoinable":
             verdicts.append(_verdict(requirement, "skip", blockers=[_blocker(
-                "denominator-unjoinable",
-                requirement["receiptBinding"]["denominatorJoin"]["reason"],
-                "honua-io/honua-release")]))
+                "denominator-ambiguous"
+                if binding.get("reasonCode") == "denominator-ambiguous-test-ids"
+                else "denominator-unjoinable",
+                binding["reason"], "honua-io/honua-release")]))
             continue
+
+        # A rejected receipt that claims this cell is reported against the cell, so
+        # a producer sees why its evidence was refused instead of a bare "missing".
+        by_name = dict(receipts)
+        claiming_rejects = {
+            name: defects for name, defects in rejected.items()
+            if by_name[name].get("runner_lane") == requirement["client_lane"]
+            and by_name[name].get("protocol") == requirement["surface"]
+        }
 
         matches = [
             (name, envelope, result)
-            for name, envelope in receipts
+            for name, envelope in admitted
             if envelope.get("runner_lane") == requirement["client_lane"]
             and envelope.get("client_version") == requirement["client_version"]
             and envelope.get("protocol") == requirement["surface"]
+            and envelope.get("deployment_target") == requirement["deployment_target"]
             for result in envelope.get("results", []) + envelope.get("extensions", [])
             if isinstance(result, dict) and result.get("test_case_id") in test_ids
             and result.get("status") != "not_applicable"
         ]
 
         if not matches:
+            if claiming_rejects:
+                # The specific code survives: "this receipt was refused, and here is
+                # each reason" is what a producer can act on. `receipt-rejected` is
+                # only the fallback for a defect with no parsable code.
+                verdicts.append(_verdict(requirement, "fail", blockers=[
+                    _blocker(
+                        code if code in REASON_CODES else "receipt-rejected",
+                        f"{name}: the whole receipt was refused - {detail or defect}",
+                        "honua-io/honua-server")
+                    for name, defects in sorted(claiming_rejects.items())
+                    for defect in defects
+                    for code, _, detail in (defect.partition(": "),)]))
+                continue
+            target_mismatch = [
+                name for name, envelope in admitted
+                if envelope.get("runner_lane") == requirement["client_lane"]
+                and envelope.get("client_version") == requirement["client_version"]
+                and envelope.get("protocol") == requirement["surface"]
+                and envelope.get("deployment_target") != requirement["deployment_target"]
+            ]
+            if target_mismatch:
+                verdicts.append(_verdict(requirement, "fail", blockers=[_blocker(
+                    "deployment-target-mismatch",
+                    f"{name}: the receipt names deployment_target "
+                    f"{dict(admitted)[name].get('deployment_target')!r}, but the governed cell "
+                    f"requires {requirement['deployment_target']!r}",
+                    "honua-io/honua-server") for name in sorted(target_mismatch)]))
+                continue
             verdicts.append(_verdict(requirement, "skip", blockers=[_blocker(
                 "missing-envelope",
                 "No admitted receipt carries a governed test ID for lane "
                 f"{requirement['client_lane']!r} / surface {requirement['surface']!r} at "
-                f"client_version {requirement['client_version']!r}.",
+                f"client_version {requirement['client_version']!r} on "
+                f"{requirement['deployment_target']!r}.",
                 "honua-io/honua-server")]))
             continue
         if len({name for name, _, _ in matches}) > 1:
@@ -379,23 +524,6 @@ def verify_release(requirements: dict, receipts: list[tuple[str, dict]], candida
             continue
 
         name, envelope, result = matches[0]
-        defects = _envelope_defects(envelope, contract, candidate)
-        # A structurally broken envelope stops here -- the later checks read fields
-        # it does not have. Everything else accumulates, so one run names every
-        # defect instead of forcing a fix-one-see-the-next loop.
-        if not any(defect.startswith(("receipt-field-missing", "malformed-envelope"))
-                   for defect in defects):
-            defects += _revision_defects(envelope, requirement, candidate)
-            defects += _result_defects(result, requirement, envelope, contract)
-
-        if defects:
-            # Every defect is reported: a receipt that is both off-candidate and
-            # missing provenance needs both fixed before it can be admitted.
-            verdicts.append(_verdict(requirement, "fail", blockers=[
-                _blocker(code, f"{name}: {detail}", "honua-io/honua-server")
-                for code, _, detail in (defect.partition(": ") for defect in defects)]))
-            continue
-
         if result["status"] == "skip":
             verdicts.append(_verdict(requirement, "skip", blockers=[_blocker(
                 "cell-skipped",
@@ -412,10 +540,16 @@ def verify_release(requirements: dict, receipts: list[tuple[str, dict]], candida
 
 
 def read_receipts(directory: Path) -> list[tuple[str, dict]]:
+    """Read every receipt under ``directory``, identified by its path.
+
+    The identity is the path relative to ``directory``, not the bare filename:
+    nested artifact directories routinely hold same-named receipts from different
+    producers, and collapsing them would hide an ambiguous cell.
+    """
     receipts = []
     for path in sorted(directory.rglob("*.cert.json")):
         try:
-            receipts.append((path.name, load_json(path)))
+            receipts.append((path.relative_to(directory).as_posix(), load_json(path)))
         except (json.JSONDecodeError, ValueError) as error:
             raise SystemExit(f"malformed receipt {path}: {error}")
     return receipts

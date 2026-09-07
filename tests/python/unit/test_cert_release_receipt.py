@@ -40,6 +40,7 @@ def runtime(**overrides) -> LaneRuntime:
         "image_digest": CANDIDATE_DIGEST,
         "producer_source_sha": PRODUCER_SHA,
         "auth_policy_revision": "anonymous-v1",
+        "deployment_target": "local-docker",
     }
     values.update(overrides)
     return LaneRuntime(**values)
@@ -155,7 +156,9 @@ def test_extension_results_stay_in_their_own_array() -> None:
 # fail-closed emission
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("binding", ["image_digest", "producer_source_sha", "auth_policy_revision"])
+@pytest.mark.parametrize(
+    "binding",
+    ["image_digest", "producer_source_sha", "auth_policy_revision", "deployment_target"])
 def test_a_missing_candidate_binding_refuses_to_emit(binding: str) -> None:
     instance = collector(runtime=runtime(**{binding: None}))
     record_substantiated(instance)
@@ -253,6 +256,148 @@ def test_a_run_that_substantiates_nothing_refuses_to_emit() -> None:
 
     with pytest.raises(ValueError, match="substantiated no executable observation"):
         instance.build_release_receipt()
+
+
+def test_a_generic_probe_is_omitted_rather_than_relabelled() -> None:
+    # Several lanes legitimately record `client_identity: "httpx"` for a probe the
+    # governed library cannot perform. Stamping the canonical client over that would
+    # publish exactly the substitution the receipt contract forbids.
+    instance = collector()
+    record_substantiated(instance)
+    instance.record(
+        "CERT-CONN-01", "pass", client_identity="httpx",
+        request_url="https://candidate.test/", exercised_capabilities=("positive",))
+
+    receipt = instance.build_release_receipt()
+
+    assert [entry["test_case_id"] for entry in receipt["unsubstantiated"]] == ["CERT-CONN-01"]
+    assert all(entry["performed_by"] == "OWSLib"
+               for entry in receipt["results"] if "performed_by" in entry)
+
+
+def test_an_observation_recorded_under_the_governed_identity_is_published() -> None:
+    instance = collector()
+    record_substantiated(instance, client_identity="OWSLib")
+
+    receipt = instance.build_release_receipt()
+
+    published = next(e for e in receipt["results"] if e["test_case_id"] == "CERT-DISC-01")
+    assert published["status"] == "pass"
+    assert published["performed_by"] == "OWSLib"
+
+
+@pytest.mark.parametrize("url", [
+    "https://candidate.test/collections?token=secret",
+    "https://candidate.test/collections?limit=1&api_key=secret",
+    "https://candidate.test/collections?ACCESS_TOKEN=secret",
+])
+def test_a_query_string_credential_is_not_publishable(url: str) -> None:
+    # `urlparse` leaves username/password unset for query-string auth, and receipts
+    # are uploaded as CI artifacts, so the secret would otherwise ship verbatim.
+    instance = collector()
+    record_substantiated(instance)
+    instance.record(
+        "CERT-CONN-01", "pass", request_url=url, exercised_capabilities=("positive",))
+
+    receipt = instance.build_release_receipt()
+
+    assert [entry["test_case_id"] for entry in receipt["unsubstantiated"]] == ["CERT-CONN-01"]
+    assert url not in json.dumps(receipt["results"])
+
+
+def test_the_credential_key_list_matches_the_frozen_contract() -> None:
+    from shared.cert_envelope import CREDENTIAL_QUERY_KEYS
+
+    contract_keys = json.loads(
+        (REPOSITORY_ROOT / "certification" / "client-protocol-requirements.v1.json").read_text(
+            encoding="utf-8"))["receiptContract"]["credentialQueryKeys"]
+    assert set(contract_keys) == CREDENTIAL_QUERY_KEYS
+
+
+def test_the_summary_counts_only_what_the_receipt_publishes() -> None:
+    # Two recorded passes, one omitted for missing provenance: a copied nightly
+    # summary would claim two passes the receipt does not contain.
+    instance = collector()
+    record_substantiated(instance)
+    instance.record("CERT-CONN-01", "pass", exercised_capabilities=("positive",))
+
+    receipt = instance.build_release_receipt()
+
+    statuses = [entry["status"] for entry in receipt["results"]]
+    assert receipt["summary"]["total"] == len(receipt["results"])
+    assert receipt["summary"]["passed"] == statuses.count("pass") == 1
+    assert receipt["summary"]["not_applicable"] == statuses.count("not_applicable")
+    assert "not-applicable" not in statuses
+
+
+def test_the_receipt_names_the_governed_deployment_target() -> None:
+    instance = collector()
+    record_substantiated(instance)
+
+    assert instance.build_release_receipt()["deployment_target"] == "local-docker"
+
+
+# ---------------------------------------------------------------------------
+# governed revision bindings
+# ---------------------------------------------------------------------------
+
+def test_lane_runtimes_default_to_content_digests(tmp_path: Path, monkeypatch) -> None:
+    from shared import cert_envelope
+
+    for name in (
+        "HONUA_FIXTURE_REVISION", "HONUA_SERVER_CONFIG_REVISION",
+        "HONUA_CANDIDATE_IMAGE_DIGEST", "HONUA_PRODUCER_SOURCE_SHA",
+        "HONUA_AUTH_POLICY_REVISION", "HONUA_DEPLOYMENT_TARGET",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    fixture = tmp_path / "seed.sql"
+    fixture.write_text("SELECT 1;\n", encoding="utf-8")
+    config = tmp_path / "server.json"
+    config.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setenv("HONUA_TEST_SERVER_VERSION", "1.0.0")
+
+    built = cert_envelope.build_lane_runtime(
+        base_url="https://candidate.test", project_root=tmp_path,
+        fixture_path=fixture, server_config_path=config,
+        version_env="HONUA_TEST_SERVER_VERSION")
+
+    assert built.fixture_revision == cert_envelope.file_digest(fixture)
+    assert built.server_config_revision == cert_envelope.file_digest(config)
+    assert built.image_digest is None
+    assert built.deployment_target is None
+
+
+def test_the_release_lane_supplies_the_governed_symbolic_revisions(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    # The denominator names symbolic revisions such as `docker/cng/seed.sql@<sha>`
+    # and `cog-1.0`, and the release join compares them exactly. A receipt carrying
+    # content digests would fail every cell with `revision-mismatch`.
+    from shared import cert_envelope
+
+    fixture = tmp_path / "seed.sql"
+    fixture.write_text("SELECT 1;\n", encoding="utf-8")
+    config = tmp_path / "server.json"
+    config.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setenv("HONUA_TEST_SERVER_VERSION", "1.0.0")
+    monkeypatch.setenv("HONUA_FIXTURE_REVISION", f"docker/cng/seed.sql@{CANDIDATE_SHA}")
+    monkeypatch.setenv("HONUA_SERVER_CONFIG_REVISION", "cog-1.0")
+    monkeypatch.setenv("HONUA_AUTH_POLICY_REVISION", "anonymous-v1")
+    monkeypatch.setenv("HONUA_CANDIDATE_IMAGE_DIGEST", CANDIDATE_DIGEST)
+    monkeypatch.setenv("HONUA_PRODUCER_SOURCE_SHA", PRODUCER_SHA)
+    monkeypatch.setenv("HONUA_DEPLOYMENT_TARGET", "local-docker")
+
+    built = cert_envelope.build_lane_runtime(
+        base_url="https://candidate.test", project_root=tmp_path,
+        fixture_path=fixture, server_config_path=config,
+        version_env="HONUA_TEST_SERVER_VERSION")
+
+    assert built.fixture_revision == f"docker/cng/seed.sql@{CANDIDATE_SHA}"
+    assert built.server_config_revision == "cog-1.0"
+    assert built.auth_policy_revision == "anonymous-v1"
+    assert built.image_digest == CANDIDATE_DIGEST
+    assert built.producer_source_sha == PRODUCER_SHA
+    assert built.deployment_target == "local-docker"
 
 
 # ---------------------------------------------------------------------------

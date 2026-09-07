@@ -111,6 +111,7 @@ def envelope(**overrides) -> dict:
         "protocol_version": "1.0",
         "protocol_profile": "core",
         "environment": "local-docker",
+        "deployment_target": "local-docker",
         "results": [{
             "test_case_id": "CERT-DISC-01",
             "status": "pass",
@@ -272,6 +273,128 @@ class FailClosedTests(unittest.TestCase):
         verdict = only_verdict([requirement()], [("a.cert.json", raw)])
         self.assertEqual(
             ["candidate-digest-mismatch", "revision-mismatch"], sorted(blocker_codes(verdict)))
+
+
+class WholeReceiptAdmissionTests(unittest.TestCase):
+    """The consumer refuses an entire receipt on one bad row; so does this."""
+
+    def test_a_valid_result_cannot_be_salvaged_from_a_rejected_receipt(self):
+        # The receipt carries a perfectly good result for the governed cell *and* a
+        # second result with an ungoverned status. Joining only the matching result
+        # would certify the cell from evidence the consumer would have thrown away.
+        raw = envelope(results=[
+            envelope()["results"][0],
+            {**envelope()["results"][0], "test_case_id": "CERT-CONN-01",
+             "status": "not-applicable"},
+        ])
+        row = requirement(test_ids=["CERT-DISC-01", "CERT-CONN-01"])
+        verdict = only_verdict([row], [("a.cert.json", raw)])
+
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("status-not-governed", blocker_codes(verdict))
+        self.assertIn("the whole receipt was refused", verdict["blockers"][0]["reason"])
+
+    def test_an_off_candidate_receipt_is_refused_before_any_cell_joins(self):
+        raw = envelope(image_digest="sha256:" + "e" * 64)
+        verdict = only_verdict([requirement()], [("a.cert.json", raw)])
+
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("candidate-digest-mismatch", blocker_codes(verdict))
+
+    def test_admission_reports_every_defect_in_the_receipt(self):
+        raw = envelope(image_digest="sha256:" + "e" * 64, auth_policy_revision="anonymous-v2")
+        _, rejected = module.admit_receipts(
+            requirements_document(requirement()), [("a.cert.json", raw)], candidate())
+
+        codes = sorted(defect.partition(": ")[0] for defect in rejected["a.cert.json"])
+        self.assertEqual(["candidate-digest-mismatch", "revision-mismatch"], codes)
+
+    def test_a_result_outside_the_bounded_roster_does_not_reject_the_receipt(self):
+        # The bounded roster is a subset of the denominator. A lane legitimately
+        # emits IDs this gate does not govern; they are judged upstream, not here.
+        raw = envelope(results=[
+            envelope()["results"][0],
+            {"test_case_id": "CERT-QFLT-01", "status": "pass", "performed_by": "OWSLib",
+             "request_url": "https://candidate.test/items?limit=1",
+             "exercised_capabilities": ["positive"]},
+        ])
+        verdict = only_verdict([requirement()], [("a.cert.json", raw)])
+        self.assertEqual("pass", verdict["result"])
+
+    def test_a_result_claiming_two_governed_rows_is_ambiguous(self):
+        rows = [
+            requirement(),
+            requirement(operation="items", capability_key="serve.ogc-api-features.items"),
+        ]
+        _, rejected = module.admit_receipts(
+            requirements_document(*rows), [("a.cert.json", envelope())], candidate())
+
+        self.assertIn("a.cert.json", rejected)
+        self.assertTrue(any(
+            defect.startswith("ambiguous-resolution") for defect in rejected["a.cert.json"]))
+
+
+class DeploymentTargetTests(unittest.TestCase):
+    def test_a_receipt_from_another_execution_context_cannot_certify(self):
+        raw = envelope(deployment_target="cloud-aws")
+        verdict = only_verdict([requirement()], [("a.cert.json", raw)])
+
+        self.assertEqual("fail", verdict["result"])
+        self.assertEqual(["deployment-target-mismatch"], blocker_codes(verdict))
+        self.assertIn("cloud-aws", verdict["blockers"][0]["reason"])
+
+    def test_a_receipt_that_omits_its_target_is_not_admitted(self):
+        raw = envelope()
+        del raw["deployment_target"]
+        verdict = only_verdict([requirement()], [("a.cert.json", raw)])
+
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("receipt-field-missing", blocker_codes(verdict))
+
+
+class ReceiptIdentityTests(unittest.TestCase):
+    def test_same_named_receipts_in_different_directories_stay_distinct(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for producer in ("run-a", "run-b"):
+                (root / producer).mkdir()
+                (root / producer / "py-owslib-ogc-features.cert.json").write_text(
+                    json.dumps(envelope()), encoding="utf-8")
+
+            receipts = module.read_receipts(root)
+            self.assertEqual(
+                ["run-a/py-owslib-ogc-features.cert.json",
+                 "run-b/py-owslib-ogc-features.cert.json"],
+                sorted(name for name, _ in receipts))
+
+            verdict = only_verdict([requirement()], receipts)
+            self.assertEqual("fail", verdict["result"])
+            self.assertEqual(["ambiguous-cell"], blocker_codes(verdict))
+
+
+class CredentialUrlTests(unittest.TestCase):
+    def test_a_plain_url_is_publishable(self):
+        self.assertTrue(module.is_publishable_url("https://candidate.test/collections?limit=10"))
+
+    def test_userinfo_credentials_are_rejected(self):
+        self.assertFalse(module.is_publishable_url("https://user:secret@candidate.test/"))
+
+    def test_query_string_credentials_are_rejected(self):
+        for url in (
+            "https://candidate.test/items?token=secret",
+            "https://candidate.test/items?API_KEY=secret",
+            "https://candidate.test/items?limit=1&access_token=secret",
+        ):
+            self.assertFalse(module.is_publishable_url(url), url)
+
+    def test_a_query_credential_blocks_the_cell(self):
+        raw = envelope(results=[{
+            **envelope()["results"][0],
+            "request_url": "https://candidate.test/collections?api_key=secret"}])
+        verdict = only_verdict([requirement()], [("a.cert.json", raw)])
+
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("provenance-missing", blocker_codes(verdict))
 
 
 class ReasonCodeVocabularyTests(unittest.TestCase):
