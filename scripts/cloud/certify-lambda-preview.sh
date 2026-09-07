@@ -445,8 +445,15 @@ if [[ -z "$cold_start_ms" ]] || ! awk -v value="$cold_start_ms" 'BEGIN { exit !(
   exit 14
 fi
 
+# CloudWatch delivery for a fresh function's first invoke lags: the thirteenth
+# live run (34084763377) created its log stream at +0s, the first query ran at
+# +49s and eleven more over the next minute found nothing, then teardown
+# removed the group. The runtime ships logs asynchronously after a ~21 s
+# init-in-invoke; give delivery three minutes, bounded, and on timeout say what
+# the group held (stream and event counts only, never log content) so the next
+# failure is diagnosable from the job log.
 cloudwatch_verified=false
-for _ in {1..12}; do
+for _ in {1..36}; do
   event_count="$(aws logs filter-log-events --log-group-name "$log_group" \
     --filter-pattern "\"${request_id}\"" --query 'length(events)' --output text)"
   if [[ "$event_count" =~ ^[1-9][0-9]*$ ]]; then
@@ -457,6 +464,11 @@ for _ in {1..12}; do
 done
 if ! $cloudwatch_verified; then
   echo "matching invocation evidence did not arrive in CloudWatch Logs" >&2
+  stream_count="$(aws logs describe-log-streams --log-group-name "$log_group" \
+    --query 'length(logStreams)' --output text 2>/dev/null)" || stream_count="unknown"
+  any_events="$(aws logs filter-log-events --log-group-name "$log_group" \
+    --query 'length(events)' --output text 2>/dev/null)" || any_events="unknown"
+  echo "cloudwatch-evidence: log-streams=${stream_count} events-in-group=${any_events} request-id-fingerprint=$(fingerprint "$request_id")" >&2
   exit 10
 fi
 
