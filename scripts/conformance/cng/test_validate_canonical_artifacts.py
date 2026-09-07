@@ -32,17 +32,133 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
             self.assertIn(assignment.budget_profile, MODULE.FORMAT_BUDGET_PROFILES)
             self.assertEqual(f"format.{identity[0]}", assignment.capability_key)
 
-    def test_budget_incomplete_observation_remains_an_explicit_skip(self):
+    def test_third_party_produced_artifact_can_never_pass(self):
+        """#4398: the COG cell validates rio_cogeo's own output, so however clean the
+        canonical client read is, the row cannot be Honua cloud-native evidence."""
         started = "2026-08-21T00:00:00Z"
         row = MODULE._observation(
             "cog", "window-read", "Rasterio", "diagnostic", started, args()
+        )
+        # Even with every declared metadata oracle satisfied, the producer bars a pass.
+        row["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["cog"]["expected_metadata"])
+
+        normalized = MODULE._normalize_observations([row], args())
+
+        self.assertEqual("skip", normalized[0]["result"])
+        self.assertEqual(MODULE.NON_HONUA_PRODUCER_GAP, normalized[0]["skip_reason"])
+        self.assertFalse(normalized[0]["honua_in_loop"])
+        self.assertEqual("third-party-fixture", normalized[0]["artifact_producer"])
+        self.assertIsNone(normalized[0]["evidence_receipt"])
+
+    def test_scope_disposition_names_the_third_party_cells(self):
+        """The fragment's own disposition must state which cells cannot support the
+        claim, so a downstream GA citation cannot read it as cloud-native proof."""
+        rows = [
+            {"surface": "cog", "result": "skip", "honua_in_loop": False},
+            {"surface": "zarr", "result": "skip", "honua_in_loop": False},
+            {"surface": "pmtiles", "result": "pass", "honua_in_loop": True},
+        ]
+
+        disposition = MODULE._scope_disposition(rows)
+
+        self.assertIn("1 of 3", disposition)
+        self.assertIn("cog", disposition)
+        self.assertIn("zarr", disposition)
+        self.assertIn("not by Honua", disposition)
+
+    def test_every_governed_surface_declares_a_producer(self):
+        for surface, _operation, _client in MODULE.GOVERNED_ASSIGNMENTS:
+            self.assertIn(
+                surface,
+                MODULE.ARTIFACT_PRODUCERS,
+                f"surface '{surface}' has no declared artifact producer",
+            )
+
+    def test_unmeasured_budget_names_the_oracle_it_could_not_prove(self):
+        """The blanket BUDGET_EVIDENCE_GAP rewrite is retired: a cell that measured
+        nothing now says which oracle is unproven, per cell."""
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args()
         )
 
         normalized = MODULE._normalize_observations([row], args())
 
         self.assertEqual("skip", normalized[0]["result"])
-        self.assertEqual(MODULE.BUDGET_EVIDENCE_GAP, normalized[0]["skip_reason"])
-        self.assertIsNone(normalized[0]["evidence_receipt"])
+        self.assertIn("no metadata was read back", normalized[0]["skip_reason"])
+        self.assertFalse(normalized[0]["budget_results"]["met"])
+        self.assertIsNone(normalized[0]["evidence_digest"])
+
+    def test_metadata_mismatch_is_reported_per_key_and_blocks_the_pass(self):
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args()
+        )
+        expected = MODULE.FORMAT_BUDGET_PROFILES["pmtiles-range"]["expected_metadata"]
+        row["observed_metadata"] = dict(expected) | {"tile_count": 20}
+
+        normalized = MODULE._normalize_observations([row], args())
+
+        self.assertEqual("skip", normalized[0]["result"])
+        self.assertIn("tile_count", normalized[0]["skip_reason"])
+        self.assertIn("expected 21", normalized[0]["skip_reason"])
+
+    def test_measured_honua_observation_passes_and_carries_a_digest(self):
+        """The retirement half of the fix: a Honua-produced cell that met every declared
+        oracle now passes with a real evidence digest, instead of being rewritten to skip
+        along with every other row."""
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args()
+        )
+        row["observed_metadata"] = dict(
+            MODULE.FORMAT_BUDGET_PROFILES["pmtiles-range"]["expected_metadata"]
+        )
+        row["observed_transfer"] = {
+            "requests": 3,
+            "transferred_bytes": 20_480,
+            "range_requests": 3,
+            "full_object_downloads": 0,
+        }
+
+        normalized = MODULE._normalize_observations([row], args())
+
+        self.assertEqual("pass", normalized[0]["result"], normalized[0].get("skip_reason"))
+        self.assertTrue(normalized[0]["honua_in_loop"])
+        self.assertTrue(normalized[0]["budget_results"]["met"])
+        self.assertEqual(args().evidence_digest, normalized[0]["evidence_digest"])
+        self.assertIsNotNone(normalized[0]["facet_results"])
+
+    def test_range_efficiency_facet_requires_measured_transfer(self):
+        """`min_range_requests` / `max_full_object_downloads` are the declared
+        range-efficiency budgets; nothing counted requests or bytes before #4398."""
+        started = "2026-08-21T00:00:00Z"
+        identity = ("pmtiles", "archive-read", "pmtiles")
+        assignment = MODULE.GOVERNED_ASSIGNMENTS[identity]
+        self.assertIn("range-efficiency", assignment.facets)
+
+        row = MODULE._observation(*identity, "python-pmtiles", started, args())
+        row["observed_metadata"] = dict(
+            MODULE.FORMAT_BUDGET_PROFILES[assignment.budget_profile]["expected_metadata"]
+        )
+
+        unmeasured = MODULE._normalize_observations([dict(row)], args())
+        self.assertEqual("skip", unmeasured[0]["result"])
+        self.assertIn("range-efficiency", unmeasured[0]["skip_reason"])
+
+        # A full-object download is exactly what "range-efficient cloud-native access"
+        # is supposed to exclude, so the budget must reject it.
+        overspent = dict(row)
+        overspent["observed_transfer"] = {
+            "requests": 3,
+            "transferred_bytes": 20_480,
+            "range_requests": 0,
+            "full_object_downloads": 9,
+        }
+        blocked = MODULE._normalize_observations([overspent], args())[0]
+        self.assertEqual("skip", blocked["result"])
+        self.assertIn("full-object downloads", blocked["skip_reason"])
+        self.assertIn("range requests", blocked["skip_reason"])
 
     def test_fixture_generators_match_governed_shape_and_archive_contract(self):
         fixture_source = (SCRIPT.parent / "generate-canonical-fixtures.py").read_text(
