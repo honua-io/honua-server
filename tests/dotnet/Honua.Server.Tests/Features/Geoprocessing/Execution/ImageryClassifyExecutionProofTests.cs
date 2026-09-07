@@ -133,7 +133,7 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
         classified.GetProperty("epsg").GetInt32().Should().Be(4326);
         classified.GetProperty("transform").EnumerateArray().Select(v => v.GetDouble())
             .Should().Equal(ExpectedTransform, "the substituted output is aligned, not corrupt");
-        Values(classified).Should().OnlyContain(value => value is 1 or 2 or 3,
+        Values(classified).Should().OnlyContain(value => value == 1 || value == 2 || value == 3,
             "every emitted label is a legal class id");
 
         Action assert = () => AssertClassMap(classified, ExpectedClasses);
@@ -188,7 +188,7 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
     {
         const string Prefix = "data:";
         artifactUri.Should().StartWith(Prefix);
-        var comma = artifactUri.IndexOf(",", StringComparison.Ordinal);
+        var comma = artifactUri.IndexOf(',', StringComparison.Ordinal);
         var bytes = Convert.FromBase64String(artifactUri[(comma + 1)..]);
 
         var scratch = Directory.CreateTempSubdirectory("honua-classify-proof");
@@ -289,8 +289,8 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
     /// </summary>
     private sealed class MinimumDistanceModelServer : IAsyncDisposable
     {
-        private static readonly IReadOnlyDictionary<string, string> Models =
-            new Dictionary<string, string>(StringComparer.Ordinal)
+        private static readonly Dictionary<string, string> Models =
+            new(StringComparer.Ordinal)
             {
                 [ModelReference] = "min-distance-model.json",
                 [TransposedModelReference] = "transposed-model.json",
@@ -324,7 +324,8 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
             builder.WebHost.UseUrls("http://127.0.0.1:0");
             var app = builder.Build();
 
-            app.MapPost("/infer", (HttpContext http) => HandleAsync(http, state));
+            Func<HttpContext, Task<IResult>> handler = http => HandleAsync(http, state);
+            app.MapPost("/infer", handler);
 
             await app.StartAsync();
             var address = app.Urls.First().TrimEnd('/');
