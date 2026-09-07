@@ -200,6 +200,17 @@ def main(argv: list[str]) -> int:
         prediction[start:stop] = (weights * zs[:, None]).sum(axis=0)
         variance[start:stop] = (weights * rhs[:n, :]).sum(axis=0) + solution[n, :]
 
+        # Ordinary kriging is EXACT at a sample: the weight vector is the indicator of
+        # that sample and the variance is zero. Solving for it numerically lands within a
+        # few ULPs instead, so assign the sample's own value where the target coincides
+        # with one rather than publishing an estimator that is exact in theory only.
+        coincident = distances_to_targets == 0.0
+        hit = coincident.any(axis=0)
+        if hit.any():
+            sample_index = coincident.argmax(axis=0)
+            prediction[start:stop][hit] = zs[sample_index[hit]]
+            variance[start:stop][hit] = 0.0
+
     prediction = prediction.reshape(args.height, args.width)
     # Round-off can drive an exactly-zero variance a few ulps negative.
     standard_error = np.sqrt(np.clip(variance, 0.0, None)).reshape(args.height, args.width)
