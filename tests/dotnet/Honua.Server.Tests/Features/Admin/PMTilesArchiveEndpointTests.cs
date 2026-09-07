@@ -78,7 +78,7 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
         finalStatus.Should().Be(
             OperationStatus.Completed,
             "the archive job must reach Completed — a failed job must fail this test, not skip its " +
-            $"assertions: {lastJson?.RootElement.ToString()}");
+            $"assertions: {lastJson?.RootElement.GetRawText()}");
 
         var root = lastJson!.RootElement;
         GetPropertyCaseInsensitive(root, "operation").GetString().Should().Be("archive");
