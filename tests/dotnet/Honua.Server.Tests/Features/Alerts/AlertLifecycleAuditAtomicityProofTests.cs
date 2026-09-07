@@ -44,46 +44,43 @@ namespace Honua.Server.Tests.Features.Alerts;
 [Trait("Category", "AlertAuditAtomicityProof")]
 public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
 {
+    /// <summary>
+    /// The schema the production alert and audit stores actually write to. They are
+    /// registered without a schema name, and <c>SchemaSearchPath.QualifyTable</c> then
+    /// hard-qualifies every statement to <c>honua</c>, which no per-test
+    /// <c>search_path</c> can redirect. The fixture's isolated schema is not an
+    /// alternative: the alert DDL is created by the DbUp migrations (and by the seed's
+    /// <c>CREATE TABLE IF NOT EXISTS honua....</c> statements) in <c>honua</c> only, so
+    /// binding the stores to the isolated schema would point them at tables that do not
+    /// exist. The proof therefore seeds, drives and asserts in <c>honua</c> — the same
+    /// place the production code path writes — and scopes every read to the event id it
+    /// seeded so a shared schema cannot make the assertions ambiguous.
+    /// </summary>
+    private const string ProductionSchema = "honua";
+
     private readonly AuditFaultSwitch _fault = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
-    private string _schema = null!;
+    private readonly string _schema = ProductionSchema;
     private long _eventId;
 
     public AlertLifecycleAuditAtomicityProofTests()
     {
         _fixture = new WebAppFixture();
         var fault = _fault;
-        string? Schema() => _fixture.CurrentSchema;
 
-        // The production registrations construct these stores WITHOUT a schema name, and
-        // SchemaSearchPath.QualifyTable then hard-qualifies every statement to "honua",
-        // which the fixture's per-test search_path cannot redirect. Rebind them to the
-        // fixture's isolated schema — resolved lazily, because the schema is created
-        // after the host is built — so the proof exercises the real stores against the
-        // rows it seeds instead of a shared "honua" it does not own.
+        // The alert stores keep their PRODUCTION registrations so the proof exercises the
+        // real code path. Only the audit sink is touched, and it is DECORATED, never
+        // replaced: the production PostgresAuditLog stays behind the switch so a disarmed
+        // run writes a real, hash-chained audit row. Configuring services at all is also
+        // what gives this class its own host, which RestartHostAsync requires.
         _fixture.ConfigureServices(services =>
         {
-            services.RemoveAll<IAlertLifecycleStore>();
-            services.AddScoped<IAlertLifecycleStore>(provider => new PostgresAlertLifecycleStore(
-                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), Schema()));
-
-            services.RemoveAll<IAlertAuditOutbox>();
-            services.AddScoped<IAlertAuditOutbox>(provider => new PostgresAlertAuditOutbox(
-                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), Schema()));
-
-            services.RemoveAll<IAlertEventQuery>();
-            services.AddScoped<IAlertEventQuery>(provider => new PostgresAlertEventQuery(
-                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), Schema()));
-
-            // Decorate, never replace: the production PostgresAuditLog stays behind the
-            // switch so a disarmed run writes a real, hash-chained audit row.
             services.RemoveAll<IAuditLog>();
             services.AddScoped<IAuditLog>(provider => new FaultInjectingAuditLog(
                 new PostgresAuditLog(
                     provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                    provider.GetRequiredService<ILogger<PostgresAuditLog>>(),
-                    Schema()),
+                    provider.GetRequiredService<ILogger<PostgresAuditLog>>()),
                 fault));
         });
     }
@@ -92,7 +89,6 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
     {
         await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();
-        _schema = _fixture.CurrentSchema!;
         _eventId = await SeedAlertEventAsync();
     }
 
@@ -186,8 +182,10 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await ReadAlertAuditRowsAsync("alert.acknowledge")).Should().BeEmpty(
             "a failed operation must never publish a success audit outcome");
-        (await ReadOutboxAsync(includeCompleted: true)).Should().BeEmpty(
+        (await ReadOutboxAsync(includeCompleted: true, eventId: MissingEventId)).Should().BeEmpty(
             "a mutation that never happened must leave no reconciliation record either");
+        (await ReadOutboxAsync(includeCompleted: true)).Should().BeEmpty(
+            "and it must not have written one against any other event either");
     }
 
     [Fact]
@@ -206,8 +204,9 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         (await ReadOutboxAsync()).Should().ContainSingle();
 
         var middlewareRows = await ReadAuditRowsAsync(
-            "resource_type = @resource_type AND action <> 'alert.acknowledge'",
-            ("resource_type", AlertAuditActions.ResourceType));
+            "resource_type = @resource_type AND resource_id = @resource_id AND action <> 'alert.acknowledge'",
+            ("resource_type", AlertAuditActions.ResourceType),
+            ("resource_id", _eventId.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         middlewareRows.Should().BeEmpty(
             "no non-domain row may masquerade as the alert domain action's evidence");
     }
@@ -296,7 +295,13 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         return document.RootElement.GetProperty("lifecycleStatus").GetString();
     }
 
-    private async Task<IReadOnlyList<OutboxRow>> ReadOutboxAsync(bool includeCompleted = false)
+    /// <summary>
+    /// Reads outbox intents for one alert event. The proof runs against the shared
+    /// <c>honua</c> schema, so every read is scoped to an event id rather than to the
+    /// whole table.
+    /// </summary>
+    private async Task<IReadOnlyList<OutboxRow>> ReadOutboxAsync(
+        bool includeCompleted = false, long? eventId = null)
     {
         var predicate = includeCompleted ? "TRUE" : "completed_at IS NULL";
         await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
@@ -304,9 +309,10 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
             SELECT outbox_id, event_id, action, actor, correlation_id, idempotency_key,
                    occurred_at, audit_id, completed_at
             FROM "{_schema}".alert_audit_outbox
-            WHERE {predicate}
+            WHERE event_id = @event_id AND {predicate}
             ORDER BY outbox_id
             """, connection);
+        command.Parameters.AddWithValue("event_id", eventId ?? _eventId);
 
         var rows = new List<OutboxRow>();
         await using var reader = await command.ExecuteReaderAsync();
