@@ -1605,8 +1605,14 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
-    public async Task Wfs_Transaction_AnonymousWrite_AllowsInsertWithoutRbac()
+    public async Task Wfs_Transaction_WithAllowAnonymousWritePolicy_AllowsInsert()
     {
+        // The old name (Wfs_Transaction_AnonymousWrite_AllowsInsertWithoutRbac) read like an
+        // RBAC bypass. It is not: the opt-in AllowAnonymousWrite policy set below is exactly
+        // what authorizes the insert, and removing that line makes this test fail. Per-operation
+        // write authorization on a policy that does NOT opt in is proven over HTTP in
+        // WfsTransactionAuthorizationHttpTests (#4387).
+        //
         // V2 cutover (#1035 72/N): per-resource access policy now lives on
         // MetadataV2Resource.AccessPolicy. Seed it directly via the test fixture.
         _fixture.UpdateV2ResourceMetadata(
