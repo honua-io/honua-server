@@ -146,11 +146,11 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
         {
             case "wkt":
                 // ISO WKT carries no SRID by definition; the envelope reports it.
-                return (new WKTWriter(OutputOrdinates(geometry)).Write(geometry), "text");
+                return (CreateWktWriter(geometry).Write(geometry), "text");
             case "ewkt":
                 // PostGIS EWKT: "SRID=<n>;<WKT>". SRID 0 means "unknown" in PostGIS
                 // and is written as bare WKT rather than as a false SRID=0 claim.
-                var wkt = new WKTWriter(OutputOrdinates(geometry)).Write(geometry);
+                var wkt = CreateWktWriter(geometry).Write(geometry);
                 return (geometry.SRID > 0
                     ? string.Create(CultureInfo.InvariantCulture, $"SRID={geometry.SRID};{wkt}")
                     : wkt, "text");
@@ -169,6 +169,19 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
             default:
                 throw new ArgumentOutOfRangeException(nameof(target), target, "Unsupported target encoding.");
         }
+    }
+
+    /// <summary>
+    /// Builds a WKT writer that emits exactly the ordinates the geometry carries.
+    /// NTS takes the output DIMENSION on the constructor and the ordinate mask as a
+    /// property, and rejects a mask the dimension cannot hold, so both are derived
+    /// from the same inspection.
+    /// </summary>
+    private static WKTWriter CreateWktWriter(Geometry geometry)
+    {
+        var ordinates = OutputOrdinates(geometry);
+        var dimension = ordinates.HasFlag(Ordinates.M) ? 4 : ordinates.HasFlag(Ordinates.Z) ? 3 : 2;
+        return new WKTWriter(dimension) { OutputOrdinates = ordinates };
     }
 
     private static Ordinates OutputOrdinates(Geometry geometry)
