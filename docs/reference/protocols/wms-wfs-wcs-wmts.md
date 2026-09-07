@@ -41,13 +41,15 @@ Axis-order quirk: WMS 1.3.0 `BBOX` follows the CRS-defined axis order (lat,lon f
 `INFO_FORMAT=application/json` returns a GeoJSON `FeatureCollection`. Each result
 has `type: "Feature"`, a `properties` object containing visible attributes, and
 `geometry: null`: this identify response supplies attributes only. Null attribute
-values remain JSON null, and internal attributes are excluded. An empty result
+values remain JSON null, booleans remain JSON booleans, and internal attributes are excluded. An empty result
 is a FeatureCollection with an empty features array.
 
 The `layer` and `attributes` members remain available as foreign members for
 existing consumers. The top-level type replaces the earlier `FeatureInfoResponse`
 value so native GeoJSON identify readers, including QGIS, can read the response.
 Consumers that explicitly match the old type must accept `FeatureCollection`.
+JSON boolean attributes previously normalized to `0`/`1` now retain `false`/`true`;
+text and GML feature-info retain their existing `0`/`1` representation.
 
 ### GetLegendGraphic
 
@@ -142,6 +144,22 @@ unadvertised `TIME` and `ELEVATION` dimensions. Known parameters and advertised
 dimension values remain validated. This permits client extras such as QGIS's
 `SLD_VERSION` and `TRANSPARENT` on a legend tile request without rejecting the
 tile. See [WMTS 1.0 sections 7.2.2.2 and 7.3.2.2](https://docs.ogc.org/is/07-057r7/07-057r7.pdf).
+
+### WMTS GetFeatureInfo JSON
+
+`INFOFORMAT=application/json` and the advertised RESTful `.json` feature-info
+template return the same GeoJSON representation described for WMS above:
+`FeatureCollection`, `Feature`, `properties` and `geometry: null`. Visible
+attribute values preserve JSON numbers, booleans, strings and nulls. Empty
+results have an empty `features` array; internal attributes are excluded.
+The `layer` and `attributes` foreign members remain available.
+
+This corrects the earlier WMTS `FeatureInfoResponse` envelope and string-only
+attribute values, which stock QGIS could not read in its Feature identify
+format. Consumers of the earlier envelope must accept `FeatureCollection` and
+typed values. The `text/plain` / `.txt` representation is unchanged, including
+an empty value after `=` for NULL. This JSON compatibility behavior is separate
+from the WMTS core conformance results and Preview release status.
 
 ## Conformance
 
