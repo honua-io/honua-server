@@ -103,7 +103,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
             return;
         }
 
-        await using (var s3 = CreateClient())
+        using (var s3 = CreateClient())
         {
             await EnsureBucketAsync(s3);
             await s3.PutObjectAsync(new PutObjectRequest
@@ -300,7 +300,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
         });
     }
 
-    private async Task EnsureBucketAsync(IAmazonS3 s3)
+    private async Task EnsureBucketAsync(AmazonS3Client s3)
     {
         var buckets = await s3.ListBucketsAsync();
         if (buckets.Buckets?.Any(b => string.Equals(b.BucketName, _bucket, StringComparison.Ordinal)) == true)
@@ -392,7 +392,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
                 var metadata = await client.GetObjectMetadataAsync(bucket, key, cancellationToken);
                 return new CloudObjectMetadata
                 {
-                    SizeBytes = metadata.ContentLength ?? 0,
+                    SizeBytes = metadata.ContentLength,
                     ETag = metadata.ETag
                 };
             }
