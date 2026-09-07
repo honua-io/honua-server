@@ -67,6 +67,22 @@ public class RasterParsingHelpersTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void TryParseBoundingBox_ArcGisProFullPrecisionCoordinates_ReturnsTrue()
+    {
+        const string bbox = "-122.43000000000000682121,37.7599999999999980104803,-122.400000000000005684342,37.7899999999999991473487";
+
+        var result = RasterParsingHelpers.TryParseBoundingBox(
+            bbox, out var minX, out var minY, out var maxX, out var maxY);
+
+        result.Should().BeTrue();
+        minX.Should().Be(-122.43);
+        minY.Should().Be(37.76);
+        maxX.Should().Be(-122.4);
+        maxY.Should().Be(37.79);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void TryParseBoundingBox_WithWhitespace_TrimsAndReturnsTrue()
     {
         var result = RasterParsingHelpers.TryParseBoundingBox(
@@ -287,8 +303,8 @@ public class RasterParsingHelpersTests
     [Operation(Operations.Query)]
     public void TryParseBoundingBox_ExceedsMaxLength_ReturnsFalse()
     {
-        // Create a bbox string longer than 100 characters
-        var longBbox = string.Join(",", new string('1', 30), new string('2', 30), new string('3', 30), new string('4', 30));
+        // Numerically valid bounds must still be rejected when the input is oversized.
+        var longBbox = "-1." + new string('0', 1024) + ",-1,1,1";
 
         var result = RasterParsingHelpers.TryParseBoundingBox(
             longBbox, out _, out _, out _, out _);

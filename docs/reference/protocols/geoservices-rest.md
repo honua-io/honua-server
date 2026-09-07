@@ -57,6 +57,12 @@ Base: `/rest/services/{serviceId}/MapServer` (service and `/{layerId}` metadata 
 | Cached tiles | `/tile/{z}/{y}/{x}` | |
 | OGC pass-through | `/WMS`, `/WMTS`, `/WMTS/{**restPath}` | See [WMS, WFS, WCS, WMTS](wms-wfs-wcs-wmts.md). |
 
+Map export accepts `bbox` as either `xmin,ymin,xmax,ymax` or an Esri JSON envelope
+with those four properties, including the envelope representation emitted by
+ArcGIS Pro. Both representations use CRS x/y coordinate order and the same finite
+coordinate, extent and geographic-range validation. `bboxSR` controls the input
+CRS and defaults to the service CRS when omitted.
+
 > Open `https://server.example.com/rest/services/roads/MapServer/export?bbox=-122.5,37.7,-122.3,37.9&size=800,600&format=png&f=image` in a browser.
 
 See [GeoServices parity — MapServer](../compatibility/geoservices-parity.md#mapserver--wms--wmts) for parameter-level coverage.
