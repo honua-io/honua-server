@@ -41,10 +41,63 @@ which shares the certification VPC. Bootstrap that cert database with the existi
 `tests/seed/client-compat-v1.sql` snapshot (the same fixture used by
 `docker/client-compat/seed/run.sh`) from a runner with private database reachability.
 This is a cert bootstrap prerequisite, not a permission to reset standing data.
-The lane does not run the seed's schema/data updates against an existing database.
 It asserts all ten names and the exact count on `test_service/0`, and uses the
 snapshot's scratch layer `test_service/10` for only its run-owned row. Missing or
 drifted fixture data fails the run.
+
+### The fixture applies to a database the server has already migrated
+
+The cert database is **not** the fresh database `docker/client-compat` creates. The standing
+cert function runs with migrations enabled, so by the time bootstrap applies the snapshot the
+schema is whatever the server's DbUp migration set produced. The snapshot must be applicable
+to that migrated shape, and it is the migrated shape that it declares:
+
+- The snapshot's `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` DDL is a no-op
+  against a migrated database — the migrated definitions win. Those definitions must therefore
+  mirror `src/Honua.Server/Migrations`, or the same fixture name yields one schema on the fresh
+  `docker/client-compat` path and a different one in certification.
+- The snapshot's INSERTs must name only columns the migrations create.
+  `honua.services.max_record_count` was exactly this divergence: the snapshot declared and
+  inserted it, no migration has ever created it, and the bootstrap failed with
+  `42703 column "max_record_count" of relation "services" does not exist` before the lane could
+  reach a single serving assertion. The server takes its paging cap from `Limits:Query`
+  configuration and, under Metadata v2, from the service settings slot, so the column carried
+  no fixture meaning; it was dropped from the snapshot rather than reintroduced into the cert
+  database.
+- Every statement stays re-appliable (`IF NOT EXISTS`, `ON CONFLICT`, `WHERE NOT EXISTS`). The
+  standing cert database is re-primed between runs, so a second application must converge
+  rather than fail.
+
+`ClientCompatSeedMigratedDatabaseTests`
+(`tests/dotnet/Honua.Server.Tests/Seed/ClientCompatSeedMigratedDatabaseTests.cs`) pins this
+contract: it migrates a PostGIS container with the production DbUp runner
+(`PostgresDatabaseMigrationRunner` over the server migration assembly), applies the snapshot
+twice over the result, and asserts the ten names and the `test_service/10` add/delete through
+the FeatureServer query path.
+
+### The command the substrate uses to apply it
+
+The cert database is reachable only from inside the certification VPC, so bootstrap applies the
+snapshot through the honua-iac `postgis-bootstrap` Lambda's maintenance `statements` mode
+(`infrastructure/terraform/examples/aws-cert/postgis-bootstrap/handler.py`). That handler runs
+each element of the payload's `statements` array through a single
+`pg8000.native.Connection.run()` call over the extended query protocol, so the caller sends the
+snapshot split into top-level statements — split on semicolons outside string literals,
+comments and dollar-quoted bodies, which keeps the snapshot's `honua.seed_metadata_v2_compat_snapshot()`
+body intact:
+
+```bash
+# statements.json: {"statements": ["CREATE EXTENSION ...", "CREATE SCHEMA ...", ...]}
+aws lambda invoke \
+  --function-name "$CERT_POSTGIS_BOOTSTRAP_FUNCTION" \
+  --cli-binary-format raw-in-base64-out \
+  --payload file://statements.json \
+  bootstrap-response.json
+```
+
+There is no `psql` anywhere in that path. The snapshot must contain no backslash meta-commands
+(`\i`, `\copy`, `\set`) and nothing that depends on a client-side splitter beyond top-level
+semicolons.
 
 ## Byte-exact ECR mirror
 
