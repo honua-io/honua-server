@@ -118,8 +118,31 @@ def invoke(function, path, *, method="GET", query=None, body=None, authenticated
 
 def ok(function, path, **kwargs):
     status, body, _ = invoke(function, path, **kwargs)
-    require(status == 200 and isinstance(body, dict) and "error" not in body, "Serving HTTP assertion failed")
+    if not (status == 200 and isinstance(body, dict) and "error" not in body):
+        # Diagnosable without leaking: the path is a fixed lane constant, the
+        # status is a number, and only a short, alphanumeric error code/title
+        # from the body is echoed (never the body, headers, or a key). Live run
+        # 34117861856 failed here with nothing but the message, and the cause
+        # (400 "Invalid Host header") took a manual probe to find.
+        code = ""
+        if isinstance(body, dict):
+            err = body.get("error")
+            if isinstance(err, dict):
+                code = str(err.get("code", ""))[:40]
+            code = code or str(body.get("title", body.get("type", "")))[:60]
+        code = re.sub(r"[^A-Za-z0-9 ._:/-]", "", code)
+        print(f"serving-assertion: phase={_phase} path={path} status={status} "
+              f"body-kind={'json' if isinstance(body, dict) else 'text'} error={code or 'none'}", file=sys.stderr)
+        require(False, "Serving HTTP assertion failed")
     return body
+
+
+_phase = "deployed"
+
+
+def set_phase(name):
+    global _phase
+    _phase = name
 
 
 def smoke(function, expected_version=None):
@@ -208,10 +231,12 @@ def certify(directory, ephemeral, digest):
     function, alias = inputs()
     proof = {"result": "noProof", "candidateDigest": digest.split("@")[-1]}
     write_json(directory / "serving.json", proof)
+    set_phase("deployed")
     proof["deployed"] = smoke(ephemeral)
     previous = alias_state(function, alias)
     target = function + ":" + alias
     # Prove the baseline can serve before publishing anything to the standing function.
+    set_phase("baseline")
     proof["baseline"] = smoke(target, previous)
     original = json.loads((directory / "standing.json").read_text())
     latest = config(function)
@@ -247,6 +272,7 @@ def certify(directory, ephemeral, digest):
         rollback_needed = True  # Set BEFORE the call: an SDK timeout may follow a successful shift.
         backend("shift", function, alias, previous, candidate)
         proof["alias"]["afterVersion"] = alias_state(function, alias, candidate)
+        set_phase("candidate")
         proof["candidate"] = smoke(target, candidate)
     finally:
         if changed and candidate is None:
@@ -265,6 +291,7 @@ def certify(directory, ephemeral, digest):
                 proof["alias"]["rollbackVersion"] = alias_state(function, alias, previous)
             clean(observe_rollback)
             def verify_rollback():
+                set_phase("rollback")
                 proof["rollback"] = smoke(target, previous)
             clean(verify_rollback)
         if changed:
