@@ -58,7 +58,7 @@ public sealed class WfsLegacyGeometryMetadataTests
             await AssertGeometryAsync("legacy_line", 5002, "LineString", [-122.5, 37.5, -122.25, 37.75]);
             await AssertGeometryAsync("legacy_polygon", 5003, "Polygon",
                 [-122.5, 37.5, -122.25, 37.5, -122.25, 37.75, -122.5, 37.5]);
-            await AssertGeometryAsync("legacy_explicit", 5001, "Point", [-122.5, 37.5], "shape");
+            await AssertGeometryAsync("legacy_explicit", 5004, "Point", [-122.5, 37.5], "shape");
 
             var nullGeometry = await GetFeatureAsync(fixture, version, usePost, "legacy_point", 3);
             nullGeometry.Descendants(Honua + "legacy_point").Should().ContainSingle();
@@ -66,7 +66,7 @@ public sealed class WfsLegacyGeometryMetadataTests
             nullGeometry.Descendants(Honua + "name").Single().Value.Should().Be("Third Feature");
 
             // Even when storage contains geometry, a nonspatial resource must not expose it.
-            var nonspatial = await GetFeatureAsync(fixture, version, usePost, "legacy_table", 5001);
+            var nonspatial = await GetFeatureAsync(fixture, version, usePost, "legacy_table", 5005);
             nonspatial.Descendants(Honua + "legacy_table").Should().ContainSingle();
             nonspatial.Descendants(Honua + "geometry").Should().BeEmpty();
             nonspatial.Descendants(Gml + "Point").Should().BeEmpty();
@@ -181,10 +181,14 @@ public sealed class WfsLegacyGeometryMetadataTests
             INSERT INTO features (objectid, layer_id, geometry, attributes) VALUES
               (5001, 0, ST_GeomFromText('POINT(-122.5 37.5)', 4326),
                 '{"objectid":5001,"name":"Legacy Point"}'::jsonb),
-              (5002, 0, ST_GeomFromText('LINESTRING(-122.5 37.5,-122.25 37.75)', 4326),
+              (5002, 1, ST_GeomFromText('LINESTRING(-122.5 37.5,-122.25 37.75)', 4326),
                 '{"objectid":5002,"name":"Legacy Line"}'::jsonb),
-              (5003, 0, ST_GeomFromText('POLYGON((-122.5 37.5,-122.25 37.5,-122.25 37.75,-122.5 37.5))', 4326),
-                '{"objectid":5003,"name":"Legacy Polygon"}'::jsonb);
+              (5003, 2, ST_GeomFromText('POLYGON((-122.5 37.5,-122.25 37.5,-122.25 37.75,-122.5 37.5))', 4326),
+                '{"objectid":5003,"name":"Legacy Polygon"}'::jsonb),
+              (5004, 3, ST_GeomFromText('POINT(-122.5 37.5)', 4326),
+                '{"objectid":5004,"name":"Explicit Geometry"}'::jsonb),
+              (5005, 4, ST_GeomFromText('POINT(-122.5 37.5)', 4326),
+                '{"objectid":5005,"name":"Nonspatial Resource"}'::jsonb);
             """;
         await command.ExecuteNonQueryAsync();
     }
@@ -205,6 +209,9 @@ public sealed class WfsLegacyGeometryMetadataTests
         ];
         foreach (var (name, type, explicitField) in resources)
         {
+            // Discovery exposes one WFS type per storage layer, so each control
+            // needs its own binding even though all rows use the same table.
+            var layerId = Array.FindIndex(resources, resource => resource.Name == name);
             List<MetadataV2Field> fields =
             [
                 new() { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
@@ -223,14 +230,14 @@ public sealed class WfsLegacyGeometryMetadataTests
                         GeometryType = type,
                         SupportedCrs = [MetadataV2SpatialReference.Wgs84]
                     })
-                .AddStorageBinding($"binding-{name}", name, "features", storageLayerId: 0,
+                .AddStorageBinding($"binding-{name}", name, "features", storageLayerId: layerId,
                     options: new Dictionary<string, JsonElement>
                     {
                         ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
                         ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
                     })
                 .AddPublication($"publication-{name}", "legacy-geometry-service", name,
-                    layerIndex: Array.FindIndex(resources, resource => resource.Name == name),
+                    layerIndex: layerId,
                     storageBindingId: $"binding-{name}", serviceLocalId: name,
                     publicationType: MetadataV2PublicationType.WfsFeatureType);
         }
