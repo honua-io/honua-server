@@ -20,44 +20,17 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
+/// <summary>MapServer metadata, query and legend endpoint integration tests.</summary>
 [Collection("Database.GeoServicesMapServer")]
 [Protocol(TestProtocols.MapServer)]
-public sealed class MapServerEndpointTests : IAsyncLifetime
+public sealed class MapServerEndpointTests : MapServerEndpointTestBase
 {
-    private readonly WebAppFixture _fixture = new();
-    private string? _generateKmlServiceName;
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public async Task DisposeAsync()
-    {
-        try
-        {
-            if (_generateKmlServiceName is { } serviceName && _fixture.CurrentSchema is { } schema)
-            {
-                await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
-                    """
-                    DELETE FROM honua.layer_fields WHERE layer_id BETWEEN 110 AND 113;
-                    DELETE FROM honua.service_layers WHERE layer_id BETWEEN 110 AND 113;
-                    DELETE FROM honua.layers WHERE layer_id BETWEEN 110 AND 113;
-                    DELETE FROM honua.services WHERE service_name = @serviceName;
-                    """,
-                    command => command.Parameters.AddWithValue("serviceName", serviceName),
-                    schema);
-            }
-        }
-        finally
-        {
-            await _fixture.DisposeAsync();
-        }
-    }
-
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]
     public async Task MapServer_Metadata_ReturnsServiceInfo()
     {
-        var response = await _fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
+        var response = await Fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -104,7 +77,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]
     public async Task MapServer_Metadata_MapsGovernanceToDocumentInfo()
     {
-        var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
+        var provider = Fixture.GetService<TestMetadataV2GraphProvider>();
         var snapshot = await provider.GetCurrentAsync();
         var services = snapshot.Graph.Services
             .Select(service =>
@@ -127,7 +100,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             Services = services,
         });
 
-        var response = await _fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
+        var response = await Fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -142,7 +115,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]
     public async Task MapServer_Metadata_WithInvalidIdentifier_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/%20/MapServer?f=json");
+        var response = await Fixture.Client.GetAsync("/rest/services/%20/MapServer?f=json");
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -152,7 +125,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}")]
     public async Task MapServer_LayerMetadata_ReturnsLayerInfo()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}?f=json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -192,7 +165,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         const int dynamicLayerId = 7;
         var layer = Uri.EscapeDataString(BuildSimpleRendererDynamicLayerObjectJson(dynamicLayerId));
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/dynamicLayer?f=json&layer={layer}");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -211,7 +184,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
     public async Task MapServer_DynamicLayer_WithoutLayer_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/dynamicLayer?f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -228,7 +201,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         var layer = Uri.EscapeDataString(
             """{"id":7,"source":{"type":"workspaceLayer","workspaceId":"demo","dataSource":{"type":"table","name":"features"}}}""");
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/dynamicLayer?f=json&layer={layer}");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -246,7 +219,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     public async Task MapServer_DynamicLayer_WithMalformedLayer_DoesNotLeakJsonParserDetails()
     {
         var malformedLayer = Uri.EscapeDataString("{\"id\":");
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/dynamicLayer?f=json&layer={malformedLayer}");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -267,7 +240,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         // Regression (#1772): GIF was advertised in supportedImageFormatTypes but the
         // SkiaSharp export renderer ships no GIF encoder, so export?format=gif was
         // rejected. Capabilities must match behavior -> GIF must not be advertised.
-        var response = await _fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
+        var response = await Fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
@@ -283,194 +256,9 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithGifFormat_ReturnsBadRequest()
-    {
-        // Regression (#1772): format=gif must be rejected cleanly (400), and the
-        // capability advertisement above must not promise it.
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&format=gif&f=image");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithMalformedBbox_AsImage_ReturnsBadRequest()
-    {
-        // CERT-ERRH-01: a binary image export (f=image) whose bbox cannot be parsed must be
-        // rejected with a real HTTP 4xx. An image client expects raster bytes and cannot
-        // interpret a 200 "success" carrying a JSON error envelope, so the malformed request
-        // has to surface as a genuine failure rather than the PA-070/PA-117 200 body.
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=garbage&f=image");
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        // The body is still the GeoServices {"error":{"code":400,...}} envelope.
-        var content = await response.Content.ReadAsStringAsync();
-        response.Content.Headers.ContentType?.MediaType.Should().Contain("json");
-        using var document = JsonDocument.Parse(content);
-        document.RootElement.TryGetProperty("error", out var error).Should().BeTrue(content);
-        error.GetProperty("code").GetInt32().Should().Be(400);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithMalformedBbox_AsJson_ReturnsErrorEnvelopeWithHttp200()
-    {
-        // f=json keeps the established GeoServices convention (HTTP 200 + error body); only the
-        // binary image path escalates to a real 4xx. Every JSON-format caller parses the body.
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=garbage&f=json");
-
-        await response.AssertGeoServicesErrorAsync(400);
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithValidBbox_AsImage_ReturnsImage()
-    {
-        // CERT-RNDR-01: a valid image export must still render real image bytes and must not be
-        // over-rejected by the malformed-bbox guard.
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=256,256&format=png&transparent=true&f=image");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().StartWith("image/");
-        (await response.Content.ReadAsByteArrayAsync()).Should().HaveCountGreaterThan(100);
-    }
-
-    [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithArcGisProJsonEnvelope_MatchesCommaEnvelope(bool usePost)
-    {
-        // Regression (#4501), captured from stock ArcGIS Pro 3.7.1: changing only bbox to CSV made
-        // its blank-map HTTP400 become PNG200. Retain the native precision.
-        const string bbox = """
-            {"xmin":-122.42168401826947,"ymin":37.765347945206912,"xmax":-122.40797808219641,"ymax":37.786301369864447,"spatialReference":{"wkid":4326,"latestWkid":4326}}
-            """;
-        const string commaBbox = "-122.42168401826947,37.765347945206912,-122.40797808219641,37.786301369864447";
-        var parameters = new Dictionary<string, string>
-        {
-            ["bbox"] = bbox,
-            ["bboxSR"] = "4326",
-            ["imageSR"] = "4326",
-            ["size"] = "469,717",
-            ["dpi"] = "144",
-            ["transparent"] = "true",
-            ["rotation"] = "0",
-            ["f"] = "image",
-            ["format"] = "png32"
-        };
-        var endpoint = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export";
-        using var content = new FormUrlEncodedContent(parameters);
-        using var response = usePost
-            ? await _fixture.Client.PostAsync(endpoint, content)
-            : await _fixture.Client.GetAsync(endpoint + "?" + await content.ReadAsStringAsync());
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        var actual = await response.Content.ReadAsByteArrayAsync();
-        using var bitmap = SkiaSharp.SKBitmap.Decode(actual);
-        bitmap.Should().NotBeNull();
-        bitmap.Width.Should().Be(469);
-        bitmap.Height.Should().Be(717);
-
-        parameters["bbox"] = commaBbox;
-        using var controlContent = new FormUrlEncodedContent(parameters);
-        using var control = await _fixture.Client.GetAsync(endpoint + "?" + await controlContent.ReadAsStringAsync());
-        control.StatusCode.Should().Be(HttpStatusCode.OK);
-        actual.Should().Equal(await control.Content.ReadAsByteArrayAsync());
-    }
-
-    [IntegrationTheory]
-    [InlineData("{")]
-    [InlineData("{}")]
-    [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":-122}")]
-    [InlineData("{\"xmin\":null,\"ymin\":37,\"xmax\":-122,\"ymax\":38}")]
-    [InlineData("{\"xmin\":\"NaN\",\"ymin\":37,\"xmax\":-122,\"ymax\":38}")]
-    [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":1e999,\"ymax\":38}")]
-    [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":-122,\"ymax\":91}")]
-    [InlineData("{\"xmin\":-123,\"ymin\":38,\"xmax\":-122,\"ymax\":37}")]
-    [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":-123,\"ymax\":38}")]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithInvalidJsonEnvelope_RetainsValidation(string bbox)
-    {
-        var endpoint = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export";
-        foreach (var usePost in new[] { false, true })
-        {
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["bbox"] = bbox,
-                ["bboxSR"] = "4326",
-                ["f"] = "image"
-            });
-            using var response = usePost
-                ? await _fixture.Client.PostAsync(endpoint, content)
-                : await _fixture.Client.GetAsync(endpoint + "?" + await content.ReadAsStringAsync());
-
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            await response.AssertGeoServicesErrorAsync(400);
-        }
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithAllLayersHidden_ReturnsBlankImage(bool useDynamicLayer)
-    {
-        var dynamicLayers = useDynamicLayer
-            ? $"&dynamicLayers={Uri.EscapeDataString(BuildSimpleRendererDynamicLayersJson(dynamicLayerId: 7))}"
-            : string.Empty;
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export" +
-            "?bbox=-180,-90,180,90&size=64,64&f=image&layers=show:-1" + dynamicLayers);
-
-        var content = await response.Content.ReadAsByteArrayAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, Encoding.UTF8.GetString(content));
-        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
-        content.Should().NotBeEmpty();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_ReturnsImageJson()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Width.Should().Be(256);
-        export.Height.Should().Be(256);
-        export.Extent.Should().NotBeNull();
-        export.Href.Should().NotBeNullOrWhiteSpace();
-        export.Scale.Should().NotBeNull();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Handlers_WithSameIdStacPublication_IgnoreProtocolDuplicate()
     {
-        var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
+        var provider = Fixture.GetService<TestMetadataV2GraphProvider>();
         var snapshot = await provider.GetCurrentAsync();
         var esriPublication = snapshot.Graph.Publications
             .Where(publication =>
@@ -512,7 +300,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
                 .ToArray(),
         });
 
-        using var exportResponse = await _fixture.Client.GetAsync(
+        using var exportResponse = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&format=png32&f=image");
 
         exportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -529,7 +317,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         foreach (var (operation, path, expectedProperty) in mapServerRequests)
         {
-            using var response = await _fixture.Client.GetAsync(path);
+            using var response = await Fixture.Client.GetAsync(path);
             var content = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(
                 HttpStatusCode.OK,
@@ -551,1007 +339,11 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithDatelineCrossingBbox_ReturnsImageJson()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=170,-10,-170,10&bboxSR=4326&imageSR=4326&size=256,256&f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Scale.Should().NotBeNull();
-        export.Scale.Should().BeGreaterThan(0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithWideDatelineCrossingBbox_In3857_PreservesWrappedExtent()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=10,-10,-10,10&bboxSR=4326&imageSR=3857&size=256,256&f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Extent.Should().NotBeNull();
-        export!.Extent!.Xmin.Should().BeGreaterThan(export.Extent.Xmax);
-        export.Scale.Should().NotBeNull();
-        export.Scale.Should().BeGreaterThan(0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithProjectedBbox_In3857_ReturnsImageJson()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-20037508.34,-20037508.34,20037508.34,20037508.34&bboxSR=3857&imageSR=3857&size=256,256&f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Extent.Should().NotBeNull();
-        export.Scale.Should().NotBeNull();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithGeographicAxisOrderBbox_In4326_ReturnsImageJson()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-90,-180,90,180&bboxSR=4326&imageSR=4326&size=256,256&f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Extent.Should().NotBeNull();
-        export.Scale.Should().NotBeNull();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_Post_ReturnsImageJson()
-    {
-        using var payload = new FormUrlEncodedContent(
-        [
-            new KeyValuePair<string, string>("bbox", "-180,-90,180,90"),
-            new KeyValuePair<string, string>("size", "256,256"),
-            new KeyValuePair<string, string>("f", "json")
-        ]);
-
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export",
-            payload);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Width.Should().Be(256);
-        export.Height.Should().Be(256);
-        export.Extent.Should().NotBeNull();
-        export.Href.Should().NotBeNullOrWhiteSpace();
-        export.Scale.Should().NotBeNull();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
-    public async Task MapServer_EstimateExportTilesSize_ReturnsStorageBackedEstimate()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/estimateExportTilesSize?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var estimate = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportTilesEstimateResponse);
-
-        estimate.Should().NotBeNull();
-        estimate!.TileCount.Should().Be(1);
-        estimate.Size.Should().BeGreaterThan(0);
-        estimate.EstimatedSizeBytes.Should().Be(estimate.Size);
-        estimate.MinZoom.Should().Be(0);
-        estimate.MaxZoom.Should().Be(0);
-        estimate.TilePackage.Should().BeFalse();
-        estimate.StorageFormat.Should().Be("zip");
-        estimate.ContentType.Should().Be("application/zip");
-        estimate.ExceededTransferLimit.Should().BeFalse();
-
-        // POST form-encoded equivalent must produce the same estimate.
-        using var postPayload = new FormUrlEncodedContent(
-        [
-            new KeyValuePair<string, string>("f", "json"),
-            new KeyValuePair<string, string>("levels", "0"),
-            new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
-            new KeyValuePair<string, string>("maxTiles", "1"),
-        ]);
-        var postResponse = await _fixture.Client.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/estimateExportTilesSize",
-            postPayload);
-
-        var postContent = await postResponse.Content.ReadAsStringAsync();
-        postResponse.StatusCode.Should().Be(HttpStatusCode.OK, postContent);
-        var postEstimate = JsonSerializer.Deserialize(postContent, MapServerJsonContext.Default.ExportTilesEstimateResponse);
-        postEstimate.Should().NotBeNull();
-        postEstimate!.TileCount.Should().Be(1);
-        postEstimate.Size.Should().BeGreaterThan(0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
-    public async Task MapServer_EstimateExportTilesSize_WholeWorldHighZoom_DoesNotMaterializeFullGrid()
-    {
-        // #2065: a whole-world high-zoom estimate (~6.9e10 tiles at z18) previously built the full
-        // coordinate grid before applying maxTiles, allocating hundreds of GB -> OOM. The count must
-        // be computed first and the build bounded by maxTiles, so this returns promptly with the true
-        // count, ExceededTransferLimit=true, and no out-of-memory.
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/estimateExportTilesSize?f=json&minZoom=0&maxZoom=18&exportExtent=-180,-85,180,85&maxTiles=1");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var estimate = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportTilesEstimateResponse);
-
-        estimate.Should().NotBeNull();
-        // The reported count is the true (very large) total, but the build was bounded to maxTiles.
-        estimate!.TileCount.Should().BeGreaterThan(1_000_000_000L);
-        estimate.ExceededTransferLimit.Should().BeTrue();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/exportTiles")]
-    public async Task MapServer_ExportTiles_WritesZipArchiveToCloudStorage()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportTilesResponse);
-
-        export.Should().NotBeNull();
-        export!.JobStatus.Should().Be("esriJobSucceeded");
-        export.TileCount.Should().Be(1);
-        export.TilePackage.Should().BeFalse();
-        export.StorageFormat.Should().Be("zip");
-        export.ContentType.Should().Be("application/zip");
-        export.ArchiveFileId.Should().NotBeNullOrWhiteSpace();
-        export.DownloadUrl.Should().NotBeNullOrWhiteSpace();
-        export.Files.Should().ContainSingle();
-        export.Results.Should().NotBeNull();
-        export.Results!.OutServiceUrl.Should().NotBeNull();
-
-        // POST form-encoded equivalent must also succeed and write an archive.
-        using var postPayload = new FormUrlEncodedContent(
-        [
-            new KeyValuePair<string, string>("f", "json"),
-            new KeyValuePair<string, string>("levels", "0"),
-            new KeyValuePair<string, string>("exportExtent", "-180,-85,180,85"),
-            new KeyValuePair<string, string>("maxTiles", "1"),
-        ]);
-        var postResponse = await _fixture.Client.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles",
-            postPayload);
-        var postContent = await postResponse.Content.ReadAsStringAsync();
-        postResponse.StatusCode.Should().Be(HttpStatusCode.OK, postContent);
-        var postExport = JsonSerializer.Deserialize(postContent, MapServerJsonContext.Default.ExportTilesResponse);
-        postExport.Should().NotBeNull();
-        postExport!.JobStatus.Should().Be("esriJobSucceeded");
-        if (!string.IsNullOrWhiteSpace(postExport.ArchiveFileId))
-        {
-            await _fixture.GetService<ICloudFileStorage>().DeleteAsync(postExport.ArchiveFileId!);
-        }
-
-        var fileId = export.ArchiveFileId!;
-        var storage = _fixture.GetService<ICloudFileStorage>();
-        try
-        {
-            var bytes = await storage.DownloadBytesAsync(fileId);
-
-            bytes.Should().NotBeNull();
-            bytes!.Length.Should().BeGreaterThan(0);
-            using var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
-            var tileEntry = archive.GetEntry("0/0/0.png");
-            tileEntry.Should().NotBeNull();
-
-            await using var tileStream = tileEntry!.Open();
-            var pngHeader = new byte[8];
-            var read = await tileStream.ReadAsync(pngHeader.AsMemory(0, pngHeader.Length));
-
-            read.Should().Be(pngHeader.Length);
-            pngHeader.Should().Equal(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
-        }
-        finally
-        {
-            await storage.DeleteAsync(fileId);
-        }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
-    public async Task MapServer_ExportTiles_WithStorageFormatTpk_WritesExplodedTilePackage()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=tpk");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportTilesResponse);
-
-        export.Should().NotBeNull();
-        export!.JobStatus.Should().Be("esriJobSucceeded");
-        export.TilePackage.Should().BeTrue();
-        export.StorageFormat.Should().Be("tpk");
-        export.ArchiveFileId.Should().NotBeNullOrWhiteSpace();
-
-        var fileId = export.ArchiveFileId!;
-        var storage = _fixture.GetService<ICloudFileStorage>();
-        try
-        {
-            var bytes = await storage.DownloadBytesAsync(fileId);
-            bytes.Should().NotBeNull();
-            using var archive = new ZipArchive(new MemoryStream(bytes!), ZipArchiveMode.Read);
-
-            // Esri exploded-cache layout: conf.xml + _alllayers/Lzz/Rrrrrrrrr/Cccccccc.png
-            archive.Entries.Should().Contain(entry => entry.FullName.EndsWith("/conf.xml", StringComparison.Ordinal));
-            archive.Entries.Should().Contain(entry => entry.FullName.EndsWith("/conf.cdi", StringComparison.Ordinal));
-            var tileEntry = archive.Entries.FirstOrDefault(entry =>
-                entry.FullName.Contains("_alllayers/L00/", StringComparison.Ordinal) &&
-                entry.FullName.EndsWith(".png", StringComparison.Ordinal));
-            tileEntry.Should().NotBeNull();
-            tileEntry!.FullName.Should().Contain("R00000000");
-            tileEntry.FullName.Should().Contain("C00000000");
-        }
-        finally
-        {
-            await storage.DeleteAsync(fileId);
-        }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
-    public async Task MapServer_ExportTiles_WithCompactStorageFormat_ReturnsBadRequest()
-    {
-        // Compact Cache V2 / TPKX now negotiates the durable async path (#2706) rather than the old
-        // "unsupported" rejection: a single-level request is instead rejected by the TPKX
-        // validation, which requires at least two zoom levels.
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=tpkx");
-
-        var content = await response.Content.ReadAsStringAsync();
-        await response.AssertGeoServicesErrorAsync(400);
-        content.ToLowerInvariant().Should().Contain("zoom levels");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
-    public async Task MapServer_EstimateExportTilesSize_WithTpk_ReportsTilePackage()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/estimateExportTilesSize?f=json&levels=0&exportExtent=-180,-85,180,85&maxTiles=1&storageFormat=tpk");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var estimate = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportTilesEstimateResponse);
-
-        estimate.Should().NotBeNull();
-        estimate!.TilePackage.Should().BeTrue();
-        estimate.StorageFormat.Should().Be("tpk");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/generateKml")]
-    public async Task MapServer_GenerateKml_ReturnsValidKml_ForPointLineAndPolygonLayers()
-    {
-        var serviceName = await SeedGenerateKmlGeometryServiceAsync();
-
-        var response = await _fixture.Client.GetAsync($"/rest/services/{serviceName}/MapServer/generateKml?f=kml");
-        var content = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.google-earth.kml+xml");
-
-        var document = XDocument.Parse(content);
-        XNamespace kml = "http://www.opengis.net/kml/2.2";
-
-        document.Root.Should().NotBeNull();
-        document.Descendants(kml + "Point").Should().NotBeEmpty();
-        document.Descendants(kml + "LineString").Should().NotBeEmpty();
-        document.Descendants(kml + "Polygon").Should().NotBeEmpty();
-        document.Descendants(kml + "Placemark").Should().NotBeEmpty();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/generateKml")]
-    public async Task MapServer_GenerateKml_Post_ReturnsValidKml()
-    {
-        var serviceName = await SeedGenerateKmlGeometryServiceAsync();
-
-        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["f"] = "kml"
-        });
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{serviceName}/MapServer/generateKml",
-            form);
-        var content = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.google-earth.kml+xml");
-
-        var document = XDocument.Parse(content);
-        XNamespace kml = "http://www.opengis.net/kml/2.2";
-        document.Descendants(kml + "Placemark").Should().NotBeEmpty();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/generateKml")]
-    public async Task MapServer_GenerateKml_WithKmzFormat_ReturnsCompressedArchive()
-    {
-        var serviceName = await SeedGenerateKmlGeometryServiceAsync();
-
-        var response = await _fixture.Client.GetAsync($"/rest/services/{serviceName}/MapServer/generateKml?f=kmz&layers=110");
-        var bytes = await response.Content.ReadAsByteArrayAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.google-earth.kmz");
-        bytes.Length.Should().BeGreaterThan(0);
-
-        using var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
-        var kmlEntry = archive.GetEntry("doc.kml");
-        kmlEntry.Should().NotBeNull();
-
-        using var kmlStream = kmlEntry!.Open();
-        using var reader = new StreamReader(kmlStream);
-        var kmlContent = await reader.ReadToEndAsync();
-
-        var document = XDocument.Parse(kmlContent);
-        XNamespace kml = "http://www.opengis.net/kml/2.2";
-        document.Descendants(kml + "Point").Should().NotBeEmpty();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/generateKml")]
-    public async Task MapServer_GenerateKml_WithProjectedLayer_ReturnsWgs84Coordinates()
-    {
-        var serviceName = await SeedGenerateKmlGeometryServiceAsync();
-
-        var response = await _fixture.Client.GetAsync($"/rest/services/{serviceName}/MapServer/generateKml?f=kml&layers=113");
-        var content = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-
-        var document = XDocument.Parse(content);
-        XNamespace kml = "http://www.opengis.net/kml/2.2";
-        var coordinateText = document.Descendants(kml + "coordinates").Single().Value.Trim();
-        var ordinates = coordinateText.Split(',', StringSplitOptions.TrimEntries);
-
-        ordinates.Should().HaveCountGreaterThanOrEqualTo(2);
-        double.Parse(ordinates[0], CultureInfo.InvariantCulture).Should().BeApproximately(-157.80, 0.0001);
-        double.Parse(ordinates[1], CultureInfo.InvariantCulture).Should().BeApproximately(21.30, 0.0001);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithTime_ReturnsImageJson()
-    {
-        var time = System.Uri.EscapeDataString("2023-01-01T00:00:00Z,2023-01-10T00:00:00Z");
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&time={time}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Href.Should().NotBeNullOrWhiteSpace();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithMalformedTime_DoesNotLeakInputOrParserDetails()
-    {
-        const string sentinel = "MAP_TIME_SENTINEL";
-        var malformedTime = Uri.EscapeDataString($"not-a-time-{sentinel}");
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&time={malformedTime}");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Invalid time parameter.");
-        content.Should().NotContain(sentinel);
-        content.Should().NotContain("BytePositionInLine");
-        content.Should().NotContain("LineNumber");
-        content.Should().NotContain("System.Text.Json");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithLayerTimeOptions_ReturnsImageJson()
-    {
-        var layerTimeOptions = System.Uri.EscapeDataString(
-            "{\"0\":{\"useTime\":true,\"time\":\"2023-01-01T00:00:00Z,2023-01-10T00:00:00Z\"}}");
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&layerTimeOptions={layerTimeOptions}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Href.Should().NotBeNullOrWhiteSpace();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithDynamicLayers_ReturnsImageJson()
-    {
-        var dynamicLayers = System.Uri.EscapeDataString(
-            "[{\"id\":0,\"source\":{\"type\":\"mapLayer\",\"mapLayerId\":0},\"definitionExpression\":\"category = 'test'\"}]");
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&dynamicLayers={dynamicLayers}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Href.Should().NotBeNullOrWhiteSpace();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithDynamicLayerSimpleRenderer_ReturnsImageJson()
-    {
-        var dynamicLayers = Uri.EscapeDataString(BuildSimpleRendererDynamicLayersJson(dynamicLayerId: 7));
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&dynamicLayers={dynamicLayers}");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Href.Should().NotBeNullOrWhiteSpace();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithUnsupportedDynamicLayerRenderer_ReturnsBadRequest()
-    {
-        var dynamicLayers = Uri.EscapeDataString(
-            """[{"id":7,"source":{"type":"mapLayer","mapLayerId":0},"drawingInfo":{"renderer":{"type":"heatmap"}}}]""");
-
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&f=json&dynamicLayers={dynamicLayers}");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("unsupported drawingInfo renderer");
-        content.Should().NotContain("System.Text.Json");
-        content.Should().NotContain("BytePositionInLine");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithGdbVersion_IgnoresParameter()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&gdbVersion=QA");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Href.Should().NotBeNullOrWhiteSpace();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithMalformedLayerDefs_DoesNotLeakJsonParserDetails()
-    {
-        var malformedLayerDefs = Uri.EscapeDataString("{\"0\":");
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&layerDefs={malformedLayerDefs}");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("layerDefs contains invalid JSON.");
-        content.Should().NotContain("BytePositionInLine");
-        content.Should().NotContain("LineNumber");
-        content.Should().NotContain("System.Text.Json");
-    }
-
-    // Regression (#1430): the Esri layerDefs array form [{"layerId":N,"where":...}]
-    // must be accepted (previously rejected with "Invalid layer id").
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithJsonArrayLayerDefs_ReturnsOk()
-    {
-        var layerDefs = Uri.EscapeDataString(
-            $$"""[{"layerId":{{WebAppFixture.TestLayerId}},"where":"1=1"}]""");
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&layerDefs={layerDefs}");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithMalformedDynamicLayers_DoesNotLeakJsonParserDetails()
-    {
-        var malformedDynamicLayers = Uri.EscapeDataString("[{\"id\":");
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&dynamicLayers={malformedDynamicLayers}");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("dynamicLayers contains invalid JSON.");
-        content.Should().NotContain("BytePositionInLine");
-        content.Should().NotContain("LineNumber");
-        content.Should().NotContain("System.Text.Json");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithUnsupportedImageSr_DoesNotLeakTransformDetails()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=999999&size=256,256&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Invalid spatial reference.");
-        content.Should().NotContain("999999");
-        content.Should().NotContain("NotSupportedException");
-        content.Should().NotContain("System.");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithMalformedSizePair_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,,256&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithSizeExceedingAdvertisedMaximum_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export" +
-            "?bbox=-180,-90,180,90&size=4097,2000&f=image");
-
-        await response.AssertGeoServicesErrorAsync(400);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithMalformedBackgroundColor_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&backgroundColor=255,,0,0&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithMalformedLayersDelimiter_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&layers=show:{WebAppFixture.TestLayerId},&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithInvalidLayerIdentifier_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&layers=show:{WebAppFixture.TestLayerId},foo&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithInvalidRequestedLayer_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&layers=show:{WebAppFixture.TestLayerId},999999&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    // #1302: MapServer/export must accept the GeoServices-standard layers visibility
-    // prefixes (show:/hide:/include:/exclude:), not just a bare id list.
-    [Theory]
-    [InlineData("show")]
-    [InlineData("hide")]
-    [InlineData("include")]
-    [InlineData("exclude")]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithLayersVisibilityPrefix_ReturnsImageJson(string prefix)
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&layers={prefix}:{WebAppFixture.TestLayerId}&f=json");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Width.Should().Be(256);
-        export.Height.Should().Be(256);
-        export.Extent.Should().NotBeNull();
-        export.Href.Should().NotBeNullOrWhiteSpace();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_WithBareLayerIdList_ReturnsImageJson()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&layers={WebAppFixture.TestLayerId}&f=json");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
-
-        export.Should().NotBeNull();
-        export!.Extent.Should().NotBeNull();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithLayerTimeOptionsUseTimeFalse_IgnoresGlobalTimeFilter()
-    {
-        var time = Uri.EscapeDataString("2025-01-01T00:00:00Z,2025-01-31T00:00:00Z");
-        var layerTimeOptions = Uri.EscapeDataString("{\"0\":{\"useTime\":false}}");
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&time={time}&layerTimeOptions={layerTimeOptions}&f=json");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var identify = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.IdentifyResponse);
-
-        identify.Should().NotBeNull();
-        identify!.Results.Should().NotBeNullOrEmpty();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_ReturnsResults()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var identify = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.IdentifyResponse);
-
-        identify.Should().NotBeNull();
-        identify!.Results.Should().NotBeNull();
-        identify.Results!.Length.Should().BeGreaterThan(0);
-    }
-
-    [IntegrationTheory]
-    [InlineData("esriGeometryEnvelope", "{\"xmin\":-122.51,\"ymin\":37.504,\"xmax\":-122.49,\"ymax\":37.506}")]
-    [InlineData("esriGeometryMultipoint", "{\"points\":[[-122.5,37.505]]}")]
-    [InlineData("esriGeometryPolyline", "{\"paths\":[[[-122.51,37.505],[-122.49,37.505]]]}")]
-    [InlineData("esriGeometryPolygon", "{\"rings\":[[[-122.51,37.504],[-122.49,37.504],[-122.49,37.506],[-122.51,37.506],[-122.51,37.504]]]}")]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_NonPointGeometryWithinTolerance_ReturnsResults(
-        string geometryType,
-        string geometry)
-    {
-        // The seeded point is (-122.5, 37.5). With this one-degree map extent and 1000px
-        // display width, tolerance=10 is 0.01 map units. Each geometry is 0.004-0.005 units away:
-        // Shapely 2.1.2 reports distance 0.004-0.005, so it misses unbuffered and hits buffered.
-        var encodedGeometry = Uri.EscapeDataString(geometry);
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify" +
-            $"?geometry={encodedGeometry}&geometryType={geometryType}&sr=4326" +
-            "&mapExtent=-123,37,-122,38&imageDisplay=1000,1000,96" +
-            "&tolerance=10&layers=all&f=json");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var identify = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.IdentifyResponse);
-
-        identify.Should().NotBeNull();
-        identify!.Results.Should().NotBeNullOrEmpty(
-            $"{geometryType} identify tolerance applies around the geometry boundary");
-    }
-
-    // Regression (#1429): the ArcGIS JS SDK and arcpy send mapExtent as an Esri JSON
-    // envelope ({"xmin":..,"ymin":..,"xmax":..,"ymax":..}); it must be accepted, not 400.
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithJsonEnvelopeMapExtent_ReturnsResults()
-    {
-        var mapExtent = Uri.EscapeDataString(
-            """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent={mapExtent}&imageDisplay=800,600,96&f=json");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var identify = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.IdentifyResponse);
-
-        identify.Should().NotBeNull();
-        identify!.Results.Should().NotBeNull();
-        identify.Results!.Length.Should().BeGreaterThan(0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithDatelineCrossingMapExtent_ReturnsOk()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=179.5,0&geometryType=esriGeometryPoint&mapExtent=170,-10,-170,10&imageDisplay=800,600,96&f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithProjectedMapExtent_ReturnsOk()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-13636637.62,4509031.39&geometryType=esriGeometryPoint&sr=3857&mapExtent=-13700000,4490000,-13600000,4600000&imageDisplay=800,600,96&f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithGdbVersion_IgnoresParameter()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json&gdbVersion=QA");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var identify = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.IdentifyResponse);
-
-        identify.Should().NotBeNull();
-        identify!.Results.Should().NotBeNull();
-        identify.Results!.Length.Should().BeGreaterThan(0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_Post_ReturnsResults()
-    {
-        using var payload = new FormUrlEncodedContent(
-        [
-            new KeyValuePair<string, string>("geometry", "-122.5,37.5"),
-            new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
-            new KeyValuePair<string, string>("mapExtent", "-180,-90,180,90"),
-            new KeyValuePair<string, string>("imageDisplay", "800,600,96"),
-            new KeyValuePair<string, string>("f", "json")
-        ]);
-
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify",
-            payload);
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        var identify = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.IdentifyResponse);
-
-        identify.Should().NotBeNull();
-        identify!.Results.Should().NotBeNull();
-        identify.Results!.Length.Should().BeGreaterThan(0);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithInvalidGeometryType_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=invalidType&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithInvalidTolerance_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&tolerance=abc&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithMalformedImageDisplay_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,,600,96&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithMalformedLayersDelimiter_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&layers=visible:{WebAppFixture.TestLayerId},&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithInvalidLayerIdentifier_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&layers=visible:{WebAppFixture.TestLayerId},foo&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithMalformedPointPair_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithMalformedGeometryJson_DoesNotLeakParserDetails()
-    {
-        var malformedGeometry = Uri.EscapeDataString("{\"rings\":[1]}");
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry={malformedGeometry}&geometryType=esriGeometryPolygon&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Geometry parameter is invalid.");
-        content.Should().NotContain("System.Text.Json");
-        content.Should().NotContain("Supported types:");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithOversizedGeometry_ReturnsBadRequest()
-    {
-        var oversizedTag = new string('a', 2500);
-        var geometry = $"{{\"x\":-122.5,\"y\":37.5,\"tag\":\"{oversizedTag}\"}}";
-
-        using var payload = new FormUrlEncodedContent(
-        [
-            new KeyValuePair<string, string>("geometry", geometry),
-            new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
-            new KeyValuePair<string, string>("mapExtent", "-180,-90,180,90"),
-            new KeyValuePair<string, string>("imageDisplay", "800,600,96"),
-            new KeyValuePair<string, string>("f", "json")
-        ]);
-
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify",
-            payload);
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_WithInvalidIdentifier_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            "/rest/services/%20/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task MapServer_Legend_ReturnsLegendLayers()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1568,7 +360,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task MapServer_Legend_WithDynamicLayerSimpleRenderer_ReturnsRequestSwatch()
     {
-        var defaultResponse = await _fixture.Client.GetAsync(
+        var defaultResponse = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=20");
         var defaultContent = await defaultResponse.Content.ReadAsStringAsync();
         defaultResponse.StatusCode.Should().Be(HttpStatusCode.OK, defaultContent);
@@ -1577,7 +369,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         var dynamicLayerId = 7;
         var dynamicLayers = Uri.EscapeDataString(BuildSimpleRendererDynamicLayersJson(dynamicLayerId));
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=20&dynamicLayers={dynamicLayers}");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -1618,7 +410,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         var dynamicLayers = Uri.EscapeDataString(
             $"[{{\"id\":501,\"source\":{{\"type\":\"mapLayer\",\"mapLayerId\":0}},\"drawingInfo\":{{\"renderer\":{renderer}}}}}]");
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&dynamicLayers={dynamicLayers}");
         var content = await response.Content.ReadAsStringAsync();
 
@@ -1643,7 +435,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         var dynamicLayers = Uri.EscapeDataString(
             """[{"id":7,"source":{"type":"mapLayer","mapLayerId":0},"drawingInfo":{"renderer":{"type":"heatmap"}}}]""");
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&dynamicLayers={dynamicLayers}");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -1664,7 +456,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             new KeyValuePair<string, string>("f", "json")
         ]);
 
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend",
             payload);
 
@@ -1692,7 +484,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             new KeyValuePair<string, string>("dynamicLayers", BuildSimpleRendererDynamicLayersJson(dynamicLayerId: 501))
         ]);
 
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{operation}",
             payload);
         var content = await response.Content.ReadAsStringAsync();
@@ -1712,7 +504,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/MapServer/queryLegends")]
     public async Task MapServer_QueryLegends_ReturnsLegendLayers()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryLegends?f=json&size=16");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -1729,7 +521,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             new KeyValuePair<string, string>("f", "json"),
             new KeyValuePair<string, string>("size", "16"),
         ]);
-        var postResponse = await _fixture.Client.PostAsync(
+        var postResponse = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryLegends",
             postPayload);
         var postContent = await postResponse.Content.ReadAsStringAsync();
@@ -1744,7 +536,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task MapServer_Legend_WithUnsupportedFormat_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=html");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -1756,11 +548,11 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task MapServer_Legend_AfterCachedValidRequest_InvalidSizeReturnsBadRequest()
     {
-        var validResponse = await _fixture.Client.GetAsync(
+        var validResponse = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=20,20");
         validResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var invalidResponse = await _fixture.Client.GetAsync(
+        var invalidResponse = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=invalid");
         await invalidResponse.AssertGeoServicesErrorAsync(400);
     }
@@ -1770,7 +562,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task MapServer_Legend_WithThreeSizeComponents_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=20,20,20");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -1782,7 +574,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task MapServer_Legend_WithInvalidIdentifier_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/%20/MapServer/legend?f=json");
+        var response = await Fixture.Client.GetAsync("/rest/services/%20/MapServer/legend?f=json");
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -1792,7 +584,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/query")]
     public async Task MapServer_Query_Get_ReturnsFeatures()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1815,7 +607,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             new KeyValuePair<string, string>("f", "json")
         ]);
 
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
             payload);
 
@@ -1833,7 +625,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/query")]
     public async Task MapServer_ServiceQuery_GetWithLayerId_ReturnsFeatures()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/query?layerId={WebAppFixture.TestLayerId}&where=1%3D1&f=json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1857,7 +649,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             new KeyValuePair<string, string>("f", "json")
         ]);
 
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/query",
             payload);
 
@@ -1881,7 +673,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             new KeyValuePair<string, string>("f", "json")
         ]);
 
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query?returnGeometry=false",
             payload);
 
@@ -1899,7 +691,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/query")]
     public async Task MapServer_ServiceQuery_WithMalformedLayersDelimiter_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/query?layers={WebAppFixture.TestLayerId},&where=1%3D1&f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -1918,7 +710,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             new KeyValuePair<string, string>("unsupportedParam", "true")
         ]);
 
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
             payload);
 
@@ -1939,7 +731,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             """;
 
         using var requestContent = new StringContent(payload, Encoding.UTF8, "text/plain");
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
             requestContent);
 
@@ -1950,51 +742,11 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/find")]
-    public async Task MapServer_Find_Post_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
-    {
-        var response = await PostTextPlainJsonAsync("/find");
-
-        await response.AssertGeoServicesErrorAsync(415, 500);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
-    public async Task MapServer_Export_Post_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
-    {
-        var response = await PostTextPlainJsonAsync("/export");
-
-        await response.AssertGeoServicesErrorAsync(415, 500);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/identify")]
-    public async Task MapServer_Identify_Post_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
-    {
-        var response = await PostTextPlainJsonAsync("/identify");
-
-        await response.AssertGeoServicesErrorAsync(415, 500);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/generateKml")]
-    public async Task MapServer_GenerateKml_Post_WithUnsupportedContentType_ReturnsUnsupportedMediaType()
-    {
-        var response = await PostTextPlainJsonAsync("/generateKml");
-
-        await response.AssertGeoServicesErrorAsync(415, 500);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
     public async Task MapServer_Query_Post_WithInvalidJson_ReturnsBadRequest()
     {
         using var requestContent = new StringContent("{\"where\":\"1=1\"", Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
             requestContent);
 
@@ -2005,108 +757,11 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
-    public async Task MapServer_Find_Get_ReturnsResponse()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId}&f=json");
-
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            var content = await response.Content.ReadAsStringAsync();
-            content.Should().Contain("\"results\"");
-        }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
-    public async Task MapServer_Find_WithGdbVersion_DoesNotRejectParameter()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId}&f=json&gdbVersion=QA");
-
-        var content = await response.Content.ReadAsStringAsync();
-        if (response.StatusCode == HttpStatusCode.BadRequest)
-        {
-            content.Should().NotContain("gdbVersion is not supported.");
-            return;
-        }
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().Contain("\"results\"");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("POST /rest/services/{serviceId}/MapServer/find")]
-    public async Task MapServer_Find_Post_ReturnsResponse()
-    {
-        using var payload = new FormUrlEncodedContent(
-        [
-            new KeyValuePair<string, string>("searchText", "test"),
-            new KeyValuePair<string, string>("layers", WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-            new KeyValuePair<string, string>("f", "json")
-        ]);
-
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find",
-            payload);
-
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            var content = await response.Content.ReadAsStringAsync();
-            content.Should().Contain("\"results\"");
-        }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
-    public async Task MapServer_Find_WithMalformedLayersDelimiter_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId},&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
-    public async Task MapServer_Find_WithMalformedSearchFieldsDelimiter_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId}&searchFields=name,,category&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
-    public async Task MapServer_Find_WithInvalidLayerIdentifier_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId},foo&f=json");
-
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/allLayersAndTables")]
     public async Task MapServer_AllLayersAndTables_ReturnsLayerMetadata()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/allLayersAndTables?f=json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -2130,7 +785,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/allLayersAndTables")]
     public async Task MapServer_AllLayersAndTables_WithInvalidIdentifier_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync("/rest/services/%20/MapServer/allLayersAndTables?f=json");
+        var response = await Fixture.Client.GetAsync("/rest/services/%20/MapServer/allLayersAndTables?f=json");
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -2143,7 +798,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         // Regression for #1454: the ArcGIS Maps SDK for JavaScript and the .NET SDK
         // hydrate sublayers via /MapServer/layers (not /allLayersAndTables). The
         // /layers resource must exist and return the identical {layers,tables} document.
-        var layersResponse = await _fixture.Client.GetAsync(
+        var layersResponse = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/layers?f=json");
         var layersContent = await layersResponse.Content.ReadAsStringAsync();
         layersResponse.StatusCode.Should().Be(HttpStatusCode.OK, layersContent);
@@ -2159,7 +814,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         layer.Fields.Should().NotBeNullOrEmpty();
 
         // Must match the allLayersAndTables document exactly (same handler).
-        var allResponse = await _fixture.Client.GetAsync(
+        var allResponse = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/allLayersAndTables?f=json");
         var allContent = await allResponse.Content.ReadAsStringAsync();
         allResponse.StatusCode.Should().Be(HttpStatusCode.OK, allContent);
@@ -2171,7 +826,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/queryDomains")]
     public async Task MapServer_QueryDomains_ReturnsDomainsArray()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryDomains?f=json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -2190,7 +845,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     public async Task MapServer_QueryDomains_Post_ReturnsDomainsArray()
     {
         using var payload = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryDomains",
             payload);
 
@@ -2207,7 +862,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/queryDomains")]
     public async Task MapServer_QueryDomains_WithUnknownLayer_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryDomains?layers=987654&f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -2220,7 +875,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     public async Task MapServer_FeatureResource_ReturnsSingleFeature()
     {
         // Resolve a real object id from the layer first so the feature lookup is deterministic.
-        var idsResponse = await _fixture.Client.GetAsync(
+        var idsResponse = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&returnIdsOnly=true&f=json");
         idsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var idsContent = await idsResponse.Content.ReadAsStringAsync();
@@ -2229,7 +884,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         idsResult!.ObjectIds.Should().NotBeNullOrEmpty();
         var objectId = idsResult.ObjectIds!.First();
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/{objectId}?f=json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -2246,7 +901,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/{featureId}")]
     public async Task MapServer_FeatureResource_WithUnknownObjectId_ReturnsNotFound()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/2147483646?f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -2264,7 +919,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/generateRenderer")]
     public async Task MapServer_ServiceGenerateRenderer_WithLayer_ReturnsSimpleRenderer()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/generateRenderer?layer={WebAppFixture.TestLayerId}&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -2289,7 +944,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
                 "classificationDef",
                 """{"type":"classBreaksDef","classificationField":"objectid","classificationMethod":"esriClassifyEqualInterval","breakCount":3}""")
         ]);
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/generateRenderer",
             payload);
 
@@ -2308,7 +963,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/generateRenderer")]
     public async Task MapServer_ServiceGenerateRenderer_WithoutLayer_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/generateRenderer?f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -2322,7 +977,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/generateRenderer")]
     public async Task MapServer_GenerateRenderer_ReturnsSimpleRenderer()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/generateRenderer");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -2342,7 +997,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var classificationDef = Uri.EscapeDataString(
             """{"type":"classBreaksDef","classificationField":"objectid","classificationMethod":"esriClassifyEqualInterval","breakCount":3}""");
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/generateRenderer?classificationDef={classificationDef}");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -2361,7 +1016,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     public async Task MapServer_GenerateRenderer_PostWithoutClassificationDef_ReturnsSimpleRenderer()
     {
         using var payload = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/generateRenderer",
             payload);
 
@@ -2377,7 +1032,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords")]
     public async Task MapServer_QueryRelatedRecords_ReturnsRelatedRecordGroups()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/queryRelatedRecords?objectIds=1,2&relationshipId=1");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -2402,7 +1057,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             new KeyValuePair<string, string>("objectIds", "1"),
             new KeyValuePair<string, string>("relationshipId", "1")
         ]);
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/queryRelatedRecords",
             payload);
 
@@ -2421,7 +1076,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/queryRelatedRecords")]
     public async Task MapServer_QueryRelatedRecords_WithUnknownRelationship_ReturnsNotFound()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId=987654");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
@@ -2433,7 +1088,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/queryAttachments")]
     public async Task MapServer_QueryAttachments_ReturnsAttachmentGroups()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/queryAttachments?objectIds=1&f=json");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -2457,7 +1112,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             new KeyValuePair<string, string>("objectIds", "1"),
             new KeyValuePair<string, string>("f", "json")
         ]);
-        var response = await _fixture.Client.PostAsync(
+        var response = await Fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/queryAttachments",
             payload);
 
@@ -2475,322 +1130,9 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/queryAttachments")]
     public async Task MapServer_QueryAttachments_WithoutObjectIds_ReturnsBadRequest()
     {
-        var response = await _fixture.Client.GetAsync(
+        var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/queryAttachments?f=json");
 
         await response.AssertGeoServicesErrorAsync(400);
-    }
-
-    private async Task<HttpResponseMessage> PostTextPlainJsonAsync(string operationPath)
-    {
-        using var content = new StringContent("""{"f":"json"}""", Encoding.UTF8, "text/plain");
-        return await _fixture.Client.PostAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer{operationPath}",
-            content);
-    }
-
-    private async Task<string> SeedGenerateKmlGeometryServiceAsync()
-    {
-        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Test schema not initialized.");
-        var serviceName = $"kml_{Guid.NewGuid().ToString("N")[..8]}";
-        _generateKmlServiceName = serviceName;
-
-        var sql = $$"""
-            INSERT INTO honua.services (
-                service_name,
-                description,
-                srid,
-                supported_formats,
-                capabilities,
-                service_extent
-            )
-            VALUES (
-                '{{serviceName}}',
-                'MapServer generateKml geometry test service',
-                4326,
-                ARRAY['JSON', 'GeoJSON'],
-                ARRAY['Query', 'Extract'],
-                ST_MakeEnvelope(-180, -90, 180, 90, 4326)
-            );
-
-            INSERT INTO honua.layers (
-                layer_id,
-                layer_name,
-                description,
-                table_schema,
-                table_name,
-                geometry_type,
-                srid,
-                extent,
-                default_visibility
-            )
-            VALUES
-                (110, 'KML Point Layer', 'Point geometry test layer', current_schema(), 'features', 'Point', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true),
-                (111, 'KML Line Layer', 'Line geometry test layer', current_schema(), 'features', 'LineString', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true),
-                (112, 'KML Polygon Layer', 'Polygon geometry test layer', current_schema(), 'features', 'Polygon', 4326, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true),
-                (113, 'KML Projected Point Layer', 'Projected point geometry test layer', current_schema(), 'features', 'Point', 3857, ST_MakeEnvelope(-180, -90, 180, 90, 4326), true);
-
-            INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
-            VALUES
-                ('{{serviceName}}', 110, 0),
-                ('{{serviceName}}', 111, 1),
-                ('{{serviceName}}', 112, 2),
-                ('{{serviceName}}', 113, 3);
-
-            INSERT INTO honua.layer_fields (
-                layer_id,
-                field_name,
-                field_type,
-                field_order,
-                max_length,
-                nullable,
-                description
-            )
-            VALUES
-                (110, 'objectid', 'Integer', 0, null, false, 'Object ID'),
-                (110, 'name', 'String', 1, 255, true, 'Name'),
-                (110, 'shape', 'Geometry', 2, null, true, 'Geometry'),
-                (111, 'objectid', 'Integer', 0, null, false, 'Object ID'),
-                (111, 'name', 'String', 1, 255, true, 'Name'),
-                (111, 'shape', 'Geometry', 2, null, true, 'Geometry'),
-                (112, 'objectid', 'Integer', 0, null, false, 'Object ID'),
-                (112, 'name', 'String', 1, 255, true, 'Name'),
-                (112, 'shape', 'Geometry', 2, null, true, 'Geometry'),
-                (113, 'objectid', 'Integer', 0, null, false, 'Object ID'),
-                (113, 'name', 'String', 1, 255, true, 'Name'),
-                (113, 'shape', 'Geometry', 2, null, true, 'Geometry');
-
-            INSERT INTO features (objectid, layer_id, geometry, attributes)
-            VALUES
-                (90110, 110, ST_SetSRID(ST_MakePoint(-157.80, 21.30), 4326), jsonb_build_object('objectid', 90110, 'name', 'KML Point Feature')),
-                (90111, 111, ST_GeomFromText('LINESTRING(-157.9 21.2,-157.7 21.4,-157.5 21.3)', 4326), jsonb_build_object('objectid', 90111, 'name', 'KML Line Feature')),
-                (90112, 112, ST_GeomFromText('POLYGON((-157.9 21.2,-157.7 21.2,-157.7 21.4,-157.9 21.4,-157.9 21.2))', 4326), jsonb_build_object('objectid', 90112, 'name', 'KML Polygon Feature')),
-                (90113, 113, ST_Transform(ST_SetSRID(ST_MakePoint(-157.80, 21.30), 4326), 3857), jsonb_build_object('objectid', 90113, 'name', 'KML Projected Point Feature'));
-            """;
-
-        // #2020: route the global honua.services/layers/service_layers/layer_fields seed through
-        // the schema-mutation advisory lock (combined statement also seeds the per-schema features).
-        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(sql, schema);
-        await SeedGenerateKmlMetadataV2GraphAsync(serviceName);
-        return serviceName;
-    }
-
-    private async Task SeedGenerateKmlMetadataV2GraphAsync(string serviceName)
-    {
-        var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
-        var snapshot = await provider.GetCurrentAsync();
-        var serviceId = $"svc-{serviceName}-map";
-
-        var resources = snapshot.Graph.Resources.ToList();
-        var bindings = snapshot.Graph.StorageBindings.ToList();
-        var publications = snapshot.Graph.Publications.ToList();
-
-        AddGenerateKmlLayer(resources, bindings, publications, serviceId, 110, "KML Point Layer", MetadataV2GeometryType.Point, 4326);
-        AddGenerateKmlLayer(resources, bindings, publications, serviceId, 111, "KML Line Layer", MetadataV2GeometryType.LineString, 4326);
-        AddGenerateKmlLayer(resources, bindings, publications, serviceId, 112, "KML Polygon Layer", MetadataV2GeometryType.Polygon, 4326);
-        AddGenerateKmlLayer(resources, bindings, publications, serviceId, 113, "KML Projected Point Layer", MetadataV2GeometryType.Point, 3857);
-
-        provider.SetGraph(snapshot.Graph with
-        {
-            Revision = snapshot.Graph.Revision + 1,
-            Resources = resources,
-            StorageBindings = bindings,
-            Services = snapshot.Graph.Services
-                .Append(new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = serviceId, Name = serviceName },
-                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-                    Protocols = [ServiceProtocols.MapServer],
-                    SpatialReference = MetadataV2SpatialReference.Wgs84,
-                    Settings = new MetadataV2ServiceSettings { MaxFeaturesPerLayer = 10_000 },
-                })
-                .ToArray(),
-            Publications = publications,
-        });
-    }
-
-    private static void AddGenerateKmlLayer(
-        List<MetadataV2Resource> resources,
-        List<MetadataV2StorageBinding> bindings,
-        List<MetadataV2Publication> publications,
-        string serviceId,
-        int layerId,
-        string name,
-        MetadataV2GeometryType geometryType,
-        int srid)
-    {
-        var resourceId = $"res-{serviceId}-{layerId}";
-        var bindingId = $"bind-{serviceId}-{layerId}";
-
-        resources.Add(new MetadataV2Resource
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = name },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            StorageBindingIds = [bindingId],
-            SchemaFields =
-            [
-                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
-                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
-                new MetadataV2Field
-                {
-                    Name = "shape",
-                    Type = MetadataV2FieldType.Geometry,
-                    Nullable = true,
-                    SemanticRoles = ["geometry"],
-                },
-            ],
-            Spatial = new MetadataV2ResourceSpatial
-            {
-                SpatialReference = new MetadataV2SpatialReference
-                {
-                    Srid = srid,
-                    Crs = $"EPSG:{srid}",
-                    IsGeographic = srid == 4326,
-                },
-                GeometryType = geometryType,
-                PrimaryGeometryField = "shape",
-            },
-            Display = new MetadataV2ResourceDisplay
-            {
-                DefaultVisibility = true,
-                DisplayField = "name",
-            },
-        });
-
-        bindings.Add(new MetadataV2StorageBinding
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = bindingId, Name = bindingId },
-            ResourceId = resourceId,
-            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            Locator = "features",
-            StorageLayerId = layerId,
-        });
-
-        publications.Add(new MetadataV2Publication
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = $"pub-{serviceId}-{layerId}", Name = name },
-            ServiceId = serviceId,
-            ResourceId = resourceId,
-            StorageBindingId = bindingId,
-            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
-            PublicationType = MetadataV2PublicationType.EsriMapLayer,
-            Identifier = new MetadataV2PublicationIdentifier
-            {
-                Value = layerId.ToString(CultureInfo.InvariantCulture),
-                IsNumeric = true,
-            },
-        });
-    }
-
-    private static string BuildSimpleRendererDynamicLayersJson(int dynamicLayerId)
-        => $"[{BuildSimpleRendererDynamicLayerObjectJson(dynamicLayerId)}]";
-
-    private static string BuildSimpleRendererDynamicLayerObjectJson(int dynamicLayerId)
-        => $$"""
-             {
-               "id": {{dynamicLayerId}},
-               "source": {
-                 "type": "mapLayer",
-                 "mapLayerId": {{WebAppFixture.TestLayerId}}
-               },
-               "definitionExpression": "1=1",
-               "drawingInfo": {
-                 "renderer": {
-                   "type": "simple",
-                   "symbol": {
-                     "type": "esriSMS",
-                     "style": "esriSMSCircle",
-                     "color": [255, 0, 0, 255],
-                     "size": 12,
-                     "outline": {
-                       "type": "esriSLS",
-                       "style": "esriSLSSolid",
-                       "color": [255, 0, 0, 255],
-                       "width": 1
-                     }
-                   }
-                 }
-               }
-             }
-             """;
-
-    [IntegrationTest]
-    [Operation(Operations.Find)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
-    public async Task MapServer_Find_ReturnsFindResults()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=Test&layers=0&returnGeometry=true&f=json");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-
-        var find = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.FindResponse);
-        find.Should().NotBeNull();
-        find!.Results.Should().NotBeNullOrEmpty();
-
-        var hit = find.Results!.First();
-        hit.LayerId.Should().Be(0);
-        hit.LayerName.Should().NotBeNullOrWhiteSpace();
-        hit.FoundFieldName.Should().NotBeNullOrWhiteSpace();
-        hit.Value.Should().NotBeNullOrWhiteSpace();
-        hit.Attributes.Should().NotBeNullOrEmpty();
-        hit.Attributes.Should().ContainKeys("description", "category", "timestamp");
-        hit.Geometry.Should().NotBeNull();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Find)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
-    public async Task MapServer_Find_WithEmptySearchFields_ReturnsFindResults()
-    {
-        // Esri clients (ArcGIS API for Python) send searchFields= empty, which is the
-        // original honua-server#1771 repro that 500'd.
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=a&layers=0&searchFields=&returnGeometry=true&f=json");
-
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-
-        var find = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.FindResponse);
-        find.Should().NotBeNull();
-        find!.Results.Should().NotBeNull();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Find)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
-    public async Task MapServer_Find_WithContainsFalse_UsesExactMatch()
-    {
-        // contains=false => exact (case-insensitive) match. 'Test Feature' is an exact
-        // value in the seed; 'Test' alone must not match under exact semantics.
-        var exact = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find" +
-            $"?searchText={Uri.EscapeDataString("Test Feature")}&layers=0&searchFields=name&contains=false&f=json");
-        var exactContent = await exact.Content.ReadAsStringAsync();
-        exact.StatusCode.Should().Be(HttpStatusCode.OK, exactContent);
-        var exactFind = JsonSerializer.Deserialize(exactContent, MapServerJsonContext.Default.FindResponse);
-        exactFind!.Results.Should().NotBeNullOrEmpty();
-        exactFind.Results!.Should().OnlyContain(r => r.FoundFieldName == "name");
-
-        var partial = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find" +
-            $"?searchText=Test&layers=0&searchFields=name&contains=false&f=json");
-        var partialContent = await partial.Content.ReadAsStringAsync();
-        partial.StatusCode.Should().Be(HttpStatusCode.OK, partialContent);
-        var partialFind = JsonSerializer.Deserialize(partialContent, MapServerJsonContext.Default.FindResponse);
-        partialFind!.Results.Should().BeNullOrEmpty();
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Find)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
-    public async Task MapServer_Find_WithoutLayers_ReturnsBadRequest()
-    {
-        var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=Test&f=json");
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

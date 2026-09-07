@@ -77,9 +77,26 @@ parent at 88% while `ImageServerEndpointsTests` alone was a 24.1 min union.
 
 **A single test class can be the floor.** When one class already exceeds 75% of
 the shard's cap, no whole-class move reaches the target and the follow-up is to
-split the class in source. That is the open state of `GeoServices MapServer`
-(`MapServerEndpointTests`, 22.9 min of a 29 min cap) and `Core Endpoints`
+split the class in source. `Core Endpoints` remains in that state
 (`FeatureServerEndpointTests`, 24.6 min of a 32 min cap).
+
+`GeoServices MapServer` previously had the same floor: `MapServerEndpointTests`
+occupied 22.9 min of a 29 min cap. Run 34150993948 subsequently exhausted that
+cap after 1743 seconds while still producing output (2 seconds idle), leaving
+no completed TRX. The source split in #4533 preserves its 123 test methods and
+141 parameterized cases across three classes: metadata/query/legend in the
+existing shard (52 cases), export/tile-package/KML in `GeoServices MapServer
+Export` (57 cases), and identify/find in `GeoServices MapServer Identify`
+(32 cases). All use the same per-test lifecycle and cleanup. The two sibling
+shards retain the original 29-minute test and 39-minute job caps. The minor
+MapServer classes still belong to `GeoServices Geometry VectorTile and
+Versioning`; its catch-all excludes all three endpoint classes.
+
+Source counts and exact ownership do not prove timing headroom. Complete
+source-bound runs of all three partitions must establish the measured wall
+time and at least 25% headroom; verification remains pending until those
+artifacts are available. Later tests, including the QGIS point-literal
+regressions in #4523, must be included when assessing their final branch.
 
 ## Signals
 
