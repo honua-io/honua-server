@@ -32,6 +32,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
 {
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task TryReserveAsync_AcrossTwoNodesWithSameKey_ExactlyOneWins()
     {
         using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -49,6 +50,7 @@ public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task TryReserveAsync_TenConcurrentCallersAcrossNodes_ExactlyOneWins()
     {
         using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -66,6 +68,7 @@ public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ReleaseAsync_WithTheOwningToken_FreesTheKeyForAnotherNode()
     {
         using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -86,6 +89,7 @@ public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ReleaseAsync_WithALapsedToken_LeavesTheCurrentOwnersReservation()
     {
         using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -110,6 +114,7 @@ public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ReleaseAsync_AfterTheResponseWasRecorded_LeavesTheRecordedResponse()
     {
         using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -133,6 +138,7 @@ public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task TryGetAsync_WhileAnotherNodeHoldsTheReservation_ReturnsNull()
     {
         using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -148,6 +154,7 @@ public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task SetAsync_ThenTryGetAsync_ReplaysTheResponseToAnotherNode()
     {
         using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -166,6 +173,7 @@ public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task Scopes_DifferingOnlyByPrincipalOrLayer_DoNotShareAReservation()
     {
         using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
