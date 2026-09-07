@@ -217,6 +217,7 @@ public sealed class StudioPackageLifecycleServiceTests
         var publication = await service.CreatePublicationRequestAsync(
             version.ItemId,
             secondVersion.VersionId,
+            expectedCurrentVersionId: secondVersion.VersionId,
             intent: null,
             warningAcknowledgement: null,
             actorId: "tester");
@@ -291,6 +292,7 @@ public sealed class StudioPackageLifecycleServiceTests
         var exception = await Assert.ThrowsAsync<ArgumentException>(() => service.CreatePublicationRequestAsync(
             version!.ItemId,
             version.VersionId,
+            expectedCurrentVersionId: version.VersionId,
             new StudioPublicationIntent { Route = "relative", Visibility = "world" },
             warningAcknowledgement: null,
             actorId: "tester"));
@@ -592,7 +594,13 @@ public sealed class StudioPackageLifecycleServiceTests
         var dashboardVersion = await service.SaveDraftAsVersionAsync(dashboardDraft.DraftId, "first save", "alice");
         Assert.NotNull(dashboardVersion);
         timeProvider.Advance(TimeSpan.FromMinutes(1));
-        var publication = await service.CreatePublicationRequestAsync(dashboardVersion!.ItemId, dashboardVersion.VersionId, intent: null, warningAcknowledgement: null, actorId: "alice");
+        var publication = await service.CreatePublicationRequestAsync(
+            dashboardVersion!.ItemId,
+            dashboardVersion.VersionId,
+            expectedCurrentVersionId: dashboardVersion.VersionId,
+            intent: null,
+            warningAcknowledgement: null,
+            actorId: "alice");
         Assert.NotNull(publication);
         Assert.Equal(StudioPublicationRequestStatus.Accepted, publication!.Status);
 
@@ -818,6 +826,58 @@ public sealed class StudioPackageLifecycleServiceTests
             () => service.GetVersionAsync(itemId, versionId));
     }
 
+    // honua-server#3980: the in-memory store must apply the approval's expected current version
+    // as a compare-and-set inside the same lock that moves the published pointer.
+    [UnitTest]
+    public async Task CreatePublicationRequest_CurrentPointerMovedAfterValidation_ThrowsPointerConflict()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var service = BuildServiceProvider(store).GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "publication-cas",
+            WorkspaceId = "studio",
+            OwnerId = "tester",
+            ActorId = "tester",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+        });
+        var approved = await service.SaveDraftAsVersionAsync(draft.DraftId, "first save", "tester");
+        Assert.NotNull(approved);
+
+        // The draft saved here is what a concurrent author lands between validation and actuation.
+        var reopened = await service.ReopenVersionAsync(approved!.ItemId, approved.VersionId, "tester");
+        Assert.NotNull(reopened);
+        var updated = await service.UpdateDraftAsync(reopened!.DraftId, new UpdateStudioPackageDraftCommand
+        {
+            PackageKey = reopened.PackageKey,
+            WorkspaceId = reopened.WorkspaceId,
+            OwnerId = reopened.OwnerId,
+            Envelope = BuildEnvelope("POPULATION > 1000", "content.parcels"),
+            Generation = reopened.Generation,
+            ActorId = "tester",
+        });
+        Assert.NotNull(updated);
+        var superseding = await service.SaveDraftAsVersionAsync(updated!.DraftId, "second save", "tester");
+        Assert.NotNull(superseding);
+
+        var conflict = await Assert.ThrowsAsync<StudioPublicationPointerConflictException>(
+            () => service.CreatePublicationRequestAsync(
+                approved.ItemId,
+                approved.VersionId,
+                expectedCurrentVersionId: approved.VersionId,
+                intent: null,
+                warningAcknowledgement: null,
+                actorId: "tester"));
+
+        Assert.Equal(approved.ItemId, conflict.ItemId);
+        Assert.Equal(approved.VersionId, conflict.ExpectedCurrentVersionId);
+        Assert.Equal(superseding!.VersionId, conflict.ActualCurrentVersionId);
+        var pointers = await store.GetPointersAsync(approved.ItemId);
+        Assert.NotNull(pointers);
+        Assert.Null(pointers!.PublishedVersionId);
+        Assert.Equal(superseding.VersionId, pointers.CurrentVersionId);
+    }
+
     private static ServiceProvider BuildServiceProvider(
         IStudioPackageStore? store = null,
         TimeProvider? timeProvider = null)
@@ -1032,6 +1092,7 @@ public sealed class StudioPackageLifecycleServiceTests
 
         public Task<StudioPublicationRequest> CreatePublicationRequestAsync(
             StudioPublicationRequest request,
+            Guid? expectedCurrentVersionId,
             CancellationToken cancellationToken = default)
             => Task.FromException<StudioPublicationRequest>(new NotSupportedException());
 

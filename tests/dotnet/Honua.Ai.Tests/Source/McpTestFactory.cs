@@ -178,7 +178,8 @@ internal static class McpTestFactory
             StudioDraftMutationContext context,
             CancellationToken cancellationToken = default) => Receipt(
                 await lifecycle.CreatePublicationRequestAsync(
-                    itemId, versionId, intent, warningAcknowledgement, actorId, cancellationToken).ConfigureAwait(false),
+                    itemId, versionId, expectedCurrentVersionId: versionId, intent, warningAcknowledgement,
+                    actorId, cancellationToken).ConfigureAwait(false),
                 "studio.content.create-publication-request");
 
         public Task<StudioDraftMutationReceipt<StudioPublicationRequest>> CreatePublicationRequestAsync(

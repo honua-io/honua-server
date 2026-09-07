@@ -473,7 +473,14 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             throw new InvalidOperationException("The saved Studio version no longer matches the sealed content hash.");
         }
 
-        var publication = await Lifecycle.CreatePublicationRequestAsync(payload.ItemId, payload.VersionId, payload.Intent,
+        // honua-server#3980: ValidateAsync asserted that the item's current pointer equalled
+        // payload.VersionId, so that is the pointer the approval was granted against. Actuation
+        // reloads the version but cannot re-check the pointer without reintroducing the same
+        // read-then-write window, so the expectation travels into the store, which compares it
+        // atomically with the published-pointer update and raises
+        // StudioPublicationPointerConflictException when a draft was saved in between.
+        var publication = await Lifecycle.CreatePublicationRequestAsync(payload.ItemId, payload.VersionId,
+                expectedCurrentVersionId: payload.VersionId, payload.Intent,
                 payload.WarningAcknowledgement, payload.ActorId, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");

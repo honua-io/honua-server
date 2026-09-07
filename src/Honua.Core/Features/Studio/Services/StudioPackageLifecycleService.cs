@@ -453,6 +453,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     public async Task<StudioPublicationRequest?> CreatePublicationRequestAsync(
         Guid itemId,
         Guid versionId,
+        Guid? expectedCurrentVersionId,
         StudioPublicationIntent? intent,
         string? warningAcknowledgement,
         string? actorId,
@@ -461,6 +462,10 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         using var activity = ActivitySource.StartActivity("studio.package.publish-request.create");
         activity?.SetTag("studio.item.id", itemId.ToString("D"));
         activity?.SetTag("studio.version.id", versionId.ToString("D"));
+        if (expectedCurrentVersionId is { } expectedCurrent)
+        {
+            activity?.SetTag("studio.item.current-version.expected", expectedCurrent.ToString("D"));
+        }
 
         var version = await _store.GetVersionAsync(itemId, versionId, cancellationToken).ConfigureAwait(false);
         if (version is null)
@@ -493,7 +498,12 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             CreatedAt = _timeProvider.GetUtcNow(),
         };
 
-        var stored = await _store.CreatePublicationRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        // honua-server#3980: the store applies expectedCurrentVersionId as a compare-and-set on the
+        // item's current pointer, atomically with the published-pointer move, and throws
+        // StudioPublicationPointerConflictException when a draft was saved after validation.
+        var stored = await _store
+            .CreatePublicationRequestAsync(request, expectedCurrentVersionId, cancellationToken)
+            .ConfigureAwait(false);
         activity?.SetTag("studio.publish.status", stored.Status.ToString());
         return stored;
     }
