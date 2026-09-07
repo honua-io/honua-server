@@ -79,10 +79,38 @@ public sealed class StacCatalogTests : IClassFixture<WebAppFixture>
             .Select(e => e.GetString()!)
             .ToList();
 
-        conformsTo.Should().Contain("https://api.stacspec.org/v1.0.0/core");
-        conformsTo.Should().Contain("https://api.stacspec.org/v1.0.0/item-search");
-        conformsTo.Should().Contain("https://api.stacspec.org/v1.0.0/collections");
+        conformsTo.Should().BeEquivalentTo(
+            ExpectedConformanceClasses,
+            "honua-server#4425: the landing page declares fourteen conformance classes and the " +
+            "tests asserted three, so nine were never checked — dropping or misspelling one is a " +
+            "public compliance claim that no longer matches the runtime");
     }
+
+    /// <summary>
+    /// Every conformance URI the STAC catalog advertises, written out from the STAC API and OGC
+    /// API specifications rather than referenced from the production constants, so a change to
+    /// those constants has to be re-stated here deliberately (honua-server#4425).
+    /// </summary>
+    private static readonly string[] ExpectedConformanceClasses =
+    [
+        // STAC API core + extensions.
+        "https://api.stacspec.org/v1.0.0/core",
+        "https://api.stacspec.org/v1.0.0/item-search",
+        "https://api.stacspec.org/v1.0.0/ogcapi-features",
+        "https://api.stacspec.org/v1.0.0/collections",
+        "https://api.stacspec.org/v1.0.0/item-search#fields",
+        "https://api.stacspec.org/v1.0.0/item-search#sort",
+        "https://api.stacspec.org/v1.0.0/item-search#filter",
+        // OGC API - Features Part 1, required by STAC API - Features.
+        "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core",
+        "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
+        "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
+        // OGC API - Features Part 3 / CQL2, required by the Filter extension.
+        "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
+        "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
+        "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
+        "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json"
+    ];
 
     [IntegrationTest]
     [Operation(Operations.StacCatalog)]
@@ -176,8 +204,9 @@ public sealed class StacCatalogTests : IClassFixture<WebAppFixture>
             .Select(e => e.GetString()!)
             .ToList();
 
-        conformsTo.Should().Contain("https://api.stacspec.org/v1.0.0/core");
-        conformsTo.Should().Contain("https://api.stacspec.org/v1.0.0/ogcapi-features");
+        conformsTo.Should().BeEquivalentTo(
+            ExpectedConformanceClasses,
+            "/stac/conformance and the landing page must advertise the identical set");
         json.RootElement.GetProperty("links")
             .EnumerateArray()
             .Should()
