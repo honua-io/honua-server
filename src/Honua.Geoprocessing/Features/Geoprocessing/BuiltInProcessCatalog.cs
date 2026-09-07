@@ -1047,7 +1047,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "conversion.geometry-format",
             Title = "Geometry Format Conversion",
-            Description = "Converts a geometry into another interchange format such as WKT, GeoJSON, WKB, or EWKT.",
+            Description = "Converts a geometry into another interchange format. Reads a base64-encoded WKB or PostGIS EWKB geometry and re-encodes it as ISO WKT, RFC 7946 GeoJSON, standard WKB, or PostGIS EWKT. Publishes a GeometryFormatResult JSON document carrying the converted value, its encoding (text, or base64 for WKB), the geometry type and the SRID; a raw OGC response returns that document, as it does for every scalar-result catalog operation. The 'wkb' target emits STANDARD WKB and reports the SRID on the result only \u2014 request 'ewkt' when the SRID must travel inside the value. The 'geojson' target follows RFC 7946: no CRS member, right-hand-rule ring winding, and a projected input is rejected rather than relabelled as WGS 84 longitude/latitude.",
             Category = "conversion",
             Parameters =
             [
