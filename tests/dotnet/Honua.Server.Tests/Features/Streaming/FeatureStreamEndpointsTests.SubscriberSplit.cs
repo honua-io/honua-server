@@ -70,7 +70,7 @@ public sealed partial class FeatureStreamEndpointsTests
                 Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new RlsPolicy[]
             {
-                new() { Role = "*", Service = "*", Layer = "*", Attribute = "name", ClaimType = ClaimTypes.Role },
+                new() { Role = "*", Service = "*", Layer = "*", Attribute = "NAME", ClaimType = ClaimTypes.Role },
             });
 
         await using var fixture = new WebAppFixture()
