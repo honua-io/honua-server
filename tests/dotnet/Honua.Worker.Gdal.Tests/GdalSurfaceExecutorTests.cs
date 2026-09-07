@@ -310,7 +310,7 @@ public sealed class GdalSurfaceExecutorTests
     /// derived from the input, not a snapshot of the output. A pass-through, a wrong band, or a
     /// slope computed from the wrong source all break it.
     /// </remarks>
-    [GdalCliFact("gdaldem")]
+    [GdalCliFact("gdaldem", "gdalinfo")]
     [Protocol(ProtocolNames.TestQuality)]
     [Operation(Operations.TestInfrastructure)]
     public async Task Slope_WithRealGdaldem_OverConstantDem_ProducesZeroSlopeEverywhere()
@@ -347,12 +347,22 @@ public sealed class GdalSurfaceExecutorTests
             // #4400: the value oracle. The source DEM is constant at
             // GdalCli.SampleDemConstantElevation, so slope must be identically zero. Without
             // this the assertions above pass for any GeoTIFF gdaldem happens to emit.
-            var statistics = await GdalCli.TryReadBandStatisticsAsync(payload, scratch).ConfigureAwait(false);
-            statistics.Should().NotBeNull(
-                "gdalinfo ships with the same gdal-bin package as gdaldem, so the oracle must be computable");
-            statistics!.Value.Minimum.Should().BeApproximately(
+            var statistics = await GdalCli.ReadBandStatisticsAsync(payload, scratch).ConfigureAwait(false);
+
+            // Shape and coverage first. Extrema alone are not an "everywhere" oracle: a raster
+            // carrying one valid zero cell and NoData elsewhere reports minimum == maximum == 0
+            // too, because gdalinfo -stats skips NoData. gdaldem runs without -compute_edges, so
+            // the one-cell border is allowed to be NoData and the interior is the coverage floor.
+            statistics.Width.Should().Be(GdalCli.SampleDemSize, "slope preserves the source grid");
+            statistics.Height.Should().Be(GdalCli.SampleDemSize, "slope preserves the source grid");
+            statistics.ValidPercent.Should().BeGreaterThanOrEqualTo(
+                MinimumSlopeValidPercent,
+                "every interior cell of a fully valid DEM must survive as a slope value; only "
+                + "gdaldem's own edge border may be NoData");
+
+            statistics.Minimum.Should().BeApproximately(
                 0.0, 1e-6, "slope over a constant surface is zero everywhere");
-            statistics.Value.Maximum.Should().BeApproximately(
+            statistics.Maximum.Should().BeApproximately(
                 0.0, 1e-6, "slope over a constant surface is zero everywhere");
         }
         finally
@@ -360,6 +370,16 @@ public sealed class GdalSurfaceExecutorTests
             CleanupScratch(scratch);
         }
     }
+
+    /// <summary>
+    /// Share of the slope raster that must carry a valid (non-NoData) value: everything but the
+    /// one-cell border <c>gdaldem</c> leaves NoData when it is invoked without
+    /// <c>-compute_edges</c>. Asserted as a floor so a GDAL build that does compute the edges
+    /// still passes at 100%.
+    /// </summary>
+    private const double MinimumSlopeValidPercent =
+        100.0 * ((GdalCli.SampleDemSize - 2) * (GdalCli.SampleDemSize - 2))
+        / (GdalCli.SampleDemSize * GdalCli.SampleDemSize);
 
     private static GdalSurfaceJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {

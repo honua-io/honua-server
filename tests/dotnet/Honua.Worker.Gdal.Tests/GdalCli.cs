@@ -87,23 +87,47 @@ internal static class GdalCli
     }
 
     /// <summary>
-    /// Synthesizes a 16×16 single-band Float32 GeoTIFF DEM at the given scratch
-    /// path using <c>gdal_create</c> (when present) or <c>gdal_translate</c>
-    /// as a fallback. Returns the raw GeoTIFF bytes ready to be base64-encoded
-    /// onto the durable spec.
+    /// Edge length of <see cref="GenerateSampleDemAsync"/>'s square sample DEM, in cells.
+    /// </summary>
+    public const int SampleDemSize = 16;
+
+    /// <summary>
+    /// Elevation burned into <see cref="GenerateSampleDemAsync"/>'s Float32 raster. The
+    /// surface is constant, which is what makes an analytical slope/aspect oracle possible
+    /// (honua-server#4400).
+    /// </summary>
+    public const double SampleDemConstantElevation = 100.0;
+
+    /// <summary>
+    /// NoData value stamped on the sample DEM. It deliberately differs from
+    /// <see cref="SampleDemConstantElevation"/> so every cell of the raster is valid, and it
+    /// matches <c>gdaldem</c>'s own default output NoData.
+    /// </summary>
+    public const double SampleDemNoData = -9999.0;
+
+    /// <summary>
+    /// Synthesizes a <see cref="SampleDemSize"/>-square single-band Float32 GeoTIFF DEM at the
+    /// given scratch path using <c>gdal_create</c> (when present) or <c>gdal_translate</c>
+    /// as a fallback. Every cell carries <see cref="SampleDemConstantElevation"/> and none of
+    /// them are NoData. Returns the raw GeoTIFF bytes ready to be base64-encoded onto the
+    /// durable spec.
     /// </summary>
     public static async Task<byte[]> GenerateSampleDemAsync(string scratch)
     {
         Directory.CreateDirectory(scratch);
         var demPath = Path.Join(scratch, "sample-dem.tif");
+        var size = SampleDemSize.ToString(CultureInfo.InvariantCulture);
+        var elevation = SampleDemConstantElevation.ToString(CultureInfo.InvariantCulture);
+        var noData = SampleDemNoData.ToString(CultureInfo.InvariantCulture);
         if (Available("gdal_create"))
         {
             var args = new[]
             {
-                "-outsize", "16", "16",
+                "-outsize", size, size,
                 "-bands", "1",
                 "-ot", "Float32",
-                "-burn", "100",
+                "-burn", elevation,
+                "-a_nodata", noData,
                 "-of", "GTiff",
                 demPath,
             };
@@ -111,58 +135,88 @@ internal static class GdalCli
         }
         else
         {
-            // Fallback: gdal_translate over a tiny VRT. The VRT holds a 16×16
-            // constant-value Float32 dataset so gdaldem has finite slope inputs.
+            // Fallback: gdal_translate over a tiny source-less VRT. Such a band reads as all
+            // zeroes, so -scale rewrites that constant onto the declared elevation and -a_nodata
+            // parks NoData on a value the raster never takes. Emitting the zeroes verbatim under
+            // NoData=0 -- as this fallback first did -- would hand gdaldem a DEM with no valid
+            // cells at all, leaving the statistics oracle downstream nothing to compute
+            // (honua-server#4400).
             var vrtPath = Path.Join(scratch, "sample.vrt");
-            File.WriteAllText(vrtPath, """
-                <VRTDataset rasterXSize="16" rasterYSize="16">
+            File.WriteAllText(vrtPath, $$"""
+                <VRTDataset rasterXSize="{{size}}" rasterYSize="{{size}}">
                   <VRTRasterBand dataType="Float32" band="1">
                     <ColorInterp>Gray</ColorInterp>
-                    <NoDataValue>0</NoDataValue>
                   </VRTRasterBand>
                 </VRTDataset>
                 """);
-            await RunOrThrowAsync("gdal_translate", new[] { "-of", "GTiff", "-a_nodata", "0", vrtPath, demPath }, scratch)
-                .ConfigureAwait(false);
+            var args = new[]
+            {
+                "-of", "GTiff",
+                "-ot", "Float32",
+                "-scale", "0", "1", elevation, elevation,
+                "-a_nodata", noData,
+                vrtPath,
+                demPath,
+            };
+            await RunOrThrowAsync("gdal_translate", args, scratch).ConfigureAwait(false);
         }
         return File.ReadAllBytes(demPath);
     }
 
     /// <summary>
-    /// Elevation burned into <see cref="GenerateSampleDemAsync"/>'s 16x16 Float32 raster. The
-    /// surface is constant, which is what makes an analytical slope/aspect oracle possible
-    /// (honua-server#4400).
+    /// Band-1 extrema together with the coverage they were computed over, so a value oracle can
+    /// show the extrema describe the whole raster rather than a handful of surviving cells.
     /// </summary>
-    public const double SampleDemConstantElevation = 100.0;
+    /// <param name="Width">Raster width, in cells.</param>
+    /// <param name="Height">Raster height, in cells.</param>
+    /// <param name="Minimum">Smallest valid (non-NoData) cell value.</param>
+    /// <param name="Maximum">Largest valid (non-NoData) cell value.</param>
+    /// <param name="ValidPercent">Percentage of cells that are not NoData.</param>
+    public readonly record struct BandStatistics(
+        int Width,
+        int Height,
+        double Minimum,
+        double Maximum,
+        double ValidPercent);
 
     /// <summary>
-    /// Reads band-1 statistics from a GeoTIFF with <c>gdalinfo -json -stats</c>, so a test can
-    /// assert produced cell values instead of magic bytes. Returns <c>null</c> when
-    /// <c>gdalinfo</c> is unavailable and the CLI is not required.
+    /// Reads band-1 statistics and raster shape from a GeoTIFF with <c>gdalinfo -json -stats</c>,
+    /// so a test can assert produced cell values instead of magic bytes. Throws when
+    /// <c>gdalinfo</c> cannot produce them; callers gate on <c>gdalinfo</c> through
+    /// <see cref="GdalCliFactAttribute"/> so an absent tool skips the case rather than reaching
+    /// here.
     /// </summary>
-    public static async Task<(double Minimum, double Maximum)?> TryReadBandStatisticsAsync(
-        byte[] geoTiff,
-        string scratch)
+    public static async Task<BandStatistics> ReadBandStatisticsAsync(byte[] geoTiff, string scratch)
     {
-        if (!Available("gdalinfo") && !RequireCli)
-        {
-            return null;
-        }
-
         Directory.CreateDirectory(scratch);
         var path = Path.Join(scratch, $"stats-{Guid.NewGuid():N}.tif");
         await File.WriteAllBytesAsync(path, geoTiff).ConfigureAwait(false);
 
         var stdout = await RunCapturingAsync("gdalinfo", ["-json", "-stats", path], scratch).ConfigureAwait(false);
         using var document = JsonDocument.Parse(stdout);
+        var size = document.RootElement.GetProperty("size");
         var band = document.RootElement.GetProperty("bands").EnumerateArray().First();
         var metadata = band.GetProperty("metadata").GetProperty(string.Empty);
 
-        var minimum = double.Parse(
-            metadata.GetProperty("STATISTICS_MINIMUM").GetString()!, CultureInfo.InvariantCulture);
-        var maximum = double.Parse(
-            metadata.GetProperty("STATISTICS_MAXIMUM").GetString()!, CultureInfo.InvariantCulture);
-        return (minimum, maximum);
+        return new BandStatistics(
+            size[0].GetInt32(),
+            size[1].GetInt32(),
+            ReadStatistic(metadata, "STATISTICS_MINIMUM"),
+            ReadStatistic(metadata, "STATISTICS_MAXIMUM"),
+            ReadStatistic(metadata, "STATISTICS_VALID_PERCENT"));
+    }
+
+    private static double ReadStatistic(JsonElement metadata, string key)
+    {
+        if (!metadata.TryGetProperty(key, out var raw))
+        {
+            throw new InvalidOperationException(
+                $"gdalinfo -stats reported no {key}; the raster has no valid cells to reconcile against.");
+        }
+
+        return raw.ValueKind == JsonValueKind.Number
+            ? raw.GetDouble()
+            : double.Parse(raw.GetString()!, CultureInfo.InvariantCulture);
     }
 
     private static async Task<string> RunCapturingAsync(string tool, IReadOnlyList<string> args, string scratch)
@@ -238,17 +292,37 @@ public sealed class GdalCliFactAttribute : FactAttribute, ITraitAttribute
     /// Initializes a new instance of the <see cref="GdalCliFactAttribute"/> class.
     /// </summary>
     /// <param name="tool">The GDAL CLI tool required by the test.</param>
-    public GdalCliFactAttribute(string tool)
+    /// <param name="additionalTools">
+    /// Any further CLI tools the case needs, including the auxiliary ones it only uses to build
+    /// its oracle. A test that reads its assertion inputs back through <c>gdalinfo</c> has to
+    /// declare it here: otherwise a host carrying the primary tool but not the auxiliary one runs
+    /// the case and reports a missing package as a bogus regression, instead of skipping cleanly
+    /// the way this attribute promises (honua-server#4400).
+    /// </param>
+    public GdalCliFactAttribute(string tool, params string[] additionalTools)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tool);
+        ArgumentNullException.ThrowIfNull(additionalTools);
 
-        if (GdalCli.Available(tool) || GdalCli.RequireCli)
+        var required = additionalTools.Prepend(tool).ToArray();
+        if (Array.Exists(required, string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("GDAL CLI tool names must be non-empty.", nameof(additionalTools));
+        }
+
+        // HONUA_REQUIRE_GDAL_CLI still wins: the CI job that owns this coverage must fail on a
+        // missing tool -- primary or auxiliary -- rather than quietly skip.
+        if (GdalCli.RequireCli)
         {
             return;
         }
 
-        Skip = $"GDAL CLI tool '{tool}' is not available on PATH. "
-            + $"Set {RequireEnvironmentVariable}=true to fail instead of skipping.";
+        var missing = Array.Find(required, candidate => !GdalCli.Available(candidate));
+        if (missing is not null)
+        {
+            Skip = $"GDAL CLI tool '{missing}' is not available on PATH. "
+                + $"Set {RequireEnvironmentVariable}=true to fail instead of skipping.";
+        }
     }
 }
 
