@@ -44,7 +44,7 @@ jobs:
           echo "sha=$REQUESTED_SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Checkout exact candidate
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.candidate.outputs.sha }}
           fetch-depth: 1

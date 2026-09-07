@@ -61,7 +61,7 @@ jobs:
     # cold run is seconds, not minutes. The ceiling is a bound, not a budget.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           # The additions-only example gate diffs the PR head against its base.
           fetch-depth: 0

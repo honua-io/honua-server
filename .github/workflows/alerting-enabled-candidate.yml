@@ -37,7 +37,7 @@ jobs:
     name: Reject incomplete or unbound receipts
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run fail-closed negative matrix
         run: python3 -m unittest scripts/qualification/test_validate_alerting_candidate.py
 
@@ -63,7 +63,7 @@ jobs:
           echo "sha=${candidate_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Check out exact candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.candidate.outputs.sha }}
 
