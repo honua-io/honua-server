@@ -355,8 +355,12 @@ public sealed class GdalSurfaceExecutorTests
             // the one-cell border is allowed to be NoData and the interior is the coverage floor.
             statistics.Width.Should().Be(GdalCli.SampleDemSize, "slope preserves the source grid");
             statistics.Height.Should().Be(GdalCli.SampleDemSize, "slope preserves the source grid");
-            statistics.ValidPercent.Should().BeGreaterThanOrEqualTo(
-                MinimumSlopeValidPercent,
+            // gdalinfo rounds its percentage (196/256 cells is reported as 76.56%).
+            // Recover the whole-cell count so that rounding is tolerated but losing even
+            // one interior cell still fails the coverage floor.
+            var validCellCount = Math.Round(statistics.ValidPercent * statistics.Width * statistics.Height / 100);
+            validCellCount.Should().BeGreaterThanOrEqualTo(
+                MinimumSlopeValidCellCount,
                 "every interior cell of a fully valid DEM must survive as a slope value; only "
                 + "gdaldem's own edge border may be NoData");
 
@@ -372,14 +376,13 @@ public sealed class GdalSurfaceExecutorTests
     }
 
     /// <summary>
-    /// Share of the slope raster that must carry a valid (non-NoData) value: everything but the
+    /// Number of slope cells that must carry a valid (non-NoData) value: everything but the
     /// one-cell border <c>gdaldem</c> leaves NoData when it is invoked without
     /// <c>-compute_edges</c>. Asserted as a floor so a GDAL build that does compute the edges
-    /// still passes at 100%.
+    /// still passes with every cell valid.
     /// </summary>
-    private const double MinimumSlopeValidPercent =
-        100.0 * ((GdalCli.SampleDemSize - 2) * (GdalCli.SampleDemSize - 2))
-        / (GdalCli.SampleDemSize * GdalCli.SampleDemSize);
+    private const int MinimumSlopeValidCellCount =
+        (GdalCli.SampleDemSize - 2) * (GdalCli.SampleDemSize - 2);
 
     private static GdalSurfaceJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {
