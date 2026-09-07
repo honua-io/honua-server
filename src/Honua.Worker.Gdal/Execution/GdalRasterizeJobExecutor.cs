@@ -192,7 +192,7 @@ internal sealed partial class GdalRasterizeJobExecutor(
     /// input layer by gdal_rasterize. On the <c>-tr</c> path <paramref name="cellSize"/>
     /// surfaces the parsed target cell size so the caller can bound the resolution-derived
     /// output grid against the payload envelope (#2793); it is <c>null</c> on the <c>-ts</c>
-    /// path, which <see cref="GdalOutputGridGuard.TryAdmit"/> bounds inline here.
+    /// path, which <see cref="GdalOutputGridGuard.TryAdmit(long, long, GdalWorkerOptions, out string)"/> bounds inline here.
     /// </summary>
     private static bool TryBuildGridArgs(
         IReadOnlyDictionary<string, string> parameters,
