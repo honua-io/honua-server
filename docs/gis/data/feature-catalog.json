@@ -9593,7 +9593,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.Replicas_AfterCreateAndUnregister_ReflectsLiveRegistryImmediately",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.Replicas_WhenReplicaExists_ReturnsReplicaList"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.Replicas_WhenReplicaExists_ReturnsReplicaList",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaOwnershipEndpointTests.Replicas_AreScopedToTheirOwningPrincipal"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "preview",
@@ -9607,7 +9608,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ReplicaInfo_WhenReplicaExists_ReturnsReplicaMetadata"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ReplicaInfo_WhenReplicaExists_ReturnsReplicaMetadata",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaOwnershipEndpointTests.Replicas_AreScopedToTheirOwningPrincipal"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "preview",
@@ -18987,6 +18989,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_WithCommunityLicense_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_WithLayerOutsideService_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_WithMalformedLayerDelimiter_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaOwnershipEndpointTests.CreateReplica_WithReturnAttachments_IsRejectedRatherThanSilentlyIgnored",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicationDurabilityTests.CreateReplica_PersistsToPostgres_SurvivesCacheEviction",
         "Honua.Server.Tests.Features.Security.FeatureServerReplicationAccessPolicyTests.CreateReplica_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer",
         "Honua.Server.Tests.Features.Security.FeatureServerReplicationAccessPolicyTests.CreateReplica_WithLayerWriteRolePolicy_AllowsMatchingRole",
@@ -19021,6 +19024,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ExtractChanges_WithReplicaContainingInvalidLayerReference_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ExtractChanges_WithoutReplicaId_ReturnIdsOnly_OmitsFeaturePayload",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ExtractChanges_WithoutReplicaId_ServerGenFlow_ReturnsChanges",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaOwnershipEndpointTests.ExtractChanges_ForAnotherPrincipalsReplica_IsDeniedAndStillWorksForTheOwner",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicationDurabilityTests.ExtractChanges_GenerationIncrementsMonotonically",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicationDurabilityTests.ExtractChanges_NewReplica_ReturnsServerGenFields",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicationDurabilityTests.ExtractChanges_WithBaselineReplicaExceedingConfiguredLimit_ReturnsBadRequest",
@@ -19132,6 +19136,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.SynchronizeReplica_MissingReplicaId_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.SynchronizeReplica_ValidReplica_ReturnsSuccess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.SynchronizeReplica_WithReplicaContainingInvalidLayerReference_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaOwnershipEndpointTests.SynchronizeReplica_ForAnotherPrincipalsReplica_IsDeniedAndAppliesNoEdits",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicationDurabilityTests.SynchronizeReplica_AdvancesSyncGeneration",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicationDurabilityTests.SynchronizeReplica_UploadFailure_DoesNotAdvanceGeneration",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicationDurabilityTests.SynchronizeReplica_Upload_AppliesEditsAndAdvancesGen",
@@ -19156,6 +19161,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.UnRegisterReplica_MissingReplicaId_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.UnRegisterReplica_NonexistentReplica_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.UnRegisterReplica_ValidReplica_ReturnsSuccess",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaOwnershipEndpointTests.UnRegisterReplica_ForAnotherPrincipalsReplica_IsDeniedAndLeavesTheReplicaRegistered",
         "Honua.Server.Tests.Features.Security.FeatureServerReplicationAccessPolicyTests.UnRegisterReplica_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer",
         "Honua.Server.Tests.Features.Security.FeatureServerServiceRbacTests.UnRegisterReplica_WithReadOnlyRole_AndMalformedBody_ReturnsForbiddenBeforeBodyValidation",
         "Honua.Server.Tests.Features.Security.FeatureServerServiceRbacTests.UnRegisterReplica_WithReadOnlyRole_ReturnsForbidden"
