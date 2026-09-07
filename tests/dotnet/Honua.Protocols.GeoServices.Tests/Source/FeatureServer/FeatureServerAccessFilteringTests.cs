@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
@@ -42,6 +44,127 @@ public sealed class FeatureServerAccessFilteringTests
         layers.ValueKind.Should().Be(JsonValueKind.Array);
         layers.GetArrayLength().Should().Be(1);
         layers[0].GetProperty("id").GetInt32().Should().Be(ServiceRbacTestFixture.AlphaLayerId);
+    }
+
+    /// <summary>
+    /// #4386: the disclosure question this fixture exists to answer, finally asked.
+    /// <para>
+    /// The three sibling tests above prove <b>metadata</b> filtering for the role-gated hidden
+    /// layer — it is absent from <c>getEstimates</c>, its domains are filtered, relationships to
+    /// it are hidden. None of them ever issued
+    /// <c>GET /rest/services/{svc}/FeatureServer/{hiddenLayerId}/query</c> as the <c>reader</c>
+    /// principal, so nothing proved that the layer's <i>rows</i> are refused rather than merely
+    /// its listing suppressed.
+    /// </para>
+    /// <para>
+    /// The hidden layer is seeded with real, marked rows first, so "zero records" is not vacuous,
+    /// and the same query is then issued by a principal that does hold <c>hidden-reader</c> and
+    /// asserted to return exactly those rows — the positive control that makes the denial
+    /// measure the authorization decision rather than an empty layer.
+    /// </para>
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_HiddenLayerAsReader_ReturnsZeroRecordsWhileTheEntitledRoleReadsThem()
+    {
+        const long firstObjectId = 8601;
+        const long secondObjectId = 8602;
+        const string firstMarker = "hidden-audit-row-8601";
+        const string secondMarker = "hidden-audit-row-8602";
+
+        using var factory = CreateFactory();
+
+        // Seed the hidden layer so the denial below is refusing rows that exist.
+        var writer = factory.Services.GetRequiredService<IFeatureWriter>();
+        foreach (var (objectId, marker) in new[] { (firstObjectId, firstMarker), (secondObjectId, secondMarker) })
+        {
+            await writer.CreateAsync(
+                ServiceRbacTestFixture.BetaLayerId,
+                Feature.Create(
+                    objectId,
+                    null,
+                    ImmutableDictionary<string, object?>.Empty
+                        .Add("objectid", objectId)
+                        .Add("audit_id", objectId)
+                        .Add("hidden_status", marker)),
+                CancellationToken.None);
+        }
+
+        var query =
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/"
+            + $"{ServiceRbacTestFixture.BetaLayerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=false";
+
+        // ---- the denied principal --------------------------------------------------
+        using (var reader = ServiceRbacTestFixture.CreateClient(factory, "reader"))
+        using (var denied = await reader.GetAsync(query))
+        {
+            var body = await denied.Content.ReadAsStringAsync();
+            await denied.AssertGeoServicesErrorAsync((int)HttpStatusCode.Forbidden);
+
+            ReadObjectIds(body).Should().BeEmpty(
+                "a principal without 'hidden-reader' must receive no record from the hidden layer; body: {0}",
+                body);
+            body.Should().NotContain(firstMarker);
+            body.Should().NotContain(secondMarker);
+            body.Should().NotContain(firstObjectId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        // ---- the entitled principal, same query, same rows --------------------------
+        using (var entitled = ServiceRbacTestFixture.CreateClient(factory, "reader", "hidden-reader"))
+        using (var allowed = await entitled.GetAsync(query))
+        {
+            var body = await allowed.Content.ReadAsStringAsync();
+            allowed.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+            ReadObjectIds(body).Should().BeEquivalentTo(
+                new[] { firstObjectId, secondObjectId },
+                "the hidden layer really does hold these rows on this route; body: {0}",
+                body);
+            body.Should().Contain(firstMarker);
+            body.Should().Contain(secondMarker);
+        }
+    }
+
+    private static IReadOnlyList<long> ReadObjectIds(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return [];
+        }
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(body);
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+
+        using (document)
+        {
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("features", out var features)
+                || features.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            var ids = new List<long>();
+            foreach (var feature in features.EnumerateArray())
+            {
+                if (feature.TryGetProperty("attributes", out var attributes)
+                    && attributes.TryGetProperty("objectid", out var objectId)
+                    && objectId.TryGetInt64(out var value))
+                {
+                    ids.Add(value);
+                }
+            }
+
+            return ids;
+        }
     }
 
     [IntegrationTest]

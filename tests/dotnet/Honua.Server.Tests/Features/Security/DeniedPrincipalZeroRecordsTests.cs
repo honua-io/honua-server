@@ -13,6 +13,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Npgsql;
 using DomainAccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
@@ -141,11 +142,20 @@ public sealed class DeniedPrincipalZeroRecordsTests
             return;
         }
 
-        deniedResponse.StatusCode.Should().Be(
-            ExpectedDenialStatus(surface),
-            "the credential does not hold {0}: {1}",
-            DeniedRole,
-            deniedBody);
+        if (surface == FeatureServerSurface)
+        {
+            // GeoServices carries authorization outcomes in its own error envelope, so the
+            // shared helper is the correct status assertion for that surface.
+            await deniedResponse.AssertGeoServicesErrorAsync((int)HttpStatusCode.Forbidden);
+        }
+        else
+        {
+            deniedResponse.StatusCode.Should().Be(
+                ExpectedDenialStatus(surface),
+                "the credential does not hold {0}: {1}",
+                DeniedRole,
+                deniedBody);
+        }
 
         // The assertion #4386 was filed for: zero records, not merely a status.
         ReadRecordIds(surface, deniedBody).Should().BeEmpty(
@@ -245,7 +255,10 @@ public sealed class DeniedPrincipalZeroRecordsTests
         using var request = new HttpRequestMessage(HttpMethod.Get, RouteFor(surface, layerId));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.Token);
         request.Headers.Referrer = new Uri(Referer);
-        return await fixture.Client.SendAsync(request, ct);
+        // A dedicated client so no ambient credential (the shared fixture's admin
+        // client carries an X-API-Key) can satisfy the request under test.
+        using var client = fixture.CreateClient();
+        return await client.SendAsync(request, ct);
     }
 
     private static string RouteFor(string surface, int layerId) => surface switch
@@ -259,8 +272,6 @@ public sealed class DeniedPrincipalZeroRecordsTests
 
     private static HttpStatusCode ExpectedDenialStatus(string surface) => surface switch
     {
-        // GeoServices maps a denial onto its own error envelope carried by a 200 body
-        // (asserted separately by the zero-record and marker checks).
         FeatureServerSurface => HttpStatusCode.Forbidden,
         OgcFeaturesSurface => HttpStatusCode.Forbidden,
         ODataSurface => HttpStatusCode.Forbidden,
