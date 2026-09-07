@@ -890,6 +890,11 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryFormatConversionExecutionProofTests.cs",
           "test": "ConvertsPolygonWithHole_ToEveryAdvertisedEncoding_PreservingTopologyRingsAndSrid",
           "assertion": "Registered production executor converts a committed polygon-with-hole EWKB fixture to every advertised target. Each output is parsed back with an independent reader and asserted against literal ring ordinates, hole preservation, exterior-minus-hole area, EWKT/WKB SRID behaviour including a SRID-less input, and scalar content type; unadvertised targets are rejected at submit and at execution."
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryFormatConversionExecutionProofTests.cs",
+          "test": "Oracle_DroppedHoleOrSwappedAxes_AreRejectedEvenThoughTheOutputParses",
+          "assertion": "Demonstrated negatives: real conversions of a hole-dropped polygon and an axis-transposed copy produce valid, parseable outputs in the requested encodings; the frozen ring/hole/ordinate oracle rejects both."
         }
       ],
       "entryPoint": "job"
@@ -1070,6 +1075,11 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/CalculateFieldExecutionProofTests.cs",
           "test": "Calculate_FilteredRows_WritesExactValuesAndLeavesExcludedRowsUntouched",
           "assertion": "Owning FeatureServer calculate route runs against a real published PostGIS layer with literal seeded rows. Canonical protocol read-back asserts exact computed values for selected rows, seed-identical values for excluded rows, integer/string field-type fidelity, and that a rejected expression or unknown field changes nothing."
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/CalculateFieldExecutionProofTests.cs",
+          "test": "Oracle_CalculateThatIgnoresTheFilter_IsRejected",
+          "assertion": "Demonstrated negative: a real calculate over where=1=1 returns a valid 200 with a plausible updated count and well-formed rows; the frozen post-state oracle rejects it because the excluded row changed."
         }
       ],
       "entryPoint": "protocol"
