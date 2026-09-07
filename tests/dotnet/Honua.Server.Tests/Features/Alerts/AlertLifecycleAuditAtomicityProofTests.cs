@@ -110,7 +110,7 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         // 1. The audit sink fails at exactly the point the lifecycle write has
         //    already reached its persistence boundary.
         _fault.Fail = true;
-        var response = await PostAsync(route, idempotencyKey);
+        using var response = await PostAsync(route, idempotencyKey);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // 2. The lifecycle mutation IS externally observable...
@@ -162,7 +162,7 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         // 7. Retrying the same operator action with the same correlation and
         //    idempotency identity creates ONE logical transition and ONE domain audit
         //    action, not duplicates.
-        var retry = await PostAsync(route, idempotencyKey);
+        using var retry = await PostAsync(route, idempotencyKey);
         retry.StatusCode.Should().Be(HttpStatusCode.OK);
         await ReconcileAsync();
 
@@ -216,15 +216,15 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
     // Harness
     // -------------------------------------------------------------------------
 
-    private Task<HttpResponseMessage> PostAsync(string route, string idempotencyKey)
+    private async Task<HttpResponseMessage> PostAsync(string route, string idempotencyKey)
     {
-        var request = new HttpRequestMessage(
+        using var request = new HttpRequestMessage(
             HttpMethod.Post, $"/api/v1/admin/observability/alerts/{_eventId}/{route}");
         request.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
         request.Content = JsonContent.Create(route == "suppress"
             ? new { note = "proof", suppressUntil = DateTimeOffset.UtcNow.AddHours(1) }
             : (object)new { note = "proof" });
-        return _client.SendAsync(request);
+        return await _client.SendAsync(request);
     }
 
     /// <summary>
