@@ -139,6 +139,12 @@ if service == "logs":
         # The real CLI paginates and prints one count per page; the pass path
         # must survive a multi-page answer, and the query must be bounded.
         assert "--start-time" in args, "filter-log-events must be bounded by --start-time"
+        if "events[].message" in args:
+            # Platform lines read back from CloudWatch when the invoke tail lacks them.
+            pattern = args[args.index("--filter-pattern") + 1]
+            if os.environ.get("STUB_CLOUDWATCH_INIT") == "invoke" and pattern == "INIT_REPORT":
+                emit(["INIT_REPORT Init Duration: 21364.18 ms\tPhase: invoke\tStatus: ok"])
+            emit([])
         emit("0\n0" if fail == "cloudwatch" else "0\n0\n1\n0")
     bad()
 if service != "lambda": bad()
@@ -331,6 +337,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertEqual(architecture, receipt["deployment"]["architecture"])
                 self.assertEqual(150.25, receipt["verification"]["coldStartInitDurationMs"])
                 self.assertEqual("init", receipt["verification"]["coldStartInitPhase"])
+                self.assertEqual("tail", receipt["verification"]["coldStartEvidenceSource"])
                 serving = receipt["serving"]
                 self.assertEqual({"beforeVersion":"7", "afterVersion":"8", "rollbackVersion":"7"}, serving["alias"])
                 for phase in ("deployed", "baseline", "candidate", "rollback"):
@@ -454,6 +461,15 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 if failure not in ("log-delete", "ownership"):
                     self.assertFalse(state["logs"], failure)
                 self.assertFalse(state["row"], failure)
+
+    def test_cold_start_missing_from_the_tail_is_read_from_cloudwatch(self):
+        """The 4 KB invoke tail can cut the INIT_REPORT off; CloudWatch carries the same line."""
+        result, receipt, state, _ = self.run_lane("cold-start", STUB_CLOUDWATCH_INIT="invoke")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("pass", receipt["result"])
+        self.assertEqual(21364.18, receipt["verification"]["coldStartInitDurationMs"])
+        self.assertEqual("invoke", receipt["verification"]["coldStartInitPhase"])
+        self.assertEqual("cloudwatch", receipt["verification"]["coldStartEvidenceSource"])
 
     def test_cold_start_beyond_the_init_window_is_recorded_from_init_report(self):
         """Init longer than Lambda's init window is re-run in the first invoke; its INIT_REPORT is the evidence."""
