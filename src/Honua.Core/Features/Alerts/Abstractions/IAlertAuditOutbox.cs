@@ -20,8 +20,8 @@ public interface IAlertAuditOutbox
 {
     /// <summary>
     /// Returns pending intents oldest-first: those whose lifecycle mutation is
-    /// committed, whose domain audit record has not been written yet, and whose
-    /// completion lease (if any) has expired.
+    /// committed, whose domain audit record has not been written yet, whose completion
+    /// lease (if any) has expired, and whose retry backoff has elapsed.
     /// </summary>
     /// <param name="limit">Maximum number of intents to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -48,11 +48,13 @@ public interface IAlertAuditOutbox
     /// rather than a missing one.
     /// </remarks>
     /// <param name="outboxId">Intent identity.</param>
+    /// <param name="claimToken">Token identifying this claimant; required at completion.</param>
     /// <param name="claimedUntil">When the lease expires.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True when this caller now owns the intent's completion.</returns>
     Task<bool> TryClaimAsync(
         long outboxId,
+        Guid claimToken,
         DateTimeOffset claimedUntil,
         CancellationToken cancellationToken = default);
 
@@ -63,12 +65,18 @@ public interface IAlertAuditOutbox
     /// racing reconciler can never produce a second audit action.
     /// </summary>
     /// <param name="outboxId">Intent identity.</param>
+    /// <param name="claimToken">The token this caller claimed the intent with.</param>
     /// <param name="auditId">Durable audit identity assigned by the audit sink.</param>
     /// <param name="completedAt">Completion timestamp.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True when this call completed the intent; false when it was already complete.</returns>
+    /// <returns>
+    /// True when this call completed the intent; false when the intent was already
+    /// complete or the lease had been reclaimed by another completer, which means the
+    /// audit record this caller wrote may be a duplicate.
+    /// </returns>
     Task<bool> CompleteAsync(
         long outboxId,
+        Guid claimToken,
         string auditId,
         DateTimeOffset completedAt,
         CancellationToken cancellationToken = default);
@@ -79,10 +87,16 @@ public interface IAlertAuditOutbox
     /// </summary>
     /// <param name="outboxId">Intent identity.</param>
     /// <param name="error">Short, non-sensitive failure description.</param>
+    /// <param name="nextAttemptAt">
+    /// When the intent becomes eligible again. Backing a repeatedly failing intent off
+    /// is what stops a poison payload from monopolising every oldest-first batch and
+    /// starving newer intents that would succeed.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task RecordAttemptFailureAsync(
         long outboxId,
         string error,
+        DateTimeOffset nextAttemptAt,
         CancellationToken cancellationToken = default);
 }
 

@@ -204,6 +204,15 @@ internal static class ObservabilityAlertEndpoints
             return BadRequest($"'note' must not exceed {MaxNoteLength} characters.");
         }
 
+        var supplied = context.Request.Headers[IdempotencyKeyHeader].ToString();
+        if (supplied.Length > MaxIdempotencyKeyLength)
+        {
+            // Truncating would map two logically distinct operator actions that share a
+            // prefix onto one identity, silently swallowing the second mutation.
+            return BadRequest(
+                $"'{IdempotencyKeyHeader}' must not exceed {MaxIdempotencyKeyLength} characters.");
+        }
+
         var actor = ResolveActor(context);
         var correlationId = context.TraceIdentifier;
         var command = new AlertLifecycleCommand
@@ -215,7 +224,7 @@ internal static class ObservabilityAlertEndpoints
             SuppressUntil = suppressUntil,
             OccurredAt = DateTimeOffset.UtcNow,
             CorrelationId = correlationId,
-            IdempotencyKey = ResolveIdempotencyKey(context, eventId, action, correlationId),
+            IdempotencyKey = ResolveIdempotencyKey(supplied, eventId, action, correlationId),
             Details = details
         };
 
@@ -253,15 +262,11 @@ internal static class ObservabilityAlertEndpoints
     /// identity yields one logical transition and one domain audit action.
     /// </summary>
     private static string ResolveIdempotencyKey(
-        HttpContext context, long eventId, AlertLifecycleAction action, string correlationId)
+        string supplied, long eventId, AlertLifecycleAction action, string correlationId)
     {
-        var supplied = context.Request.Headers[IdempotencyKeyHeader].ToString();
+        // An oversized header is rejected upstream rather than truncated, so the
+        // identity here is always the caller's in full.
         var identity = string.IsNullOrWhiteSpace(supplied) ? correlationId : supplied.Trim();
-        if (identity.Length > MaxIdempotencyKeyLength)
-        {
-            identity = identity[..MaxIdempotencyKeyLength];
-        }
-
         return string.Create(
             CultureInfo.InvariantCulture,
             $"{eventId}:{AlertAuditActions.ForLifecycle(action)}:{identity}");

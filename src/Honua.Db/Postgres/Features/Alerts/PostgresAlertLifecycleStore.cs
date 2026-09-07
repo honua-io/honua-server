@@ -29,7 +29,7 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
 
     private const string OutboxProjection =
         "outbox_id, event_id, action, actor, note, details, correlation_id, " +
-        "idempotency_key, occurred_at, audit_id, completed_at";
+        "idempotency_key, occurred_at, audit_id, completed_at, attempts";
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _lifecycleTable;

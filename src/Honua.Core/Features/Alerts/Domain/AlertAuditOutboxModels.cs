@@ -142,6 +142,9 @@ public sealed record AlertAuditOutboxEntry
     /// <summary>Action-specific audit detail payload.</summary>
     public string Details { get; init; } = string.Empty;
 
+    /// <summary>Failed completion attempts so far; drives the retry backoff.</summary>
+    public int Attempts { get; init; }
+
     /// <summary>Durable audit identity once the intent has been completed.</summary>
     public string? AuditId { get; init; }
 

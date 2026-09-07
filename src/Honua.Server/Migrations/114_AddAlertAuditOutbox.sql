@@ -24,11 +24,16 @@ CREATE TABLE IF NOT EXISTS honua.alert_audit_outbox (
     completed_at     TIMESTAMPTZ NULL,
     attempts         INTEGER     NOT NULL DEFAULT 0,
     last_error       TEXT        NULL,
+    -- Retry backoff. A poison intent the audit sink keeps rejecting must not
+    -- monopolise every oldest-first batch and starve newer, healthy intents.
+    next_attempt_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     -- Completion lease. A completer claims an intent before writing its audit
     -- record so the request path and the reconciler - or two reconcilers - cannot
     -- both write one. The lease expires so a claimant that dies does not strand
-    -- the intent.
-    claimed_until    TIMESTAMPTZ NULL
+    -- the intent, and the token proves at completion time that the writer still
+    -- held the lease it wrote under.
+    claimed_until    TIMESTAMPTZ NULL,
+    claim_token      UUID        NULL
 );
 
 COMMENT ON TABLE honua.alert_audit_outbox IS
@@ -42,5 +47,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_alert_audit_outbox_idempotency
 
 -- The reconciler's drain predicate: pending intents, oldest first.
 CREATE INDEX IF NOT EXISTS ix_alert_audit_outbox_pending
-    ON honua.alert_audit_outbox (outbox_id)
+    ON honua.alert_audit_outbox (next_attempt_at, outbox_id)
     WHERE completed_at IS NULL;

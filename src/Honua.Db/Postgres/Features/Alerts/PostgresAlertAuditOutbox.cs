@@ -17,7 +17,7 @@ internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
 {
     private const string Columns =
         "outbox_id, event_id, action, actor, note, details, correlation_id, " +
-        "idempotency_key, occurred_at, audit_id, completed_at";
+        "idempotency_key, occurred_at, audit_id, completed_at, attempts";
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _table;
@@ -38,7 +38,8 @@ internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
             FROM {_table}
             WHERE completed_at IS NULL
               AND (claimed_until IS NULL OR claimed_until < now())
-            ORDER BY outbox_id
+              AND next_attempt_at <= now()
+            ORDER BY next_attempt_at, outbox_id
             LIMIT @limit
             """;
 
@@ -72,14 +73,17 @@ internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
 
     public async Task<bool> TryClaimAsync(
         long outboxId,
+        Guid claimToken,
         DateTimeOffset claimedUntil,
         CancellationToken cancellationToken = default)
     {
         // A single conditional UPDATE is the fence: exactly one caller can move an
-        // unclaimed (or lease-expired) pending intent into a claimed state.
+        // unclaimed (or lease-expired) pending intent into a claimed state, and the
+        // token it stamps is what proves at completion time that the lease it wrote
+        // the audit record under was never reclaimed.
         var sql = $"""
             UPDATE {_table}
-            SET claimed_until = @claimed_until
+            SET claimed_until = @claimed_until, claim_token = @claim_token
             WHERE outbox_id = @outbox_id
               AND completed_at IS NULL
               AND (claimed_until IS NULL OR claimed_until < now())
@@ -88,6 +92,7 @@ internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("outbox_id", NpgsqlDbType.Bigint, outboxId);
+        command.Parameters.AddWithValue("claim_token", NpgsqlDbType.Uuid, claimToken);
         command.Parameters.AddWithValue("claimed_until", NpgsqlDbType.TimestampTz, claimedUntil);
 
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
@@ -95,24 +100,27 @@ internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
 
     public async Task<bool> CompleteAsync(
         long outboxId,
+        Guid claimToken,
         string auditId,
         DateTimeOffset completedAt,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(auditId);
 
-        // The completed_at IS NULL predicate is the fence: two workers racing to
-        // complete the same intent cannot both win, so a crash-recovered intent
-        // can never yield a second domain audit action.
+        // Completing requires BOTH that the intent is still pending and that this
+        // caller still holds the lease it wrote under. A completer whose lease expired
+        // mid-write loses here instead of overwriting the winner's audit identity, and
+        // the false return tells it its own write may be a duplicate.
         var sql = $"""
             UPDATE {_table}
             SET audit_id = @audit_id, completed_at = @completed_at, last_error = NULL
-            WHERE outbox_id = @outbox_id AND completed_at IS NULL
+            WHERE outbox_id = @outbox_id AND completed_at IS NULL AND claim_token = @claim_token
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("outbox_id", NpgsqlDbType.Bigint, outboxId);
+        command.Parameters.AddWithValue("claim_token", NpgsqlDbType.Uuid, claimToken);
         command.Parameters.AddWithValue("audit_id", NpgsqlDbType.Text, auditId);
         command.Parameters.AddWithValue("completed_at", NpgsqlDbType.TimestampTz, completedAt);
 
@@ -122,11 +130,16 @@ internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
     public async Task RecordAttemptFailureAsync(
         long outboxId,
         string error,
+        DateTimeOffset nextAttemptAt,
         CancellationToken cancellationToken = default)
     {
         var sql = $"""
             UPDATE {_table}
-            SET attempts = attempts + 1, last_error = @last_error, claimed_until = NULL
+            SET attempts = attempts + 1,
+                last_error = @last_error,
+                claimed_until = NULL,
+                claim_token = NULL,
+                next_attempt_at = @next_attempt_at
             WHERE outbox_id = @outbox_id AND completed_at IS NULL
             """;
 
@@ -134,6 +147,7 @@ internal sealed class PostgresAlertAuditOutbox : IAlertAuditOutbox
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("outbox_id", NpgsqlDbType.Bigint, outboxId);
         command.Parameters.AddWithValue("last_error", NpgsqlDbType.Text, Truncate(error, 512));
+        command.Parameters.AddWithValue("next_attempt_at", NpgsqlDbType.TimestampTz, nextAttemptAt);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -159,5 +173,6 @@ internal static class AlertAuditOutboxMapper
         OccurredAt = reader.GetFieldValue<DateTimeOffset>(8),
         AuditId = reader.IsDBNull(9) ? null : reader.GetString(9),
         CompletedAt = reader.IsDBNull(10) ? null : reader.GetFieldValue<DateTimeOffset>(10),
+        Attempts = reader.GetInt32(11),
     };
 }

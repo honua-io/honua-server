@@ -7,9 +7,14 @@ using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Db.Postgres.Features.Alerts;
+using Honua.Db.Postgres.Features.AuditLog;
 using Honua.Server.Features.Alerts;
 using Honua.TestKit;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
 using Xunit;
@@ -47,19 +52,39 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
 
     public AlertLifecycleAuditAtomicityProofTests()
     {
-        _fixture = new WebAppFixture().ConfigureServices(services =>
+        _fixture = new WebAppFixture();
+        var fault = _fault;
+        string? Schema() => _fixture.CurrentSchema;
+
+        // The production registrations construct these stores WITHOUT a schema name, and
+        // SchemaSearchPath.QualifyTable then hard-qualifies every statement to "honua",
+        // which the fixture's per-test search_path cannot redirect. Rebind them to the
+        // fixture's isolated schema — resolved lazily, because the schema is created
+        // after the host is built — so the proof exercises the real stores against the
+        // rows it seeds instead of a shared "honua" it does not own.
+        _fixture.ConfigureServices(services =>
         {
+            services.RemoveAll<IAlertLifecycleStore>();
+            services.AddScoped<IAlertLifecycleStore>(provider => new PostgresAlertLifecycleStore(
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), Schema()));
+
+            services.RemoveAll<IAlertAuditOutbox>();
+            services.AddScoped<IAlertAuditOutbox>(provider => new PostgresAlertAuditOutbox(
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), Schema()));
+
+            services.RemoveAll<IAlertEventQuery>();
+            services.AddScoped<IAlertEventQuery>(provider => new PostgresAlertEventQuery(
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), Schema()));
+
             // Decorate, never replace: the production PostgresAuditLog stays behind the
             // switch so a disarmed run writes a real, hash-chained audit row.
-            var descriptor = services.LastOrDefault(service => service.ServiceType == typeof(IAuditLog))
-                ?? throw new InvalidOperationException("No IAuditLog registration to decorate.");
-            services.Remove(descriptor);
-
-            var fault = _fault;
-            services.Add(new ServiceDescriptor(
-                typeof(IAuditLog),
-                provider => new FaultInjectingAuditLog(ResolveInner(provider, descriptor), fault),
-                descriptor.Lifetime));
+            services.RemoveAll<IAuditLog>();
+            services.AddScoped<IAuditLog>(provider => new FaultInjectingAuditLog(
+                new PostgresAuditLog(
+                    provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                    provider.GetRequiredService<ILogger<PostgresAuditLog>>(),
+                    Schema()),
+                fault));
         });
     }
 
@@ -223,24 +248,6 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
             .Should().ContainSingle("a restart must drain pending audit intents unattended");
     }
 
-    private static object ResolveInner(IServiceProvider provider, ServiceDescriptor descriptor)
-    {
-        if (descriptor.ImplementationInstance is { } instance)
-        {
-            return instance;
-        }
-
-        if (descriptor.ImplementationFactory is { } factory)
-        {
-            return factory(provider);
-        }
-
-        return ActivatorUtilities.CreateInstance(
-            provider,
-            descriptor.ImplementationType
-                ?? throw new InvalidOperationException("The IAuditLog registration has no implementation type."));
-    }
-
     private static string LifecycleName(short status) => status switch
     {
         1 => "acknowledged",
@@ -399,9 +406,9 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         private readonly IAuditLog _inner;
         private readonly AuditFaultSwitch _fault;
 
-        public FaultInjectingAuditLog(object inner, AuditFaultSwitch fault)
+        public FaultInjectingAuditLog(IAuditLog inner, AuditFaultSwitch fault)
         {
-            _inner = (IAuditLog)inner;
+            _inner = inner;
             _fault = fault;
         }
 

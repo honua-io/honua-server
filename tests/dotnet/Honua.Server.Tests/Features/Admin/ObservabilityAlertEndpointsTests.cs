@@ -259,19 +259,19 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
         public Task<AlertAuditOutboxEntry?> GetAsync(long outboxId, CancellationToken cancellationToken = default)
             => Task.FromResult<AlertAuditOutboxEntry?>(null);
 
-        public Task<bool> TryClaimAsync(long outboxId, DateTimeOffset claimedUntil,
+        public Task<bool> TryClaimAsync(long outboxId, Guid claimToken, DateTimeOffset claimedUntil,
             CancellationToken cancellationToken = default)
             => Task.FromResult(true);
 
-        public Task<bool> CompleteAsync(long outboxId, string auditId, DateTimeOffset completedAt,
-            CancellationToken cancellationToken = default)
+        public Task<bool> CompleteAsync(long outboxId, Guid claimToken, string auditId,
+            DateTimeOffset completedAt, CancellationToken cancellationToken = default)
         {
             Completed.Add((outboxId, auditId));
             return Task.FromResult(true);
         }
 
         public Task RecordAttemptFailureAsync(long outboxId, string error,
-            CancellationToken cancellationToken = default)
+            DateTimeOffset nextAttemptAt, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
 
