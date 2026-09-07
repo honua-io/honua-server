@@ -358,6 +358,68 @@ This manual workflow predates the automated suite above and remains as a fallbac
 6. For JS lane extensions: record JS-EXT-01 (PBF/MVT decode fidelity) and JS-EXT-02 (tile load pipeline) in the `extensions` array.
 7. Save as `<run-id>-js-mvt.cert.json`.
 
+## Release-tier receipts
+
+The envelope above is the **nightly** contract: it answers this repository's own
+baseline diff, and it is what every committed baseline under
+`tests/baselines/client-compat/` records.
+
+The 2026.1 release gate answers a different consumer — the `client-interop-cert-v1`
+normalizer in
+[`honua-io/honua-evidence`](https://github.com/honua-io/honua-evidence)
+(`scripts/fetch-certification-producers.py`). That normalizer admits a receipt only
+when the receipt itself binds the exact candidate, and it rejects the **whole**
+receipt on any single divergence rather than downgrading the offending row. The
+governed field list is mirrored into this repository at
+[`certification/client-protocol-requirements.v1.json`](../../certification/client-protocol-requirements.v1.json)
+under `receiptContract`, so producers and checks read one in-repo copy of it.
+
+A release-tier receipt is the nightly envelope plus these bindings:
+
+| Field | Contract |
+|---|---|
+| `producer_source_sha` | Exact 40-character commit of the workflow run that produced the receipt. |
+| `image_digest` | Exact `sha256:` digest of the candidate image the run executed against. A locally built image cannot produce a release receipt. |
+| `auth_policy_revision` | Governed auth-policy revision, alongside the existing `fixture_revision` and `server_config_revision`. |
+| `client_id` | Governed canonical client name (for example `OWSLib`). Not interchangeable with the CI runner lane. |
+| `runner_lane` | The CI lane, carried separately from `client_id`. |
+| `protocol_profile` | The exercised wire contract profile. |
+| `deployment_target` | The governed execution context (`local-docker` for every bounded-roster row today). Stricter than the consumer, which reads the target from the requirement: naming it on the receipt stops evidence from one execution context certifying a cell governed for another. |
+| `results[].performed_by` | The application client that performed the request. A generic HTTP probe may not stand in for it. |
+| `results[].request_url` | Absolute URL carrying no credentials — neither in userinfo nor in a query parameter such as `?token=` or `?api_key=`. `null` only for a `skip`, where no request was made. |
+| `results[].exercised_capabilities` | The governed scenario facets the observation genuinely exercised. A `pass` may not claim a facet absent from this list. |
+
+The release lane supplies the bindings it alone knows through the environment:
+`HONUA_CANDIDATE_IMAGE_DIGEST`, `HONUA_PRODUCER_SOURCE_SHA`,
+`HONUA_AUTH_POLICY_REVISION`, `HONUA_DEPLOYMENT_TARGET`, and — because the governed
+denominator names *symbolic* revisions such as `docker/cng/seed.sql@<source_sha>` and
+`cog-1.0` rather than content digests, and the join compares them exactly —
+`HONUA_FIXTURE_REVISION` and `HONUA_SERVER_CONFIG_REVISION`. Every one of them is
+unset at nightly and developer tier, where the revisions stay content digests.
+
+Two differences from the nightly envelope are deliberate:
+
+- **Status vocabulary.** The governed vocabulary is `pass`, `fail`, `skip`,
+  `not_applicable` — underscored. The nightly envelope, the baseline diff and the
+  matrix documentation all use the hyphenated `not-applicable`. The translation
+  happens once, in `build_release_receipt`, so the nightly contract is untouched.
+- **Omission over invention.** An observation that cannot name the request it
+  performed, that recorded a `client_identity` other than the governed client, or
+  that did not name the facets it exercised, is omitted from the release receipt and
+  listed under `unsubstantiated`. The governed aggregator emits a requirement it
+  sees no observation for as a `skip`, which the release gate fails closed on, so
+  omission costs one cell; publishing a malformed row would cost the entire receipt.
+  `summary` is recomputed over what the receipt actually publishes, so an omitted
+  observation cannot leave a pass count the receipt does not support.
+
+`shared.cert_envelope.CertificationEvidenceCollector.build_release_receipt` produces
+these receipts and refuses to emit at all when the candidate bindings are missing or
+when the server was source-built. The bounded roster they answer, and the fail-closed
+verdict over them, live in
+[`certification/client-protocol-requirements.v1.json`](../../certification/client-protocol-requirements.v1.json)
+and `scripts/certification/verify-client-certification-receipts.py`
+([#3434](https://github.com/honua-io/honua-server/issues/3434)).
+
 ## Evidence Version
 
 | Version | Date | Change |
@@ -389,3 +451,4 @@ This manual workflow predates the automated suite above and remains as a fallbac
 | 1.0.24 | 2026-05-07 | Record the restored #938 release-evidence contract for `client-interop-nightly.yml`: the full scheduled matrix requires one current envelope with a committed baseline for every pair in `expected-pairs.json`, the compose runtime includes Redis and split HTTP/gRPC ports, lane failures upload `lane-exit-code.txt` and `compose.log`, and manual dispatch subsets are scoped by `--client-lanes`. |
 | 1.0.25 | 2026-05-18 | Add the licensed ArcGIS Pro desktop evidence scaffold for `client_lane: "desktop-arcgis"`: manual/scheduled self-hosted Windows workflow, ArcPy runner, artifact/redaction guardrails, and fixture-only contract tests. This is distinct from `arcgis-stub` and does not require ArcGIS Pro in ordinary PR gates (#1019). |
 | 1.0.26 | 2026-05-18 | Tighten the `desktop-arcgis` licensed runner contract with headless layout/map-frame PNG export, strict live-artifact validation, and an artifact manifest covering envelopes, screenshots, logs, and project artifacts (#1019). |
+| 1.0.27 | 2026-09-07 | Document the release-tier receipt contract for the bounded 2026.1 external-client roster: the candidate/producer/auth bindings, the governed client identity and per-result request provenance the `client-interop-cert-v1` consumer requires, the underscored `not_applicable` status vocabulary, and the omit-rather-than-invent rule. The nightly envelope is unchanged (#3434). |
