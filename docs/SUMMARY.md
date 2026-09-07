@@ -141,6 +141,7 @@
 - [Control Plane migration guide](reference/control-plane-migration-guide.md)
 - [Integration patterns](reference/integration-patterns.md)
 - [Saved-map collaboration op-log](reference/saved-map-collaboration-op-log.md)
+- [Feature locks (collaborative editing)](reference/collaboration/feature-locks.md)
 - Compatibility
   - [OGC conformance](reference/compatibility/ogc-conformance.md)
   - [CITE status](cite-status.md)

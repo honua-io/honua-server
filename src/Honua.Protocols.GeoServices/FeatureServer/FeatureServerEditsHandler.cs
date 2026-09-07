@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.AttributeRules;
+using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -21,6 +22,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
@@ -54,6 +56,8 @@ internal sealed class FeatureServerEditsHandler(
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly IPluginEditPipeline _pluginPipeline = dependencies.PluginPipeline;
     private readonly IApplyEditsIdempotencyStore _idempotencyStore = dependencies.IdempotencyStore;
+    private readonly IFeatureEditGuard _editGuard = dependencies.EditGuard;
+    private readonly IFeatureLockService _featureLocks = dependencies.FeatureLocks;
     private readonly ILogger<FeatureServerEditsHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -308,6 +312,15 @@ internal sealed class FeatureServerEditsHandler(
             // updates with that snapshot's token, then re-read, merge and validate again only
             // after a confirmed precondition failure. Never retry an ambiguous commit or a
             // caller-supplied precondition, and never replay a multi-operation request.
+            // Collaborative-editing lock enforcement (#4402). A lease handed out by
+            // /collaboration/feature-locks is binding on this write path: an update or
+            // delete of a feature another editor currently holds is rejected with the
+            // stable per-feature FeatureLocked code instead of silently overwriting the
+            // holder. The scope is null — and every per-feature check is skipped — when
+            // no lease is held anywhere, which is the uncontended default.
+            var lockScope = await ResolveEditLockScopeAsync(
+                httpContext, service, publication, layerId, cancellationToken).ConfigureAwait(false);
+
             var retryStaleUpdate = request.Updates is { Length: 1 } &&
                 request.Adds is not { Length: > 0 } && request.Deletes is not { Length: > 0 } &&
                 request.Preconditions.IsDefaultOrEmpty && versionContext is not { IsDefault: false };
@@ -315,7 +328,7 @@ internal sealed class FeatureServerEditsHandler(
             FeatureEditResult editResult;
             for (var attempt = 0; ; attempt++)
             {
-                editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, editPrincipal, cancellationToken);
+                editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, editPrincipal, lockScope, cancellationToken);
                 editContext.GuardUpdateSnapshot = retryStaleUpdate;
                 await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
                     .ConfigureAwait(false);
@@ -477,13 +490,15 @@ internal sealed class FeatureServerEditsHandler(
         MetadataV2Resource resource,
         int storageLayerId,
         EditPrincipal principal,
+        EditLockScope? lockScope,
         CancellationToken cancellationToken)
     {
         var context = new EditOperationContext
         {
             AddResults = request.Adds is { Length: > 0 } ? new EditResult?[request.Adds.Length] : null,
             UpdateResults = request.Updates is { Length: > 0 } ? new EditResult?[request.Updates.Length] : null,
-            DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null
+            DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null,
+            LockScope = lockScope
         };
 
         await ProcessAddOperationsAsync(request, context, resource, principal, cancellationToken);
@@ -659,6 +674,22 @@ internal sealed class FeatureServerEditsHandler(
                 // existingFeature is guaranteed to have a value here (the null case returns above),
                 // so the previous `existingFeature?.Id ?? objectId` had a dead `?? objectId` branch
                 // that could never execute; access .Value.Id directly instead.
+                // Collaborative-editing lease enforcement (#4402): reject the slot when
+                // another editor holds an active lock on this feature. Emitted as the stable
+                // per-feature FeatureLocked code so an Esri client can branch on it, and
+                // recorded as a validation error so rollbackOnFailure=true fails the whole
+                // batch. Either way the stored row is left exactly as the holder left it.
+                if (await EvaluateEditLockAsync(context.LockScope, objectId, "update", cancellationToken)
+                        .ConfigureAwait(false) is { } updateLockConflict)
+                {
+                    context.HasValidationErrors = true;
+                    context.UpdateResults![i] = CreateFailureResult(
+                        code: GeoServicesEditErrorCodes.FeatureLocked,
+                        description: updateLockConflict,
+                        objectId: objectId);
+                    continue;
+                }
+
                 var internalObjectId = existingFeature.Value.Id;
                 context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
                 context.UpdateSnapshotPreconditions[internalObjectId] = new FeatureEditPrecondition
@@ -841,6 +872,19 @@ internal sealed class FeatureServerEditsHandler(
                 context.DeleteResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.NotPermitted,
                     description: SanitizeEditErrorMessage(ownerDecision.Reason!, "Edit not permitted."),
+                    objectId: objectId);
+                continue;
+            }
+
+            // Collaborative-editing lease enforcement (#4402), same contract as the update
+            // path: a feature another editor holds cannot be deleted out from under them.
+            if (await EvaluateEditLockAsync(context.LockScope, objectId, "delete", cancellationToken)
+                    .ConfigureAwait(false) is { } deleteLockConflict)
+            {
+                context.HasValidationErrors = true;
+                context.DeleteResults![i] = CreateFailureResult(
+                    code: GeoServicesEditErrorCodes.FeatureLocked,
+                    description: deleteLockConflict,
                     objectId: objectId);
                 continue;
             }
@@ -1442,6 +1486,74 @@ internal sealed class FeatureServerEditsHandler(
         public List<Feature?> DeleteFeatures { get; } = new();
         public List<int> DeleteIndexes { get; } = new();
         public bool HasValidationErrors { get; set; }
+
+        /// <summary>
+        /// Collaborative-editing lock scope for this request, or <see langword="null"/>
+        /// when no lease is held anywhere and per-feature evaluation is unnecessary (#4402).
+        /// </summary>
+        public EditLockScope? LockScope { get; init; }
+    }
+
+    /// <summary>
+    /// The collaborative-editing lock context for one applyEdits request: which
+    /// service/layer the targeted features belong to in the lease namespace, and the
+    /// holder identity the caller is editing under (#4402).
+    /// </summary>
+    private sealed record EditLockScope(string ServiceName, int LayerId, LockHolder? Holder);
+
+    /// <summary>
+    /// Builds the lock scope for a request, or returns <see langword="null"/> when the
+    /// lease store holds nothing at all so the batch can skip guard evaluation entirely.
+    /// </summary>
+    private async Task<EditLockScope?> ResolveEditLockScopeAsync(
+        HttpContext httpContext,
+        MetadataV2Service service,
+        MetadataV2Publication publication,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        if (!await FeatureEditLockEnforcement.IsEvaluationRequiredAsync(_featureLocks, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        // The lease namespace is (service name, protocol layer id, protocol object id):
+        // exactly the triple a GeoServices client used to claim the lease, and the same
+        // triple the OGC API Features and OData write paths resolve to for the same row.
+        var serviceName = FeatureEditLockEnforcement.ResolveServiceName(service, publication);
+        return string.IsNullOrWhiteSpace(serviceName)
+            ? null
+            : new EditLockScope(
+                serviceName,
+                FeatureEditLockEnforcement.ResolveLayerId(publication, layerId),
+                FeatureEditLockEnforcement.ResolveHolder(httpContext));
+    }
+
+    /// <summary>
+    /// Evaluates one feature mutation against the active leases, returning the
+    /// client-facing description when the edit is blocked by another editor's lease.
+    /// </summary>
+    private async Task<string?> EvaluateEditLockAsync(
+        EditLockScope? scope,
+        long objectId,
+        string operation,
+        CancellationToken cancellationToken)
+    {
+        if (scope is null)
+        {
+            return null;
+        }
+
+        var conflict = await FeatureEditLockEnforcement.EvaluateAsync(
+            _editGuard,
+            scope.ServiceName,
+            scope.LayerId,
+            objectId,
+            operation,
+            scope.Holder,
+            cancellationToken).ConfigureAwait(false);
+
+        return conflict is null ? null : FeatureEditLockEnforcement.Describe(conflict);
     }
 
     /// <summary>

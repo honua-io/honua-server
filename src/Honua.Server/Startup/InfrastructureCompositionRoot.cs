@@ -14,6 +14,7 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Configuration;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
@@ -68,6 +69,14 @@ internal static class InfrastructureCompositionRoot
         // audit events once, at the shared edit-pipeline boundary, for every
         // protocol adapter (FeatureServer, OGC API Features, WFS-T, OData, gRPC).
         services.AddAuditingFeatureWriter();
+
+        // Collaborative-editing lease enforcement at the same shared boundary (#4402). The
+        // protocol handlers check leases too, so each surface can refuse in its own natural
+        // shape; this decorator is the guarantee that a write path which does not ask —
+        // WFS-T, gRPC, the OData atomic change-set, or one added later — still cannot
+        // overwrite a feature another editor holds. Registered after the audit decorator so
+        // a blocked edit never reaches the auditor as an applied write.
+        services.AddFeatureLockEnforcingFeatureWriter();
 
         // Registry-backed geographic-SRID classification seam (#2794). Composes the provider's
         // ICrsRegistry (registered above for providers that ship one, e.g. Postgres) with the

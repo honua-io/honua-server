@@ -12,7 +12,54 @@ namespace Honua.Core.Features.Collaboration.FeatureLocks;
 public readonly record struct FeatureRef(
     string ServiceName,
     int LayerId,
-    string FeatureId);
+    string FeatureId)
+{
+    /// <summary>
+    /// Builds a lease key in the one canonical form both the claim endpoints and every
+    /// write path use.
+    /// </summary>
+    /// <param name="serviceName">The routed service name, in whatever casing the caller used.</param>
+    /// <param name="layerId">The published layer id.</param>
+    /// <param name="featureId">The feature's OBJECTID, in whatever form the caller used.</param>
+    /// <returns>The canonical <see cref="FeatureRef"/>.</returns>
+    /// <remarks>
+    /// A <see cref="FeatureRef"/> is a dictionary key compared with ordinal string
+    /// equality, but the identifiers reaching it are not ordinal-stable: service routing
+    /// resolves names case-insensitively, and an object id may arrive as <c>001</c> from a
+    /// URL and as <c>1</c> from the writer. Without this normalisation a lease claimed as
+    /// <c>("TEST", 0, "001")</c> would silently fail to block a write evaluated as
+    /// <c>("test", 0, "1")</c> — enforcement would look correct and do nothing.
+    /// </remarks>
+    public static FeatureRef Canonical(string serviceName, int layerId, string featureId)
+    {
+        ArgumentNullException.ThrowIfNull(serviceName);
+        ArgumentNullException.ThrowIfNull(featureId);
+
+        var trimmedFeatureId = featureId.Trim();
+        var normalizedFeatureId = long.TryParse(
+            trimmedFeatureId,
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var numericFeatureId)
+            ? numericFeatureId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : trimmedFeatureId;
+
+        return new FeatureRef(
+            serviceName.Trim().ToLowerInvariant(),
+            layerId,
+            normalizedFeatureId);
+    }
+
+    /// <summary>
+    /// Builds a lease key for a numeric feature id.
+    /// </summary>
+    /// <param name="serviceName">The routed service name.</param>
+    /// <param name="layerId">The published layer id.</param>
+    /// <param name="objectId">The feature's OBJECTID.</param>
+    /// <returns>The canonical <see cref="FeatureRef"/>.</returns>
+    public static FeatureRef Canonical(string serviceName, int layerId, long objectId)
+        => Canonical(serviceName, layerId, objectId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+}
 
 /// <summary>
 /// Describes the principal that holds or is requesting a feature lock.
@@ -21,11 +68,22 @@ public readonly record struct FeatureRef(
 /// <param name="DisplayName">An optional human-readable name for the holder.</param>
 /// <param name="SessionId">An optional editing session identifier for the holder.</param>
 /// <param name="TenantId">An optional tenant identifier scoping the holder.</param>
+/// <param name="PrincipalName">
+/// The authenticated principal the lease was claimed under. <b>Server-stamped, never
+/// client-supplied</b> — the lock endpoints overwrite whatever the request body carried
+/// with the authenticated identity. This is what makes lease ownership unforgeable: every
+/// other field on this record comes from the caller, so a second editor could otherwise
+/// copy the holder's <see cref="HolderId"/> onto its own write and be treated as the owner.
+/// <see langword="null"/> only for leases created outside an authenticated request (in
+/// tests, or by an embedding host calling <c>IFeatureLockService</c> directly), which are
+/// matched on the caller-supplied fields alone.
+/// </param>
 public sealed record LockHolder(
     string HolderId,
     string? DisplayName = null,
     string? SessionId = null,
-    string? TenantId = null);
+    string? TenantId = null,
+    string? PrincipalName = null);
 
 /// <summary>
 /// Represents an active lease on a feature lock, including its lifetime window.

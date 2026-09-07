@@ -24,56 +24,21 @@ internal sealed record FeatureLockMutationRequest
 
     public int LeaseSeconds { get; init; } = 120;
 
-    public FeatureRef ToFeatureRef() => new(ServiceName, LayerId, FeatureId);
+    // Canonical form on the way in, so a lease claimed with the URL casing the caller
+    // happened to use still matches the key every write path evaluates (#4402).
+    public FeatureRef ToFeatureRef() => FeatureRef.Canonical(ServiceName, LayerId, FeatureId);
 
-    public LockHolder ToHolder() => new(HolderId, DisplayName, SessionId, TenantId);
+    /// <summary>
+    /// Builds the holder, stamping the authenticated principal over anything the request
+    /// body carried. The principal is the only unforgeable part of a lease identity: the
+    /// holder id, session and tenant are all caller-chosen and are echoed back in conflict
+    /// responses, so a second editor could otherwise replay them to be treated as the owner.
+    /// </summary>
+    public LockHolder ToHolder(ClaimsPrincipal? principal) =>
+        new(HolderId, DisplayName, SessionId, TenantId, ResolvePrincipalName(principal));
+
+    private static string? ResolvePrincipalName(ClaimsPrincipal? principal)
+        => principal?.Identity?.IsAuthenticated == true ? principal.Identity.Name : null;
 
     public TimeSpan ToLeaseDuration() => TimeSpan.FromSeconds(LeaseSeconds);
-}
-
-internal enum FeatureLockAuthorizationStatus
-{
-    Authorized,
-    RequiresAuthentication,
-    Forbidden
-}
-
-internal sealed record FeatureLockAuthorizationResult
-{
-    private FeatureLockAuthorizationResult(
-        FeatureLockAuthorizationStatus status,
-        FeatureLockAccessContext access,
-        string? detail)
-    {
-        Status = status;
-        Access = access;
-        Detail = detail;
-    }
-
-    public FeatureLockAuthorizationStatus Status { get; }
-
-    public FeatureLockAccessContext Access { get; }
-
-    public string? Detail { get; }
-
-    public bool Authorized => Status == FeatureLockAuthorizationStatus.Authorized;
-
-    public static FeatureLockAuthorizationResult AllowWrite() =>
-        new(FeatureLockAuthorizationStatus.Authorized, FeatureLockAccessContext.AuthorizedWrite, detail: null);
-
-    public static FeatureLockAuthorizationResult RequireAuthentication(string detail) =>
-        new(FeatureLockAuthorizationStatus.RequiresAuthentication, FeatureLockAccessContext.Unauthorized, detail);
-
-    public static FeatureLockAuthorizationResult Forbid(string detail) =>
-        new(FeatureLockAuthorizationStatus.Forbidden, FeatureLockAccessContext.ReadOnly, detail);
-}
-
-internal interface IFeatureLockAuthorizer
-{
-    ValueTask<FeatureLockAuthorizationResult> AuthorizeAsync(
-        string mapId,
-        FeatureRef feature,
-        ClaimsPrincipal principal,
-        string operation,
-        CancellationToken cancellationToken);
 }

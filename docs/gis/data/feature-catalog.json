@@ -785,7 +785,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.OData.ODataAuthorizationTests.DeleteFeature_WithoutApiKey_ReturnsUnauthorized",
-        "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.DeleteFeature_WithValidId_ReturnsNoContent"
+        "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.DeleteFeature_WithValidId_ReturnsNoContent",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataFeatureLockEnforcementTests.Delete_WhileAnotherEditorHoldsTheLease_Returns423AndTheFeatureSurvives"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented",
@@ -829,6 +830,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAuthorizationTests.DeleteFeature_WithoutApiKey_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Delete_WhileAnotherEditorHoldsTheLease_Returns423AndTheFeatureSurvives",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.DeleteFeature_WhenEventPublishFails_ReturnsNoContent",
@@ -13577,6 +13579,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.UpdateFeature_WithLayerPath_ReturnsUpdatedFeature",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataFeatureLockEnforcementTests.Patch_ByTheLeaseHolder_Succeeds",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataFeatureLockEnforcementTests.Patch_OfAnUnleasedFeature_IsUnaffected",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataFeatureLockEnforcementTests.Patch_WhileAnotherEditorHoldsTheLease_Returns423AndLeavesTheStoredRowUnchanged",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataUpdate_InsertOnlyGrant_DeniesUpdate",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataUpdate_UpdateGrant_AllowsUpdate",
         "Honua.Server.Tests.PatchConcurrencyTests.PatchEndpoints_DeclareConflictAndPreconditionResponses"
@@ -13593,6 +13598,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Patch_WhileAnotherEditorHoldsTheLease_Returns423AndLeavesTheStoredRowUnchanged",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.PatchItem_WithMismatchedPublicIdProperty_ReturnsBadRequest",
@@ -19277,6 +19283,12 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsUpdateConflictTests.ApplyEdits_AfterUpdateConflict_ClientRereadAndRetrySucceeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsUpdateConflictTests.ApplyEdits_UpdateAgainstStaleSnapshot_ReturnsUpdateConflictAndLeavesTheWinningWriteIntact",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerEditingEditionGateTests.ApplyEdits_UnderCommunity_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerFeatureLockEnforcementTests.ApplyEdits_DeleteWhileAnotherEditorHoldsTheLease_IsRejectedAndTheFeatureSurvives",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerFeatureLockEnforcementTests.ApplyEdits_UnleasedFeatureInTheSameLayer_IsUnaffected",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerFeatureLockEnforcementTests.ApplyEdits_UpdateAfterTheLeaseIsReleased_Succeeds",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerFeatureLockEnforcementTests.ApplyEdits_UpdateByTheLeaseHolder_Succeeds",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerFeatureLockEnforcementTests.ApplyEdits_UpdateWhileAnotherEditorHoldsTheLease_IsRejectedAndLeavesTheStoredRowUnchanged",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerFeatureLockEnforcementTests.LeaseNamespaceIsTheRouteServiceAndLayer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.ApplyEdits_ConcurrentAttributeOnlyUpdates_PreserveGeometryAndReportSuccess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.ApplyEdits_ConcurrentDistinctPartialUpdates_RereadAfterLockedSnapshotChanges",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.ApplyEdits_NumericPrimaryKeyAndDuplicateIdAttribute_TargetsOnlyPrimaryKey",
@@ -19298,6 +19310,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.ApplyEdits_WithValidPointGeometry_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.GeometryValidationTests.ApplyEdits_WithZCoordinates_Succeeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.FeatureServerGdbVersionFlowTests.GdbVersionFlow_EditQueryReconcilePost_IsolatesThenMerges",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Update_AndTheGeoServicesWriteForTheSameRow_AreBlockedByOneLease",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_DeletePayload_DeleteGrantAllowsDeletesWhenUpdateGrantDoesNot",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_UpdatePayload_DeleteOnlyGrantDeniesUpdate",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ApplyEdits_UpdatePayload_InsertOnlyGrantDeniesUpdate",
@@ -22271,6 +22284,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAuthorizationTests.UpdateFeature_WithoutApiKey_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Replace_ByTheLeaseHolder_Succeeds",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Replace_WhileAnotherEditorHoldsTheLease_Returns423AndLeavesTheStoredRowUnchanged",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesFeatureLockEnforcementTests.Update_AndTheGeoServicesWriteForTheSameRow_AreBlockedByOneLease",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.ProjectedCollection_AbsentContentCrs_DefaultsToCrs84ForGetPutRoundTrip",
