@@ -792,7 +792,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             await using var command = connection.CreateCommand();
             command.CommandText = """
                 UPDATE features
-                SET attributes = COALESCE(attributes, '{}'::jsonb) || jsonb_build_object('__tenant_id', 'hidden', 'nullable_value', NULL)
+                SET attributes = COALESCE(attributes, '{}'::jsonb) || jsonb_build_object(
+                    '__tenant_id', 'hidden', 'nullable_value', NULL, 'boolean_value', true, 'false_value', false)
                 WHERE layer_id = @layerId;
                 """;
             command.Parameters.Add(new NpgsqlParameter { ParameterName = "layerId", Value = WebAppFixture.TestLayerId });
@@ -820,8 +821,17 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             feature.GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Null);
             var properties = feature.GetProperty("properties");
             properties.GetProperty("nullable_value").ValueKind.Should().Be(JsonValueKind.Null);
+            properties.GetProperty("boolean_value").GetBoolean().Should().BeTrue();
+            properties.GetProperty("false_value").GetBoolean().Should().BeFalse();
             properties.GetRawText().Should().Be(feature.GetProperty("attributes").GetRawText());
         }
+
+        using var textResponse = await _fixture.Client.GetAsync(
+            response.RequestMessage!.RequestUri!.ToString().Replace("INFO_FORMAT=application/json", "INFO_FORMAT=text/plain", StringComparison.Ordinal));
+        var text = await textResponse.Content.ReadAsStringAsync();
+        textResponse.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        text.Should().Contain("boolean_value=1").And.Contain("false_value=0")
+            .And.Contain($"nullable_value={Environment.NewLine}").And.NotContain("hidden");
     }
 
     [IntegrationTest]

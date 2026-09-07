@@ -1230,22 +1230,6 @@ internal static partial class WmsRequestHandlers
                pixelY >= 0 && pixelY < imageHeight;
     }
 
-    private static Dictionary<string, object?> BuildVisibleFeatureInfoAttributes(Feature feature)
-    {
-        var attributes = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var attribute in feature.Attributes)
-        {
-            if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
-            {
-                continue;
-            }
-
-            attributes[attribute.Key] = FeatureAttributeValueNormalizer.Normalize(attribute.Value);
-        }
-
-        return attributes;
-    }
-
     /// <summary>
     /// Splits a WMS FILTER parameter into per-layer tokens using only semicolons
     /// at XML depth 0 as delimiters. Semicolons inside XML elements (entity

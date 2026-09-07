@@ -650,7 +650,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         using var json = JsonDocument.Parse(content);
-        json.RootElement.GetProperty("type").GetString().Should().Be("FeatureInfoResponse");
+        json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
         json.RootElement.TryGetProperty("features", out _).Should().BeTrue();
     }
 
