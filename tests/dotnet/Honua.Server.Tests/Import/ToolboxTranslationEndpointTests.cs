@@ -916,7 +916,7 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
                   "targetProcessId": "conversion.geometry-format",
                   "parameterMappings": [
                     { "sourceName": "in_geometry", "targetParameter": "geometry" },
-                    { "sourceName": "out_format", "targetParameter": "targetFormat" }
+                    { "sourceName": "out_format", "targetParameter": "target" }
                   ]
                 }
               ]
@@ -928,9 +928,14 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         var tool = report.RootElement.GetProperty("tools")[0];
 
         tool.GetProperty("classification").GetString().Should().Be("unsupported");
+
+        // ONLY the entry-point issue: the mapping above is complete and correct, so any
+        // parameter issue here means the mapping drifted from the catalog and is masking
+        // the check this test exists for (the validator reports the entry-point verdict
+        // only once the mapping itself is clean).
         tool.GetProperty("issues").EnumerateArray()
             .Select(issue => issue.GetProperty("code").GetString())
-            .Should().Contain("process-not-job-executable");
+            .Should().Equal("process-not-job-executable");
     }
 
     [IntegrationTest]
