@@ -93,6 +93,7 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();
         _schema = _fixture.CurrentSchema!;
+        await CreateAlertSchemaAsync();
         _eventId = await SeedAlertEventAsync();
     }
 
@@ -130,6 +131,13 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         pending[0].CompletedAt.Should().BeNull();
         pending[0].EventId.Should().Be(_eventId);
 
+        // 4b. The rejected inline completion is recorded against the intent, and an
+        //     intent the sink just rejected backs off before it is retried, so a poison
+        //     payload cannot monopolise every oldest-first batch.
+        var (attempts, backedOff) = await ReadRetryStateAsync();
+        attempts.Should().Be(1, "the injected audit failure is recorded against the intent");
+        backedOff.Should().BeTrue("a rejected intent is not retried until its backoff elapses");
+
         // 5. Restart the process against the same database with the fault cleared.
         //    The reconciler runs on startup, so the record must appear without any
         //    further operator action.
@@ -137,6 +145,12 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         await _fixture.RestartHostAsync();
         _client = _fixture.CreateAdminClient();
         AssertReconcilerRunsOnStartup();
+
+        // Bring the backoff proven above forward instead of sleeping it out. What is
+        // under proof is that reconciliation completes the intent unattended, not the
+        // wall-clock delay production imposes before retrying a sink that just rejected
+        // a write; the reconciler still has to find, claim and complete the intent.
+        await ExpireRetryBackoffAsync();
         await ReconcileAsync();
 
         var audits = await ReadAlertAuditRowsAsync(auditAction);
@@ -256,6 +270,37 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         _ => "open"
     };
 
+    /// <summary>
+    /// Creates the alert and audit tables this proof's stores read and write inside the
+    /// fixture's own schema.
+    /// </summary>
+    /// <remarks>
+    /// The shared seed (<c>tests/seed/server.yaml</c>) declares these tables against the
+    /// literal, process-global <c>honua</c> schema because the production stores hard-qualify
+    /// to it, so a per-test schema does not contain them and every case here failed in
+    /// <see cref="InitializeAsync"/> with <c>42P01</c>. The proof cannot fall back to
+    /// <c>honua</c>: a lifecycle mutation whose audit intent is deliberately left pending
+    /// would be drained by any other collection's host reconciler polling the same shared
+    /// table before this test asserts the intent is still pending.
+    /// <para>
+    /// The shapes are CLONED from the seeded tables rather than restated here, so the
+    /// schema this proof runs its real stores against cannot drift from the one the rest of
+    /// the suite - and the migrations the seed mirrors - define. <c>LIKE ... INCLUDING ALL</c>
+    /// copies columns, defaults, check constraints and indexes but not foreign keys; the
+    /// proof asserts audit and lifecycle behaviour, and the "no such event" case is a 404
+    /// the store derives from its own existence check (<c>MutateAsync</c> returning null),
+    /// not from a referential violation.
+    /// </para>
+    /// </remarks>
+    private Task CreateAlertSchemaAsync()
+        => _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
+            CREATE TABLE IF NOT EXISTS "{_schema}".alert_rules (LIKE honua.alert_rules INCLUDING ALL);
+            CREATE TABLE IF NOT EXISTS "{_schema}".alert_events (LIKE honua.alert_events INCLUDING ALL);
+            CREATE TABLE IF NOT EXISTS "{_schema}".alert_event_lifecycle (LIKE honua.alert_event_lifecycle INCLUDING ALL);
+            CREATE TABLE IF NOT EXISTS "{_schema}".alert_audit_outbox (LIKE honua.alert_audit_outbox INCLUDING ALL);
+            CREATE TABLE IF NOT EXISTS "{_schema}".audit_log (LIKE honua.audit_log INCLUDING ALL);
+            """);
+
     private async Task<long> SeedAlertEventAsync()
     {
         await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
@@ -294,6 +339,36 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return document.RootElement.GetProperty("lifecycleStatus").GetString();
+    }
+
+    /// <summary>
+    /// Reads the pending intent's retry state. <c>next_attempt_at</c> is compared against
+    /// the database clock, which is the clock the store's own drain predicate uses.
+    /// </summary>
+    private async Task<(int Attempts, bool BackedOff)> ReadRetryStateAsync()
+    {
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand($"""
+            SELECT attempts, next_attempt_at > now()
+            FROM "{_schema}".alert_audit_outbox
+            WHERE completed_at IS NULL
+            """, connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue("the pending intent must still be there to have retry state");
+        return (reader.GetInt32(0), reader.GetBoolean(1));
+    }
+
+    /// <summary>
+    /// Makes every pending intent due now, so a pass driven by the test observes what a
+    /// pass after the backoff has elapsed would.
+    /// </summary>
+    private async Task ExpireRetryBackoffAsync()
+    {
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            $"""UPDATE "{_schema}".alert_audit_outbox SET next_attempt_at = now() WHERE completed_at IS NULL""",
+            connection);
+        await command.ExecuteNonQueryAsync();
     }
 
     private async Task<IReadOnlyList<OutboxRow>> ReadOutboxAsync(bool includeCompleted = false)
