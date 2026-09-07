@@ -242,14 +242,17 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{NonExistentLayerId}/ImageServer?f=json");
 
-        if (response.StatusCode != HttpStatusCode.OK)
-        {
-            var content = await response.Content.ReadAsStringAsync();
-            content.Should().NotContain("Exception");
-            content.Should().NotContain("StackTrace");
-            content.Should().NotContain("ConnectionString");
-            content.Should().NotContain("NpgsqlConnection");
-        }
+        // #4423: this file documents that GeoServices always answers HTTP 200 and carries the
+        // error in the body, so the `if (StatusCode != OK)` guard that used to wrap these
+        // assertions made every one of them unreachable — the test could not fail. The response
+        // must be an error, and its body must disclose no internals.
+        await response.AssertGeoServicesErrorAsync();
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotContain("Exception");
+        content.Should().NotContain("StackTrace");
+        content.Should().NotContain("ConnectionString");
+        content.Should().NotContain("NpgsqlConnection");
     }
 
     [IntegrationTest]
@@ -260,13 +263,14 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{NonExistentLayerId}/ImageServer/exportImage?f=json&bbox=-180,-90,180,90");
 
-        if (response.StatusCode != HttpStatusCode.OK)
-        {
-            var content = await response.Content.ReadAsStringAsync();
-            content.Should().NotContain("Exception");
-            content.Should().NotContain("StackTrace");
-            content.Should().NotContain("ConnectionString");
-        }
+        // #4423: same unreachable-guard fix as the sibling above.
+        await response.AssertGeoServicesErrorAsync();
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotContain("Exception");
+        content.Should().NotContain("StackTrace");
+        content.Should().NotContain("ConnectionString");
+        content.Should().NotContain("NpgsqlConnection");
     }
 
     #endregion
