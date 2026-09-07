@@ -115,10 +115,12 @@ public sealed class ProcessConditionalInputProbeTests
     [UnitTest]
     public void FindAdmissibilityViolations_AdvertisedButNotExecutableProcess_IsNotJobExecutable()
     {
-        // analytics.cluster validates cleanly but is ProtocolOnly: it runs only through its
-        // owning synchronous protocol endpoint, so the canonical job runtime can never
-        // dispatch it however the parameters are filled in.
-        var violations = Probe().FindAdmissibilityViolations("analytics.cluster", ["features"]);
+        // analytics.cluster validates cleanly with a complete DBSCAN mapping but is
+        // ProtocolOnly: it runs only through its owning synchronous protocol endpoint, so
+        // the canonical job runtime can never dispatch it however the parameters are
+        // filled in.
+        var violations = Probe().FindAdmissibilityViolations(
+            "analytics.cluster", ["layerId", "algorithm", "eps", "minPoints"]);
 
         violations.Should().ContainSingle();
         violations[0].Kind.Should().Be(ProcessAdmissibilityViolationKind.NotJobExecutable);
@@ -466,7 +468,18 @@ public sealed class ProcessConditionalInputProbeTests
         // (or a process rename) silently disables the check with no other symptom — the report
         // would quietly go back to certifying a tool whose executor can only fail. Pin the keys
         // to real catalog entries so that failure mode is loud.
-        BuiltInProcessCatalog.AdvertisedButNotExecutableProcesses.Should().NotBeEmpty();
+        // #3932 made raster.interpolate-kriging executable and it was the last Unavailable
+        // row, so the map is currently EMPTY. Pin it to the catalog's own classification
+        // rather than to a hard-coded non-empty expectation: the two must agree, so a
+        // process advertised as unexecutable without an Unavailable classification (or the
+        // reverse) is still loud.
+        var unavailable = _catalog.ListProcesses()
+            .Where(process => process.ExecutionKind == ProcessExecutionKind.Unavailable)
+            .Select(process => process.ProcessId)
+            .ToArray();
+        BuiltInProcessCatalog.AdvertisedButNotExecutableProcesses.Keys
+            .Should().BeEquivalentTo(unavailable,
+                "the advertised-but-not-executable map and the catalog classification are the same fact");
 
         foreach (var (processId, reason) in BuiltInProcessCatalog.AdvertisedButNotExecutableProcesses)
         {
