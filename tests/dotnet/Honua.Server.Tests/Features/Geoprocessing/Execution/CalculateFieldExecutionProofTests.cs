@@ -287,9 +287,19 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         outcome.Status.Should().Be(HttpStatusCode.OK);
 
         var document = JsonDocument.Parse(outcome.Body);
-        document.RootElement.TryGetProperty("success", out var success).Should().BeTrue(
-            "calculate must answer with the CalculateResponse envelope, but the body was: {0}", outcome.Body);
-        success.GetBoolean().Should().BeTrue("the body was: {0}", outcome.Body);
+        if (!document.RootElement.TryGetProperty("success", out var success))
+        {
+            document.Dispose();
+            throw new XunitException(
+                "calculate must answer with the CalculateResponse envelope. Body was: " + outcome.Body);
+        }
+
+        if (!success.GetBoolean())
+        {
+            document.Dispose();
+            throw new XunitException("calculate reported failure. Body was: " + outcome.Body);
+        }
+
         return document;
     }
 
@@ -306,10 +316,13 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
             "GeoServices signals errors in the body, never the transport status (PA-070/PA-117)");
 
         using var document = JsonDocument.Parse(outcome.Body);
-        document.RootElement.TryGetProperty("success", out _).Should().BeFalse(
-            "a rejected calculate must not report a success envelope, but the body was: {0}", outcome.Body);
+        if (document.RootElement.TryGetProperty("success", out _)
+            || !document.RootElement.TryGetProperty("error", out var error))
+        {
+            throw new XunitException(
+                "a rejected calculate must answer with the GeoServices error envelope. Body was: " + outcome.Body);
+        }
 
-        var error = document.RootElement.GetProperty("error");
         error.GetProperty("code").GetInt32().Should().Be(400, because);
 
         var details = error.TryGetProperty("details", out var detailsElement)
