@@ -133,7 +133,13 @@ cleanup() {
       exit 91
     fi
     aws lambda delete-function --function-name "$function_name" || status=11
-    aws lambda wait function-not-exists --function-name "$function_name" || status=11
+    # The CLI has no function-not-exists waiter (ninth live run failed its
+    # teardown on exactly that); poll get-function until it is gone.
+    for _i in $(seq 1 30); do
+      if ! aws lambda get-function --function-name "$function_name" >/dev/null 2>&1; then break; fi
+      sleep 5
+    done
+    if aws lambda get-function --function-name "$function_name" >/dev/null 2>&1; then status=11; fi
   fi
   if $log_group_created; then
     if [[ "$log_group" != /aws/lambda/honua-certrun-lambda-* ]]; then
@@ -289,9 +295,14 @@ fi
 
 payload='{"version":"2.0","routeKey":"GET /healthz/live","rawPath":"/healthz/live","rawQueryString":"","headers":{"accept":"application/json","host":"lambda-cert.invalid"},"requestContext":{"http":{"method":"GET","path":"/healthz/live","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"honua-lambda-preview-cert"}},"isBase64Encoded":false}'
 invoke_meta="$(aws lambda invoke --function-name "$function_name" --cli-binary-format raw-in-base64-out \
-  --log-type Tail --payload "$payload" "$scratch/response.json")"
+  --invocation-type RequestResponse --log-type Tail --payload "$payload" "$scratch/response.json")"
 if [[ "$(jq -r '.StatusCode' <<<"$invoke_meta")" != "200" || "$(jq -r '.FunctionError // empty' <<<"$invoke_meta")" != "" ]]; then
+  # Ninth live run: StatusCode 204 with no ExecutedVersion, i.e. the API treated
+  # the call as a dry run. Say exactly what came back so the next failure is
+  # diagnosable from the job log (Lambda's own log tail, never the env).
   echo "Lambda invocation failed" >&2
+  jq -c '{StatusCode, ExecutedVersion, FunctionError}' <<<"$invoke_meta" >&2
+  jq -r '.LogResult // empty' <<<"$invoke_meta" | base64 -d 2>/dev/null | tail -n 20 | sed 's/^/lambda-log: /' >&2
   exit 6
 fi
 if [[ "$(jq -r '.statusCode' "$scratch/response.json")" != "200" ]]; then
