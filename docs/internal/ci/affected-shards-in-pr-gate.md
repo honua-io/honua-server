@@ -24,11 +24,17 @@ and answers one question: *which shard families is this diff most likely to turn
 red?* It is a selector, not a second router — every routing decision is
 delegated to machinery that already gates trunk.
 
-1. **Skip when nothing can move a shard.** A diff touching no file under `src/`
-   or `tests/dotnet/` selects nothing and costs no runners (`no_product_code`).
-   `tests/dotnet/` is included deliberately: shard filters select test classes
-   by fully-qualified name, so a test-only change is exactly the kind of diff
-   that reddens a shard without touching `src/`.
+1. **Skip when nothing can move a shard.** A diff touching no product-code path
+   selects nothing and costs no runners (`no_product_code`). Product code is
+   `src/` and `tests/dotnet/` **unioned with every root the shard map itself
+   routes on** — `.github/ci-shards.json` also claims `observability/`,
+   `samples/gp/` and `tests/fixtures/toolbox-translation/`, which are shard
+   inputs (`SloMetricContractTests` reads `observability/slo-metric-contract.json`)
+   that would otherwise be skipped while the trailing matrix went red on them.
+   `infrastructure_paths` is deliberately excluded, so a workflow-only diff
+   still costs nothing. `tests/dotnet/` is included deliberately: shard filters
+   select test classes by fully-qualified name, so a test-only change is
+   exactly the kind of diff that reddens a shard without touching `src/`.
 2. **Ask the router.** `scripts/ci/honua-server-targeted-tests.sh` is invoked
    verbatim with `--stdin`, so PR Gate can never route differently from the
    trailing matrix it is trying to predict. Its answer is the candidate set.
@@ -39,13 +45,28 @@ delegated to machinery that already gates trunk.
    dropped. A force-full (`ALL`) closure carries no narrowing information and is
    never read as one. A **targeted** router answer is authoritative and is never
    trimmed by the closure — that would make the lane predict something other
-   than what the matrix will run.
+   than what the matrix will run. The one exception is the router's
+   `no_path_match` **default** (`default_shards_when_no_match`), which is not a
+   targeted answer at all: for a changed test file no `paths` entry claims, the
+   shards whose filters actually run that test are added alongside it. Without
+   that, editing
+   `tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataFeatureProviderResolverTests.cs`
+   selected only the Core shard — a different assembly — and never ran `OData
+   Core`, the family that owns the changed test.
 4. **Rank largest-impact first**, by:
    1. `test_class_hits` — changed test files declaring a class this shard's own
       `dotnet test --filter` actually selects, evaluated with
       `scripts/ci/check-server-test-shard-coverage.py`'s filter evaluator and
       class inventory. Exact, not heuristic: a hit means this shard literally
-      runs the test the diff touched.
+      runs the test the diff touched. Scored against the **effective** runner
+      filter: `scripts/ci/run-server-test-shard.sh` composes every shard filter
+      with `&Tier!=Slow&Tier!=Fast`, so a changed class whose tests are all Fast
+      (Fast runs once per CI run in `dotnet-foundation-tests`) or all Slow
+      (nightly) credits nobody. The tier is resolved from the source — literal
+      `[Trait("Tier", …)]` and the TestKit attributes that emit one — because
+      the coverage guard's filter evaluator returns neutral-true for every
+      non-`FullyQualifiedName` clause by design, which makes `(f)&Tier!=Fast`
+      and `f` indistinguishable to it.
    2. `path_hits` — how many of the diff's files this shard's `paths` claim.
    3. `project_affected` — the shard's test project is in the closure.
    4. `dispatch_rank` descending — the observed shard duration ci.yml already
@@ -126,6 +147,16 @@ of the four depends on one.
   its step summary and as `HONUA_AFFECTED_SHARD_*` annotations while concluding
   success.
 
+Missing evidence is mode-aware, because promotion is only those two changes and
+the context must not be able to pass by failing to look. In `report` an
+unavailable selection, an absent receipt, or a receipt set smaller than the
+selection warns and passes; in `enforce` each of those fails the context
+(`HONUA_AFFECTED_SHARD_UNAVAILABLE`). In particular a *partial* receipt set is
+never green: one shard dying before `run-server-test-shard.sh` writes its timing
+file while another passes would otherwise report every family it heard from as
+green and hide the one it was spending a runner to learn about. A confirmed red
+is still reported as a red rather than as infrastructure.
+
 **Promotion rule: make the context required when its false-red rate over 7 days
 of runs is below 2%.** A false red is a run emitting
 `HONUA_AFFECTED_SHARD_RED` for a head whose change did not in fact break that
@@ -157,13 +188,23 @@ measurement, not a failed change.
 
 ## Guardrails
 
-`scripts/ci/fixtures/validate-affected-shards.py` runs in `CI Router
-Validation` (`scripts/ci/validate-ci-router.sh`) against the real
+`scripts/ci/fixtures/validate-affected-shards.py` runs against the real
 `.github/ci-shards.json`, offline. It proves that a change under a uniquely
 owned feature namespace selects that namespace's shard (17 families), that a
-changed test file selects the shard whose filter runs it (70 families), that the
-cap holds against a `run_all` answer, that a `run_all` answer narrows by the
-closure while a targeted one is never trimmed, that advisory shards stay out,
-and that matrix entries carry every field the shard job and runner consume.
-Each of those is paired with a failure injection, so a green run means the
-check is still load-bearing.
+changed test file selects the shard whose filter runs it (70 families), that a
+class no shard would run on tier credits nobody, that the cap holds against a
+`run_all` answer, that a `run_all` answer narrows by the closure while a
+targeted one is never trimmed, that advisory shards stay out, and that matrix
+entries carry every field the shard job and runner consume. Each of those is
+paired with a failure injection, so a green run means the check is still
+load-bearing.
+
+It runs in **both** places, and the PR one is the load-bearing one:
+`affected-shards-select` executes it before consuming the selector, and
+`CI Router Validation` (`scripts/ci/validate-ci-router.sh`) runs it on trunk.
+`ci.yml` has no `pull_request` trigger, so the trunk copy alone would never see
+the pull request that *changes* the selector — an under-scoped selector or
+shard-map edit would make both selection and aggregation green and land, and
+only the trailing workflow would discover the broken fixture. AGENTS.md already
+treats a diff touching the selectors as unable to scope itself; a lane
+consuming its own PR-authored selector is the same problem.

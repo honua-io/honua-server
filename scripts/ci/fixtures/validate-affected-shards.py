@@ -45,6 +45,11 @@ class FixtureError(AssertionError):
     """A fixture expectation was violated."""
 
 
+# Memoised by runnable_method_index(); the tier injection resets it so the
+# patched walk is re-derived rather than served from the live run.
+_RUNNABLE_METHODS: dict[str, list[str]] | None = None
+
+
 def load_module():
     spec = importlib.util.spec_from_file_location("compute_affected_shards", SELECTOR)
     module = importlib.util.module_from_spec(spec)
@@ -124,6 +129,22 @@ def unique_owned_prefix(config: dict[str, Any], shard: dict[str, Any]) -> str | 
             continue
         return prefix
     return None
+
+
+def runnable_method_index(classes: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
+    """`{class fqn: the methods a shard would actually run}` for the inventory.
+
+    Resolved once and shared. The ownership walk below is 71 shards x ~1400
+    classes, and deriving tiers inside that loop re-reads every test source per
+    shard -- the fixture went from 55s to over two minutes before this.
+    """
+    global _RUNNABLE_METHODS
+    if _RUNNABLE_METHODS is None:
+        _RUNNABLE_METHODS = {
+            fqn: selector.runnable_methods(REPO_ROOT, fqn, entry)
+            for fqn, entry in classes.items()
+        }
+    return _RUNNABLE_METHODS
 
 
 def check_feature_namespace_selects_its_shard(
@@ -217,7 +238,10 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
     """
     coverage, classes = selector.load_shard_coverage(REPO_ROOT)
 
-    # One pass over the whole inventory: which shards run each class.
+    # One pass over the whole inventory: which shards run each class. Scored on
+    # the RUNNABLE methods, matching the selector -- a class every shard skips
+    # on tier cannot demonstrate ownership of one.
+    runnable = runnable_method_index(classes)
     owners: dict[str, list[str]] = {}
     for shard in config["shards"]:
         project = selector.shard_test_project(shard)
@@ -226,7 +250,7 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
                 continue
             if any(
                 coverage.shard_claims(shard["filter"], f"{fqn}.{method}")
-                for method in entry["methods"]
+                for method in runnable[fqn]
             ):
                 owners.setdefault(fqn, []).append(shard["name"])
 
@@ -264,6 +288,72 @@ def check_changed_test_file_selects_its_running_shard(config: dict[str, Any]) ->
                 f"{shard_name!r}; got {result['shards']}"
             )
     return len(exclusive)
+
+
+def check_non_runnable_tiers_are_not_credited(config: dict[str, Any]) -> int:
+    """A changed test NO shard would execute must credit no shard at all.
+
+    Every shard runs `(<filter>)&Tier!=Slow&Tier!=Fast`
+    (scripts/ci/run-server-test-shard.sh; both exclusions default on and
+    pr-gate.yml overrides neither), so a class whose tests are all Fast or all
+    Slow is executed by none of the 71 families no matter which one's
+    `FullyQualifiedName` filter claims it. Crediting it anyway would hand that
+    shard `test_class_hits` -- the top-priority ranking term -- for tests it
+    never runs, and under a capped run_all answer that spends a slot a
+    genuinely runnable affected shard needed.
+
+    Discovered from the live inventory rather than naming a class: the point is
+    that the rule holds for whatever the repository currently declares.
+    """
+    coverage, classes = selector.load_shard_coverage(REPO_ROOT)
+    runnable = runnable_method_index(classes)
+
+    # A source file can declare several classes and count_test_class_hits reads
+    # the FILE, so only a file that is entirely tier-excluded proves anything.
+    runnable_sources = {
+        source
+        for fqn, entry in classes.items()
+        if runnable[fqn]
+        for source in entry["src"]
+    }
+
+    proven = 0
+    for fqn, entry in sorted(classes.items()):
+        if not entry["methods"] or runnable[fqn]:
+            continue
+        source = entry["src"][0]
+        if source in runnable_sources:
+            continue
+        claimed_by = [
+            shard["name"]
+            for shard in config["shards"]
+            if selector.shard_test_project(shard) == entry["csproj"]
+            and any(
+                coverage.shard_claims(shard["filter"], f"{fqn}.{method}")
+                for method in entry["methods"]
+            )
+        ]
+        if not claimed_by:
+            continue
+        hits = selector.count_test_class_hits(REPO_ROOT, config, [source])
+        if hits is None:
+            raise FixtureError("test-class ownership was unavailable")
+        credited = sorted(name for name, count in hits.items() if count)
+        if credited:
+            raise FixtureError(
+                f"{source!r} declares only tier-excluded tests, which no shard runs, "
+                f"but it credited {credited}"
+            )
+        proven += 1
+        if proven >= 3:
+            break
+
+    if proven == 0:
+        raise FixtureError(
+            "no entirely tier-excluded test class is claimed by a shard filter; the "
+            "non-runnable-tier fixture has stopped covering anything"
+        )
+    return proven
 
 
 def check_run_all_narrows_by_affected_projects(config: dict[str, Any]) -> None:
@@ -418,6 +508,25 @@ def check_failure_injections(config: dict[str, Any]) -> None:
         raise FixtureError(f"the {label!r} check accepted a selector that breaks it")
     selector.select = original
 
+    # The tier check runs below `select`, on count_test_class_hits, so its
+    # injection is the pre-fix ownership walk: score every declared method
+    # regardless of tier. That is exactly the defect the check exists for.
+    global _RUNNABLE_METHODS
+    original_runnable = selector.runnable_methods
+    selector.runnable_methods = lambda root, fqn, entry: list(entry["methods"])
+    _RUNNABLE_METHODS = None
+    try:
+        check_non_runnable_tiers_are_not_credited(config)
+    except FixtureError:
+        pass
+    else:
+        raise FixtureError(
+            "the non-runnable-tier check accepted an ownership walk that ignores tiers"
+        )
+    finally:
+        selector.runnable_methods = original_runnable
+        _RUNNABLE_METHODS = None
+
     # The namespace check reads the ROUTER's answer, and the router reads
     # ci-shards.json off disk -- so its injection has to be a mutated config
     # file, not a patched function.
@@ -454,6 +563,7 @@ def main() -> int:
     check_cap_is_enforced(config)
     check_largest_impact_first(config)
     owned = check_changed_test_file_selects_its_running_shard(config)
+    tiered = check_non_runnable_tiers_are_not_credited(config)
     check_run_all_narrows_by_affected_projects(config)
     check_targeted_answer_is_never_trimmed(config)
     check_advisory_shards_are_excluded(config)
@@ -463,6 +573,7 @@ def main() -> int:
     print(
         f"affected-shards=ok (namespace routing proven for {covered} and changed-test "
         f"ownership for {owned} of {len(config['shards'])} shard families; "
+        f"tier exclusion proven on {tiered} non-runnable classes; "
         f"cap={selector.DEFAULT_CAP})"
     )
     return 0

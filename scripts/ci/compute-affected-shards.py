@@ -42,6 +42,14 @@ ORDERING ("largest-impact first")
          shard runner asks, so a shard with a hit here is a shard that will
          literally execute the test the diff touched.
 
+         Scored against the EFFECTIVE runner filter. run-server-test-shard.sh
+         composes every shard filter with `&Tier!=Slow&Tier!=Fast`, so a
+         changed class whose tests are all Fast or all Slow is run by none of
+         the 71 families and must credit none of them -- otherwise the shard
+         claiming it by name receives the top-priority ranking signal for tests
+         it never runs, and under a capped run_all answer that spends a slot a
+         genuinely runnable affected shard needed.
+
          It matters most where the router is weakest. Shard `paths` name
          individual test FILES for the protocol-split projects, so a diff that
          ADDS a test file to a directory a shard already owns is claimed by no
@@ -70,10 +78,13 @@ ORDERING ("largest-impact first")
     `path_hits` is computed here with the same `startswith` prefix test the
     router's jq uses. Both it and `test_class_hits` are RANKING inputs only --
     membership of the candidate set always comes from the router's own answer --
-    so a divergence costs at most a reordering, never a mis-route. That is also
-    why the class walk is FAIL-OPEN: if the coverage module cannot be loaded or
-    the walk throws, the receipt records `test_ownership: unavailable` and the
-    ranking degrades to `path_hits`, rather than failing a report-only lane.
+    so a divergence costs at most a reordering, never a mis-route. The one
+    place `test_class_hits` also ADDS a candidate is the router's
+    `no_path_match` default, which is not an ownership claim at all; see
+    select(). The class walk is FAIL-OPEN throughout: if the coverage module
+    cannot be loaded or the walk throws, the receipt records
+    `test_ownership: unavailable` and the ranking degrades to `path_hits`,
+    rather than failing a report-only lane.
 
 FAIL-SAFE DIRECTION
     Opposite to the required gate's. The lean gate force-FULLS when its diff
@@ -91,6 +102,7 @@ import functools
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -107,6 +119,34 @@ DEFAULT_PROJECTS_SCRIPT = "scripts/ci/compute-affected-projects.sh"
 # than reimplemented: a second filter parser that disagreed with the guard's
 # would make this lane predict a shard the matrix does not actually run.
 COVERAGE_MODULE = "scripts/ci/check-server-test-shard-coverage.py"
+
+# Where the TestKit attributes that EMIT a Tier trait are declared. `[UnitTest]`
+# expands to Tier=Fast, `[ScaleTest]`/`[CloudTest]`/... to Tier=Slow, and so on,
+# so an attribute name is a tier the same way a literal `[Trait("Tier", ...)]`
+# is. Discovered from the source rather than hard-coded, for the same reason the
+# coverage guard discovers its test-method attributes: a new tiered attribute
+# must not silently stop being recognised.
+TIER_ATTRIBUTE_DIR = "tests/dotnet/Honua.TestKit/Attributes"
+
+# Tiers scripts/ci/run-server-test-shard.sh excludes from EVERY shard it runs.
+# It composes the shard's own `filter` with `&Tier!=Slow` and then `&Tier!=Fast`
+# (HONUA_SERVER_TEST_EXCLUDE_SLOW / _EXCLUDE_FAST, both defaulting to true, and
+# pr-gate.yml sets neither), so a changed test carrying one of these tiers is
+# executed by NO shard this lane can select -- Fast runs once per CI run in
+# dotnet-foundation-tests, Slow runs nightly.
+#
+# This has to be resolved from the SOURCE, not by handing the composed filter
+# to `coverage.shard_claims`. That evaluator returns neutral-true for every
+# non-FullyQualifiedName clause on purpose (check-server-test-shard-coverage.py
+# `_eval`, so a Trait filter cannot falsely orphan a class), which makes
+# `(base)&Tier!=Fast` and `base` indistinguishable to it.
+EXCLUDED_TIERS = frozenset({"Fast", "Slow"})
+
+_TIER_TRAIT_RE = re.compile(r'Trait\(\s*"Tier"\s*,\s*(?:"([A-Za-z]+)"|Tiers\.([A-Za-z]+))')
+_TIER_EMITTER_RE = re.compile(r'"Tier"\s*,\s*(?:Tiers\.([A-Za-z]+)|"([A-Za-z]+)")')
+_ATTRIBUTE_DECL_RE = re.compile(r"\bclass\s+([A-Za-z_][A-Za-z0-9_]*)Attribute\b")
+_ATTRIBUTE_USE_RE = re.compile(r"[\[,]\s*([A-Za-z_][A-Za-z0-9_]*)")
+_ATTRIBUTE_LINE_START_RE = re.compile(r"(?:\A|\n)[ \t]*\[")
 
 # The test assembly a shard runs when its record declares no `csproj`. Mirrors
 # the same default in scripts/ci/run-server-test-shard.sh and ci.yml.
@@ -251,6 +291,118 @@ def load_shard_coverage(root: Path) -> tuple[Any, dict[str, dict[str, Any]]]:
     return coverage, coverage.enumerate_test_classes()
 
 
+@functools.lru_cache(maxsize=1)
+def tier_attributes(root: Path) -> dict[str, str]:
+    """`{attribute short name: tier}` for every TestKit attribute that emits one."""
+    mapping: dict[str, str] = {}
+    directory = root / TIER_ATTRIBUTE_DIR
+    if not directory.is_dir():
+        return mapping
+    for path in sorted(directory.glob("*.cs")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        emitted = _TIER_EMITTER_RE.search(text)
+        if not emitted:
+            continue
+        tier = emitted.group(1) or emitted.group(2)
+        for name in _ATTRIBUTE_DECL_RE.findall(text):
+            mapping[name] = tier
+    return mapping
+
+
+def _blank_literals(coverage: Any, text: str) -> str:
+    """Blank comments and string literals to spaces, preserving every offset.
+
+    `coverage._strip_noise` collapses them to a fixed token instead, so its
+    output cannot be indexed back into the original source -- and the tier this
+    scan needs lives INSIDE a string literal. Same single left-to-right
+    alternation, so the same construct wins; only the replacement differs.
+    """
+    return coverage._NOISE.sub(
+        lambda match: "".join(" " if char != "\n" else "\n" for char in match.group(0)),
+        text,
+    )
+
+
+def _tiers_in(attribute_text: str, attributes: dict[str, str]) -> set[str]:
+    tiers = {
+        literal or constant for literal, constant in _TIER_TRAIT_RE.findall(attribute_text)
+    }
+    for name in _ATTRIBUTE_USE_RE.findall(attribute_text):
+        tier = attributes.get(name) or attributes.get(name.removesuffix("Attribute"))
+        if tier:
+            tiers.add(tier)
+    return tiers
+
+
+@functools.lru_cache(maxsize=256)
+def scan_tiers(root: Path, source: str) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """`({class name: tiers}, {method name: tiers})` declared in one test source.
+
+    Attributes are read positionally: each run of `[...]` blocks that starts a
+    line is attributed to whatever declaration follows it, using the coverage
+    guard's own bracket-depth skipper and declaration patterns so an
+    `[InlineData(new[] { 1, 2 })]` cannot end the run early. Scoped to a single
+    file (there are only ever a handful of changed test files), so no brace
+    tracking is needed: the coverage inventory already tells the caller which
+    class owns which method names.
+    """
+    coverage, _ = load_shard_coverage(root)
+    raw = (root / source).read_text(encoding="utf-8", errors="replace")
+    blanked = _blank_literals(coverage, raw)
+    attributes = tier_attributes(root)
+
+    classes: dict[str, set[str]] = {}
+    methods: dict[str, set[str]] = {}
+    position = 0
+    while True:
+        opening = _ATTRIBUTE_LINE_START_RE.search(blanked, position)
+        if not opening:
+            break
+        start = opening.end() - 1
+        end = coverage._skip_attribute_blocks(blanked, start)
+        if end <= start:
+            position = start + 1
+            continue
+        position = end
+        tiers = _tiers_in(raw[start:end], attributes)
+        if not tiers:
+            continue
+        declared = coverage.CLASS_RE.match(blanked, end)
+        if declared:
+            classes.setdefault(declared.group(1), set()).update(tiers)
+            continue
+        method = coverage._method_name_after(blanked, end)
+        if method:
+            methods.setdefault(method, set()).update(tiers)
+    return classes, methods
+
+
+def runnable_methods(root: Path, fqn: str, entry: dict[str, Any]) -> list[str]:
+    """`entry["methods"]` minus the ones no selectable shard would execute.
+
+    A class-level tier applies to every test in the class (xUnit unions class
+    and method traits, and `Tier!=Fast` excludes a test if ANY of its Tier
+    values is Fast), so an excluded class tier empties the class outright.
+    A method with no Tier trait at all survives `Tier!=X`, which is why the
+    untiered majority is unaffected.
+    """
+    simple = fqn.rsplit(".", 1)[-1]
+    class_tiers: set[str] = set()
+    method_tiers: dict[str, set[str]] = {}
+    for source in entry["src"]:
+        classes, methods = scan_tiers(root, source)
+        class_tiers |= classes.get(simple, set())
+        for name, tiers in methods.items():
+            method_tiers.setdefault(name, set()).update(tiers)
+    if class_tiers & EXCLUDED_TIERS:
+        return []
+    return [
+        method
+        for method in entry["methods"]
+        if not (method_tiers.get(method, set()) & EXCLUDED_TIERS)
+    ]
+
+
 def count_test_class_hits(
     root: Path, config: dict[str, Any], changed_files: Sequence[str]
 ) -> dict[str, int] | None:
@@ -278,6 +430,20 @@ def count_test_class_hits(
 
     hits: dict[str, int] = {}
     try:
+        # Restricted to the methods a selectable shard would ACTUALLY execute.
+        # run-server-test-shard.sh composes every shard filter with
+        # `&Tier!=Slow&Tier!=Fast`, so a changed class whose tests are all Fast
+        # -- the class-level `[Trait("Tier", "Fast")]` on
+        # ServingObservabilityContractTests is the shape -- is run by none of
+        # them. Counting it anyway handed the claiming shard the
+        # highest-priority ranking signal there is for tests it never runs,
+        # which under a capped `run_all` selection spends a slot and can push a
+        # genuinely runnable affected shard past the cap.
+        runnable = {
+            fqn: runnable_methods(root, fqn, entry)
+            for changed in test_files
+            for fqn, entry in declared.get(changed, ())
+        }
         for shard in config["shards"]:
             project = shard_test_project(shard)
             count = 0
@@ -287,7 +453,7 @@ def count_test_class_hits(
                         continue
                     if any(
                         coverage.shard_claims(shard["filter"], f"{fqn}.{method}")
-                        for method in entry["methods"]
+                        for method in runnable[fqn]
                     ):
                         count += 1
                         break
