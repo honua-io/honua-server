@@ -169,7 +169,13 @@ public sealed class GdalRasterInterpolateExecutorTests
     [UnitTest]
     public async Task Kriging_RoutesToTheBundledNumPySolver_AndNeverToGdalGrid()
     {
-        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("kriged-tif"));
+        var runner = new FakeGdalCommandRunner((_, args, _) =>
+        {
+            var outputIndex = Array.IndexOf(args.ToArray(), "--output");
+            outputIndex.Should().BeGreaterThanOrEqualTo(0);
+            File.WriteAllBytes(args[outputIndex + 1], Encoding.UTF8.GetBytes("kriged-tif"));
+            return new GdalCommandResult { ExitCode = 0 };
+        });
         var executor = NewExecutor(runner, out var scratch);
         try
         {
