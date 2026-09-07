@@ -20,11 +20,11 @@ sql:
   # --- Public tier service: anonymous read allowed -> access "public" ---
   - |
       INSERT INTO honua.services (
-          service_name, description, srid, max_record_count,
+          service_name, description, srid,
           supported_formats, capabilities, service_extent, metadata
       )
       VALUES (
-          'portal_public', 'Portal Facade — Public Basemap', 4326, 1000,
+          'portal_public', 'Portal Facade — Public Basemap', 4326,
           ARRAY['JSON', 'GeoJSON'],
           ARRAY['Query', 'Extract'],
           ST_MakeEnvelope(-122.45, 37.74, -122.38, 37.80, 4326),
@@ -39,11 +39,11 @@ sql:
   # --- Org tier service: authenticated (no role) allowed -> access "org" ---
   - |
       INSERT INTO honua.services (
-          service_name, description, srid, max_record_count,
+          service_name, description, srid,
           supported_formats, capabilities, service_extent, metadata
       )
       VALUES (
-          'portal_org', 'Portal Facade — Org Operational Layers', 4326, 1000,
+          'portal_org', 'Portal Facade — Org Operational Layers', 4326,
           ARRAY['JSON', 'GeoJSON'],
           ARRAY['Query', 'Extract'],
           ST_MakeEnvelope(-122.45, 37.74, -122.38, 37.80, 4326),
@@ -58,11 +58,11 @@ sql:
   # --- Private tier service: role-gated -> access "private" ---
   - |
       INSERT INTO honua.services (
-          service_name, description, srid, max_record_count,
+          service_name, description, srid,
           supported_formats, capabilities, service_extent, metadata
       )
       VALUES (
-          'portal_private', 'Portal Facade — Restricted Parcels', 4326, 1000,
+          'portal_private', 'Portal Facade — Restricted Parcels', 4326,
           ARRAY['JSON', 'GeoJSON'],
           ARRAY['Query', 'Extract'],
           ST_MakeEnvelope(-122.45, 37.74, -122.38, 37.80, 4326),
