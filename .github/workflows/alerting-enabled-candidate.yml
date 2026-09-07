@@ -109,7 +109,7 @@ jobs:
 
       - name: Retain immutable candidate receipt
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: alerting-enabled-candidate-${{ steps.candidate.outputs.sha }}
           path: artifacts/alerting-enabled-candidate/

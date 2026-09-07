@@ -860,7 +860,7 @@ jobs:
         run: scripts/ci/run-foundation-family.sh run ${{ matrix.family }}
 
       - name: Upload foundation family test results
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 3
         with:
@@ -874,7 +874,7 @@ jobs:
       # coverage (as before the split), but the artifact is uploaded per family
       # so the fan-in job below can merge whatever exists without special-casing.
       - name: Upload foundation family coverage (cobertura)
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 3
         with:
@@ -952,7 +952,7 @@ jobs:
       # coverage is aggregated across families in one place rather than being
       # scattered by the split.
       - name: Upload foundation test results
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 5
         with:
@@ -962,7 +962,7 @@ jobs:
           retention-days: 7
 
       - name: Upload foundation coverage (cobertura)
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 5
         with:
@@ -1354,7 +1354,7 @@ jobs:
 
       - name: Upload Operator Eval Report
         if: ${{ always() && matrix.upload_operator_eval_report }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: operator-eval-report
           path: tests/TestResults/eval-report.json
@@ -1371,7 +1371,7 @@ jobs:
 
       - name: Upload shard test results
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         timeout-minutes: 3
         with:
           name: server-test-results-${{ matrix.artifact_suffix }}
@@ -1525,7 +1525,7 @@ jobs:
 
       - name: Upload Worker GDAL test results
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         timeout-minutes: 3
         with:
           name: worker-gdal-test-results
@@ -1586,7 +1586,7 @@ jobs:
         working-directory: tests/python
 
       - name: Upload Python test results
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 3
         with:
@@ -1766,7 +1766,7 @@ jobs:
             echo "(could not query feature counts — DB unreachable?)"
 
       - name: Upload JavaScript test diagnostics
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: javascript-integration-results
@@ -1776,7 +1776,7 @@ jobs:
           retention-days: 7
 
       - name: Upload OpenLayers Evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: openlayers-compat-results
@@ -1892,7 +1892,7 @@ jobs:
           HONUA_API_KEY: "ci-admin-password"
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: esri-leaflet-browser-results
@@ -2006,7 +2006,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: maplibre-compat-results
           path: |
@@ -2017,7 +2017,7 @@ jobs:
       # Startup failures happen before Playwright can produce test results.
       - name: Upload MapLibre server startup log
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: maplibre-server-startup-log
           path: ${{ runner.temp }}/honua-server-setup.log
@@ -2123,7 +2123,7 @@ jobs:
 
       - name: Upload certification artifact
         if: always() && steps.setup.outputs.cert-available == 'true' && steps.setup.outputs.cert-artifact-available == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: mcp-certification-${{ matrix.transport }}
           path: |
@@ -2216,7 +2216,7 @@ jobs:
 
       - name: Upload LLM smoke transcripts
         if: always() && steps.setup.outputs.smoke-available == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: mcp-llm-smoke-transcripts
           path: |
@@ -2330,7 +2330,7 @@ jobs:
           exit "${rc}"
 
       - name: Upload Postgres coverage (cobertura)
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: ${{ always() && matrix.collect_coverage }}
         timeout-minutes: 3
         with:

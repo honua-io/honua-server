@@ -73,7 +73,7 @@ jobs:
             --run-url "$RUN_URL"
 
       - name: Upload normalized certification fragment
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: cite-protocol-certification-${{ github.run_id }}
           path: |

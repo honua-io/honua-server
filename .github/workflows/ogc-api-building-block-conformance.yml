@@ -136,7 +136,7 @@ jobs:
 
       - name: Upload OGC API conformance evidence
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: ogc-api-building-block-conformance-${{ github.run_id }}
           path: ogcapi-conformance-results/

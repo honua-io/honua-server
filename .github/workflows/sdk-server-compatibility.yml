@@ -625,7 +625,7 @@ jobs:
 
       - name: Upload SDK compatibility cell evidence
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: sdk-compat-result-${{ matrix.server_label }}-${{ matrix.sdk_label }}-${{ github.run_id }}
           path: |
@@ -749,7 +749,7 @@ jobs:
 
       - name: Upload normalized fragment, report, and traces
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: sdk-release-certification-${{ github.run_id }}
           path: |
@@ -808,7 +808,7 @@ jobs:
 
       - name: Upload SDK compatibility table
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: sdk-compatibility-matrix-${{ github.run_id }}
           path: |
