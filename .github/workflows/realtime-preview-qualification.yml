@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Verify immutable dispatch identities
         env:
@@ -179,7 +179,7 @@ jobs:
 
       - name: Retain source, diagnostics, ledger, identities, and verdict
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: realtime-preview-qualification-${{ inputs.candidate_revision }}-${{ github.run_id }}
           path: artifacts/qualification/

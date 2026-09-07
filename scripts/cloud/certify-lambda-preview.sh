@@ -77,13 +77,18 @@ function_name="honua-certrun-lambda-${run_token}"
 log_group="/aws/lambda/${function_name}"
 source_repository="${HONUA_LAMBDA_SOURCE_IMAGE%%:*}"
 source_ref="${HONUA_LAMBDA_SOURCE_IMAGE}@${HONUA_LAMBDA_SOURCE_DIGEST}"
-target_tag="candidate-${HONUA_LAMBDA_SERVER_REVISION:0:12}-${HONUA_LAMBDA_SOURCE_DIGEST:7:12}"
+# The architecture is part of the tag because the supplied source digest may name a
+# multi-platform index: the same revision and pin certified for arm64 and for x86_64 mirror
+# different child manifests, and a shared tag would make each run read the other's artifact as a
+# stale mirror and delete it.
+target_tag="candidate-${HONUA_LAMBDA_SERVER_REVISION:0:12}-${HONUA_LAMBDA_SOURCE_DIGEST:7:12}-${HONUA_LAMBDA_ARCHITECTURE}"
 target_ref="${HONUA_LAMBDA_PREVIEW_REPOSITORY}:${target_tag}"
 repository_name="${HONUA_LAMBDA_PREVIEW_REPOSITORY#*/}"
 registry="${HONUA_LAMBDA_PREVIEW_REPOSITORY%%/*}"
 function_created=false
 log_group_created=false
 function_arn=""
+mirror_outcome=""
 
 fingerprint() {
   printf '%s' "$1" | sha256sum | awk '{print "sha256:" $1}'
@@ -132,6 +137,14 @@ function_presence() {
     printf 'get-function was indeterminate for the run function: %.200s\n' "${err//$'\n'/ }" >&2
     echo unknown
   fi
+}
+
+# Reads the stored manifest for one image id (imageTag=... or imageDigest=...) in the mirror.
+ecr_manifest_for() {
+  aws ecr batch-get-image --repository-name "$repository_name" \
+    --image-ids "$1" \
+    --accepted-media-types application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.v2+json \
+    --query 'images[0].imageManifest' --output text
 }
 
 cleanup() {
@@ -226,14 +239,78 @@ docker run --rm --entrypoint /bin/sh "$source_platform_ref" -c \
   'test -x /opt/extensions/lambda-adapter && test -x /var/task/Honua.Server'
 
 aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
-# Mirror the exact source manifest by digest. A docker pull/tag/push round trip re-serialises the
-# image config through the daemon's own representation, which changes the config blob digest and
-# makes the artifact ECR stores a different artifact from the one the pin certifies. crane uploads
-# the manifest and its blobs verbatim, so the config blob and rootfs survive the copy; ECR may still
-# re-encode the manifest envelope to Docker schema 2, which is why nothing below compares manifest
-# digests. Re-copying on every run is deliberate: it keeps a tag written by an earlier, re-encoding
-# mirror from being accepted on a later run.
-crane copy "$source_platform_ref" "$target_ref"
+
+# The certification repository is tag-immutable, so a rerun for the same candidate cannot overwrite
+# the tag an earlier attempt wrote: the manifest PUT is rejected with TAG_INVALID. Decide what to do
+# with an existing tag before pushing. The ECR copy is a mirror whose source of truth is the GHCR
+# pin, never the other way round, so a tag holding anything other than the exact source artifact is
+# a stale mirror artifact and is replaced rather than trusted. Identity here is blob identity
+# (config blob + layer blobs), not envelope identity, for the same reason the checks below never
+# compare manifest digests: ECR may re-encode the OCI manifest into a Docker schema 2 envelope.
+describe_status=0
+existing_describe="$(aws ecr describe-images --repository-name "$repository_name" \
+  --image-ids imageTag="$target_tag" --output json 2>"$scratch/describe-existing.log")" || describe_status=$?
+if (( describe_status != 0 )) && ! grep -q 'ImageNotFoundException' "$scratch/describe-existing.log"; then
+  # Fail closed: an unreadable repository must never be mistaken for an absent tag.
+  echo "ECR describe-images failed for the candidate tag" >&2
+  exit 3
+fi
+
+if (( describe_status == 0 )); then
+  existing_digest="$(jq -r '.imageDetails[0].imageDigest // empty' <<<"$existing_describe")"
+  if [[ ! "$existing_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "ECR reported an existing candidate tag without an exact image digest" >&2
+    exit 3
+  fi
+  existing_config=""
+  existing_layers=""
+  if [[ "$existing_digest" != "$source_platform_digest" ]]; then
+    # Fail closed: a manifest lookup that failed is not evidence that the tag holds a stale
+    # artifact, and must never be the reason a prior run's release artifact is deleted.
+    manifest_status=0
+    existing_manifest="$(ecr_manifest_for "imageDigest=$existing_digest" 2>"$scratch/batch-get-existing.log")" || manifest_status=$?
+    if (( manifest_status != 0 )); then
+      echo "ECR batch-get-image failed for the existing candidate tag" >&2
+      exit 3
+    fi
+    existing_config="$(jq -er '.config.digest' <<<"$existing_manifest")" || {
+      echo "ECR returned the existing candidate manifest without an exact config digest" >&2
+      exit 3
+    }
+    existing_layers="$(jq -ce '[.layers[].digest]' <<<"$existing_manifest")" || {
+      echo "ECR returned the existing candidate manifest without exact layer digests" >&2
+      exit 3
+    }
+  fi
+  if [[ "$existing_digest" == "$source_platform_digest" ]] ||
+     [[ "$existing_config" == "$source_config" && "$existing_layers" == "$source_layers" ]]; then
+    # Already the exact source artifact. Pushing it again would only fail on the immutable tag; the
+    # verification below still runs against what ECR actually holds, so nothing is taken on trust.
+    mirror_outcome=skipped-existing
+  else
+    if [[ "$repository_name" != honua-cert-cert-lambda-preview || "$target_tag" != candidate-* ]]; then
+      echo "STOP: refusing image delete outside the lane's certification namespace" >&2
+      exit 95
+    fi
+    delete_json="$(aws ecr batch-delete-image --repository-name "$repository_name" \
+      --image-ids imageTag="$target_tag" --output json)"
+    if [[ "$(jq -r '(.failures // []) | length' <<<"$delete_json")" != "0" ]]; then
+      echo "ECR refused to remove the stale candidate tag" >&2
+      exit 4
+    fi
+    mirror_outcome=replaced-stale
+  fi
+else
+  mirror_outcome=pushed
+fi
+
+if [[ "$mirror_outcome" != "skipped-existing" ]]; then
+  # Mirror the exact source manifest by digest. A docker pull/tag/push round trip re-serialises the
+  # image config through the daemon's own representation, which changes the config blob digest and
+  # makes the artifact ECR stores a different artifact from the one the pin certifies. crane uploads
+  # the manifest and its blobs verbatim, so the config blob and rootfs survive the copy.
+  crane copy "$source_platform_ref" "$target_ref"
+fi
 
 ecr_digest="$(aws ecr describe-images --repository-name "$repository_name" \
   --image-ids imageTag="$target_tag" --query 'imageDetails[0].imageDigest' --output text)"
@@ -241,10 +318,7 @@ if [[ ! "$ecr_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "ECR did not return an exact image digest" >&2
   exit 3
 fi
-ecr_manifest="$(aws ecr batch-get-image --repository-name "$repository_name" \
-  --image-ids imageDigest="$ecr_digest" \
-  --accepted-media-types application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.v2+json \
-  --query 'images[0].imageManifest' --output text)"
+ecr_manifest="$(ecr_manifest_for "imageDigest=$ecr_digest")"
 ecr_config="$(jq -er '.config.digest' <<<"$ecr_manifest")"
 if [[ "$ecr_config" != "$source_config" ]]; then
   echo "ECR mirror config digest does not match the exact source artifact" >&2
@@ -350,14 +424,36 @@ if [[ -z "$request_id" ]]; then
   exit 9
 fi
 
-cold_start_ms="$(sed -nE 's/^REPORT .*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$tail_log")"
+# A cold start reports its Init Duration on the REPORT line when the runtime
+# initialized inside Lambda's init window. When initialization exceeds that
+# window (the twelfth live run: ~21 s to resolve secrets and open the database
+# over the VPC, the runtime re-runs it during the first invoke and the only
+# Init Duration is on an INIT_REPORT line with "Phase: invoke". Both are cold
+# starts of this exact function; record which phase carried it so the
+# operating envelope is visible in the receipt. An INIT_REPORT whose Status is
+# error or timeout is not evidence of a served cold start.
+cold_start_phase="init"
+cold_start_ms="$(sed -nE 's/^REPORT .*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$tail_log" | tail -n 1)"
+if [[ -z "$cold_start_ms" ]]; then
+  init_report="$(grep -E '^INIT_REPORT[[:space:]].*Init Duration: ' <<<"$tail_log" | grep -vE 'Status: (error|timeout)' | tail -n 1 || true)"
+  cold_start_ms="$(sed -nE 's/^INIT_REPORT[[:space:]].*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$init_report")"
+  cold_start_phase="$(sed -nE 's/.*Phase: ([a-z]+).*/\1/p' <<<"$init_report")"
+  cold_start_phase="${cold_start_phase:-invoke}"
+fi
 if [[ -z "$cold_start_ms" ]] || ! awk -v value="$cold_start_ms" 'BEGIN { exit !(value > 0) }'; then
-  echo "first invoke REPORT has no positive cold-start Init Duration" >&2
+  echo "first invoke REPORT/INIT_REPORT has no positive cold-start Init Duration" >&2
   exit 14
 fi
 
+# CloudWatch delivery for a fresh function's first invoke lags: the thirteenth
+# live run (34084763377) created its log stream at +0s, the first query ran at
+# +49s and eleven more over the next minute found nothing, then teardown
+# removed the group. The runtime ships logs asynchronously after a ~21 s
+# init-in-invoke; give delivery three minutes, bounded, and on timeout say what
+# the group held (stream and event counts only, never log content) so the next
+# failure is diagnosable from the job log.
 cloudwatch_verified=false
-for _ in {1..12}; do
+for _ in {1..36}; do
   event_count="$(aws logs filter-log-events --log-group-name "$log_group" \
     --filter-pattern "\"${request_id}\"" --query 'length(events)' --output text)"
   if [[ "$event_count" =~ ^[1-9][0-9]*$ ]]; then
@@ -368,6 +464,11 @@ for _ in {1..12}; do
 done
 if ! $cloudwatch_verified; then
   echo "matching invocation evidence did not arrive in CloudWatch Logs" >&2
+  stream_count="$(aws logs describe-log-streams --log-group-name "$log_group" \
+    --query 'length(logStreams)' --output text 2>/dev/null)" || stream_count="unknown"
+  any_events="$(aws logs filter-log-events --log-group-name "$log_group" \
+    --query 'length(events)' --output text 2>/dev/null)" || any_events="unknown"
+  echo "cloudwatch-evidence: log-streams=${stream_count} events-in-group=${any_events} request-id-fingerprint=$(fingerprint "$request_id")" >&2
   exit 10
 fi
 
@@ -394,6 +495,7 @@ mkdir -p "$(dirname "$HONUA_LAMBDA_PREVIEW_RECEIPT")"
 jq -n \
   --arg architecture "$HONUA_LAMBDA_ARCHITECTURE" \
   --argjson cold_start_ms "$cold_start_ms" \
+  --arg cold_start_phase "$cold_start_phase" \
   --argjson serving "$serving_proof" \
   --arg schema "honua.lambda-preview-certification/v1" \
   --arg server_revision "$HONUA_LAMBDA_SERVER_REVISION" \
@@ -402,15 +504,16 @@ jq -n \
   --arg source_platform_digest "$source_platform_digest" \
   --arg source_rootfs_fingerprint "$(fingerprint "$source_rootfs")" \
   --arg ecr_digest "$ecr_digest" \
+  --arg mirror_outcome "$mirror_outcome" \
   --arg region_fingerprint "$(fingerprint "${AWS_REGION:-${AWS_DEFAULT_REGION:-}}")" \
   --arg account_fingerprint "$(fingerprint "$(aws sts get-caller-identity --query Account --output text)")" \
   --arg repository_fingerprint "$(fingerprint "$HONUA_LAMBDA_PREVIEW_REPOSITORY")" \
   --arg function_fingerprint "$(fingerprint "$function_name")" \
   --arg request_fingerprint "$(fingerprint "$request_id")" \
   --arg run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${GITHUB_RUN_ID}" \
-  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourcePlatformDigest:$source_platform_digest,sourceConfigDigest:$source_config_digest,sourceRootfsFingerprint:$source_rootfs_fingerprint,ecrDigest:$ecr_digest,repositoryFingerprint:$repository_fingerprint,mirrorTool:"crane",configDigestPreserved:true,rootfsPreserved:true,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
+  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourcePlatformDigest:$source_platform_digest,sourceConfigDigest:$source_config_digest,sourceRootfsFingerprint:$source_rootfs_fingerprint,ecrDigest:$ecr_digest,mirrorOutcome:$mirror_outcome,repositoryFingerprint:$repository_fingerprint,mirrorTool:"crane",configDigestPreserved:true,rootfsPreserved:true,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,coldStartInitPhase:$cold_start_phase,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
   > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
 
-jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourcePlatformDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourceConfigDigest | test("^sha256:[0-9a-f]{64}$")) and .artifact.configDigestPreserved and .artifact.rootfsPreserved and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and .verification.coldStartInitDurationMs > 0' \
+jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourcePlatformDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourceConfigDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.mirrorOutcome | test("^(pushed|skipped-existing|replaced-stale)$")) and .artifact.configDigestPreserved and .artifact.rootfsPreserved and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and .verification.coldStartInitDurationMs > 0' \
   "$HONUA_LAMBDA_PREVIEW_RECEIPT" >/dev/null
 echo "Lambda Preview certification passed; ECR digest: ${ecr_digest}"

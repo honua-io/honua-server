@@ -115,7 +115,7 @@ jobs:
       server_sha: ${{ steps.ref.outputs.server_sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 
@@ -215,7 +215,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
       - name: Run integration lanes against the RC image
         run: |
           set -euo pipefail
@@ -246,7 +246,7 @@ jobs:
           done
           echo "Collected integration evidence:"; cat integration-evidence.ndjson || true
       - name: Upload integration evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: integration-evidence
           path: integration-evidence.ndjson
@@ -260,7 +260,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
       - name: Cut SDKs (dry-run) and collect compat evidence vs the RC image
         run: |
           set -euo pipefail
@@ -291,7 +291,7 @@ jobs:
           done
           echo "Collected SDK evidence:"; cat sdk-evidence.ndjson || true
       - name: Upload SDK evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: sdk-evidence
           path: sdk-evidence.ndjson
@@ -331,9 +331,9 @@ jobs:
       verdict: ${{ steps.validate.outputs.verdict }}
     steps:
       - name: Checkout honua-server
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
       - name: Checkout honua-devops (validator)
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           repository: honua-io/honua-devops
           path: .honua-devops
@@ -385,7 +385,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload manifest + scoreboard bundle
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: release-train-evidence
           path: |
@@ -406,7 +406,7 @@ jobs:
     environment: release-promote
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
       - name: Log in to GHCR (retag needs registry write auth)
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:

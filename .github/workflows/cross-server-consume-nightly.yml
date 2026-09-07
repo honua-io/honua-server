@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload consume artifacts
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: cross-server-consume-${{ github.run_id }}
           path: |

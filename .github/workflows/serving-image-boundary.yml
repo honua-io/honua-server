@@ -70,7 +70,7 @@ jobs:
       input_digests: ${{ steps.digests.outputs.value }}
       freshness_epoch: ${{ steps.freshness.outputs.value }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -207,7 +207,7 @@ jobs:
     steps:
       # No `fetch-depth: 0` here: only `detect` diffs base..head. A build leg
       # needs the build context, not the history.
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         if: env.IMPACTED == 'true'
 
       - name: Restore exact verification marker

@@ -44,7 +44,7 @@ jobs:
           echo "sha=$REQUESTED_SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Checkout exact candidate
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.candidate.outputs.sha }}
           fetch-depth: 1
@@ -136,7 +136,7 @@ jobs:
 
       - name: Upload OGC API conformance evidence
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: ogc-api-building-block-conformance-${{ github.run_id }}
           path: ogcapi-conformance-results/

@@ -7,7 +7,9 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Tiles.PMTiles;
 using Honua.TestKit;
+using Honua.TestKit.Formats;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -70,18 +72,20 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
         var jobId = await StartArchiveJobAsync();
         var (finalStatus, lastJson) = await WaitForJobCompletionAsync(jobId);
 
-        finalStatus.Should().NotBeNull("job should have completed within timeout");
+        // honua-server#4421: the size and file-id assertions used to sit inside
+        // `if (finalStatus == OperationStatus.Completed)`, so the test passed when the job FAILED.
+        // Require completion, then assert unconditionally.
+        finalStatus.Should().Be(
+            OperationStatus.Completed,
+            "the archive job must reach Completed — a failed job must fail this test, not skip its " +
+            $"assertions: {lastJson?.RootElement.GetRawText()}");
 
         var root = lastJson!.RootElement;
         GetPropertyCaseInsensitive(root, "operation").GetString().Should().Be("archive");
 
-        var archiveSize = GetPropertyCaseInsensitive(root, "archiveSizeBytes").GetInt64();
-
-        if (finalStatus == OperationStatus.Completed)
-        {
-            archiveSize.Should().BeGreaterThan(0, "completed archive should have non-zero size");
-            GetPropertyCaseInsensitive(root, "archiveFileId").GetString().Should().NotBeNullOrWhiteSpace();
-        }
+        GetPropertyCaseInsensitive(root, "archiveSizeBytes").GetInt64()
+            .Should().BeGreaterThan(0, "completed archive should have non-zero size");
+        GetPropertyCaseInsensitive(root, "archiveFileId").GetString().Should().NotBeNullOrWhiteSpace();
 
         lastJson.Dispose();
     }
@@ -165,6 +169,63 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
         tileDataLength.Should().BeGreaterThan(0, "tile data section should not be empty");
         (tileDataOffset + tileDataLength).Should().Be((ulong)archiveBytes.Length,
             "tile data should extend to end of archive");
+
+        // honua-server#4421: every header assertion above passes on an archive whose tile data is
+        // arbitrary bytes — `tileType == 1` is a declared byte, not a payload check.
+        //
+        // Decoding the tile-data section as a single blob is not enough either: concatenated
+        // protobuf messages merge into one valid message, so a directory entry with a wrong offset
+        // or length would still "decode". Walk the directory and decode each declared tile slice
+        // exactly as a PMTiles client would address it.
+        var header = PMTilesHeader.ReadFrom(archiveBytes);
+        var entries = ReadAllEntries(archiveBytes, header);
+        entries.Should().NotBeEmpty("the archive must declare at least one tile entry");
+        ((ulong)entries.Length).Should().Be(
+            tileEntries, "every declared tile entry must be reachable through the directories");
+
+        foreach (var entry in entries)
+        {
+            var start = (int)(header.TileDataOffset + entry.Offset);
+            var slice = archiveBytes[start..(start + (int)entry.Length)];
+            var tileBytes = PMTilesDirectory.Decompress(slice, header.TileCompression);
+            MvtTileDecoder.TryDecode(tileBytes, out var decoded).Should().BeTrue(
+                $"the tile at directory entry {entry.TileId} (offset {entry.Offset}, length " +
+                $"{entry.Length}) must be a decodable Mapbox Vector Tile, since the header declares " +
+                "tile type 1 (MVT)");
+            decoded!.Layers.Should().NotBeEmpty();
+            decoded.FeatureCount.Should().BeGreaterThan(
+                0, "an archive of empty tiles proves nothing about the tile pipeline");
+        }
+    }
+
+    /// <summary>
+    /// Walks the root directory, following leaf directories, and returns every tile entry.
+    /// </summary>
+    private static PMTilesEntry[] ReadAllEntries(byte[] archiveBytes, PMTilesHeader header)
+    {
+        var root = ReadDirectory(archiveBytes, header, header.RootDirectoryOffset, header.RootDirectoryLength);
+        var tiles = new List<PMTilesEntry>();
+        foreach (var entry in root)
+        {
+            if (!entry.IsLeaf)
+            {
+                tiles.Add(entry);
+                continue;
+            }
+
+            tiles.AddRange(ReadDirectory(
+                archiveBytes, header, header.LeafDirectoryOffset + entry.Offset, entry.Length));
+        }
+
+        return [.. tiles];
+    }
+
+    private static PMTilesEntry[] ReadDirectory(
+        byte[] archiveBytes, PMTilesHeader header, ulong offset, ulong length)
+    {
+        var slice = archiveBytes[(int)offset..(int)(offset + length)];
+        return PMTilesDirectory.DeserializeEntries(
+            PMTilesDirectory.Decompress(slice, header.InternalCompression));
     }
 
     private async Task<string> StartArchiveJobAsync()

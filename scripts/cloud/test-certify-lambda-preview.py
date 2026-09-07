@@ -49,9 +49,14 @@ arch = "arm64" if os.environ["HONUA_LAMBDA_ARCHITECTURE"] == "arm64" else "amd64
 if name == "sleep": emit(None)
 if name == "crane":
     if args[0] != "copy": bad()
+    if s["ecr"] is not None:
+        # The certification repository is tag-immutable: the manifest PUT is rejected outright.
+        print("PUT ...: TAG_INVALID: The image tag '%s' already exists and cannot be overwritten "
+              "because the repository is immutable" % args[2].rsplit(":", 1)[-1], file=sys.stderr)
+        bad()
     # crane uploads the manifest and its blobs verbatim, so ECR keeps the exact config blob and rootfs.
     s["mirrored"] = args[1]
-    s["ecr"] = {"config": manifest["config"]["digest"],
+    s["ecr"] = {"digest": digest, "config": manifest["config"]["digest"],
                 "layers": [layer["digest"] for layer in manifest["layers"]], "rootfs": rootfs}
     emit(None)
 if name == "docker":
@@ -92,10 +97,31 @@ if service == "sts": emit("123456789012")
 if service == "ecr":
     if op == "get-login-password": emit("offline-password")
     if op == "describe-images":
-        if not s["ecr"]: emit("None")
-        emit("bad" if fail == "digest" else digest)
+        if fail == "describe-error":
+            print("An error occurred (AccessDeniedException) when calling the DescribeImages "
+                  "operation: not authorized", file=sys.stderr)
+            bad()
+        if not s["ecr"]:
+            print("An error occurred (ImageNotFoundException) when calling the DescribeImages "
+                  "operation: The image with imageId {imageTag: %s} does not exist"
+                  % arg("--image-ids", ""), file=sys.stderr)
+            bad()
+        if arg("--query"): emit("bad" if fail == "digest" else s["ecr"]["digest"])
+        emit({"imageDetails": [{"imageDigest": s["ecr"]["digest"]}]})
+    if op == "batch-delete-image":
+        assert arg("--repository-name").endswith("honua-cert-cert-lambda-preview")
+        assert arg("--image-ids").startswith("imageTag=candidate-")
+        if fail == "stale-delete":
+            emit({"imageIds": [], "failures": [{"failureCode": "ImageNotFound"}]})
+        s["deleted_tags"].append(arg("--image-ids"))
+        s["ecr"] = None
+        emit({"imageIds": [{"imageTag": arg("--image-ids").split("=", 1)[1]}], "failures": []})
     if op == "batch-get-image":
-        if not s["ecr"]: bad()
+        if not s["ecr"] or fail == "manifest-error":
+            if fail == "manifest-error":
+                print("An error occurred (AccessDeniedException) when calling the BatchGetImage "
+                      "operation: not authorized", file=sys.stderr)
+            bad()
         stored = {"config": {"digest": s["ecr"]["config"]},
                   "layers": [{"digest": d} for d in s["ecr"]["layers"]]}
         if fail == "mirror": stored["config"]["digest"] = "sha256:"+"f"*64
@@ -222,6 +248,8 @@ log = "REPORT RequestId: offline-id Duration: 20.00 ms Billed Duration: 30 ms In
 if fail == "report": log = "no report"
 if fail == "cold-start": log = "REPORT RequestId: offline-id Duration: 20.00 ms"
 if fail == "cold-zero": log = "REPORT RequestId: offline-id Init Duration: 0 ms"
+if fail == "init-error": log = "INIT_REPORT Init Duration: 21364.18 ms\tPhase: invoke\tStatus: error\nREPORT RequestId: offline-id Duration: 20.00 ms"
+if os.environ.get("STUB_INIT_PHASE") == "invoke": log = "INIT_REPORT Init Duration: 21364.18 ms\tPhase: invoke\tStatus: ok\nREPORT RequestId: offline-id Duration: 20.00 ms Billed Duration: 30 ms"
 response_path.write_text(json.dumps({"statusCode":status,"body":body if isinstance(body,str) else json.dumps(body)}))
 meta = {"StatusCode":200,"ExecutedVersion":"99" if fail == "executed-version" else version,"LogResult":base64.b64encode(log.encode()).decode()}
 if fail == "invoke": meta["FunctionError"] = "Unhandled"
@@ -251,8 +279,12 @@ def as_ecr_schema2(manifest):
     return converted
 
 
+# Derived by the lane from the pinned revision and source digest the offline run supplies.
+CANDIDATE_TAG = "candidate-" + "a" * 12 + "-" + "a" * 12 + "-x86_64"
+
+
 class LambdaPreviewLaneContractTests(unittest.TestCase):
-    def run_lane(self, failure="", **overrides):
+    def run_lane(self, failure="", ecr=None, **overrides):
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)
             stub = directory / "stub"
@@ -265,7 +297,8 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
             state_path.write_text(json.dumps({"calls": [], "backend": [], "function": False, "logs": False,
                                              "alias": "7", "image": original, "versions": ["7"], "deleted_versions": [],
                                              "shifted": False, "rolledback": False, "row": False,
-                                             "ecr": None, "mirrored": None, "vpc": None}))
+                                             "ecr": ecr, "mirrored": None, "vpc": None,
+                                             "deleted_tags": []}))
             env = {**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"], "STUB_STATE": str(state_path),
                    "STUB_FAIL": failure, "STUB_INDEX": "", "HONUA_LAMBDA_SOURCE_IMAGE": "ghcr.io/honua-io/honua-server:nightly-lambda-aot-test-amd64",
                    "HONUA_LAMBDA_SOURCE_DIGEST": "sha256:" + "a" * 64, "HONUA_LAMBDA_SERVER_REVISION": "a" * 40,
@@ -293,6 +326,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertEqual("pass", receipt["result"])
                 self.assertEqual(architecture, receipt["deployment"]["architecture"])
                 self.assertEqual(150.25, receipt["verification"]["coldStartInitDurationMs"])
+                self.assertEqual("init", receipt["verification"]["coldStartInitPhase"])
                 serving = receipt["serving"]
                 self.assertEqual({"beforeVersion":"7", "afterVersion":"8", "rollbackVersion":"7"}, serving["alias"])
                 for phase in ("deployed", "baseline", "candidate", "rollback"):
@@ -331,6 +365,64 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
         self.assertEqual(child, receipt["artifact"]["sourcePlatformDigest"])
         self.assertEqual("sha256:" + "a" * 64, receipt["artifact"]["sourceDigest"])
 
+    def test_rerun_survives_the_immutable_candidate_tag(self):
+        """The certification repository is tag-immutable, so a rerun must not depend on overwriting."""
+        source = "ghcr.io/honua-io/honua-server@sha256:" + "a" * 64
+        exact = {"digest": "sha256:" + "b" * 64, "config": "sha256:" + "c" * 64,
+                 "layers": ["sha256:" + "d" * 64], "rootfs": ["sha256:" + "1" * 64, "sha256:" + "2" * 64]}
+        # What the live run 34064826386 hit: a tag left behind by the earlier re-encoding mirror.
+        stale = {"digest": "sha256:" + "5" * 64, "config": "sha256:" + "f" * 64,
+                 "layers": ["sha256:" + "e" * 64], "rootfs": ["sha256:" + "0" * 64]}
+        cases = ((None, "pushed", source, []), (exact, "skipped-existing", None, []),
+                 (stale, "replaced-stale", source, [CANDIDATE_TAG]))
+        for seeded, outcome, mirrored, deleted in cases:
+            with self.subTest(outcome=outcome):
+                result, receipt, state, _ = self.run_lane(ecr=seeded)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual("pass", receipt["result"])
+                self.assertEqual(outcome, receipt["artifact"]["mirrorOutcome"])
+                self.assertEqual(mirrored, state["mirrored"])
+                self.assertEqual(deleted, [d.split("=", 1)[1] for d in state["deleted_tags"]])
+                self.assertEqual(bool(mirrored), any(call[:1] == ["crane"] for call in state["calls"]))
+                # Whatever the outcome, the artifact ECR ends up holding is still verified in full.
+                self.assertEqual(exact["digest"], receipt["artifact"]["ecrDigest"])
+                self.assertEqual(exact["config"], receipt["artifact"]["sourceConfigDigest"])
+
+    def test_immutable_tag_handling_fails_closed(self):
+        stale = {"digest": "sha256:" + "5" * 64, "config": "sha256:" + "f" * 64,
+                 "layers": ["sha256:" + "e" * 64], "rootfs": []}
+        for failure, seeded in (("describe-error", None), ("stale-delete", stale), ("manifest-error", stale)):
+            with self.subTest(failure=failure):
+                result, receipt, state, _ = self.run_lane(failure, ecr=seeded)
+                self.assertNotEqual(0, result.returncode)
+                self.assertNotEqual("pass", receipt.get("result"))
+                self.assertEqual("noProof", receipt["serving"]["result"])
+                # An unreadable repository is never mistaken for an absent tag, and a stale mirror
+                # that could not be removed is never left for the verification below to accept.
+                self.assertIsNone(state["mirrored"])
+                self.assertFalse(any(call[:1] == ["crane"] for call in state["calls"]))
+                self.assertFalse(state["function"] or state["logs"] or state["row"])
+        # A manifest lookup that failed is not evidence of a stale artifact: nothing is deleted, and
+        # the seeded artifact the earlier certification handed off is still there.
+        _, _, state, _ = self.run_lane("manifest-error", ecr=stale)
+        self.assertEqual([], state["deleted_tags"])
+        self.assertEqual(stale, state["ecr"])
+
+    def test_candidate_tag_separates_the_two_supported_architectures(self):
+        """One multi-platform pin certified for both architectures must not share a mirror tag."""
+        tags = {}
+        for architecture in ("x86_64", "arm64"):
+            with self.subTest(architecture=architecture):
+                result, _, state, _ = self.run_lane(STUB_INDEX="index", HONUA_LAMBDA_ARCHITECTURE=architecture)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                addressed = {argument.split("=", 1)[1] for call in state["calls"] for argument in call
+                             if argument.startswith("imageTag=")}
+                copied = {call[3].rsplit(":", 1)[-1] for call in state["calls"] if call[:2] == ["crane", "copy"]}
+                self.assertEqual(1, len(addressed | copied), addressed | copied)
+                tags[architecture] = (addressed | copied).pop()
+                self.assertTrue(tags[architecture].endswith("-" + architecture), tags[architecture])
+        self.assertNotEqual(tags["x86_64"], tags["arm64"])
+
     def test_source_index_without_exactly_one_candidate_child_fails_closed(self):
         for mode in ("no-match", "ambiguous"):
             with self.subTest(mode=mode):
@@ -344,7 +436,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
     def test_each_check_fails_closed(self):
         for failure in ("architecture", "ecr-platform", "revision", "adapter", "digest", "mirror", "layers", "rootfs",
                         "skip-config", "missing-db", "resolved-image", "health-status", "health-body", "invoke",
-                        "report", "cold-start", "cold-zero", "cloudwatch", "migrations", "migration-pending", "migration-plan",
+                        "report", "cold-start", "cold-zero", "init-error", "cloudwatch", "migrations", "migration-pending", "migration-plan",
                         "query", "fixture-names", "create", "readback", "delete", "delete-remains",
                         "denial-status", "denial-body", "denial-records", "denial-nested", "scoped-unauthenticated", "scoped-allowed", "scoped-records", "executed-version", "weighted",
                         "function-delete", "log-delete", "version-delete", "ownership", "get-function-transient"):
@@ -358,6 +450,14 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 if failure not in ("log-delete", "ownership"):
                     self.assertFalse(state["logs"], failure)
                 self.assertFalse(state["row"], failure)
+
+    def test_cold_start_beyond_the_init_window_is_recorded_from_init_report(self):
+        """Init longer than Lambda's init window is re-run in the first invoke; its INIT_REPORT is the evidence."""
+        result, receipt, state, _ = self.run_lane(STUB_INIT_PHASE="invoke")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("pass", receipt["result"])
+        self.assertEqual(21364.18, receipt["verification"]["coldStartInitDurationMs"])
+        self.assertEqual("invoke", receipt["verification"]["coldStartInitPhase"])
 
     def test_indeterminate_get_function_is_never_recorded_as_deletion(self):
         """A throttle or service error during teardown must not publish teardown.functionDeleted."""

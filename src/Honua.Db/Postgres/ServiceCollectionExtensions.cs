@@ -195,6 +195,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAlertMutationExecutor, PostgresAlertMutationExecutor>();
         services.AddScoped<IAlertEventQuery, PostgresAlertEventQuery>();
         services.AddScoped<IAlertLifecycleStore, PostgresAlertLifecycleStore>();
+        services.AddScoped<IAlertAuditOutbox, PostgresAlertAuditOutbox>();
 
         // OGC SensorThings API observations store (#1747)
         services.AddScoped<Honua.Core.Features.SensorThings.Abstractions.IObservationStore>(
