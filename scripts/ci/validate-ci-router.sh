@@ -292,10 +292,15 @@ assert_exact_shards \
   "core-capacity-CrsTransformationCorrectnessTests" \
   "tests/dotnet/Honua.Server.Tests/CrsTransformationCorrectnessTests.cs" \
   '["Core Attachments and Records"]'
+# #3204 headroom rebalance: AdvancedSpatialQueryTests and
+# StreamingFeatureServerEndpointTests moved out of `Core Endpoints` into their own
+# shard (#4450 putting the former here is what took Core Endpoints to 82% of its
+# budget). Both children sit on the same source tree, so a change to the class must
+# still select BOTH — a one-shard answer would mean half the pair stopped running.
 assert_exact_shards \
   "core-capacity-AdvancedSpatialQueryTests" \
   "tests/dotnet/Honua.Server.Tests/AdvancedSpatialQueryTests.cs" \
-  '["Core Endpoints"]'
+  '["Core Endpoints","Core Spatial Query and Streaming"]'
 # The STAC capacity split leaves both children on the same source tree, so a
 # change under it must still select BOTH of them (a one-shard answer here would
 # mean half the STAC assembly stopped running on a STAC diff).
@@ -307,6 +312,87 @@ assert_exact_shards \
   "stac-capacity-split-source" \
   "src/Honua.Protocols.Stac/StacEndpoints.cs" \
   '["STAC Protocol","STAC Items and Collections","STAC and API Governance"]'
+# --- #3204 September 2026 shard-headroom rebalance --------------------------
+# Every capacity split below leaves both children on the same source tree, so a
+# change under that tree must select BOTH children; a one-shard answer would mean
+# the split silently halved what runs on a diff that touches it.
+# `assert_exact_shards` is used where the tree belongs to one protocol test
+# project; `assert_descriptor` where the file also sits under the broad
+# Honua.Server.Tests path prefixes that several catch-all shards already claim.
+assert_exact_shards \
+  "headroom-split-migration-source-imports" \
+  "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportEndpointTests.cs" \
+  '["Migration","Migration Source Imports"]'
+assert_exact_shards \
+  "headroom-split-cloud-streaming-import" \
+  "tests/dotnet/Honua.Server.Tests/Import/StreamingImportTests.cs" \
+  '["Cloud and Streaming Import","File and Raster Import"]'
+assert_exact_shards \
+  "headroom-split-geoservices-imageserver" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs" \
+  '["GeoServices Catalog and ImageServer Support","GeoServices ImageServer"]'
+assert_exact_shards \
+  "headroom-split-odata-errors" \
+  "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataErrorHandlingTests.cs" \
+  '["OData Core","OData Errors and Conformance"]'
+assert_exact_shards \
+  "headroom-split-mcp-auth" \
+  "tests/dotnet/Honua.Ai.Tests/Source/McpBearerAuthenticationTests.cs" \
+  '["MCP Authentication and Governance","MCP and Sessions"]'
+# Honua.Server.Tests classes: assert the NEW child is selected (the broad
+# Features/ path prefixes legitimately add the catch-all shards as well).
+assert_descriptor \
+  "headroom-split-studio-packaging" \
+  "tests/dotnet/Honua.Server.Tests/Features/Studio/StudioPackageEndpointsTests.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Studio Packaging"
+assert_descriptor \
+  "headroom-split-identity" \
+  "tests/dotnet/Honua.Server.Tests/Features/Identity/ScimProvisioningEndpointsTests.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Identity"
+assert_descriptor \
+  "headroom-split-capabilities" \
+  "tests/dotnet/Honua.Server.Tests/Features/Capabilities/CapabilityManifestEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Capabilities"
+assert_descriptor \
+  "headroom-split-elevation-terrain" \
+  "tests/dotnet/Honua.Server.Tests/Features/Protocols/Elevation/ElevationEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "Elevation and Terrain Analysis"
+assert_descriptor \
+  "headroom-split-studio-ai" \
+  "tests/dotnet/Honua.Server.Tests/Features/StudioAi/StudioAiProxyEndpointsTests.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Studio AI"
+assert_descriptor \
+  "headroom-split-ogc-tiles-endpoints-crs" \
+  "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/OgcTilesEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Tiles Endpoints and CRS"
+# The dominant class kept on each parent must still select the parent.
+assert_descriptor \
+  "headroom-split-parent-mapserver" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices MapServer"
+# The MapServer minor classes moved into an existing shard rather than a new one;
+# that shard must now be selected by a MapServer diff.
+assert_descriptor \
+  "headroom-move-mapserver-minor" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerDynamicJoinTests.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices Geometry VectorTile and Versioning"
+
 assert_descriptor \
   "ci-shards-only" \
   ".github/ci-shards.json" \
@@ -598,7 +684,7 @@ assert_descriptor \
   "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/CompactTilePackageWriterTests.cs" \
   "targeted" \
   "false" \
-  "GeoServices ImageServer"
+  "GeoServices Catalog and ImageServer Support"
 assert_exact_shards \
   "measured-tile-routing-imageserver-batch" \
   "$(printf '%s\n%s\n%s\n%s' \
@@ -606,7 +692,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
       'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
-  '["Core and Cloud Contracts","Raster Serving Scene Geometry and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance"]'
+  '["Core and Cloud Contracts","Raster Serving Scene Geometry and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support"]'
 
 # Follow-up proof from draft PR #2700: pure routing tests share the Core and Cloud Contracts owner
 # with the real pgRouting fixture and must not widen the canonical NAServer diff.
@@ -682,7 +768,7 @@ assert_descriptor \
 assert_exact_shards \
   "zarr-server-source-exact-owner" \
   "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  '["Raster Serving Scene Geometry and Terrain"]'
+  '["Raster Serving Scene Geometry and Terrain","Elevation and Terrain Analysis"]'
 # Per-shard exclusion assertions for this path were dropped in #3229 as redundant
 # against the exact-set assertion above; the same reasoning applies to the raster
 # owners added below.
@@ -696,11 +782,11 @@ assert_exact_shards \
 assert_exact_shards \
   "cog-server-source-exact-owner" \
   "src/Honua.Server/Features/Protocols/Cog/CogEndpoints.cs" \
-  '["Raster Serving Scene Geometry and Terrain"]'
+  '["Raster Serving Scene Geometry and Terrain","Elevation and Terrain Analysis"]'
 assert_exact_shards \
   "coverages-server-source-exact-owner" \
   "src/Honua.Server/Features/Protocols/Coverages/Multidimensional/MultidimensionalCoverageEndpoints.cs" \
-  '["Raster Serving Scene Geometry and Terrain"]'
+  '["Raster Serving Scene Geometry and Terrain","Elevation and Terrain Analysis"]'
 # The test file itself also sits under the broad tests/.../Features/ prefix that
 # the Misc catch-all family claims, so an exact-set assertion does not apply:
 # assert INCLUSION of the new owner plus the exclusion that actually moved —
@@ -728,7 +814,7 @@ assert_exact_shards \
       'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs' \
       'src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs' \
       'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerZarrTestFixture.cs')" \
-  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","Raster Serving Scene Geometry and Terrain","WFS"]'
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","Raster Serving Scene Geometry and Terrain","WFS","Elevation and Terrain Analysis","GeoServices Catalog and ImageServer Support","OGC API Tiles Endpoints and CRS"]'
 
 # Narrowing Zarr must not remove the carved shards' actual feature-area paths.
 assert_descriptor \
@@ -745,7 +831,7 @@ assert_descriptor \
 assert_exact_shards \
   "streaming-source-exact-owners" \
   "src/Honua.Server/Features/Streaming/FeatureStreamEndpoints.cs" \
-  '["Server Features Data Enrichment and Capabilities","Server Features Miscellaneous","Server Features Sharing","Server Features Streaming Endpoints","Server Features Streaming Snapshot and Conformance"]'
+  '["Server Features Data Enrichment and Capabilities","Server Features Miscellaneous","Server Features Sharing","Server Features Streaming Endpoints","Server Features Streaming Snapshot and Conformance","Server Features Capabilities","Server Features Studio AI"]'
 # A Streaming TEST change, by contrast, must reach the shard that runs those
 # classes and must NOT wake the 25-minute Data Enrichment and Sharing child,
 # which runs no Streaming class. #3229 narrowed that child off the broad
@@ -753,7 +839,7 @@ assert_exact_shards \
 assert_exact_shards \
   "streaming-test-exact-owners" \
   "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
-  '["Server Features Miscellaneous","Server Features Spec Printing and Static Maps","Server Features Streaming Endpoints","Server Features Streaming Snapshot and Conformance"]'
+  '["Server Features Miscellaneous","Server Features Spec Printing and Static Maps","Server Features Streaming Endpoints","Server Features Streaming Snapshot and Conformance","Server Features Studio AI"]'
 assert_excludes_shard \
   "streaming-test-excludes-data-enrichment-sharing" \
   "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
@@ -793,7 +879,7 @@ assert_descriptor \
 assert_exact_shards \
   "mcp-studio-source-includes-server-dashboard-proof" \
   "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/StudioCompositionTools.cs" \
-  '["MCP and Sessions","Operator Eval Harness","Server Features Analytics Studio Export and Reporting"]'
+  '["MCP and Sessions","Operator Eval Harness","Server Features Analytics Studio Export and Reporting","MCP Authentication and Governance","Server Features Studio Packaging"]'
 assert_excludes_shard \
   "studio-source-excludes-collaboration-child" \
   "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs" \
@@ -1293,6 +1379,12 @@ echo "Checking flake-hunt report contract..."
 # report at all. Untested, it silently emits an empty green report.
 "${PYTHON_BIN}" scripts/ci/summarize-flaky-detection.test.py
 
+echo "Checking shard headroom audit and its drain guard..."
+# #3204: the audit decides whether a shard still has room, and its
+# --max-utilization guard is what names a crowded shard on the PR that fills it.
+# Untested, a wrong "latest run" reading would silently stop reporting.
+"${PYTHON_BIN}" scripts/ci/audit-shard-headroom.test.py
+
 echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
@@ -1304,10 +1396,13 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEchoTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
     "WFS" \
+  `# #3204: the ImageServer shard now holds ONLY ImageServerEndpointsTests (a single` \
+  `# 24.1m class); Catalog, Tiles and the smaller ImageServer classes moved to` \
+  `# GeoServices Catalog and ImageServer Support.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.Tiles.CompactTilePackageWriterTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices ImageServer" \
+    "GeoServices Catalog and ImageServer Support" \
   --assert-owner \
     "Honua.Server.Tests.PatchConcurrencyTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1319,7 +1414,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.AdvancedSpatialQueryTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core Endpoints" \
+    "Core Spatial Query and Streaming" \
   --assert-owner \
     "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1347,6 +1442,121 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Protocols.Stac.StacOpsDemoEndpointTests" \
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
     "STAC Protocol" \
+  `# #3204 September 2026 shard-headroom rebalance: pin one class on each side of` \
+  `# every capacity split, so a later filter edit cannot quietly move a heavy` \
+  `# class back onto the shard the split took it off (or orphan it entirely).` \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Studio Packaging" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsRestTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Analytics Studio Export and Reporting" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Identity" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Collaboration Mobile and Identity" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.GeoservicesImportEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Migration Source Imports" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Migration" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.StreamingImportTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Cloud and Streaming Import" \
+  --assert-owner \
+    "Honua.Server.Tests.Import.RasterImportEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "File and Raster Import" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Capabilities" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentJobIntegrationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Data Enrichment and Capabilities" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Elevation.ElevationEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Elevation and Terrain Analysis" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Cog.CogEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Raster Serving Scene Geometry and Terrain" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Studio AI" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Streaming.FeatureStreamAdmissionTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Streaming Endpoints" \
+  --assert-owner \
+    "Honua.Server.Tests.StreamingFeatureServerEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core Spatial Query and Streaming" \
+  --assert-owner \
+    "Honua.Server.Tests.FeatureServerEndpointTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Core Endpoints" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices ImageServer" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices Catalog and ImageServer Support" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices MapServer" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices Geometry VectorTile and Versioning" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.OData.ODataErrorHandlingTests" \
+    "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
+    "OData Errors and Conformance" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests" \
+    "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
+    "OData Core" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.OData.ODataFilterFunctionTests" \
+    "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
+    "OData Pagination and Spatial" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.OData.ODataFilterMatrixTests" \
+    "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
+    "OData Advanced and Filters" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Tiles Endpoints and CRS" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDismissJobTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Tiles Coverages and Processes" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP Authentication and Governance" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1394,11 +1604,11 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Analytics Studio Export and Reporting" \
+    "Server Features Studio Packaging" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Analytics Studio Export and Reporting" \
+    "Server Features Studio Packaging" \
   `# Synthetic probe, not a real class (#2709): proves an unknown future` \
   `# Features.Protocols.* namespace still falls through to the Server Features` \
   `# Misc catch-all. --assert-route skips the class-exists check that` \
@@ -1416,7 +1626,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "MCP Authentication and Governance" \
   `# --- #3259: the 20 classes that matched no shard filter and never ran ---` \
   `# Honua.Ai.Tests assembly -> MCP and Sessions family.` \
   --assert-owner \
@@ -1476,7 +1686,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.ImageServer.ImageServerRenderingRuleMappingTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "GeoServices ImageServer" \
+    "GeoServices Catalog and ImageServer Support" \
   `# Honua.Server.Tests assembly. AlertNotificationRateLimiterTests was swallowed` \
   `# by the Admin-family '!~RateLimit' exclusion, now narrowed to` \
   `# '!~Honua.Server.Tests.Features.Admin.RateLimit'.` \
@@ -1487,15 +1697,15 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Import.AwsS3ShapefileImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import" \
+    "Cloud and Streaming Import" \
   --assert-owner \
     "Honua.Server.Tests.Import.AwsS3UploadProgressTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import" \
+    "Cloud and Streaming Import" \
   --assert-owner \
     "Honua.Server.Tests.Import.AzureBlobShapefileImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import" \
+    "Cloud and Streaming Import" \
   --assert-owner \
     "Honua.Server.Tests.Import.ImportValidationErrorMessageTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1503,7 +1713,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Import.RedisJobQueueFallbackTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import" \
+    "Cloud and Streaming Import" \
   `# The FileImport clause '~Honua.Server.Tests.Import.EmulatorCloudStorage' was` \
   `# dangling: the classes in EmulatorCloudStorageImportTests.cs are named` \
   `# EmulatorAwsS3CloudStorageImportTests / EmulatorAzureBlobCloudStorageImportTests,` \
@@ -1512,11 +1722,11 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Import.EmulatorAwsS3CloudStorageImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import" \
+    "Cloud and Streaming Import" \
   --assert-owner \
     "Honua.Server.Tests.Import.EmulatorAzureBlobCloudStorageImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "File and Raster Import" \
+    "Cloud and Streaming Import" \
   `# #3271 Raster Serving Scene Geometry and Terrain: the three raster-serving namespaces are pinned to the` \
   `# shard that now owns them, so a rename back into the Misc catch-all or the` \
   `# Caching File Storage Styling and Infrastructure bucket fails here rather than silently re-hiding them.` \

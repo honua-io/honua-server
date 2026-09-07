@@ -41,7 +41,7 @@ jobs:
       producers: ${{ steps.plan.outputs.producers }}
       reused_consumers: ${{ steps.plan.outputs.reused_consumers }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       - id: plan
         name: Validate and emit bounded matrices
         env:
@@ -56,7 +56,7 @@ jobs:
             --output benchmark-plan.json \
             --github-output "${GITHUB_OUTPUT}"
       - name: Upload immutable benchmark plan
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-benchmark-plan-${{ github.run_id }}
           path: benchmark-plan.json
@@ -77,7 +77,7 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       # NOT routed through ./.github/actions/setup-dotnet-ci — deliberate, and it
       # applies to every job in this workflow (see `baseline` and `reused-consumer`).
       #
@@ -140,7 +140,7 @@ jobs:
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
       - name: Upload immutable same-run payload
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: server-test-${{ github.sha }}-${{ matrix.project_suffix }}
           path: payload/
@@ -159,7 +159,7 @@ jobs:
             metrics/producer-${{ matrix.identity }}.json > metrics/updated.json
           mv metrics/updated.json metrics/producer-${{ matrix.identity }}.json
       - name: Upload producer metrics
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-metrics-producer-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
           path: metrics/
@@ -194,7 +194,7 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       # Raw setup-dotnet, not ./.github/actions/setup-dotnet-ci — see the comment
       # on the `producer` job. Caching NuGet here would speed up only the baseline
       # arm and bias the gated comparison.
@@ -224,7 +224,7 @@ jobs:
             '.job_elapsed_ms=$job_elapsed_ms' metrics/baseline-${{ matrix.identity }}.json > metrics/updated.json
           mv metrics/updated.json metrics/baseline-${{ matrix.identity }}.json
       - name: Upload baseline metrics and TRX evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-metrics-baseline-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
           path: metrics/
@@ -261,7 +261,7 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       # Raw setup-dotnet, not ./.github/actions/setup-dotnet-ci — see the comment
       # on the `producer` job. This job restores nothing: it unpacks the producer
       # payload and runs `dotnet test --no-build --no-restore`
@@ -323,7 +323,7 @@ jobs:
             metrics/consumer-artifact-${{ matrix.identity }}.json > metrics/updated.json
           mv metrics/updated.json metrics/consumer-artifact-${{ matrix.identity }}.json
       - name: Upload reuse metrics and TRX evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: reuse-metrics-consumer-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
           path: metrics/
@@ -344,7 +344,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       - name: Download benchmark plan
         uses: actions/download-artifact@v8
         with:
@@ -378,7 +378,7 @@ jobs:
       - name: Preserve raw metrics
         run: cp -a raw-metrics evidence/raw-metrics
       - name: Upload raw and summarized reuse evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: server-test-reuse-evidence-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           path: evidence/

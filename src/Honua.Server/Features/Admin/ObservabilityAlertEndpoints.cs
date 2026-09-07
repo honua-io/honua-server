@@ -20,6 +20,12 @@ internal static class ObservabilityAlertEndpoints
 {
     private const int MaxNoteLength = 1024;
 
+    /// <summary>Optional operator-supplied retry identity for a lifecycle mutation.</summary>
+    private const string IdempotencyKeyHeader = "Idempotency-Key";
+
+    /// <summary>Bound on the caller-controlled portion of the retry identity.</summary>
+    private const int MaxIdempotencyKeyLength = 128;
+
     public static void MapObservabilityAlertEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Read-only ops-reader authorization (A12): the GET alert reads additionally admit an ops:read
@@ -99,66 +105,53 @@ internal static class ObservabilityAlertEndpoints
         ObservabilityAlertAcknowledgeRequest? body,
         [FromServices] IAlertLifecycleStore lifecycleStore,
         [FromServices] IAlertEventQuery query,
-        [FromServices] IAuditLog auditLog,
+        [FromServices] IAlertAuditCompleter auditCompleter,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         return PerformLifecycleAsync(
             eventId,
+            AlertLifecycleAction.Acknowledge,
             body?.Note,
-            action: "alert.acknowledge",
+            suppressUntil: null,
+            details: string.Empty,
+            lifecycleStore,
             query,
-            auditLog,
+            auditCompleter,
             context,
-            (actor, note, timestamp) => lifecycleStore.AcknowledgeAsync(eventId, actor, note, timestamp, cancellationToken),
             cancellationToken);
     }
 
-    private static async Task<IResult> HandleSuppress(
+    private static Task<IResult> HandleSuppress(
         long eventId,
         ObservabilityAlertSuppressRequest? body,
         [FromServices] IAlertLifecycleStore lifecycleStore,
         [FromServices] IAlertEventQuery query,
-        [FromServices] IAuditLog auditLog,
+        [FromServices] IAlertAuditCompleter auditCompleter,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         if (body is null)
         {
-            return BadRequest("A request body with 'suppressUntil' is required.");
+            return Task.FromResult(BadRequest("A request body with 'suppressUntil' is required."));
         }
 
-        var now = DateTimeOffset.UtcNow;
-        if (body.SuppressUntil <= now)
+        if (body.SuppressUntil <= DateTimeOffset.UtcNow)
         {
-            return BadRequest("'suppressUntil' must be in the future.");
+            return Task.FromResult(BadRequest("'suppressUntil' must be in the future."));
         }
 
-        if (body.Note is { Length: > MaxNoteLength })
-        {
-            return BadRequest($"'note' must not exceed {MaxNoteLength} characters.");
-        }
-
-        var actor = ResolveActor(context);
-        var lifecycle = await lifecycleStore.SuppressAsync(eventId, actor, body.SuppressUntil, body.Note, now, cancellationToken).ConfigureAwait(false);
-        if (lifecycle is null)
-        {
-            return NotFound(eventId);
-        }
-
-        await RecordAuditAsync(auditLog, context, actor, eventId, "alert.suppress",
-            $"{{\"suppressUntil\":\"{body.SuppressUntil.ToString("O", CultureInfo.InvariantCulture)}\"}}",
-            cancellationToken).ConfigureAwait(false);
-
-        var refreshed = await query.GetAsync(eventId, cancellationToken).ConfigureAwait(false);
-        if (refreshed is null)
-        {
-            return NotFound(eventId);
-        }
-
-        return Results.Json(
-            ObservabilityAlertEventResponseMapper.Map(refreshed),
-            ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
+        return PerformLifecycleAsync(
+            eventId,
+            AlertLifecycleAction.Suppress,
+            body.Note,
+            body.SuppressUntil,
+            details: $"{{\"suppressUntil\":\"{body.SuppressUntil.ToString("O", CultureInfo.InvariantCulture)}\"}}",
+            lifecycleStore,
+            query,
+            auditCompleter,
+            context,
+            cancellationToken);
     }
 
     private static Task<IResult> HandleResolve(
@@ -166,29 +159,45 @@ internal static class ObservabilityAlertEndpoints
         ObservabilityAlertResolveRequest? body,
         [FromServices] IAlertLifecycleStore lifecycleStore,
         [FromServices] IAlertEventQuery query,
-        [FromServices] IAuditLog auditLog,
+        [FromServices] IAlertAuditCompleter auditCompleter,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         return PerformLifecycleAsync(
             eventId,
+            AlertLifecycleAction.Resolve,
             body?.Note,
-            action: "alert.resolve",
+            suppressUntil: null,
+            details: string.Empty,
+            lifecycleStore,
             query,
-            auditLog,
+            auditCompleter,
             context,
-            (actor, note, timestamp) => lifecycleStore.ResolveAsync(eventId, actor, note, timestamp, cancellationToken),
             cancellationToken);
     }
 
+    /// <summary>
+    /// Applies one operator lifecycle mutation.
+    /// </summary>
+    /// <remarks>
+    /// The mutation and its domain audit INTENT are committed in a single store
+    /// transaction, then the audit record is written and the intent completed. A
+    /// fault or a process death anywhere after the commit leaves the mutation with
+    /// a pending intent, which <c>AlertAuditOutboxReconciler</c> completes
+    /// deterministically on restart — so a lifecycle mutation is never externally
+    /// observable without either its domain audit record or a durable
+    /// reconciliation record that produces it (#3865).
+    /// </remarks>
     private static async Task<IResult> PerformLifecycleAsync(
         long eventId,
+        AlertLifecycleAction action,
         string? note,
-        string action,
+        DateTimeOffset? suppressUntil,
+        string details,
+        IAlertLifecycleStore lifecycleStore,
         IAlertEventQuery query,
-        IAuditLog auditLog,
+        IAlertAuditCompleter auditCompleter,
         HttpContext context,
-        Func<string, string?, DateTimeOffset, Task<AlertEventLifecycle?>> mutate,
         CancellationToken cancellationToken)
     {
         if (note is { Length: > MaxNoteLength })
@@ -196,16 +205,45 @@ internal static class ObservabilityAlertEndpoints
             return BadRequest($"'note' must not exceed {MaxNoteLength} characters.");
         }
 
+        var supplied = context.Request.Headers[IdempotencyKeyHeader].ToString();
+        if (supplied.Length > MaxIdempotencyKeyLength)
+        {
+            // Truncating would map two logically distinct operator actions that share a
+            // prefix onto one identity, silently swallowing the second mutation.
+            return BadRequest(
+                $"'{IdempotencyKeyHeader}' must not exceed {MaxIdempotencyKeyLength} characters.");
+        }
+
         var actor = ResolveActor(context);
-        var now = DateTimeOffset.UtcNow;
-        var lifecycle = await mutate(actor, note, now).ConfigureAwait(false);
-        if (lifecycle is null)
+        var correlationId = context.TraceIdentifier;
+        var command = new AlertLifecycleCommand
+        {
+            EventId = eventId,
+            Action = action,
+            Actor = actor,
+            Note = note,
+            SuppressUntil = suppressUntil,
+            OccurredAt = DateTimeOffset.UtcNow,
+            CorrelationId = correlationId,
+            IdempotencyKey = ResolveIdempotencyKey(supplied, eventId, action, correlationId),
+            Details = details
+        };
+
+        var transition = await lifecycleStore.ApplyAsync(command, cancellationToken).ConfigureAwait(false);
+        if (transition.Lifecycle is null)
         {
             return NotFound(eventId);
         }
 
-        await RecordAuditAsync(auditLog, context, actor, eventId, action, details: string.Empty, cancellationToken)
-            .ConfigureAwait(false);
+        if (transition.Intent is { } intent)
+        {
+            await auditCompleter.CompleteAsync(
+                    intent,
+                    context.Connection.RemoteIpAddress?.ToString(),
+                    context.Request.Headers.UserAgent.ToString() is { Length: > 0 } agent ? agent : null,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         var refreshed = await query.GetAsync(eventId, cancellationToken).ConfigureAwait(false);
         if (refreshed is null)
@@ -218,30 +256,21 @@ internal static class ObservabilityAlertEndpoints
             ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
     }
 
-    private static Task<string?> RecordAuditAsync(
-        IAuditLog auditLog,
-        HttpContext context,
-        string actor,
-        long eventId,
-        string action,
-        string details,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Resolves the operator retry identity: an explicit <c>Idempotency-Key</c>
+    /// header when the caller supplies one, otherwise the request's own
+    /// correlation identity scoped to the event and action. Retrying with the same
+    /// identity yields one logical transition and one domain audit action.
+    /// </summary>
+    private static string ResolveIdempotencyKey(
+        string supplied, long eventId, AlertLifecycleAction action, string correlationId)
     {
-        var auditEvent = new AuditEvent
-        {
-            Timestamp = DateTimeOffset.UtcNow,
-            EventType = AuditEventType.AdminAction,
-            Actor = actor,
-            ActorType = AuditActorType.UserId,
-            ResourceType = "alert_event",
-            ResourceId = eventId.ToString(CultureInfo.InvariantCulture),
-            Action = action,
-            Outcome = AuditOutcome.Success,
-            CorrelationId = context.TraceIdentifier,
-            Details = details
-        };
-
-        return auditLog.RecordAsync(auditEvent, cancellationToken);
+        // An oversized header is rejected upstream rather than truncated, so the
+        // identity here is always the caller's in full.
+        var identity = string.IsNullOrWhiteSpace(supplied) ? correlationId : supplied.Trim();
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{eventId}:{AlertAuditActions.ForLifecycle(action)}:{identity}");
     }
 
     internal static bool TryParseAlertFilter(IQueryCollection query, out AlertEventFilter filter, out string error)

@@ -93,7 +93,7 @@ jobs:
     # 0-job startup failure. This job runs on every listed trigger.
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # The FF land pushes directly to trunk, so the git push must be
@@ -253,7 +253,7 @@ jobs:
 
       - name: Upload merge-train metrics
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: merge-train-metrics
           path: |

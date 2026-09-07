@@ -360,7 +360,7 @@ jobs:
       full_ci: ${{ steps.filter.outputs.full_ci }}
       postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -560,7 +560,7 @@ jobs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
       matrix_include: ${{ steps.compute.outputs.matrix_include }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -650,7 +650,7 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Validate workflow and shard routing metadata
         run: |
@@ -683,7 +683,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Canonical Instruction Check
         run: bash scripts/ci/check-instructions-sync.sh
@@ -820,7 +820,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       # Reclaim runner disk before the build + coverage run; the modular
       # topology pushed some runners over the free-disk limit. Best-effort.
@@ -860,7 +860,7 @@ jobs:
         run: scripts/ci/run-foundation-family.sh run ${{ matrix.family }}
 
       - name: Upload foundation family test results
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 3
         with:
@@ -874,7 +874,7 @@ jobs:
       # coverage (as before the split), but the artifact is uploaded per family
       # so the fan-in job below can merge whatever exists without special-casing.
       - name: Upload foundation family coverage (cobertura)
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 3
         with:
@@ -902,7 +902,7 @@ jobs:
     steps:
       # Needed for scripts/ci/run-foundation-family.sh, which supplies the
       # expected trx count the parity check below asserts against.
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       # continue-on-error: a family that died before its upload step leaves no
       # artifact to download, and that must surface as the family's own failure
@@ -952,7 +952,7 @@ jobs:
       # coverage is aggregated across families in one place rather than being
       # scattered by the split.
       - name: Upload foundation test results
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 5
         with:
@@ -962,7 +962,7 @@ jobs:
           retention-days: 7
 
       - name: Upload foundation coverage (cobertura)
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 5
         with:
@@ -1058,7 +1058,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       # Reclaim runner disk while .NET setup and cache planning run. The
       # modular topology (8 protocol
@@ -1309,9 +1309,52 @@ jobs:
         run: |
           scripts/ci/run-server-test-shard.sh
 
+      # #3204 drain guard, ADVISORY. Three shards hit their test budget in 24
+      # hours (#4450, #4455, and Analytics Studio Export on run 34072577139).
+      # Every one of them was already spending >85% of its budget on the run
+      # BEFORE it went red, and nothing said so — the drain of test-heavy
+      # must-fix PRs kept adding cases until a shard tipped over on trunk.
+      #
+      # WHERE THIS FIRES. Only here, on the full matrix: the nightly schedule,
+      # a manual dispatch, and the train's train/batch/* dispatch. It is NOT a
+      # per-PR signal — pr-gate.yml runs no shard matrix at all, so a PR head
+      # produces no *.timing.json anywhere and there is nothing for the audit to
+      # read. Under the trailing-matrix landing model that means the warning
+      # lands after merge; the value is that it lands while the shard still
+      # PASSES at >85%, instead of one or more runs later when it times out and
+      # turns trunk red. Making this a genuine pre-merge signal would require
+      # per-PR shard execution, which #2865 deliberately removed.
+      #
+      # continue-on-error keeps it non-required: the coordinator decides whether
+      # to make it blocking after a week of data.
+      - name: Report shard headroom (advisory)
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -uo pipefail
+          if ! ls tests/TestResults/*.timing.json >/dev/null 2>&1; then
+            echo "No timing artifact for this shard; nothing to report."
+            exit 0
+          fi
+          table=$(python3 scripts/ci/audit-shard-headroom.py \
+            --timings-dir tests/TestResults --markdown 2>/dev/null \
+            | grep -Ev '\| no_data \|')
+          printf '%s\n' "${table}"
+          {
+            echo "### Server test shard headroom"
+            echo
+            printf '%s\n' "${table}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          # Advisory: the annotation is the signal, the exit code stays 0 via
+          # continue-on-error above.
+          python3 scripts/ci/audit-shard-headroom.py \
+            --timings-dir tests/TestResults --max-utilization 0.85 >/dev/null
+
       - name: Upload Operator Eval Report
         if: ${{ always() && matrix.upload_operator_eval_report }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: operator-eval-report
           path: tests/TestResults/eval-report.json
@@ -1328,7 +1371,7 @@ jobs:
 
       - name: Upload shard test results
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         timeout-minutes: 3
         with:
           name: server-test-results-${{ matrix.artifact_suffix }}
@@ -1370,7 +1413,7 @@ jobs:
       # reporting them skipped with a green exit code (#3271).
       HONUA_REQUIRE_GDAL_CLI: "true"
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1482,7 +1525,7 @@ jobs:
 
       - name: Upload Worker GDAL test results
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         timeout-minutes: 3
         with:
           name: worker-gdal-test-results
@@ -1500,7 +1543,7 @@ jobs:
       TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
       HONUA_TEST_CONFIGURATION: Release
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1543,7 +1586,7 @@ jobs:
         working-directory: tests/python
 
       - name: Upload Python test results
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         timeout-minutes: 3
         with:
@@ -1562,7 +1605,7 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -1634,7 +1677,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
@@ -1723,7 +1766,7 @@ jobs:
             echo "(could not query feature counts — DB unreachable?)"
 
       - name: Upload JavaScript test diagnostics
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: javascript-integration-results
@@ -1733,7 +1776,7 @@ jobs:
           retention-days: 7
 
       - name: Upload OpenLayers Evidence
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: openlayers-compat-results
@@ -1764,7 +1807,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -1849,7 +1892,7 @@ jobs:
           HONUA_API_KEY: "ci-admin-password"
 
       - name: Upload test artifacts
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: esri-leaflet-browser-results
@@ -1880,7 +1923,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -1963,7 +2006,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: maplibre-compat-results
           path: |
@@ -1974,7 +2017,7 @@ jobs:
       # Startup failures happen before Playwright can produce test results.
       - name: Upload MapLibre server startup log
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: maplibre-server-startup-log
           path: ${{ runner.temp }}/honua-server-setup.log
@@ -2010,7 +2053,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       # Design: skip-if-absent is intentional for cross-repo coordination.
       # Test code lives in honua-sdk-js; this repo provides only CI jobs,
@@ -2080,7 +2123,7 @@ jobs:
 
       - name: Upload certification artifact
         if: always() && steps.setup.outputs.cert-available == 'true' && steps.setup.outputs.cert-artifact-available == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: mcp-certification-${{ matrix.transport }}
           path: |
@@ -2112,7 +2155,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup Honua MCP environment
         id: setup
@@ -2173,7 +2216,7 @@ jobs:
 
       - name: Upload LLM smoke transcripts
         if: always() && steps.setup.outputs.smoke-available == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: mcp-llm-smoke-transcripts
           path: |
@@ -2211,7 +2254,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2287,7 +2330,7 @@ jobs:
           exit "${rc}"
 
       - name: Upload Postgres coverage (cobertura)
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         if: ${{ always() && matrix.collect_coverage }}
         timeout-minutes: 3
         with:
@@ -2315,7 +2358,7 @@ jobs:
     needs: changes
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2425,7 +2468,7 @@ jobs:
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -2494,7 +2537,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Pre-pull BuildKit image with retries
         timeout-minutes: 3
@@ -2665,7 +2708,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Resolve Console image
         id: console_image
@@ -2718,7 +2761,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       # Mirror the build job's disk reclaim — the full-solution build can
       # exhaust ubuntu-latest disk once every project writes Release outputs.

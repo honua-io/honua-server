@@ -2134,7 +2134,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 6,
-      "provingTestCount": 32,
+      "provingTestCount": 40,
       "maturity": {
         "implemented": 6
       },
@@ -2206,7 +2206,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 12,
-      "provingTestCount": 129,
+      "provingTestCount": 138,
       "maturity": {
         "implemented": 12
       },

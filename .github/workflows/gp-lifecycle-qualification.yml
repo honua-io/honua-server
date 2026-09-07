@@ -31,7 +31,7 @@ jobs:
       HONUA_GP_LANE: lifecycle
       HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-lifecycle
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -41,7 +41,7 @@ jobs:
         run: scripts/qualification/gp-lifecycle-harness.sh
       - name: Retain scenario receipts, including findings
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: gp-lifecycle-receipts-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/gp-lifecycle/*.json
@@ -55,7 +55,7 @@ jobs:
           sha256sum "artifacts/gp-lifecycle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz" > "artifacts/gp-lifecycle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz.sha256"
       - name: Retain immutable lifecycle evidence pack
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: gp-lifecycle-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/gp-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz*
