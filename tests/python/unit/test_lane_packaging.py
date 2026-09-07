@@ -9,6 +9,10 @@ first parent directory that is not a package. A lane directory without an
 ``from conftest import ...`` in a lane that collects earlier resolves against
 the wrong module. That took the shared Python Integration Tests job down at
 collection time once already (#4516); these tests keep it from recurring.
+
+The conftest check walks the whole tree rather than the lane roots, because a
+nested `unit/subsystem/conftest.py` collides exactly the same way when its own
+directory is not a package -- packaging the lane root is not enough.
 """
 
 from __future__ import annotations
@@ -39,17 +43,42 @@ def test_every_testpath_lane_is_a_package():
     )
 
 
-def test_no_lane_conftest_shadows_the_shared_conftest():
+def _unpackaged_ancestors(conftest: Path) -> list[str]:
+    """Directories between ``conftest`` and the root that are not packages."""
+    gaps = []
+    for parent in conftest.parents:
+        if parent == TESTS_PYTHON_ROOT:
+            break
+        if not (parent / "__init__.py").is_file():
+            gaps.append(str(parent.relative_to(TESTS_PYTHON_ROOT)))
+    return gaps
+
+
+def _discovered_conftests() -> list[Path]:
+    root_conftest = TESTS_PYTHON_ROOT / "conftest.py"
+    return [
+        path
+        for path in sorted(TESTS_PYTHON_ROOT.rglob("conftest.py"))
+        if path != root_conftest
+        and not any(part.startswith((".", "__")) for part in path.parts)
+    ]
+
+
+def test_no_conftest_shadows_the_shared_conftest():
     shared_conftest = TESTS_PYTHON_ROOT / "conftest.py"
     assert shared_conftest.is_file()
 
-    shadowing = [
-        str(path.parent.relative_to(TESTS_PYTHON_ROOT))
-        for path in sorted(TESTS_PYTHON_ROOT.glob("*/conftest.py"))
-        if not (path.parent / "__init__.py").is_file()
-    ]
+    conftests = _discovered_conftests()
+    assert conftests, "expected at least one lane conftest to be discovered"
 
-    assert shadowing == [], (
-        "a lane conftest.py in a non-package directory imports as the bare "
-        f"module name 'conftest' and shadows {shared_conftest.name}: {shadowing}"
+    shadowing = {
+        str(conftest.relative_to(TESTS_PYTHON_ROOT)): gaps
+        for conftest in conftests
+        if (gaps := _unpackaged_ancestors(conftest))
+    }
+
+    assert shadowing == {}, (
+        "a conftest.py whose directory chain up to tests/python is not fully "
+        "packaged imports as the bare module name 'conftest' and shadows "
+        f"{shared_conftest.name}; unpackaged directories per conftest: {shadowing}"
     )
