@@ -16,6 +16,7 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NSubstitute;
 using Xunit;
+using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
@@ -159,6 +160,45 @@ public sealed class GeometryFormatConversionExecutionProofTests
         process.SupportedExecutionModes.Should().HaveFlag(ProcessExecutionModes.Sync);
         process.SupportedExecutionModes.Should().HaveFlag(ProcessExecutionModes.Async);
         RuntimeProfiles.Normalize(process.RuntimeProfile).Should().Be(RuntimeProfiles.Managed);
+    }
+
+    /// <summary>
+    /// The same polygon with its hole dropped: a plausible wrong-but-well-formed
+    /// conversion, since a writer that only walks the exterior ring emits exactly
+    /// this and it parses cleanly in every target encoding.
+    /// </summary>
+    private const string FilledPolygonEwkbBase64 =
+        "AQMAACDmEAAAAQAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAAAAAAAAAAAAAAA==";
+
+    /// <summary>The same rings with longitude and latitude transposed.</summary>
+    private const string SwappedAxisPolygonEwkbBase64 =
+        "AQMAACDmEAAAAgAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkQAAAAAAAACRAAAAAAAAAJEAAAAAAAAAkQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAEEAAAAAAAAAAQAAAAAAAABBAAAAAAAAAEEAAAAAAAAAAQAAAAAAAABBAAAAAAAAAAEAAAAAAAAAAQA==";
+
+    [UnitTest]
+    public async Task Oracle_DroppedHoleOrSwappedAxes_AreRejectedEvenThoughTheOutputParses()
+    {
+        // Both negatives come from real executions, so each output is a valid,
+        // parseable value of the requested encoding on the same SRID.
+        var filled = await ConvertAsync(FilledPolygonEwkbBase64, "wkt");
+        filled.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var filledGeometry = Decode(filled.Envelope!.GetProperty("value").GetString()!, "wkt");
+        filledGeometry.Should().BeOfType<Polygon>();
+        filledGeometry.IsValid.Should().BeTrue("the substituted output is well formed, not corrupt");
+
+        Action rejectFilled = () => AssertPolygonContent(filledGeometry, "wkt");
+        rejectFilled.Should().Throw<XunitException>("the oracle must reject a conversion that dropped the hole")
+            .Which.Message.Should().Contain("preserve the hole");
+
+        var swapped = await ConvertAsync(SwappedAxisPolygonEwkbBase64, "geojson");
+        swapped.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var swappedGeometry = Decode(swapped.Envelope!.GetProperty("value").GetString()!, "geojson");
+        // Ring counts and area survive an axis swap, so only the ordinates catch it.
+        ((Polygon)swappedGeometry).NumInteriorRings.Should().Be(1);
+        swappedGeometry.Area.Should().BeApproximately(ExpectedArea, 1e-9);
+
+        Action rejectSwapped = () => AssertPolygonContent(swappedGeometry, "geojson");
+        rejectSwapped.Should().Throw<XunitException>("the oracle must reject transposed ordinates")
+            .Which.Message.Should().Contain("ring vertex 1");
     }
 
     // -------------------------------------------------------------------------

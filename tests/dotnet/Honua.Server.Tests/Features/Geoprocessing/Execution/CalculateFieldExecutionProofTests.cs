@@ -12,6 +12,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
 using Xunit;
+using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
@@ -163,6 +164,40 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertRowsAsync(SeedRows);
+    }
+
+    [IntegrationTest]
+    public async Task Oracle_CalculateThatIgnoresTheFilter_IsRejected()
+    {
+        // A plausible wrong-but-well-formed calculate: the real route, the real
+        // expressions and a real 200 with a plausible updated count — but applied to
+        // every row because the filter was ignored. Produced here by asking for
+        // where=1=1, so the response and the resulting rows are genuinely valid.
+        var response = await PostCalculateAsync(
+            where: "1=1",
+            calcExpression: """
+                [{"field":"score","sqlExpression":"score * 2 + 1"},
+                 {"field":"label","sqlExpression":"UPPER(label) || '-C'"}]
+                """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        document.RootElement.GetProperty("updatedFeatureCount").GetInt32().Should().Be(4);
+
+        // The frozen post-state of the score >= 20 proof rejects it: row 1 was
+        // supposed to be untouched.
+        Func<Task> assert = () => AssertRowsAsync(
+        [
+            (1, "alpha", 10, "keep"),
+            (2, "BETA-C", 41, "keep"),
+            (3, "GAMMA-C", 61, null),
+            (4, "DELTA-C", 81, "keep"),
+        ]);
+
+        (await assert.Should().ThrowAsync<XunitException>(
+            "the read-back oracle must reject a calculate that ignored its filter"))
+            .Which.Message.Should().Contain("row 1");
     }
 
     // -------------------------------------------------------------------------
