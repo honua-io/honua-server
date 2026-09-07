@@ -15,7 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v3"
+POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v4"
 INDEX_CONTRACT = "honua.impact-routing-evidence-index/v2"
 # v4 resets retained trend samples after candidate-only, unexecuted routes
 # stopped being promotion-countable.  trend() accepts only the current contract,
@@ -177,7 +177,14 @@ def load_policy(value: object) -> dict[str, Any]:
     )
     if lookback > 48:
         raise ValueError("image outcome lookback exceeds the policy bound")
-    pages = positive_int(value.get("maximum_pages_per_query"), "maximum pages per query")
+    # Bound the run catalog in RUNS, not pages. A page cap is a bound on the
+    # same work expressed in a unit the policy cannot compare against anything
+    # else, and that is precisely how it broke: `maximum_pages_per_query: 8`
+    # admitted 800 runs per query while the catalog and download bounds below
+    # admitted 3,000 and 2,500, so the loosest-looking knob was silently the
+    # binding one and the ledger failed collection outright once either
+    # observer stream passed 800 runs in the retention window.
+    runs = positive_int(value.get("maximum_runs_per_query"), "maximum runs per query")
     downloads = positive_int(value.get("maximum_receipt_downloads"), "maximum downloads")
     # Listing one run's artifact catalog is a cheap paged GET; downloading a
     # receipt is a real archive transfer. Conflating the two made the download
@@ -190,10 +197,16 @@ def load_policy(value: object) -> dict[str, Any]:
     # 1,000-download ceiling rejected the policy's required retention period.
     # Keep finite ceilings above current throughput while still failing closed
     # before an accidental policy edit can make the API work unbounded.
-    if pages > 10 or downloads > 2500 or catalogs > 3000:
+    if runs > 4000 or downloads > 2500 or catalogs > 3000:
         raise ValueError("GitHub query, catalog, or download bound is unsafe")
-    if catalogs < downloads:
-        raise ValueError("catalog bound must not be smaller than the download bound")
+    # One query's runs are the population every later bound draws from, so the
+    # three have to nest. Any other ordering makes a bound unreachable and
+    # turns organic fleet growth into a collection failure rather than a
+    # budget the operator can read and raise deliberately.
+    if runs < catalogs or catalogs < downloads:
+        raise ValueError(
+            "query, catalog, and download bounds must not widen as they narrow"
+        )
     for field in (
         "minimum_docs_only_heads",
         "minimum_native_heads",
@@ -939,7 +952,14 @@ def _validate_native(
     head = exact_sha(value.get("head_sha"), "native-image head")
     base = exact_sha(value.get("base_sha"), "native-image base")
     paths = value.get("changed_paths")
-    if not isinstance(paths, list) or not paths or not all(isinstance(item, str) for item in paths):
+    # An empty list is an observable state, not a malformed receipt: a head
+    # whose three-dot diff against its base contributes nothing (a merge commit
+    # that only re-lands base content) legitimately changes no path. The
+    # producer raises rather than emitting on a failed `git diff`, so empty
+    # never encodes "the diff could not be taken". It is cross-checked against
+    # the routing decision below instead, which binds it harder than a
+    # non-empty list is bound.
+    if not isinstance(paths, list) or not all(isinstance(item, str) for item in paths):
         raise ValueError("native-image changed paths are invalid")
     if len(set(paths)) != len(paths) or any(
         not item
@@ -1009,6 +1029,17 @@ def _validate_native(
     }
     if comparison != expected_comparison:
         raise ValueError("native-image comparison does not replay")
+    # Every routing decision is a function of the changed paths, so a head that
+    # changed nothing must route nothing on BOTH policies. This is what makes
+    # the empty list above safe to accept: a truncated or dropped path list
+    # that mattered to routing cannot satisfy it.
+    if not paths and (
+        candidate_serving
+        or candidate["worker_build"]
+        or legacy_serving
+        or legacy["worker_trigger"]
+    ):
+        raise ValueError("native-image empty diff contradicts its routing decision")
     # Same ordering rule as the PR Gate receipt: prove the receipt is sound
     # first, then decide whether it belongs to the current cohort.
     if drifted:
@@ -1878,7 +1909,7 @@ def main() -> int:
                 cutoff_value - timedelta(hours=1)
             ).isoformat().replace("+00:00", "Z"),
             "image_run_cutoff": image_cutoff,
-            "maximum_pages_per_query": policy["maximum_pages_per_query"],
+            "maximum_runs_per_query": policy["maximum_runs_per_query"],
             "maximum_producer_run_catalogs": policy["maximum_producer_run_catalogs"],
             "maximum_receipt_downloads": policy["maximum_receipt_downloads"],
         }

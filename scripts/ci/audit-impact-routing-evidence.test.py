@@ -35,7 +35,7 @@ def policy(**overrides: object) -> dict:
         "receipt_index_grace_minutes": 90,
         "maximum_receipt_loss_ratio": 0.05,
         "promotion_green_days": 7,
-        "maximum_pages_per_query": 3,
+        "maximum_runs_per_query": 60,
         "maximum_producer_run_catalogs": 40,
         "maximum_receipt_downloads": 20,
         "minimum_docs_only_heads": 1,
@@ -179,6 +179,7 @@ def native_receipt(
     image_inputs: dict[str, str] | None = None,
     tree: str = "merge",
     gate_run_id: int | None = None,
+    changed_paths: list[str] | None = None,
 ) -> dict:
     if serving is None:
         serving = {"generic": True, "lambda": False, "functions": False}
@@ -193,7 +194,8 @@ def native_receipt(
             name: hashlib.sha256(f"{name}:{head}".encode("utf-8")).hexdigest()
             for name in MODULE.IMAGE_INPUT_CLASSES
         }
-    changed_paths = ["src/Honua.Core/Models/Resource.cs"]
+    if changed_paths is None:
+        changed_paths = ["src/Honua.Core/Models/Resource.cs"]
     return {
         "schema": MODULE.NATIVE_CONTRACT,
         "repository": MODULE.REPOSITORY,
@@ -291,9 +293,18 @@ def test_policy_and_discovery() -> None:
     MODULE.load_policy(policy())
     for invalid in (
         policy(receipt_retention_days=91),
-        policy(maximum_pages_per_query=11),
-        policy(maximum_producer_run_catalogs=3001),
-        policy(maximum_receipt_downloads=2501, maximum_producer_run_catalogs=3000),
+        policy(maximum_runs_per_query=4001),
+        policy(maximum_producer_run_catalogs=3001, maximum_runs_per_query=4000),
+        policy(
+            maximum_receipt_downloads=2501,
+            maximum_producer_run_catalogs=3000,
+            maximum_runs_per_query=4000,
+        ),
+        # The three bounds have to nest. A query bound tighter than the catalog
+        # bound is what actually broke collection: 8 pages admitted 800 runs
+        # while the catalog bound advertised 3,000, so the ledger failed outright
+        # once an observer stream passed 800 runs in the retention window.
+        policy(maximum_runs_per_query=39),
         # The catalog bound must never be tighter than the download bound, or
         # it silently becomes the binding cap on window size again.
         policy(maximum_producer_run_catalogs=19),
@@ -1075,6 +1086,115 @@ def test_integrity_failures_do_not_count() -> None:
         assert "member set" in unsafe["integrity_failures"][0]["reason"]
 
 
+def test_empty_diff_receipts_are_evidence_not_integrity_failures() -> None:
+    """#3343: an empty `changed_paths` is an observation, not a malformed receipt.
+
+    A head whose three-dot diff against its base contributes nothing — a merge
+    commit that only re-lands base content — changes no path. The producer
+    raises instead of emitting when `git diff` fails, so empty never encodes a
+    failed diff. Rejecting it outright was the whole of the ledger's remaining
+    receipt-integrity red on 2026-09-04: both failures were PR #4138 heads
+    (producer runs 33788215833 and 33791973685), each a `Merge branch 'trunk'`
+    commit with a genuinely empty diff and an all-false routing decision.
+    """
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    quiet = {"generic": False, "lambda": False, "functions": False}
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        archives = root / "archives"
+        pages(root / "serving", "workflow_runs", [])
+        pages(root / "worker", "workflow_runs", [])
+        index = {
+            "contract": MODULE.INDEX_CONTRACT,
+            "artifacts": [entry(MODULE.NATIVE_STREAM, 301, 1)],
+            "exclusions": [],
+            "receipt_emission": emission(),
+            "integrity_failures": [],
+        }
+
+        empty = native_receipt(
+            blobs,
+            pr=4138,
+            head=HEAD_B,
+            worker=False,
+            serving=quiet,
+            legacy_serving=quiet,
+            legacy_worker=False,
+            changed_paths=[],
+        )
+        archive(archives, 301, MODULE.NATIVE_STREAM, empty)
+        accepted = MODULE.summarize(
+            index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT,
+        )
+        assert accepted["counts"]["validated_native_receipts"] == 1
+        assert accepted["counts"]["integrity_failures"] == 0
+        assert accepted["gates"]["integrity_clean"] is True
+
+        # ...and the empty case is bound HARDER than a non-empty one, which is
+        # what makes accepting it safe. Every routing decision is a function of
+        # the changed paths, so a head that changed nothing must route nothing.
+        # A path list that was truncated or dropped after it had already
+        # selected work cannot satisfy this.
+        for contradiction in (
+            native_receipt(
+                blobs, pr=4138, head=HEAD_B, worker=True,
+                serving=quiet, legacy_serving=quiet, legacy_worker=True,
+                changed_paths=[],
+            ),
+            native_receipt(
+                blobs, pr=4138, head=HEAD_B, worker=False,
+                serving={"generic": True, "lambda": False, "functions": False},
+                legacy_serving={"generic": True, "lambda": False, "functions": False},
+                legacy_worker=False,
+                changed_paths=[],
+            ),
+        ):
+            archive(archives, 301, MODULE.NATIVE_STREAM, contradiction)
+            rejected = MODULE.summarize(
+                index, archives, root / "serving", root / "worker",
+                policy(), REPOSITORY_ROOT,
+            )
+            assert rejected["counts"]["integrity_failures"] == 1
+            assert "empty diff contradicts its routing decision" in (
+                rejected["integrity_failures"][0]["reason"]
+            )
+
+        # The digest still has to replay over the exact list, empty or not, so
+        # an emptied list cannot be swapped in under a populated receipt's
+        # digest.
+        forged = native_receipt(
+            blobs, pr=4138, head=HEAD_B, worker=False,
+            serving=quiet, legacy_serving=quiet, legacy_worker=False,
+        )
+        forged["changed_paths"] = []
+        archive(archives, 301, MODULE.NATIVE_STREAM, forged)
+        stale_digest = MODULE.summarize(
+            index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT,
+        )
+        assert stale_digest["counts"]["integrity_failures"] == 1
+        assert "changed paths digest does not replay" in (
+            stale_digest["integrity_failures"][0]["reason"]
+        )
+
+        # A non-list is still malformed.
+        malformed = native_receipt(
+            blobs, pr=4138, head=HEAD_B, worker=False,
+            serving=quiet, legacy_serving=quiet, legacy_worker=False,
+        )
+        malformed["changed_paths"] = ""
+        archive(archives, 301, MODULE.NATIVE_STREAM, malformed)
+        invalid = MODULE.summarize(
+            index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT,
+        )
+        assert invalid["counts"]["integrity_failures"] == 1
+        assert "changed paths are invalid" in (
+            invalid["integrity_failures"][0]["reason"]
+        )
+
+
 def test_workflows_are_read_only_and_attempt_bound() -> None:
     ledger = (REPOSITORY_ROOT / ".github/workflows/impact-routing-evidence-ledger.yml").read_text(
         encoding="utf-8"
@@ -1086,6 +1206,14 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     assert "ref: ${{ github.workflow_sha }}" in ledger
     assert "actions/runs/${run_id}/artifacts?per_page=100" in ledger
     assert "producer_count > MAXIMUM_CATALOGS" in ledger
+    # The run catalog is bounded in RUNS, read from the declared total before
+    # paging, so the collection budget is comparable with the catalog and
+    # download budgets instead of being a page count that silently undercut
+    # both. Pages are then derived from that total, never fixed.
+    assert "MAXIMUM_RUNS: ${{ steps.policy.outputs.maximum_runs_per_query }}" in ledger
+    assert "expected_total > MAXIMUM_RUNS" in ledger
+    assert "maximum_pages=$(( (expected_total + 99) / 100 ))" in ledger
+    assert "MAXIMUM_PAGES" not in ledger
     assert 'id: download' in ledger
     assert 'zipfile.is_zipfile(sys.argv[1])' in ledger
     assert 'receipt artifact %s was unavailable or invalid after 4 attempts' in ledger
@@ -1104,6 +1232,24 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     assert (
         "name: native-image-impact-observation-v3-attempt-${{ github.run_attempt }}"
         in native
+    )
+    # A post-observation discard is the same fact as a collect-time skip: the
+    # source was superseded, so nothing was owed. It has to leave the same
+    # stable-name marker, or `discover` reads a successful observer shell with
+    # no artifact as receipt loss — which is exactly what produced all 24 lost
+    # native receipts in the 2026-09-04 ledger.
+    assert "recordObservationSkip({" in native
+    assert (
+        "name: native-image-impact-skipped-${{ steps.recheck.outputs.skip_code }}"
+        "-attempt-${{ github.run_attempt }}" in native
+    )
+    assert "if: steps.recheck.outputs.skip == 'true'" in native
+    # Both markers upload under the same stable name pattern, and the recheck
+    # only runs when collect did not skip, so the two can never both fire.
+    assert native.count("path: ${{ runner.temp }}/observation-skipped.json") == 2
+    assert MODULE.NATIVE_SKIP_ARTIFACT.fullmatch(
+        "native-image-impact-skipped-pull-request-identity-moved-during-observation"
+        "-attempt-1"
     )
 
 
@@ -1837,6 +1983,7 @@ test_policy_generation_ignores_routing_irrelevant_workflow_edits()
 test_expired_receipt_is_reclassified_as_loss()
 test_summary_requires_real_candidate_and_image_evidence()
 test_integrity_failures_do_not_count()
+test_empty_diff_receipts_are_evidence_not_integrity_failures()
 test_workflows_are_read_only_and_attempt_bound()
 test_exact_input_reuse_counts_when_routing_never_narrows()
 test_reuse_requires_the_attestation_to_exist_when_the_head_starts()

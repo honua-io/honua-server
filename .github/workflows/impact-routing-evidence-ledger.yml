@@ -57,7 +57,7 @@ jobs:
           RECEIPT_CUTOFF: ${{ steps.policy.outputs.receipt_cutoff }}
           PRODUCER_RUN_CUTOFF: ${{ steps.policy.outputs.producer_run_cutoff }}
           IMAGE_RUN_CUTOFF: ${{ steps.policy.outputs.image_run_cutoff }}
-          MAXIMUM_PAGES: ${{ steps.policy.outputs.maximum_pages_per_query }}
+          MAXIMUM_RUNS: ${{ steps.policy.outputs.maximum_runs_per_query }}
           MAXIMUM_CATALOGS: ${{ steps.policy.outputs.maximum_producer_run_catalogs }}
         run: |
           set -euo pipefail
@@ -70,9 +70,10 @@ jobs:
             local output_root="$3"
             shift 3
             local expected_total=''
+            local maximum_pages=''
             local complete=false
             local page=1
-            while (( page <= MAXIMUM_PAGES )); do
+            while [[ -z "${maximum_pages}" ]] || (( page <= maximum_pages )); do
               local output
               output="$(printf '%s/%03d.json' "${output_root}" "${page}")"
               gh api --method GET "${endpoint}" \
@@ -85,6 +86,25 @@ jobs:
                 '.[$collection] | arrays | length' "${output}")"
               if [[ -z "${expected_total}" ]]; then
                 expected_total="${total}"
+                # The budget is a bound on RUNS, and the declared total states
+                # up front how many there are. Fail before paging rather than
+                # discovering the shortfall at the tail, and page exactly as
+                # far as this window actually needs.
+                if (( expected_total > MAXIMUM_RUNS )); then
+                  # Fail closed and say exactly what to change. A truncated
+                  # catalog cannot degrade gracefully here: `discover` and
+                  # `summarize` count observed heads and reconcile
+                  # authoritative image outcomes against these pages, so
+                  # silently dropping the tail would turn a collection
+                  # shortfall into fabricated integrity/outcome failures.
+                  printf '::error::%s catalog declares %s run(s), over the %s-run budget. Raise maximum_runs_per_query in .github/impact-routing-promotion.json (and the catalog/download bounds with it) or shorten receipt_retention_days.\n' \
+                    "${collection}" "${expected_total}" "${MAXIMUM_RUNS}" >&2
+                  exit 1
+                fi
+                maximum_pages=$(( (expected_total + 99) / 100 ))
+                if (( maximum_pages < 1 )); then
+                  maximum_pages=1
+                fi
               elif [[ "${total}" != "${expected_total}" ]]; then
                 echo "${collection} total changed during pagination" >&2
                 exit 1
@@ -100,13 +120,8 @@ jobs:
               page=$((page + 1))
             done
             if [[ "${complete}" != true ]]; then
-              # Fail closed and say exactly what to change. A truncated catalog
-              # cannot degrade gracefully here: `discover`/`summarize` count
-              # observed heads and reconcile authoritative image outcomes
-              # against these pages, so silently dropping the tail would turn a
-              # collection shortfall into fabricated integrity/outcome failures.
-              printf '::error::%s catalog needs more than %s page(s) of 100 (declared total %s). Raise maximum_pages_per_query in .github/impact-routing-promotion.json or shorten receipt_retention_days.\n' \
-                "${collection}" "${MAXIMUM_PAGES}" "${expected_total}" >&2
+              printf '::error::%s catalog ended after %s page(s) without reaching its declared total %s.\n' \
+                "${collection}" "${maximum_pages}" "${expected_total}" >&2
               exit 1
             fi
           }
