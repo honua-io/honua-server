@@ -104,7 +104,10 @@ alias, so requests do not depend on public ingress or redirect behavior.
   (equal to `artifact.sourceDigest` unless the pin named an index).
 - `artifact.sourceConfigDigest`, `artifact.sourceRootfsFingerprint`, `artifact.mirrorTool`,
   `artifact.configDigestPreserved` and `artifact.rootfsPreserved`: the byte-exactness proof.
-- `verification.coldStartInitDurationMs`: observed first-invoke REPORT value.
+- `verification.coldStartInitDurationMs` and `verification.coldStartInitPhase`: the observed
+  first-invoke Init Duration and the phase that carried it (`init` from the REPORT line, or
+  `invoke` from the INIT_REPORT line when initialization exceeded Lambda's init window and
+  was re-run inside the first invoke).
 - `serving.result`, `serving.candidateDigest` (digest only), and `serving.candidateVersion`.
 - `serving.deployed`, `.baseline`, `.candidate`, `.rollback`: migration assertions;
   fixture name/hash, expected/actual row count and name verification; created,
