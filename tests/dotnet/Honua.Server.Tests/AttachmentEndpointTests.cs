@@ -142,7 +142,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         // #4404: a non-blank URL was never dereferenced, so a wrong or unroutable URL passed.
         // Fetch the advertised URL for the seeded text attachment and compare the bytes.
         var textAttachment = seededGroup.AttachmentInfos.Single(attachment => attachment.Name == "test1.txt");
-        var urlResponse = await _fixture.Client.GetAsync(ToRelativeUri(textAttachment.Url!));
+        var urlResponse = await _fixture.Client.GetAsync(ResolveAdvertisedUrl(textAttachment.Url!));
         urlResponse.BeSuccessful();
         (await urlResponse.Content.ReadAsByteArrayAsync()).Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
 
@@ -1094,10 +1094,32 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// The <c>returnUrl</c> form emits either an absolute or a base-path-relative URL
-    /// depending on host configuration; the test client is rooted at the test server, so
-    /// reduce it to a path the client can fetch.
+    /// The <c>returnUrl</c> form emits either an absolute URL (when a base URL is
+    /// configured) or a base-path-relative one. The test client routes every request to the
+    /// in-memory server regardless of the authority in the URI, so an absolute URL naming
+    /// the wrong scheme, host or port would still be fetched successfully; assert the
+    /// authority explicitly before dereferencing, or the round trip proves nothing about
+    /// whether the advertised URL is usable by a real client (honua-server#4468).
     /// </summary>
-    private static string ToRelativeUri(string url)
-        => Uri.TryCreate(url, UriKind.Absolute, out var absolute) ? absolute.PathAndQuery : url;
+    private Uri ResolveAdvertisedUrl(string url)
+    {
+        var baseAddress = _fixture.Client.BaseAddress;
+        baseAddress.Should().NotBeNull("the test client must be rooted at the test server");
+
+        // On Unix, Uri.TryCreate with UriKind.Absolute parses a leading-slash path as a
+        // file:// URI, so the presence of an http/https scheme — not absoluteness alone — is
+        // what distinguishes an advertised absolute URL from a base-path-relative one.
+        if (Uri.TryCreate(url, UriKind.Absolute, out var absolute) &&
+            (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
+        {
+            absolute.Scheme.Should().Be(baseAddress!.Scheme, "the advertised URL must keep the serving scheme");
+            absolute.Authority.Should().Be(
+                baseAddress.Authority,
+                "the advertised URL must point at the serving host, not some other authority");
+            return absolute;
+        }
+
+        url.Should().StartWith("/", "a non-absolute advertised URL must be rooted so a client can resolve it");
+        return new Uri(baseAddress!, url);
+    }
 }

@@ -228,11 +228,13 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         // that the row was written. Re-read it.
         var persisted = await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, original.Id);
         Assert.NotNull(persisted);
-        Assert.Equal(updated.Filename, persisted!.Value.Filename);
-        Assert.Equal(updated.ContentType, persisted.Value.ContentType);
-        Assert.Equal(updated.Keywords, persisted.Value.Keywords);
-        Assert.Equal(original.Size, persisted.Value.Size);
-        Assert.Equal(original.StoragePath, persisted.Value.StoragePath);
+
+        var persistedRow = persisted.Value;
+        Assert.Equal(updated.Filename, persistedRow.Filename);
+        Assert.Equal(updated.ContentType, persistedRow.ContentType);
+        Assert.Equal(updated.Keywords, persistedRow.Keywords);
+        Assert.Equal(original.Size, persistedRow.Size);
+        Assert.Equal(original.StoragePath, persistedRow.StoragePath);
     }
 
     [Theory]
@@ -551,6 +553,81 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// <c>ICloudFileStorage.DeleteAsync</c> defines <c>false</c> as "file was not found", so a
+    /// row whose object had already been removed is a fully reconciled delete, not an orphan.
+    /// Reporting one here would put a false positive on the counter operators alert on
+    /// (honua-server#4468).
+    /// </summary>
+    [Fact]
+    public async Task DeleteAsync_WhenStorageObjectIsAlreadyGone_RecordsNoOrphan()
+    {
+        var ledger = new RecordingOrphanLedger();
+        var store = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource),
+            _fileStorage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            schemaName: _schemaName,
+            orphanLedger: ledger);
+
+        var attachment = await CreateTestAttachment("already-gone.txt");
+
+        // Remove the object behind the store's back, so the real storage answers the store's
+        // delete with false rather than a simulated one.
+        Assert.True(await _fileStorage.DeleteAsync(attachment.StoragePath));
+        Assert.False(await _fileStorage.ExistsAsync(attachment.StoragePath));
+
+        Assert.True(await store.DeleteAsync(TestLayerId, TestFeatureId, attachment.Id));
+
+        Assert.Empty(ledger.Orphans);
+        Assert.Null(await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, attachment.Id));
+    }
+
+    /// <summary>
+    /// The metadata row is committed away before storage deletion begins, so a caller
+    /// disconnect or timeout during <c>DeleteAsync</c> leaks the object just as a storage
+    /// outage does. The cancellation must be recorded before it propagates
+    /// (honua-server#4468).
+    /// </summary>
+    [Fact]
+    public async Task DeleteAsync_WhenStorageDeleteIsCanceled_RecordsTheUndeletedObject()
+    {
+        var attachment = await CreateTestAttachment("canceled-delete.txt");
+        Assert.True(await _fileStorage.ExistsAsync(attachment.StoragePath));
+
+        var ledger = new RecordingOrphanLedger();
+        using var cancellation = new CancellationTokenSource();
+        var storage = new DeleteFailingFileStorage(
+            _fileStorage,
+            (_, _) =>
+            {
+                cancellation.Cancel();
+                throw new OperationCanceledException(cancellation.Token);
+            });
+        var store = new PostgresAttachmentStore(
+            new TestDatabaseConnectionProvider(_fixture.DataSource),
+            storage,
+            NullLogger<PostgresAttachmentStore>.Instance,
+            schemaName: _schemaName,
+            orphanLedger: ledger);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => store.DeleteAsync(TestLayerId, TestFeatureId, attachment.Id, cancellation.Token));
+
+        // The row is gone whether or not the caller waited for the answer, so the object is
+        // now unreachable and has to be enumerable for reconciliation.
+        Assert.Null(await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, attachment.Id));
+
+        var orphan = Assert.Single(ledger.Orphans);
+        Assert.Equal(AttachmentOrphanKind.UndeletedObject, orphan.Kind);
+        Assert.Equal(attachment.StoragePath, orphan.StoragePath);
+        Assert.Equal(TestLayerId, orphan.LayerId);
+        Assert.Equal(TestFeatureId, orphan.FeatureId);
+        Assert.True(await _fileStorage.ExistsAsync(attachment.StoragePath));
+
+        await _fileStorage.DeleteAsync(attachment.StoragePath);
+    }
+
+    /// <summary>
     /// A schema that does not exist, so the metadata INSERT fails while the object upload against
     /// the shared file storage succeeds — the exact window the compensating delete exists for.
     /// A suffix on <c>_schemaName</c> cannot be used: the isolated schema name already sits at
@@ -592,12 +669,18 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Passes every call through to the real storage except <c>DeleteAsync</c>, which throws.
-    /// Models the storage outage that turns a compensating delete into a leak.
+    /// Passes every call through to the real storage except <c>DeleteAsync</c>, which is
+    /// answered by <paramref name="onDelete"/> — by default a storage outage, the failure
+    /// that turns a compensating delete into a leak.
     /// </summary>
-    private sealed class DeleteFailingFileStorage(ICloudFileStorage inner) : ICloudFileStorage
+    private sealed class DeleteFailingFileStorage(
+        ICloudFileStorage inner,
+        Func<string, CancellationToken, Task<bool>>? onDelete = null) : ICloudFileStorage
     {
         private readonly List<string> _attemptedDeletes = [];
+
+        private readonly Func<string, CancellationToken, Task<bool>> _onDelete =
+            onDelete ?? ((fileId, _) => throw new IOException($"Simulated storage outage deleting '{fileId}'."));
 
         public IReadOnlyList<string> AttemptedDeletes
         {
@@ -619,7 +702,7 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
                 _attemptedDeletes.Add(fileId);
             }
 
-            throw new IOException($"Simulated storage outage deleting '{fileId}'.");
+            return _onDelete(fileId, cancellationToken);
         }
 
         public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
