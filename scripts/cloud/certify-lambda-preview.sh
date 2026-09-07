@@ -116,8 +116,27 @@ report_create_error() {
   done < <(grep -a '[^[:space:]]' "$scratch/create-error.log" | head -n 3)
 }
 
+# Deletion is only what GetFunction says is not there. The API distinguishes ResourceNotFoundException
+# from TooManyRequestsException, ServiceException, credential and network failures, but the CLI exits
+# nonzero for all of them alike; reading a bare nonzero as "gone" would let a throttle or an outage
+# during teardown publish a passing receipt while the run-namespaced function still exists.
+# Prints present, absent, or unknown; never treats unknown as absent.
+function_presence() {
+  local err rc=0
+  err="$(aws lambda get-function --function-name "$1" 2>&1 >/dev/null)" || rc=$?
+  if (( rc == 0 )); then
+    echo present
+  elif [[ "$err" == *ResourceNotFoundException* ]]; then
+    echo absent
+  else
+    printf 'get-function was indeterminate for the run function: %.200s\n' "${err//$'\n'/ }" >&2
+    echo unknown
+  fi
+}
+
 cleanup() {
   local status=$?
+  local deleted
   set +e
   if $function_created; then
     if [[ "$function_name" != honua-certrun-lambda-* ]]; then
@@ -133,7 +152,22 @@ cleanup() {
       exit 91
     fi
     aws lambda delete-function --function-name "$function_name" || status=11
-    aws lambda wait function-not-exists --function-name "$function_name" || status=11
+    # The CLI has no function-not-exists waiter (ninth live run failed its
+    # teardown on exactly that); poll get-function until it reports the function
+    # not found. An indeterminate answer keeps polling — throttling and service
+    # errors are what the retries are for — and, if it never resolves, fails the
+    # run rather than recording a deletion nobody observed.
+    deleted=false
+    for _i in $(seq 1 30); do
+      case "$(function_presence "$function_name")" in
+        absent) deleted=true; break ;;
+      esac
+      sleep 5
+    done
+    if ! $deleted; then
+      echo "teardown could not confirm the run function was deleted" >&2
+      status=11
+    fi
   fi
   if $log_group_created; then
     if [[ "$log_group" != /aws/lambda/honua-certrun-lambda-* ]]; then
@@ -289,9 +323,14 @@ fi
 
 payload='{"version":"2.0","routeKey":"GET /healthz/live","rawPath":"/healthz/live","rawQueryString":"","headers":{"accept":"application/json","host":"lambda-cert.invalid"},"requestContext":{"http":{"method":"GET","path":"/healthz/live","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"honua-lambda-preview-cert"}},"isBase64Encoded":false}'
 invoke_meta="$(aws lambda invoke --function-name "$function_name" --cli-binary-format raw-in-base64-out \
-  --log-type Tail --payload "$payload" "$scratch/response.json")"
+  --invocation-type RequestResponse --log-type Tail --payload "$payload" "$scratch/response.json")"
 if [[ "$(jq -r '.StatusCode' <<<"$invoke_meta")" != "200" || "$(jq -r '.FunctionError // empty' <<<"$invoke_meta")" != "" ]]; then
+  # Ninth live run: StatusCode 204 with no ExecutedVersion, i.e. the API treated
+  # the call as a dry run. Say exactly what came back so the next failure is
+  # diagnosable from the job log (Lambda's own log tail, never the env).
   echo "Lambda invocation failed" >&2
+  jq -c '{StatusCode, ExecutedVersion, FunctionError}' <<<"$invoke_meta" >&2
+  jq -r '.LogResult // empty' <<<"$invoke_meta" | base64 -d 2>/dev/null | tail -n 20 | sed 's/^/lambda-log: /' >&2
   exit 6
 fi
 if [[ "$(jq -r '.statusCode' "$scratch/response.json")" != "200" ]]; then
@@ -341,8 +380,8 @@ trap - EXIT
 function_created=false
 log_group_created=false
 
-if aws lambda get-function --function-name "$function_name" >/dev/null 2>&1; then
-  echo "function still exists after teardown" >&2
+if [[ "$(function_presence "$function_name")" != "absent" ]]; then
+  echo "function still exists after teardown, or its absence could not be confirmed" >&2
   exit 11
 fi
 if [[ "$(aws logs describe-log-groups --log-group-name-prefix "$log_group" \
