@@ -7,6 +7,19 @@ on:
   schedule:
     # Weekly, offset from the CITE suites (Mon/Tue) to spread runner load.
     - cron: '0 6 * * 3'
+  # honua-server#4398: the validator's own unit tests were in no testpaths and in no
+  # workflow, so the code that decides what the certification fragment claims was
+  # itself unverified. The `validator-selftest` job below is cheap (no Docker, no
+  # geospatial toolchain), so it runs on every change to the lane, not weekly.
+  pull_request:
+    paths:
+      - 'scripts/conformance/cng/**'
+      - '.github/workflows/cng-conformance.yml'
+  push:
+    branches: [trunk]
+    paths:
+      - 'scripts/conformance/cng/**'
+      - '.github/workflows/cng-conformance.yml'
   workflow_dispatch:
     inputs:
       server_image:
@@ -27,13 +40,43 @@ permissions:
   packages: read
 
 concurrency:
-  group: cng-conformance-${{ github.ref }}
+  # honua-server#4479: the cheap push/PR self-test must never cancel an in-flight
+  # heavyweight run. A push to `trunk` touching these paths shares `refs/heads/trunk`
+  # with the scheduled and dispatched lane, and the replacement push run skips the
+  # `cng` job entirely (it is restricted to schedule/workflow_dispatch), so the
+  # cancellation would destroy a full conformance result and produce nothing in its
+  # place. Split the group by tier: self-tests serialise against self-tests, the lane
+  # against the lane.
+  group: cng-conformance-${{ github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'lane' || 'selftest' }}
   cancel-in-progress: true
 
 jobs:
+  validator-selftest:
+    name: CNG Validator Self-Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Run CNG validator self-tests
+        # These assert the governed assignment roster, the artifact-producer
+        # attribution and the budget-profile evaluation that decides whether a
+        # certification cell may pass. They import the validator module directly and
+        # need none of the geospatial client toolchain the lane installs.
+        run: python3 -m unittest discover -s scripts/conformance/cng -p 'test_*.py' -v
+
   cng:
     name: CNG Conformance
     runs-on: ubuntu-24.04
+    # The lane must not run against a validator whose own tests are red.
+    needs: validator-selftest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 45
     steps:
       - name: Checkout code
