@@ -169,17 +169,79 @@ public sealed class DurableJobSubstrateRegistrationTests
         act.Should().NotThrow();
     }
 
+    [UnitTest]
+    public void AddGeoprocessing_ConnectedButUnentitledRedis_DoesNotRegisterExecutionJobStore()
+    {
+        // Infrastructure Redis is connected in every non-Development/Test deployment regardless of
+        // entitlement (requiresDurableDistributedEvents), so the multiplexer alone must never
+        // compose durable jobs — otherwise an unentitled deployment runs them.
+        var services = ComposeJobSubstrate(attested: true, entitled: false);
+
+        services.Should().NotContain(
+            descriptor => descriptor.ServiceType == typeof(IExecutionJobStore),
+            "entitlement is a separate gate from durability attestation (honua-server#4502)");
+    }
+
+    [UnitTest]
+    public void Classify_UnentitledRedisThatAttests_ReportsNotEntitledRatherThanAvailable()
+    {
+        // The regression this pins: durability is inspected against whatever infrastructure Redis
+        // is connected, so an UNENTITLED deployment whose Redis does attest would otherwise be
+        // classified Available and advertise 'jobs.runner'.
+        var options = new DurableJobSubstrateOptions
+        {
+            RedisConfigured = true,
+            RedisEntitled = false,
+            RedisDurabilityAttestation = new RedisDurabilityAttestation(
+                "redis:6379",
+                "aof (appendonly=yes, aof_enabled=1)",
+                "appendfsync=everysec",
+                "noeviction",
+                DateTimeOffset.UtcNow),
+        };
+
+        options.Classify(jobStorePresent: true, jobQueuePresent: true)
+            .Should().Be(DurableJobSubstrateCause.RedisNotEntitled);
+    }
+
+    [UnitTest]
+    public void Classify_EntitledRedisThatAttests_StaysAvailable()
+    {
+        var options = new DurableJobSubstrateOptions
+        {
+            RedisConfigured = true,
+            RedisEntitled = true,
+            RedisDurabilityAttestation = new RedisDurabilityAttestation(
+                "redis:6379",
+                "aof (appendonly=yes, aof_enabled=1)",
+                "appendfsync=everysec",
+                "noeviction",
+                DateTimeOffset.UtcNow),
+        };
+
+        options.Classify(jobStorePresent: true, jobQueuePresent: true)
+            .Should().Be(DurableJobSubstrateCause.Available);
+    }
+
     /// <summary>
     /// Composes the durable job substrate the way the server's composition root does when Redis
     /// is connected: <c>AddGeoprocessing</c> contributes the store, <c>AddJobOrchestration</c>
     /// composes the queue and log store around it. <paramref name="attested"/> mirrors whether
-    /// <c>Program.cs</c> published the accepted attestation as a resolvable singleton.
+    /// <c>Program.cs</c> published the accepted attestation as a resolvable singleton;
+    /// <paramref name="entitled"/> mirrors the separate <see cref="DurableJobSubstrateEntitlement"/>
+    /// marker it publishes when the bootstrap license grants <c>caching.redis</c>. The two are
+    /// deliberately independent knobs — that is the honua-server#4502 contract.
     /// </summary>
-    private static ServiceCollection ComposeJobSubstrate(bool attested)
+    private static ServiceCollection ComposeJobSubstrate(bool attested, bool entitled = true)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
+
+        if (entitled)
+        {
+            services.AddSingleton(new DurableJobSubstrateEntitlement());
+        }
 
         if (attested)
         {

@@ -176,6 +176,51 @@ public sealed class RedisDurabilityAttestationIntegrationTests
             .Should().Be(DurableJobSubstrateCause.RedisPersistenceDisabled);
     }
 
+    /// <summary>
+    /// A startup-time durability rejection must not MASK a later Redis outage. The health check
+    /// runs its ping and cache write/read/delete probes first and only reports the durability
+    /// degradation once connectivity is proven; otherwise an operator whose Redis has AOF off
+    /// would keep reading "durability is not attested" while the actual failure is that Redis is
+    /// unreachable (honua-server#4502 review).
+    /// </summary>
+    [IntegrationTest]
+    public async Task RejectedDurability_WithUnreachableRedis_ReportsTheOutageNotTheDurabilityVerdict()
+    {
+        await using var redis = await StartRedisAsync(appendOnly: false, evictionPolicy: "noeviction");
+        var inspection = await RedisDurabilityAttestor.InspectAsync(redis.Multiplexer);
+        inspection.Accepted.Should().BeFalse();
+
+        var substrate = Options.Create(new DurableJobSubstrateOptions
+        {
+            RedisConfigured = true,
+            RedisEntitled = true,
+            RedisDurabilityFailure = inspection.FailureCause
+        });
+
+        var cacheServices = new ServiceCollection();
+        cacheServices.AddStackExchangeRedisCache(options => options.Configuration = redis.ConnectionString);
+        using var cacheProvider = cacheServices.BuildServiceProvider();
+        var healthCheck = new Honua.Server.Features.HealthCheck.RedisHealthCheck(
+            redis.Multiplexer,
+            cacheProvider.GetRequiredService<IDistributedCache>(),
+            NullLogger<Honua.Server.Features.HealthCheck.RedisHealthCheck>.Instance,
+            substrate);
+
+        // While Redis serves, the durability rejection IS the diagnosis.
+        (await healthCheck.CheckHealthAsync(new HealthCheckContext())).Status
+            .Should().Be(HealthStatus.Degraded);
+
+        // Take Redis away. The same startup-time rejection is still on the options, but the
+        // reported condition must now be the outage.
+        await redis.Container.StopAsync();
+
+        var outage = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        outage.Status.Should().Be(HealthStatus.Unhealthy,
+            "a connectivity failure outranks the durability verdict it would otherwise hide");
+        outage.Description.Should().NotContain("durability is not attested");
+    }
+
     [IntegrationTest]
     public async Task AcceptedRedis_SurvivesAbruptKillAndRestart_WithAllDurableRecordsIntact()
     {
@@ -355,6 +400,13 @@ public sealed class RedisDurabilityAttestationIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(redis);
+
+        // Entitlement and durability attestation are separate gates (honua-server#4502). These
+        // cases all model an ENTITLED deployment whose Redis does or does not attest, so the
+        // marker the composition root publishes for 'caching.redis' is always present here; the
+        // unentitled case is covered by DurableJobSubstrateRegistrationTests.
+        services.AddSingleton(new DurableJobSubstrateEntitlement());
+
         if (attestation is not null)
         {
             services.AddSingleton(attestation);

@@ -308,6 +308,18 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         connectedRedis = ConnectionMultiplexer.Connect(redisOptions);
         builder.Services.TryAddSingleton<IConnectionMultiplexer>(connectedRedis);
 
+        // The durable job substrate is composed only when it is ENTITLED (honua-server#4502).
+        // The multiplexer above is registered regardless, because requiresDurableDistributedEvents
+        // connects infrastructure Redis for distributed events in every non-Development/Test
+        // deployment — so it is not evidence of a jobs entitlement, and AddGeoprocessing keys the
+        // IExecutionJobStore registration on THIS marker instead. Deliberately independent of the
+        // durability attestation registered below: durability decides what is advertised,
+        // entitlement decides what exists.
+        if (redisCacheEntitled)
+        {
+            builder.Services.TryAddSingleton(new DurableJobSubstrateEntitlement());
+        }
+
         if (!connectedRedis.IsConnected)
         {
             if (requireRedisAtStartup)
@@ -571,7 +583,13 @@ builder.Services.AddHonuaBatchAndDeployBackends();
 builder.Services.AddHonuaSelfHostedRollingProxy(builder.Configuration);
 // ---- End extracted block
 
-if (connectedRedis != null)
+// Gated on the ENTITLED substrate, not merely a connected multiplexer (honua-server#4502): the
+// members of this block take IExecutionJobStore as a required dependency, and AddGeoprocessing
+// composes that store only when the entitlement marker is present. Keying the two on different
+// facts is precisely what made a non-AOF Redis abort ServiceProvider validation with 31
+// unresolved-service failures; an unentitled deployment with connected infrastructure Redis was
+// the second trigger of the same defect.
+if (connectedRedis != null && redisCacheEntitled)
 {
     // Control-plane reconcile graph (stores, four typed reconcilers, dispatcher seam, event handler,
     // trigger options). Shared with the cloud event entrypoint (Honua.ControlPlane.Lambda) via

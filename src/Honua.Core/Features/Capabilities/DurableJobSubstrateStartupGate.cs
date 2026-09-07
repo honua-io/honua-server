@@ -4,6 +4,31 @@
 namespace Honua.Core.Features.Capabilities;
 
 /// <summary>
+/// Marker proving the deployment is ENTITLED to a durable job substrate, registered by the
+/// composition root when the bootstrap license snapshot grants <c>caching.redis</c>.
+/// </summary>
+/// <remarks>
+/// Entitlement and durability attestation are two different gates and honua-server#4502 keeps
+/// them apart. Durability decides what the server ADVERTISES; entitlement decides whether the
+/// durable job substrate is composed at all. They were briefly conflated because #4141 gated the
+/// job-store registration on <see cref="RedisDurabilityAttestation"/>, which the composition root
+/// happens to register only when Redis is entitled — so removing that gate to stop the
+/// unresolved-service startup crash would have let an unentitled deployment whose Redis DOES
+/// attest compose and advertise <c>jobs.runner</c>. This marker carries the entitlement fact on
+/// its own so the registration can require it without ever consulting the attestation.
+/// <para>
+/// Infrastructure Redis is connected in non-Development/Test deployments regardless of
+/// entitlement (<c>requiresDurableDistributedEvents</c> forces it for distributed events), so
+/// the presence of <c>IConnectionMultiplexer</c> is NOT evidence of a jobs entitlement.
+/// </para>
+/// </remarks>
+public sealed class DurableJobSubstrateEntitlement
+{
+    /// <summary>The capability id this entitlement unlocks.</summary>
+    public const string CapabilityId = CapabilityUnavailableCodes.DurableJobsCapability;
+}
+
+/// <summary>
 /// Operator policy for what an unattested Redis durability inspection means at startup.
 /// </summary>
 /// <remarks>
