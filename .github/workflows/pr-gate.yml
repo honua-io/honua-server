@@ -323,6 +323,7 @@ jobs:
     if: always()
     needs: [pr-gate, format]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Require build, tests, and format
         env:
