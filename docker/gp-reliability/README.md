@@ -19,6 +19,15 @@ daemon. Receipts are written to `artifacts/gp-lifecycle` by default. A failing
 assertion is recorded as a `FINDING` and the runner exits nonzero; do not edit a
 receipt or relax an assertion to make a candidate green.
 
+Referenced output staging is fail-closed, so the harness provisions the shared
+object volume from the topology's own declared store contract (via
+`scripts/operations/initialize-gp-output-store.sh`) before the first `compose up`,
+and refuses to start if the digest it computes differs from the one `compose.yml`
+declares. The `output-store-attestation` scenario then proves an existing but
+unattested mount is rejected without being self-provisioned, that the runtime
+publishes path-free store evidence, and that a staged artifact read back from the
+peer server is byte-identical after every server and worker container is replaced.
+
 The lifecycle lane also qualifies the production worker's supported cancellation and timeout
 seams. It pauses a real native GDAL child at claimed, process-started, staged-output, and
 terminal-CAS fences; cancels through OGC DELETE from the peer server; and exercises both a
