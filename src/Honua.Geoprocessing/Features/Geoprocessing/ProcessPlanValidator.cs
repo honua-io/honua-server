@@ -1336,13 +1336,22 @@ internal static partial class ProcessPlanValidator
 
         // The nugget is the discontinuity at the origin, so it must sit strictly
         // below the TOTAL sill or the model has no structured component at all.
-        if (TryReadDouble(step, "nugget", out var nugget)
-            && TryReadDouble(step, "sill", out var sill)
-            && sill <= nugget)
+        // Compare EFFECTIVE values: an omitted parameter takes the catalog default the
+        // worker will apply, so submit-time validation and execution agree instead of
+        // admitting a plan (nugget=2, sill omitted) that the worker then rejects.
+        var effectiveNugget = TryReadDouble(step, "nugget", out var nugget) ? nugget : DefaultKrigingNugget;
+        var effectiveSill = TryReadDouble(step, "sill", out var sill) ? sill : DefaultKrigingSill;
+        if (effectiveSill <= effectiveNugget)
         {
             AddRangeViolationIfNew(step, "sill", "the variogram needs nugget < sill", violations);
         }
     }
+
+    /// <summary>Catalog default nugget for <c>raster.interpolate-kriging</c>.</summary>
+    private const double DefaultKrigingNugget = 0d;
+
+    /// <summary>Catalog default TOTAL sill for <c>raster.interpolate-kriging</c>.</summary>
+    private const double DefaultKrigingSill = 1d;
 
     private static bool TryReadDouble(AnalysisPlanStep step, string name, out double value)
     {

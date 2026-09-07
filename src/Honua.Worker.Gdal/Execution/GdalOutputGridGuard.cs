@@ -49,8 +49,24 @@ internal static class GdalOutputGridGuard
     /// job with a clear validation message before spawning the GDAL tool.
     /// </summary>
     public static bool TryAdmit(long width, long height, GdalWorkerOptions options, out string error)
+        => TryAdmit(width, height, options, bands: 1, out error);
+
+    /// <summary>
+    /// Admits or rejects an explicitly requested output grid that carries
+    /// <paramref name="bands"/> Float64 bands. <c>raster.interpolate-kriging</c> emits
+    /// two (prediction plus kriging standard error), so admitting it against a
+    /// single-band footprint would let a request through at twice the configured
+    /// decoded-byte cap.
+    /// </summary>
+    /// <param name="width">Requested output width in pixels.</param>
+    /// <param name="height">Requested output height in pixels.</param>
+    /// <param name="options">Worker caps.</param>
+    /// <param name="bands">Number of Float64 output bands the operation emits.</param>
+    /// <param name="error">Caller-facing rejection reason.</param>
+    public static bool TryAdmit(long width, long height, GdalWorkerOptions options, int bands, out string error)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentOutOfRangeException.ThrowIfLessThan(bands, 1);
         error = "";
 
         if (width < 1 || height < 1)
@@ -87,9 +103,10 @@ internal static class GdalOutputGridGuard
         // output size is pixels × 8. Compare via division to avoid an Int64 overflow on
         // the multiply when the pixel caps are configured very high.
         const long BytesPerFloat64Pixel = 8L;
-        if (pixels > (double)options.MaxDecodedRasterBytes / BytesPerFloat64Pixel)
+        var bytesPerPixel = BytesPerFloat64Pixel * bands;
+        if (pixels > (double)options.MaxDecodedRasterBytes / bytesPerPixel)
         {
-            error = $"estimated output grid size {pixels.ToString(CultureInfo.InvariantCulture)} pixels × 8 bytes/pixel (single-band Float64) exceeds configured MaxDecodedRasterBytes={options.MaxDecodedRasterBytes.ToString(CultureInfo.InvariantCulture)}";
+            error = $"estimated output grid size {pixels.ToString(CultureInfo.InvariantCulture)} pixels × {bytesPerPixel.ToString(CultureInfo.InvariantCulture)} bytes/pixel ({bands.ToString(CultureInfo.InvariantCulture)}-band Float64) exceeds configured MaxDecodedRasterBytes={options.MaxDecodedRasterBytes.ToString(CultureInfo.InvariantCulture)}";
             return false;
         }
 

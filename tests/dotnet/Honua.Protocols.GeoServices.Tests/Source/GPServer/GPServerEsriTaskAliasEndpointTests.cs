@@ -68,9 +68,8 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
         // Both addressing forms are published for an aliased process...
         tasks.Should().Contain("geometry.buffer");
         tasks.Should().Contain("Buffer");
-        // A known-but-unavailable process remains honestly discoverable under both
-        // its canonical id and Esri-conventional alias. Calling it still fails closed
-        // at the canonical execution-capability boundary.
+        // An aliased native process is published under both its canonical id and its
+        // Esri-conventional alias, exactly once each.
         tasks.Count(name => name == "raster.interpolate-kriging").Should().Be(1);
         tasks.Count(name => name == "Kriging").Should().Be(1);
         // ...a non-aliased Honua-specific job process keeps only its internal-ID name...
@@ -88,7 +87,7 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     [InlineData("Kriging")]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
-    public async Task TaskInfo_UnavailableTask_PublishesLimitation(string taskName)
+    public async Task TaskInfo_AliasedNativeTask_PublishesTheCanonicalDefinition(string taskName)
     {
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{taskName}");
 
@@ -96,8 +95,14 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = doc.RootElement;
         root.GetProperty("name").GetString().Should().Be(taskName);
-        root.GetProperty("description").GetString().Should().Contain("UNSUPPORTED");
-        root.GetProperty("description").GetString().Should().Contain("does not bundle");
+        // Kriging executes on the bundled numerical backend since #3932, so task-info
+        // describes the operation instead of publishing an unavailability limitation.
+        root.GetProperty("description").GetString().Should().Contain("ORDINARY KRIGING");
+        var inputs = root.GetProperty("parameters").EnumerateArray()
+            .Where(parameter => parameter.GetProperty("direction").GetString() == "esriGPParameterDirectionInput")
+            .Select(parameter => parameter.GetProperty("name").GetString())
+            .ToArray();
+        inputs.Should().Contain(["points", "width", "height", "range"]);
     }
 
     [IntegrationTest]

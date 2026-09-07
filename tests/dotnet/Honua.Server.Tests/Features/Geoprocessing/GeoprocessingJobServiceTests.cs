@@ -182,6 +182,24 @@ public sealed class GeoprocessingJobServiceTests
                 }
             ]
         };
+        // The built-in catalog no longer classifies ANY process Unavailable (#3932 made
+        // raster.interpolate-kriging executable, and it was the last one), so the
+        // unavailable branch is exercised against a synthetic definition rather than a
+        // catalog row that would silently stop testing it.
+        var unavailableDefinition = new ProcessDefinition
+        {
+            ProcessId = "custom.unavailable",
+            Title = "Unavailable process",
+            Description = "Test-only unavailable process.",
+            Category = "custom",
+            Parameters = [],
+            OutputArtifactKinds = [],
+            ExecutionKind = ProcessExecutionKind.Unavailable,
+            SupportedExecutionModes = ProcessExecutionModes.None,
+            ExecutionCapabilityReason = "Test-only: no backend is bundled."
+        };
+        var unavailableCatalog = Substitute.For<IProcessCatalog>();
+        unavailableCatalog.GetProcess(unavailableDefinition.ProcessId).Returns(unavailableDefinition);
         var unavailablePlan = new AnalysisPlan
         {
             PlanId = "plan-unavailable",
@@ -190,9 +208,9 @@ public sealed class GeoprocessingJobServiceTests
             [
                 new AnalysisPlanStep
                 {
-                    StepId = "kriging",
+                    StepId = "unavailable",
                     Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "raster.interpolate-kriging",
+                    ProcessId = unavailableDefinition.ProcessId,
                     Inputs = new Dictionary<string, string>()
                 }
             ]
@@ -200,7 +218,7 @@ public sealed class GeoprocessingJobServiceTests
 
         _sut.ValidatePlan(workflowPlan, CreatePrincipal()).Violations
             .Should().Contain(violation => violation.Code == "WORKFLOW_ONLY_PROCESS");
-        _sut.ValidatePlan(unavailablePlan, CreatePrincipal()).Violations
+        DirectSubmitPlanValidator.Evaluate(unavailablePlan, unavailableCatalog).Violations
             .Should().Contain(violation => violation.Code == "PROCESS_UNAVAILABLE");
     }
 
@@ -506,26 +524,30 @@ public sealed class GeoprocessingJobServiceTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_NonJobCapability_RejectsBeforeDurablePersistence()
     {
-        var unavailablePlan = new AnalysisPlan
+        // source.geojson is WorkflowOnly: composable inside a DAG, never directly
+        // submittable. The built-in catalog has no Unavailable row left to use here
+        // (#3932), and the PROCESS_UNAVAILABLE branch keeps its own coverage in
+        // ValidatePlan_WorkflowOnlyAndUnavailableProcesses_ReportCanonicalCapability.
+        var nonJobPlan = new AnalysisPlan
         {
-            PlanId = "plan-unavailable",
-            IntentId = "intent-unavailable",
+            PlanId = "plan-non-job",
+            IntentId = "intent-non-job",
             Steps =
             [
                 new AnalysisPlanStep
                 {
-                    StepId = "kriging",
+                    StepId = "source",
                     Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "raster.interpolate-kriging",
-                    Inputs = new Dictionary<string, string>(),
+                    ProcessId = "source.geojson",
+                    Inputs = new Dictionary<string, string> { ["inline"] = "{}" },
                 },
             ],
         };
 
-        var act = () => _sut.SubmitJobAsync(unavailablePlan, null, CreatePrincipal());
+        var act = () => _sut.SubmitJobAsync(nonJobPlan, null, CreatePrincipal());
 
         await act.Should().ThrowAsync<GeoprocessingValidationException>()
-            .WithMessage("*PROCESS_UNAVAILABLE*");
+            .WithMessage("*WORKFLOW_ONLY_PROCESS*");
         await _jobStore.DidNotReceive().TryCreateAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }

@@ -33,10 +33,15 @@ the geotransform origin sits on the extent corner.
 """
 import argparse
 import json
+import math
 import sys
 
 import numpy as np
 from osgeo import gdal, ogr
+
+# Target cells solved per pass. Peak extra memory is O(samples * TARGET_CHUNK), so a
+# 2000-sample job holds ~1 GB of right-hand sides regardless of how large the grid is.
+TARGET_CHUNK = 65_536
 
 
 def semivariogram(model: str, h: np.ndarray, nugget: float, sill: float, rng: float) -> np.ndarray:
@@ -81,9 +86,21 @@ def read_points(path: str, z_field: str | None):
             value = feature.GetField(z_field)
             if value is None:
                 raise ValueError(f"field '{z_field}' is null on at least one feature")
-            zs.append(float(value))
+            try:
+                observation = float(value)
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"field '{z_field}' is not numeric on at least one feature") from error
         else:
-            zs.append(geometry.GetZ())
+            # OGR reports Z = 0 for a 2D point, which would silently krige a
+            # zero-valued surface when the caller forgot 'zField'.
+            if geometry.GetCoordinateDimension() < 3:
+                raise ValueError(
+                    "the points carry no Z dimension; supply 'zField' to name the value to interpolate")
+            observation = geometry.GetZ()
+
+        if not math.isfinite(observation):
+            raise ValueError("every sample value must be finite")
+        zs.append(observation)
 
     extent = layer.GetExtent()
     return np.array(xs), np.array(ys), np.array(zs), wkt, extent
@@ -143,19 +160,47 @@ def main(argv: list[str]) -> int:
     mesh_x, mesh_y = np.meshgrid(grid_x, grid_y)
     targets = mesh_x.size
 
-    target_distances = np.hypot(
-        xs[:, None] - mesh_x.reshape(1, targets),
-        ys[:, None] - mesh_y.reshape(1, targets),
-    )
-    rhs = np.ones((n + 1, targets))
-    rhs[:n, :] = semivariogram(args.model, target_distances, args.nugget, args.sill, args.rng)
+    # The sample-by-target arrays scale as n * width * height, so a large grid would
+    # allocate tens of gigabytes and be OOM-killed long before the tool timeout could
+    # cancel it. Factorise the (n+1) system once, then solve the right-hand sides in
+    # bounded chunks: peak extra memory is O(n * CHUNK), independent of grid size.
+    chunk = max(1, min(targets, TARGET_CHUNK))
+    # Invert once rather than re-factorising per chunk: the system is (n+1) square with
+    # n bounded by --max-samples, so a single inverse is cheap and lets every chunk be a
+    # matrix product. Re-running np.linalg.solve per chunk would repeat the O(n^3)
+    # factorisation for every one of them.
+    factorisation = np.linalg.inv(lhs)
 
-    solution = np.linalg.solve(lhs, rhs)
-    weights = solution[:n, :]
-    lagrange = solution[n, :]
+    flat_x = mesh_x.reshape(targets)
+    flat_y = mesh_y.reshape(targets)
+    prediction = np.empty(targets, dtype=np.float64)
+    variance = np.empty(targets, dtype=np.float64)
 
-    prediction = (weights * zs[:, None]).sum(axis=0).reshape(args.height, args.width)
-    variance = (weights * rhs[:n, :]).sum(axis=0) + lagrange
+    # Exactness at a sample is defined by gamma(0) = 0, but a target reconstructed as
+    # x_min + (column + 0.5) * delta_x can miss a decimal sample coordinate by a few
+    # ULPs and then collect the full nugget. Snap distances that are zero to within a
+    # scale-aware tolerance so the advertised exact-at-samples contract survives the
+    # grid arithmetic.
+    span = max(x_max - x_min, y_max - y_min)
+    coincident_tolerance = span * 1e-12
+
+    for start in range(0, targets, chunk):
+        stop = min(start + chunk, targets)
+        distances_to_targets = np.hypot(
+            xs[:, None] - flat_x[None, start:stop],
+            ys[:, None] - flat_y[None, start:stop],
+        )
+        distances_to_targets[distances_to_targets <= coincident_tolerance] = 0.0
+
+        rhs = np.ones((n + 1, stop - start))
+        rhs[:n, :] = semivariogram(args.model, distances_to_targets, args.nugget, args.sill, args.rng)
+
+        solution = factorisation @ rhs
+        weights = solution[:n, :]
+        prediction[start:stop] = (weights * zs[:, None]).sum(axis=0)
+        variance[start:stop] = (weights * rhs[:n, :]).sum(axis=0) + solution[n, :]
+
+    prediction = prediction.reshape(args.height, args.width)
     # Round-off can drive an exactly-zero variance a few ulps negative.
     standard_error = np.sqrt(np.clip(variance, 0.0, None)).reshape(args.height, args.width)
 
@@ -174,7 +219,7 @@ def main(argv: list[str]) -> int:
         band.SetDescription(name)
         band.WriteArray(values)
     dataset.FlushCache()
-    dataset = None
+    del dataset
 
     json.dump({"samples": int(n), "width": args.width, "height": args.height}, sys.stdout)
     return 0

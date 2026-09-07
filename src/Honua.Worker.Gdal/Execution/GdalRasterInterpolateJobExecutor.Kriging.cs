@@ -39,6 +39,9 @@ internal sealed partial class GdalRasterInterpolateJobExecutor
     /// </summary>
     internal const int MaxKrigingSamples = 2000;
 
+    /// <summary>Float64 bands the operation publishes: prediction and standard error.</summary>
+    internal const int OutputBands = 2;
+
     /// <summary>Variogram models the bundled backend implements.</summary>
     internal static readonly string[] KrigingVariogramModels = ["spherical", "exponential", "gaussian"];
 
@@ -60,7 +63,9 @@ internal sealed partial class GdalRasterInterpolateJobExecutor
                 "Invalid kriging inputs: 'zField' must match ^[A-Za-z_][A-Za-z0-9_]*$.");
         }
 
-        if (!TryReadOutputSize(parameters, opts, out var width, out var height, out var sizeError))
+        // Two Float64 bands (prediction + kriging standard error), so the decoded-byte
+        // admission must budget twice a single-band grid.
+        if (!TryReadOutputSize(parameters, opts, out var width, out var height, out var sizeError, OutputBands))
         {
             Log.InvalidInputs(logger, job.OperationId, sizeError);
             return JobExecutionResult.Failed($"Invalid kriging inputs: {sizeError}");
