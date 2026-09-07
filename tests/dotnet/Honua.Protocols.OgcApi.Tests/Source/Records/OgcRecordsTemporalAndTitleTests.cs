@@ -153,6 +153,21 @@ public sealed class OgcRecordsTemporalAndTitleTests : IAsyncLifetime
             "the record title must come from the catalog title, not collapse to the machine name");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
+    public async Task GetItems_QMatchesThePrefixedRecordId()
+    {
+        // The coverage document says q searches the record id. The haystack carried only the bare
+        // layer id / service name, so a term equal to the record's actual id found nothing.
+        var ids = await GetRecordIdsAsync($"q={Uri.EscapeDataString(TimedRecordId)}&limit=100");
+
+        ids.Should().Contain(
+            TimedRecordId,
+            "a term equal to the record's own id must return that record");
+        ids.Should().NotContain("service:test", "and must not return records with a different id");
+    }
+
     private async Task<string[]> GetRecordIdsAsync(string query)
     {
         var response = await _fixture.Client.GetAsync(

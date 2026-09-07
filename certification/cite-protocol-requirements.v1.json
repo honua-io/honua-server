@@ -1,6 +1,6 @@
 {
   "schema": "honua.protocol-certification-requirements/v1",
-  "revision": "2026-09-06-lane-status.1",
+  "revision": "2026-09-06-lane-status.2",
   "requirements_source": "honua-io/honua-release/certification/protocol-certification-requirements.v1.json",
   "requirements_source_revision": "32b68decc54c0db88780b4e439ecbcb00504bb36",
   "source_revisions": {
@@ -67,8 +67,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -95,8 +95,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -123,8 +123,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -151,8 +151,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -179,8 +179,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -207,8 +207,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -235,8 +235,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -263,8 +263,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -291,8 +291,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -320,7 +320,7 @@
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
       "cite_lane_status": "absent",
-      "cite_lane_absence_reason": "No CITE runner is implemented for OGC API - Records discovery; the other serve.ogc operations are covered by the versioned OGC API Features/Tiles, WFS, WMS, WMTS and WCS lanes (honua-server#4425)."
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -347,8 +347,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -375,8 +375,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -403,8 +403,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -431,8 +431,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -459,8 +459,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc",
@@ -487,8 +487,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc-api-coverages",
@@ -517,7 +517,7 @@
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
       "cite_lane_status": "absent",
-      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
+      "cite_lane_absence_reason": "No CITE runner exists in this repository: the surface has no docker/cite/<suite> composition and no scripts/conformance/cite runner, so the declared nightly lane produces no receipt (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc-api-edr",
@@ -546,7 +546,7 @@
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
       "cite_lane_status": "absent",
-      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
+      "cite_lane_absence_reason": "No CITE runner exists in this repository: the surface has no docker/cite/<suite> composition and no scripts/conformance/cite runner, so the declared nightly lane produces no receipt (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc-api-features",
@@ -575,8 +575,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc-api-features",
@@ -631,7 +631,7 @@
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
       "cite_lane_status": "absent",
-      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
+      "cite_lane_absence_reason": "No CITE runner exists in this repository: the surface has no docker/cite/<suite> composition and no scripts/conformance/cite runner, so the declared nightly lane produces no receipt (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc-api-records",
@@ -660,7 +660,7 @@
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
       "cite_lane_status": "absent",
-      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
+      "cite_lane_absence_reason": "No CITE runner exists in this repository: the surface has no docker/cite/<suite> composition and no scripts/conformance/cite runner, so the declared nightly lane produces no receipt (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc-api-tiles",
@@ -687,8 +687,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.ogc-api-tiles",
@@ -744,7 +744,7 @@
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
       "cite_lane_status": "absent",
-      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
+      "cite_lane_absence_reason": "No CITE runner exists in this repository: the surface has no docker/cite/<suite> composition and no scripts/conformance/cite runner, so the declared nightly lane produces no receipt (honua-server#4425)."
     },
     {
       "capability_key": "serve.wcs",
@@ -772,8 +772,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.wcs",
@@ -829,8 +829,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.wfs",
@@ -938,8 +938,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.wms",
@@ -993,8 +993,8 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "cite_lane_status": "implemented",
-      "cite_lane_absence_reason": null
+      "cite_lane_status": "absent",
+      "cite_lane_absence_reason": "Aggregate row: scripts/conformance/cite/build_protocol_certification_fragment.py maps only the versioned surfaces onto a CITE suite, so this row is always emitted as a skip and its declared lane produces no receipt of its own. Evidence for the underlying protocol comes from the versioned sibling rows (honua-server#4425)."
     },
     {
       "capability_key": "serve.wmts",
@@ -1048,7 +1048,7 @@
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
       "cite_lane_status": "absent",
-      "cite_lane_absence_reason": "No CITE runner is implemented in this repository: there is no docker/cite/<suite> composition and no scripts/conformance/cite/run-cite-*-tests.sh runner for this surface, so the certification fragment records skip and the declared nightly lane produces no receipt (honua-server#4425)."
+      "cite_lane_absence_reason": "No CITE runner exists in this repository: the surface has no docker/cite/<suite> composition and no scripts/conformance/cite runner, so the declared nightly lane produces no receipt (honua-server#4425)."
     }
   ]
 }

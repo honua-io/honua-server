@@ -347,11 +347,22 @@ internal static class OgcRecordsEndpoints
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray()
             };
+            // A public service name can collapse several protocol-specific service rows. Reading the
+            // temporal value from the first one alone would let a datetime query exclude the merged
+            // record even though a sibling was updated inside the interval, and the answer would
+            // vary with publication ordering — so take the latest across the group.
+            var mergedModified = visiblePublications
+                .Select(tuple => ResolveModified(tuple.Service.Metadata))
+                .Where(value => value.HasValue)
+                .DefaultIfEmpty(null)
+                .Max();
+
             records.Add(CreateServiceRecord(
                 representative,
                 visiblePublications.Select(t => (t.Publication, t.Resource)).ToArray()!,
                 snapshot,
-                baseUrl));
+                baseUrl,
+                mergedModified));
         }
 
         // Resource-level records: one per resource, attributed to its primary publication's service.
@@ -404,7 +415,8 @@ internal static class OgcRecordsEndpoints
         MetadataV2Service service,
         (MetadataV2Publication Publication, MetadataV2Resource? Resource)[] visiblePublications,
         MetadataV2GraphSnapshot snapshot,
-        string baseUrl)
+        string baseUrl,
+        DateTimeOffset? modified)
     {
         var serviceMetadata = service.Metadata
             ?? throw new InvalidOperationException("Metadata v2 service metadata is required.");
@@ -450,9 +462,13 @@ internal static class OgcRecordsEndpoints
                 Links = links.ToImmutable()
             },
             bbox,
-            Modified: ResolveModified(serviceMetadata),
+            Modified: modified,
             ExternalIds: [serviceMetadata.Name],
-            SearchText: BuildSearchText(serviceMetadata.Name, serviceMetadata.Title, serviceMetadata.Description));
+            SearchText: BuildSearchText(
+                $"service:{serviceMetadata.Name}",
+                serviceMetadata.Name,
+                serviceMetadata.Title,
+                serviceMetadata.Description));
     }
 
     private static CatalogRecord CreateResourceRecord(
@@ -515,6 +531,7 @@ internal static class OgcRecordsEndpoints
             Modified: ResolveModified(resource.Metadata),
             ExternalIds: [layerIdString, resource.Metadata.Name],
             SearchText: BuildSearchText(
+                $"layer:{layerIdString}",
                 layerIdString,
                 resource.Metadata.Name,
                 resource.Metadata.Title,
@@ -526,10 +543,12 @@ internal static class OgcRecordsEndpoints
     /// </summary>
     /// <remarks>
     /// honua-server#4425: the shipped coverage document states that <c>q</c> searches "over id,
-    /// title, and description", but the haystack was built from id + name + description with the
-    /// title omitted. The fixture could not detect the mismatch because every seeded title is null,
-    /// so <c>Title ?? Name</c> collapsed to the same string. Include the title so the documented
-    /// behaviour and the implementation agree; a null or duplicate segment contributes nothing.
+    /// title, and description", but the haystack was built from the bare name + description with
+    /// the title omitted and the record's actual (prefixed) id absent — so <c>q=layer:0</c> could
+    /// not find the record whose id is exactly <c>layer:0</c>. The fixture could not detect the
+    /// title half because every seeded title is null, so <c>Title ?? Name</c> collapsed to the same
+    /// string. Both the prefixed public id and the title are included now; a null or duplicate
+    /// segment contributes nothing.
     /// </remarks>
     private static string BuildSearchText(params string?[] segments)
         => string.Join(' ', segments.Where(segment => !string.IsNullOrWhiteSpace(segment)));

@@ -37,15 +37,18 @@ records include links to GeoServices FeatureServer and MapServer surfaces.
 - `externalIds` filters against stable source identifiers such as layer id,
   layer name, or service name.
 - `q` is a comma-separated list of case-insensitive search terms with OR
-  semantics over the record id, name, title, and description text; whitespace
-  within a term is preserved.
+  semantics over the record id (both the prefixed public form, `service:{name}`
+  or `layer:{id}`, and the bare source identifier), the name, the title, and the
+  description text; whitespace within a term is preserved.
 - `bbox` intersects record extents when an extent is known. A record with no
   known extent is excluded when `bbox` is supplied.
 - `datetime` filters against the catalog entry's own `updatedAt` (falling back
-  to `createdAt`). A record that has **no** timestamp carries no instant to
-  compare and is therefore **kept** rather than excluded (honua-server#1988) —
-  excluding it would make every `datetime` query return nothing on a catalog
-  whose entries are undated.
+  to `createdAt`). Where one public service name collapses several
+  protocol-specific service rows, the record's timestamp is the latest across
+  that group. A record that has **no** timestamp carries no instant to compare
+  and is therefore **kept** rather than excluded (honua-server#1988) — excluding
+  it would make every `datetime` query return nothing on a catalog whose entries
+  are undated.
 
 Any other query parameter — including `sortby`, `filter`, `filter-lang`,
 `keywords`, and `themes` — is rejected with `400`; the `/items` allowlist is a

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.TestKit;
 
@@ -9,66 +10,53 @@ namespace Honua.Server.Tests.Features.Certification;
 
 /// <summary>
 /// Keeps <c>certification/cite-protocol-requirements.v1.json</c> honest about which OGC CITE lanes
-/// actually exist in this repository (honua-server#4425).
+/// can actually produce a receipt (honua-server#4425).
 /// </summary>
 /// <remarks>
 /// <para>
 /// The ledger declared <c>serve.ogc-api-records</c> (and EDR, Coverages, Maps, Styles,
 /// SensorThings) as <c>maturity: "supported"</c> with a <c>canonical_client: "OGC CITE"</c>, a
 /// named <c>client_lane</c> and <c>required_tier: "nightly"</c> — while no such workflow, Docker
-/// composition or runner script existed. Section 14 of the quality contract requires that public
+/// composition or runner existed. Section 14 of the quality contract requires that public
 /// compliance claims equal the receipts, and a declared lane that does not exist must not be
 /// counted as evidence.
 /// </para>
 /// <para>
-/// Rather than freeze a hand-maintained list, this derives the truth from the repository: a lane is
-/// implemented when its CITE suite has a <c>docker/cite/&lt;suite&gt;</c> composition — the
-/// artifact a runner cannot execute without. Building one of the absent lanes therefore makes this
-/// test fail until the ledger is updated to claim it, and deleting a composition makes it fail
-/// until the ledger stops claiming it.
+/// The authority for "can this row produce a receipt" is not a hand-maintained list: it is
+/// <c>SUITE_BY_SURFACE</c> in
+/// <c>scripts/conformance/cite/build_protocol_certification_fragment.py</c>, the map the fragment
+/// builder actually consults. A surface missing from it is emitted as a <c>skip</c> with
+/// "No current CITE suite maps truthfully to this governed operation", no matter what compositions
+/// exist on disk. This test parses that map out of the builder and requires the ledger to agree, so
+/// wiring a new lane fails here until the ledger claims it, and dropping one fails here until the
+/// ledger stops.
 /// </para>
 /// </remarks>
 [Trait("Tier", "Fast")]
-public sealed class CiteProtocolRequirementsLedgerTests
+public sealed partial class CiteProtocolRequirementsLedgerTests
 {
-    /// <summary>
-    /// Maps a ledger <c>surface</c> to the <c>docker/cite</c> suite directory that certifies it.
-    /// Surfaces absent from this map have no CITE composition and must be declared absent in the
-    /// ledger. Note the ledger's <c>wms</c>/<c>wmts</c> surfaces are certified by the versioned
-    /// compositions (<c>wms13</c>, <c>wmts10</c>), whose runner scripts are named without the
-    /// version suffix.
-    /// </summary>
-    private static readonly Dictionary<string, string> SuiteBySurface = new(StringComparer.Ordinal)
-    {
-        ["ogc-api-features"] = "ogc-api-features",
-        ["ogc-api-features-1-0"] = "ogc-api-features",
-        ["ogc-api-tiles"] = "ogc-api-tiles",
-        ["ogc-api-tiles-1-0"] = "ogc-api-tiles",
-        ["ogc-api-processes"] = "ogc-api-processes",
-        ["wfs"] = "wfs20",
-        ["wfs-1-0"] = "wfs10",
-        ["wfs-1-1"] = "wfs11",
-        ["wfs-2-0"] = "wfs20",
-        ["wms"] = "wms13",
-        ["wms-1-3"] = "wms13",
-        ["wmts"] = "wmts10",
-        ["wmts-1-0"] = "wmts10",
-        ["wcs"] = "wcs20",
-        ["wcs-2-0"] = "wcs20",
-        // The per-operation umbrella rows are certified through the versioned lanes above; the
-        // OGC API - Records operation is the exception and is declared absent in the ledger.
-        ["ogc"] = "wfs20"
-    };
-
     private static readonly JsonDocument Ledger = JsonDocument.Parse(
         File.ReadAllBytes(RepositoryPaths.Resolve("certification", "cite-protocol-requirements.v1.json")));
+
+    /// <summary>Surfaces the certification fragment builder can map onto a CITE suite.</summary>
+    private static readonly HashSet<string> ExecutableSurfaces = ReadExecutableSurfaces();
 
     private static IEnumerable<JsonElement> CiteRequirements
         => Ledger.RootElement.GetProperty("requirements").EnumerateArray()
             .Where(requirement => requirement.GetProperty("canonical_client").GetString() == "OGC CITE");
 
     [Fact]
-    public void EveryCiteRequirement_DeclaresWhetherItsLaneIsImplemented()
+    public void TheFragmentBuilderMap_IsParseable()
+    {
+        // Guards the parser itself: if the builder's map is reformatted beyond recognition the
+        // other assertions would silently degrade into "nothing is executable".
+        ExecutableSurfaces.Should().NotBeEmpty(
+            "SUITE_BY_SURFACE must be readable out of build_protocol_certification_fragment.py");
+        ExecutableSurfaces.Should().Contain("ogc-api-features-1-0");
+    }
+
+    [Fact]
+    public void EveryCiteRequirement_DeclaresWhetherItsLaneCanProduceAReceipt()
     {
         foreach (var requirement in CiteRequirements)
         {
@@ -80,56 +68,68 @@ public sealed class CiteProtocolRequirementsLedgerTests
     }
 
     [Fact]
-    public void EveryLaneDeclaredImplemented_HasACiteCompositionInThisRepository()
-    {
-        foreach (var requirement in CiteRequirements.Where(IsImplemented))
-        {
-            var key = Describe(requirement);
-            var surface = requirement.GetProperty("surface").GetString()!;
-
-            SuiteBySurface.TryGetValue(surface, out var suite).Should().BeTrue(
-                $"{key} claims an implemented CITE lane, so its surface must map to a CITE suite");
-
-            Directory.Exists(RepositoryPaths.Resolve("docker", "cite", suite!)).Should().BeTrue(
-                $"{key} claims an implemented lane, so its CITE composition docker/cite/{suite} must exist");
-        }
-    }
-
-    [Fact]
-    public void EveryLaneWithoutACiteComposition_IsDeclaredAbsentWithAReason()
+    public void LaneStatus_MatchesWhatTheFragmentBuilderCanActuallyExecute()
     {
         foreach (var requirement in CiteRequirements)
         {
             var key = Describe(requirement);
             var surface = requirement.GetProperty("surface").GetString()!;
-            var hasRunner = SuiteBySurface.TryGetValue(surface, out var suite)
-                            && Directory.Exists(RepositoryPaths.Resolve("docker", "cite", suite!));
-            if (hasRunner && requirement.GetProperty("operation").GetString() != "OGC-OP-OGC-API-RECORDS-DISCOVERY")
-            {
-                continue;
-            }
+            var executable = ExecutableSurfaces.Contains(surface);
 
-            IsImplemented(requirement).Should().BeFalse(
-                $"{key} has no CITE composition in this repository, so the ledger must not claim a lane — " +
-                "a declared lane that does not exist must not be counted as evidence");
-            requirement.GetProperty("cite_lane_absence_reason").GetString().Should().NotBeNullOrWhiteSpace(
-                $"{key} must record why its declared lane is absent");
+            IsImplemented(requirement).Should().Be(
+                executable,
+                executable
+                    ? $"{key} maps to a CITE suite in the fragment builder, so the ledger may claim it"
+                    : $"{key} has no entry in the fragment builder's SUITE_BY_SURFACE, so every run " +
+                      "emits a skip and the ledger must not claim a lane — a declared lane that " +
+                      "cannot produce a receipt must not be counted as evidence");
         }
     }
 
     [Fact]
-    public void AbsentLanes_StillDeclareTheLaneNameSoTheGapIsAddressable()
+    public void EveryAbsentLane_RecordsWhyAndKeepsItsIntendedLaneName()
     {
         var absent = CiteRequirements.Where(requirement => !IsImplemented(requirement)).ToArray();
 
         absent.Should().NotBeEmpty(
-            "the ledger currently declares nightly CITE lanes for surfaces with no runner; if that " +
-            "ever stops being true this test should be deleted along with the absent rows");
+            "the ledger currently declares nightly CITE lanes for surfaces the fragment builder " +
+            "cannot execute; if that ever stops being true, delete this test with the last absent row");
         foreach (var requirement in absent)
         {
+            var key = Describe(requirement);
+            requirement.GetProperty("cite_lane_absence_reason").GetString().Should().NotBeNullOrWhiteSpace(
+                $"{key} must record why its declared lane produces no receipt");
             requirement.GetProperty("client_lane").GetString().Should().NotBeNullOrWhiteSpace(
-                "an absent lane keeps its intended name so the work item stays identifiable");
+                $"{key} keeps its intended lane name so the work item stays identifiable");
         }
+    }
+
+    [Fact]
+    public void EveryImplementedLane_RecordsNoAbsenceReason()
+    {
+        foreach (var requirement in CiteRequirements.Where(IsImplemented))
+        {
+            requirement.GetProperty("cite_lane_absence_reason").ValueKind.Should().Be(
+                JsonValueKind.Null,
+                $"{Describe(requirement)} claims an implemented lane, so it must carry no absence reason");
+        }
+    }
+
+    /// <summary>
+    /// Parses <c>SUITE_BY_SURFACE = { "surface": "suite", ... }</c> out of the fragment builder.
+    /// </summary>
+    private static HashSet<string> ReadExecutableSurfaces()
+    {
+        var builder = File.ReadAllText(RepositoryPaths.Resolve(
+            "scripts", "conformance", "cite", "build_protocol_certification_fragment.py"));
+        var block = MapBlockPattern().Match(builder);
+        if (!block.Success)
+        {
+            return [];
+        }
+
+        return [.. MapEntryPattern().Matches(block.Groups["body"].Value)
+            .Select(match => match.Groups["surface"].Value)];
     }
 
     private static bool IsImplemented(JsonElement requirement)
@@ -140,4 +140,10 @@ public sealed class CiteProtocolRequirementsLedgerTests
         => $"{requirement.GetProperty("capability_key").GetString()}"
            + $" / {requirement.GetProperty("operation").GetString()}"
            + $" (lane {requirement.GetProperty("client_lane").GetString()})";
+
+    [GeneratedRegex(@"SUITE_BY_SURFACE\s*=\s*\{(?<body>[^}]*)\}", RegexOptions.Singleline)]
+    private static partial Regex MapBlockPattern();
+
+    [GeneratedRegex("\"(?<surface>[^\"]+)\"\\s*:\\s*\"[^\"]+\"")]
+    private static partial Regex MapEntryPattern();
 }
