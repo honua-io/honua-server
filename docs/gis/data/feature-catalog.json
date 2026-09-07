@@ -10254,7 +10254,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.AttachmentEndpointTests.DownloadAttachment_WithNonExistentId_Returns404",
-        "Honua.Server.Tests.AttachmentEndpointTests.DownloadAttachment_WithValidId_ReturnsFileContent"
+        "Honua.Server.Tests.AttachmentEndpointTests.DownloadAttachment_WithValidId_ReturnsFileContent",
+        "Honua.Server.Tests.AttachmentEndpointTests.DownloadAttachment_WithoutCredentials_IsRefusedAndNeverReturnsTheBytes"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -19668,7 +19669,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_ConcurrentUploadsToTheSameFeature_BothPersistWithTheirOwnBytes",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_FileTooLarge_Returns413",
+        "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_RacingADeleteOnTheSameFeature_LeavesBothStoresConsistent",
+        "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_RejectedUploads_LeaveNoPartialObjectAndNoRow",
+        "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_ThenDownload_RoundTripsBinaryBytesExactly",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithCanonicalFeatureRoute_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithInvalidMimeType_Returns400",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithUnsupportedContentType_Returns415",
@@ -19689,6 +19694,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_ForMissingAttachment_ReturnsFailureErrorObject",
+        "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_RemovesTheMetadataRowAndTheStoredObject",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithCanonicalFeatureRoute_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithInvalidAttachmentIdsToken_Returns400",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithMalformedAttachmentIdsDelimiter_Returns400",

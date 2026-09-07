@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Attachments.Services;
 using Honua.Core.Features.Federation.Services;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Studio.Services;
@@ -41,7 +42,11 @@ public static partial class Extensions
         LambdaTelemetry.MeterName,
         // PA-112: the SensorThings observation-stream slow-consumer drop counter was
         // tracked in-memory but never exported as an OTel metric.
-        "Honua.SensorThings"
+        "Honua.SensorThings",
+        // #4404: the attachment orphan counter exists so an operator can alert on a
+        // storage object that outlived its metadata row; without this entry neither the
+        // Prometheus nor the OTLP exporter would ever collect it.
+        LoggingAttachmentOrphanLedger.MeterName
     ];
     private static readonly string[] _activitySourceNames =
     [
