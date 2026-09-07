@@ -128,12 +128,15 @@ internal sealed class RecordingRangeProxy : IAsyncDisposable
             using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseContentRead);
             var payload = await response.Content.ReadAsByteArrayAsync();
 
+            var contentRange = response.Content.Headers.ContentRange;
             _exchanges.Enqueue(new ProxyExchange(
                 context.Request.HttpMethod,
                 context.Request.RawUrl ?? string.Empty,
                 context.Request.Headers["Range"],
                 (int)response.StatusCode,
-                response.Content.Headers.ContentRange?.ToString(),
+                contentRange?.From,
+                contentRange?.To,
+                contentRange?.Length,
                 payload.LongLength));
 
             context.Response.StatusCode = (int)response.StatusCode;
@@ -212,13 +215,17 @@ internal sealed class RecordingRangeProxy : IAsyncDisposable
     /// <param name="Path">Raw request URL, including the bucket and key.</param>
     /// <param name="RequestRange">The <c>Range</c> request header, or null when absent.</param>
     /// <param name="StatusCode">Upstream status code.</param>
-    /// <param name="ContentRange">The <c>Content-Range</c> response header, or null when absent.</param>
+    /// <param name="ContentRangeFrom">First byte of the served range, from <c>Content-Range</c>.</param>
+    /// <param name="ContentRangeTo">Last byte of the served range, from <c>Content-Range</c>.</param>
+    /// <param name="ContentRangeLength">Total object length, from <c>Content-Range</c>.</param>
     /// <param name="ResponseBytes">Bytes in the response body.</param>
     internal sealed record ProxyExchange(
         string Method,
         string Path,
         string? RequestRange,
         int StatusCode,
-        string? ContentRange,
+        long? ContentRangeFrom,
+        long? ContentRangeTo,
+        long? ContentRangeLength,
         long ResponseBytes);
 }

@@ -15,7 +15,6 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -129,7 +128,7 @@ public sealed class CogObjectStoreTileTests : IAsyncLifetime
             "every read on this path must be a byte-range request");
         reads.Should().OnlyContain(exchange => exchange.StatusCode == 206,
             "S3 answers a satisfiable Range request with 206 Partial Content");
-        reads.Should().OnlyContain(exchange => exchange.ContentRange != null,
+        reads.Should().OnlyContain(exchange => exchange.ContentRangeLength != null,
             "a 206 must identify the served range");
 
         var objectSize = _cog.Length + PaddingBytes;
@@ -138,12 +137,13 @@ public sealed class CogObjectStoreTileTests : IAsyncLifetime
             "a range read must not pull the whole {0}-byte object; it transferred {1} bytes",
             objectSize, transferred);
 
-        // Every Content-Range agrees with the range asked for and with the object's real size,
-        // so "206" is not just a status the emulator stamps on a full-object body.
+        // Every Content-Range agrees with the object's real size and with the body length, so
+        // "206" is not just a status the emulator stamps on a full-object body.
         foreach (var exchange in reads)
         {
-            exchange.ContentRange.Should().EndWith("/" + objectSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            exchange.ResponseBytes.Should().Be(RangeLength(exchange.RequestRange!));
+            exchange.ContentRangeLength.Should().Be(objectSize);
+            exchange.ResponseBytes.Should().Be(exchange.ContentRangeTo!.Value - exchange.ContentRangeFrom!.Value + 1);
+            exchange.ContentRangeTo!.Value.Should().BeLessThan(objectSize);
         }
     }
 
@@ -271,15 +271,6 @@ public sealed class CogObjectStoreTileTests : IAsyncLifetime
             await registration.Content.ReadAsStringAsync());
     }
 
-    private static long RangeLength(string requestRange)
-    {
-        // "bytes=<first>-<last>", inclusive on both ends.
-        var span = requestRange.AsSpan(requestRange.IndexOf('=') + 1);
-        var dash = span.IndexOf('-');
-        var first = long.Parse(span[..dash], System.Globalization.CultureInfo.InvariantCulture);
-        var last = long.Parse(span[(dash + 1)..], System.Globalization.CultureInfo.InvariantCulture);
-        return last - first + 1;
-    }
 
     private static AmazonS3Client CreateS3Client(string serviceUrl, string accessKey, string secretKey)
         => new(
@@ -313,7 +304,6 @@ public sealed class CogObjectStoreTileTests : IAsyncLifetime
             Key = key,
             InputStream = stream,
             AutoCloseStream = false,
-            DisablePayloadSigning = true,
         });
     }
 
