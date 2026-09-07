@@ -12,6 +12,7 @@ using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.Protocols.Mcp.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -53,13 +54,15 @@ internal sealed class McpDataAccessSurface
     private readonly IReadOnlyList<IMcpResource> _resources;
     private readonly McpSurfaceLimits _limits;
     private readonly ILogger<McpDataAccessSurface> _logger;
+    private readonly ProposalEvidenceVerifier? _proposalEvidenceVerifier;
 
     public McpDataAccessSurface(
         IEnumerable<IMcpTool> tools,
         IEnumerable<IMcpResource> resources,
         ILogger<McpDataAccessSurface> logger,
         McpSurfaceLimits? limits = null,
-        IEnumerable<IMcpToolSource>? toolSources = null)
+        IEnumerable<IMcpToolSource>? toolSources = null,
+        ProposalEvidenceVerifier? proposalEvidenceVerifier = null)
     {
         _tools = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         // Dynamic, runtime-published tools (#2483). None composed by default, so the
@@ -68,6 +71,7 @@ internal sealed class McpDataAccessSurface
         _resources = resources.ToList();
         _limits = limits ?? McpSurfaceLimits.Default;
         _logger = logger;
+        _proposalEvidenceVerifier = proposalEvidenceVerifier;
 
         McpLog.SurfaceInitialized(
             _logger,
@@ -643,6 +647,41 @@ internal sealed class McpDataAccessSurface
         McpToolsCallResult result;
         try
         {
+            if (tool is IEvidenceBoundProposalTool)
+            {
+                var tenant = httpContext.RequestServices.GetService<ITenantContext>();
+                if (_proposalEvidenceVerifier is null
+                    || tenant is null
+                    || !tenant.RequireTenantId(out var tenantId, out _))
+                {
+                    throw new GeoprocessingValidationException(
+                        "The signed proposal-evidence verifier or authenticated tenant is unavailable.");
+                }
+
+                var sessionId = httpContext.Request.Headers[McpSessionManager.SessionHeaderName].ToString();
+                if (string.IsNullOrWhiteSpace(sessionId))
+                {
+                    throw new GeoprocessingValidationException(
+                        "A bound MCP session is required for governed proposal calls.");
+                }
+
+                httpContext.Items[ProposalEvidenceVerifier.HttpContextItemKey] =
+                    await _proposalEvidenceVerifier.VerifyAsync(
+                        tool,
+                        parameters.Arguments,
+                        parameters.Meta,
+                        tenantId,
+                        sessionId,
+                        request.Id,
+                        cancellationToken).ConfigureAwait(false);
+            }
+            else if (parameters.Meta is { ValueKind: JsonValueKind.Object } suppliedMeta
+                && suppliedMeta.TryGetProperty(ProposalEvidenceVerifier.MetaProperty, out _))
+            {
+                throw new GeoprocessingValidationException(
+                    "Signed model output may select only a catalog-owned proposal tool.");
+            }
+
             result = await tool
                 .InvokeAsync(httpContext, parameters.Arguments, cancellationToken)
                 .ConfigureAwait(false);

@@ -8,6 +8,7 @@ using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -72,6 +73,7 @@ internal static class StudioAiProxyEndpoints
         IOptions<StudioAiProxyConfiguration> options,
         IStudioAuthorizationService authorizationService,
         IAuditLog auditLog,
+        ITenantContext tenantContext,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
@@ -114,6 +116,35 @@ internal static class StudioAiProxyEndpoints
         if (mappingError is not null || domainRequest is null)
         {
             return BadRequest(context, mappingError ?? "Invalid request.");
+        }
+
+        if (domainRequest.Certification is not null)
+        {
+            if (!tenantContext.RequireTenantId(out var tenantId, out _))
+            {
+                return BadRequest(context, "A resolved tenant is required for a certification request.");
+            }
+
+            domainRequest = new StudioAiChatRequest
+            {
+                Certification = new StudioAiTranscriptCertification
+                {
+                    CandidateId = domainRequest.Certification.CandidateId,
+                    TenantId = tenantId,
+                    ReleaseId = domainRequest.Certification.ReleaseId,
+                    EndpointIdentity = domainRequest.Certification.EndpointIdentity,
+                    ActionId = domainRequest.Certification.ActionId,
+                    RunNonce = domainRequest.Certification.RunNonce,
+                },
+                Provider = domainRequest.Provider,
+                Model = domainRequest.Model,
+                System = domainRequest.System,
+                Messages = domainRequest.Messages,
+                Tools = domainRequest.Tools,
+                ToolChoice = domainRequest.ToolChoice,
+                MaxTokens = domainRequest.MaxTokens,
+                Temperature = domainRequest.Temperature,
+            };
         }
 
         var validationError = service.ValidateRequest(domainRequest);
