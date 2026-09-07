@@ -304,15 +304,24 @@ internal sealed class RedisHealthCheck : IHealthCheck
                     });
             }
 
+            // honua-server#4502: this is the operations status surface for a non-durable job
+            // substrate, and it reports DEGRADED — not Unhealthy. Redis itself is serving (the
+            // probe below still proves it), and the durable job store IS composed; what is
+            // missing is the durability guarantee, which the capability manifest already
+            // withholds 'jobs.runner' for. Reporting Unhealthy here fails the roll-up and, before
+            // this fix, the readiness probe with it — turning "AOF is off" into a total outage.
             if (_durableJobSubstrate.RedisEntitled
-                && _durableJobSubstrate.RedisDurabilityAttestation is null)
+                && _durableJobSubstrate.RedisDurabilityAttestation is null
+                && _durableJobSubstrate.RedisDurabilityFailure is { } durabilityCause)
             {
-                return HealthCheckResult.Unhealthy(
-                    "Redis durability is not attested",
+                return HealthCheckResult.Degraded(
+                    $"Redis durability is not attested. {DurableJobSubstrateRemediation.NonDurableConsequence}",
                     data: new Dictionary<string, object>
                     {
-                        ["cause"] = (_durableJobSubstrate.RedisDurabilityFailure
-                            ?? DurableJobSubstrateCause.RedisAttestationUnavailable).ToString()
+                        ["cause"] = durabilityCause.ToString(),
+                        ["durabilityAttested"] = false,
+                        ["consequence"] = DurableJobSubstrateRemediation.NonDurableConsequence,
+                        ["remediation"] = DurableJobSubstrateRemediation.For(durabilityCause)
                     });
             }
 
