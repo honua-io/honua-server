@@ -12,11 +12,20 @@ namespace Honua.Core.Features.Attachments.Services;
 /// event and as a metric an operator can alert on.
 /// </summary>
 /// <remarks>
+/// <para>
 /// This deliberately does not persist to a table. Attachment orphans arise precisely when
 /// one of the two stores is failing, so a ledger that needs a database write of its own
 /// would be unavailable exactly when it is needed. The counter carries the orphan kind as
 /// a tag so a dashboard can distinguish "we uploaded and could not clean up" from "we
 /// deleted the row and could not delete the object".
+/// </para>
+/// <para>
+/// The counter's unit is an annotation (<c>{object}</c>), which the OpenTelemetry Prometheus
+/// exporter drops rather than appending to the series name, so this instrument exports as
+/// <c>honua_attachments_orphans_total</c>. Any other unit would rename the exported series and
+/// silently empty every query against it; see observability/metric-name-contract.json, which
+/// records this instrument and is enforced by MetricNameContractTests.
+/// </para>
 /// </remarks>
 public sealed class LoggingAttachmentOrphanLedger : IAttachmentOrphanLedger, IDisposable
 {
