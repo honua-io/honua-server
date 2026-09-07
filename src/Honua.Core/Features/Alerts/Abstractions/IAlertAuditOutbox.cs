@@ -85,3 +85,33 @@ public interface IAlertAuditOutbox
         string error,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Completes an alert domain audit intent: records the audit event the intent
+/// describes and marks it complete (#3865).
+/// </summary>
+/// <remarks>
+/// The lifecycle endpoints complete their own intent inline so the audit record
+/// normally lands within the operator's request, and the alert reconciler
+/// completes whatever a fault or a process death left behind. Both routes replay
+/// the intent's ORIGINAL actor, action, note, timestamp and correlation id, so
+/// lifecycle evidence and audit evidence agree regardless of which one wrote the
+/// record. The abstraction lives in Core so the Admin endpoints can drive
+/// completion without reaching into the Alerts feature.
+/// </remarks>
+public interface IAlertAuditCompleter
+{
+    /// <summary>
+    /// Records the domain audit event for one intent and marks it complete.
+    /// </summary>
+    /// <param name="intent">The pending intent.</param>
+    /// <param name="remoteIp">Optional caller address when completing inline on a request.</param>
+    /// <param name="userAgent">Optional caller user agent when completing inline on a request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True when the domain audit record now exists for this intent.</returns>
+    Task<bool> CompleteAsync(
+        AlertAuditOutboxEntry intent,
+        string? remoteIp = null,
+        string? userAgent = null,
+        CancellationToken cancellationToken = default);
+}

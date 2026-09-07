@@ -94,7 +94,7 @@ internal sealed partial class AlertAuditOutboxReconciler : BackgroundService
             return 0;
         }
 
-        var completer = scope.ServiceProvider.GetRequiredService<AlertAuditOutboxCompleter>();
+        var completer = scope.ServiceProvider.GetRequiredService<IAlertAuditCompleter>();
         var pending = await outbox.ListPendingAsync(BatchSize, cancellationToken).ConfigureAwait(false);
         if (pending.Count == 0)
         {

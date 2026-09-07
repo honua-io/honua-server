@@ -9,8 +9,6 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Server.Features.Alerts;
 using Honua.TestKit;
-using Honua.TestKit.Attributes;
-using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
@@ -38,8 +36,6 @@ namespace Honua.Server.Tests.Features.Alerts;
 /// </para>
 /// </summary>
 [Collection("Database")]
-[Protocol(TestProtocols.Admin)]
-[Operation(Operations.Configuration)]
 [Trait("Category", "AlertAuditAtomicityProof")]
 public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
 {
@@ -77,11 +73,10 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [IntegrationTheory]
+    [Theory]
     [InlineData("acknowledge", "alert.acknowledge", 1)]
     [InlineData("suppress", "alert.suppress", 2)]
     [InlineData("resolve", "alert.resolve", 3)]
-    [Endpoint("POST /api/v1/admin/observability/alerts/{eventId}/acknowledge")]
     public async Task LifecycleMutation_WithAFailingAuditSink_LeavesADurableReconciliationRecord_ThatARestartCompletes(
         string route, string auditAction, short expectedStatus)
     {
@@ -153,8 +148,7 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
         (await ReadLifecycleStatusAsync()).Should().Be(expectedStatus);
     }
 
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/observability/alerts/{eventId}/acknowledge")]
+    [Fact]
     public async Task FailedLifecycleMutation_PublishesNeitherASuccessResponseNorASuccessAuditOutcome()
     {
         const long MissingEventId = 987654321;
@@ -171,8 +165,7 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
             "a mutation that never happened must leave no reconciliation record either");
     }
 
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/observability/alerts/{eventId}/acknowledge")]
+    [Fact]
     public async Task SharedRequestMiddlewareAudit_DoesNotSubstituteForTheAlertDomainAction()
     {
         _fault.Fail = true;

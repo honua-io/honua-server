@@ -20,7 +20,7 @@ namespace Honua.Server.Features.Alerts;
 /// action, note, timestamp and correlation id, so lifecycle evidence and audit
 /// evidence agree regardless of which one wrote the record.
 /// </remarks>
-internal sealed partial class AlertAuditOutboxCompleter
+internal sealed partial class AlertAuditOutboxCompleter : IAlertAuditCompleter
 {
     /// <summary>
     /// How long a completer owns an intent. Long enough for a slow audit sink,
@@ -49,14 +49,7 @@ internal sealed partial class AlertAuditOutboxCompleter
         _logger = logger;
     }
 
-    /// <summary>
-    /// Records the domain audit event for one intent and marks it complete.
-    /// </summary>
-    /// <param name="intent">The pending intent.</param>
-    /// <param name="remoteIp">Optional caller address, when completing inline on the request.</param>
-    /// <param name="userAgent">Optional caller user agent, when completing inline on the request.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True when the domain audit record now exists for this intent.</returns>
+    /// <inheritdoc />
     public async Task<bool> CompleteAsync(
         AlertAuditOutboxEntry intent,
         string? remoteIp = null,

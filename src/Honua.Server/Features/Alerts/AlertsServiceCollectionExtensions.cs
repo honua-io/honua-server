@@ -91,6 +91,7 @@ internal static class AlertsServiceCollectionExtensions
         // not the evaluation pipeline is running.
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<AlertAuditOutboxCompleter>();
+        services.AddScoped<IAlertAuditCompleter>(sp => sp.GetRequiredService<AlertAuditOutboxCompleter>());
         services.AddSingleton<AlertAuditOutboxReconciler>();
         services.AddHostedService(sp => sp.GetRequiredService<AlertAuditOutboxReconciler>());
 

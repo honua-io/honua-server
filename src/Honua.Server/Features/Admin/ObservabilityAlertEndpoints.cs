@@ -5,7 +5,6 @@ using System.Globalization;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Server.Features.Alerts;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -105,7 +104,7 @@ internal static class ObservabilityAlertEndpoints
         ObservabilityAlertAcknowledgeRequest? body,
         [FromServices] IAlertLifecycleStore lifecycleStore,
         [FromServices] IAlertEventQuery query,
-        [FromServices] AlertAuditOutboxCompleter auditCompleter,
+        [FromServices] IAlertAuditCompleter auditCompleter,
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -127,7 +126,7 @@ internal static class ObservabilityAlertEndpoints
         ObservabilityAlertSuppressRequest? body,
         [FromServices] IAlertLifecycleStore lifecycleStore,
         [FromServices] IAlertEventQuery query,
-        [FromServices] AlertAuditOutboxCompleter auditCompleter,
+        [FromServices] IAlertAuditCompleter auditCompleter,
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -159,7 +158,7 @@ internal static class ObservabilityAlertEndpoints
         ObservabilityAlertResolveRequest? body,
         [FromServices] IAlertLifecycleStore lifecycleStore,
         [FromServices] IAlertEventQuery query,
-        [FromServices] AlertAuditOutboxCompleter auditCompleter,
+        [FromServices] IAlertAuditCompleter auditCompleter,
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -196,7 +195,7 @@ internal static class ObservabilityAlertEndpoints
         string details,
         IAlertLifecycleStore lifecycleStore,
         IAlertEventQuery query,
-        AlertAuditOutboxCompleter auditCompleter,
+        IAlertAuditCompleter auditCompleter,
         HttpContext context,
         CancellationToken cancellationToken)
     {
