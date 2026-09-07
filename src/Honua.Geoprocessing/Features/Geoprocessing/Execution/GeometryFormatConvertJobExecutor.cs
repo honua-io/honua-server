@@ -150,13 +150,13 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
         return JobExecutionResult.Succeeded();
     }
 
+    /// <summary>The only CRS RFC 7946 GeoJSON may carry.</summary>
+    private const int Wgs84Srid = 4326;
+
     /// <summary>
     /// Re-encodes <paramref name="geometry"/> into <paramref name="target"/> and reports
     /// whether the artifact carries the value as text or as base64 bytes.
     /// </summary>
-    /// <summary>The only CRS RFC 7946 GeoJSON may carry.</summary>
-    private const int Wgs84Srid = 4326;
-
     private static (string Value, string Encoding) Encode(Geometry geometry, string target)
     {
         switch (target)
