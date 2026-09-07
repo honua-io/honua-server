@@ -350,6 +350,86 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [InlineData(true)]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithArcGisProJsonEnvelope_MatchesCommaEnvelope(bool usePost)
+    {
+        // Regression (#4501), captured from stock ArcGIS Pro 3.7.1: changing only bbox to CSV made
+        // its blank-map HTTP400 become PNG200. Retain the native precision.
+        const string bbox = """
+            {"xmin":-122.42168401826947,"ymin":37.765347945206912,"xmax":-122.40797808219641,"ymax":37.786301369864447,"spatialReference":{"wkid":4326,"latestWkid":4326}}
+            """;
+        const string commaBbox = "-122.42168401826947,37.765347945206912,-122.40797808219641,37.786301369864447";
+        var parameters = new Dictionary<string, string>
+        {
+            ["bbox"] = bbox,
+            ["bboxSR"] = "4326",
+            ["imageSR"] = "4326",
+            ["size"] = "469,717",
+            ["dpi"] = "144",
+            ["transparent"] = "true",
+            ["rotation"] = "0",
+            ["f"] = "image",
+            ["format"] = "png32"
+        };
+        var endpoint = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export";
+        using var content = new FormUrlEncodedContent(parameters);
+        using var response = usePost
+            ? await _fixture.Client.PostAsync(endpoint, content)
+            : await _fixture.Client.GetAsync(endpoint + "?" + await content.ReadAsStringAsync());
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        var actual = await response.Content.ReadAsByteArrayAsync();
+        using var bitmap = SkiaSharp.SKBitmap.Decode(actual);
+        bitmap.Should().NotBeNull();
+        bitmap.Width.Should().Be(469);
+        bitmap.Height.Should().Be(717);
+
+        parameters["bbox"] = commaBbox;
+        using var controlContent = new FormUrlEncodedContent(parameters);
+        using var control = await _fixture.Client.GetAsync(endpoint + "?" + await controlContent.ReadAsStringAsync());
+        control.StatusCode.Should().Be(HttpStatusCode.OK);
+        actual.Should().Equal(await control.Content.ReadAsByteArrayAsync());
+    }
+
+    [Theory]
+    [InlineData("{")]
+    [InlineData("{}")]
+    [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":-122}")]
+    [InlineData("{\"xmin\":null,\"ymin\":37,\"xmax\":-122,\"ymax\":38}")]
+    [InlineData("{\"xmin\":\"NaN\",\"ymin\":37,\"xmax\":-122,\"ymax\":38}")]
+    [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":1e999,\"ymax\":38}")]
+    [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":-122,\"ymax\":91}")]
+    [InlineData("{\"xmin\":-123,\"ymin\":38,\"xmax\":-122,\"ymax\":37}")]
+    [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":-123,\"ymax\":38}")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithInvalidJsonEnvelope_RetainsValidation(string bbox)
+    {
+        var endpoint = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export";
+        foreach (var usePost in new[] { false, true })
+        {
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["bbox"] = bbox,
+                ["bboxSR"] = "4326",
+                ["f"] = "image"
+            });
+            using var response = usePost
+                ? await _fixture.Client.PostAsync(endpoint, content)
+                : await _fixture.Client.GetAsync(endpoint + "?" + await content.ReadAsStringAsync());
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await response.AssertGeoServicesErrorAsync(400);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithAllLayersHidden_ReturnsBlankImage(bool useDynamicLayer)
     {
         var dynamicLayers = useDynamicLayer

@@ -159,14 +159,19 @@ internal static partial class MapServerEndpoints
                     AxisOrder.EastNorth,
                     SpatialReference.Create(bboxSrid.Value).IsGeographic);
 
+            if (!TryNormalizeMapEnvelope(bboxValue, "bbox", out var normalizedBbox, out var bboxError))
+            {
+                return CreateExportBadRequest(context, responseFormat, bboxError!);
+            }
+
             // GeoServices bbox is always xmin,ymin,xmax,ymax in CRS x/y (EastNorth) order
             // regardless of the bboxSR datum. Esri never sends lat/lon-first bbox strings;
             // passing the geographic CRS axis order (NorthEast) silently transposes extents
             // where |lon|<=90 (Europe, Africa, India, etc.).
-            if (!TryParseBbox(bboxValue, AxisOrder.EastNorth, bboxCrsDefinition.IsGeographic, out var extent))
+            if (!TryParseBbox(normalizedBbox, AxisOrder.EastNorth, bboxCrsDefinition.IsGeographic, out var extent))
             {
                 return CreateExportBadRequest(context, responseFormat,
-                    "Invalid or missing bbox parameter. Expected format: xmin,ymin,xmax,ymax");
+                    "Invalid or missing bbox parameter. Expected an Esri JSON envelope or xmin,ymin,xmax,ymax.");
             }
 
             var transformResult = await TryTransformExtentAsync(
