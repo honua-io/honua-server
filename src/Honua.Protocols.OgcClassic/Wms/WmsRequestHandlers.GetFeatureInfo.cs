@@ -220,8 +220,8 @@ internal static partial class WmsRequestHandlers
         var remaining = Math.Min(featureCount, 1000);
 
         var plainText = new StringBuilder();
-        var jsonFeatures = new List<WmsFeatureInfoFeature>();
-        var gmlFeatures = new List<WmsFeatureInfoFeature>();
+        var jsonFeatures = new List<OgcClassicFeatureInfoFeature>();
+        var gmlFeatures = new List<OgcClassicFeatureInfoFeature>();
 
         foreach (var layer in queryLayers)
         {
@@ -291,7 +291,7 @@ internal static partial class WmsRequestHandlers
 
                 if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
                 {
-                    jsonFeatures.Add(new WmsFeatureInfoFeature
+                    jsonFeatures.Add(new OgcClassicFeatureInfoFeature
                     {
                         Layer = layerName,
                         Attributes = attributes
@@ -301,7 +301,7 @@ internal static partial class WmsRequestHandlers
 
                 if (string.Equals(infoFormat, GmlFeatureInfoMimeType, StringComparison.OrdinalIgnoreCase))
                 {
-                    gmlFeatures.Add(new WmsFeatureInfoFeature
+                    gmlFeatures.Add(new OgcClassicFeatureInfoFeature
                     {
                         Layer = layerName,
                         Attributes = attributes
@@ -324,12 +324,12 @@ internal static partial class WmsRequestHandlers
 
         if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
         {
-            var payload = new WmsFeatureInfoResponse
+            var payload = new OgcClassicFeatureInfoResponse
             {
                 Features = [.. jsonFeatures]
             };
 
-            return Results.Json(payload, OgcClassicJsonContext.Default.WmsFeatureInfoResponse, contentType: JsonMimeType);
+            return Results.Json(payload, OgcClassicJsonContext.Default.OgcClassicFeatureInfoResponse, contentType: JsonMimeType);
         }
 
         if (string.Equals(infoFormat, GmlFeatureInfoMimeType, StringComparison.OrdinalIgnoreCase))
@@ -390,7 +390,7 @@ internal static partial class WmsRequestHandlers
     /// content type matches the advertised GML format.
     /// </summary>
     private static string BuildWmsGmlFeatureInfo(
-        IReadOnlyList<WmsFeatureInfoFeature> features,
+        IReadOnlyList<OgcClassicFeatureInfoFeature> features,
         string schemaUrl)
     {
         var sb = new StringBuilder(512);
