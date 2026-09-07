@@ -48,6 +48,12 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
 
     private const string CubeRoot = "cubes/datacube-tile";
 
+    /// <summary>
+    /// Publication index the cube is registered against. The default graph publishes layer indices
+    /// 0, 1 and 2; the registration request requires a positive layer id, so 0 cannot be used.
+    /// </summary>
+    private const int CubeLayerId = 1;
+
     private readonly WebAppFixture _fixture = new();
     private readonly WebAppFixture _anonymousFixture = new WebAppFixture()
         .UseSeed("tests/seed/server.yaml")
@@ -85,8 +91,13 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
                     yMax: WorldExtent)));
         });
 
-    private HttpClient _client = null!;
-    private HttpClient _anonymousClient = null!;
+    /// <summary>Fixtures this test instance started, disposed in <see cref="DisposeAsync"/>.</summary>
+    /// <remarks>
+    /// xUnit constructs the class and runs <see cref="InitializeAsync"/> once per test method, so
+    /// eagerly starting all three hosts would boot twelve of them for four tests. Each test starts
+    /// only the host it needs.
+    /// </remarks>
+    private readonly List<WebAppFixture> _started = [];
 
     /// <summary>The cube's cell value at storage row <paramref name="row"/>, column <paramref name="col"/>.</summary>
     /// <remarks>
@@ -138,21 +149,21 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
                 publicationType: MetadataV2PublicationType.OgcCollection)
             .BuildProvider();
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-        await _anonymousFixture.InitializeAsync();
-        _anonymousClient = _anonymousFixture.Client;
-        await _cubeFixture.InitializeAsync();
-        await RegisterAndScanCubeAsync();
-    }
+    public Task InitializeAsync() => Task.CompletedTask;
 
     public async Task DisposeAsync()
     {
-        await _fixture.DisposeAsync();
-        await _anonymousFixture.DisposeAsync();
-        await _cubeFixture.DisposeAsync();
+        foreach (var fixture in _started)
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private async Task<HttpClient> StartAsync(WebAppFixture fixture)
+    {
+        await fixture.InitializeAsync();
+        _started.Add(fixture);
+        return fixture.Client;
     }
 
     [IntegrationTest]
@@ -161,7 +172,8 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
     {
         // The default test layer has no registered Zarr coverage, so the datacube tile
         // handler resolves no servable coverage and returns 404.
-        var response = await _client.GetAsync(
+        var client = await StartAsync(_fixture);
+        var response = await client.GetAsync(
             $"/api/v1/datacubes/{WebAppFixture.TestLayerId}/tiles/WebMercatorQuad/0/0/0");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -174,7 +186,8 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         // Before the per-layer authorization guard, this request reached the Zarr
         // store and returned 404. A valid layer id must not reveal registration
         // state or pixels to an anonymous caller.
-        var response = await _anonymousClient.GetAsync(
+        var client = await StartAsync(_anonymousFixture);
+        var response = await client.GetAsync(
             $"/api/v1/datacubes/{WebAppFixture.TestLayerId}/tiles/WebMercatorQuad/0/0/0");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -193,8 +206,9 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}")]
     public async Task DatacubeTile_RegisteredCoverage_RendersEveryCubeCellAtZoomZero()
     {
-        var response = await _cubeFixture.Client.GetAsync(
-            $"/api/v1/datacubes/{WebAppFixture.TestLayerId}/tiles/WebMercatorQuad/0/0/0");
+        var client = await StartCubeAsync();
+        var response = await client.GetAsync(
+            $"/api/v1/datacubes/{CubeLayerId}/tiles/WebMercatorQuad/0/0/0");
 
         var png = await ReadTilePngAsync(response);
 
@@ -216,8 +230,9 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}")]
     public async Task DatacubeTile_ZoomOneNorthEastTile_RendersOnlyThatWindowOfTheCube()
     {
-        var response = await _cubeFixture.Client.GetAsync(
-            $"/api/v1/datacubes/{WebAppFixture.TestLayerId}/tiles/WebMercatorQuad/1/1/0");
+        var client = await StartCubeAsync();
+        var response = await client.GetAsync(
+            $"/api/v1/datacubes/{CubeLayerId}/tiles/WebMercatorQuad/1/1/0");
 
         var png = await ReadTilePngAsync(response);
 
@@ -235,13 +250,14 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
     /// Registers the in-memory cube through the production admin endpoints and scans its metadata,
     /// so the served tiles depend on the same registration/scan path an operator drives.
     /// </summary>
-    private async Task RegisterAndScanCubeAsync()
+    private async Task<HttpClient> StartCubeAsync()
     {
-        var register = await _cubeFixture.Client.PostAsJsonAsync(
+        var client = await StartAsync(_cubeFixture);
+        var register = await client.PostAsJsonAsync(
             "/api/v1/admin/zarr-stores",
             new
             {
-                layerId = WebAppFixture.TestLayerId,
+                layerId = CubeLayerId,
                 name = "datacube-tile-cube",
                 provider = "AwsS3",
                 bucket = "bucket",
@@ -252,7 +268,7 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         using var created = JsonDocument.Parse(await register.Content.ReadAsStringAsync());
         var id = created.RootElement.GetProperty("id").GetInt64();
 
-        var refresh = await _cubeFixture.Client.PostAsync($"/api/v1/admin/zarr-stores/{id}/refresh", null);
+        var refresh = await client.PostAsync($"/api/v1/admin/zarr-stores/{id}/refresh", null);
         refresh.StatusCode.Should().Be(HttpStatusCode.OK, await refresh.Content.ReadAsStringAsync());
 
         using var scanned = JsonDocument.Parse(await refresh.Content.ReadAsStringAsync());
@@ -261,6 +277,7 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         scanned.RootElement.GetProperty("srid").GetInt32().Should().Be(3857);
         scanned.RootElement.GetProperty("primaryVariable").GetString().Should().Be("temperature");
         scanned.RootElement.GetProperty("variableCount").GetInt32().Should().Be(1);
+        return client;
     }
 
     private static async Task<byte[]> ReadTilePngAsync(HttpResponseMessage response)
