@@ -1314,8 +1314,17 @@ jobs:
       # Every one of them was already spending >85% of its budget on the run
       # BEFORE it went red, and nothing said so — the drain of test-heavy
       # must-fix PRs kept adding cases until a shard tipped over on trunk.
-      # This step reads the shard's own timing artifact and prints its headroom
-      # so the PR that fills a shard is the PR that hears about it.
+      #
+      # WHERE THIS FIRES. Only here, on the full matrix: the nightly schedule,
+      # a manual dispatch, and the train's train/batch/* dispatch. It is NOT a
+      # per-PR signal — pr-gate.yml runs no shard matrix at all, so a PR head
+      # produces no *.timing.json anywhere and there is nothing for the audit to
+      # read. Under the trailing-matrix landing model that means the warning
+      # lands after merge; the value is that it lands while the shard still
+      # PASSES at >85%, instead of one or more runs later when it times out and
+      # turns trunk red. Making this a genuine pre-merge signal would require
+      # per-PR shard execution, which #2865 deliberately removed.
+      #
       # continue-on-error keeps it non-required: the coordinator decides whether
       # to make it blocking after a week of data.
       - name: Report shard headroom (advisory)

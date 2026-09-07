@@ -36,11 +36,29 @@ Each `Honua.Server.Tests` shard carries two timeouts:
    `Server Features Analytics Studio Export and Reporting` (run 34072577139) —
    each of which had spent >85% of its budget on the run *before* it went red.
    `scripts/ci/audit-shard-headroom.py --max-utilization 0.85` is the guard for
-   that window, and the PR gate runs it per shard as a non-required advisory step
+   that window. It runs per shard as a non-required advisory step
    (`Report shard headroom (advisory)` in `ci.yml`) that also prints the headroom
    table to the job summary. It reads the **last** measured run, not a p90,
-   because a PR gate only has the one run it just produced; a shard that timed
-   out is scored at the cap it was killed at, not at the truncated duration.
+   because a single run is what any one CI invocation produces; a shard that
+   timed out is scored at the cap it was killed at, not at the truncated
+   duration.
+
+   **Where it fires.** Only on the full matrix — the nightly schedule, a manual
+   dispatch, and the train's `train/batch/*` dispatch. It is *not* a per-PR
+   signal: `pr-gate.yml` runs no shard matrix, so a PR head produces no
+   `*.timing.json` for the audit to read, and `ci.yml` has no `pull_request`
+   trigger by design (#2865). Under the trailing-matrix landing model the
+   warning therefore arrives after merge — its value is that it arrives while
+   the shard still **passes** at >85%, rather than one or more runs later when
+   it times out and turns trunk red. A genuine pre-merge signal would require
+   per-PR shard execution, which #2865 deliberately removed; re-introducing it
+   is out of scope for this guard.
+
+   In guard mode the audit deliberately stops printing its "recommended cap"
+   re-basing advice, so CI never tells an operator to raise the budget this
+   policy forbids. That recommendation is still emitted (and still on the JSON
+   row) when the audit is run without `--max-utilization`, which is the budget
+   re-basing workflow described under "Re-basing the budgets".
 
 ### Sizing a split
 

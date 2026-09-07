@@ -74,10 +74,13 @@ def run_cli(records: list[dict], cfg: dict, *args: str) -> int:
             (timings / f"{index}.timing.json").write_text(json.dumps(entry), encoding="utf-8")
         # The audit prints its report to stdout and its annotations to stderr;
         # a test asserting on the exit code should not spray either into the CI log.
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            return MODULE.main(
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = MODULE.main(
                 ["--config", str(config_path), "--timings-dir", str(timings), *args]
             )
+        run_cli.stderr = err.getvalue()
+        return code
 
 
 def test_latest_utilization_reads_the_newest_run_not_the_average() -> None:
@@ -192,6 +195,39 @@ def test_max_utilization_is_independent_of_fail_on_warn() -> None:
     assert run_cli(records, cfg, "--fail-on-warn") == 1
 
 
+def test_guard_mode_does_not_also_advise_raising_the_cap() -> None:
+    """The two annotations must not contradict each other.
+
+    A crowded shard trips both the p90 warn line and the drain guard. If the
+    warning still printed "recommended cap 26m" next to an error saying the
+    budget is not the fix, an operator following CI output would apply exactly
+    the cap increase policy 4 forbids.
+    """
+    cfg = config(("Alpha", 20))
+    records = [record("Alpha", 1080, started_at="2026-09-06T03:00:00Z")]  # 18m = 90%
+    run_cli(records, cfg, "--max-utilization", "0.85")
+    guarded = run_cli.stderr
+    assert "HONUA_SHARD_LOW_HEADROOM" in guarded
+    assert "HONUA_SHARD_OVER_MAX_UTILIZATION" in guarded
+    assert "recommended cap" not in guarded
+    assert "move whole test classes out or split the shard" in guarded
+
+
+def test_rebasing_mode_still_recommends_a_cap() -> None:
+    """Without the guard the audit is the budget re-basing tool it always was."""
+    cfg = config(("Alpha", 20))
+    records = [record("Alpha", 1080, started_at="2026-09-06T03:00:00Z")]
+    run_cli(records, cfg)
+    assert "recommended cap 26m" in run_cli.stderr
+
+
+def test_recommended_cap_stays_on_the_row_in_guard_mode() -> None:
+    """Suppressing the advice must not change the measurement the JSON reports."""
+    cfg = config(("Alpha", 20))
+    rows = audit(cfg, [record("Alpha", 1080, started_at="2026-09-06T03:00:00Z")])
+    assert rows["Alpha"]["recommended_test_timeout_minutes"] == 26
+
+
 def test_markdown_table_reports_the_last_run_column() -> None:
     cfg = config(("Alpha", 20))
     rows = list(
@@ -226,6 +262,9 @@ test_max_utilization_passes_a_shard_with_headroom()
 test_max_utilization_is_exclusive_at_the_boundary()
 test_shards_without_artifacts_are_skipped_not_failed()
 test_max_utilization_is_independent_of_fail_on_warn()
+test_guard_mode_does_not_also_advise_raising_the_cap()
+test_rebasing_mode_still_recommends_a_cap()
+test_recommended_cap_stays_on_the_row_in_guard_mode()
 test_markdown_table_reports_the_last_run_column()
 test_records_without_a_timestamp_never_win_the_latest_slot()
 print("shard-headroom-audit-guard=ok")

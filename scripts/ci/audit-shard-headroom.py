@@ -302,11 +302,23 @@ def main(argv: list[str] | None = None) -> int:
     flagged = [r for r in rows if r["status"] in {"low_headroom", "over_capacity"}]
     if flagged:
         for row in flagged:
+            # The cap recommendation is re-basing advice and belongs only to the
+            # re-basing workflow. Emitting it alongside the --max-utilization
+            # error would tell the operator to raise the very budget that error
+            # says not to raise, so guard mode states the remedy the policy
+            # actually allows. `recommended_test_timeout_minutes` stays on the
+            # row either way: it is a fact about the measurement, and the JSON
+            # report is consumed by the budget re-basing workflow.
+            if args.max_utilization is None:
+                remedy = (
+                    f"; recommended cap {row['recommended_test_timeout_minutes']}m"
+                )
+            else:
+                remedy = "; move whole test classes out or split the shard"
             print(
                 f"::warning::HONUA_SHARD_LOW_HEADROOM shard='{row['shard']}' p90="
                 f"{row['p90']}m (reference {row['reference_minutes']}m, including any "
-                f"censored timeout floor) of {row['test_timeout_minutes']}m; recommended cap "
-                f"{row['recommended_test_timeout_minutes']}m",
+                f"censored timeout floor) of {row['test_timeout_minutes']}m{remedy}",
                 file=sys.stderr,
             )
 
@@ -328,7 +340,8 @@ def main(argv: list[str] | None = None) -> int:
                 f"{row['latest_minutes']}m of its {row['test_timeout_minutes']}m budget "
                 f"({row['latest_utilization'] * 100:.0f}%, limit "
                 f"{args.max_utilization * 100:.0f}%). Move whole test classes out of this "
-                f"shard (or split it) — raising the budget is not the fix.",
+                f"shard, or split it; raising the budget is not the fix "
+                f"(docs/internal/ci/shard-timeout-budgets.md, policy 4).",
                 file=sys.stderr,
             )
         if crowded:
