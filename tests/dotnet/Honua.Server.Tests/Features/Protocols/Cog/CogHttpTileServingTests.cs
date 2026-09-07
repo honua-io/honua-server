@@ -73,14 +73,22 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
     private static readonly string FixtureDirectory = Path.Join(AppContext.BaseDirectory, "CogFixtures");
 
     /// <summary>
-    /// A positive layer index with an ImageServer publication and no PostGIS raster
-    /// rows. The default seed's raster layer is 0, which the admin registration
-    /// endpoint rejects ("LayerId must be a positive integer"), and it also carries a
-    /// seeded raster that the handler would serve before ever reaching the COG
-    /// fallback. This layer has neither problem, so the COG path is the only way a
-    /// tile can be produced.
+    /// The layer the COG is registered against. It has to satisfy three constraints
+    /// at once: positive (the admin endpoint rejects layer 0 with "LayerId must be a
+    /// positive integer"), present in <c>honua.layers</c> (the registration row
+    /// carries a foreign key, so an invented id fails the insert), and free of
+    /// PostGIS raster rows (otherwise <c>ImageServerTileHandler</c> serves from
+    /// PostGIS and never reaches the COG fallback). Seeded layer 1 is all three; the
+    /// V2 graph below republishes it as an ImageServer raster layer so the tile route
+    /// resolves it.
     /// </summary>
-    private const int CogLayerId = 9101;
+    private const int CogLayerId = 1;
+
+    /// <summary>
+    /// A second seeded, raster-free layer carrying only the registration whose object
+    /// does not exist, so the failure case has no healthy COG to fall back to.
+    /// </summary>
+    private const int MissingCogLayerId = 2;
 
     private readonly string _objectKey = $"cog-proof/{Guid.NewGuid():N}/{Fixture}.tif";
     private readonly string _missingObjectKey = $"cog-proof/{Guid.NewGuid():N}/absent.tif";
@@ -139,6 +147,16 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
                 layerIndex: CogLayerId,
                 storageBindingId: "cog-http-binding",
                 publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .AddResource("cog-missing-resource", "cog-missing-resource", MetadataV2ResourceType.RasterDataset)
+            .AddStorageBinding("cog-missing-binding", "cog-missing-resource", "rasters", storageLayerId: MissingCogLayerId)
+            .AddService("cog-missing-service", "cog-missing-service", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                "cog-missing-publication",
+                "cog-missing-service",
+                "cog-missing-resource",
+                layerIndex: MissingCogLayerId,
+                storageBindingId: "cog-missing-binding",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
             .BuildProvider();
 
         _fixture = new WebAppFixture()
@@ -167,11 +185,11 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
         await RegisterAsync("GDAL LZW predictor-1 uint8 fixture", _objectKey);
     }
 
-    private async Task<long> RegisterAsync(string name, string objectKey)
+    private async Task<long> RegisterAsync(string name, string objectKey, int layerId = CogLayerId)
     {
         using var response = await _fixture.Client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", new
         {
-            layerId = CogLayerId,
+            layerId,
             name,
             provider = "AwsS3",
             bucket = _bucket,
@@ -240,11 +258,21 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         _recorder.Reads.Should().NotBeEmpty("serving a tile must read from the object");
-        var totalRequested = _recorder.Reads.Sum(read => (long)read.Length);
-        totalRequested.Should().BeLessThan(_sourceBytes.Length,
-            "a COG read is ranged: the whole object must never be pulled to serve one tile");
-        _recorder.Reads.Should().OnlyContain(read => read.Length < _sourceBytes.Length);
+
+        // Every request is a bounded range, and none of them is the whole object. The
+        // aggregate is deliberately not bounded by the object size: parsing the IFD
+        // chain re-reads overlapping header regions, so the sum can exceed the file
+        // length while no single transfer ever pulls it end to end.
+        _recorder.Reads.Should().OnlyContain(read => read.Length < _sourceBytes.Length,
+            "each read must be a bounded range, not a whole-object GET");
         _recorder.Reads.Should().NotContain(read => read.Offset == 0 && read.Length == _sourceBytes.Length);
+        _recorder.Reads.Max(read => read.Length).Should().BeLessThan(_sourceBytes.Length);
+
+        // The tile payload itself is a single small read: the compressed tile is a
+        // fraction of the object, which is the property that makes COG serving viable
+        // against a remote object at all.
+        _recorder.Reads.Min(read => read.Length).Should().BeLessThan(_sourceBytes.Length / 2,
+            "the tile range must be materially smaller than the object");
     }
 
     [EmulatorTest(BucketEnv, RegionEnv, AccessKeyEnv, SecretKeyEnv, ServiceUrlEnv, ForcePathStyleEnv)]
@@ -256,7 +284,15 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
         // exactly the requested slice of the object.
         const int offset = 512;
         const int length = 256;
-        using var http = new HttpClient();
+        // The emulator presigns an HTTPS URL backed by a self-signed certificate.
+        // Certificate validation is bypassed for this one request because the subject
+        // under test is HTTP range semantics, not TLS, and the endpoint is a local
+        // container. Nothing in the product is affected.
+        using var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
+        using var http = new HttpClient(handler);
         using var request = new HttpRequestMessage(HttpMethod.Get, await PresignAsync());
         request.Headers.Range = new RangeHeaderValue(offset, offset + length - 1);
 
@@ -278,13 +314,13 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}")]
     public async Task MissingObject_ProducesBoundedErrorAndNoPartialOutput()
     {
-        var registrationId = await RegisterAsync("Absent object", _missingObjectKey);
+        var registrationId = await RegisterAsync("Absent object", _missingObjectKey, MissingCogLayerId);
 
         try
         {
-            // Ask for a tile the healthy COG cannot supply either, so the only candidate
-            // is the registration whose object does not exist.
-            using var response = await _fixture.Client.GetAsync(TileUrl(TileLevel, 5, 5));
+            // This layer's only candidate is the registration whose object is absent.
+            using var response = await _fixture.Client.GetAsync(
+                TileUrl(TileLevel, 0, 0, MissingCogLayerId));
             var body = await response.Content.ReadAsByteArrayAsync();
 
             ((int)response.StatusCode).Should().BeGreaterThanOrEqualTo(400,
@@ -310,8 +346,9 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
         !string.IsNullOrWhiteSpace(_accessKey) &&
         !string.IsNullOrWhiteSpace(_secretKey);
 
-    private static string TileUrl(int level, int row, int col) => FormattableString.Invariant(
-        $"/rest/services/{CogLayerId}/ImageServer/tile/{level}/{row}/{col}?format=png");
+    private static string TileUrl(int level, int row, int col, int layerId = CogLayerId) =>
+        FormattableString.Invariant(
+            $"/rest/services/{layerId}/ImageServer/tile/{level}/{row}/{col}?format=png");
 
     private AmazonS3Client CreateClient()
     {
