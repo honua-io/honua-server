@@ -345,7 +345,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         (await response.Content.ReadAsByteArrayAsync()).Should().HaveCountGreaterThan(100);
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.Export)]
@@ -392,7 +392,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         actual.Should().Equal(await control.Content.ReadAsByteArrayAsync());
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("{")]
     [InlineData("{}")]
     [InlineData("{\"xmin\":-123,\"ymin\":37,\"xmax\":-122}")]
