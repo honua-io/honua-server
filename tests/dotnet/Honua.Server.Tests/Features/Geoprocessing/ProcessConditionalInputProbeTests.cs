@@ -115,13 +115,13 @@ public sealed class ProcessConditionalInputProbeTests
     [UnitTest]
     public void FindAdmissibilityViolations_AdvertisedButNotExecutableProcess_IsNotJobExecutable()
     {
-        // raster.interpolate-kriging validates cleanly (points is its only required input) but
-        // no kriging backend is bundled, so its executor fails every job.
-        var violations = Probe().FindAdmissibilityViolations("raster.interpolate-kriging", ["points"]);
+        // analytics.cluster validates cleanly but is ProtocolOnly: it runs only through its
+        // owning synchronous protocol endpoint, so the canonical job runtime can never
+        // dispatch it however the parameters are filled in.
+        var violations = Probe().FindAdmissibilityViolations("analytics.cluster", ["features"]);
 
         violations.Should().ContainSingle();
         violations[0].Kind.Should().Be(ProcessAdmissibilityViolationKind.NotJobExecutable);
-        violations[0].Message.Should().Contain("raster.interpolate-idw");
     }
 
     [UnitTest]
