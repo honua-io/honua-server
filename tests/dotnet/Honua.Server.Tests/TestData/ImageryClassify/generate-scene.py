@@ -2,8 +2,11 @@
 # Licensed under the Elastic License 2.0. See LICENSE in the project root.
 """Author the committed imagery.classify scene. Input only - never an expected output.
 
-The scene is a 4x4 three-band Byte GeoTIFF in EPSG:4326 whose origin is
-(10.0, 20.0) with 0.5-degree cells, so it covers x[10, 12] y[18, 20].
+The scene is a 16x16 three-band Byte GeoTIFF in EPSG:4326 whose origin is
+(10.0, 20.0) with 0.5-degree cells, so it covers x[10, 18] y[12, 20]. The grid is a
+4x4 signature layout upsampled by BLOCK, four pixels per side, because the executor
+refuses to verify georeferencing on a result fewer than ten cells across - a single
+pixel may span at most a tenth of the source extent.
 
 Each pixel is one of three committed spectral signatures displaced by a small
 deterministic offset, so classification is a real nearest-centroid computation
@@ -15,7 +18,8 @@ from the north-west corner, is:
     soil  soil  soil       vegetation
     soil  soil  water      water
 
-Offsets for pixel i are (((i%3)-1)*5, ((i%5)-2)*4, ((i%4)-1)*3) on red/green/blue.
+Offsets for signature i are (((i%3)-1)*5, ((i%5)-2)*4, ((i%4)-1)*3) on red/green/blue,
+applied uniformly across that signature's 4x4 block.
 Every displaced pixel stays well inside its centroid's decision region; the
 generator asserts it, so a fixture edit that made a pixel ambiguous fails here
 instead of silently weakening the proof.
@@ -36,9 +40,13 @@ LAYOUT = [
 ]
 
 
+BLOCK = 4
+SIDE = 4 * BLOCK
+
+
 def main() -> int:
     gdal.UseExceptions()
-    bands = [[], [], []]
+    signatures = []
     for index, class_id in enumerate(LAYOUT):
         centroid = CLASSES[class_id]
         offsets = (((index % 3) - 1) * 5, ((index % 5) - 2) * 4, ((index % 4) - 1) * 3)
@@ -51,21 +59,28 @@ def main() -> int:
         assert ranked[0][1] == class_id, (index, pixel, ranked)
         assert ranked[1][0] - ranked[0][0] > 15, ("ambiguous pixel", index, pixel, ranked)
 
-        for b in range(3):
-            bands[b].append(pixel[b])
+        signatures.append(pixel)
 
-    dataset = gdal.GetDriverByName("GTiff").Create("classify-scene.tif", 4, 4, 3, gdal.GDT_Byte)
+    # Upsample the 4x4 signature layout into the 16x16 grid, block by block.
+    bands = [[0] * (SIDE * SIDE) for _ in range(3)]
+    for row in range(SIDE):
+        for column in range(SIDE):
+            pixel = signatures[((row // BLOCK) * 4) + (column // BLOCK)]
+            for b in range(3):
+                bands[b][(row * SIDE) + column] = pixel[b]
+
+    dataset = gdal.GetDriverByName("GTiff").Create("classify-scene.tif", SIDE, SIDE, 3, gdal.GDT_Byte)
     dataset.SetGeoTransform((10.0, 0.5, 0.0, 20.0, 0.0, -0.5))
     reference = osr.SpatialReference()
     reference.ImportFromEPSG(4326)
     dataset.SetProjection(reference.ExportToWkt())
     for index, values in enumerate(bands, start=1):
         band = dataset.GetRasterBand(index)
-        band.WriteArray(np.array(values, dtype=np.uint8).reshape(4, 4))
+        band.WriteArray(np.array(values, dtype=np.uint8).reshape(SIDE, SIDE))
     dataset.FlushCache()
 
-    for index, values in enumerate(bands, start=1):
-        print(f"band {index}: {values}")
+    for index, pixel in enumerate(signatures):
+        print(f"signature {index}: class {LAYOUT[index]} rgb {pixel}")
     return 0
 
 

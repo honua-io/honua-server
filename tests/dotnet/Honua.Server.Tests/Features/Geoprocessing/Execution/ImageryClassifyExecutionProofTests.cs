@@ -55,12 +55,20 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
     /// <summary>A second committed model whose class ids are rotated.</summary>
     private const string TransposedModelReference = "honua-mindist-transposed";
 
+    /// <summary>Scene side in pixels; a 4x4 signature layout upsampled by <see cref="Block"/>.</summary>
+    private const int Side = 16;
+
+    /// <summary>Pixels per side of one committed spectral signature's block.</summary>
+    private const int Block = 4;
+
     /// <summary>
-    /// Frozen class map, row-major from the north-west corner. Derived from the
-    /// committed scene layout (water/vegetation/soil) documented in the fixture
-    /// generator, not captured from a run.
+    /// Frozen class layout, row-major from the north-west corner: the committed
+    /// water/vegetation/soil arrangement documented in the fixture generator, not
+    /// captured from a run. The scene upsamples it by <see cref="Block"/> because the
+    /// executor refuses to verify georeferencing on a result fewer than ten cells
+    /// across.
     /// </summary>
-    private static readonly int[] ExpectedClasses =
+    private static readonly int[] ExpectedLayout =
     [
         1, 1, 2, 2,
         1, 1, 2, 2,
@@ -68,9 +76,9 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
         3, 3, 1, 1,
     ];
 
-    /// <summary>Frozen class histogram: the confusion oracle's diagonal.</summary>
+    /// <summary>Frozen class histogram over the upsampled grid: the confusion oracle's diagonal.</summary>
     private static readonly Dictionary<int, int> ExpectedClassCounts =
-        new() { [1] = 6, [2] = 5, [3] = 5 };
+        new() { [1] = 6 * Block * Block, [2] = 5 * Block * Block, [3] = 5 * Block * Block };
 
     // Committed scene georeferencing: origin (10, 20), 0.5 degree cells, EPSG:4326.
     private static readonly double[] ExpectedTransform = [10.0, 0.5, 0.0, 20.0, 0.0, -0.5];
@@ -102,14 +110,14 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
         var classified = await DecodeAsync(published.Value!);
 
         // Source/output grid alignment and CRS.
-        classified.GetProperty("width").GetInt32().Should().Be(4);
-        classified.GetProperty("height").GetInt32().Should().Be(4);
+        classified.GetProperty("width").GetInt32().Should().Be(Side);
+        classified.GetProperty("height").GetInt32().Should().Be(Side);
         classified.GetProperty("bands").GetInt32().Should().Be(1, "a classification is one label band");
         classified.GetProperty("epsg").GetInt32().Should().Be(4326);
         classified.GetProperty("transform").EnumerateArray().Select(v => v.GetDouble())
             .Should().Equal(ExpectedTransform);
 
-        AssertClassMap(classified, ExpectedClasses);
+        AssertClassMap(classified);
     }
 
     [Fact]
@@ -135,7 +143,7 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
         Values(classified).Should().OnlyContain(value => value == 1 || value == 2 || value == 3,
             "every emitted label is a legal class id");
 
-        Action assert = () => AssertClassMap(classified, ExpectedClasses);
+        Action assert = () => AssertClassMap(classified);
         assert.Should().Throw<XunitException>("the frozen class oracle must reject a different model's output");
     }
 
@@ -157,14 +165,18 @@ public sealed class ImageryClassifyExecutionProofTests : IAsyncLifetime
     // Oracle
     // -------------------------------------------------------------------------
 
-    private static void AssertClassMap(JsonElement classified, int[] expected)
+    private static void AssertClassMap(JsonElement classified)
     {
         var actual = Values(classified);
-        actual.Should().HaveCount(expected.Length);
-        for (var index = 0; index < expected.Length; index++)
+        actual.Should().HaveCount(Side * Side);
+        for (var row = 0; row < Side; row++)
         {
-            actual[index].Should().Be(expected[index],
-                $"pixel {index} (row {index / 4}, column {index % 4}) classification");
+            for (var column = 0; column < Side; column++)
+            {
+                var expected = ExpectedLayout[((row / Block) * 4) + (column / Block)];
+                actual[(row * Side) + column].Should().Be(expected,
+                    $"pixel (row {row}, column {column}) classification");
+            }
         }
 
         foreach (var (classId, count) in ExpectedClassCounts)
