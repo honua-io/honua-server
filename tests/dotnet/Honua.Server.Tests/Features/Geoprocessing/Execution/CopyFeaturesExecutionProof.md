@@ -18,9 +18,9 @@ The operation creates typed storage from the canonical source schema and streams
 
 ## Review regression fixtures
 
-The same real PostGIS fixture also proves that a masked non-nullable `label` column is omitted from the copied schema while IDs 11,13,15 and scores 7,14,21 remain available. The source's labels remain intact after the mask is removed.
+The same real PostGIS fixture also proves that a masked non-nullable `label` column is retained as nullable with NULL copied values while IDs 11,13,15 and scores 7,14,21 remain available. The source's labels remain intact after the mask is removed.
 
-Three injected publication failures occur before publication, after real publication has committed but before its response is returned, and during enablement with the caller token cancelled. Each case asserts zero generated copy tables or layer rows, unchanged graph resource/binding/publication identities, and all original source values and XYZ ordinates. Compensation has its own bounded cancellation token and targets only the invocation's generated table.
+Four injected publication failures occur before publication, after real publication has committed but before its response is returned, during the metadata rewrite, and during enablement with the caller token cancelled. Each case asserts zero generated copy tables or layer rows, unchanged graph resource/binding/publication identities, and all original source values and XYZ ordinates. Compensation has its own bounded cancellation token and targets only the invocation's generated table.
 
 A temporal variant assigns source instants January 1,3,5 of 2026. Predicate-filtered, ID-filtered, empty, and masked-time copies assert independently computed live bounds (January 3/5, January 3/3, or null/null). They clear the source's declared extent so the canonical resolver can compute the copied live extent, while retaining the time field and leaving the source extent intact. Source-backed temporal extent reads use the canonical security, aggregate-expression, and timestamp-decoding helpers; masking the target time field also suppresses both live bounds. Generated empty copies explicitly opt into empty publication, with the existing ordinary empty-table rejection test retained.
 

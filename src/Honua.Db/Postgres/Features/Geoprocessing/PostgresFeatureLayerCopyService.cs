@@ -147,9 +147,6 @@ internal sealed class PostgresFeatureLayerCopyService(
                 StorageBindingIds = targetResource.StorageBindingIds,
                 PrimaryStorageBindingId = targetResource.PrimaryStorageBindingId,
                 SchemaFields = schemaFields,
-                Display = resource.Display is { DisplayField: { } displayField } && masked.Contains(displayField, StringComparer.OrdinalIgnoreCase)
-                    ? resource.Display with { DisplayField = targetResource.Display?.DisplayField }
-                    : resource.Display,
                 Spatial = resource.Spatial! with { Bbox = targetResource.Spatial?.Bbox, StorageCrs = resource.Spatial!.SpatialReference },
                 Temporal = resource.Temporal is null ? null : resource.Temporal with { Extent = null },
                 Relationships = [],
