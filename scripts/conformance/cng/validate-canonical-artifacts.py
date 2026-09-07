@@ -45,6 +45,121 @@ BUDGET_EVIDENCE_GAP = (
     "observations are not yet emitted; tracked by honua-server#3377."
 )
 
+# Which surfaces have Honua code in the producing loop (#4398). A surface produced
+# entirely by third-party tooling can never be consumer evidence for a Honua claim,
+# no matter how cleanly its canonical clients read the file back: the artifact under
+# test was written by rasterio / rio-cogeo / xarray, not by Honua. Keeping this as
+# data — rather than as a `_mark_unbound` call the caller may forget — makes the
+# property structural and testable.
+ARTIFACT_PRODUCERS = {
+    "geoparquet": "honua",       # live FeatureServer f=parquet
+    "flatgeobuf": "honua",       # live FeatureServer f=fgb
+    "pmtiles": "honua",          # PMTilesWriter via artifact-gen
+    "3d-tiles": "honua",         # TilesetDocumentWriter via artifact-gen
+    "stac": "honua",             # live server
+    "cloud-native": "honua",     # JS clients against live server artifacts
+    "cog": "third-party-fixture",        # rio_cogeo.cog_translate
+    "zarr": "third-party-fixture",       # xarray.to_zarr
+    "hdf5-netcdf": "third-party-fixture",  # xarray.to_netcdf
+}
+
+NON_HONUA_PRODUCER_GAP = (
+    "The validated artifact was produced by third-party tooling, not by Honua, so "
+    "this observation is consumer evidence for that tooling and cannot support a "
+    "Honua cloud-native claim; tracked by honua-server#3377 and honua-server#4398."
+)
+
+
+def _metadata_matches(expected: Any, observed: Any, tolerance: float) -> bool:
+    """Compares a declared budget expectation against what the consumer read back."""
+    if isinstance(expected, dict):
+        return isinstance(observed, dict) and all(
+            key in observed and _metadata_matches(value, observed[key], tolerance)
+            for key, value in expected.items()
+        )
+    if isinstance(expected, (list, tuple)):
+        if not isinstance(observed, (list, tuple)) or len(expected) != len(observed):
+            return False
+        return all(
+            _metadata_matches(item, observed[index], tolerance)
+            for index, item in enumerate(expected)
+        )
+    if isinstance(expected, bool) or isinstance(observed, bool):
+        return expected is observed
+    if isinstance(expected, (int, float)) and isinstance(observed, (int, float)):
+        return abs(float(expected) - float(observed)) <= tolerance
+    return expected == observed
+
+
+def _evaluate_budget(observation: dict, assignment: "GovernedAssignment") -> list[str]:
+    """
+    Evaluates the declared budget profile against what this run actually measured.
+
+    #4398: `FORMAT_BUDGET_PROFILES` declared exactly the oracles a GA claim needs —
+    COG's `crs`/`dimensions`/`band_count`/`nodata`/`overview_count`, GeoParquet's
+    `feature_count`/`bounds`, PMTiles' `spec_version`/`tile_count`, Zarr's
+    `shape`/`chunks`, and the `min_range_requests` / `max_full_object_downloads`
+    range-efficiency budgets — and nothing read a profile to compare anything. The
+    only consumer was a self-test asserting the profiles exist. This function is the
+    missing consumer: it returns one reason per unmet budget, and an empty list only
+    when every declared oracle was measured and matched.
+    """
+    profile = FORMAT_BUDGET_PROFILES[assignment.budget_profile]
+    tolerance = profile["max_coordinate_error"]
+    reasons: list[str] = []
+
+    observed = observation.get("observed_metadata")
+    if not isinstance(observed, dict) or not observed:
+        reasons.append(
+            f"no metadata was read back from the artifact, so the "
+            f"{assignment.budget_profile} metadata oracle is unproven"
+        )
+    else:
+        for key in profile["required_metadata"]:
+            if key not in observed:
+                reasons.append(f"required metadata '{key}' was not observed")
+        for key, expected in profile["expected_metadata"].items():
+            if key not in observed:
+                continue
+            if not _metadata_matches(expected, observed[key], tolerance):
+                reasons.append(
+                    f"metadata '{key}' observed {observed[key]!r}, expected {expected!r}"
+                )
+
+    if "range-efficiency" in assignment.facets:
+        transfer = observation.get("observed_transfer")
+        if not isinstance(transfer, dict) or not transfer:
+            reasons.append(
+                "no request/byte transfer was measured, so the range-efficiency "
+                "budget (min_range_requests / max_full_object_downloads) is unproven"
+            )
+        else:
+            requests = transfer.get("requests", 0)
+            transferred = transfer.get("transferred_bytes", 0)
+            range_requests = transfer.get("range_requests", 0)
+            full_downloads = transfer.get("full_object_downloads", 0)
+            if requests > profile["max_requests"]:
+                reasons.append(
+                    f"{requests} requests exceeds the budget of {profile['max_requests']}"
+                )
+            if transferred > profile["max_transferred_bytes"]:
+                reasons.append(
+                    f"{transferred} transferred bytes exceeds the budget of "
+                    f"{profile['max_transferred_bytes']}"
+                )
+            if range_requests < profile["min_range_requests"]:
+                reasons.append(
+                    f"{range_requests} range requests is below the required minimum of "
+                    f"{profile['min_range_requests']}"
+                )
+            if full_downloads > profile["max_full_object_downloads"]:
+                reasons.append(
+                    f"{full_downloads} full-object downloads exceeds the budget of "
+                    f"{profile['max_full_object_downloads']}"
+                )
+
+    return reasons
+
 class GovernedAssignment(NamedTuple):
     """One exact release-denominator identity owned by this producer."""
 
@@ -350,8 +465,16 @@ def _collect(observations: list[dict], validator, path, args: argparse.Namespace
 
 def _collect_client(observations: list[dict], surface: str, operation: str, client: str,
                     lane: str, args: argparse.Namespace, check, *, unbound: bool = False,
-                    expected_version: str | None = None) -> None:
-    """Collect one client independently so its verdict cannot hide or misattribute siblings."""
+                    expected_version: str | None = None,
+                    observed_metadata: dict | None = None,
+                    observed_transfer: dict | None = None) -> None:
+    """Collect one client independently so its verdict cannot hide or misattribute siblings.
+
+    ``observed_metadata`` / ``observed_transfer`` are mutable dictionaries the ``check``
+    closure fills in as it reads the artifact (#4398). They carry what the consumer
+    actually saw into :func:`_evaluate_budget`, which is what turns the declared
+    ``FORMAT_BUDGET_PROFILES`` oracles into assertions instead of documentation.
+    """
     started = _now()
     try:
         detected_version = check()
@@ -359,6 +482,10 @@ def _collect_client(observations: list[dict], surface: str, operation: str, clie
             surface, operation, client, lane, started, args,
             detected_version if isinstance(detected_version, str) else None,
         )
+        if observed_metadata:
+            observation["observed_metadata"] = dict(observed_metadata)
+        if observed_transfer:
+            observation["observed_transfer"] = dict(observed_transfer)
         if unbound:
             observation["result"] = "skip"
             observation["skip_reason"] = UNBOUND_CONSUMER_GAP
@@ -400,6 +527,25 @@ def _mark_unbound(observations: list[dict]) -> list[dict]:
     return observations
 
 
+def _apply_producer_attribution(observation: dict) -> None:
+    """
+    Records which surfaces have Honua code in the producing loop, and refuses a pass
+    to any observation that does not (#4398).
+
+    This is the structural half of the fix: the COG and Zarr cells validate an
+    artifact ``rio_cogeo.cog_translate`` and ``xarray.to_zarr`` wrote, so however
+    green their canonical clients are, they cannot be cited as Honua cloud-native
+    evidence. Recording ``honua_in_loop`` on every row means a downstream consumer
+    of the fragment can tell the two kinds of cell apart without reading this script.
+    """
+    producer = ARTIFACT_PRODUCERS.get(observation["surface"], "third-party-fixture")
+    observation["artifact_producer"] = producer
+    observation["honua_in_loop"] = producer == "honua"
+    if not observation["honua_in_loop"] and observation["result"] == "pass":
+        observation["result"] = "skip"
+        observation["skip_reason"] = NON_HONUA_PRODUCER_GAP
+
+
 def _digest_evidence(*roots: Path) -> str:
     digest = hashlib.sha256()
     for root in roots:
@@ -439,12 +585,25 @@ def _normalize_observations(observations: list[dict], args: argparse.Namespace) 
             facet: {"result": facet_result, "evidence_digest": args.evidence_digest}
             for facet in assignment.facets
         }
+        observation["budget_profile"] = assignment.budget_profile
+        _apply_producer_attribution(observation)
         if observation["result"] == "pass":
-            observation["result"] = "skip"
-            observation["skip_reason"] = BUDGET_EVIDENCE_GAP
-            observation["evidence_digest"] = None
-            observation["facet_results"] = None
-            observation["evidence_uri"] = None
+            # #4398: the blanket pass -> skip rewrite is retired. A cell that measured
+            # its declared oracles now passes and carries a real evidence digest; a cell
+            # that did not says exactly which budget it failed to measure, instead of
+            # one generic gap string for all twenty-three rows.
+            unmet = _evaluate_budget(observation, assignment)
+            observation["budget_results"] = {
+                "profile": assignment.budget_profile,
+                "met": not unmet,
+                "unmet": unmet,
+            }
+            if unmet:
+                observation["result"] = "skip"
+                observation["skip_reason"] = "; ".join(unmet)
+                observation["evidence_digest"] = None
+                observation["facet_results"] = None
+                observation["evidence_uri"] = None
         elif observation["result"] == "skip":
             observation["evidence_digest"] = None
             observation["facet_results"] = None
@@ -458,13 +617,28 @@ def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
     import pyarrow.parquet
 
     observations: list[dict] = []
+    # #4398: what the consumer actually reads back, compared against the declared
+    # FORMAT_BUDGET_PROFILES oracle by _evaluate_budget.
+    metadata_seen: dict[str, Any] = {}
 
     def pyarrow_check() -> None:
         table = pyarrow.parquet.read_table(path)
         if table.num_rows < 1:
             raise ValueError("PyArrow read zero GeoParquet rows")
-        if b"geo" not in (table.schema.metadata or {}):
+        raw = (table.schema.metadata or {}).get(b"geo")
+        if raw is None:
             raise ValueError("PyArrow schema has no GeoParquet 'geo' metadata")
+        geo = json.loads(raw)
+        primary = geo.get("primary_column")
+        column = (geo.get("columns") or {}).get(primary) or {}
+        metadata_seen.update({
+            "geo.version": geo.get("version"),
+            "primary_column": primary,
+            "geometry_encoding": (column.get("encoding") or "").upper(),
+            "crs": _normalize_crs(column.get("crs")),
+            "feature_count": table.num_rows,
+            "bounds": list(column.get("bbox") or []),
+        })
 
     def geopandas_check() -> None:
         frame = geopandas.read_parquet(path)
@@ -489,7 +663,9 @@ def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
             expected_version="3.14.0",
         )
 
-    _collect_client(observations, "geoparquet", "feature-read", "PyArrow", "pyarrow-geoparquet", args, pyarrow_check)
+    _collect_client(
+        observations, "geoparquet", "feature-read", "PyArrow", "pyarrow-geoparquet", args,
+        pyarrow_check, observed_metadata=metadata_seen)
     _collect_client(observations, "geoparquet", "geometry-read", "GeoPandas", "geopandas-geoparquet", args, geopandas_check)
     _collect_client(
         observations, "geoparquet", "feature-read", "GDAL", "gdal-geoparquet", args, gdal_check,
@@ -503,11 +679,18 @@ def validate_flatgeobuf(path: Path, args: argparse.Namespace) -> list[dict]:
     import pyogrio
 
     observations: list[dict] = []
+    metadata_seen: dict[str, Any] = {}
 
     def pyogrio_check() -> None:
         frame = pyogrio.read_dataframe(path)
         if frame.empty or frame.geometry.isna().any() or frame.crs is None:
             raise ValueError("Pyogrio did not recover non-null FlatGeobuf geometries and CRS")
+        metadata_seen.update({
+            "geometry_type": str(frame.geometry.geom_type.iloc[0]),
+            "feature_count": int(len(frame)),
+            "crs": _normalize_crs(frame.crs),
+            "bounds": [float(value) for value in frame.total_bounds],
+        })
 
     def geopandas_check() -> None:
         frame = geopandas.read_file(path)
@@ -518,7 +701,9 @@ def validate_flatgeobuf(path: Path, args: argparse.Namespace) -> list[dict]:
         _run("ogrinfo", "-al", "-so", str(path))
         return _command_version("GDAL", "gdalinfo", "--version")
 
-    _collect_client(observations, "flatgeobuf", "feature-read", "Pyogrio", "pyogrio-flatgeobuf", args, pyogrio_check)
+    _collect_client(
+        observations, "flatgeobuf", "feature-read", "Pyogrio", "pyogrio-flatgeobuf", args,
+        pyogrio_check, observed_metadata=metadata_seen)
     _collect_client(observations, "flatgeobuf", "feature-read", "GeoPandas", "geopandas-flatgeobuf", args, geopandas_check)
     _collect_client(observations, "flatgeobuf", "feature-read", "GDAL", "gdal-flatgeobuf", args, gdal_check)
     return observations
@@ -533,14 +718,50 @@ def validate_pmtiles(path: Path, args: argparse.Namespace) -> list[dict]:
         reader = Reader(source)
         header = reader.header()
         metadata = reader.metadata()
-        first = next(iter(all_tiles(source)), None)
+        tiles = list(all_tiles(source))
+        first = tiles[0] if tiles else None
     if header.get("version") != 3:
         raise ValueError(f"PMTiles reader reported version={header.get('version')!r}, expected 3")
     if not isinstance(metadata, dict):
         raise ValueError("PMTiles metadata is not an object")
     if first is None or not first[1]:
         raise ValueError("PMTiles reader found no non-empty tiles")
-    return [_observation("pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args)]
+    observation = _observation("pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args)
+    # #4398: the declared pmtiles budget oracle, read back from the archive Honua wrote.
+    observation["observed_metadata"] = {
+        "spec_version": str(header.get("version")),
+        "tile_type": _pmtiles_tile_type(header.get("tile_type")),
+        "bounds": [
+            header.get("min_lon_e7", 0) / 1e7, header.get("min_lat_e7", 0) / 1e7,
+            header.get("max_lon_e7", 0) / 1e7, header.get("max_lat_e7", 0) / 1e7,
+        ],
+        "zoom_range": [header.get("min_zoom"), header.get("max_zoom")],
+        "tile_count": len(tiles),
+    }
+    return [observation]
+
+
+def _pmtiles_tile_type(raw) -> str:
+    """Maps the PMTiles v3 numeric tile-type enum onto the profile's spelling."""
+    if isinstance(raw, str):
+        return raw.lower()
+    return {0: "unknown", 1: "mvt", 2: "png", 3: "jpeg", 4: "webp", 5: "avif"}.get(raw, str(raw))
+
+
+def _normalize_crs(raw) -> str | None:
+    """Renders a PROJJSON / pyproj / string CRS as the profile's ``AUTHORITY:CODE``."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return raw
+    to_string = getattr(raw, "to_string", None)
+    if callable(to_string):
+        return to_string()
+    if isinstance(raw, dict):
+        authority = raw.get("id") or {}
+        if authority.get("authority") and authority.get("code") is not None:
+            return f"{authority['authority']}:{authority['code']}"
+    return str(raw)
 
 
 def validate_cog(path: Path, args: argparse.Namespace) -> list[dict]:
@@ -550,12 +771,21 @@ def validate_cog(path: Path, args: argparse.Namespace) -> list[dict]:
 
     observations: list[dict] = []
 
+    metadata_seen: dict[str, Any] = {}
+
     def rasterio_check() -> None:
         with rasterio.open(path) as dataset:
             if dataset.driver != "GTiff" or dataset.crs is None or dataset.count < 1:
                 raise ValueError("Rasterio did not recover a georeferenced COG")
             if dataset.read(1, window=Window(0, 0, 16, 16)).size != 256:
                 raise ValueError("Rasterio window read returned an unexpected shape")
+            metadata_seen.update({
+                "crs": _normalize_crs(dataset.crs),
+                "dimensions": [dataset.width, dataset.height],
+                "band_count": dataset.count,
+                "nodata": dataset.nodata,
+                "overview_count": len(dataset.overviews(1)),
+            })
 
     def rio_cogeo_check() -> None:
         valid, errors, _warnings = cog_validate(path, strict=True)
@@ -566,7 +796,9 @@ def validate_cog(path: Path, args: argparse.Namespace) -> list[dict]:
         _run("gdalinfo", "-json", str(path))
         return _command_version("GDAL", "gdalinfo", "--version")
 
-    _collect_client(observations, "cog", "window-read", "Rasterio", "rasterio-cog", args, rasterio_check, unbound=True)
+    _collect_client(
+        observations, "cog", "window-read", "Rasterio", "rasterio-cog", args, rasterio_check,
+        unbound=True, observed_metadata=metadata_seen)
     _collect_client(observations, "cog", "structure-validate", "rio-cogeo", "rio-cogeo", args, rio_cogeo_check, unbound=True)
     _collect_client(observations, "cog", "dataset-read", "GDAL", "gdal-cog", args, gdal_check, unbound=True)
     return observations
@@ -625,11 +857,27 @@ def validate_zarr(path: Path, args: argparse.Namespace) -> list[dict]:
     import zarr
 
     observations: list[dict] = []
+    metadata_seen: dict[str, Any] = {}
 
     def zarr_check() -> None:
         group = zarr.open_group(path, mode="r")
         if "temperature" not in group or group["temperature"].size < 1:
             raise ValueError("zarr did not recover the temperature array")
+        array = group["temperature"]
+        chunks = list(array.chunks)
+        shape = list(array.shape)
+        chunk_count = 1
+        for extent, chunk in zip(shape, chunks):
+            chunk_count *= -(-extent // chunk)
+        metadata_seen.update({
+            "zarr_format": int(getattr(group, "metadata", None).zarr_format)
+            if hasattr(group, "metadata") and hasattr(getattr(group, "metadata"), "zarr_format")
+            else 2,
+            "shape": shape,
+            "chunks": chunks,
+            "dtype": array.dtype.str,
+            "chunk_count": chunk_count,
+        })
 
     def fsspec_check() -> None:
         if not fsspec.filesystem("file").exists(str(path / ".zmetadata")):
@@ -647,12 +895,14 @@ def validate_zarr(path: Path, args: argparse.Namespace) -> list[dict]:
                 raise ValueError("Dask did not compute a valid Zarr aggregate")
 
     for operation, client, lane, check in (
-        ("array-read", "zarr", "zarr-python", zarr_check),
+        ("array-read", "zarr", "zarr-python", zarr_check),  # carries the metadata oracle
         ("multidimensional-subset", "xarray", "xarray-zarr", xarray_check),
         ("store-read", "fsspec", "fsspec-zarr", fsspec_check),
         ("distributed-array-compute", "Dask", "dask-zarr", dask_check),
     ):
-        _collect_client(observations, "zarr", operation, client, lane, args, check, unbound=True)
+        _collect_client(
+            observations, "zarr", operation, client, lane, args, check, unbound=True,
+            observed_metadata=metadata_seen if client == "zarr" else None)
     return observations
 
 
