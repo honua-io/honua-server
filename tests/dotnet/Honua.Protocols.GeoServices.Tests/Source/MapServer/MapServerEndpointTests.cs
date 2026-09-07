@@ -1336,9 +1336,13 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         {
             var parameters = new Dictionary<string, string>
             {
-                ["f"] = "json", ["geometry"] = value, ["geometryType"] = "esriGeometryPoint",
-                ["layers"] = "all:0", ["tolerance"] = "10",
-                ["mapExtent"] = "-122.52,37.48,-122.48,37.52", ["imageDisplay"] = "1000,1000,96"
+                ["f"] = "json",
+                ["geometry"] = value,
+                ["geometryType"] = "esriGeometryPoint",
+                ["layers"] = "all:0",
+                ["tolerance"] = "10",
+                ["mapExtent"] = "-122.52,37.48,-122.48,37.52",
+                ["imageDisplay"] = "1000,1000,96"
             };
             using var payload = new FormUrlEncodedContent(parameters);
             var url = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify";
