@@ -160,6 +160,10 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
         // runs. Both sides of this comparison are therefore the SAME z=8 tile over the same
         // geometry, differing only in whether SimplifyZoom is configured — so any vertex reduction
         // is attributable to ST_SimplifyPreserveTopology alone.
+        //
+        // That same quantization constrains the source geometry: its excursions must be several
+        // tile units wide, or ST_AsMVTGeom flattens them on both sides of the A/B and the
+        // comparison degenerates to 2 vertices against 2. See TileGeometry.DenseZigZagWkt.
         const double lon = -122.4194;
         const double lat = 37.7749;
         const int sourceVertices = 400;
@@ -320,18 +324,38 @@ public sealed class MvtTileDecodeTests : IAsyncLifetime
         }
 
         /// <summary>
-        /// A dense zig-zag line centred on the supplied point, with alternating sub-metre-scale
-        /// excursions that survive at high zoom and collapse under a 500 m tolerance.
+        /// A dense two-scale zig-zag line running west from the supplied point: every tenth
+        /// vertex makes a coarse ~2.2 km excursion, and the nine vertices between each pair of
+        /// those wobble by ~90 m.
         /// </summary>
+        /// <remarks>
+        /// Both amplitudes are chosen against the z=8 tile grid, not against ground distance.
+        /// One z=8 tile unit is ~30 m on the ground, and <c>ST_AsMVTGeom</c> snaps the geometry
+        /// to that integer grid and then drops the collinear vertices the snap produces. An
+        /// excursion smaller than a tile unit is therefore erased by the encoder itself, before
+        /// <c>ST_SimplifyPreserveTopology</c> is reached at all, and the A/B in the caller would
+        /// compare two vertices against two. The fine wobble is accordingly several tile units
+        /// wide — visible to the encoder — but well inside the 500 m tolerance, so simplification
+        /// removes it; the coarse excursion is far outside that tolerance and must survive it.
+        /// The whole line stays inside the z=8 tile that contains the supplied point, so nothing
+        /// here is measuring the clip instead of the simplification.
+        /// </remarks>
         public static string DenseZigZagWkt(double lon, double lat, int vertices)
         {
+            // ~2.9 tile units of longitude per vertex at z=8, so no two vertices snap together.
+            const double stepDegrees = -0.001d;
+            const double fineDegrees = 0.0008d;
+            const double coarseDegrees = 0.02d;
+            const int coarsePeriod = 10;
+
             var points = new List<string>(vertices);
             for (var i = 0; i < vertices; i++)
             {
-                var offset = i * 0.00002d;
-                var wobble = (i % 2 == 0 ? 1 : -1) * 0.000015d;
+                var wobble = i % coarsePeriod == 0
+                    ? (i / coarsePeriod % 2 == 0 ? 1 : -1) * coarseDegrees
+                    : (i % 2 == 0 ? 1 : -1) * fineDegrees;
                 points.Add(
-                    $"{F(lon + offset)} {F(lat + wobble)}");
+                    $"{F(lon + (i * stepDegrees))} {F(lat + wobble)}");
             }
 
             return $"LINESTRING({string.Join(", ", points)})";
