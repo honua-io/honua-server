@@ -270,6 +270,117 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertIn("retry npm install -g 3d-tiles-validator@0.6.1", workflow)
         self.assertNotIn("retry npm install -g 3d-tiles-validator@latest", workflow)
 
+    def test_selftest_and_lane_do_not_share_a_concurrency_group(self):
+        """#4479: a push to trunk touching the lane paths shares `refs/heads/trunk` with
+        the scheduled run. With one group and cancel-in-progress the cheap self-test
+        cancelled the heavyweight lane and, because the `cng` job is schedule/dispatch
+        only, produced no conformance result to replace it."""
+        workflow = (SCRIPT.parents[3] / ".github" / "workflows" / "cng-conformance.yml").read_text(
+            encoding="utf-8"
+        )
+        group = next(
+            line.strip() for line in workflow.splitlines() if line.strip().startswith("group:")
+        )
+        self.assertNotEqual("group: cng-conformance-${{ github.ref }}", group)
+        self.assertIn("github.event_name == 'schedule'", group)
+        self.assertIn("github.event_name == 'workflow_dispatch'", group)
+        self.assertIn("'lane'", group)
+        self.assertIn("'selftest'", group)
+
+
+# The exact `geo` metadata `GeoParquetFeatureWriter.BuildGeoParquetMetadata` emits for a
+# point layer served as EPSG:4326: no `crs` field (the GeoParquet default is OGC:CRS84)
+# and no metadata `bbox` — a `covering` descriptor addressing the physical bbox struct
+# column instead.
+EMITTED_GEOPARQUET_METADATA = {
+    "version": "1.1.0",
+    "primary_column": "geometry",
+    "columns": {
+        "geometry": {
+            "encoding": "WKB",
+            "geometry_types": ["Point"],
+            "covering": {
+                "bbox": {
+                    "xmin": ["bbox", "xmin"],
+                    "ymin": ["bbox", "ymin"],
+                    "xmax": ["bbox", "xmax"],
+                    "ymax": ["bbox", "ymax"],
+                }
+            },
+        }
+    },
+}
+
+# One per-row bbox for each of the six fixture points, as the physical struct column
+# holds them. Their aggregate is the profile's declared extent.
+FIXTURE_BBOX_COLUMN = {
+    "xmin": [-122.4194, 0.0, 179.5, 13.0, -70.0, 100.0],
+    "ymin": [37.7749, 0.0, 86.0, 52.5, 40.0, 1.3],
+    "xmax": [-122.4194, 0.0, 179.5, 13.0, -70.0, 100.0],
+    "ymax": [37.7749, 0.0, 86.0, 52.5, 40.0, 1.3],
+}
+
+
+def read_fixture_covering(parts):
+    """Stands in for the Arrow column read so the aggregation is testable without pyarrow."""
+    if list(parts)[:1] != ["bbox"]:
+        return None
+    return FIXTURE_BBOX_COLUMN.get(list(parts)[1])
+
+
+class GeoParquetObservationTests(unittest.TestCase):
+    """#4479: the observation must be read from the format Honua actually emits."""
+
+    def test_omitted_crs_is_the_geoparquet_default_not_a_missing_crs(self):
+        column = EMITTED_GEOPARQUET_METADATA["columns"]["geometry"]
+        self.assertNotIn("crs", column)
+        self.assertEqual("EPSG:4326", MODULE._geoparquet_column_crs(column))
+        self.assertEqual("EPSG:4326", MODULE._geoparquet_column_crs({"crs": "OGC:CRS84"}))
+
+    def test_explicit_crs_still_resolves_to_its_authority_code(self):
+        projjson = {"id": {"authority": "EPSG", "code": 3857}}
+        self.assertEqual("EPSG:3857", MODULE._geoparquet_column_crs({"crs": projjson}))
+        self.assertIsNone(MODULE._geoparquet_column_crs({"crs": None}))
+
+    def test_bounds_aggregate_the_declared_covering_column(self):
+        column = EMITTED_GEOPARQUET_METADATA["columns"]["geometry"]
+        self.assertNotIn("bbox", column)
+        self.assertEqual(
+            [-122.4194, 0.0, 179.5, 86.0],
+            MODULE._geoparquet_bounds(column, read_fixture_covering),
+        )
+
+    def test_bounds_fall_back_to_a_metadata_bbox_when_no_covering_is_declared(self):
+        column = {"encoding": "WKB", "bbox": [-1.0, -2.0, 3.0, 4.0]}
+        self.assertEqual(
+            [-1.0, -2.0, 3.0, 4.0],
+            MODULE._geoparquet_bounds(column, lambda parts: None),
+        )
+
+    def test_bounds_are_unobserved_when_the_covering_column_is_absent(self):
+        column = EMITTED_GEOPARQUET_METADATA["columns"]["geometry"]
+        self.assertEqual([], MODULE._geoparquet_bounds(column, lambda parts: None))
+
+    def test_emitted_geoparquet_meets_its_declared_budget_and_carries_a_digest(self):
+        """The regression this file exists for: before #4479 the PyArrow cell read
+        `column["crs"]` and `column["bbox"]`, which the writer never emits, so the
+        governed GeoParquet cell observed `None` / `[]`, always missed its oracle and
+        was rewritten to `skip` with its evidence digest stripped."""
+        observed = MODULE._geoparquet_metadata(
+            EMITTED_GEOPARQUET_METADATA, 6, read_fixture_covering)
+        started = "2026-08-21T00:00:00Z"
+        row = MODULE._observation(
+            "geoparquet", "feature-read", "PyArrow", "pyarrow-geoparquet", started, args()
+        )
+        row["result"] = "pass"
+        row["observed_metadata"] = observed
+        normalized = MODULE._normalize_observations([row], args())[0]
+
+        self.assertEqual([], normalized["budget_results"]["unmet"])
+        self.assertTrue(normalized["budget_results"]["met"])
+        self.assertEqual("pass", normalized["result"])
+        self.assertEqual("sha256:" + "c" * 64, normalized["evidence_digest"])
+
 
 if __name__ == "__main__":
     unittest.main()

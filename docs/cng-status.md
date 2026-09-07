@@ -124,10 +124,24 @@ generic gap string.
   `evidence_digest`; a row that does not carries the precise unmet budget as its
   `skip_reason`, not the blanket `BUDGET_EVIDENCE_GAP`.
 
+The observation must be read from the format Honua actually emits
+(honua-server#4479). The GeoParquet cell originally read `crs` and `bbox` straight
+off the geometry column metadata, neither of which `GeoParquetFeatureWriter` writes
+for a 4326 layer: it omits `crs` because the GeoParquet default *is* OGC:CRS84, and
+it declares a `covering` descriptor addressing a physical `bbox` struct column
+instead of a metadata `bbox`. Read literally, the governed GeoParquet row observed
+`None` / `[]`, missed its declared oracle every run and was rewritten to `skip` with
+its evidence digest stripped. The validator now resolves the omitted default CRS and
+aggregates the bounds out of the declared covering column.
+
 The validator's own tests (`test_validate_canonical_artifacts.py`) were in no
 `testpaths` and in no workflow. They now run as the `validator-selftest` job in
 `cng-conformance.yml`, on every change to `scripts/conformance/cng/**`, and the
-heavyweight lane job `needs:` them.
+heavyweight lane job `needs:` them. That cheap job and the heavyweight lane sit in
+**separate concurrency groups** (honua-server#4479): both are reachable on
+`refs/heads/trunk`, and with one shared group and `cancel-in-progress` a push
+touching the lane paths cancelled an in-flight scheduled run whose result the
+replacement push run — which skips the `cng` job entirely — could not reproduce.
 
 ## Local validation evidence (2026-06-20)
 

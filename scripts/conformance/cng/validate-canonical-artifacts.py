@@ -612,8 +612,72 @@ def _normalize_observations(observations: list[dict], args: argparse.Namespace) 
     return normalized
 
 
+def _geoparquet_column_crs(column: dict) -> str | None:
+    """
+    Resolves the GeoParquet column CRS, honouring the specification's default.
+
+    #4479: an omitted `crs` is not a missing CRS — the GeoParquet default is
+    OGC:CRS84, WGS 84 in longitude/latitude order, and
+    `GeoParquetFeatureWriter.ResolveGeoParquetCrsProjJson` deliberately omits the
+    field for EPSG:4326 output for exactly that reason. Reading `column["crs"]`
+    literally observed `None` for every Honua-produced artifact and could never
+    match the profile's declared `EPSG:4326` oracle. OGC:CRS84 and EPSG:4326 are
+    the same datum, and GeoParquet fixes the stored coordinates in (x, y) order
+    regardless of the CRS axis order, so both resolve to the declared token. An
+    explicit JSON `null` means "no CRS" and stays unresolved.
+    """
+    if "crs" not in column:
+        return "EPSG:4326"
+    resolved = _normalize_crs(column.get("crs"))
+    return "EPSG:4326" if resolved == "OGC:CRS84" else resolved
+
+
+def _geoparquet_bounds(column: dict, read_covering) -> list[float]:
+    """
+    Aggregates the artifact bounds out of the emitted GeoParquet 1.1 covering.
+
+    #4479: the writer emits no `bbox` value inside the geometry column metadata.
+    It declares a `covering` descriptor whose paths address a physical `bbox`
+    struct column (`xmin`/`ymin`/`xmax`/`ymax`), so a consumer reads the aggregate
+    extent by reducing that column, not by reading a metadata scalar. Reading
+    `column["bbox"]` observed `[]` and could never match the declared oracle.
+
+    ``read_covering`` resolves one covering path to that column's values; the
+    caller supplies it so this aggregation stays testable without an Arrow
+    toolchain. A producer that instead writes a metadata `bbox` still works.
+    """
+    covering = ((column.get("covering") or {}).get("bbox")) or {}
+    aggregates = (("xmin", min), ("ymin", min), ("xmax", max), ("ymax", max))
+    bounds: list[float] = []
+    for member, aggregate in aggregates:
+        values = read_covering(covering.get(member) or [])
+        if not values:
+            bounds = []
+            break
+        bounds.append(float(aggregate(values)))
+    if bounds:
+        return bounds
+    return [float(value) for value in (column.get("bbox") or [])]
+
+
+def _geoparquet_metadata(geo: dict, feature_count: int, read_covering) -> dict[str, Any]:
+    """Renders what a GeoParquet consumer observes from the emitted `geo` metadata."""
+    primary = geo.get("primary_column")
+    column = (geo.get("columns") or {}).get(primary) or {}
+    return {
+        "geo.version": geo.get("version"),
+        "primary_column": primary,
+        "geometry_encoding": (column.get("encoding") or "").upper(),
+        "crs": _geoparquet_column_crs(column),
+        "feature_count": feature_count,
+        "bounds": _geoparquet_bounds(column, read_covering),
+    }
+
+
 def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
     import geopandas
+    import pyarrow
+    import pyarrow.compute
     import pyarrow.parquet
 
     observations: list[dict] = []
@@ -628,17 +692,21 @@ def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
         raw = (table.schema.metadata or {}).get(b"geo")
         if raw is None:
             raise ValueError("PyArrow schema has no GeoParquet 'geo' metadata")
-        geo = json.loads(raw)
-        primary = geo.get("primary_column")
-        column = (geo.get("columns") or {}).get(primary) or {}
-        metadata_seen.update({
-            "geo.version": geo.get("version"),
-            "primary_column": primary,
-            "geometry_encoding": (column.get("encoding") or "").upper(),
-            "crs": _normalize_crs(column.get("crs")),
-            "feature_count": table.num_rows,
-            "bounds": list(column.get("bbox") or []),
-        })
+
+        def read_covering(parts: list[str]) -> list[float] | None:
+            """Resolves one declared covering path onto the physical bbox column."""
+            if not parts or parts[0] not in table.column_names:
+                return None
+            values = table.column(parts[0])
+            for member in parts[1:]:
+                try:
+                    values = pyarrow.compute.struct_field(values, member)
+                except (KeyError, TypeError, pyarrow.ArrowInvalid):
+                    return None
+            return values.drop_null().to_pylist()
+
+        metadata_seen.update(
+            _geoparquet_metadata(json.loads(raw), table.num_rows, read_covering))
 
     def geopandas_check() -> None:
         frame = geopandas.read_parquet(path)

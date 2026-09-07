@@ -40,7 +40,14 @@ permissions:
   packages: read
 
 concurrency:
-  group: cng-conformance-${{ github.ref }}
+  # honua-server#4479: the cheap push/PR self-test must never cancel an in-flight
+  # heavyweight run. A push to `trunk` touching these paths shares `refs/heads/trunk`
+  # with the scheduled and dispatched lane, and the replacement push run skips the
+  # `cng` job entirely (it is restricted to schedule/workflow_dispatch), so the
+  # cancellation would destroy a full conformance result and produce nothing in its
+  # place. Split the group by tier: self-tests serialise against self-tests, the lane
+  # against the lane.
+  group: cng-conformance-${{ github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'lane' || 'selftest' }}
   cancel-in-progress: true
 
 jobs:
