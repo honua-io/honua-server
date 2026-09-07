@@ -97,8 +97,9 @@ done
 
 canonical="$(printf '%s\n' honua-gp-store-v1 local "$store_reference" "$persistence_class" "$backup_identity" \
   "$sorted_inventory" "$key_prefix" "$max_inline_artifact_bytes" "${ticks[@]}")"
-# printf appended a trailing newline the canonical form does not carry.
-digest="$(printf '%s' "${canonical%$'\n'}" | sha256sum | cut -d' ' -f1)"
+# The command substitution above already stripped the trailing newline printf
+# appended, so `canonical` is the exact form the runtime hashes.
+digest="$(printf '%s' "${canonical}" | sha256sum | cut -d' ' -f1)"
 
 marker="${root_path}/.honua-gp-store.json"
 # noclobber prevents quietly re-attesting a different store or policy in place.
