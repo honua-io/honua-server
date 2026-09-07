@@ -29,6 +29,34 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private const string TestCollectionId = "0";
 
+    // Independently computed from the seeded geometries in tests/seed/server.yaml
+    // (layer 0): 1 (-122.5, 37.5), 2 (-122.7, 37.7), 4 (-121.9, 37.3),
+    // 5 (-122.3, 37.8); objectid 3 has a null geometry. This class takes a fresh
+    // fixture (and therefore a fresh schema) per test, so these sets are exact.
+    private static readonly long[] AllGeometryBearingIds = [1, 2, 4, 5];
+
+    // -122.6,37.4,-122.0,37.9 keeps 1 and 5 and drops 2 (x < -122.6) and
+    // 4 (x > -122.0), so a bbox that is parsed and then ignored fails (#4393).
+    private const string ExcludingBbox = "-122.6,37.4,-122.0,37.9";
+    private static readonly long[] ExcludingBboxIds = [1, 5];
+    private static readonly long[] ExcludedByBboxIds = [2, 4];
+
+    private static long[] FeatureIds(JsonElement collection) => collection
+        .GetProperty("features")
+        .EnumerateArray()
+        .Select(feature => feature.GetProperty("id").GetInt64())
+        .OrderBy(id => id)
+        .ToArray();
+
+    private async Task<JsonDocument> GetItemsAsync(string query)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items?{query}");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        return JsonDocument.Parse(body);
+    }
+
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
@@ -467,20 +495,29 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithValidBbox_ReturnsFilteredFeatures()
     {
-        // Arrange - Use a worldwide bbox to ensure we get results
-        var bbox = "-180,-90,180,90";
+        // The worldwide bbox is the control: it must return every geometry-bearing
+        // seeded feature (and never the null-geometry objectid 3).
+        using var worldwide = await GetItemsAsync("bbox=-180,-90,180,90");
+        worldwide.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        FeatureIds(worldwide.RootElement).Should().Equal(AllGeometryBearingIds);
 
-        // Act
-        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
+        // The proof: a bbox that excludes geometry-bearing features by position. The
+        // previous worldwide-only assertion passed on a bbox that was parsed and then
+        // discarded (#4393).
+        using var restricted = await GetItemsAsync($"bbox={ExcludingBbox}");
+        var ids = FeatureIds(restricted.RootElement);
+        ids.Should().Equal(ExcludingBboxIds);
+        ids.Should().NotContain(ExcludedByBboxIds);
+        ids.Should().NotContain(3L, "objectid 3 has no geometry and can never intersect a bbox");
+        restricted.RootElement.GetProperty("numberMatched").GetInt32().Should().Be(ExcludingBboxIds.Length);
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-
-        json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
-        json.RootElement.TryGetProperty("features", out _).Should().BeTrue();
+        // The coordinates that survive really are inside the requested envelope.
+        foreach (var coordinates in restricted.RootElement.GetProperty("features").EnumerateArray()
+                     .Select(feature => feature.GetProperty("geometry").GetProperty("coordinates")))
+        {
+            coordinates[0].GetDouble().Should().BeInRange(-122.6, -122.0);
+            coordinates[1].GetDouble().Should().BeInRange(37.4, 37.9);
+        }
     }
 
     [IntegrationTest]
@@ -509,19 +546,23 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         // spec-legal per OGC API Features Part 1; this 2D feature surface ignores the
         // vertical (minZ/maxZ) component and filters on the horizontal extent instead of
         // rejecting the request, so 3D-aware OGC/ArcGIS clients are not refused (#1987).
-        var bbox = "-180,-90,-10,180,90,10";
+        using var worldwide = await GetItemsAsync("bbox=-180,-90,-10,180,90,10");
+        worldwide.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        FeatureIds(worldwide.RootElement).Should().Equal(AllGeometryBearingIds);
 
-        // Act
-        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
+        // "uses the horizontal extent" is now asserted rather than asserted-by-name:
+        // the same horizontal envelope that excludes 2 and 4 in 2D must exclude them
+        // in 6-element form, while the vertical component is ignored (#4393).
+        var parts = ExcludingBbox.Split(',');
+        using var restricted = await GetItemsAsync(
+            $"bbox={parts[0]},{parts[1]},-10,{parts[2]},{parts[3]},10");
+        FeatureIds(restricted.RootElement).Should().Equal(ExcludingBboxIds);
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-
-        json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
-        json.RootElement.TryGetProperty("features", out _).Should().BeTrue();
+        // A vertical band that no seeded feature could carry (all are 2D points) must
+        // not change the answer — the minZ/maxZ pair is discarded, not applied.
+        using var otherAltitude = await GetItemsAsync(
+            $"bbox={parts[0]},{parts[1]},4000,{parts[2]},{parts[3]},5000");
+        FeatureIds(otherAltitude.RootElement).Should().Equal(ExcludingBboxIds);
     }
 
     [IntegrationTest]
@@ -562,19 +603,17 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithDatelineCrossingBbox_ReturnsResults()
     {
-        // Arrange - Crosses antimeridian (minX > maxX) while still covering sample data
-        var bbox = "170,-90,-50,90";
+        // Crosses the antimeridian (minX > maxX): the envelope is x >= 170 OR x <= -50,
+        // which covers every seeded point (all near x = -122).
+        using var wide = await GetItemsAsync("bbox=170,-90,-50,90");
+        FeatureIds(wide.RootElement).Should().Equal(AllGeometryBearingIds);
 
-        // Act
-        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/items?bbox={bbox}");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonDocument.Parse(content);
-        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        features.Should().NotBeEmpty();
+        // Narrow the eastern bound to -122.4 so the wrapped envelope becomes
+        // x >= 170 OR x <= -122.4: that keeps 1 (-122.5) and 2 (-122.7) and drops
+        // 5 (-122.3) and 4 (-121.9). NotBeEmpty alone did not prove the bound was
+        // applied at all (#4393).
+        using var narrow = await GetItemsAsync("bbox=170,-90,-122.4,90");
+        FeatureIds(narrow.RootElement).Should().Equal(1L, 2L);
     }
 
     [IntegrationTest]

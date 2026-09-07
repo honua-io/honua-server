@@ -313,13 +313,81 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_WithProjectedBboxCrs_AllowsProjectedRange()
     {
-        var bbox = "-20000000,-20000000,20000000,20000000";
-        var bboxCrs = "http://www.opengis.net/def/crs/EPSG/0/3857";
-        var response = await _fixture.Client.GetAsync(
-            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items" +
-            $"?bbox={Uri.EscapeDataString(bbox)}&bbox-crs={Uri.EscapeDataString(bboxCrs)}");
+        const string bboxCrs = "http://www.opengis.net/def/crs/EPSG/0/3857";
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Two CRS84 points whose EPSG:3857 positions are computed independently from
+        // the spherical Mercator formulas (R = 6378137):
+        //   x = lon * pi/180 * R,  y = R * ln(tan(pi/4 + lat*pi/360))
+        //   (-122, 37) -> ( -13_580_978,  4_439_107 )
+        //   (-100, 37) -> ( -11_131_949,  4_439_107 )
+        // The narrow envelope below therefore contains the first and excludes the
+        // second. Previously this test asserted only HttpStatusCode.OK and inspected
+        // no features at all, so an ignored bbox passed (#4393).
+        var insideId = await CreateProjectedPointAsync(-122d, 37d, "Projected bbox inside");
+        var outsideId = await CreateProjectedPointAsync(-100d, 37d, "Projected bbox outside");
+
+        var worldwide = await GetProjectedItemIdsAsync("-20000000,-20000000,20000000,20000000", bboxCrs);
+        worldwide.Should().Contain(insideId).And.Contain(outsideId);
+
+        var narrow = await GetProjectedItemIdsAsync("-14000000,4000000,-13000000,5000000", bboxCrs);
+        narrow.Should().Contain(insideId);
+        narrow.Should().NotContain(outsideId,
+            "its EPSG:3857 easting (-11,131,949) is outside the requested envelope");
+
+        // The same envelope expressed in the default CRS84 must select the same
+        // feature, proving bbox-crs is reprojected rather than silently ignored.
+        var crs84 = await GetProjectedItemIdsAsync("-125.8,33.7,-116.8,40.9", crs: null);
+        crs84.Should().Contain(insideId).And.NotContain(outsideId);
+    }
+
+    private async Task<long> CreateProjectedPointAsync(double longitude, double latitude, string name)
+    {
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = FormattableString.Invariant($"[{longitude}, {latitude}]")
+            },
+            Properties = new Dictionary<string, object?> { ["name"] = name }
+        };
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature),
+                Encoding.UTF8,
+                "application/geo+json")
+        };
+
+        var response = await _fixture.Client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
+        var created = JsonSerializer.Deserialize(body, OgcJsonContext.Default.GeoJsonFeature);
+        return NormalizeFeatureId(created!.Id)
+            ?? throw new InvalidOperationException("Created feature did not have a numeric identifier.");
+    }
+
+    private async Task<long[]> GetProjectedItemIdsAsync(string bbox, string? crs)
+    {
+        var url =
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items" +
+            $"?limit=1000&bbox={Uri.EscapeDataString(bbox)}";
+        if (crs is not null)
+        {
+            url += $"&bbox-crs={Uri.EscapeDataString(crs)}";
+        }
+
+        var response = await _fixture.Client.GetAsync(url);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var json = JsonDocument.Parse(body);
+        return json.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("id").GetInt64())
+            .ToArray();
     }
 
     [IntegrationTest]

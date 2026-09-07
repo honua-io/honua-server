@@ -33,11 +33,13 @@ public sealed class OgcFeaturesAuthorizationTests : IClassFixture<OgcFeaturesAut
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task CreateFeature_WithoutApiKey_ReturnsUnauthorized()
     {
+        var before = await ReadAuthorizedStateAsync();
         var response = await _fixture.Client.PostAsync(
             $"/ogc/features/collections/{WebAppFixture.TestLayerId}/items",
             CreateGeoJsonContent("Unauthorized Create"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await AssertDeniedWithoutChangesAsync(response, before);
     }
 
     [IntegrationTest]
@@ -45,11 +47,13 @@ public sealed class OgcFeaturesAuthorizationTests : IClassFixture<OgcFeaturesAut
     [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task UpdateFeature_WithoutApiKey_ReturnsUnauthorized()
     {
+        var before = await ReadAuthorizedStateAsync();
         var response = await _fixture.Client.PutAsync(
             $"/ogc/features/collections/{WebAppFixture.TestLayerId}/items/1",
             CreateGeoJsonContent("Unauthorized Update"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await AssertDeniedWithoutChangesAsync(response, before);
     }
 
     [IntegrationTest]
@@ -57,10 +61,12 @@ public sealed class OgcFeaturesAuthorizationTests : IClassFixture<OgcFeaturesAut
     [Endpoint("DELETE /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task DeleteFeature_WithoutApiKey_ReturnsUnauthorized()
     {
+        var before = await ReadAuthorizedStateAsync();
         var response = await _fixture.Client.DeleteAsync(
             $"/ogc/features/collections/{WebAppFixture.TestLayerId}/items/1");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await AssertDeniedWithoutChangesAsync(response, before);
     }
 
     [IntegrationTest]
@@ -68,6 +74,7 @@ public sealed class OgcFeaturesAuthorizationTests : IClassFixture<OgcFeaturesAut
     [Endpoint("POST /ogc/features/collections/{collectionId}/items/batch")]
     public async Task Batch_WithoutApiKey_ReturnsUnauthorized()
     {
+        var before = await ReadAuthorizedStateAsync();
         var batch = new BatchRequest
         {
             Operations =
@@ -88,6 +95,7 @@ public sealed class OgcFeaturesAuthorizationTests : IClassFixture<OgcFeaturesAut
             requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await AssertDeniedWithoutChangesAsync(response, before);
     }
 
     [IntegrationTest]
@@ -103,6 +111,50 @@ public sealed class OgcFeaturesAuthorizationTests : IClassFixture<OgcFeaturesAut
             CreateGeoJsonContent("Authorized Create"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
+        response.Headers.Location.Should().NotBeNull();
+        using var readBack = await client.GetAsync(response.Headers.Location);
+        readBack.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var created = JsonDocument.Parse(await readBack.Content.ReadAsStringAsync());
+        created.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Authorized Create");
+        created.RootElement.GetProperty("geometry").GetProperty("coordinates").EnumerateArray()
+            .Select(value => value.GetDouble()).Should().Equal(-122.4194, 37.7749);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithoutApiKey_RefusesAndDisclosesNoRecords()
+    {
+        var before = await ReadAuthorizedStateAsync();
+        using var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{WebAppFixture.TestLayerId}/items");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await AssertDeniedWithoutChangesAsync(response, before);
+    }
+
+    private async Task<(int Count, string Target)> ReadAuthorizedStateAsync()
+    {
+        using var client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminApiKey));
+        using var list = await client.GetAsync($"/ogc/features/collections/{WebAppFixture.TestLayerId}/items?limit=1000");
+        list.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var collection = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var count = collection.RootElement.GetProperty("features").GetArrayLength();
+        count.Should().BeGreaterThanOrEqualTo(5, "the protected fixture must contain records");
+        using var response = await client.GetAsync($"/ogc/features/collections/{WebAppFixture.TestLayerId}/items/1");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var target = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        target.RootElement.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
+        return (count, target.RootElement.GetProperty("properties").GetRawText() + target.RootElement.GetProperty("geometry").GetRawText());
+    }
+
+    private async Task AssertDeniedWithoutChangesAsync(HttpResponseMessage response, (int Count, string Target) before)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("Test Feature").And.NotContain("Unauthorized Create")
+            .And.NotContain("Unauthorized Update").And.NotContain("Unauthorized Batch");
+        using var error = JsonDocument.Parse(body);
+        error.RootElement.TryGetProperty("features", out _).Should().BeFalse();
+        error.RootElement.TryGetProperty("geometry", out _).Should().BeFalse();
+        (await ReadAuthorizedStateAsync()).Should().Be(before, "a denied request must preserve row count and target attributes/geometry");
     }
 
     private static StringContent CreateGeoJsonContent(string name)
@@ -141,7 +193,15 @@ public sealed class OgcFeaturesAuthorizationTestsFixture : IAsyncLifetime
             builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminApiKey);
         });
 
-    public Task InitializeAsync() => App.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await App.InitializeAsync();
+        App.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, accessPolicy: new Honua.Core.Features.Security.Domain.AccessPolicy
+        {
+            AllowAnonymous = false,
+            AllowAnonymousWrite = false
+        });
+    }
 
     public Task DisposeAsync() => App.DisposeAsync();
 }
