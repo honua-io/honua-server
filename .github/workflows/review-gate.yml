@@ -55,6 +55,17 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
+            // A superseded event is shed NEUTRALLY: the step succeeds, records one
+            // job-summary line, and leaves `pr` empty so `attest` is never admitted.
+            // Nothing here writes a commit status, so shedding can only withhold a
+            // redundant attestation -- it can never publish a wrong one.
+            const shed = async reason => {
+              core.notice(`superseded: ${reason}`);
+              core.summary.addRaw(`Shed superseded review event: ${reason}`, true);
+              await core.summary.write();
+              core.setOutput('superseded', 'true');
+            };
+
             let prNumber = Number(
               context.payload.pull_request?.number ||
               context.payload.issue?.number ||
@@ -64,11 +75,10 @@ jobs:
             const eventHead = context.payload.workflow_run?.head_sha ||
               context.payload.pull_request?.head?.sha ||
               context.payload.client_payload?.head_sha;
-            if (!eventHead) {
-              core.info('Event has no subject SHA; continuing to pull request resolution.');
-              return;
-            }
-            if (!prNumber && context.payload.workflow_run) {
+            // Only the workflow_run association fallback needs a subject SHA. An
+            // issue_comment carries no SHA but does name its pull request, so it
+            // still reaches the closed-subject check below.
+            if (!prNumber && eventHead && context.payload.workflow_run) {
               const { data: assocPrs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
                 ...context.repo, commit_sha: eventHead,
               });
@@ -82,10 +92,19 @@ jobs:
             const { data: pull } = await github.rest.pulls.get({
               ...context.repo, pull_number: prNumber,
             });
-            if (pull.head.sha !== eventHead) {
-              core.notice(
-                `superseded: event subject ${eventHead} is not current head ${pull.head.sha} for PR #${prNumber}`);
-              core.setOutput('superseded', 'true');
+            // A closed pull request is the terminal form of a stale subject: no
+            // admission decision can ever consume a `Review Gate` status for a head
+            // that can no longer merge. Attesting one anyway spends the trusted job
+            // to stamp a RED status onto an already-merged commit, because
+            // `pull request is not open` is scored as a blocking reason. `reopened`
+            // re-fires this workflow with the pull request open again, and
+            // claude-review.yml already sheds closed subjects the same way.
+            if (pull.state !== 'open') {
+              return shed(`PR #${prNumber} is ${pull.state}; no admission can consume its Review Gate status`);
+            }
+            if (eventHead && pull.head.sha !== eventHead) {
+              return shed(
+                `event subject ${eventHead} is not current head ${pull.head.sha} for PR #${prNumber}`);
             }
 
       - name: Resolve every event to one pull request
