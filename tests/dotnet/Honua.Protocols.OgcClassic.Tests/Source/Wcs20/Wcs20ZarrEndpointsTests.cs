@@ -13,6 +13,7 @@ using Honua.Core.Features.Raster.ZarrParser;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Formats;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
@@ -176,6 +177,76 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
         content.Should().Contain("locator=\"SCALESIZE\"");
+    }
+
+    /// <summary>
+    /// The served Zarr slice's pixels, not its signature (honua-server#4395).
+    /// </summary>
+    /// <remarks>
+    /// Every positive Zarr serving test asserted <c>image/png</c> and the eight-byte PNG signature,
+    /// so a response carrying the wrong elevation slice, a transposed grid or a blank image passed.
+    /// The fixture cube stores <c>level * 1000 + row * 10 + column</c>, which makes the returned
+    /// image self-identifying: the thousands digit is the elevation slice, the tens the row and the
+    /// units the column.
+    /// <para>
+    /// The request trims the full advertised extent and scales it to 8x8, so each of the cube's
+    /// 4x4 cells becomes a 2x2 pixel block: output pixel (px, py) has its centre inside cube cell
+    /// (row py/2, column px/2), which is what the reader's native-CRS sample grid resolves under
+    /// nearest-neighbour resampling. With no explicit stretch the grey ramp spans the slice's own
+    /// range — 1000 at (0,0) to 1033 at (3,3) — so every pixel's grey level is computable from the
+    /// fixture without rendering anything.
+    /// </para>
+    /// </remarks>
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_ZarrSlice_RendersTheSelectedElevationSlicesPixels()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
+            "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
+            "&FORMAT=image/png&SUBSET=Long(-180,180)&SUBSET=Lat(-90,90)" +
+            "&SUBSET=elevation(333.3333)&SCALESIZE=x(8),y(8)");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, Encoding.UTF8.GetString(bytes));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+        var image = MiniPngDecoder.Decode(bytes);
+        image.Width.Should().Be(8);
+        image.Height.Should().Be(8);
+
+        // The elevation axis runs 0..1000 over four levels, so its coordinates are 0, 333.33,
+        // 666.67 and 1000 and the requested 333.3333 is level 1 — the slice whose values are
+        // 1000..1033. Level 0 (0..33) and level 3 (3000..3033) render a different image, so a
+        // reader that ignored the SUBSET or read the head of the flattened cube fails here.
+        const float sliceBase = 1000f;
+        const float sliceMax = 1033f;
+
+        for (var py = 0; py < 8; py++)
+        {
+            for (var px = 0; px < 8; px++)
+            {
+                var value = sliceBase + ((py / 2) * 10f) + (px / 2);
+                var grey = (byte)Math.Clamp(
+                    (int)Math.Round((value - sliceBase) / (sliceMax - sliceBase) * 255.0), 0, 255);
+                image.Pixel(px, py).Should().Be(
+                    (grey, grey, grey, (byte)255),
+                    "pixel ({0},{1}) renders cube cell (level 1, row {2}, column {3}) whose value is {4}",
+                    px,
+                    py,
+                    py / 2,
+                    px / 2,
+                    value);
+            }
+        }
+
+        // The corners pin the orientation in cube terms: the north-west pixel is the slice minimum
+        // (pure black) and the south-east pixel its maximum (pure white). A vertically flipped or
+        // transposed render moves at least one of them.
+        image.Pixel(0, 0).Should().Be(((byte)0, (byte)0, (byte)0, (byte)255));
+        image.Pixel(7, 7).Should().Be(((byte)255, (byte)255, (byte)255, (byte)255));
     }
 
     private static string BuildRequest(string path)

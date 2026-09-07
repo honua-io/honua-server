@@ -7,7 +7,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 
-namespace Honua.Core.Tests.Raster.ZarrParser;
+namespace Honua.TestKit.Formats;
 
 /// <summary>
 /// A minimal PNG decoder for 8-bit truecolour+alpha images, written directly against the PNG
@@ -19,13 +19,13 @@ namespace Honua.Core.Tests.Raster.ZarrParser;
 /// wrong-colourmapped tile passed. This decoder makes the pixels assertable: it parses IHDR,
 /// concatenates the IDAT stream, inflates it, and reverses the per-scanline filters.
 /// </remarks>
-internal static class MiniPngDecoder
+public static class MiniPngDecoder
 {
     /// <summary>A decoded 8-bit RGBA image.</summary>
     /// <param name="Width">Image width in pixels.</param>
     /// <param name="Height">Image height in pixels.</param>
     /// <param name="Rgba">Row-major RGBA samples, 4 bytes per pixel.</param>
-    internal sealed record DecodedImage(int Width, int Height, byte[] Rgba)
+    public sealed record DecodedImage(int Width, int Height, byte[] Rgba)
     {
         /// <summary>Returns the RGBA quadruple at the given pixel.</summary>
         public (byte R, byte G, byte B, byte A) Pixel(int x, int y)

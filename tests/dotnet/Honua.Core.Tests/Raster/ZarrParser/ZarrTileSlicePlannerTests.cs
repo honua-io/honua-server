@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
+using Honua.TestKit.Formats;
 using Xunit;
 
 namespace Honua.Core.Tests.Raster.ZarrParser;
