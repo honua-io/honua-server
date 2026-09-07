@@ -119,22 +119,29 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
                 // Migrations are already applied by the runner above; the host must read the
                 // database as it finds it, exactly as the certified Lambda image does.
                 builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(
-                        WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(connectionString)));
+                        WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(
+                            connectionString,
+                            new Dictionary<string, string?>
+                            {
+                                ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword
+                            })));
             },
             "Test");
 
-        // No dev-auth bypass and no admin credentials: the lane's serving assertions run as the
-        // anonymous principal the seed's access policy admits.
+        // No dev-auth bypass. The lane's `invoke` helper defaults to `authenticated=True` and
+        // sends the cert admin key on every serving call (scripts/cloud/lambda-certification.py),
+        // so the fixture assertions run as that principal here too — an anonymous client is
+        // refused on the scratch layer's writes and would not be exercising the lane's path.
         using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
 
         // --- test_service/0 serves exactly the ten client-compat-v1 records --------------------
         var countDocument = await GetJsonAsync(
             client,
             ServicePath + "/query?f=json&where=1%3D1&returnCountOnly=true");
-        countDocument.RootElement.TryGetProperty("error", out _)
-            .Should().BeFalse("the seeded service must resolve on a server-migrated database");
         countDocument.RootElement.GetProperty("count").GetInt32()
             .Should().Be(10, "the certification lane requires exactly ten fixture rows on test_service/0");
 
@@ -165,15 +172,11 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
                 geometry = new { x = -122.42, y = 37.76, spatialReference = new { wkid = 4326 } }
             }
         });
-        using var addResponse = await client.PostAsync(
-            ScratchPath + "/addFeatures",
-            new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["f"] = "json",
-                ["features"] = features
-            }));
-        addResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var added = JsonDocument.Parse(await addResponse.Content.ReadAsStringAsync());
+        using var added = await PostFormAsync(client, ScratchPath + "/addFeatures", new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["features"] = features
+        });
         var addResults = added.RootElement.GetProperty("addResults");
         addResults.GetArrayLength().Should().Be(1);
         addResults[0].GetProperty("success").GetBoolean()
@@ -185,15 +188,11 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         created.GetArrayLength().Should().Be(1, "the inserted row must be readable through the query path");
         created[0].GetProperty("attributes").GetProperty("name").GetString().Should().Be(marker);
 
-        using var deleteResponse = await client.PostAsync(
-            ScratchPath + "/deleteFeatures",
-            new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["f"] = "json",
-                ["objectIds"] = objectId.ToString(CultureInfo.InvariantCulture)
-            }));
-        deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var deleted = JsonDocument.Parse(await deleteResponse.Content.ReadAsStringAsync());
+        using var deleted = await PostFormAsync(client, ScratchPath + "/deleteFeatures", new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["objectIds"] = objectId.ToString(CultureInfo.InvariantCulture)
+        });
         var deleteResults = deleted.RootElement.GetProperty("deleteResults");
         deleteResults.GetArrayLength().Should().Be(1);
         deleteResults[0].GetProperty("success").GetBoolean()
@@ -213,9 +212,36 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
     private static async Task<JsonDocument> GetJsonAsync(HttpClient client, string path)
     {
         using var response = await client.GetAsync(path);
+        return await ReadServingJsonAsync("GET", path, response);
+    }
+
+    private static async Task<JsonDocument> PostFormAsync(
+        HttpClient client,
+        string path,
+        Dictionary<string, string> form)
+    {
+        using var response = await client.PostAsync(path, new FormUrlEncodedContent(form));
+        return await ReadServingJsonAsync("POST", path, response);
+    }
+
+    /// <summary>
+    /// The GeoServices surface answers an operation failure with HTTP 200 and an <c>error</c>
+    /// envelope, so a status-only assertion would read a refused edit as a pass. Fail on either,
+    /// and carry the body into the message: a serving failure here has to name its own cause.
+    /// </summary>
+    private static async Task<JsonDocument> ReadServingJsonAsync(
+        string method,
+        string path,
+        HttpResponseMessage response)
+    {
         var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, $"GET {path} returned {(int)response.StatusCode}: {Truncate(payload)}");
-        return JsonDocument.Parse(payload);
+        response.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            $"{method} {path} returned {(int)response.StatusCode}: {Truncate(payload)}");
+        var document = JsonDocument.Parse(payload);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            $"{method} {path} answered with a GeoServices error envelope: {Truncate(payload)}");
+        return document;
     }
 
     private static string Truncate(string value)
