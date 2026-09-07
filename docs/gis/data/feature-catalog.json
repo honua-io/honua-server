@@ -11090,6 +11090,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_ReturnsPlainText",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_WithFilter_AppliesLayerFilter",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetFeatureInfo_WithLegacyPointParameters_ReturnsServiceException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetMap_ArcGisProFullPrecisionBbox_ReturnsImage",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetMap_BboxDisjointFromCrsBounds_ReturnsBlankImage",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetMap_BboxOutsideCrsBounds_ReturnsBlankImage",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_GetMap_Crs84MinXGreaterThanMaxX_ReturnsXmlServiceException",
