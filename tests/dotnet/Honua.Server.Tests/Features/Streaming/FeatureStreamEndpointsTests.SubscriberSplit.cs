@@ -190,9 +190,15 @@ public sealed partial class FeatureStreamEndpointsTests
             new Uri("ws://localhost/api/v1/streaming/features?serviceId=test&layers=0"),
             ct));
 
-        exception.Message.Should().MatchRegex(
-            "40[13]",
-            "an unauthenticated WebSocket subscriber must be refused the upgrade, not handed a socket");
+        // The TestHost client reports the refused upgrade as
+        // "Incomplete handshake, status code: {status}". Assert on the status it names rather
+        // than with a regular expression: FluentAssertions applies a match timeout, and under a
+        // loaded host that timeout — not the assertion — is what fails.
+        exception.Message.Should().ContainAny(
+            ["401", "403"],
+            "an unauthenticated WebSocket subscriber must be refused the upgrade, not handed a "
+            + "socket; the client reported: {0}",
+            exception.Message);
         exception.Message.Should().NotContain("101", "no protocol upgrade may be completed");
     }
 
