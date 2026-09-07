@@ -126,11 +126,11 @@ public sealed class GeometryFormatConversionExecutionProofTests
         value.Should().NotContain("SRID=", "a SRID-less input must not be labelled with a fabricated SRID");
         AssertPolygonContent(Decode(value, "ewkt"), "ewkt");
 
-        // The WKB round-trip of a SRID-less input stays plain WKB.
+        // The WKB round-trip of a SRID-less input stays plain WKB: no EWKB SRID flag.
         var wkb = await ConvertAsync(PolygonWithHoleWkbBase64, "wkb");
-        var decoded = Decode(wkb.Envelope!.Value.GetProperty("value").GetString()!, "wkb");
-        decoded.SRID.Should().Be(0);
-        AssertPolygonContent(decoded, "wkb");
+        var payload = wkb.Envelope!.Value.GetProperty("value").GetString()!;
+        (Convert.FromBase64String(payload)[4] & 0x20).Should().Be(0);
+        AssertPolygonContent(Decode(payload, "wkb"), "wkb");
     }
 
     [UnitTest]
@@ -147,9 +147,9 @@ public sealed class GeometryFormatConversionExecutionProofTests
         var bytes = Convert.FromBase64String(envelope.GetProperty("value").GetString()!);
         (bytes[4] & 0x20).Should().Be(0, "the EWKB SRID flag must not be set on a 'wkb' output");
 
-        var decoded = Decode(envelope.GetProperty("value").GetString()!, "wkb");
-        decoded.SRID.Should().Be(0);
-        AssertPolygonContent(decoded, "wkb");
+        // The decoded SRID is NTS's factory default for a payload that carries none, so
+        // the byte-level flag assertion above is what pins the contract.
+        AssertPolygonContent(Decode(envelope.GetProperty("value").GetString()!, "wkb"), "wkb");
     }
 
     [UnitTest]
@@ -225,12 +225,12 @@ public sealed class GeometryFormatConversionExecutionProofTests
     private const string FilledPolygonEwkbBase64 =
         "AQMAACDmEAAAAQAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAAAAAAAAAAAAAAA==";
 
-    /// <summary>The same rings with longitude and latitude transposed.</summary>
-    private const string SwappedAxisPolygonEwkbBase64 =
-        "AQMAACDmEAAAAgAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkQAAAAAAAACRAAAAAAAAAJEAAAAAAAAAkQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAEEAAAAAAAAAAQAAAAAAAABBAAAAAAAAAEEAAAAAAAAAAQAAAAAAAABBAAAAAAAAAAEAAAAAAAAAAQA==";
+    /// <summary>The same rings translated one degree east, as a reprojection would.</summary>
+    private const string ShiftedPolygonEwkbBase64 =
+        "AQMAACDmEAAAAgAAAAUAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAJkAAAAAAAAAAAAAAAAAAACZAAAAAAAAAJEAAAAAAAADwPwAAAAAAACRAAAAAAAAA8D8AAAAAAAAAAAUAAAAAAAAAAAAIQAAAAAAAAABAAAAAAAAACEAAAAAAAAAQQAAAAAAAABRAAAAAAAAAEEAAAAAAAAAUQAAAAAAAAABAAAAAAAAACEAAAAAAAAAAQA==";
 
     [UnitTest]
-    public async Task Oracle_DroppedHoleOrSwappedAxes_AreRejectedEvenThoughTheOutputParses()
+    public async Task Oracle_DroppedHoleOrShiftedOrdinates_AreRejectedEvenThoughTheOutputParses()
     {
         // Both negatives come from real executions, so each output is a valid,
         // parseable value of the requested encoding on the same SRID.
@@ -244,16 +244,19 @@ public sealed class GeometryFormatConversionExecutionProofTests
         rejectFilled.Should().Throw<XunitException>("the oracle must reject a conversion that dropped the hole")
             .Which.Message.Should().Contain("preserve the hole");
 
-        var swapped = await ConvertAsync(SwappedAxisPolygonEwkbBase64, "geojson");
-        swapped.Status.Should().Be(ExecutionJobStatus.Succeeded);
-        var swappedGeometry = Decode(swapped.Envelope!.Value.GetProperty("value").GetString()!, "geojson");
-        // Ring counts and area survive an axis swap, so only the ordinates catch it.
-        ((Polygon)swappedGeometry).NumInteriorRings.Should().Be(1);
-        swappedGeometry.Area.Should().BeApproximately(ExpectedArea, 1e-9);
+        var shifted = await ConvertAsync(ShiftedPolygonEwkbBase64, "geojson");
+        shifted.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var shiftedGeometry = Decode(shifted.Envelope!.Value.GetProperty("value").GetString()!, "geojson");
+        // Ring count, winding and area all survive a translation - the shape is identical
+        // and only its position moved, which is exactly what a silent reprojection looks
+        // like - so only the literal ordinates catch it.
+        ((Polygon)shiftedGeometry).NumInteriorRings.Should().Be(1);
+        shiftedGeometry.Area.Should().BeApproximately(ExpectedArea, 1e-9);
+        ((Polygon)shiftedGeometry).Shell.IsCCW.Should().BeTrue();
 
-        Action rejectSwapped = () => AssertPolygonContent(swappedGeometry, "geojson");
-        rejectSwapped.Should().Throw<XunitException>("the oracle must reject transposed ordinates")
-            .Which.Message.Should().Contain("ring vertex 1");
+        Action rejectShifted = () => AssertPolygonContent(shiftedGeometry, "geojson");
+        rejectShifted.Should().Throw<XunitException>("the oracle must reject displaced ordinates")
+            .Which.Message.Should().Contain("ring vertex 0");
     }
 
     // -------------------------------------------------------------------------
