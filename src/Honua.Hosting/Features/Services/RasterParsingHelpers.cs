@@ -13,9 +13,10 @@ namespace Honua.Infrastructure.Services;
 internal static class RasterParsingHelpers
 {
     /// <summary>
-    /// Maximum allowed length for bounding box strings to prevent DoS.
+    /// Bounds parsing work while allowing full-precision client coordinates.
+    /// ArcGIS Pro can serialize four valid ordinates to more than 100 characters.
     /// </summary>
-    private const int MaxBboxLength = 100;
+    private const int MaxBboxLength = 1024;
 
     /// <summary>
     /// Maximum coordinate value supporting projected CRS (e.g., Web Mercator ~20,037,508).
