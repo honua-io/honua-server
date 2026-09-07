@@ -18,6 +18,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using SkiaSharp;
 
@@ -128,15 +129,27 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
 
         await _fixture.InitializeAsync();
 
-        var store = _fixture.Services.GetRequiredService<ICogStore>();
-        await store.RegisterAsync(new CogRegistrationRequest
+        // Register through the admin endpoint rather than ICogStore directly: the
+        // fixture routes each request to its own Postgres schema via test schema
+        // headers, so a registration written outside a request lands in a schema the
+        // tile request never reads.
+        await RegisterAsync("GDAL LZW predictor-1 uint8 fixture", _objectKey);
+    }
+
+    private async Task<long> RegisterAsync(string name, string objectKey)
+    {
+        using var response = await _fixture.Client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", new
         {
-            LayerId = WebAppFixture.TestLayerId,
-            Name = "GDAL LZW predictor-1 uint8 fixture",
-            Provider = CloudStorageProvider.AwsS3,
-            Bucket = _bucket!,
-            ObjectKey = _objectKey
+            layerId = WebAppFixture.TestLayerId,
+            name,
+            provider = "AwsS3",
+            bucket = _bucket,
+            objectKey
         });
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().BeOneOf([HttpStatusCode.Created, HttpStatusCode.OK], body);
+        using var document = System.Text.Json.JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("id").GetInt64();
     }
 
     public Task DisposeAsync() => _fixture is null ? Task.CompletedTask : _fixture.DisposeAsync();
@@ -150,9 +163,12 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
 
         using var response = await _fixture.Client.GetAsync(TileUrl(TileLevel, 0, 0));
         var png = await response.Content.ReadAsByteArrayAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK,
-            System.Text.Encoding.UTF8.GetString(png.Take(512).ToArray()));
-        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        var diagnostic = System.Text.Encoding.UTF8.GetString(png.Take(1024).ToArray());
+        response.StatusCode.Should().Be(HttpStatusCode.OK, diagnostic);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png",
+            "tile response was: {0}; range reads: {1}",
+            diagnostic,
+            string.Join(" | ", _recorder.Reads.Select(r => $"{r.Offset}+{r.Length}")));
 
         using var bitmap = SKBitmap.Decode(png);
         bitmap.Should().NotBeNull("the served tile must be a decodable image");
@@ -231,15 +247,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}")]
     public async Task MissingObject_ProducesBoundedErrorAndNoPartialOutput()
     {
-        var store = _fixture.Services.GetRequiredService<ICogStore>();
-        var registration = await store.RegisterAsync(new CogRegistrationRequest
-        {
-            LayerId = WebAppFixture.TestLayerId,
-            Name = "Absent object",
-            Provider = CloudStorageProvider.AwsS3,
-            Bucket = _bucket!,
-            ObjectKey = _missingObjectKey
-        });
+        var registrationId = await RegisterAsync("Absent object", _missingObjectKey);
 
         try
         {
@@ -260,7 +268,8 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
         }
         finally
         {
-            await store.UnregisterAsync(registration.Id);
+            using var cleanup = await _fixture.Client.DeleteAsync(
+                FormattableString.Invariant($"/api/v1/admin/cloud-rasters/{registrationId}"));
         }
     }
 
