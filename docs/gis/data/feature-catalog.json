@@ -4467,6 +4467,8 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAnonymous_ReturnsPublicTenantManifestAndNoStoreHeaders",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AutonomyTracksPolicyStoreInsteadOfWorkflowStore",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FileExportDirections_AdvertisesOnlyThreeImplementedWriters",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FilePluginWriters_UsesLicensedEnabledDiscovery",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_FileReadersWithoutImportService_ReportMissingDependency",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LegacyProjection_MarksDisabledPreviewsUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LifecycleOnlyPreviews_RemainAvailableWithoutOptIn",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_MultiTenancyWithoutSchemaRouting_IsDisabledByConfiguration",
