@@ -171,7 +171,7 @@ Explicit format/CRS conversion idioms. Two are managed; the rest run in the GDAL
 
 | Process ID | Description | Key parameters | Profile |
 | --- | --- | --- | --- |
-| `conversion.geometry-format` | Convert a geometry to WKT, GeoJSON, WKB, or EWKT. | `geometry`, `target` | managed |
+| `conversion.geometry-format` | Convert a base64 WKB/EWKB geometry to ISO WKT, RFC 7946 GeoJSON, standard WKB, or PostGIS EWKT. `wkb` emits standard WKB and reports the SRID on the result only; `geojson` normalises ring winding and rejects a projected input rather than relabelling it as WGS 84. | `geometry`, `target` | managed |
 | `conversion.feature-project` | Reproject every feature in a layer. | `layerId`, `targetSrid` | managed |
 | `conversion.raster-format` | Raster format conversion (GTiff/PNG/JPEG/COG) via real GDAL `gdal_translate` (#2138). | `source`, `targetFormat`, `compression` | **native** |
 | `conversion.raster-reproject` | Raster CRS conversion via real GDAL `gdalwarp` (#2138). | `source`, `targetSrid`, `resampling` | **native** |

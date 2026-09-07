@@ -48,6 +48,17 @@ public sealed class GeometryFormatConversionExecutionProofTests
     private const string PolygonWithHoleEwkbBase64 =
         "AQMAACDmEAAAAgAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAQQAAAAAAAABBAAAAAAAAAEEAAAAAAAAAQQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQA==";
 
+    /// <summary>
+    /// The same polygon wound the WRONG way for RFC 7946: clockwise exterior,
+    /// counter-clockwise hole. Common in Esri applyEdits and shapefile imports.
+    /// </summary>
+    private const string ClockwisePolygonWkbBase64 =
+        "AQMAAAACAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACRAAAAAAAAAJEAAAAAAAAAkQAAAAAAAACRAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAABAAAAAAAAAAEAAAAAAAAAQQAAAAAAAAABAAAAAAAAAEEAAAAAAAAAQQAAAAAAAAABAAAAAAAAAEEAAAAAAAAAAQAAAAAAAAABA";
+
+    /// <summary>The same polygon as EWKB carrying a PROJECTED SRID (Web Mercator).</summary>
+    private const string WebMercatorPolygonEwkbBase64 =
+        "AQMAACARDwAAAgAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAJEAAAAAAAAAAAAAAAAAAACRAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAQQAAAAAAAABBAAAAAAAAAEEAAAAAAAAAQQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQA==";
+
     // Independently derived from the fixture ordinates, not from any output:
     // shoelace area of the 10x10 exterior minus the 2x2 hole.
     private const double ExpectedArea = 96d;
@@ -123,12 +134,54 @@ public sealed class GeometryFormatConversionExecutionProofTests
     }
 
     [UnitTest]
-    public async Task EwkbRoundTrip_PreservesTheSridThroughTheWkbTarget()
+    public async Task WkbTarget_EmitsStandardWkb_AndReportsTheSridOnTheEnvelopeOnly()
     {
         var wkb = await ConvertAsync(PolygonWithHoleEwkbBase64, "wkb");
-        var decoded = Decode(wkb.Envelope!.GetProperty("value").GetString()!, "wkb");
-        decoded.SRID.Should().Be(4326, "the wkb target round-trips an EWKB input as EWKB");
+
+        // 'ewkb' is not an advertised target, so an EWKB input must come back as
+        // STANDARD WKB: a WKB-only consumer rejects PostGIS's SRID flag or misreads the
+        // type word it sets. The SRID survives on the envelope, and 'ewkt' remains the
+        // encoding that carries it inside the value.
+        wkb.Envelope!.GetProperty("srid").GetInt32().Should().Be(4326);
+        var bytes = Convert.FromBase64String(wkb.Envelope.GetProperty("value").GetString()!);
+        (bytes[4] & 0x20).Should().Be(0, "the EWKB SRID flag must not be set on a 'wkb' output");
+
+        var decoded = Decode(wkb.Envelope.GetProperty("value").GetString()!, "wkb");
+        decoded.SRID.Should().Be(0);
         AssertPolygonContent(decoded, "wkb");
+    }
+
+    [UnitTest]
+    public async Task GeoJsonTarget_RejectsAProjectedInputRatherThanMislocatingIt()
+    {
+        // RFC 7946 has no CRS member and is always WGS 84 lon/lat, so emitting Web
+        // Mercator metres under that label would place the geometry wherever a standard
+        // consumer reads metres as degrees.
+        var result = await ConvertAsync(WebMercatorPolygonEwkbBase64, "geojson");
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("3857").And.Contain("RFC 7946");
+        result.Published.Should().BeNull("a rejected conversion must publish nothing");
+
+        // The same projected input is fine for the encodings that can carry its CRS.
+        var ewkt = await ConvertAsync(WebMercatorPolygonEwkbBase64, "ewkt");
+        ewkt.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        ewkt.Envelope!.GetProperty("value").GetString().Should().StartWith("SRID=3857;");
+    }
+
+    [UnitTest]
+    public async Task GeoJsonTarget_NormalisesRingWindingToTheRightHandRule()
+    {
+        // Clockwise-exterior polygons are common (Esri applyEdits, shapefile imports).
+        // RFC 7946 section 3.1.6 fixes exterior rings counter-clockwise and holes
+        // clockwise, and the raw NTS writer preserves whatever the input carried.
+        var geoJson = (await ConvertAsync(ClockwisePolygonWkbBase64, "geojson")).Envelope!
+            .GetProperty("value").GetString()!;
+
+        var polygon = (Polygon)new GeoJsonReader().Read<Geometry>(geoJson);
+        polygon.Shell.IsCCW.Should().BeTrue("RFC 7946 requires a counter-clockwise exterior ring");
+        polygon.GetInteriorRingN(0).IsCCW.Should().BeFalse("RFC 7946 requires clockwise holes");
+        AssertPolygonContent(polygon, "geojson");
     }
 
     [UnitTest]

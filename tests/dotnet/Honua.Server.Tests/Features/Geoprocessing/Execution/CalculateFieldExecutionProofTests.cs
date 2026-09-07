@@ -252,16 +252,16 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         }
     }
 
-    private Task<HttpResponseMessage> PostCalculateAsync(string where, string calcExpression)
+    private async Task<HttpResponseMessage> PostCalculateAsync(string where, string calcExpression)
     {
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
             ["where"] = where,
             ["calcExpression"] = calcExpression
         });
 
-        return _fixture.Client.PostAsync(
+        return await _fixture.Client.PostAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_routeLayerId}/calculate", content);
     }
 

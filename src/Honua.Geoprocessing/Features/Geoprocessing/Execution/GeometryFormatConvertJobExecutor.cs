@@ -102,6 +102,20 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
             return JobExecutionResult.Failed("Invalid geometry conversion inputs: WKB payload decoded to no geometry.");
         }
 
+        // RFC 7946 fixes the GeoJSON coordinate reference system as WGS 84 lon/lat and
+        // has no CRS member, so emitting projected ordinates under that label would
+        // place the geometry wherever a standard consumer reads metres as degrees. An
+        // SRID-less input is admitted: the caller has asserted no CRS to contradict.
+        if (string.Equals(inputs.Target, "geojson", StringComparison.Ordinal)
+            && geometry.SRID is not (0 or Wgs84Srid))
+        {
+            Log.InvalidInputs(_logger, job.OperationId, $"projected SRID {geometry.SRID} for the geojson target");
+            return JobExecutionResult.Failed(
+                $"Invalid geometry conversion inputs: the 'geojson' target is RFC 7946, which is always WGS 84 " +
+                $"longitude/latitude, but the input declares SRID {geometry.SRID.ToString(CultureInfo.InvariantCulture)}. " +
+                "Reproject with 'geometry.project' first, or request 'ewkt' to keep the SRID inside the value.");
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(50, "Encoding geometry", cancellationToken).ConfigureAwait(false);
 
@@ -140,6 +154,9 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
     /// Re-encodes <paramref name="geometry"/> into <paramref name="target"/> and reports
     /// whether the artifact carries the value as text or as base64 bytes.
     /// </summary>
+    /// <summary>The only CRS RFC 7946 GeoJSON may carry.</summary>
+    private const int Wgs84Srid = 4326;
+
     private static (string Value, string Encoding) Encode(Geometry geometry, string target)
     {
         switch (target)
@@ -155,14 +172,18 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
                     ? string.Create(CultureInfo.InvariantCulture, $"SRID={geometry.SRID};{wkt}")
                     : wkt, "text");
             case "geojson":
-                // RFC 7946 geometry object. GeoJSON has no SRID member.
-                return (new GeoJsonWriter().Write(geometry), "text");
+                // RFC 7946 geometry object. GeoJSON has no SRID member, and section
+                // 3.1.6 fixes right-hand-rule winding, which the raw writer preserves
+                // from the input rather than enforcing.
+                return (new GeoJsonWriter().Write(EnforceRightHandRule(geometry)), "text");
             case "wkb":
-                // handleSRID round-trips an EWKB input as EWKB and a plain WKB
-                // input (SRID 0) as plain WKB.
+                // STANDARD WKB, never PostGIS EWKB: 'ewkb' is not an advertised target,
+                // and a WKB-only consumer rejects the SRID flag or misreads the type
+                // word it sets. The SRID is reported on the envelope instead; ask for
+                // 'ewkt' when the SRID must travel inside the value.
                 var writer = new WKBWriter(
                     ByteOrder.LittleEndian,
-                    handleSRID: geometry.SRID > 0,
+                    handleSRID: false,
                     emitZ: HasOrdinate(geometry, Ordinate.Z),
                     emitM: HasOrdinate(geometry, Ordinate.M));
                 return (Convert.ToBase64String(writer.Write(geometry)), "base64");
@@ -200,12 +221,48 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
         return ordinates;
     }
 
+    /// <summary>
+    /// Applies RFC 7946 section 3.1.6 winding: exterior rings counter-clockwise, holes
+    /// clockwise. Stored data is frequently clockwise-exterior (Esri applyEdits,
+    /// shapefile imports); the query path enforces the same rule in SQL with
+    /// <c>ST_ForcePolygonCCW</c>, and this is the managed counterpart for the
+    /// conversion path. Non-polygonal geometry passes through unchanged.
+    /// </summary>
+    private static Geometry EnforceRightHandRule(Geometry geometry) => geometry switch
+    {
+        Polygon polygon => geometry.Factory.CreatePolygon(
+            OrientRing(polygon.Shell, counterClockwise: true),
+            polygon.InteriorRings.Cast<LinearRing>()
+                .Select(ring => OrientRing(ring, counterClockwise: false)).ToArray()),
+        MultiPolygon multi => geometry.Factory.CreateMultiPolygon(
+            multi.Geometries.Cast<Polygon>()
+                .Select(polygon => (Polygon)EnforceRightHandRule(polygon)).ToArray()),
+        GeometryCollection collection and not MultiPolygon => geometry.Factory.CreateGeometryCollection(
+            collection.Geometries.Select(EnforceRightHandRule).ToArray()),
+        _ => geometry
+    };
+
+    private static LinearRing OrientRing(LinearRing ring, bool counterClockwise) =>
+        ring.IsCCW == counterClockwise ? ring : (LinearRing)ring.Reverse();
+
+    /// <summary>
+    /// Whether ANY coordinate in the geometry carries a finite ordinate. Inspecting
+    /// only the first coordinate silently drops the ordinate from every later vertex
+    /// when the first one happens to be 2D — including a mixed-dimension collection
+    /// whose first member is planar.
+    /// </summary>
     private static bool HasOrdinate(Geometry geometry, Ordinate ordinate)
     {
-        var value = ordinate == Ordinate.Z
-            ? geometry.Coordinate?.Z
-            : geometry.Coordinate?.M;
-        return value.HasValue && !double.IsNaN(value.Value);
+        foreach (var coordinate in geometry.Coordinates)
+        {
+            var value = ordinate == Ordinate.Z ? coordinate.Z : coordinate.M;
+            if (!double.IsNaN(value))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool TryReadInputs(
