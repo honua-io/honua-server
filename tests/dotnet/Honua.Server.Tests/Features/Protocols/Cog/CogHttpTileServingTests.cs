@@ -12,6 +12,8 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit;
@@ -20,6 +22,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.Cog;
@@ -69,6 +72,16 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
 
     private static readonly string FixtureDirectory = Path.Join(AppContext.BaseDirectory, "CogFixtures");
 
+    /// <summary>
+    /// A positive layer index with an ImageServer publication and no PostGIS raster
+    /// rows. The default seed's raster layer is 0, which the admin registration
+    /// endpoint rejects ("LayerId must be a positive integer"), and it also carries a
+    /// seeded raster that the handler would serve before ever reaching the COG
+    /// fallback. This layer has neither problem, so the COG path is the only way a
+    /// tile can be produced.
+    /// </summary>
+    private const int CogLayerId = 9101;
+
     private readonly string _objectKey = $"cog-proof/{Guid.NewGuid():N}/{Fixture}.tif";
     private readonly string _missingObjectKey = $"cog-proof/{Guid.NewGuid():N}/absent.tif";
 
@@ -115,10 +128,28 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
             });
         }
 
+        var graph = new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder()
+            .AddResource("cog-http-resource", "cog-http-resource", MetadataV2ResourceType.RasterDataset)
+            .AddStorageBinding("cog-http-binding", "cog-http-resource", "rasters", storageLayerId: CogLayerId)
+            .AddService("cog-http-service", "cog-http-service", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                "cog-http-publication",
+                "cog-http-service",
+                "cog-http-resource",
+                layerIndex: CogLayerId,
+                storageBindingId: "cog-http-binding",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
+
         _fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
             .ConfigureServices(services =>
             {
+                services.RemoveAll<IMetadataV2GraphProvider>();
+                services.RemoveAll<IMetadataV2GraphStore>();
+                services.AddSingleton<IMetadataV2GraphProvider>(graph);
+                services.AddSingleton<IMetadataV2GraphStore>(graph);
+
                 // Register the production S3 range reader against the emulator and wrap it
                 // in a recorder so the test can assert what was actually fetched. The
                 // recorder only observes; every byte still comes from AwsS3RangeReader.
@@ -140,7 +171,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
     {
         using var response = await _fixture.Client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", new
         {
-            layerId = WebAppFixture.TestLayerId,
+            layerId = CogLayerId,
             name,
             provider = "AwsS3",
             bucket = _bucket,
@@ -280,7 +311,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
         !string.IsNullOrWhiteSpace(_secretKey);
 
     private static string TileUrl(int level, int row, int col) => FormattableString.Invariant(
-        $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/tile/{level}/{row}/{col}?format=png");
+        $"/rest/services/{CogLayerId}/ImageServer/tile/{level}/{row}/{col}?format=png");
 
     private AmazonS3Client CreateClient()
     {
