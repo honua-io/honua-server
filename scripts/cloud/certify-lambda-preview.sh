@@ -272,7 +272,7 @@ create_json="$(aws lambda create-function \
   --vpc-config "file://$scratch/vpc.json" \
   --memory-size 1024 \
   --timeout 60 \
-  --tags "honua-cert-run=${run_token}" "honua-purpose=lambda-preview-certification" 2>"$scratch/create-error.log")" || {
+  --tags "honua-cert-run=${run_token},honua-purpose=lambda-preview-certification" 2>"$scratch/create-error.log")" || {
   echo "Lambda create failed" >&2
   report_create_error
   exit 5
