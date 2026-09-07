@@ -18,7 +18,6 @@ using Honua.ControlPlane;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -61,7 +60,6 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task FeatureProject_RealCatalogLayer_PublishesAnalyticalMercatorCoordinatesAndSrid()
     {
         using var provider = SourceServices();
@@ -79,7 +77,6 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task HonuaLayerSource_RealCatalogFilterBboxAndFields_PublishesExactProjectedSelection()
     {
         using var provider = SourceServices();
