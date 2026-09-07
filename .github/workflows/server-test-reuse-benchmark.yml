@@ -41,7 +41,7 @@ jobs:
       producers: ${{ steps.plan.outputs.producers }}
       reused_consumers: ${{ steps.plan.outputs.reused_consumers }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       - id: plan
         name: Validate and emit bounded matrices
         env:
@@ -77,7 +77,7 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       # NOT routed through ./.github/actions/setup-dotnet-ci — deliberate, and it
       # applies to every job in this workflow (see `baseline` and `reused-consumer`).
       #
@@ -194,7 +194,7 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       # Raw setup-dotnet, not ./.github/actions/setup-dotnet-ci — see the comment
       # on the `producer` job. Caching NuGet here would speed up only the baseline
       # arm and bias the gated comparison.
@@ -261,7 +261,7 @@ jobs:
         run: |
           epoch_ns="$(date +%s%N)"
           echo "epoch_ms=$(( epoch_ns / 1000000 ))" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       # Raw setup-dotnet, not ./.github/actions/setup-dotnet-ci — see the comment
       # on the `producer` job. This job restores nothing: it unpacks the producer
       # payload and runs `dotnet test --no-build --no-restore`
@@ -344,7 +344,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       - name: Download benchmark plan
         uses: actions/download-artifact@v8
         with:

@@ -34,7 +34,7 @@ jobs:
       HONUA_GP_OIDC_SIGNING_KEY: ${{ secrets.GP_QUALIFICATION_OIDC_SIGNING_KEY }}
       HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-resilience
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io

@@ -18,7 +18,7 @@ jobs:
       HONUA_GP_CANARY_TOKEN: ${{ secrets.GP_CANARY_TOKEN }}
       HONUA_GP_CANARY_RECEIPT: ${{ github.workspace }}/artifacts/gp-canary/receipt.json
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
       - name: Execute synchronous geometry.buffer canary
         run: scripts/qualification/gp-canary.sh
       - name: Record seven-run burn-in history
