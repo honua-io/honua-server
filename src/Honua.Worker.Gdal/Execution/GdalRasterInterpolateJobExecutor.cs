@@ -13,8 +13,8 @@ namespace Honua.Worker.Gdal.Execution;
 /// <summary>
 /// Native-profile <see cref="IProcessExecutor"/> for the raster interpolation
 /// family: <c>raster.interpolate-idw</c> (inverse-distance-weighted) backed by the
-/// GDAL <c>gdal_grid</c> CLI, and <c>raster.interpolate-kriging</c>, which is
-/// FLAGGED as unsupported in this build.
+/// GDAL <c>gdal_grid</c> CLI, and <c>raster.interpolate-kriging</c>, backed by the
+/// bundled NumPy ordinary-kriging solver.
 ///
 /// <para>
 /// IDW reads a base64-encoded GeoJSON point FeatureCollection from <c>points</c>,
@@ -22,10 +22,10 @@ namespace Honua.Worker.Gdal.Execution;
 /// the GeoTIFF as a canonical data-URI artifact.
 /// </para>
 /// <para>
-/// Kriging requires a kriging-capable numerical backend that the worker image does
-/// NOT bundle (stock GDAL <c>gdal_grid</c> has no kriging algorithm). Rather than
-/// silently substitute a different algorithm, the executor FAILS the job with a
-/// clear message so the limitation is explicit (#2141).
+/// Kriging cannot go through <c>gdal_grid</c> — stock GDAL has no kriging
+/// algorithm — so it routes to the bundled NumPy backend in
+/// <c>Scripts/gdal_ordinary_kriging.py</c> instead; see the
+/// <c>.Kriging.cs</c> partial for the ordinary-kriging contract (#3932).
 /// </para>
 /// Runs only inside the GDAL worker image — <see cref="AcceptedRuntimeProfiles"/>
 /// is <c>{ "native" }</c>.
@@ -38,18 +38,8 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
     /// <summary>Process id for inverse-distance-weighted interpolation.</summary>
     public const string IdwProcessId = "raster.interpolate-idw";
 
-    /// <summary>Process id for kriging interpolation (flagged unsupported).</summary>
+    /// <summary>Process id for ordinary-kriging interpolation.</summary>
     public const string KrigingProcessId = "raster.interpolate-kriging";
-
-    /// <summary>
-    /// Stable message published when a kriging job is submitted. Surfaced as the
-    /// job's failure reason so callers see the unsupported-dependency limitation
-    /// rather than a silent no-op or a substituted algorithm.
-    /// </summary>
-    public const string KrigingUnsupportedMessage =
-        "Kriging interpolation is not available in this build: the worker image does not bundle a "
-        + "kriging-capable numerical backend (stock GDAL gdal_grid has no kriging algorithm). "
-        + "Use raster.interpolate-idw for inverse-distance-weighted interpolation.";
 
     private const string GeoTiffContentType = "image/tiff; application=geotiff";
 
@@ -92,18 +82,17 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
                 $"Process id '{processId ?? "<none>"}' is not handled by the raster interpolation executor.");
         }
 
-        // Kriging is advertised but flagged: fail fast with a clear message instead
-        // of substituting IDW or producing a silent stub (#2141 acceptance).
+        var opts = options.CurrentValue;
+
+        // Kriging never reaches gdal_grid: stock GDAL has no kriging algorithm, so
+        // the operation routes to the bundled NumPy solver instead (#3932).
         if (string.Equals(processId, KrigingProcessId, StringComparison.Ordinal))
         {
-            Log.KrigingUnsupported(logger, job.OperationId);
-            return JobExecutionResult.Failed(KrigingUnsupportedMessage);
+            return await ExecuteKrigingAsync(job, context, parameters, opts, cancellationToken).ConfigureAwait(false);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing interpolation inputs", cancellationToken).ConfigureAwait(false);
-
-        var opts = options.CurrentValue;
 
         if (!TryBuildAlgorithm(parameters, out var algorithm, out var algorithmError))
         {
@@ -394,9 +383,5 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         [LoggerMessage(9325, LogLevel.Information,
             "GDAL raster interpolate executor completed job {OperationId}: bytes={Bytes}")]
         public static partial void InterpolationCompleted(ILogger logger, string operationId, long bytes);
-
-        [LoggerMessage(9326, LogLevel.Warning,
-            "GDAL raster interpolate executor refused job {OperationId}: kriging is flagged unsupported in this build")]
-        public static partial void KrigingUnsupported(ILogger logger, string operationId);
     }
 }

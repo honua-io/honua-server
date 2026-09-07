@@ -409,6 +409,16 @@ public sealed partial class RasterExecutionProofTests : IDisposable
 
     private async Task<byte[]> Execute(string id, params (string, string)[] inputs)
     {
+        var (result, context) = await ExecuteRaw(id, inputs);
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        context.Artifacts.Should().ContainSingle();
+        return GdalCli.DecodeDataUri(context.Artifacts[0]);
+    }
+
+    /// <summary>Runs a production executor and returns its raw outcome, including failures.</summary>
+    private async Task<(JobExecutionResult Result, RecordingJobExecutionContext Context)> ExecuteRaw(
+        string id, params (string, string)[] inputs)
+    {
         var options = GdalJobFactory.Options(_scratch);
         IProcessExecutor executor = id switch
         {
@@ -427,14 +437,12 @@ public sealed partial class RasterExecutionProofTests : IDisposable
             "raster.resample" => new GdalRasterResampleJobExecutor(_runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
             "raster.interpolate-idw" => new GdalRasterInterpolateJobExecutor(_runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
             "raster.histogram" => new GdalRasterStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterStatisticsJobExecutor>.Instance),
+            "raster.interpolate-kriging" => new GdalRasterInterpolateJobExecutor(_runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
             _ => throw new ArgumentOutOfRangeException(nameof(id))
         };
         var job = GdalJobFactory.Job(id, inputs);
         var context = new RecordingJobExecutionContext(job.OperationId);
-        var result = await executor.ExecuteAsync(job, context, CancellationToken.None);
-        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
-        context.Artifacts.Should().ContainSingle();
-        return GdalCli.DecodeDataUri(context.Artifacts[0]);
+        return (await executor.ExecuteAsync(job, context, CancellationToken.None), context);
     }
 
     private async Task<JsonElement> Decode(byte[] bytes)

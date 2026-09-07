@@ -12,8 +12,10 @@ namespace Honua.Worker.Gdal.Tests;
 
 /// <summary>
 /// Fake-runner coverage for <see cref="GdalRasterInterpolateJobExecutor"/>: the
-/// gdal_grid IDW argument projection plus the flagged Kriging path that fails fast
-/// with a clear unsupported-dependency message (no silent stub, #2141).
+/// gdal_grid IDW argument projection plus the kriging routing, which never reaches
+/// gdal_grid (stock GDAL has no kriging algorithm) and instead invokes the bundled
+/// NumPy solver script (#3932). Burned-value correctness lives in
+/// <c>RasterExecutionProofTests.Kriging.cs</c> against real GDAL.
 /// </summary>
 public sealed class GdalRasterInterpolateExecutorTests
 {
@@ -165,27 +167,91 @@ public sealed class GdalRasterInterpolateExecutorTests
     }
 
     [UnitTest]
-    public async Task Kriging_IsFlaggedUnsupported_FailsFastWithClearMessage_AndNeverRunsCli()
+    public async Task Kriging_RoutesToTheBundledNumPySolver_AndNeverToGdalGrid()
     {
-        var runner = FakeGdalCommandRunner.Failing(1, "should-not-run");
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("kriged-tif"));
         var executor = NewExecutor(runner, out var scratch);
         try
         {
-            // Even with valid inputs, kriging must fail fast with the unsupported
-            // message rather than silently substituting another algorithm.
             var job = GdalJobFactory.Job(
                 GdalRasterInterpolateJobExecutor.KrigingProcessId,
                 ("points", Base64("points")),
-                ("zField", "elevation"));
+                ("zField", "elevation"),
+                ("width", "8"),
+                ("height", "6"),
+                ("variogramModel", "exponential"),
+                ("nugget", "0.25"),
+                ("sill", "2"),
+                ("range", "5"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
             var result = await executor.ExecuteAsync(job, context, default);
 
-            result.Status.Should().Be(ExecutionJobStatus.Failed);
-            result.ErrorMessage.Should().Be(GdalRasterInterpolateJobExecutor.KrigingUnsupportedMessage);
-            result.ErrorMessage.Should().Contain("not available in this build");
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            context.Artifacts.Should().ContainSingle();
+            context.Artifacts[0].Should().StartWith("data:image/tiff");
+
+            var invocation = runner.Invocations.Single();
+            invocation.Tool.Should().Be("python3", "stock gdal_grid has no kriging algorithm");
+            invocation.Arguments[0].Should().EndWith(GdalRasterInterpolateJobExecutor.KrigingScript);
+            invocation.Arguments.Should().ContainInOrder("--model", "exponential");
+            invocation.Arguments.Should().ContainInOrder("--nugget", "0.25");
+            invocation.Arguments.Should().ContainInOrder("--sill", "2");
+            invocation.Arguments.Should().ContainInOrder("--range", "5");
+            invocation.Arguments.Should().ContainInOrder("--width", "8");
+            invocation.Arguments.Should().ContainInOrder("--height", "6");
+            invocation.Arguments.Should().ContainInOrder("--z-field", "elevation");
+            invocation.Arguments.Should().ContainInOrder("--max-samples", "2000");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Kriging_WithoutAGridOrARange_IsRejectedBeforeTheSolverRuns()
+    {
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("the kriging solver must not run for an incomplete request"));
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            // Kriging solves per target cell, so there is no implicit default grid,
+            // and no defensible default correlation length.
+            var noGrid = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.KrigingProcessId,
+                ("points", Base64("points")),
+                ("range", "5"));
+            var noGridResult = await executor.ExecuteAsync(
+                noGrid, new RecordingJobExecutionContext(noGrid.OperationId), default);
+            noGridResult.Status.Should().Be(ExecutionJobStatus.Failed);
+            noGridResult.ErrorMessage.Should().Contain("'width' and 'height' are required");
+
+            var noRange = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.KrigingProcessId,
+                ("points", Base64("points")),
+                ("width", "8"),
+                ("height", "6"));
+            var noRangeResult = await executor.ExecuteAsync(
+                noRange, new RecordingJobExecutionContext(noRange.OperationId), default);
+            noRangeResult.Status.Should().Be(ExecutionJobStatus.Failed);
+            noRangeResult.ErrorMessage.Should().Contain("'range' is required");
+
+            var illPosed = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.KrigingProcessId,
+                ("points", Base64("points")),
+                ("width", "8"),
+                ("height", "6"),
+                ("range", "5"),
+                ("nugget", "2"),
+                ("sill", "2"));
+            var illPosedResult = await executor.ExecuteAsync(
+                illPosed, new RecordingJobExecutionContext(illPosed.OperationId), default);
+            illPosedResult.Status.Should().Be(ExecutionJobStatus.Failed);
+            illPosedResult.ErrorMessage.Should().Contain("nugget < sill");
+
             runner.Invocations.Should().BeEmpty();
-            context.Artifacts.Should().BeEmpty();
         }
         finally
         {
