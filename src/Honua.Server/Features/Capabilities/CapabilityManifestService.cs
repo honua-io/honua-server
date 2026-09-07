@@ -103,15 +103,15 @@ internal sealed class CapabilityManifestService(
         var operationCapabilities = await ResolveOperationCapabilitiesAsync(request.Environment, cancellationToken)
             .ConfigureAwait(false);
 
-        // #2335 (B3): the registry-derived composition resolves each descriptor through
-        // the shared gate resolver (edition/experimental precedence). All descriptors
-        // stay Implemented today, so this produces the same wire document as the legacy
-        // hand-curated composition; the gate context is the seam T10 (#2346) flips.
+        // The registry-derived composition resolves protocol capabilities through
+        // the shared edition/experimental gate. File import/export availability is
+        // appended from the same direction descriptors in both composition modes.
         var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
 
         var capabilities = options.ManifestFromRegistry
             ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
+        capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
             : BuildPackages();
@@ -162,6 +162,39 @@ internal sealed class CapabilityManifestService(
 
         return manifest;
     }
+
+    private IEnumerable<CapabilityManifestCapability> BuildFileFormatCapabilities(
+        CapabilityPolicyContext context, ClaimsPrincipal principal)
+    {
+        var plugins = runtimeInventory.ActiveOutputFormats
+            .ToDictionary(format => "format.write." + format.FormatId.ToLowerInvariant(), StringComparer.Ordinal);
+        var emitted = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var descriptor in capabilityRegistry.All.Where(d => d.Category is "format-read" or "format-write"))
+        {
+            var read = descriptor.Category == "format-read";
+            var supported = descriptor.ImplementationStatus == CapabilityImplementationStatus.Served
+                || (!read && plugins.ContainsKey(descriptor.Id));
+            emitted.Add(descriptor.Id);
+            yield return Capability(descriptor.Id, descriptor.Category, context,
+                maturity: supported ? CapabilityMaturity.Implemented : descriptor.Maturity,
+                supported: supported,
+                configured: !read || runtimeInventory.HasFileImportService,
+                entitlementKey: read ? "import.file" : null,
+                requiresAuthentication: true,
+                callerAuthorized: CanUseFileFormats(principal, read),
+                unavailableReasonOverride: CapabilityReasonCodes.DependencyUnavailable);
+        }
+
+        foreach (var id in plugins.Keys.Order(StringComparer.Ordinal).Where(id => !emitted.Contains(id)))
+        {
+            yield return Capability(id, "format-write", context, requiresAuthentication: true,
+                callerAuthorized: CanUseFileFormats(principal, read: false));
+        }
+    }
+
+    private static bool CanUseFileFormats(ClaimsPrincipal principal, bool read) =>
+        (principal.IsInRole("admin") || principal.IsInRole(AdminApiKeyPermission.ScopedAdminRole))
+        && AdminApiKeyPermission.IsAuthorized(principal, read ? HttpMethods.Post : HttpMethods.Get);
 
     private async ValueTask<CapabilityManifestEnvironment> ResolveEnvironmentAsync(
         string? environment,
@@ -733,6 +766,7 @@ internal sealed class CapabilityManifestService(
         string[]? entitlementKeys = null,
         string? policyCapability = null,
         bool requiresAuthentication = false,
+        bool callerAuthorized = true,
         bool requiresEnvironment = false,
         bool requiresWorkspace = false,
         bool requiresDurableJobStore = false,
@@ -781,7 +815,7 @@ internal sealed class CapabilityManifestService(
             available = false;
             reasonCode = CapabilityReasonCodes.InsufficientPolicy;
         }
-        else if (requiresAuthentication && !context.Authenticated)
+        else if ((requiresAuthentication && !context.Authenticated) || !callerAuthorized)
         {
             available = false;
             reasonCode = CapabilityReasonCodes.InsufficientPolicy;

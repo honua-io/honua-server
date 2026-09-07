@@ -95,11 +95,6 @@ public sealed class CapabilityRegistryConformanceTests
         "operate.status",
     ];
 
-    // Format descriptors that intentionally exist beyond the SupportedFileFormat
-    // import enum: writer/codec-backed formats (EsriJsonWkbWriter, WKT/WKB codecs).
-    private static readonly HashSet<string> NonImportFormatNames =
-        new(StringComparer.Ordinal) { "esrijson", "wkb" };
-
     [UnitTest]
     public void Registry_IsNotEmpty()
     {
@@ -122,14 +117,20 @@ public sealed class CapabilityRegistryConformanceTests
     }
 
     [UnitTest]
-    public void Resolve_EnablesEveryRegisteredCapability_AndRejectsUnknown()
+    public void Resolve_RespectsImplementationAndOptIn_AndRejectsUnknown()
     {
         var context = CapabilityGateContext.Default;
 
         foreach (var descriptor in Registry.All)
         {
             var resolution = Registry.Resolve(descriptor.Id, context);
-            if (descriptor.Id is "serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages")
+            if (descriptor.ImplementationStatus == CapabilityImplementationStatus.KnownGap)
+            {
+                resolution.Enabled.Should().BeFalse(
+                    $"unimplemented capability '{descriptor.Id}' cannot be served");
+                resolution.ReasonCode.Should().Be(CapabilityReasonCodes.NotImplemented);
+            }
+            else if (descriptor.Id is "serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages")
             {
                 descriptor.Maturity.Should().Be(CapabilityMaturity.Preview);
                 descriptor.RequiresOptIn.Should().BeFalse();
@@ -275,14 +276,39 @@ public sealed class CapabilityRegistryConformanceTests
         var importFormatNames = Enum.GetValues<SupportedFileFormat>()
             .Select(f => f.ToString().ToLowerInvariant())
             .ToHashSet(StringComparer.Ordinal);
+        var writers = Honua.Io.Export.BuiltInExportFormats.Dispatch.Values
+            .Select(format => format.ToString().ToLowerInvariant()).ToHashSet(StringComparer.Ordinal);
 
         foreach (var descriptor in Registry.All
                      .Where(d => d.Id.StartsWith(CapabilityRegistry.DataFormatIdPrefix, StringComparison.Ordinal)))
         {
-            var name = descriptor.Id[CapabilityRegistry.DataFormatIdPrefix.Length..];
-            (importFormatNames.Contains(name) || NonImportFormatNames.Contains(name)).Should().BeTrue(
-                $"format descriptor '{descriptor.Id}' must map to a SupportedFileFormat member or a known writer/codec format");
+            var name = descriptor.StandardName!;
+            (importFormatNames.Contains(name) || writers.Contains(name)).Should().BeTrue(
+                $"format descriptor '{descriptor.Id}' must map to an import format or a built-in export writer");
         }
+
+        foreach (var name in importFormatNames.Union(writers))
+        {
+            AssertDirection("read", name, importFormatNames.Contains(name));
+            AssertDirection("write", name, writers.Contains(name));
+        }
+
+        Registry.All.Where(d => d.Category == "format-write" && d.ImplementationStatus == CapabilityImplementationStatus.Served)
+            .Select(d => d.StandardName).Should().BeEquivalentTo(writers);
+        Honua.Io.Export.BuiltInExportFormats.Dispatch.Values.Should()
+            .BeEquivalentTo(Enum.GetValues<Honua.Io.Export.BuiltInExportFormat>());
+    }
+
+    private static void AssertDirection(string direction, string name, bool served)
+    {
+        var descriptor = Registry.Find($"format.{direction}.{name}");
+        descriptor.Should().NotBeNull();
+        descriptor!.Maturity.Should().Be(served ? CapabilityMaturity.Implemented : CapabilityMaturity.Planned);
+        descriptor.ImplementationStatus.Should().Be(served ? CapabilityImplementationStatus.Served : CapabilityImplementationStatus.KnownGap);
+        var resolution = Registry.Resolve(descriptor.Id, CapabilityGateContext.Default);
+        resolution.Enabled.Should().Be(served);
+        resolution.ReasonCode.Should().Be(served ? null : CapabilityReasonCodes.NotImplemented);
+        FormatCapabilityGate.Evaluate($"{direction}.{name}").IsBlocked.Should().Be(!served);
     }
 
     // -----------------------------------------------------------------------

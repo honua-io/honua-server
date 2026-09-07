@@ -5,6 +5,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Plugins.Abstractions;
 
 namespace Honua.Server.Features.Capabilities;
 
@@ -20,7 +22,9 @@ internal sealed class CapabilityManifestRuntimeInventory(
     IEnumerable<IOpsAutonomyPolicyStore> opsAutonomyPolicyStores,
     IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
     IEnumerable<IFeatureDataProvider> featureDataProviders,
-    IWebHostEnvironment hostEnvironment)
+    IWebHostEnvironment hostEnvironment,
+    IServiceProviderIsService serviceInventory,
+    IFeatureOutputFormatRegistry outputFormats)
 {
     public IReadOnlyList<IBatchComputeBackend> BatchBackends { get; } = batchBackends.ToArray();
 
@@ -37,4 +41,9 @@ internal sealed class CapabilityManifestRuntimeInventory(
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     public string EnvironmentName { get; } = hostEnvironment.EnvironmentName;
+
+    public bool HasFileImportService { get; } = serviceInventory.IsService(typeof(IFileImportService));
+
+    public IReadOnlyCollection<PluginOutputFormatDescriptor> ActiveOutputFormats => outputFormats.HasFormats
+        ? outputFormats.AdvertisedFormats : [];
 }

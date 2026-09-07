@@ -394,16 +394,16 @@ internal sealed class ExportJobService(
         // rooted and the Path.Combine calls below cannot silently drop scratchDir.
         var baseName = ExportEndpoints.SanitizeExportFilename(job.ServiceName, job.LayerName);
 
-        switch (job.Format.ToLowerInvariant())
+        switch (BuiltInExportFormats.Resolve(job.Format))
         {
-            case "csv":
+            case BuiltInExportFormat.Csv:
                 {
                     var csvPath = Path.Join(scratchDir, $"{baseName}.csv");
                     await using var stream = File.Create(csvPath);
                     var writtenCount = await CsvExportWriter.WriteAsync(stream, features, job.Fields, cancellationToken).ConfigureAwait(false);
                     return new ExportFileResult(csvPath, writtenCount, []);
                 }
-            case "shapefile":
+            case BuiltInExportFormat.Shapefile:
                 {
                     var zipPath = Path.Join(scratchDir, $"{baseName}.zip");
                     await using var stream = File.Create(zipPath);
@@ -411,7 +411,7 @@ internal sealed class ExportJobService(
                         stream, features, job.Fields, job.GeometryType, srsWkt, logger, cancellationToken).ConfigureAwait(false);
                     return new ExportFileResult(zipPath, result.WrittenCount, result.Warnings);
                 }
-            case "gpkg":
+            case BuiltInExportFormat.GeoPackage:
                 {
                     var gpkgPath = Path.Join(scratchDir, $"{baseName}.gpkg");
                     var writtenCount = await GeoPackageExportWriter.WriteAsync(

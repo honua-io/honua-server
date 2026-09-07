@@ -4,8 +4,10 @@
 using System.IO.Compression;
 using System.Net;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Threading.Channels;
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -44,6 +46,33 @@ public sealed class ExportEndpointTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData("geojson")]
+    [InlineData("gpx")]
+    [InlineData("kml")]
+    [InlineData("gml")]
+    [InlineData("wkt")]
+    [InlineData("filegdb")]
+    [InlineData("flatgeobuf")]
+    [InlineData("geoparquet")]
+    [InlineData("esrijson")]
+    [InlineData("wkb")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    public async Task Export_DeclaredWriterGap_RejectsBeforeLayerLookup(string format)
+    {
+        var registry = new CapabilityRegistry();
+        var descriptor = registry.Find($"format.write.{format}");
+        descriptor.Should().NotBeNull();
+        descriptor!.ImplementationStatus.Should().Be(CapabilityImplementationStatus.KnownGap);
+        registry.Resolve(descriptor.Id, CapabilityGateContext.Default).Enabled.Should().BeFalse();
+        var response = await _client.GetAsync($"/api/v1/admin/services/nonexistent/layers/0/export?format={format}");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("detail").GetString().Should()
+            .Be($"Invalid export format '{format}'. Valid formats: csv, shapefile, gpkg");
     }
 
     [IntegrationTest]
@@ -116,7 +145,8 @@ public sealed class ExportEndpointTests : IAsyncLifetime
             var connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = tempPath,
-                Mode = SqliteOpenMode.ReadOnly
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
             }.ToString();
 
             await using var connection = new SqliteConnection(connectionString);

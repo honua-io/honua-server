@@ -100,6 +100,23 @@ JSON (`application/json`) responses by default; geometry is emitted as GeoJSON-s
 
 Large exports queue as background jobs. See [export data guide](../guides/query-analyze/export-data.md).
 
+The capability registry and `GET /api/v1/capabilities/manifest` distinguish `format.read.<name>` (file import) from
+`format.write.<name>` (admin file export). Only `csv`, `shapefile`, and
+`geopackage` have implemented file-write descriptors; the GeoPackage endpoint token
+is `gpkg`. The other ten file-write descriptors are planned, known implementation
+gaps in the built-in writer registry. The live manifest also includes licensed,
+enabled plugin writers, including a plugin that fills a built-in format gap.
+Its request-scoped `available` field checks admin permissions (import requires
+write authority; synchronous export allows admin read authority). Readers also
+require the active provider to register the file-import service and the import
+entitlement; a missing service reports `dependency-unavailable`.
+
+The original `format.<name>` identifiers describe shared codec and protocol format
+support. They do not promise a writer at the admin export endpoint. For example,
+GeoJSON query responses and GeoParquet query exports remain supported through the
+protocol routes listed above even though those formats have no built-in admin
+file-export writer.
+
 ### Tiles, maps, and coverages
 
 | Surface | Output |
