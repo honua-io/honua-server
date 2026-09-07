@@ -40,11 +40,11 @@ Executed on 2026-09-06 using the Windows .NET SDK 10.0.100, Release configuratio
 
 | Check | Result |
 | --- | --- |
-| Affected alert endpoint, operations, floor, and isolation suites | 48 passed, 0 failed, 0 skipped |
+| Affected alert endpoint, operations, floor, and isolation suites, including all four review regression cases | 52 passed, 0 failed, 0 skipped |
 | Postgres audit persistence, chain, retention, and truncation suites | 26 passed, 0 failed, 0 skipped |
 | MCP taxonomy and capability registry conformance | 68 passed, 0 failed, 0 skipped |
-| Server Fast suite | 4078 passed, 0 failed, 0 skipped |
-| Final endpoint metadata, API coverage, and catalog checks | 15 passed, 0 failed, 0 skipped |
+| Server Fast suite plus final request-disposal regression | 4079 passed, 0 failed, 0 skipped |
+| Full architecture after explicit transaction changes and catalog regeneration | 287 passed, 0 failed, 0 skipped |
 | Tenant claim casing regression before the fix | 2 failed, 6 passed; both failures reached the forbidden instance-store delegate |
 | Changed-file `dotnet format` and `--verify-no-changes` | Passed |
 
@@ -56,7 +56,7 @@ The full architecture run passed 286 checks and identified one missing endpoint
 annotation; the final 15-check run above verifies that correction. Native Fast
 validation also required canonical LF output in the parity-export generator and
 coordinated renewal-file access and asynchronous shutdown in the license fixture.
-All renewal assertions remain intact. Documentation validation passed 2056 link
+All renewal assertions remain intact. One intermediate Fast run hit the existing streaming cancellation deadline race under concurrent native load (4077 passed, 1 failed); the unchanged streaming assertion passed in the final full Fast rerun above. Documentation validation passed 2056 link
 targets and 13 code-referenced anchors, with 14 pre-existing allowlisted warnings.
 
 See the [alert rule design](../design/realtime-alert-rules.md) for the endpoint contract.
