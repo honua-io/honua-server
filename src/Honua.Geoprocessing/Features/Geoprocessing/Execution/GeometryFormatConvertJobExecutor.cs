@@ -102,6 +102,15 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
             return JobExecutionResult.Failed("Invalid geometry conversion inputs: WKB payload decoded to no geometry.");
         }
 
+        // NTS leaves a plain (non-EWKB) input at its factory's default SRID, which is
+        // -1, not 0. PostGIS spells "no SRID" as 0 and every output below keys off that,
+        // so normalise once here rather than leaking a negative sentinel into the
+        // envelope or letting it trip the WGS 84 gate.
+        if (geometry.SRID < 0)
+        {
+            geometry.SRID = 0;
+        }
+
         // RFC 7946 fixes the GeoJSON coordinate reference system as WGS 84 lon/lat and
         // has no CRS member, so emitting projected ordinates under that label would
         // place the geometry wherever a standard consumer reads metres as degrees. An
