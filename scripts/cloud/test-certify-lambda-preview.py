@@ -222,6 +222,8 @@ log = "REPORT RequestId: offline-id Duration: 20.00 ms Billed Duration: 30 ms In
 if fail == "report": log = "no report"
 if fail == "cold-start": log = "REPORT RequestId: offline-id Duration: 20.00 ms"
 if fail == "cold-zero": log = "REPORT RequestId: offline-id Init Duration: 0 ms"
+if fail == "init-error": log = "INIT_REPORT Init Duration: 21364.18 ms\tPhase: invoke\tStatus: error\nREPORT RequestId: offline-id Duration: 20.00 ms"
+if os.environ.get("STUB_INIT_PHASE") == "invoke": log = "INIT_REPORT Init Duration: 21364.18 ms\tPhase: invoke\tStatus: ok\nREPORT RequestId: offline-id Duration: 20.00 ms Billed Duration: 30 ms"
 response_path.write_text(json.dumps({"statusCode":status,"body":body if isinstance(body,str) else json.dumps(body)}))
 meta = {"StatusCode":200,"ExecutedVersion":"99" if fail == "executed-version" else version,"LogResult":base64.b64encode(log.encode()).decode()}
 if fail == "invoke": meta["FunctionError"] = "Unhandled"
@@ -293,6 +295,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertEqual("pass", receipt["result"])
                 self.assertEqual(architecture, receipt["deployment"]["architecture"])
                 self.assertEqual(150.25, receipt["verification"]["coldStartInitDurationMs"])
+                self.assertEqual("init", receipt["verification"]["coldStartInitPhase"])
                 serving = receipt["serving"]
                 self.assertEqual({"beforeVersion":"7", "afterVersion":"8", "rollbackVersion":"7"}, serving["alias"])
                 for phase in ("deployed", "baseline", "candidate", "rollback"):
@@ -344,7 +347,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
     def test_each_check_fails_closed(self):
         for failure in ("architecture", "ecr-platform", "revision", "adapter", "digest", "mirror", "layers", "rootfs",
                         "skip-config", "missing-db", "resolved-image", "health-status", "health-body", "invoke",
-                        "report", "cold-start", "cold-zero", "cloudwatch", "migrations", "migration-pending", "migration-plan",
+                        "report", "cold-start", "cold-zero", "init-error", "cloudwatch", "migrations", "migration-pending", "migration-plan",
                         "query", "fixture-names", "create", "readback", "delete", "delete-remains",
                         "denial-status", "denial-body", "denial-records", "denial-nested", "scoped-unauthenticated", "scoped-allowed", "scoped-records", "executed-version", "weighted",
                         "function-delete", "log-delete", "version-delete", "ownership", "get-function-transient"):
@@ -358,6 +361,14 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 if failure not in ("log-delete", "ownership"):
                     self.assertFalse(state["logs"], failure)
                 self.assertFalse(state["row"], failure)
+
+    def test_cold_start_beyond_the_init_window_is_recorded_from_init_report(self):
+        """Init longer than Lambda's init window is re-run in the first invoke; its INIT_REPORT is the evidence."""
+        result, receipt, state, _ = self.run_lane(STUB_INIT_PHASE="invoke")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("pass", receipt["result"])
+        self.assertEqual(21364.18, receipt["verification"]["coldStartInitDurationMs"])
+        self.assertEqual("invoke", receipt["verification"]["coldStartInitPhase"])
 
     def test_indeterminate_get_function_is_never_recorded_as_deletion(self):
         """A throttle or service error during teardown must not publish teardown.functionDeleted."""

@@ -350,9 +350,24 @@ if [[ -z "$request_id" ]]; then
   exit 9
 fi
 
-cold_start_ms="$(sed -nE 's/^REPORT .*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$tail_log")"
+# A cold start reports its Init Duration on the REPORT line when the runtime
+# initialized inside Lambda's init window. When initialization exceeds that
+# window (the twelfth live run: ~21 s to resolve secrets and open the database
+# over the VPC, the runtime re-runs it during the first invoke and the only
+# Init Duration is on an INIT_REPORT line with "Phase: invoke". Both are cold
+# starts of this exact function; record which phase carried it so the
+# operating envelope is visible in the receipt. An INIT_REPORT whose Status is
+# error or timeout is not evidence of a served cold start.
+cold_start_phase="init"
+cold_start_ms="$(sed -nE 's/^REPORT .*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$tail_log" | tail -n 1)"
+if [[ -z "$cold_start_ms" ]]; then
+  init_report="$(grep -E '^INIT_REPORT[[:space:]].*Init Duration: ' <<<"$tail_log" | grep -vE 'Status: (error|timeout)' | tail -n 1 || true)"
+  cold_start_ms="$(sed -nE 's/^INIT_REPORT[[:space:]].*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$init_report")"
+  cold_start_phase="$(sed -nE 's/.*Phase: ([a-z]+).*/\1/p' <<<"$init_report")"
+  cold_start_phase="${cold_start_phase:-invoke}"
+fi
 if [[ -z "$cold_start_ms" ]] || ! awk -v value="$cold_start_ms" 'BEGIN { exit !(value > 0) }'; then
-  echo "first invoke REPORT has no positive cold-start Init Duration" >&2
+  echo "first invoke REPORT/INIT_REPORT has no positive cold-start Init Duration" >&2
   exit 14
 fi
 
@@ -394,6 +409,7 @@ mkdir -p "$(dirname "$HONUA_LAMBDA_PREVIEW_RECEIPT")"
 jq -n \
   --arg architecture "$HONUA_LAMBDA_ARCHITECTURE" \
   --argjson cold_start_ms "$cold_start_ms" \
+  --arg cold_start_phase "$cold_start_phase" \
   --argjson serving "$serving_proof" \
   --arg schema "honua.lambda-preview-certification/v1" \
   --arg server_revision "$HONUA_LAMBDA_SERVER_REVISION" \
@@ -408,7 +424,7 @@ jq -n \
   --arg function_fingerprint "$(fingerprint "$function_name")" \
   --arg request_fingerprint "$(fingerprint "$request_id")" \
   --arg run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${GITHUB_RUN_ID}" \
-  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourcePlatformDigest:$source_platform_digest,sourceConfigDigest:$source_config_digest,sourceRootfsFingerprint:$source_rootfs_fingerprint,ecrDigest:$ecr_digest,repositoryFingerprint:$repository_fingerprint,mirrorTool:"crane",configDigestPreserved:true,rootfsPreserved:true,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
+  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourcePlatformDigest:$source_platform_digest,sourceConfigDigest:$source_config_digest,sourceRootfsFingerprint:$source_rootfs_fingerprint,ecrDigest:$ecr_digest,repositoryFingerprint:$repository_fingerprint,mirrorTool:"crane",configDigestPreserved:true,rootfsPreserved:true,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,coldStartInitPhase:$cold_start_phase,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
   > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
 
 jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourcePlatformDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourceConfigDigest | test("^sha256:[0-9a-f]{64}$")) and .artifact.configDigestPreserved and .artifact.rootfsPreserved and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and .verification.coldStartInitDurationMs > 0' \
