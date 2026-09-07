@@ -26,6 +26,7 @@ internal static class ObservabilityAlertEndpoints
         // credential, while the mutating POSTs (acknowledge/suppress/resolve) still require full admin
         // write — the ops-read policy is method-aware.
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/observability/alerts")
+            .AddEndpointFilter<AlertAdminIsolationFilter>()
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Observability", "Alerts")
