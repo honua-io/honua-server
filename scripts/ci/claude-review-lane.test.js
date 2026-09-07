@@ -101,7 +101,12 @@ test('completed exact-head reviews are visibly deduplicated before review', () =
 
 test('the resolved PR/head is the in-flight Claude dedupe key', () => {
   assert.match(source, /^  resolve:\n/m);
-  assert.match(source, /skip: \$\{\{ steps\.target\.outputs\.skip \}\}/);
+  // A shed subject short-circuits to `skip: true` without ever reaching the
+  // resolver; every other outcome is still the resolver's to decide.
+  assert.match(
+    source,
+    /skip: \$\{\{ steps\.stale\.outputs\.superseded == 'true' && 'true' \|\| steps\.target\.outputs\.skip \}\}/,
+  );
   assert.match(
     source,
     /needs: resolve\n\s+if: needs\.resolve\.outputs\.skip == 'false'/,

@@ -153,6 +153,39 @@ Bridge delivery is intentionally best-effort. It improves status freshness but
 is never used as proof that review evidence is still valid. The merge train is
 a manual batch merge authority and re-attests from source evidence twice.
 
+### Shedding a superseded subject
+
+A review event is worth trusted work only while its subject can still consume
+the result, and there are two moments where that can stop being true:
+
+1. **When the event arrives.** `resolve` (and the bridge) compares the event's
+   subject SHA with the PR's live head and sheds a closed PR or a moved head
+   before admitting `attest`.
+2. **When the trusted job finally starts.** `attest` serializes on the PR number
+   with `cancel-in-progress: false`, deliberately, so it can queue behind other
+   events for minutes. The PR can merge, or move on, inside that queue. `attest`
+   therefore re-reads the pull request as its first step — before the checkout,
+   the policy digest, and the bounded GraphQL snapshot — and sheds a subject that
+   went stale while it waited. Measured on trunk before this check existed, 27 of
+   63 sampled `attest` failures (43%) were `pull request is not open`: the whole
+   trusted job spent to stamp a red `Review Gate` status onto an already-merged
+   commit.
+
+Both sheds are **neutral and one-directional**. They write no commit status,
+fail no run, and record one job-summary line. They can only *withhold* an
+attestation, never publish one, so shedding can never admit a pull request that
+would otherwise have been blocked — it can only withhold a status that no
+admission could have consumed. `reopened` re-fires the workflow, and a head that
+moved is always re-attested by its own `synchronize` event, because the resolve
+concurrency group only ever cancels an *older* run. An event that names no
+subject SHA — `issue_comment`, the highest-volume trigger — deliberately binds
+to the live head and is never shed on staleness: its entire purpose is that
+review evidence moved while the head did not.
+
+`claude-review.yml` applies the same rule one step earlier, deciding closed,
+draft, and moved subjects from the API before it checks out the trusted reviewer
+policy at all.
+
 Closing and reopening a PR can create multiple runs for an unchanged head. The
 dispatcher deterministically selects the newest canonical run by GitHub
 creation time and run ID; older runs remain historical evidence. An admission

@@ -49,6 +49,10 @@ jobs:
       pull-requests: read
     outputs:
       pr: ${{ steps.target.outputs.result }}
+      # The subject `attest` was admitted for. It re-checks this against the
+      # live head, because `attest` serializes and the subject can go stale
+      # while it queues.
+      head: ${{ steps.stale.outputs.subject_head }}
     steps:
       - name: Shed superseded review event
         id: stale
@@ -75,6 +79,11 @@ jobs:
             const eventHead = context.payload.workflow_run?.head_sha ||
               context.payload.pull_request?.head?.sha ||
               context.payload.client_payload?.head_sha;
+            // Carry the subject forward so the trusted job can re-decide
+            // staleness at the moment it actually starts. An issue_comment
+            // names no SHA and deliberately leaves this empty: its whole point
+            // is that review evidence moved under an unchanged head.
+            if (eventHead) core.setOutput('subject_head', eventHead);
             // Only the workflow_run association fallback needs a subject SHA. An
             // issue_comment carries no SHA but does name its pull request, so it
             // still reaches the closed-subject check below.
@@ -147,7 +156,59 @@ jobs:
       # recording the result. The next event observes the serialized result.
       cancel-in-progress: false
     steps:
+      - name: Shed superseded review subject
+        id: subject
+        uses: actions/github-script@v9
+        env:
+          PR: ${{ needs.resolve.outputs.pr }}
+          SUBJECT_HEAD: ${{ needs.resolve.outputs.head }}
+        with:
+          script: |
+            // THE SECOND STALENESS WINDOW. `resolve` already sheds an event whose
+            // subject is stale when the event arrives. This job then serializes
+            // behind every other event for the same pull request -- deliberately,
+            // `cancel-in-progress: false` -- so the subject it was admitted for can
+            // go stale while it waits in that queue. The shed in `resolve` cannot
+            // see that; only this step, at the moment the trusted job starts, can.
+            //
+            // Left unshed, the queued attestation spends the whole trusted job to
+            // stamp a RED `Review Gate` status onto a commit no admission can
+            // consume, because `pull request is not open` is scored as a blocking
+            // reason. Measured on trunk: 27 of 63 sampled `attest` failures (43%)
+            // were exactly that, and every one of them ran the full GraphQL
+            // snapshot and admission evaluation first (#3213).
+            //
+            // The shed is NEUTRAL and ONE-DIRECTIONAL: it writes no commit status,
+            // fails nothing, and can only WITHHOLD an attestation. It can never
+            // publish one, so it cannot admit a pull request that would otherwise
+            // have been blocked. `reopened` re-fires this workflow.
+            const shed = async reason => {
+              core.notice(`superseded: ${reason}`);
+              core.summary.addRaw(`Shed superseded review subject: ${reason}`, true);
+              await core.summary.write();
+              core.setOutput('superseded', 'true');
+            };
+
+            const prNumber = Number(process.env.PR);
+            const subjectHead = process.env.SUBJECT_HEAD || '';
+            const { data: pull } = await github.rest.pulls.get({
+              ...context.repo, pull_number: prNumber,
+            });
+            if (pull.state !== 'open') {
+              return shed(
+                `PR #${prNumber} became ${pull.state} while this attestation queued`);
+            }
+            // A head that moved is always re-attested by its own `synchronize`
+            // event: the resolve concurrency group only ever cancels an OLDER run,
+            // so the newest head always reaches this job. An event that names no
+            // subject SHA binds to the live head instead and must not shed here.
+            if (subjectHead && pull.head.sha !== subjectHead) {
+              return shed(
+                `subject ${subjectHead} is no longer head ${pull.head.sha} for PR #${prNumber}`);
+            }
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: steps.subject.outputs.superseded != 'true'
         with:
           # Pin the exact trusted commit containing this workflow. A moving
           # default branch must not change policy halfway through attestation.
@@ -156,6 +217,7 @@ jobs:
 
       - id: policy
         name: Bind the immutable review-first measurement policy
+        if: steps.subject.outputs.superseded != 'true'
         run: |
           node scripts/ci/review-first-evidence-ledger.js policy-digest \
             --root . \
@@ -164,6 +226,7 @@ jobs:
 
       - name: Attest current PR head
         id: attest
+        if: steps.subject.outputs.superseded != 'true'
         uses: actions/github-script@v9
         env:
           REVIEW_FIRST_POLICY_DIGEST: ${{ steps.policy.outputs.measurement_policy_digest }}
