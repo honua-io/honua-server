@@ -236,47 +236,47 @@ public static class MvtTileDecoder
             {
                 case MoveTo:
                 case LineTo:
-                {
-                    if (index + (count * 2) > commands.Count)
                     {
-                        throw new InvalidDataException(
-                            $"Layer '{layerName}' has a geometry command running past the end of the stream.");
-                    }
-
-                    for (var i = 0; i < count; i++)
-                    {
-                        x += ZigZag(commands[index++]);
-                        y += ZigZag(commands[index++]);
-                        if (id == MoveTo)
-                        {
-                            current = [];
-                            rings.Add(current);
-                        }
-
-                        if (current is null)
+                        if (index + (count * 2) > commands.Count)
                         {
                             throw new InvalidDataException(
-                                $"Layer '{layerName}' has a LineTo before any MoveTo.");
+                                $"Layer '{layerName}' has a geometry command running past the end of the stream.");
                         }
 
-                        current.Add(new MvtPoint(x, y));
-                    }
+                        for (var i = 0; i < count; i++)
+                        {
+                            x += ZigZag(commands[index++]);
+                            y += ZigZag(commands[index++]);
+                            if (id == MoveTo)
+                            {
+                                current = [];
+                                rings.Add(current);
+                            }
 
-                    break;
-                }
+                            if (current is null)
+                            {
+                                throw new InvalidDataException(
+                                    $"Layer '{layerName}' has a LineTo before any MoveTo.");
+                            }
+
+                            current.Add(new MvtPoint(x, y));
+                        }
+
+                        break;
+                    }
 
                 case ClosePath:
-                {
-                    if (current is null or { Count: 0 })
                     {
-                        throw new InvalidDataException($"Layer '{layerName}' has a ClosePath with no open ring.");
-                    }
+                        if (current is null or { Count: 0 })
+                        {
+                            throw new InvalidDataException($"Layer '{layerName}' has a ClosePath with no open ring.");
+                        }
 
-                    // The spec omits the repeated closing vertex on the wire; materialize it so a
-                    // caller can compare rings to source geometry directly.
-                    current.Add(current[0]);
-                    break;
-                }
+                        // The spec omits the repeated closing vertex on the wire; materialize it so a
+                        // caller can compare rings to source geometry directly.
+                        current.Add(current[0]);
+                        break;
+                    }
 
                 default:
                     throw new InvalidDataException(
