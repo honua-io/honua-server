@@ -214,6 +214,17 @@ public sealed class DeniedPrincipalZeroRecordsTests
         using var identifiers = new NpgsqlCommandBuilder();
         var schema = identifiers.QuoteIdentifier(fixture.CurrentSchema!);
 
+        // Clear the fixture's sample rows from the two layers under test, in this
+        // fixture's own isolated schema. Without this the layers also hold the seed
+        // corpus and "exactly the allowed ids" could only be asserted as "contains" —
+        // which would no longer distinguish an allowed read from an over-broad one.
+        await using (var clear = new NpgsqlCommand(
+            $"DELETE FROM {schema}.features WHERE layer_id IN ({AllowedLayerId}, {DeniedLayerId});",
+            connection))
+        {
+            await clear.ExecuteNonQueryAsync(ct);
+        }
+
         await using var seed = new NpgsqlCommand($$"""
             INSERT INTO {{schema}}.features(objectid, layer_id, geometry, attributes) VALUES
               ({{AllowedObjectId}}, {{AllowedLayerId}}, ST_SetSRID(ST_MakePoint(-122.41, 37.77), 4326), '{"name":"{{AllowedMarker}}"}'),
@@ -224,12 +235,25 @@ public sealed class DeniedPrincipalZeroRecordsTests
         await seed.ExecuteNonQueryAsync(ct);
 
         // The denied resource must genuinely hold rows, otherwise "zero records" is
-        // vacuous. Read them straight out of PostGIS before any HTTP call.
-        await using var verify = new NpgsqlCommand(
-            $"SELECT count(*) FROM {schema}.features WHERE layer_id = {DeniedLayerId} AND objectid IN ({DeniedObjectId}, {DeniedSecondObjectId});",
-            connection);
-        var stored = Convert.ToInt64(await verify.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
-        stored.Should().Be(2, "the denied resource must hold real, non-empty rows");
+        // vacuous — and each layer must hold exactly the two rows seeded above, so the
+        // response-level set assertions below are exact. Both facts are read straight
+        // out of PostGIS with direct SQL, before any HTTP call, so the expectation is
+        // independent of anything the server returns.
+        foreach (var (layerId, first, second) in new[]
+                 {
+                     (DeniedLayerId, DeniedObjectId, DeniedSecondObjectId),
+                     (AllowedLayerId, AllowedObjectId, AllowedSecondObjectId),
+                 })
+        {
+            await using var verify = new NpgsqlCommand(
+                $"SELECT count(*) FILTER (WHERE objectid IN ({first}, {second})), count(*) "
+                + $"FROM {schema}.features WHERE layer_id = {layerId};",
+                connection);
+            await using var reader = await verify.ExecuteReaderAsync(ct);
+            (await reader.ReadAsync(ct)).Should().BeTrue();
+            reader.GetInt64(0).Should().Be(2, "layer {0} must hold the two seeded rows", layerId);
+            reader.GetInt64(1).Should().Be(2, "layer {0} must hold nothing else", layerId);
+        }
     }
 
     private static async Task<PortalTokenIssuance> IssueAllowedCredentialAsync(
