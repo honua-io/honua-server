@@ -15,7 +15,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// <c>gdal_grid -outsize &lt;width&gt; &lt;height&gt;</c> take an explicit output
 /// canvas size straight from caller input. A request can supply a tiny vector input
 /// yet ask for an enormous output raster — GDAL then allocates the
-/// width×height×bands×dtype OUTPUT grid → OOM. <see cref="TryAdmit"/> bounds that
+/// width×height×bands×dtype OUTPUT grid → OOM. <see cref="TryAdmit(long, long, GdalWorkerOptions, out string)"/> bounds that
 /// EXPLICIT pixel grid. This is the OUTPUT-side companion to the INPUT
 /// decompression-bomb bound enforced by <see cref="GdalRasterDimensionGuard"/>
 /// (#2766/#2780): both reuse the same <see cref="GdalWorkerOptions"/> width / height /
@@ -33,7 +33,7 @@ namespace Honua.Worker.Gdal.Execution;
 /// <see cref="GdalRasterResampleJobExecutor"/> <c>gdalwarp -tr</c> path (extent =
 /// declared input pixel dimensions × ModelPixelScale). Both derive the extent from a
 /// cheap header / payload read, then apply the same width / height / pixel / decoded-byte
-/// caps as <see cref="TryAdmit"/>. When no real extent can be derived (an
+/// caps as <see cref="TryAdmit(long, long, GdalWorkerOptions, out string)"/>. When no real extent can be derived (an
 /// un-georeferenced raster or a degenerate/point envelope) the resolution bound admits
 /// and the <see cref="GdalWorkerOptions.ToolTimeout"/> /
 /// <see cref="GdalWorkerOptions.MaxArtifactBytes"/> ceilings remain the backstop.
@@ -120,7 +120,7 @@ internal static class GdalOutputGridGuard
     /// the input extent (the input raster's ground extent for <c>raster.resample</c>; the
     /// vector payload envelope for <c>conversion.rasterize</c>). The derived width /
     /// height / pixel-count / decoded-byte footprint is then bounded by the same
-    /// <see cref="GdalWorkerOptions"/> caps <see cref="TryAdmit"/> applies, so a tiny
+    /// <see cref="GdalWorkerOptions"/> caps <see cref="TryAdmit(long, long, GdalWorkerOptions, out string)"/> applies, so a tiny
     /// cell size over a wide extent is refused BEFORE the GDAL tool spawns and allocates
     /// the output grid. Returns <c>false</c> with a caller-facing <paramref name="error"/>
     /// on an over-cap grid.
