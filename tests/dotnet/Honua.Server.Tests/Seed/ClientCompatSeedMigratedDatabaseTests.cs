@@ -5,14 +5,20 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Server.Startup;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Mixins;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -128,6 +134,20 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
                             {
                                 ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword
                             })));
+
+                // FeatureServer edits are gated on the Pro entitlement
+                // `editing.featureserver-edits`; an unlicensed host answers the lane's
+                // test_service/10 write with HTTP 402 rather than an edit result. The standing
+                // cert function carries a license, this in-process host does not, so grant the
+                // same edition here. Nothing else about the seed contract depends on licensing.
+                builder.ConfigureTestServices(services =>
+                {
+                    var license = new TestLicenseEntitlementService(HonuaEdition.Pro);
+                    services.RemoveAll<ILicenseEntitlementService>();
+                    services.RemoveAll<ILicenseStatusProvider>();
+                    services.AddSingleton<ILicenseEntitlementService>(license);
+                    services.AddSingleton<ILicenseStatusProvider>(license);
+                });
             },
             "Test");
 

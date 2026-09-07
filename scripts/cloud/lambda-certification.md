@@ -75,6 +75,19 @@ contract: it migrates a PostGIS container with the production DbUp runner
 twice over the result, and asserts the ten names and the `test_service/10` add/delete through
 the FeatureServer query path.
 
+Two properties of the serving assertions are environment, not fixture, and the standing cert
+function has to supply them:
+
+- **The lane is an authenticated principal.** `invoke()` defaults to `authenticated=True` and
+  sends `REALAWS_CERT_ADMIN_KEY` on every serving call except the two explicit denial probes.
+  The snapshot's `allowAnonymous` policy is what makes the *denial* probes meaningful; it is not
+  what admits the fixture reads or the scratch-layer writes.
+- **`test_service/10` writes need a licensed function.** FeatureServer edits are gated on the
+  Pro entitlement `editing.featureserver-edits`. An unlicensed (Community) function answers
+  `addFeatures` with HTTP 402 `Payment Required` and the lane records `serving.result: noProof` —
+  a licensing gap, not fixture drift. Certify against a function whose license carries that
+  entitlement.
+
 ### The command the substrate uses to apply it
 
 The cert database is reachable only from inside the certification VPC, so bootstrap applies the
