@@ -818,7 +818,7 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImageryClassifyExecutionProofTests.cs",
           "test": "Classify_RealSceneThroughARealModelServer_MatchesTheFrozenClassOracle",
           "fixturePath": "tests/dotnet/Honua.Server.Tests/TestData/ImageryClassify",
-          "assertion": "Required PR Gate runs the production executor and the real HTTP inference adapter over a loopback model server that executes a committed minimum-distance-to-mean classifier (NumPy) on the posted scene inside the pinned production GDAL image. The decoded classification GeoTIFF is asserted against a frozen 16-pixel class map and per-class counts derived from the committed scene signatures, plus model identity, task, forwarded source CRS, band count, grid alignment and CRS."
+          "assertion": "Required PR Gate runs the production executor and the real HTTP inference adapter over a loopback model server that executes a committed minimum-distance-to-mean classifier (NumPy) on the posted scene inside the pinned production GDAL image. The decoded classification GeoTIFF is asserted against a frozen class map (a committed 4x4 signature layout upsampled across the 16x16 scene) and per-class counts derived from the committed scene signatures, plus model identity, task, forwarded source CRS, band count, grid alignment and CRS."
         },
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImageryClassifyExecutionProofTests.cs",
