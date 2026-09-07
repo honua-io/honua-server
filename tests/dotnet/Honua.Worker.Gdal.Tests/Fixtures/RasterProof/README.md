@@ -124,3 +124,26 @@ candidate cut; local/PR head proofs do not claim to qualify an uncut digest.
 
 Windows focused verification: 14 passed, 0 failed, 0 skipped after the topology fix.
 Initial run: 8 passed, 1 failed specifically on invalid eight-connected topology.
+
+## Ordinary kriging fixtures (#3932)
+
+`raster.interpolate-kriging` was classified Unavailable: stock GDAL has no kriging
+algorithm, so the executor failed every job. It now routes to the bundled NumPy solver
+(`src/Honua.Worker.Gdal/Scripts/gdal_ordinary_kriging.py`) and publishes a two-band
+Float64 GeoTIFF - band 1 the prediction, band 2 the kriging standard error.
+
+Four hand-written point fixtures, all EPSG:4326 with a numeric `value` attribute. The
+grid follows `gdal_grid`'s convention: the point envelope is divided into
+`width` x `height` cells and the surface is evaluated at each cell CENTRE.
+
+| fixture | points | what it pins |
+| --- | --- | --- |
+| `kriging-pair.geojson` | (0,0)=10, (4,3)=20 | The two-sample kriging system has a closed-form solution, so BOTH bands are asserted cell by cell over the whole 4x3 grid. Eliminating the Lagrange multiplier leaves `w2 - w1 = (g01 - g02) / g12` with `w1 + w2 = 1`; the variance is `w1*g01 + w2*g02 + mu`. Variogram: exponential, nugget 0.25, sill 2, range 5. |
+| `kriging-survey.geojson` | four corners of x[0,4] y[0,4] plus (2,2)=26 | On a 5x5 grid the cell centres are 0.4/1.2/2.0/2.8/3.6, so cell (2,2) IS the fifth sample. Ordinary kriging is an exact interpolator - `gamma(0)` is zero even with a nugget - so that cell must read 26.0 with zero kriging error. |
+| `kriging-corners.geojson` | the same four corners, withholding (2,2) | The remaining samples are symmetric about the grid centre, and the kriging system has a unique solution, so the solution must be invariant under that symmetry: every weight is exactly 1/4. The prediction is therefore the corner mean 25, the residual against the withheld truth of 26 is a frozen -1.0, and the variance closes to `2*gamma(2*sqrt2) - gamma(4)/2 - gamma(4*sqrt2)/4`. |
+| `kriging-constant.geojson` | four points, all 7.5 | The weights sum to one, so a constant field must come back exactly constant everywhere. |
+
+Demonstrated negatives: inverse distance weighting over the same points and grid
+produces a well-formed single-band GeoTIFF that the kriging oracle rejects on most
+cells, and the same variogram retuned to a different range moves the surface off the
+frozen expectation - so the committed variogram genuinely drives the result.
