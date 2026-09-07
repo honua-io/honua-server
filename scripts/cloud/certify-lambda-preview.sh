@@ -490,8 +490,15 @@ platform_lines() {
 cold_start_source="tail"
 read -r cold_start_ms cold_start_phase < <(cold_start_from_lines "$tail_log") || true
 if [[ -z "${cold_start_ms:-}" ]]; then
+  # The request-id evidence above proves delivery has started, not that the
+  # platform lines are in yet: INIT_REPORT carries no request id and ships on
+  # its own schedule. Poll for the cold-start line itself, bounded.
   cold_start_source="cloudwatch"
-  read -r cold_start_ms cold_start_phase < <(cold_start_from_lines "$(platform_lines REPORT; platform_lines INIT_REPORT)") || true
+  for _ in {1..24}; do
+    read -r cold_start_ms cold_start_phase < <(cold_start_from_lines "$(platform_lines REPORT; platform_lines INIT_REPORT)") || true
+    [[ -n "${cold_start_ms:-}" ]] && break
+    sleep 5
+  done
 fi
 if [[ -z "${cold_start_ms:-}" ]] || ! awk -v value="$cold_start_ms" 'BEGIN { exit !(value > 0) }'; then
   echo "first invoke REPORT/INIT_REPORT has no positive cold-start Init Duration (tail and CloudWatch)" >&2
