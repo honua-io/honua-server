@@ -135,7 +135,11 @@ if service == "logs":
     if op == "delete-log-group":
         if fail != "log-delete": s["logs"] = False
         emit(None)
-    if op == "filter-log-events": emit("0" if fail == "cloudwatch" else "1")
+    if op == "filter-log-events":
+        # The real CLI paginates and prints one count per page; the pass path
+        # must survive a multi-page answer, and the query must be bounded.
+        assert "--start-time" in args, "filter-log-events must be bounded by --start-time"
+        emit("0\n0" if fail == "cloudwatch" else "0\n0\n1\n0")
     bad()
 if service != "lambda": bad()
 if op == "get-function-url-config": emit({"FunctionUrl": "https://cert.lambda-url.us-east-1.on.aws/"})
