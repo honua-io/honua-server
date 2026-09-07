@@ -187,8 +187,10 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             "analytics.cluster",
             "analytics.density",
             "source.geojson",
-            "sink.geojson-file",
-            "raster.interpolate-kriging"]);
+            "sink.geojson-file"]);
+        // Kriging executes on the bundled numerical backend (#3932), so it is a Job and
+        // OGC Processes must publish it like every other native raster operation.
+        ids.Should().Contain("raster.interpolate-kriging");
     }
 
     [IntegrationTest]
@@ -391,7 +393,6 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         [
             "analytics.cluster",
             "source.geojson",
-            "raster.interpolate-kriging",
         ];
 
         foreach (var processId in processIds)
@@ -566,7 +567,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_NonJobCatalogEntries_Return404()
     {
-        foreach (var processId in new[] { "analytics.cluster", "source.geojson", "raster.interpolate-kriging" })
+        foreach (var processId in new[] { "analytics.cluster", "source.geojson" })
         {
             using var content = new StringContent("{\"inputs\":{}}", Encoding.UTF8, "application/json");
             var response = await _fixture.Client.PostAsync(

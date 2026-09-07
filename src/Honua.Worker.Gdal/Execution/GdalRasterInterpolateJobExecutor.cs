@@ -260,7 +260,8 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         GdalWorkerOptions options,
         out int? width,
         out int? height,
-        out string failure)
+        out string failure,
+        int outputBands = 1)
     {
         width = null;
         height = null;
@@ -294,7 +295,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         // width×height surface, closing the output-allocation OOM vector (#2782).
         // Reuses the same caps the input dimension guard applies (#2766).
         if (width.HasValue && height.HasValue
-            && !GdalOutputGridGuard.TryAdmit(width.Value, height.Value, options, out failure))
+            && !GdalOutputGridGuard.TryAdmit(width.Value, height.Value, options, outputBands, out failure))
         {
             width = null;
             height = null;

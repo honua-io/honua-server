@@ -54,7 +54,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         xml.Should().Contain("processVersion=\"1.0.0\"");
         advertisedProcessIds.Should().NotContain("source.geojson");
         advertisedProcessIds.Should().NotContain("analytics.cluster");
-        advertisedProcessIds.Should().NotContain("raster.interpolate-kriging");
+        // Kriging is a Job since #3932, so WPS advertises it asynchronously.
+        advertisedProcessIds.Should().Contain("raster.interpolate-kriging");
         xml.Should().NotContain("Operation name=\"Dismiss\"").And.NotContain("jobControlOptions=\"sync-execute\"");
     }
 
