@@ -196,7 +196,15 @@ internal static class GdalCli
         using var document = JsonDocument.Parse(stdout);
         var size = document.RootElement.GetProperty("size");
         var band = document.RootElement.GetProperty("bands").EnumerateArray().First();
-        var metadata = band.GetProperty("metadata").GetProperty(string.Empty);
+
+        // gdalinfo drops the default metadata domain entirely when it has nothing to put in it,
+        // which is exactly what an all-NoData raster produces. Treat that as a missing oracle
+        // rather than letting GetProperty throw a bare KeyNotFoundException.
+        if (!band.GetProperty("metadata").TryGetProperty(string.Empty, out var metadata))
+        {
+            throw new InvalidOperationException(
+                "gdalinfo -stats reported no band metadata; the raster has no valid cells to reconcile against.");
+        }
 
         return new BandStatistics(
             size[0].GetInt32(),
