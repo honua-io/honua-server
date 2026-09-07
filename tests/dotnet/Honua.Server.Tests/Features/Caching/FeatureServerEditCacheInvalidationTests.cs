@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Middleware;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -61,6 +62,18 @@ public sealed class FeatureServerEditCacheInvalidationTests : IAsyncLifetime
 
     private CacheServiceResponseCache _warmReplica = null!;
 
+    /// <summary>
+    /// Every cache key is scoped to the tenant's schema before it reaches the store
+    /// (<c>RedisCacheService.GetPrefixedKey</c> -> <see cref="CacheScopeKeys.EnsureScoped"/>),
+    /// and the schema comes from the ambient <see cref="SchemaContext"/> the request
+    /// middleware sets. A bare test thread has no ambient schema, so it would read and write
+    /// the unscoped default namespace while the server's edit invalidates the fixture's
+    /// isolated schema — two disjoint key spaces, and the assertions below would be vacuous.
+    /// Assigning the ambient schema publishes it to the whole calling flow, which is what
+    /// makes the replica a second instance serving THIS tenant rather than a different one.
+    /// </summary>
+    private readonly SchemaContext _schemaContext = new();
+
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
@@ -70,10 +83,19 @@ public sealed class FeatureServerEditCacheInvalidationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    /// <summary>
+    /// Puts the calling test method in the same tenant cache scope the server request uses.
+    /// See <see cref="_schemaContext"/>; the ambient value must be set inside the test method
+    /// itself because an <c>AsyncLocal</c> written in <see cref="InitializeAsync"/> does not
+    /// flow back out to its caller.
+    /// </summary>
+    private void JoinTenantCacheScope() => _schemaContext.CurrentSchema = _fixture.CurrentSchema;
+
     [IntegrationTest]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_Add_InvalidatesTheLayersCachedQueryResponsesOnAWarmReplica()
     {
+        JoinTenantCacheScope();
         await SeedWarmReplicaAsync();
 
         await ApplyEditsAsync(
@@ -88,6 +110,7 @@ public sealed class FeatureServerEditCacheInvalidationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_Update_InvalidatesTheLayersCachedQueryResponsesOnAWarmReplica()
     {
+        JoinTenantCacheScope();
         var objectId = await AddFeatureAsync("cache-update-before");
         await SeedWarmReplicaAsync();
 
@@ -106,6 +129,7 @@ public sealed class FeatureServerEditCacheInvalidationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_Delete_InvalidatesTheLayersCachedQueryResponsesOnAWarmReplica()
     {
+        JoinTenantCacheScope();
         var objectId = await AddFeatureAsync("cache-delete");
         await SeedWarmReplicaAsync();
 
@@ -122,6 +146,7 @@ public sealed class FeatureServerEditCacheInvalidationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_AfterInvalidation_AReplicaCachesAndServesTheNewGeneration()
     {
+        JoinTenantCacheScope();
         // The complementary half: invalidation must not poison the namespace. After the edit, the
         // replica has to be able to cache and read back a fresh response.
         await SeedWarmReplicaAsync();
@@ -142,6 +167,7 @@ public sealed class FeatureServerEditCacheInvalidationTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_FailedEdit_LeavesTheCacheAlone()
     {
+        JoinTenantCacheScope();
         // The negative control: an edit that changed nothing must not evict, or every rejected
         // request would become a cache-stampede trigger.
         await SeedWarmReplicaAsync();
