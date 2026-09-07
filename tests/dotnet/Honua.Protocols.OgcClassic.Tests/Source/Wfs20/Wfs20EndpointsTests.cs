@@ -1605,7 +1605,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
-    public async Task Wfs_Transaction_AnonymousWrite_AllowsInsertWithoutRbac()
+    public async Task Wfs_Transaction_AllowAnonymousWritePolicy_AllowsInsertWithoutRbac()
     {
         // V2 cutover (#1035 72/N): per-resource access policy now lives on
         // MetadataV2Resource.AccessPolicy. Seed it directly via the test fixture.
