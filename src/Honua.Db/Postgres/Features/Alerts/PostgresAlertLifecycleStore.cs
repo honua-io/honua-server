@@ -112,7 +112,7 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
         {
             var replayed = await ReadLifecycleAsync(connection, transaction, command.EventId, cancellationToken)
                 .ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
             return new AlertLifecycleTransition { Lifecycle = replayed, Intent = existing, Replayed = true };
         }
 
@@ -139,7 +139,7 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
 
         // Both writes commit together: the mutation is never externally observable
         // without its durable audit intent.
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return new AlertLifecycleTransition { Lifecycle = lifecycle, Intent = intent };
     }
 

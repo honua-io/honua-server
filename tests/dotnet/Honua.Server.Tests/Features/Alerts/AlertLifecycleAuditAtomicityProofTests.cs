@@ -77,11 +77,10 @@ public sealed class AlertLifecycleAuditAtomicityProofTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("acknowledge", "alert.acknowledge", 1)]
     [InlineData("suppress", "alert.suppress", 2)]
     [InlineData("resolve", "alert.resolve", 3)]
-    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/observability/alerts/{eventId}/acknowledge")]
     public async Task LifecycleMutation_WithAFailingAuditSink_LeavesADurableReconciliationRecord_ThatARestartCompletes(
         string route, string auditAction, short expectedStatus)
