@@ -19,6 +19,11 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
     internal static readonly TimeSpan RevalidationInterval = TimeSpan.FromSeconds(1);
     internal const string AuthorizationEnded = "authorization-ended";
 
+    // Coordinate revalidation failure with normal endpoint completion.
+    private const int StreamRunning = 0;
+    private const int StreamEnded = 1;
+    private const int StreamCompleted = 2;
+
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
     {
         var context = invocation.HttpContext;
@@ -64,15 +69,23 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
         }
 
         context.RequestAborted = lifetime.Token;
-        var ended = false;
+        var outcome = StreamRunning;
         var monitor = MonitorAsync();
         try
         {
-            return await next(invocation).ConfigureAwait(false);
+            var completed = await next(invocation).ConfigureAwait(false);
+            // Record completion before stopping the monitor, so a late failed
+            // check cannot change an endpoint outcome that already completed.
+            Interlocked.CompareExchange(ref outcome, StreamCompleted, StreamRunning);
+            return completed;
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {
-            return Results.Empty;
+            // A stream that lost authorization before emitting anything carries the
+            // outcome in its status code; an unstarted body has no frame to carry it.
+            return Volatile.Read(ref outcome) == StreamEnded && !context.Response.HasStarted
+                ? Results.Unauthorized()
+                : Results.Empty;
         }
         finally
         {
@@ -80,7 +93,11 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             await monitor.ConfigureAwait(false);
             context.RequestAborted = originalAbort;
             context.Features.Set(socketFeature);
-            if (ended && !originalAbort.IsCancellationRequested && guardedFeature?.Socket is null)
+            // An unstarted response still belongs to the endpoint's typed result.
+            // Writing a frame there would open a 200 stream body underneath a pending
+            // denial, so only a response already streaming receives the terminal frame.
+            if (Volatile.Read(ref outcome) == StreamEnded && !originalAbort.IsCancellationRequested
+                && guardedFeature?.Socket is null && context.Response.HasStarted)
             {
                 // The endpoint has stopped writing, so the terminal frame cannot split
                 // an in-flight SSE event. Never include tenant, layer or cursor metadata.
@@ -120,7 +137,14 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
                         continue;
                     }
 
-                    ended = true;
+                    if (Interlocked.CompareExchange(ref outcome, StreamEnded, StreamRunning) != StreamRunning)
+                    {
+                        // The endpoint completed while this check was in flight. A
+                        // revalidation deadline that expires in that window fails
+                        // closed, which must not retract a result already produced.
+                        return;
+                    }
+
                     if (guardedFeature?.Socket is { } socket)
                     {
                         await socket.EndAuthorizationAsync().ConfigureAwait(false);
