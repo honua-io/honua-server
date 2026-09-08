@@ -309,11 +309,11 @@ public sealed class GdalRasterInterpolateExecutorTests
         var executor = NewExecutor(runner, out var scratch);
         try
         {
-            var points = FormattableString.Invariant($$"""
+            var points = FormattableString.Invariant($$$"""
             {"type":"FeatureCollection","features":[
               {"type":"Feature","properties":{"value":0},"geometry":{"type":"Point","coordinates":[0,0]}},
-              {"type":"Feature","properties":{"value":{{value}}},"geometry":{"type":"Point","coordinates":[0,1]}},
-              {"type":"Feature","properties":{"value":{{value}}},"geometry":{"type":"Point","coordinates":[1,0]}}]}
+              {"type":"Feature","properties":{"value":{{{value}}}},"geometry":{"type":"Point","coordinates":[0,1]}},
+              {"type":"Feature","properties":{"value":{{{value}}}},"geometry":{"type":"Point","coordinates":[1,0]}}]}
             """);
             var job = GdalJobFactory.Job(
                 GdalRasterInterpolateJobExecutor.KrigingProcessId,
