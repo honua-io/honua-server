@@ -685,9 +685,8 @@ internal sealed class Wcs20Handler
     {
         // Layer-scoped /rest/services/{id:int}/ImageServer/WCS routes don't carry a
         // logical V2 service — they're keyed by the int storage layer handle. Resolve
-        // the resource directly from the storage-layer index, with a fallback to
-        // publication.LayerIndex for fixtures/graphs that haven't migrated their
-        // storage bindings (matches the resolution order used elsewhere in the V2 ports).
+        // raster publication and its exact service, preferring its storage-layer
+        // handle with a fallback to LayerIndex for graphs without storage handles.
         if (!TryResolveResourceForLayer(snapshot, layerId, out var resource, out var owningService))
         {
             return new LayerCoverageResult(null, null);
@@ -721,70 +720,34 @@ internal sealed class Wcs20Handler
         out MetadataV2Resource resource,
         out MetadataV2Service? owningService)
     {
-        var matchingBindings = snapshot.Graph.StorageBindings
-            .Where(candidate => candidate.StorageLayerId == layerId)
+        // Storage IDs are local to a store. Select a raster publication first so
+        // an overlapping feature binding cannot supply the coverage's access policy.
+        var candidates = snapshot.Graph.Publications
+            .Where(snapshot.IsRoutable)
+            .Select(publication => (
+                Resource: snapshot.ResolveResource(publication)!,
+                Service: snapshot.Index.ServicesById[publication.ServiceId],
+                LayerId: snapshot.ResolveStorageLayerId(publication) ?? publication.LayerIndex))
+            .Where(candidate => candidate.LayerId == layerId &&
+                candidate.Resource.Type == MetadataV2ResourceType.RasterDataset &&
+                (IsProtocolEnabled(candidate.Service, WcsProtocolName) ||
+                 IsProtocolEnabled(candidate.Service, ServiceProtocols.ImageServer)))
+            .DistinctBy(candidate => (candidate.Resource.Metadata.Id, candidate.Service.Metadata.Id))
+            .Take(2)
             .ToArray();
-        foreach (var binding in matchingBindings)
-        {
-            if (snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var byBinding) &&
-                binding.IsRoutable(byBinding))
-            {
-                resource = byBinding;
-                owningService = FindOwningService(snapshot, byBinding);
-                return true;
-            }
-        }
-        if (matchingBindings.Length > 0)
-        {
-            resource = default!;
-            owningService = null;
-            return false;
-        }
 
-        var candidate = snapshot.Graph.Publications
-            .Where(p => p.LayerIndex == layerId)
-            .Select(publication => (Publication: publication, Resource: snapshot.ResolveResource(publication)))
-            .FirstOrDefault(entry => snapshot.IsRoutable(entry.Publication));
-        if (candidate.Resource is not null)
+        // The integer route cannot identify an owner when multiple raster services
+        // publish this handle. Fail closed rather than choose a policy by graph order.
+        if (candidates.Length == 1)
         {
-            resource = candidate.Resource;
-            owningService = snapshot.Index.ServicesById.TryGetValue(candidate.Publication.ServiceId, out var byPublication)
-                ? byPublication
-                : FindOwningService(snapshot, candidate.Resource);
+            resource = candidates[0].Resource;
+            owningService = candidates[0].Service;
             return true;
         }
 
         resource = default!;
         owningService = null;
         return false;
-    }
-
-    /// <summary>
-    /// Finds the service that publishes <paramref name="resource"/>, so the layer-scoped
-    /// WCS route can honour a service-level access policy (honua-server#4388). The route
-    /// is keyed by an integer storage-layer handle and carries no service segment, so the
-    /// owning service has to be recovered from the publication graph. Returns
-    /// <see langword="null"/> when no routable publication references the resource, which
-    /// leaves the decision resting on the resource policy alone, as before.
-    /// </summary>
-    private static MetadataV2Service? FindOwningService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource)
-    {
-        foreach (var publication in snapshot.Graph.Publications)
-        {
-            if (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
-                !snapshot.IsRoutable(publication))
-            {
-                continue;
-            }
-
-            if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
-                service.AccessPolicy is not null)
-            {
-                return service;
-            }
-        }
-
-        return null;
     }
 
     private static ServiceResolutionResult ResolveService(

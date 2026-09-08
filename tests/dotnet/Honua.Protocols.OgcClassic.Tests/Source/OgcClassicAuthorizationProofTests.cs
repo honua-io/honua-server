@@ -6,11 +6,13 @@ using System.Text;
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -196,6 +198,70 @@ public sealed class OgcClassicAuthorizationProofTests : IAsyncLifetime
 
         using var allowed = await Viewer().GetAsync(url);
         await AssertImageAsync(allowed);
+    }
+
+    [IntegrationTheory]
+    [InlineData("DescribeCoverage", true, false)]
+    [InlineData("DescribeCoverage", false, false)]
+    [InlineData("GetCoverage", true, false)]
+    [InlineData("GetCoverage", false, false)]
+    [InlineData("DescribeCoverage", true, true)]
+    [InlineData("GetCoverage", true, true)]
+    [Protocol(TestProtocols.Wcs201)]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    public async Task Wcs_OverlappingStorageIds_UsesRasterServicePolicy(
+        string operation, bool restrictRaster, bool ambiguous)
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var rasterPublication = graph.Publications.Single(publication => publication.Metadata.Id == "pub-image-test");
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        provider.SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Publications = ambiguous ? graph.Publications.Append(rasterPublication with
+            {
+                Metadata = rasterPublication.Metadata with { Id = "pub-other-raster" },
+                ServiceId = "svc-test"
+            }).ToArray() : graph.Publications,
+            Services = graph.Services.Select(service => service with
+            {
+                AccessPolicy = (service.Metadata.Id == "svc-image-test") == restrictRaster
+                    ? new AccessPolicy { AllowedRoles = [ViewerRole] }
+                    : new AccessPolicy { AllowAnonymous = true }
+            }).ToArray()
+        }, schema: _fixture.CurrentSchema);
+        var url = $"/rest/services/0/ImageServer/WCS?SERVICE=WCS&REQUEST={operation}" +
+            "&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png&SUBSET=Long(-122.45,-122.40)&SUBSET=Lat(37.75,37.80)";
+
+        using var outsider = await Outsider().GetAsync(url);
+        if (restrictRaster)
+        {
+            await AssertWcsRefusedAsync(outsider);
+        }
+        else
+        {
+            outsider.StatusCode.Should().Be(HttpStatusCode.OK, await outsider.Content.ReadAsStringAsync());
+        }
+
+        using var allowed = await Viewer().GetAsync(url);
+        if (ambiguous)
+        {
+            await AssertWcsRefusedAsync(allowed);
+            return;
+        }
+
+        if (operation == "GetCoverage")
+        {
+            await AssertImageAsync(allowed);
+        }
+        else
+        {
+            allowed.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await allowed.Content.ReadAsStringAsync()).Should().Contain("CoverageDescription");
+        }
     }
 
     private HttpClient Viewer() => CreateClient(ViewerRole);
