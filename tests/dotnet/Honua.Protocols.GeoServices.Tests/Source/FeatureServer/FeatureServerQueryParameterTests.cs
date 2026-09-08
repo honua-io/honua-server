@@ -14,7 +14,7 @@ using Honua.TestKit.Extensions;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 [Protocol(TestProtocols.FeatureServer)]
-[Collection("Database")]
+[Collection("Database.GeoServicesFeatureServerQuery")]
 public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixture>
 {
     private readonly WebAppFixture _fixture;

@@ -81,3 +81,20 @@ public class DatabaseGeoServicesCatalogCollection
 public class DatabaseGeoServicesSceneCatalogCollection
 {
 }
+
+/// <summary>
+/// Database-backed collection for the FeatureServer <c>query</c> parameter, format
+/// negotiation and statistics-ordering tests in the "FeatureServer Endpoints Query
+/// Services and Replication" shard.
+/// </summary>
+/// <remarks>
+/// The classes here only read: they issue GET/POST <c>query</c> requests against the
+/// per-class <see cref="Honua.TestKit.WebAppFixture"/> seed and assert on the response,
+/// so they mutate neither the catalog nor any process-global <c>honua.*</c> table and
+/// have no reason to serialize behind the shard's editing and replication classes.
+/// </remarks>
+[CollectionDefinition("Database.GeoServicesFeatureServerQuery")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
+public class DatabaseGeoServicesFeatureServerQueryCollection
+{
+}
