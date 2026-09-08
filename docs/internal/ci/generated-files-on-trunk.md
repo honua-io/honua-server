@@ -76,10 +76,14 @@ Run from an isolated worktree (the generators overwrite the six projections):
 ```bash
 python3 scripts/ci/fixtures/validate-generated-files.py
 bash scripts/ci/validate-ci-router.sh
-bash scripts/ci/regenerate-generated-files.sh --configuration Release
+UseSharedCompilation=true bash scripts/ci/regenerate-generated-files.sh --configuration Release
 bash scripts/ci/report-generated-file-drift.sh
 bash scripts/ci/commit-generated-files.sh --dry-run
 ```
+
+The explicit shared-compilation setting preserves the lane requirement even
+when a host exports `UseSharedCompilation=false`; `dotnet` still resolves
+through PATH and retains the lane CPU cap.
 
 The final command shows the candidate diff without staging, committing, or
 pushing. The real-Git contract test proves no-op handling, advisory drift,
