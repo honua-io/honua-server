@@ -430,7 +430,6 @@ public sealed class ServingImageBoundaryTests
 
         // The deferral is only safe while those lanes really do build and
         // boundary-verify every production variant post-merge.
-        var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"));
         foreach (var productionVariant in new[]
                  {
                      "docker/Dockerfile.aot",
