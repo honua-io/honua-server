@@ -224,7 +224,9 @@ public sealed class OgcClassicAuthorizationProofTests : IAsyncLifetime
             Publications = ambiguous ? graph.Publications.Append(rasterPublication with
             {
                 Metadata = rasterPublication.Metadata with { Id = "pub-other-raster" },
-                ServiceId = "svc-test"
+                ServiceId = "svc-test",
+                LayerIndex = 99,
+                ServiceLocalId = "other-raster"
             }).ToArray() : graph.Publications,
             Services = graph.Services.Select(service => service with
             {
