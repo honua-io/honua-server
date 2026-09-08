@@ -425,13 +425,19 @@ and `scripts/certification/verify-client-certification-receipts.py`
 The bounded verifier requires every executable result in both `results` and
 `extensions` to resolve to exactly one governed requirement. An unknown test ID
 rejects the whole receipt: absence from the local mirror does not establish that
-the full denominator admits it. Publish a receipt for the bounded profile, or
-validate against a denominator containing all of its observations. The nightly
-common-core envelope remains separate.
+the full denominator admits it. For a full-profile receipt, pass
+`--full-requirements /path/to/protocol-certification-requirements.v1.json` to the
+verifier. Every bounded requirement must appear unchanged exactly once in that
+full denominator. The verifier then validates every observation against the full
+denominator, including provenance and revision checks for observations outside the
+mirror, while reporting only the bounded cells. The nightly common-core envelope
+remains separate.
 
-A cell must have exactly one admitted observation across both arrays and all
-receipts. Two observations are ambiguous even when they occur in the same file,
-use different test IDs mapped to the same operation, or both claim `pass`. In
+A cell must have exactly one admitted receipt. Multiple tests in that receipt may
+substantiate the same operation: any failure makes the cell fail, otherwise any
+skip makes it skip, and the cell passes only if all matching observations pass.
+Every observation must independently meet the governed provenance/facet rules;
+the verifier does not invent facets by combining insufficient observations. In
 particular, a leading pass cannot hide a later failure or skip. Malformed extension
 arrays and test IDs reject the receipt; a `tls` facet requires an HTTPS request.
 The CLI returns nonzero and writes a non-green verdict for these cases.

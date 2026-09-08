@@ -25,7 +25,9 @@ Two modes, both fail-closed:
 ``--mode release``
     Binds the receipts under ``--receipts`` to an exact candidate
     (``--source-sha``/``--image-digest``/``--cut-at``/``--producer-source-sha``) and
-    applies the full join. Every governed row must resolve to exactly one ``pass``.
+    applies the full join. Every governed row must resolve to one receipt whose
+    matching observations all pass. ``--full-requirements`` supplies the governed
+    denominator when that receipt includes observations outside the local mirror.
 
 Exit status is 0 only when every required cell is ``pass``. Anything else -- a
 missing envelope, a skip, a stale or mismatched digest, a source-built server, an
@@ -381,8 +383,32 @@ def _revision_defects(envelope: dict, requirement: dict, candidate: dict) -> lis
     return defects
 
 
+def admission_requirements(requirements: dict, full_requirements: dict | None) -> dict:
+    """Use the full denominator without allowing it to change a bounded cell.
+
+    Full-profile producers can emit legitimate observations outside the bounded
+    projection. Those observations must still resolve and pass whole-receipt
+    admission; ignoring them cannot establish that the consumer accepts them.
+    """
+    if full_requirements is None:
+        return requirements
+    if full_requirements.get("schema") != "honua.protocol-certification-requirements/v1":
+        raise ValueError("full requirements must use honua.protocol-certification-requirements/v1")
+    rows = full_requirements.get("requirements")
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise ValueError("full requirements must contain a requirements array of objects")
+    for bounded in requirements["requirements"]:
+        expected = {key: value for key, value in bounded.items() if key != "receiptBinding"}
+        matches = [row for row in rows if row == expected]
+        if len(matches) != 1:
+            raise ValueError(
+                f"full requirements must preserve bounded cell {cell_id(bounded)!r} exactly once")
+    return {**requirements, "requirements": rows}
+
+
 def admit_receipts(
     requirements: dict, receipts: list[tuple[str, dict]], candidate: dict,
+    full_requirements: dict | None = None,
 ) -> tuple[list[tuple[str, dict]], dict[str, list[str]]]:
     """Split receipts into admitted and rejected, whole receipts at a time.
 
@@ -392,6 +418,7 @@ def admit_receipts(
     the result a cell happens to match would let a receipt carrying one valid row
     and one malformed row certify that cell.
     """
+    requirements = admission_requirements(requirements, full_requirements)
     contract = requirements["receiptContract"]
     admitted: list[tuple[str, dict]] = []
     rejected: dict[str, list[str]] = {}
@@ -459,10 +486,13 @@ def _receipt_result_defects(
     return list(dict.fromkeys(defects))
 
 
-def verify_release(requirements: dict, receipts: list[tuple[str, dict]], candidate: dict) -> list[dict]:
+def verify_release(
+    requirements: dict, receipts: list[tuple[str, dict]], candidate: dict,
+    full_requirements: dict | None = None,
+) -> list[dict]:
     """Apply the governed join to real receipts and emit one verdict per governed row."""
     verdicts: list[dict] = []
-    admitted, rejected = admit_receipts(requirements, receipts, candidate)
+    admitted, rejected = admit_receipts(requirements, receipts, candidate, full_requirements)
 
     for requirement in requirements["requirements"]:
         binding = requirement["receiptBinding"]["denominatorJoin"]
@@ -482,6 +512,8 @@ def verify_release(requirements: dict, receipts: list[tuple[str, dict]], candida
             name: defects for name, defects in rejected.items()
             if by_name[name].get("runner_lane") == requirement["client_lane"]
             and by_name[name].get("protocol") == requirement["surface"]
+            and by_name[name].get("client_version") == requirement["client_version"]
+            and by_name[name].get("deployment_target") == requirement["deployment_target"]
         }
 
         matches = [
@@ -533,7 +565,7 @@ def verify_release(requirements: dict, receipts: list[tuple[str, dict]], candida
                 f"{requirement['deployment_target']!r}.",
                 "honua-io/honua-server")]))
             continue
-        if len(matches) > 1:
+        if len({name for name, _, _ in matches}) > 1:
             verdicts.append(_verdict(requirement, "fail", blockers=[_blocker(
                 "ambiguous-cell",
                 f"{len(matches)} observations claim this cell (including results and extensions): "
@@ -541,7 +573,11 @@ def verify_release(requirements: dict, receipts: list[tuple[str, dict]], candida
                 "honua-io/honua-server")]))
             continue
 
-        name, envelope, result = matches[0]
+        # Several test IDs may substantiate one operation in the same receipt.
+        # Every observation has already passed provenance/facet validation. Read
+        # all statuses so an earlier pass cannot conceal a later failure or skip.
+        status_rank = {"pass": 0, "skip": 1, "fail": 2}
+        name, envelope, result = max(matches, key=lambda match: status_rank[match[2]["status"]])
         if result["status"] == "skip":
             verdicts.append(_verdict(requirement, "skip", blockers=[_blocker(
                 "cell-skipped",
@@ -614,6 +650,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", choices=("contract", "release"), default="contract")
     parser.add_argument("--root", type=Path, default=None)
     parser.add_argument("--requirements", type=Path, default=None)
+    parser.add_argument("--full-requirements", type=Path, default=None,
+                        help="governed full denominator for whole-profile receipt admission; "
+                             "must preserve every bounded requirement unchanged")
     parser.add_argument("--receipts", type=Path, default=None)
     parser.add_argument("--source-sha")
     parser.add_argument("--image-digest")
@@ -646,7 +685,12 @@ def main(argv: list[str] | None = None) -> int:
             "cut_at": parse_timestamp(args.cut_at, "--cut-at"),
             "producer_source_sha": args.producer_source_sha,
         }
-        verdicts = verify_release(requirements, read_receipts(args.receipts), candidate)
+        try:
+            verdicts = verify_release(
+                requirements, read_receipts(args.receipts), candidate,
+                load_json(args.full_requirements) if args.full_requirements else None)
+        except ValueError as error:
+            raise SystemExit(str(error)) from error
     else:
         verdicts = verify_contract(requirements, root)
 
