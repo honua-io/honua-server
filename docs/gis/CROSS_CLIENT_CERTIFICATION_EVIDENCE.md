@@ -420,6 +420,46 @@ verdict over them, live in
 and `scripts/certification/verify-client-certification-receipts.py`
 ([#3434](https://github.com/honua-io/honua-server/issues/3434)).
 
+### Whole-receipt admission and conflicting observations
+
+The bounded verifier requires every executable result in both `results` and
+`extensions` to resolve to exactly one governed requirement. An unknown test ID
+rejects the whole receipt: absence from the local mirror does not establish that
+the full denominator admits it. For a full-profile receipt, pass
+`--full-requirements /path/to/protocol-certification-requirements.v1.json` to the
+verifier. Every bounded requirement must appear unchanged exactly once in that
+full denominator. The verifier then validates every observation against the full
+denominator, including provenance and revision checks for observations outside the
+mirror, while reporting only the bounded cells. The nightly common-core envelope
+remains separate.
+
+A cell must have exactly one admitted receipt. Multiple tests in that receipt may
+substantiate the same operation: any failure makes the cell fail, otherwise any
+skip makes it skip, and the cell passes only if all matching observations pass.
+Every observation must independently meet the governed provenance/facet rules;
+the verifier does not invent facets by combining insufficient observations. In
+particular, a leading pass cannot hide a later failure or skip. Malformed extension
+arrays and test IDs reject the receipt; a `tls` facet requires an HTTPS request.
+The CLI returns nonzero and writes a non-green verdict for these cases.
+
+These rules enforce the 2026.1 promise that missing, skipped, stale, mismatched and
+source-built required client evidence cannot pass the release gate. The regression
+fixtures test receipt admission, not external-client execution or candidate
+certification. Candidate-dependent criteria 2, 3 (execution), and 4 of #3434 remain
+released for the reason recorded in PR #4442: an immutable candidate is required
+before those executions and their candidate-bound receipts can exist.
+
+The remaining pre-cut producer reconciliation is still open. The upstream
+[denominator at `0150f767aa000aa1b029bddb8a058d60385954c9`](https://github.com/honua-io/honua-release/blob/0150f767aa000aa1b029bddb8a058d60385954c9/certification/protocol-certification-requirements.v1.json),
+checked on 2026-09-08 UTC, has the same 59 bounded rows as the frozen mirror and
+no `test_ids` on any of them. Its required lane, surface and version bindings also
+remain unresolved against the committed producers: 55 lane mismatches, two
+missing QGIS surfaces, and two QGIS version mismatches. These are blocking cells,
+not exclusions or waived pre-cut work. Reconcile the governed operation/test IDs
+with the actual client producers before emitting joining receipts; do not relabel
+an OpenLayers observation as MapLibre, a different QGIS version as `3.40`, or a
+generic HTTP probe as an application client.
+
 ## Evidence Version
 
 | Version | Date | Change |

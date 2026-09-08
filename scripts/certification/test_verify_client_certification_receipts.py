@@ -19,6 +19,8 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -92,6 +94,16 @@ def requirements_document(*rows) -> dict:
     }
 
 
+def full_requirements_document(*rows) -> dict:
+    return {
+        "schema": "honua.protocol-certification-requirements/v1",
+        "requirements": [
+            {key: copy.deepcopy(value) for key, value in row.items() if key != "receiptBinding"}
+            for row in rows
+        ],
+    }
+
+
 def envelope(**overrides) -> dict:
     """A receipt that satisfies every governed rule for ``requirement()``."""
     value = {
@@ -144,6 +156,38 @@ class ReleaseJoinTests(unittest.TestCase):
         self.assertEqual(
             "ogc-features|collections|OWSLib|0.36.0|local-docker", verdict["cell"])
 
+    def test_cli_refuses_a_failed_observation_after_a_valid_pass(self):
+        # Exercise the actual JSON-file -> CLI -> process exit/report boundary.
+        # This is a verifier fixture, not a claim that an external client ran.
+        # The expected result follows from two conflicting observations of one
+        # exact cell; it is not copied from the verifier's current output.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipts = root / "receipts"
+            receipts.mkdir()
+            requirements_path = root / "requirements.json"
+            requirements_path.write_text(json.dumps(requirements_document(requirement())), encoding="utf-8")
+            raw = envelope()
+            raw["extensions"] = [{**raw["results"][0], "status": "fail"}]
+            (receipts / "conflicting.cert.json").write_text(json.dumps(raw), encoding="utf-8")
+            report_path = root / "report.json"
+            completed = subprocess.run([
+                sys.executable, str(VERIFIER), "--mode", "release",
+                "--requirements", str(requirements_path), "--receipts", str(receipts),
+                "--source-sha", CANDIDATE_SHA, "--image-digest", CANDIDATE_DIGEST,
+                "--producer-source-sha", PRODUCER_SHA, "--cut-at", "2026-09-01T00:00:00Z",
+                "--output", str(report_path),
+            ], capture_output=True, text=True, check=False)
+            self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual({"pass": 0, "fail": 1, "skip": 0}, report["summary"]["byResult"])
+            self.assertFalse(report["summary"]["green"])
+            self.assertEqual("cell-failed", report["cells"][0]["reason_code"])
+            self.assertEqual(CANDIDATE_SHA, report["candidate"]["source_sha"])
+            self.assertEqual(CANDIDATE_DIGEST, report["candidate"]["image_digest"])
+            self.assertEqual("OWSLib", report["cells"][0]["canonical_client"])
+            self.assertEqual("0.36.0", report["cells"][0]["client_version"])
+            self.assertEqual("local-docker", report["cells"][0]["deployment_target"])
     def test_extension_results_can_satisfy_a_governed_cell(self):
         # NB-* extension IDs live in a separate array; the governed consumer reads
         # both, so a denominator row bound to one must resolve here too.
@@ -309,9 +353,9 @@ class WholeReceiptAdmissionTests(unittest.TestCase):
         codes = sorted(defect.partition(": ")[0] for defect in rejected["a.cert.json"])
         self.assertEqual(["candidate-digest-mismatch", "revision-mismatch"], codes)
 
-    def test_a_result_outside_the_bounded_roster_does_not_reject_the_receipt(self):
-        # The bounded roster is a subset of the denominator. A lane legitimately
-        # emits IDs this gate does not govern; they are judged upstream, not here.
+    def test_an_unresolved_result_rejects_the_whole_receipt(self):
+        # The local mirror cannot assume the full denominator admits this result.
+        # The governed consumer requires exactly one match for every observation.
         raw = envelope(results=[
             envelope()["results"][0],
             {"test_case_id": "CERT-QFLT-01", "status": "pass", "performed_by": "OWSLib",
@@ -319,7 +363,62 @@ class WholeReceiptAdmissionTests(unittest.TestCase):
              "exercised_capabilities": ["positive"]},
         ])
         verdict = only_verdict([requirement()], [("a.cert.json", raw)])
-        self.assertEqual("pass", verdict["result"])
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("unresolved-result", blocker_codes(verdict))
+
+    def test_conflicting_observations_cannot_hide_behind_a_pass(self):
+        # Independent contract: any failure dominates; otherwise any skip blocks
+        # a pass. Multiple passing tests for one operation are legitimate. Array
+        # order, test ID aliases and array placement cannot choose the verdict.
+        for status in ("pass", "fail", "skip"):
+            for reverse in (False, True):
+                for extension in (False, True):
+                    for alias in (False, True):
+                        with self.subTest(status=status, reverse=reverse, extension=extension, alias=alias):
+                            row = requirement(test_ids=["CERT-DISC-01", "CERT-CONN-01"])
+                            raw = envelope()
+                            first = raw["results"][0]
+                            second = {**first, "status": status,
+                                      "test_case_id": "CERT-CONN-01" if alias else "CERT-DISC-01"}
+                            observations = [second, first] if reverse else [first, second]
+                            raw["results"] = observations[:1] if extension else observations
+                            raw["extensions"] = observations[1:] if extension else []
+                            verdict = only_verdict([row], [("a.cert.json", raw)])
+                            self.assertEqual(status, verdict["result"])
+                            codes = [] if status == "pass" else [
+                                "cell-failed" if status == "fail" else "cell-skipped"]
+                            self.assertEqual(codes, blocker_codes(verdict))
+
+    def test_malformed_extensions_reject_the_whole_receipt_without_crashing(self):
+        for value in (None, 7, {}, "not-an-array"):
+            with self.subTest(value=value):
+                verdict = only_verdict([requirement()], [("a.cert.json", envelope(extensions=value))])
+                self.assertEqual("fail", verdict["result"])
+                self.assertIn("malformed-envelope", blocker_codes(verdict))
+
+    def test_inapplicable_result_still_requires_a_test_id(self):
+        raw = envelope(extensions=[{"status": "not_applicable"}])
+        verdict = only_verdict([requirement()], [("a.cert.json", raw)])
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("malformed-envelope", blocker_codes(verdict))
+
+    def test_plain_http_cannot_substantiate_a_tls_facet(self):
+        row = requirement(scenario_facets=["positive", "tls"])
+        raw = envelope()
+        raw["results"][0].update(request_url="http://candidate.test/collections",
+                                  exercised_capabilities=["positive", "tls"])
+        verdict = only_verdict([row], [("a.cert.json", raw)])
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("provenance-missing", blocker_codes(verdict))
+        raw["results"][0]["request_url"] = "https://candidate.test/collections"
+        self.assertEqual("pass", only_verdict([row], [("a.cert.json", raw)])["result"])
+
+    def test_malformed_request_url_rejects_the_whole_receipt_without_crashing(self):
+        raw = envelope()
+        raw["results"][0]["request_url"] = "https://[invalid/collections"
+        verdict = only_verdict([requirement()], [("a.cert.json", raw)])
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("provenance-missing", blocker_codes(verdict))
 
     def test_a_result_claiming_two_governed_rows_is_ambiguous(self):
         rows = [
@@ -348,8 +447,96 @@ class DeploymentTargetTests(unittest.TestCase):
         del raw["deployment_target"]
         verdict = only_verdict([requirement()], [("a.cert.json", raw)])
 
+        self.assertEqual("skip", verdict["result"])
+        self.assertIn("missing-envelope", blocker_codes(verdict))
+        admitted, rejected = module.admit_receipts(
+            requirements_document(requirement()), [("a.cert.json", raw)], candidate())
+        self.assertEqual([], admitted)
+        self.assertTrue(any(value.startswith("receipt-field-missing:") for value in rejected["a.cert.json"]))
+
+    def test_rejected_other_version_or_target_does_not_claim_this_cell(self):
+        for identity in ({"client_version": "0.35.0"}, {"deployment_target": "cloud-aws"}):
+            with self.subTest(identity=identity):
+                raw = envelope(**identity)
+                raw["extensions"] = [{**raw["results"][0], "test_case_id": "UNBOUND"}]
+                verdict = only_verdict([requirement()], [("other.cert.json", raw)])
+                self.assertEqual("skip", verdict["result"])
+                self.assertEqual(["missing-envelope"], blocker_codes(verdict))
+
+
+class FullDenominatorTests(unittest.TestCase):
+    def setUp(self):
+        self.bounded = requirement()
+        self.extra = requirement(operation="items", test_ids=["CERT-QFLT-01"])
+        self.raw = envelope()
+        self.raw["extensions"] = [{**self.raw["results"][0], "test_case_id": "CERT-QFLT-01"}]
+
+    def verdict(self, full, raw=None):
+        return module.verify_release(
+            requirements_document(self.bounded), [("full.cert.json", raw or self.raw)],
+            candidate(), full)[0]
+
+    def test_valid_full_profile_receipt_can_certify_its_bounded_cell(self):
+        full = full_requirements_document(self.bounded, self.extra)
+        verdict = self.verdict(full)
+        self.assertEqual("pass", verdict["result"])
+        self.assertEqual([], verdict["blockers"])
+
+    def test_cli_validates_a_full_profile_receipt_and_reports_only_bounded_cells(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, document in (
+                ("bounded.json", requirements_document(self.bounded)),
+                ("full.json", full_requirements_document(self.bounded, self.extra)),
+                ("profile.cert.json", self.raw),
+            ):
+                (root / name).write_text(json.dumps(document), encoding="utf-8")
+            completed = subprocess.run([
+                sys.executable, str(VERIFIER), "--mode", "release",
+                "--requirements", str(root / "bounded.json"),
+                "--full-requirements", str(root / "full.json"), "--receipts", str(root),
+                "--source-sha", CANDIDATE_SHA, "--image-digest", CANDIDATE_DIGEST,
+                "--producer-source-sha", PRODUCER_SHA, "--cut-at", "2026-09-01T00:00:00Z",
+                "--output", str(root / "report.json"),
+            ], capture_output=True, text=True, check=False)
+            self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+            report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+            self.assertEqual({"pass": 1, "fail": 0, "skip": 0}, report["summary"]["byResult"])
+            self.assertEqual(1, report["summary"]["requiredCells"])
+            self.assertEqual("collections", report["cells"][0]["operation"])
+
+    def test_incomplete_facet_observations_are_not_combined_into_a_pass(self):
+        row = requirement(scenario_facets=["positive", "auth"],
+                          test_ids=["CERT-DISC-01", "CERT-AUTH-01"])
+        raw = envelope()
+        raw["extensions"] = [{**raw["results"][0], "test_case_id": "CERT-AUTH-01",
+                              "exercised_capabilities": ["auth"]}]
+        verdict = only_verdict([row], [("incomplete.cert.json", raw)])
         self.assertEqual("fail", verdict["result"])
-        self.assertIn("receipt-field-missing", blocker_codes(verdict))
+        self.assertIn("facets-not-exercised", blocker_codes(verdict))
+
+    def test_full_profile_receipt_is_not_assumed_valid_without_its_denominator(self):
+        verdict = self.verdict(None)
+        self.assertEqual("fail", verdict["result"])
+        self.assertEqual(["unresolved-result"], blocker_codes(verdict))
+
+    def test_invalid_outside_observation_rejects_even_the_valid_bounded_result(self):
+        full = full_requirements_document(self.bounded, self.extra)
+        self.raw["extensions"][0]["performed_by"] = "httpx"
+        verdict = self.verdict(full)
+        self.assertEqual("fail", verdict["result"])
+        self.assertEqual(["provenance-missing"], blocker_codes(verdict))
+
+    def test_full_denominator_cannot_rewrite_or_drop_the_bounded_contract(self):
+        for rows in ([self.extra], [requirement(scenario_facets=[]), self.extra],
+                     [self.bounded, self.bounded, self.extra]):
+            with self.subTest(rows=rows):
+                with self.assertRaisesRegex(ValueError, "preserve bounded cell"):
+                    self.verdict(full_requirements_document(*rows))
+
+    def test_full_denominator_schema_is_checked(self):
+        with self.assertRaisesRegex(ValueError, "schema|must use"):
+            self.verdict({"schema": "untrusted-shape", "requirements": []})
 
 
 class ReceiptIdentityTests(unittest.TestCase):
