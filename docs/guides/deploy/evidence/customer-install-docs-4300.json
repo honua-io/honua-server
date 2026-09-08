@@ -68,7 +68,7 @@
     "logSha256": "2ad991dbe7467ddbf22594052d3a8ea2d0628978e9671dff031ddd92ec9bffb3"
   },
   "documentationChecks": {
-    "nativePowerShell51BlocksParsed": 29,
+    "nativePowerShell51BlocksParsed": 30,
     "linuxBlocksParse": true,
     "linksAndCodeReferencedAnchors": true,
     "noRawCurlAdditions": true,
