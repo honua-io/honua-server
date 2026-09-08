@@ -767,19 +767,45 @@ internal sealed partial class Wfs20Handler
 
                 writer.WriteEndElement();
                 break;
+            // NTS models MultiPoint, MultiLineString and MultiPolygon as GeometryCollection
+            // subclasses, so these cases must precede the collection case; otherwise a
+            // homogeneous aggregate is emitted as gml:MultiGeometry and a client infers a
+            // mixed-geometry layer instead of the advertised multi-geometry one. GML 3.1.1
+            // still declares the homogeneous aggregates, matching the GML 2 writer below.
+            case MultiPoint multiPoint:
+                WriteGml31Aggregate(writer, multiPoint, "MultiPoint", "pointMember", srsName, axisOrder, includeSrsName);
+                break;
+            case MultiLineString multiLineString:
+                WriteGml31Aggregate(writer, multiLineString, "MultiLineString", "lineStringMember", srsName, axisOrder, includeSrsName);
+                break;
+            case MultiPolygon multiPolygon:
+                WriteGml31Aggregate(writer, multiPolygon, "MultiPolygon", "polygonMember", srsName, axisOrder, includeSrsName);
+                break;
             case GeometryCollection collection:
-                writer.WriteStartElement("gml", "MultiGeometry", GmlLegacyNamespace);
-                WriteSrsName(writer, srsName, includeSrsName);
-                for (var i = 0; i < collection.NumGeometries; i++)
-                {
-                    writer.WriteStartElement("gml", "geometryMember", GmlLegacyNamespace);
-                    WriteGml31Geometry(writer, collection.GetGeometryN(i), srsName, axisOrder, includeSrsName: false);
-                    writer.WriteEndElement();
-                }
-
-                writer.WriteEndElement();
+                WriteGml31Aggregate(writer, collection, "MultiGeometry", "geometryMember", srsName, axisOrder, includeSrsName);
                 break;
         }
+    }
+
+    private static void WriteGml31Aggregate(
+        XmlWriter writer,
+        GeometryCollection aggregate,
+        string elementName,
+        string memberElementName,
+        string srsName,
+        AxisOrder axisOrder,
+        bool includeSrsName)
+    {
+        writer.WriteStartElement("gml", elementName, GmlLegacyNamespace);
+        WriteSrsName(writer, srsName, includeSrsName);
+        for (var i = 0; i < aggregate.NumGeometries; i++)
+        {
+            writer.WriteStartElement("gml", memberElementName, GmlLegacyNamespace);
+            WriteGml31Geometry(writer, aggregate.GetGeometryN(i), srsName, axisOrder, includeSrsName: false);
+            writer.WriteEndElement();
+        }
+
+        writer.WriteEndElement();
     }
 
     private static void WriteGml2Geometry(XmlWriter writer, Geometry geometry, string srsName, AxisOrder axisOrder, bool includeSrsName)

@@ -79,6 +79,39 @@ public sealed class WfsLegacyGeometryMetadataTests
             projected.Descendants(Honua + "name").Single().Value.Should().Be("Legacy Point");
             projected.Descendants(Honua + "objectid").Should().BeEmpty();
 
+            // A declared multi-geometry must keep its advertised homogeneous type.
+            await AssertMultiGeometryAsync("legacy_multipoint", 5006, "MultiPoint", "pointMember", "Point", 2);
+            await AssertMultiGeometryAsync("legacy_multiline", 5007, "MultiLineString", "lineStringMember", "LineString", 1);
+            await AssertMultiGeometryAsync("legacy_multipolygon", 5008, "MultiPolygon", "polygonMember", "Polygon", 1);
+
+            // The advertised fallback geometry property must also be requestable by
+            // projection; it resolves against no schema field, so PROPERTYNAME must not
+            // reject it as unknown.
+            var geometryOnly = await GetFeatureAsync(fixture, version, usePost, "legacy_point", 5001, "geometry");
+            geometryOnly.Descendants(Honua + "geometry").Should().ContainSingle()
+                .Which.Elements(Gml + "Point").Should().ContainSingle();
+            geometryOnly.Descendants(Honua + "name").Should().BeEmpty();
+            geometryOnly.Descendants(Honua + "objectid").Should().BeEmpty();
+
+            var geometryAndName = await GetFeatureAsync(
+                fixture, version, usePost, "legacy_point", 5001, "honua:geometry,name");
+            geometryAndName.Descendants(Honua + "geometry").Should().ContainSingle()
+                .Which.Elements(Gml + "Point").Should().ContainSingle();
+            geometryAndName.Descendants(Honua + "name").Single().Value.Should().Be("Legacy Point");
+            geometryAndName.Descendants(Honua + "objectid").Should().BeEmpty();
+
+            // An explicit geometry field keeps resolving through the existing alias path.
+            var explicitProjection = await GetFeatureAsync(
+                fixture, version, usePost, "legacy_explicit", 5004, "shape");
+            explicitProjection.Descendants(Honua + "shape").Should().ContainSingle();
+            explicitProjection.Descendants(Honua + "objectid").Should().BeEmpty();
+
+            // A nonspatial resource advertises no geometry property, so requesting one
+            // must still fail as an unknown property.
+            using var unknownProperty = await GetFeatureResponseAsync(
+                fixture, version, usePost, "legacy_table", 5005, "geometry");
+            unknownProperty.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
             async Task AssertGeometryAsync(string typeName, int id, string geometryType,
                 double[] expectedCoordinates, string propertyName = "geometry")
             {
@@ -115,6 +148,37 @@ public sealed class WfsLegacyGeometryMetadataTests
                 ((string?)geometry.Attribute("srsName")).Should().Be(version == "1.0.0"
                     ? "EPSG:4326" : "urn:ogc:def:crs:EPSG::4326");
             }
+
+            async Task AssertMultiGeometryAsync(string typeName, int id, string aggregateName,
+                string memberName, string memberGeometryName, int expectedMemberCount)
+            {
+                var document = await GetFeatureAsync(fixture, version, usePost, typeName, id);
+                var feature = document.Descendants(Honua + typeName).Single();
+                var aggregate = feature.Element(Honua + "geometry")?.Element(Gml + aggregateName);
+                aggregate.Should().NotBeNull(
+                    $"{version} {typeName} must return its declared gml:{aggregateName}");
+                if (aggregate is null)
+                {
+                    return;
+                }
+
+                document.Descendants(Gml + "MultiGeometry").Should().BeEmpty(
+                    "a homogeneous aggregate must not degrade to a generic gml:MultiGeometry");
+                var members = aggregate.Elements(Gml + memberName).ToArray();
+                members.Should().HaveCount(expectedMemberCount);
+                foreach (var member in members)
+                {
+                    member.Elements(Gml + memberGeometryName).Should().ContainSingle()
+                        .Which.Attribute("srsName").Should().BeNull("only the aggregate carries srsName");
+                }
+
+                var coordinateElement = version == "1.0.0"
+                    ? "coordinates"
+                    : memberGeometryName == "Point" ? "pos" : "posList";
+                aggregate.Descendants(Gml + coordinateElement).Should().HaveCount(expectedMemberCount);
+                ((string?)aggregate.Attribute("srsName")).Should().Be(version == "1.0.0"
+                    ? "EPSG:4326" : "urn:ogc:def:crs:EPSG::4326");
+            }
         }
         finally
         {
@@ -124,16 +188,24 @@ public sealed class WfsLegacyGeometryMetadataTests
 
     private static async Task<XDocument> GetFeatureAsync(WebAppFixture fixture, string version,
         bool usePost, string typeName, int id, string? propertyName = null)
+        => await ReadAsync(await GetFeatureResponseAsync(fixture, version, usePost, typeName, id, propertyName));
+
+    private static async Task<HttpResponseMessage> GetFeatureResponseAsync(WebAppFixture fixture,
+        string version, bool usePost, string typeName, int id, string? propertyName = null)
     {
         if (!usePost)
         {
-            return await ReadAsync(await fixture.Client.GetAsync(
+            return await fixture.Client.GetAsync(
                 $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION={version}&TYPENAME={typeName}" +
                 $"&FEATUREID={typeName}.{id}&SRSNAME=urn:ogc:def:crs:EPSG::4326" +
-                (propertyName is null ? string.Empty : $"&PROPERTYNAME={propertyName}")));
+                (propertyName is null ? string.Empty : $"&PROPERTYNAME={propertyName}"));
         }
 
-        var property = propertyName is null ? string.Empty : $"<wfs:PropertyName>{propertyName}</wfs:PropertyName>";
+        // WFS 1.0/1.1 POST carries one wfs:PropertyName element per requested property.
+        var property = propertyName is null
+            ? string.Empty
+            : string.Concat(propertyName.Split(',')
+                .Select(name => $"<wfs:PropertyName>{name}</wfs:PropertyName>"));
         using var body = new StringContent($"""
             <wfs:GetFeature service="WFS" version="{version}"
                 xmlns:wfs="http://www.opengis.net/wfs" xmlns:ogc="http://www.opengis.net/ogc">
@@ -143,7 +215,7 @@ public sealed class WfsLegacyGeometryMetadataTests
               </wfs:Query>
             </wfs:GetFeature>
             """, Encoding.UTF8, "application/xml");
-        return await ReadAsync(await fixture.Client.PostAsync("/wfs", body));
+        return await fixture.Client.PostAsync("/wfs", body);
     }
 
     private static async Task<XDocument> DescribeAsync(WebAppFixture fixture, string version,
@@ -188,7 +260,14 @@ public sealed class WfsLegacyGeometryMetadataTests
               (5004, 3, ST_GeomFromText('POINT(-122.5 37.5)', 4326),
                 '{"objectid":5004,"name":"Explicit Geometry"}'::jsonb),
               (5005, 4, ST_GeomFromText('POINT(-122.5 37.5)', 4326),
-                '{"objectid":5005,"name":"Nonspatial Resource"}'::jsonb);
+                '{"objectid":5005,"name":"Nonspatial Resource"}'::jsonb),
+              (5006, 5, ST_GeomFromText('MULTIPOINT(-122.5 37.5,-122.25 37.75)', 4326),
+                '{"objectid":5006,"name":"Legacy MultiPoint"}'::jsonb),
+              (5007, 6, ST_GeomFromText('MULTILINESTRING((-122.5 37.5,-122.25 37.75))', 4326),
+                '{"objectid":5007,"name":"Legacy MultiLine"}'::jsonb),
+              (5008, 7, ST_GeomFromText(
+                'MULTIPOLYGON(((-122.5 37.5,-122.25 37.5,-122.25 37.75,-122.5 37.5)))', 4326),
+                '{"objectid":5008,"name":"Legacy MultiPolygon"}'::jsonb);
             """;
         await command.ExecuteNonQueryAsync();
     }
@@ -205,7 +284,10 @@ public sealed class WfsLegacyGeometryMetadataTests
             ("legacy_line", MetadataV2GeometryType.LineString, false),
             ("legacy_polygon", MetadataV2GeometryType.Polygon, false),
             ("legacy_explicit", MetadataV2GeometryType.Point, true),
-            ("legacy_table", MetadataV2GeometryType.None, false)
+            ("legacy_table", MetadataV2GeometryType.None, false),
+            ("legacy_multipoint", MetadataV2GeometryType.MultiPoint, false),
+            ("legacy_multiline", MetadataV2GeometryType.MultiLineString, false),
+            ("legacy_multipolygon", MetadataV2GeometryType.MultiPolygon, false)
         ];
         foreach (var (name, type, explicitField) in resources)
         {

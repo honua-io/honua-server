@@ -31,20 +31,7 @@ internal static class WfsPropertyNameResolver
             return null;
         }
 
-        var localName = requested;
-        var lastSlash = localName.LastIndexOf('/');
-        if (lastSlash >= 0 && lastSlash < localName.Length - 1)
-        {
-            localName = localName[(lastSlash + 1)..];
-        }
-
-        // A ValueReference can qualify the schema-declared local name with the feature
-        // namespace (honua:eo_x003A_cloud_cover). Strip that QName prefix before decoding.
-        var colon = localName.LastIndexOf(':');
-        if (colon >= 0 && colon < localName.Length - 1)
-        {
-            localName = localName[(colon + 1)..];
-        }
+        var localName = ExtractLocalName(requested);
 
         // Prefer the schema-advertised spelling. A canonical field can itself look like an
         // XML escape, but EncodeLocalName escapes its underscore and therefore advertises a
@@ -72,6 +59,57 @@ internal static class WfsPropertyNameResolver
 
         var decodedName = XmlConvert.DecodeName(localName);
         return FindExactField(resource, decodedName);
+    }
+
+    /// <summary>
+    /// Determines whether a requested property reference addresses the geometry property a
+    /// spatial resource advertises, applying the same local-name normalization as
+    /// <see cref="Resolve"/>. Callers use this for the fallback geometry property of a
+    /// resource that declares a geometry type but registers no geometry schema field, where
+    /// the field-based geometry alias has no field to match and <see cref="Resolve"/>
+    /// therefore reports the advertised property as unknown.
+    /// </summary>
+    internal static bool MatchesGeometryProperty(string requestedName, string geometryPropertyName)
+    {
+        ArgumentNullException.ThrowIfNull(requestedName);
+        ArgumentNullException.ThrowIfNull(geometryPropertyName);
+
+        var localName = ExtractLocalName(requestedName.Trim());
+        if (localName.Length == 0)
+        {
+            return false;
+        }
+
+        // 'geometry' and 'shape' are the aliases FilterExpressionHelpers accepts for an
+        // explicit geometry field, so the fallback property stays addressable the same way.
+        return localName.Equals(geometryPropertyName, StringComparison.OrdinalIgnoreCase) ||
+               XmlConvert.DecodeName(localName).Equals(geometryPropertyName, StringComparison.OrdinalIgnoreCase) ||
+               localName.Equals("geometry", StringComparison.OrdinalIgnoreCase) ||
+               localName.Equals("shape", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Reduces a property reference to the XML local name DescribeFeatureType advertises by
+    /// dropping any XPath step prefix and any QName namespace prefix.
+    /// </summary>
+    private static string ExtractLocalName(string requested)
+    {
+        var localName = requested;
+        var lastSlash = localName.LastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash < localName.Length - 1)
+        {
+            localName = localName[(lastSlash + 1)..];
+        }
+
+        // A ValueReference can qualify the schema-declared local name with the feature
+        // namespace (honua:eo_x003A_cloud_cover). Strip that QName prefix before decoding.
+        var colon = localName.LastIndexOf(':');
+        if (colon >= 0 && colon < localName.Length - 1)
+        {
+            localName = localName[(colon + 1)..];
+        }
+
+        return localName;
     }
 
     private static string? FindExactField(MetadataV2Resource resource, string requestedName)
