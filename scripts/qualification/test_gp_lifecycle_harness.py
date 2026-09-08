@@ -4,6 +4,7 @@ import copy
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -16,6 +17,24 @@ STREAK = ROOT / "scripts/qualification/gp-canary-streak.sh"
 
 
 class GpQualificationHarnessTests(unittest.TestCase):
+    def test_receipt_serialization_failure_is_reported_as_missing_evidence(self):
+        with tempfile.TemporaryDirectory(prefix="gp-receipt-failure-") as directory:
+            fake_jq = Path(directory) / "jq"
+            fake_jq.write_text(
+                '#!/bin/sh\nif [ "$1" = "-n" ] && [ "$2" = "--slurpfile" ]; then exit 24; fi\n'
+                f'exec "{shutil.which("jq")}" "$@"\n',
+                encoding="utf-8",
+            )
+            fake_jq.chmod(0o755)
+            completed, receipts, summary = self.run_harness(
+                "self-test", PATH=f"{directory}:{os.environ['PATH']}"
+            )
+        self.assertNotEqual(0, completed.returncode)
+        self.assertEqual({}, receipts)
+        self.assertEqual(0, summary["receipt_count"])
+        self.assertEqual(0, summary["passed"])
+        self.assertEqual(summary["declared_scenarios"], summary["missing_scenarios"])
+
     def test_output_store_preflight_never_counts_unexecuted_proof_as_passed(self):
         completed, receipts, summary = self.run_harness(
             "output-store", HONUA_SERVER_IMAGE="unattested:latest"
