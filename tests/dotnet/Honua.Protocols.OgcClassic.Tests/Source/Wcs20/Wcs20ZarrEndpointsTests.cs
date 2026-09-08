@@ -363,7 +363,8 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
                 "\"axes\":[{\"name\":\"elevation\",\"unit\":\"m\",\"start\":0,\"end\":1000}]}"),
             [root + "/temperature/.zarray"] = Encoding.UTF8.GetBytes(
                 "{\"chunks\":[" + levels + "," + rows + "," + columns +
-                "],\"compressor\":null,\"dtype\":\"<f4\",\"fill_value\":0,\"filters\":null," +
+                // Zero is a valid sample on level 0; keep the fill sentinel outside the data range.
+                "],\"compressor\":null,\"dtype\":\"<f4\",\"fill_value\":\"NaN\",\"filters\":null," +
                 "\"order\":\"C\",\"shape\":[" + levels + "," + rows + "," + columns + "],\"zarr_format\":2}"),
             [root + "/temperature/.zattrs"] = Encoding.UTF8.GetBytes(
                 "{\"_ARRAY_DIMENSIONS\":[\"elevation\",\"y\",\"x\"]}"),
