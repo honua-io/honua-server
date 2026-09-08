@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -77,6 +78,14 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             // Record completion before stopping the monitor, so a late failed
             // check cannot change an endpoint outcome that already completed.
             Interlocked.CompareExchange(ref outcome, StreamCompleted, StreamRunning);
+            // SSE handlers can swallow cancellation during the first write and
+            // return an empty result. Preserve typed endpoint denials, but turn
+            // that empty completion into an HTTP denial if streaming never began.
+            if (completed is EmptyHttpResult && Volatile.Read(ref outcome) == StreamEnded
+                && !context.Response.HasStarted)
+            {
+                return Results.Unauthorized();
+            }
             return completed;
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
