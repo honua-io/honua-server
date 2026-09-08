@@ -79,6 +79,12 @@ for SSE/WS, `unauthorized` for OData); revocation rows retain `revokedAt`. The t
 cover both sides of the applicable expiry/revocation boundary, and termination must meet
 the declared bound. Credentials themselves must not be retained in the receipt.
 
+Revocation must occur after issuance and before expiry, and its observed termination
+must also precede expiry. A token that expires while the revocation scenario is waiting
+cannot qualify the revocation row: the same disconnect could be caused by expiry alone.
+The expiry/revocation boundary and termination must both fall inside the source workflow
+execution window. These checks preserve separate expiry and revocation proof obligations.
+
 Required assertion IDs are `no-cross-tenant-payload` and `invalid-credentials-rejected`;
 expiry/revocation also require `old-credential-terminated` and `replacement-resume`, and
 changed-scope rows require `changed-scope-rejected`. A generic successful assertion, an

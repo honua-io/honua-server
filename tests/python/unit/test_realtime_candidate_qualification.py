@@ -66,7 +66,7 @@ def complete_evidence():
                 "resourceIds": ["tenant-a/layers/0", "tenant-b/layers/1"],
                 "mutationIds": ["a-before", "b-after"],
                 "issuedAt": "2026-09-02T06:35:00Z",
-                "expiresAt": "2026-09-02T06:36:00Z",
+                "expiresAt": "2026-09-02T06:37:00Z" if scenario == "token-revocation" else "2026-09-02T06:36:00Z",
                 "revokedAt": "2026-09-02T06:36:00Z",
                 "terminatedAt": "2026-09-02T06:36:01Z",
                 "enforcementBoundMilliseconds": 5000,
@@ -104,6 +104,48 @@ def qualify(source):
 
 
 class RealtimeCandidateQualificationTests(unittest.TestCase):
+    def test_revocation_requires_a_live_credential_and_termination_before_expiry(self):
+        # Independently specified clock cases: issuance 06:35, revocation 06:36,
+        # termination 06:36:01, expiry 06:37. An expiry cannot prove revocation.
+        cases = (
+            ("revokedAt", "2026-09-02T06:34:59Z", "revocation must occur during the token lifetime"),
+            ("expiresAt", "2026-09-02T06:36:00Z", "revocation must occur during the token lifetime"),
+            ("expiresAt", "2026-09-02T06:35:59Z", "revocation must occur during the token lifetime"),
+            ("expiresAt", "2026-09-02T06:36:01Z", "revocation termination must precede token expiry"),
+            ("expiresAt", "2026-09-02T06:36:00.500Z", "revocation termination must precede token expiry"),
+        )
+        for surface, transport in (("feature-stream", "sse"), ("feature-stream", "websocket"),
+                                   ("feature-stream", "odata"), ("sensorthings", "sse"),
+                                   ("sensorthings", "websocket")):
+            for field, value, reason in cases:
+                with self.subTest(surface=surface, transport=transport, field=field, value=value):
+                    source = complete_evidence()
+                    target = next(row for row in source["rows"] if row["surface"] == surface
+                                  and row["transport"] == transport and row["scenario"] == "token-revocation")
+                    target["authorization"][field] = value
+                    receipt = qualify(source)
+                    self.assertEqual("rejected", receipt["status"])
+                    rejected = [row for row in receipt["rows"] if row["state"] == "rejected"]
+                    self.assertEqual(1, len(rejected))
+                    self.assertEqual((surface, transport, "token-revocation"),
+                                     tuple(rejected[0][key] for key in ("surface", "transport", "scenario")))
+                    self.assertIn(reason, " ".join(rejected[0]["reasons"]))
+                    self.assertEqual(SERVER_SHA, receipt["candidate"]["serverRevision"])
+                    self.assertEqual(SERVER_IMAGE, receipt["candidate"]["serverImage"])
+
+    def test_authorization_boundary_and_termination_must_be_observed_in_the_live_run(self):
+        for scenario in ("token-expiry", "token-revocation"):
+            for field, value, reason in (
+                ("completedAt", "2026-09-02T06:36:00.500Z", "termination falls outside its claimed live workflow"),
+                ("startedAt", "2026-09-02T06:36:00.500Z", "boundary falls outside its claimed live workflow"),
+            ):
+                with self.subTest(scenario=scenario, field=field):
+                    source = complete_evidence()
+                    target = next(row for row in source["rows"] if row["scenario"] == scenario)
+                    workflow = deepcopy(source["workflow"])
+                    workflow[field] = value
+                    self.assertIn(reason, " ".join(MODULE._authorization_diagnostics(target, workflow)))
+
     def test_expiry_does_not_stand_in_for_revocation_or_scope_change(self):
         source = complete_evidence()
         source["rows"] = [row for row in source["rows"] if row["scenario"] not in {"token-revocation", "tenant-scope-change"}]

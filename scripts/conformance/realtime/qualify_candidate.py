@@ -105,6 +105,16 @@ def _authorization_diagnostics(row: dict, workflow: dict) -> list[str]:
         if row["scenario"] == "token-revocation":
             boundary = _timestamp(proof.get("revokedAt"), "authorization.revokedAt", reasons)
         terminated = _timestamp(proof.get("terminatedAt"), "authorization.terminatedAt", reasons)
+        if row["scenario"] == "token-revocation":
+            if (issued is not None and boundary is not None and expires is not None
+                    and not issued <= boundary < expires):
+                reasons.append("authorization revocation must occur during the token lifetime")
+            if terminated is not None and expires is not None and terminated >= expires:
+                reasons.append("authorization revocation termination must precede token expiry")
+        for timestamp, label in ((boundary, "boundary"), (terminated, "termination")):
+            if (timestamp is not None and started is not None and completed is not None
+                    and not started <= timestamp <= completed):
+                reasons.append(f"authorization {label} falls outside its claimed live workflow")
         bound = proof.get("enforcementBoundMilliseconds")
         if isinstance(bound, bool) or not isinstance(bound, int) or not 0 < bound <= 5000:
             reasons.append("authorization enforcement bound must be positive and at most 5000 ms")
