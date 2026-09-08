@@ -8,6 +8,7 @@ using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using System.Security.Claims;
@@ -45,6 +46,101 @@ public sealed class LiveStreamAuthorizationTests
         });
         ((IStatusCodeHttpResult)result!).StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         output.Length.Should().Be(0, "normal cancellation must not overwrite a typed denial with a terminal stream frame");
+    }
+
+    [UnitTest]
+    public async Task Filter_RevalidationFailsWhileTheEndpointIsStillRunning_KeepsTheEndpointDenial()
+    {
+        // The runner can starve the endpoint continuation past the revalidation
+        // deadline. That check then fails closed while the endpoint is still about
+        // to answer, which is the ordering the flaky run above hit by accident.
+        var authentication = Substitute.For<IAuthenticationService>();
+        authentication.AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<string>()).Returns(async call =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, call.ArgAt<HttpContext>(0).RequestAborted);
+            return AuthenticateResult.NoResult();
+        });
+        var registrations = new ServiceCollection();
+        registrations.AddLogging();
+        registrations.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PortalTokenAuthenticationHandler>(
+            PortalTokenAuthenticationExtensions.PortalTokenScheme, _ => { });
+        registrations.AddSingleton(authentication);
+        await using var services = registrations.BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "denied")],
+            PortalTokenAuthenticationExtensions.PortalTokenScheme));
+        using var output = new MemoryStream();
+        context.Response.Body = output;
+        var result = await new LiveStreamAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(context), async invocation =>
+        {
+            var deauthorized = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using var registration = invocation.HttpContext.RequestAborted.Register(() => deauthorized.TrySetResult());
+            await deauthorized.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        });
+        ((IStatusCodeHttpResult)result!).StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        output.Length.Should().Be(0, "a response the endpoint never started carries its outcome in the status code, not an SSE frame");
+        await ((IResult)result!).ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        output.Length.Should().Be(0, "executing the typed denial must preserve an empty response body");
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task Filter_RevalidationCancelsEndpoint_EndsOnlyAnAlreadyStartedStream(bool responseStarted, bool swallowCancellation)
+    {
+        var authentication = Substitute.For<IAuthenticationService>();
+        authentication.AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<string>())
+            .Returns(AuthenticateResult.NoResult());
+        var registrations = new ServiceCollection();
+        registrations.AddLogging();
+        registrations.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PortalTokenAuthenticationHandler>(
+            PortalTokenAuthenticationExtensions.PortalTokenScheme, _ => { });
+        registrations.AddSingleton(authentication);
+        await using var services = registrations.BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "revoked")],
+            PortalTokenAuthenticationExtensions.PortalTokenScheme));
+        using var output = new MemoryStream();
+        var response = Substitute.For<IHttpResponseFeature>();
+        response.HasStarted.Returns(responseStarted);
+        response.StatusCode = StatusCodes.Status200OK;
+        context.Features.Set(response);
+        context.Response.Body = output;
+
+        var result = await new LiveStreamAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(context), async invocation =>
+        {
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, invocation.HttpContext.RequestAborted)
+                    .WaitAsync(TimeSpan.FromSeconds(30));
+            }
+            catch (OperationCanceledException) when (swallowCancellation && invocation.HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                // SSE endpoints can catch cancellation during their first write
+                // and return normally before the response has started.
+            }
+            return Results.Empty;
+        });
+
+        if (responseStarted)
+        {
+            result.Should().BeSameAs(Results.Empty);
+            System.Text.Encoding.UTF8.GetString(output.ToArray()).Should().Be(
+                "event: status\ndata: {\"status\":\"error\",\"code\":\"authorization-ended\"}\n\n");
+        }
+        else
+        {
+            await ((IResult)result!).ExecuteAsync(context);
+            context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+            ((IStatusCodeHttpResult)result!).StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+            output.Length.Should().Be(0, "cancellation before streaming starts must return an HTTP denial");
+        }
     }
 
     [UnitTest]
