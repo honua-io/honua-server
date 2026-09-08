@@ -33,8 +33,8 @@ public sealed class CatalogExecutableConformanceTests
         definitions.Should().HaveCount(98);
         definitions.Should().OnlyHaveUniqueItems(process => process.ProcessId);
         definitions.Should().NotContain(process => process.ExecutionKind == ProcessExecutionKind.Unclassified);
-        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(81);
-        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(5);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(82);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(4);
         definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.WorkflowOnly).Should().Be(12);
         definitions.Should().NotContain(
             process => process.ExecutionKind == ProcessExecutionKind.Unavailable,
