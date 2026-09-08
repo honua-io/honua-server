@@ -47,6 +47,8 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertLess(generator.index('generate-feature-catalog.sh'), generator.index('generate-capability-matrix.py'))
         self.assertLess(generator.index('generate-geoservices-parity.sh'), generator.index('generate-capability-matrix.py'))
         self.assertIn('verify-admin-operation-parity.py', generator)
+        self.assertIn('generate-admin-operation-parity-exports.sh "$@" --no-build --no-restore', generator)
+        self.assertIn('generate-geoservices-parity.sh "$@" --no-build --no-restore', generator)
 
     def test_generator_failure_stops_the_pipeline(self):
         with tempfile.TemporaryDirectory() as temp:

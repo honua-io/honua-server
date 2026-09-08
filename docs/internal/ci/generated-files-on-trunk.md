@@ -16,8 +16,10 @@ inputs still fail. Generator implementation and serialization are unchanged.
 | `docs/gis/data/capability-matrix.v1.json` | `scripts/ci/generate-capability-matrix.py` (after catalog and parity) | Every trunk push |
 | `examples/manifest.json` | `scripts/examples/generate-manifest.py` | Every trunk push |
 | `src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json` | `scripts/geoparquet/generate-projjson-catalog.py` | Explicit CRS/PROJ dependency update; depends on external pyproj/PROJ data, not trunk evidence |
-| `docs/gis/gap-report.md`, cross-server gap report and SDK compatibility table snapshots | `scripts/client-compat/diff-baselines.py`, `scripts/ci/generate-cross-server-gap-report.sh`, `scripts/ci/generate-sdk-compatibility-table.sh` | Evidence-run outputs; require measured results, external checkouts or live servers |
-| COG, canonical CNG and curated format corpus fixtures | `scripts/raster/generate-cog-fixtures.py`, `scripts/conformance/cng/generate-canonical-fixtures.py`, `scripts/test-data/generate-*` | Explicit fixture refresh with GDAL/external tooling; runtime test data, not trunk projections |
+| `docs/gis/gap-report.md`, `docs/internal/compatibility/cross-server-consume-gap-report.md` | `scripts/client-compat/diff-baselines.py`, `scripts/ci/generate-cross-server-gap-report.sh` | Evidence-run snapshots; require measured results, external checkouts or live servers |
+| `tests/fixtures/curated-edge-corpus/v1/sea-surface-temperature.zarr/temperature/0.0.0` | `scripts/test-data/generate-curated-corpus-zarr.py` | Explicit refresh of fixed sample values |
+| `tests/fixtures/external-format-corpus/v1/*` binary fixtures | `scripts/test-data/generate-external-format-corpus.sh` | Explicit GDAL/OGR fixture refresh from authored GeoJSON inputs |
+| `tests/dotnet/Honua.Core.Tests/Raster/CogParser/Fixtures/*` TIFF/pixel fixtures | `scripts/raster/generate-cog-fixtures.py` | Explicit rasterio/GDAL fixture refresh |
 
 There are **no tracked `*.generated.*` files**. Compiler-generated JSON/logging,
 OpenAPI runtime output and SDK bindings are build artifacts or package inputs.
@@ -35,7 +37,11 @@ judgments, GeoServices judgments, certification receipts, and stranded-merge
 dispositions are authored inputs or evidence. They are never auto-rewritten.
 The review-first, impact-routing and server-test-prebuild evidence ledgers are
 workflow artifacts produced by their existing ledger/audit scripts, not
-checked-in projections. Their provenance and validation stay intact.
+checked-in projections. The SDK compatibility table/summary
+(`scripts/ci/generate-sdk-compatibility-table.sh`), canonical CNG fixtures
+(`scripts/conformance/cng/generate-canonical-fixtures.py`), migration evidence
+packs and protocol-harness fragments are also run artifacts. Their provenance
+and validation stay intact.
 
 ## Execution and write contract
 
