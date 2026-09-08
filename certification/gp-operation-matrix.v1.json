@@ -771,7 +771,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "InterpolateKriging_SamplePoints_ReproducesSampleValuesExactly",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production kriging executor with pinned real GDAL; the decoded cell centred on the interior sample reproduces its observed value, and the surface declares no nodata \u2014 the exactness property that distinguishes kriging from a smoother."
+          "assertion": "Required PR Gate executes the production kriging executor with pinned real GDAL; the decoded cell centred on the interior sample reproduces its observed value, and the surface declares no nodata — the exactness property that distinguishes kriging from a smoother."
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
@@ -885,6 +885,7 @@
     {
       "processId": "conversion.geometry-format",
       "status": "proven",
+      "entryPoint": "job",
       "evidence": [
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryFormatConversionExecutionProofTests.cs",
@@ -896,8 +897,7 @@
           "test": "Oracle_DroppedHoleOrShiftedOrdinates_AreRejectedEvenThoughTheOutputParses",
           "assertion": "Demonstrated negatives: real conversions of a hole-dropped polygon and a translated copy produce valid, parseable outputs in the requested encodings - the translated one keeps ring count, winding and area, exactly as a silent reprojection would - and the frozen ring/hole/ordinate oracle rejects both."
         }
-      ],
-      "entryPoint": "job"
+      ]
     },
     {
       "processId": "conversion.feature-project",
@@ -1070,6 +1070,7 @@
     {
       "processId": "data-management.calculate-field",
       "status": "proven",
+      "entryPoint": "protocol",
       "evidence": [
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/CalculateFieldExecutionProofTests.cs",
@@ -1081,8 +1082,7 @@
           "test": "Oracle_CalculateThatIgnoresTheFilter_IsRejected",
           "assertion": "Demonstrated negative: a real calculate over where=1=1 returns a valid 200 with a plausible updated count and well-formed rows; the frozen post-state oracle rejects it because the excluded row changed."
         }
-      ],
-      "entryPoint": "protocol"
+      ]
     },
     {
       "processId": "import.dataset",
