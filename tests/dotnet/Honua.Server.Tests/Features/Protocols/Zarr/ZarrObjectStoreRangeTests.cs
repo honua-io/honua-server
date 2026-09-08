@@ -145,9 +145,68 @@ public sealed class ZarrObjectStoreRangeTests
         tail.Should().Equal(payload.AsSpan(payload.Length - 10, 10).ToArray());
 
         // A missing chunk must surface as FileNotFoundException; ZarrSubsetReader catches exactly
-        // that to substitute the array's fill value for an unwritten chunk.
-        var missing = async () => await reader.ReadRangeAsync(options.BucketName, key + ".absent", 0, 16);
-        await missing.Should().ThrowAsync<FileNotFoundException>();
+        // that to substitute the array's fill value for an unwritten chunk. It sizes a chunk with
+        // GetObjectSizeAsync BEFORE it ever issues the ranged GET, so the HEAD translation is the
+        // one that path actually depends on — assert both.
+        var missingHead = async () => await reader.GetObjectSizeAsync(options.BucketName, key + ".absent");
+        await missingHead.Should().ThrowAsync<FileNotFoundException>();
+
+        var missingGet = async () => await reader.ReadRangeAsync(options.BucketName, key + ".absent", 0, 16);
+        await missingGet.Should().ThrowAsync<FileNotFoundException>();
+    }
+
+    /// <summary>
+    /// An unwritten chunk must read back as the array's fill value, over a real object store.
+    /// </summary>
+    /// <remarks>
+    /// Sparse Zarr stores omit chunks that hold only the fill value, so this is ordinary input, not
+    /// a corruption case. End to end it is also the assertion that binds
+    /// <see cref="AwsS3RangeReader.GetObjectSizeAsync"/>'s not-found translation to a behaviour:
+    /// if that HEAD stopped raising <see cref="FileNotFoundException"/>, this read would fault
+    /// instead of returning the declared fill value.
+    /// </remarks>
+    [EmulatorTest(BucketEnv, RegionEnv, AccessKeyEnv, SecretKeyEnv, ServiceUrlEnv, ForcePathStyleEnv)]
+    public async Task ReadSubset_WithAnUnwrittenChunk_FillsThatWindowWithTheDeclaredFillValue()
+    {
+        var options = ReadOptions();
+        var root = "zarr-range/" + Guid.NewGuid().ToString("N");
+        var objects = BuildCube(root);
+
+        // The fixture declares fill_value NaN. Drop the north-east chunk so the store is sparse.
+        const string omitted = "/temperature/0.1";
+        objects.Remove(root + omitted).Should().BeTrue("the fixture must contain the chunk being omitted");
+        await UploadAsync(options, objects);
+
+        var reader = CreateRangeReader(options);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, options.BucketName, root);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
+            reader,
+            options.BucketName,
+            root,
+            metadata,
+            new ZarrSubsetRequest
+            {
+                Variable = "temperature",
+                Start = [0, 0],
+                Stop = [Grid, Grid],
+            });
+
+        for (var row = 0; row < Grid; row++)
+        {
+            for (var col = 0; col < Grid; col++)
+            {
+                var actual = BitConverter.ToSingle(subset.Data, ((row * Grid) + col) * sizeof(float));
+                if (row < Chunk && col >= Chunk)
+                {
+                    float.IsNaN(actual).Should().BeTrue(
+                        "cell ({0},{1}) is inside the omitted chunk and must read as the fill value", row, col);
+                }
+                else
+                {
+                    actual.Should().Be(Sample(row, col), "cell ({0},{1}) is stored", row, col);
+                }
+            }
+        }
     }
 
     private static Dictionary<string, byte[]> BuildCube(string root)
