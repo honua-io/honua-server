@@ -90,3 +90,12 @@ public class DatabaseSceneGrpcCollection : ICollectionFixture<DatabaseFixtureAda
 public class DatabaseOidcAuthenticationCollection : ICollectionFixture<DatabaseFixtureAdapter>
 {
 }
+
+/// <summary>
+/// Database-backed collection for feature-stream endpoint tests.
+/// </summary>
+[CollectionDefinition("Database.FeatureStreamEndpoints")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
+public class DatabaseFeatureStreamEndpointsCollection : ICollectionFixture<DatabaseFixtureAdapter>
+{
+}
