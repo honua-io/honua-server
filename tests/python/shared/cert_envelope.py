@@ -95,6 +95,7 @@ RENDERING_IDS: frozenset[str] = frozenset({
 })
 
 _STATUS_RANK = {"fail": 3, "pass": 2, "skip": 1, "not-applicable": 1}
+_RELEASE_STATUS_RANK = {"fail": 4, "skip": 3, "pass": 2, "not-applicable": 1}
 
 # The governed status vocabulary spells the fourth token with an underscore. The
 # lanes, the baseline diff and the matrix documentation all use the hyphenated
@@ -204,6 +205,9 @@ class CertificationEvidenceCollector:
         self.protocol_profile = protocol_profile
         self._results: dict[str, CertResult] = {}
         self._extensions: dict[str, CertResult] = {}
+        # Nightly envelopes retain their historical best-available skip/pass
+        # behavior. Release qualification must retain every observed non-pass.
+        self._release_results: dict[str, CertResult] = {}
 
     # -- recording ---------------------------------------------------------
 
@@ -252,6 +256,9 @@ class CertificationEvidenceCollector:
         existing = bucket.get(test_case_id)
         if existing is None or _prefer(candidate, existing):
             bucket[test_case_id] = candidate
+        existing_release = self._release_results.get(test_case_id)
+        if existing_release is None or _prefer(candidate, existing_release, release=True):
+            self._release_results[test_case_id] = candidate
 
     def try_record(self, test_case_id: str, status: str, **kwargs) -> bool:
         """Record only if this lane declares the case applicable.
@@ -327,12 +334,14 @@ class CertificationEvidenceCollector:
         candidate image, the trusted producer revision or the governed client
         identity raises instead of writing a receipt a release gate might admit.
 
-        An individual observation that cannot name the request it performed, or
+        An individual passing observation that cannot name the request it performed, or
         the governed facets it exercised, is *omitted* rather than published with
         invented provenance. The governed aggregator emits a requirement it sees
         no observation for as a skip, which the release gate fails closed on, so
         omission costs nothing and publishing a malformed row would cost the whole
         receipt -- the consumer rejects an entire receipt on one bad result.
+        An observed fail or skip without provenance instead rejects emission:
+        omitting it could let another test credit the same governed operation.
         """
         missing = [
             name for name, value in (
@@ -367,10 +376,9 @@ class CertificationEvidenceCollector:
         substantiated: list[dict] = []
         unsubstantiated: list[dict] = []
         for entry in [*envelope["results"], *envelope["extensions"]]:
-            recorded = self._results.get(entry["test_case_id"]) or self._extensions.get(
-                entry["test_case_id"])
-            governed = dict(entry)
-            governed["status"] = GOVERNED_STATUS[entry["status"]]
+            recorded = self._release_results.get(entry["test_case_id"])
+            governed = _as_dict(recorded) if recorded is not None else dict(entry)
+            governed["status"] = GOVERNED_STATUS[governed["status"]]
             if governed["status"] == "not_applicable":
                 # The consumer discards these before it checks provenance.
                 substantiated.append(governed)
@@ -378,6 +386,10 @@ class CertificationEvidenceCollector:
 
             provenance = _release_provenance(recorded, self.client_id or "")
             if provenance is None:
+                if recorded is not None and recorded.status in {"fail", "skip"}:
+                    raise ValueError(
+                        f"Cannot omit nonpassing observation {recorded.test_case_id}: "
+                        "release request provenance is missing or invalid.")
                 unsubstantiated.append({
                     "test_case_id": entry["test_case_id"],
                     "status": governed["status"],
@@ -429,9 +441,10 @@ class CertificationEvidenceCollector:
         return bool(self._results) or bool(self._extensions)
 
 
-def _prefer(candidate: CertResult, existing: CertResult) -> bool:
-    candidate_rank = _STATUS_RANK.get(candidate.status, 0)
-    existing_rank = _STATUS_RANK.get(existing.status, 0)
+def _prefer(candidate: CertResult, existing: CertResult, *, release: bool = False) -> bool:
+    ranks = _RELEASE_STATUS_RANK if release else _STATUS_RANK
+    candidate_rank = ranks.get(candidate.status, 0)
+    existing_rank = ranks.get(existing.status, 0)
     if candidate_rank != existing_rank:
         return candidate_rank > existing_rank
     return _richness(candidate) > _richness(existing)
