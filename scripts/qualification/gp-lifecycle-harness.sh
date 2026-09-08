@@ -485,6 +485,7 @@ run_output_store_attestation() {
   local ephemeral_root ephemeral_log ephemeral_code attestation
   local before_ids after_ids objects worker_before worker_after worker_attestation
   local content_before content_after sha_before sha_after descriptor_before descriptor_after
+  local content_type_before content_type_after content_bytes
   local -a rejection
 
   declared="$(compose_staging_value ConfigurationDigest)"
@@ -552,11 +553,18 @@ run_output_store_attestation() {
   }
 
   content_before="$(mktemp)"
-  auth_curl "${base_url}/api/geoprocessing/jobs/${job}/artifacts/0/content" > "${content_before}" || {
+  content_type_before="$(auth_curl -o "${content_before}" -w '%{content_type}' "${base_url}/api/geoprocessing/jobs/${job}/artifacts/0/content")" || {
     rm -f "${content_before}"
     write_receipt "${scenario}" fail "FINDING: staged artifact was unreadable through the normal server read path" "${job}" "${state}"
     return 1
   }
+  content_bytes="$(wc -c < "${content_before}")"
+  if [[ "${content_type_before%%;*}" != application/geo+json ]] || (( content_bytes <= 1024 )); then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: staged GeoJSON media type or byte length is incorrect" "${job}" "${state}"
+    return 1
+  fi
+  jq -n --argjson bytes "${content_bytes}" '{sha256:null,bytes:$bytes}' > "${scenario_state_file}"
   sha_before="$(sha256sum "${content_before}" | cut -d' ' -f1)"
   if ! python3 "${repo_root}/scripts/qualification/verify-gp-store-artifact.py" "${content_before}"; then
     rm -f "${content_before}"
@@ -620,7 +628,7 @@ run_output_store_attestation() {
 
   # Read back through a replacement host that never produced these bytes.
   content_after="$(mktemp)"
-  auth_curl "${peer_url}/api/geoprocessing/jobs/${job}/artifacts/0/content" > "${content_after}" || {
+  content_type_after="$(auth_curl -o "${content_after}" -w '%{content_type}' "${peer_url}/api/geoprocessing/jobs/${job}/artifacts/0/content")" || {
     rm -f "${content_before}" "${content_after}"
     write_receipt "${scenario}" fail "FINDING: staged artifact was lost across server and worker replacement" "${job}" "${state}"
     return 1
@@ -631,7 +639,7 @@ run_output_store_attestation() {
     write_receipt "${scenario}" fail "FINDING: staged output descriptor was lost across replacement" "${job}" "${state}"
     return 1
   }
-  if ! cmp -s "${content_before}" "${content_after}"; then
+  if [[ "${content_type_after}" != "${content_type_before}" ]] || ! cmp -s "${content_before}" "${content_after}"; then
     rm -f "${content_before}" "${content_after}"
     write_receipt "${scenario}" fail "FINDING: staged output bytes changed across server and worker replacement" "${job}" "${state}"
     return 1
@@ -1015,7 +1023,7 @@ run_soak() {
 
 run_topology() {
   local name value backlog_jobs backlog_cap soak_seconds soak_concurrency
-  for name in docker curl jq; do
+  for name in docker curl jq python3; do
     command -v "${name}" >/dev/null || { preflight_failure="missing required command: ${name}"; return 1; }
   done
   require_digest HONUA_SERVER_IMAGE || { preflight_failure="HONUA_SERVER_IMAGE is not an exact digest"; return 1; }
