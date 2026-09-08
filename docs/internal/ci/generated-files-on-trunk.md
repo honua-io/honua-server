@@ -106,3 +106,9 @@ families cover 26 projects.
 
 The local Release build and `FeatureCatalogEmitter` also passed using PATH's
 lane-capped `dotnet`, shared compilation, and the trunk writer's analyzer policy.
+All three emitters then passed through PATH's `dotnet vstest` with the same
+environment variables and test filters as the existing generator wrappers.
+This reused the completed binaries because the host's build-slot limiter also
+queues `dotnet test --no-build`. Admin parity verification and both Python
+generators passed (115 capabilities). The publication dry run reported only
+`examples/manifest.json` drift: one candidate commit, without staging or pushing.
