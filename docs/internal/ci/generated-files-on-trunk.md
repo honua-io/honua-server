@@ -89,3 +89,6 @@ and rejection of a stale writer against a concurrently advanced trunk.
 Branch validation on 2026-09-07: the four generated-file contracts, the
 lean-gate command contract, actionlint for both affected workflows, shell
 syntax checks, and all 12 capability-matrix generator unit tests passed.
+The complete `validate-ci-router.sh` suite also passed: 1,383 Server test
+classes are claimed, all 73 shard filters select tests, and the four foundation
+families cover 26 projects.
