@@ -36,6 +36,13 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// checked-in qualification topology, which closes the loop between the manifest, the
 /// provisioning procedure and the runtime validator.
 /// </para>
+/// <para>
+/// Every vector runs the shipped script itself, so the fixture is
+/// <see cref="GnuLinuxUnitTestAttribute"/> rather than <c>[UnitTest]</c>: still Tier=Fast for
+/// the PR gate, which is ubuntu-latest, but skipped on a contributor's Windows or macOS box
+/// where a local <c>--filter "Tier=Fast"</c> run would fail on the missing GNU toolchain
+/// instead of on the conformance this gate exists to check.
+/// </para>
 /// </remarks>
 public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
 {
@@ -51,7 +58,7 @@ public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
 
     private readonly string _root = Directory.CreateTempSubdirectory("honua-gp-provisioner-").FullName;
 
-    [UnitTest]
+    [GnuLinuxUnitTest]
     public async Task Provisioner_DefaultContract_WritesTheIndependentlyPinnedAttestation()
     {
         var root = CreateVolume("default-contract");
@@ -82,7 +89,7 @@ public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
     /// whose ordinal order differs from a locale-aware one, and non-default sweep/retention
     /// durations including a day component.
     /// </summary>
-    [UnitTest]
+    [GnuLinuxUnitTest]
     public async Task Provisioner_UnsortedInventoryAndTunedDurations_MatchesTheRuntimeDigest()
     {
         var root = CreateVolume("tuned-contract");
@@ -132,7 +139,7 @@ public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
     /// topology accepts: the digest the compose file declares is the digest the script
     /// produces from that topology's own settings.
     /// </summary>
-    [UnitTest]
+    [GnuLinuxUnitTest]
     public async Task Provisioner_QualificationTopologySettings_ReproduceTheDeclaredDigest()
     {
         var topology = ReadQualificationTopology();
@@ -161,7 +168,7 @@ public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
     /// Re-provisioning in place would silently re-attest a different store or backup
     /// policy over live data, so it must fail and leave the existing marker untouched.
     /// </summary>
-    [UnitTest]
+    [GnuLinuxUnitTest]
     public async Task Provisioner_AlreadyAttestedRoot_RefusesAndPreservesTheMarker()
     {
         var root = CreateVolume("already-attested");
@@ -193,7 +200,7 @@ public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
     /// about — bytes that survive nothing. The script must refuse it before any marker
     /// exists, matching the runtime's own precondition.
     /// </summary>
-    [UnitTest]
+    [GnuLinuxUnitTest]
     public async Task Provisioner_StoreOutsideTheBackupInventory_RefusesAndWritesNoMarker()
     {
         var root = CreateVolume("outside-backup-set");
@@ -241,9 +248,9 @@ public sealed class GeoprocessingOutputStoreProvisionerTests : IDisposable
     {
         const string Prefix = "Geoprocessing__OutputStaging__";
         var settings = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        foreach (var line in File.ReadAllLines(RepositoryPaths.Resolve("docker", "gp-reliability", "compose.yml")))
+        var lines = File.ReadAllLines(RepositoryPaths.Resolve("docker", "gp-reliability", "compose.yml"));
+        foreach (var trimmed in lines.Select(line => line.Trim()))
         {
-            var trimmed = line.Trim();
             if (!trimmed.StartsWith(Prefix, StringComparison.Ordinal))
             {
                 continue;
