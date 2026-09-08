@@ -38,11 +38,11 @@ public sealed class CompatCompileBindingAndAccessPolicyTests
         // compiled service AND its layer resources must still be non-anonymous.
         """
         INSERT INTO honua.services (
-            service_name, description, srid, max_record_count,
+            service_name, description, srid,
             supported_formats, capabilities, service_extent, metadata
         )
         VALUES (
-            'compat_protected', 'Compat protected service', 4326, 1000,
+            'compat_protected', 'Compat protected service', 4326,
             ARRAY['JSON', 'GeoJSON'],
             ARRAY['Query'],
             ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326),

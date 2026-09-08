@@ -8,11 +8,17 @@ CREATE EXTENSION IF NOT EXISTS postgis_raster;
 
 CREATE SCHEMA IF NOT EXISTS honua;
 
+-- Mirrors src/Honua.Server/Migrations/001_CreateHonuaSchema.sql exactly. On a
+-- server-migrated database this CREATE is a no-op and the migrated shape wins; on a
+-- fresh database (docker/client-compat) it must produce that same shape, so it must
+-- not declare columns the server no longer has. `max_record_count` was such a column:
+-- the migrations never create it and nothing in the server reads it (the paging cap
+-- comes from Limits:Query configuration and, in Metadata v2, from the service
+-- settings slot), so it is not carried here or in the INSERT below.
 CREATE TABLE IF NOT EXISTS honua.services (
     service_name VARCHAR(64) PRIMARY KEY,
     description TEXT NOT NULL DEFAULT '',
     srid INT NOT NULL DEFAULT 4326,
-    max_record_count INT NOT NULL DEFAULT 1000,
     supported_formats TEXT[] NOT NULL DEFAULT '{JSON,GeoJSON}',
     capabilities TEXT[] NOT NULL DEFAULT '{Query,Extract}',
     service_extent GEOMETRY,
@@ -914,11 +920,11 @@ END;
 $$;
 
 INSERT INTO honua.services (
-    service_name, description, srid, max_record_count,
+    service_name, description, srid,
     supported_formats, capabilities, service_extent
 )
 VALUES (
-    'test_service', 'Client compatibility certification service', 4326, 1000,
+    'test_service', 'Client compatibility certification service', 4326,
     ARRAY['JSON', 'GeoJSON'],
     ARRAY['Query', 'Extract', 'Create', 'Update', 'Delete', 'Sync'],
     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326)
@@ -926,7 +932,6 @@ VALUES (
 ON CONFLICT (service_name) DO UPDATE SET
     description = EXCLUDED.description,
     srid = EXCLUDED.srid,
-    max_record_count = EXCLUDED.max_record_count,
     supported_formats = EXCLUDED.supported_formats,
     capabilities = EXCLUDED.capabilities,
     service_extent = EXCLUDED.service_extent,
