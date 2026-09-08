@@ -44,7 +44,7 @@ public sealed class FeatureLockCapabilityManifestTests
 {
     private const string LocksCapability = "collaboration.feature-locks";
     private const string CrossNodeCapability = "collaboration.feature-locks.cross-node";
-    private const string VersionTokenCapability = "edit.version-tokens";
+    private const string VersionTokenCapability = "edit.geoservices-version-tokens";
 
     [IntegrationTheory]
     [InlineData(false)]

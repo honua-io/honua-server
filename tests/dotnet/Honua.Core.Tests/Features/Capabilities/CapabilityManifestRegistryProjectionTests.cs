@@ -72,7 +72,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "edit.features",
         "collaboration.feature-locks",
         "collaboration.feature-locks.cross-node",
-        "edit.version-tokens",
+        "edit.geoservices-version-tokens",
         "versioning.branch",
         "operate.status",
     ];
@@ -169,7 +169,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
     private static readonly string[] KnownGapManifestCapabilityIds =
     [
         "collaboration.feature-locks.cross-node",
-        "edit.version-tokens",
+        "edit.geoservices-version-tokens",
     ];
 
     [Fact]

@@ -93,7 +93,7 @@ public sealed class CapabilityRegistryConformanceTests
         "edit.features",
         "collaboration.feature-locks",
         "collaboration.feature-locks.cross-node",
-        "edit.version-tokens",
+        "edit.geoservices-version-tokens",
         "versioning.branch",
         "operate.status",
     ];

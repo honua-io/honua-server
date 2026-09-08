@@ -27,20 +27,33 @@ underlying feature data.
 | Is lease authorization configured out of the box? | **No.** The shipped authorizer denies every claim, so until you supply your own no lease is granted at all (see [Authorization](#authorization)). |
 | Is a lease atomic with the write it guards? | **No.** The check happens immediately before the mutation, not inside the writer transaction. See [What a lease does not promise](#what-a-lease-does-not-promise). |
 
-These are the recorded dispositions for honua-server#4402. Every one of them is also
-published by `GET /api/v1/capabilities/manifest`, so a client can discover them without
-reading this page:
+These are the recorded dispositions for honua-server#4402.
+
+**Three of them are machine-readable.** The rows below are published by
+`GET /api/v1/capabilities/manifest`, so a client can branch on them without reading this
+page:
 
 | Manifest capability | What it reports |
 | --- | --- |
 | `collaboration.feature-locks` | `supported: true` — enforcement ships on every feature-write path. `available` is `true` only once you supply an [authorizer](#authorization); until then it is `false` with `reasonCode: disabled-by-configuration`, because a lease that can never be granted is not an available capability. |
 | `collaboration.feature-locks.cross-node` | `supported: false`, `lifecycle: planned`, `reasonCode: unsupported` — leases do not span nodes. See [Single-node scope](#single-node-scope). |
-| `edit.version-tokens` | `supported: false`, `lifecycle: planned`, `reasonCode: unsupported` — the GeoServices `applyEdits` surface honours no client-supplied version token. |
+| `edit.geoservices-version-tokens` | `supported: false`, `lifecycle: planned`, `reasonCode: unsupported` — the GeoServices `applyEdits` surface honours no client-supplied version token. The row is named for that surface on purpose: OGC API Features **does** enforce `If-Match`/`412`, and a generically-named row would tell you to disable optimistic concurrency where it works. |
 
 That is the same shape the manifest already uses for an unimplemented file-format writer,
-so a client that can read one can read these. Lease atomicity is a property of the
-enforcement point rather than a separate capability; see
-[What a lease does not promise](#what-a-lease-does-not-promise).
+so a client that can read one can read these.
+
+**Two of them are not, and are documented here only.** Whether claiming a lease is
+mandatory, and whether the lease check is atomic with the write it guards, are semantics of
+how enforcement behaves rather than capabilities that can be switched on or off; the
+manifest has no field that could carry them without inventing one. Read
+[What a lease does not promise](#what-a-lease-does-not-promise) for both.
+
+One further caveat when you read the manifest: `capabilities[].available` does not account
+for a [deployment capability profile](../../guides/deploy/capability-deployment-profiles.md). A profile that omits
+`collaboration.map-sessions` removes the feature-lock routes, and no capability row in the
+manifest folds that in — the profile is published separately as `deploymentProfile`, and a
+client that cares must intersect the two. That is uniform across every row in the document,
+not specific to feature locks.
 
 ## Endpoints
 

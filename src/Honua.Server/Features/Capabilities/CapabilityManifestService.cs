@@ -527,11 +527,13 @@ internal sealed class CapabilityManifestService(
                 requiresAuthentication: true),
             // The two recorded 2026.1 gaps, published rather than left to the docs page: a
             // lease is node-local, and GeoServices applyEdits honours no client-supplied
-            // version token. Same wire shape as an unimplemented file-format writer.
+            // version token. Same wire shape as an unimplemented file-format writer. The
+            // version-token row is scoped to GeoServices because OGC API Features does
+            // enforce If-Match/412 — a global name would under-report the working surfaces.
             Capability("collaboration.feature-locks.cross-node", "collaboration", context,
                 maturity: CapabilityMaturity.Planned,
                 supported: false),
-            Capability("edit.version-tokens", "edit", context,
+            Capability("edit.geoservices-version-tokens", "edit", context,
                 maturity: CapabilityMaturity.Planned,
                 supported: false),
             // Branch versioning (VMS) — built-experimental, gated OFF the GA surface by
