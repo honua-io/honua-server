@@ -19,6 +19,8 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -144,6 +146,38 @@ class ReleaseJoinTests(unittest.TestCase):
         self.assertEqual(
             "ogc-features|collections|OWSLib|0.36.0|local-docker", verdict["cell"])
 
+    def test_cli_refuses_a_failed_observation_after_a_valid_pass(self):
+        # Exercise the actual JSON-file -> CLI -> process exit/report boundary.
+        # This is a verifier fixture, not a claim that an external client ran.
+        # The expected result follows from two conflicting observations of one
+        # exact cell; it is not copied from the verifier's current output.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipts = root / "receipts"
+            receipts.mkdir()
+            requirements_path = root / "requirements.json"
+            requirements_path.write_text(json.dumps(requirements_document(requirement())), encoding="utf-8")
+            raw = envelope()
+            raw["extensions"] = [{**raw["results"][0], "status": "fail"}]
+            (receipts / "conflicting.cert.json").write_text(json.dumps(raw), encoding="utf-8")
+            report_path = root / "report.json"
+            completed = subprocess.run([
+                sys.executable, str(VERIFIER), "--mode", "release",
+                "--requirements", str(requirements_path), "--receipts", str(receipts),
+                "--source-sha", CANDIDATE_SHA, "--image-digest", CANDIDATE_DIGEST,
+                "--producer-source-sha", PRODUCER_SHA, "--cut-at", "2026-09-01T00:00:00Z",
+                "--output", str(report_path),
+            ], capture_output=True, text=True, check=False)
+            self.assertEqual(1, completed.returncode, completed.stdout + completed.stderr)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual({"pass": 0, "fail": 1, "skip": 0}, report["summary"]["byResult"])
+            self.assertFalse(report["summary"]["green"])
+            self.assertEqual("ambiguous-cell", report["cells"][0]["reason_code"])
+            self.assertEqual(CANDIDATE_SHA, report["candidate"]["source_sha"])
+            self.assertEqual(CANDIDATE_DIGEST, report["candidate"]["image_digest"])
+            self.assertEqual("OWSLib", report["cells"][0]["canonical_client"])
+            self.assertEqual("0.36.0", report["cells"][0]["client_version"])
+            self.assertEqual("local-docker", report["cells"][0]["deployment_target"])
     def test_extension_results_can_satisfy_a_governed_cell(self):
         # NB-* extension IDs live in a separate array; the governed consumer reads
         # both, so a denominator row bound to one must resolve here too.
