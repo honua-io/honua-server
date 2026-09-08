@@ -40,9 +40,19 @@ public sealed class ReadinessCheckServiceTests
         result.Exception.Should().BeNull();
     }
 
+    /// <summary>
+    /// honua-server#4502: an unattested durable job substrate is healthy-but-DEGRADED, exactly
+    /// like the cache-fallback and in-memory feature-change-event paths, and must not fail
+    /// readiness. Failing it depools every node of a fleet whose Redis merely has AOF off — the
+    /// release e2e harness (stock <c>redis:7-alpine</c>) polls <c>/healthz/ready</c>, so a 503
+    /// there is a total outage in exchange for a durability guarantee the capability manifest
+    /// already withholds. The degradation is reported on the health-check roll-up instead
+    /// (<c>RedisHealthCheck</c> -> Degraded), and <c>Jobs:RequireDurableStore=true</c> is the
+    /// opt-in for operators who would rather the process refuse to start at all.
+    /// </summary>
     [UnitTest]
     [Operation(Operations.HealthCheck)]
-    public async Task CheckReadinessAsync_WithRedisDurabilityFailure_ReturnsTypedNotReady()
+    public async Task CheckReadinessAsync_WithRedisDurabilityFailure_IsReadyButDegraded()
     {
         var migrationState = new MigrationState();
         migrationState.MarkSucceeded();
@@ -59,9 +69,33 @@ public sealed class ReadinessCheckServiceTests
 
         var result = await service.CheckReadinessAsync();
 
-        result.IsReady.Should().BeFalse();
-        result.Message.Should().Be(
-            "Not Ready - Redis durability attestation failed (RedisEvictionPolicyUnsafe)");
+        result.IsReady.Should().BeTrue();
+        result.StatusCode.Should().Be(200);
+    }
+
+    /// <summary>
+    /// The same guard for a Pro/Enterprise-entitled server started with no Redis at all: nothing
+    /// was ever attested, and nothing about that may fail readiness either.
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task CheckReadinessAsync_EntitledWithoutRedis_IsReady()
+    {
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var service = new ReadinessCheckService(
+            new MockHealthyDatabaseChecker(),
+            migrationState,
+            new MockLogger<ReadinessCheckService>(),
+            durableJobSubstrateOptions: Options.Create(new DurableJobSubstrateOptions
+            {
+                RedisConfigured = false,
+                RedisEntitled = true
+            }));
+
+        var result = await service.CheckReadinessAsync();
+
+        result.IsReady.Should().BeTrue();
     }
 
     [UnitTest]
