@@ -920,10 +920,11 @@ jobs:
         run: |
           trx_count=$(find tests/TestResults -name '*.trx' 2>/dev/null | wc -l)
           cobertura_count=$(find tests/FoundationCoverage -name 'coverage.cobertura.xml' 2>/dev/null | wc -l)
-          # Exactly one collector today; missing coverage must fail even if
-          # every test produced a TRX file. Do not upload a partial report set.
-          if [[ "${cobertura_count}" -ne 1 ]]; then
-            echo "::error::Expected the Core cobertura report; found ${cobertura_count}."
+          # Core is the sole collector. VSTest also copies its report into
+          # the TRX attachment directory, so more than one file is normal.
+          # Missing coverage must fail even if every test produced a TRX.
+          if [[ "${cobertura_count}" -lt 1 ]]; then
+            echo "::error::Missing the Core cobertura report."
             exit 1
           fi
           expected_trx=$(scripts/ci/run-foundation-family.sh expected-trx-count)

@@ -46,6 +46,10 @@ class FoundationExecution(unittest.TestCase):
             self.assertNotEqual(verify().returncode, 0)
             (coverage / 'coverage.cobertura.xml').write_text('<coverage/>')
             self.assertEqual(verify().returncode, 0)
+            attachment = coverage / 'runner/In/runner'
+            attachment.mkdir(parents=True)
+            (attachment / 'coverage.cobertura.xml').write_text('<coverage/>')
+            self.assertEqual(verify().returncode, 0)
             (results / '0.trx').unlink()
             self.assertNotEqual(verify().returncode, 0)
 
