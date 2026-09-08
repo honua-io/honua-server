@@ -47,8 +47,8 @@ set retains the rotation drift risk.
 
 The cert OIDC role needs `secretsmanager:GetSecretValue` on that exact secret via
 honua-iac's existing `CertificationStackSecretsRead` grant (honua-iac #175).
-Access denial stops the lane with the required resource ARN: a configured ARN is
-reported directly; a name becomes
+Access denial stops the lane with the required resource ARN: a full ARN is
+reported directly; a partial ARN gets the six-character suffix pattern; a name becomes
 `arn:<partition>:secretsmanager:<region>:<account>:secret:<name>-??????` (only the
 six-character AWS suffix is wildcarded). Report that diagnostic to the iac owner;
 do not widen policy or trust in this lane. Raw AWS errors and secret values remain
