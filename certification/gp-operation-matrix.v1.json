@@ -61,7 +61,13 @@
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
-          "test": "Execute_FirstSliceVectorProcess_CompletesAndReturnsBufferGeometry / Execute_FirstSliceProcessWithValueOutputSelection_CompletesAndReturnsInlineBuffer",
+          "test": "Execute_FirstSliceVectorProcess_CompletesAndReturnsBufferGeometry",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
+          "assertion": "Required PR Gate submits and polls real buffer execution, checking inline result selection, input SRID, distance, non-origin center, every vertex radius, envelope, topology and analytical area bounds."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
+          "test": "Execute_FirstSliceProcessWithValueOutputSelection_CompletesAndReturnsInlineBuffer",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
           "assertion": "Required PR Gate submits and polls real buffer execution, checking inline result selection, input SRID, distance, non-origin center, every vertex radius, envelope, topology and analytical area bounds."
         }
