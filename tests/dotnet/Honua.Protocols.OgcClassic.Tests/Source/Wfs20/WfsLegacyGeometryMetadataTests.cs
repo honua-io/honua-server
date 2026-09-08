@@ -80,9 +80,9 @@ public sealed class WfsLegacyGeometryMetadataTests
             projected.Descendants(Honua + "objectid").Should().BeEmpty();
 
             // A declared multi-geometry must keep its advertised homogeneous type.
-            await AssertMultiGeometryAsync("legacy_multipoint", 5006, "MultiPoint", "pointMember", "Point", 2);
-            await AssertMultiGeometryAsync("legacy_multiline", 5007, "MultiLineString", "lineStringMember", "LineString", 1);
-            await AssertMultiGeometryAsync("legacy_multipolygon", 5008, "MultiPolygon", "polygonMember", "Polygon", 1);
+            await AssertMultiGeometryAsync("legacy_multipoint", 5006, "Point", 2);
+            await AssertMultiGeometryAsync("legacy_multiline", 5007, "LineString", 1);
+            await AssertMultiGeometryAsync("legacy_multipolygon", 5008, "Polygon", 1);
 
             // The advertised fallback geometry property must also be requestable by
             // projection; it resolves against no schema field, so PROPERTYNAME must not
@@ -149,9 +149,21 @@ public sealed class WfsLegacyGeometryMetadataTests
                     ? "EPSG:4326" : "urn:ogc:def:crs:EPSG::4326");
             }
 
-            async Task AssertMultiGeometryAsync(string typeName, int id, string aggregateName,
-                string memberName, string memberGeometryName, int expectedMemberCount)
+            async Task AssertMultiGeometryAsync(string typeName, int id,
+                string memberGeometryName, int expectedMemberCount)
             {
+                // WFS 1.0 serializes GML 2, which only has the MultiLineString/MultiPolygon
+                // spellings; GML 3.0 deprecated those in favour of MultiCurve/MultiSurface,
+                // so the WFS 1.1 writer must emit the current GML 3.1 aggregates.
+                var (aggregateName, memberName) = (version, memberGeometryName) switch
+                {
+                    (_, "Point") => ("MultiPoint", "pointMember"),
+                    ("1.0.0", "LineString") => ("MultiLineString", "lineStringMember"),
+                    ("1.0.0", _) => ("MultiPolygon", "polygonMember"),
+                    (_, "LineString") => ("MultiCurve", "curveMember"),
+                    _ => ("MultiSurface", "surfaceMember")
+                };
+
                 var document = await GetFeatureAsync(fixture, version, usePost, typeName, id);
                 var feature = document.Descendants(Honua + typeName).Single();
                 var aggregate = feature.Element(Honua + "geometry")?.Element(Gml + aggregateName);

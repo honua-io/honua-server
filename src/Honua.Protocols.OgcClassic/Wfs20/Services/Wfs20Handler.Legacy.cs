@@ -770,16 +770,18 @@ internal sealed partial class Wfs20Handler
             // NTS models MultiPoint, MultiLineString and MultiPolygon as GeometryCollection
             // subclasses, so these cases must precede the collection case; otherwise a
             // homogeneous aggregate is emitted as gml:MultiGeometry and a client infers a
-            // mixed-geometry layer instead of the advertised multi-geometry one. GML 3.1.1
-            // still declares the homogeneous aggregates, matching the GML 2 writer below.
+            // mixed-geometry layer instead of the advertised multi-geometry one. GML 3.0
+            // deprecated gml:MultiLineString and gml:MultiPolygon in favour of MultiCurve
+            // and MultiSurface, which is also what MapGeometryPropertyType advertises for
+            // these geometry types; the GML 2 writer below keeps the older spellings.
             case MultiPoint multiPoint:
                 WriteGml31Aggregate(writer, multiPoint, "MultiPoint", "pointMember", srsName, axisOrder, includeSrsName);
                 break;
             case MultiLineString multiLineString:
-                WriteGml31Aggregate(writer, multiLineString, "MultiLineString", "lineStringMember", srsName, axisOrder, includeSrsName);
+                WriteGml31Aggregate(writer, multiLineString, "MultiCurve", "curveMember", srsName, axisOrder, includeSrsName);
                 break;
             case MultiPolygon multiPolygon:
-                WriteGml31Aggregate(writer, multiPolygon, "MultiPolygon", "polygonMember", srsName, axisOrder, includeSrsName);
+                WriteGml31Aggregate(writer, multiPolygon, "MultiSurface", "surfaceMember", srsName, axisOrder, includeSrsName);
                 break;
             case GeometryCollection collection:
                 WriteGml31Aggregate(writer, collection, "MultiGeometry", "geometryMember", srsName, axisOrder, includeSrsName);
