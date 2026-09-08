@@ -16,6 +16,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.FileStorage;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -40,7 +41,7 @@ namespace Honua.Server.Tests.Features.Protocols.Cog;
 /// production <c>AwsS3RangeReader</c> issues real ranged GETs against it, and the
 /// tile is requested through <c>GET /rest/services/{id}/ImageServer/tile/...</c>.
 ///
-/// <para><b>Oracle.</b> The fixture is <c>lzw_pred1_uint8.tif</c> from
+/// <para><b>Oracle.</b> The fixture is <c>lzw_pred2_uint8_multitile.tif</c> from
 /// <c>tests/dotnet/Honua.Core.Tests/Raster/CogParser/Fixtures</c>, produced by GDAL
 /// 3.12.1 via <c>scripts/raster/generate-cog-fixtures.py</c>. Its sibling
 /// <c>.bin</c> holds GDAL's own decode of that file in TIFF tile order, so the
@@ -50,9 +51,13 @@ namespace Honua.Server.Tests.Features.Protocols.Cog;
 /// <para><b>Tile alignment.</b> The fixtures are georeferenced to EPSG:3857 at the
 /// Web Mercator origin with a 1222.992452562495 m pixel. A 128-pixel COG tile
 /// therefore spans 128 x 1222.992452562495 = 156543.034 m, which is exactly the
-/// width of a slippy tile at zoom 8 (40075016.686 / 2^8). So tile (z8, row 0, col 0)
-/// maps onto COG tile 0 with no resampling, which is what
-/// <c>CogTileResolver.TryResolveAlignedTileIndex</c> requires.</para>
+/// width of a slippy tile at zoom 8 (40075016.686 / 2^8). This fixture is 256 x 256
+/// pixels in 128-pixel blocks, so slippy tiles (z8, row 0..1, col 0..1) map onto its
+/// four COG tiles with no resampling, which is what
+/// <c>CogTileResolver.TryResolveAlignedTileIndex</c> requires. The test asks for
+/// (row 1, col 1) so that the tile it wants is neither the first tile nor adjacent
+/// to the header, and a read of the tile's own byte range is distinguishable from a
+/// read of the file's metadata.</para>
 /// </remarks>
 [Collection("Emulators")]
 [Protocol(TestProtocols.ImageServer)]
@@ -65,10 +70,26 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
     private const string ServiceUrlEnv = "HONUA_TEST_S3_SERVICE_URL";
     private const string ForcePathStyleEnv = "HONUA_TEST_S3_FORCE_PATH_STYLE";
 
-    private const string Fixture = "lzw_pred1_uint8";
+    // The multi-tile fixture (256x256 image, 128px blocks -> four tiles) is used
+    // deliberately. On the single-tile fixture the compressed tile is 17,975 bytes of
+    // an 18,362-byte object, so "the tile read is small relative to the object" is not
+    // a property that fixture can demonstrate at all. Here one tile is roughly a
+    // quarter of the data, so a regression that fetched the whole object to serve one
+    // tile really does break the bound asserted below.
+    private const string Fixture = "lzw_pred2_uint8_multitile";
     private const int TileSize = 128;
     private const int TileLevel = 8;
     private const int ExpectedTileBytes = TileSize * TileSize; // one uint8 band
+    private const int TileCount = 4;
+
+    /// <summary>
+    /// The slippy tile requested, and the COG tile it must resolve to. The fixture is
+    /// two tiles across, and CogTileResolver indexes tiles row-major, so slippy
+    /// (col 1, row 1) is COG tile 3 — the last 16,384 bytes of the reference blob.
+    /// </summary>
+    private const int RequestedTileCol = 1;
+    private const int RequestedTileRow = 1;
+    private const int RequestedTileIndex = 3;
 
     private static readonly string FixtureDirectory = Path.Join(AppContext.BaseDirectory, "CogFixtures");
 
@@ -115,10 +136,13 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
 
         _sourceBytes = await File.ReadAllBytesAsync(Path.Join(FixtureDirectory, Fixture + ".tif"));
         var reference = await File.ReadAllBytesAsync(Path.Join(FixtureDirectory, Fixture + ".bin"));
-        // The .bin concatenates every tile in TIFF tile order; this fixture is a single
-        // 128x128 tile, so the whole file is the expected decode of tile 0.
-        reference.Length.Should().Be(ExpectedTileBytes);
-        _gdalDecodedTile = reference;
+        // The .bin concatenates every tile in TIFF tile order, so the expected decode of
+        // the requested tile is its slice of that blob.
+        reference.Length.Should().Be(ExpectedTileBytes * TileCount);
+        _gdalDecodedTile = reference
+            .Skip(RequestedTileIndex * ExpectedTileBytes)
+            .Take(ExpectedTileBytes)
+            .ToArray();
 
         if (!HasEmulator)
         {
@@ -168,11 +192,12 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
                 services.AddSingleton<IMetadataV2GraphProvider>(graph);
                 services.AddSingleton<IMetadataV2GraphStore>(graph);
 
-                // Register the production S3 range reader against the emulator and wrap it
-                // in a recorder so the test can assert what was actually fetched. The
-                // recorder only observes; every byte still comes from AwsS3RangeReader.
-                var reader = new AwsRangeReaderShim(CreateClient());
-                _recorder = new RecordingRangeReader(reader);
+                // The production reader, against the emulator. Honua.Aws grants this
+                // assembly internal access, so the type under test is the shipping
+                // AwsS3RangeReader rather than a test double: if it stops issuing valid
+                // ranged requests or mishandles object metadata, these tests go red.
+                // The recorder only observes what it was asked for.
+                _recorder = new RecordingRangeReader(new AwsS3RangeReader(CreateClient()));
                 services.AddSingleton<ICloudRangeReader>(_recorder);
             });
 
@@ -210,7 +235,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
     {
         _recorder.Reset();
 
-        using var response = await _fixture.Client.GetAsync(TileUrl(TileLevel, 0, 0));
+        using var response = await _fixture.Client.GetAsync(TileUrl(TileLevel, RequestedTileRow, RequestedTileCol));
         var png = await response.Content.ReadAsByteArrayAsync();
         var diagnostic = System.Text.Encoding.UTF8.GetString(png.Take(1024).ToArray());
         response.StatusCode.Should().Be(HttpStatusCode.OK, diagnostic);
@@ -254,25 +279,39 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
     {
         _recorder.Reset();
 
-        using var response = await _fixture.Client.GetAsync(TileUrl(TileLevel, 0, 0));
+        using var response = await _fixture.Client.GetAsync(TileUrl(TileLevel, RequestedTileRow, RequestedTileCol));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         _recorder.Reads.Should().NotBeEmpty("serving a tile must read from the object");
 
-        // Every request is a bounded range, and none of them is the whole object. The
-        // aggregate is deliberately not bounded by the object size: parsing the IFD
-        // chain re-reads overlapping header regions, so the sum can exceed the file
-        // length while no single transfer ever pulls it end to end.
         _recorder.Reads.Should().OnlyContain(read => read.Length < _sourceBytes.Length,
             "each read must be a bounded range, not a whole-object GET");
         _recorder.Reads.Should().NotContain(read => read.Offset == 0 && read.Length == _sourceBytes.Length);
-        _recorder.Reads.Max(read => read.Length).Should().BeLessThan(_sourceBytes.Length);
 
-        // The tile payload itself is a single small read: the compressed tile is a
-        // fraction of the object, which is the property that makes COG serving viable
-        // against a remote object at all.
-        _recorder.Reads.Min(read => read.Length).Should().BeLessThan(_sourceBytes.Length / 2,
-            "the tile range must be materially smaller than the object");
+        // Name the tile transfer instead of inferring it. Metadata parsing issues its
+        // own header and IFD reads, so "the smallest read" or "the largest read" only
+        // describes the tile by accident; the tile's offset and compressed length come
+        // from the fixture's own TIFF directory (tags 324/325), read here by a local
+        // walker rather than by the parser under test.
+        var (tileOffset, tileByteCount) = ReadTileExtent(_sourceBytes, RequestedTileIndex);
+        var recorded = string.Join(", ", _recorder.Reads.Select(r => $"{r.Offset}+{r.Length}"));
+        _recorder.Reads.Should().ContainSingle(
+            read => read.Offset == tileOffset && read.Length == tileByteCount,
+            "exactly one read must fetch tile {0}'s own byte range {1}+{2}; reads were: {3}",
+            RequestedTileIndex, tileOffset, tileByteCount, recorded);
+
+        // The largest single transfer is the compressed tile. Bounding *that* is the
+        // property that matters: taking the minimum would instead measure a small
+        // header read and would stay green while the tile fetch grew to the whole
+        // object.
+        var largest = _recorder.Reads.Max(read => read.Length);
+        largest.Should().BeLessThan(_sourceBytes.Length / 2,
+            "one tile of four must not cost a transfer of half the object");
+
+        // And the whole exchange — metadata plus tile — stays under the object size, so
+        // serving a tile is genuinely cheaper than downloading the file.
+        _recorder.Reads.Sum(read => (long)read.Length).Should().BeLessThan(_sourceBytes.Length,
+            "the total bytes fetched to serve one tile must be less than the object itself");
     }
 
     [EmulatorTest(BucketEnv, RegionEnv, AccessKeyEnv, SecretKeyEnv, ServiceUrlEnv, ForcePathStyleEnv)]
@@ -329,6 +368,11 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
             // criterion is asserted below: it is an error, it is bounded, it carries no
             // imagery, and it does not describe the storage layout.
             var text = System.Text.Encoding.UTF8.GetString(body);
+            // The GeoServices contract is specifically that the transport status stays
+            // 200 and the error travels in the body. Asserting only the body would stay
+            // green if this regressed to a bare HTTP 404 or 500.
+            response.StatusCode.Should().Be(HttpStatusCode.OK,
+                "GeoServices carries the error in the envelope, not the status line");
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/json",
                 "no partial or placeholder imagery may be emitted for a missing object");
 
@@ -398,6 +442,60 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
         await s3.PutBucketAsync(new PutBucketRequest { BucketName = _bucket });
     }
 
+    /// <summary>
+    /// Reads one tile's file offset and compressed byte count out of the fixture's own
+    /// TIFF directory (tags 324 <c>TileOffsets</c> and 325 <c>TileByteCounts</c> of the
+    /// full-resolution IFD), so a recorded range can be identified as the tile transfer.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately a local reader over the GDAL-written bytes: asking the parser under
+    /// test where its tile lives, and then asserting it read from there, would be
+    /// circular. Only the little-endian, single-IFD shape these fixtures actually have
+    /// is handled, and anything else fails loudly rather than guessing.
+    /// </remarks>
+    private static (long Offset, int ByteCount) ReadTileExtent(byte[] tiff, int tileIndex)
+    {
+        (tiff[0], tiff[1]).Should().Be(((byte)'I', (byte)'I'), "the fixtures are little-endian TIFFs");
+        BitConverter.ToUInt16(tiff, 2).Should().Be(42, "classic TIFF, not BigTIFF");
+
+        var ifd = (int)BitConverter.ToUInt32(tiff, 4);
+        var entryCount = BitConverter.ToUInt16(tiff, ifd);
+
+        long? offsets = null;
+        long? byteCounts = null;
+        for (var i = 0; i < entryCount; i++)
+        {
+            var entry = ifd + 2 + (i * 12);
+            var tag = BitConverter.ToUInt16(tiff, entry);
+            if (tag is not (324 or 325))
+            {
+                continue;
+            }
+
+            var type = BitConverter.ToUInt16(tiff, entry + 2);
+            type.Should().Be(4, "tile offsets and byte counts are written as LONG in these fixtures");
+            var count = (int)BitConverter.ToUInt32(tiff, entry + 4);
+            count.Should().BeGreaterThan(tileIndex, "the fixture must contain the requested tile");
+
+            // A LONG array of one value is inline in the entry; anything longer is
+            // stored out of line and the entry holds its offset.
+            var arrayStart = count == 1 ? entry + 8 : (int)BitConverter.ToUInt32(tiff, entry + 8);
+            var value = BitConverter.ToUInt32(tiff, arrayStart + (tileIndex * 4));
+            if (tag == 324)
+            {
+                offsets = value;
+            }
+            else
+            {
+                byteCounts = value;
+            }
+        }
+
+        offsets.Should().NotBeNull("the fixture must carry TileOffsets");
+        byteCounts.Should().NotBeNull("the fixture must carry TileByteCounts");
+        return (offsets!.Value, (int)byteCounts!.Value);
+    }
+
     private sealed record RangeRead(long Offset, int Length);
 
     /// <summary>
@@ -450,74 +548,4 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
             => inner.GetObjectMetadataAsync(bucket, key, cancellationToken);
     }
 
-    /// <summary>
-    /// Byte-range reads against the emulator using the same S3 GET-with-Range calls the
-    /// production <c>AwsS3RangeReader</c> issues. The production type is internal to
-    /// <c>Honua.Aws</c>, so the test project cannot construct it directly; this shim
-    /// keeps the transport real (a live ranged GET to LocalStack) rather than faking it.
-    /// </summary>
-    private sealed class AwsRangeReaderShim(IAmazonS3 client) : ICloudRangeReader, IDisposable
-    {
-        public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
-
-        public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
-            => ReadCoreAsync(bucket, key, offset, length, expectedETag: null, cancellationToken);
-
-        public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, string expectedETag, CancellationToken cancellationToken = default)
-            => ReadCoreAsync(bucket, key, offset, length, expectedETag, cancellationToken);
-
-        public async Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
-            => new MemoryStream(await ReadCoreAsync(bucket, key, offset, length, expectedETag: null, cancellationToken));
-
-        public async Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
-            => (await GetObjectMetadataAsync(bucket, key, cancellationToken)).SizeBytes;
-
-        public async Task<CloudObjectMetadata> GetObjectMetadataAsync(string bucket, string key, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                var metadata = await client.GetObjectMetadataAsync(bucket, key, cancellationToken);
-                return new CloudObjectMetadata
-                {
-                    SizeBytes = metadata.ContentLength,
-                    ETag = metadata.ETag
-                };
-            }
-            catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-            {
-                throw new FileNotFoundException($"S3 object '{key}' was not found in bucket '{bucket}'.", ex);
-            }
-        }
-
-        private async Task<byte[]> ReadCoreAsync(
-            string bucket, string key, long offset, int length, string? expectedETag, CancellationToken cancellationToken)
-        {
-            var request = new GetObjectRequest
-            {
-                BucketName = bucket,
-                Key = key,
-                ByteRange = new ByteRange(offset, offset + length - 1),
-                EtagToMatch = expectedETag
-            };
-
-            GetObjectResponse response;
-            try
-            {
-                response = await client.GetObjectAsync(request, cancellationToken);
-            }
-            catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-            {
-                throw new FileNotFoundException($"S3 object '{key}' was not found in bucket '{bucket}'.", ex);
-            }
-
-            using (response)
-            {
-                using var buffer = new MemoryStream(length);
-                await response.ResponseStream.CopyToAsync(buffer, cancellationToken);
-                return buffer.ToArray();
-            }
-        }
-
-        public void Dispose() => client.Dispose();
-    }
 }
