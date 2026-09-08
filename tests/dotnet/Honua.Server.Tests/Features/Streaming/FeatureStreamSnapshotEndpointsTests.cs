@@ -141,6 +141,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         updateDelta.Value.GetProperty("operation").GetString().Should().Be("update");
         updateDelta.Value.GetProperty("attributes").GetProperty("name").GetString().Should().Be(updated,
             "an update's streamed after-image must carry the exact new value");
+        AssertEditedPointGeometry(updateDelta.Value);
         updateDelta.Value.GetRawText().Should().NotContain(
             inserted,
             "the after-image must not replay the superseded value");
@@ -1980,6 +1981,16 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         delta.GetProperty("operation").GetString().Should().Be("insert");
         delta.GetProperty("attributes").GetProperty("name").GetString().Should().Be(correlation,
             "the streamed after-image must carry the exact marker the edit wrote");
+        AssertEditedPointGeometry(delta);
+    }
+
+    private static void AssertEditedPointGeometry(JsonElement delta)
+    {
+        delta.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
+        delta.GetProperty("geometry").GetProperty("coordinates").EnumerateArray()
+            .Select(value => value.GetDouble()).Should().Equal([-122.0, 47.0],
+                "the stream must preserve the fixture's longitude and latitude ordinates");
+        delta.GetProperty("geometryCrs").GetString().Should().Be("EPSG:4326");
     }
 
     private async Task<long> ApplyEditsAsync(string payload, string resultsProperty, CancellationToken cancellationToken)

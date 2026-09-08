@@ -70,8 +70,8 @@ public sealed partial class FeatureStreamEndpointsTests
         var ct = timeout.Token;
 
         var issuer = fixture.GetService<IPortalTokenIssuer>();
-        var alice = await IssueSplitTokenAsync(issuer, "alice", AlphaRole, ct);
-        var bob = await IssueSplitTokenAsync(issuer, "bob", BetaRole, ct);
+        var alice = await IssueSplitTokenAsync(issuer, "alice", AlphaRole, null, ct);
+        var bob = await IssueSplitTokenAsync(issuer, "bob", BetaRole, null, ct);
 
         using (var unfiltered = new HttpRequestMessage(HttpMethod.Get,
             $"/api/v1/streaming/features?token={alice}"))
@@ -127,9 +127,9 @@ public sealed partial class FeatureStreamEndpointsTests
         // Alice must also have advanced past round 2's alpha row without ever seeing beta.
         aliceSeen.AddRange(await ReadFeatureChangesUntilAsync(aliceStream, 88102, ct));
 
-        aliceSeen.Select(frame => frame.ObjectId).Should().Equal(88101, 88102,
+        aliceSeen.Select(frame => frame.ObjectId).Should().Equal([88101L, 88102L],
             "Alice must receive each entitled row exactly once and no Bob row");
-        bobSeen.Select(frame => frame.ObjectId).Should().Equal(88201, 88202,
+        bobSeen.Select(frame => frame.ObjectId).Should().Equal([88201L, 88202L],
             "Bob must receive each entitled row exactly once and no Alice row");
 
         foreach (var frame in aliceSeen)
@@ -171,8 +171,8 @@ public sealed partial class FeatureStreamEndpointsTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         var ct = timeout.Token;
         var issuer = fixture.GetService<IPortalTokenIssuer>();
-        var alice = await IssueSplitTokenAsync(issuer, "alice", "reader", ct, "tenant-a");
-        var bob = await IssueSplitTokenAsync(issuer, "bob", "admin", ct, "tenant-b");
+        var alice = await IssueSplitTokenAsync(issuer, "alice", "reader", "tenant-a", ct);
+        var bob = await IssueSplitTokenAsync(issuer, "bob", "admin", "tenant-b", ct);
         var anchor = await fixture.GetService<IFeatureChangeEventStore>().AppendAsync(new FeatureChangeEventRequest
         {
             ServiceId = "test", LayerId = 0, ObjectId = 89000, Operation = "update",
@@ -241,8 +241,8 @@ public sealed partial class FeatureStreamEndpointsTests
         IPortalTokenIssuer issuer,
         string principalId,
         string role,
-        CancellationToken cancellationToken,
-        string? tenantId = null)
+        string? tenantId,
+        CancellationToken cancellationToken)
         => (await issuer.IssueAsync(
             new PortalTokenIssueRequest(
                 principalId,
