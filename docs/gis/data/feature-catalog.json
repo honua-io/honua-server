@@ -4982,7 +4982,7 @@
         "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_LayerWithoutServableCoverage_Returns404",
         "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_RegisteredCoverage_RendersEveryCubeCellAtZoomZero",
         "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_WithoutAuthentication_Returns401BeforeStoreLookup",
-        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_ZoomOneNorthEastTile_RendersOnlyThatWindowOfTheCube"
+        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_ZoomOneQuadrants_EachRenderTheirOwnWindowOfTheCube"
       ],
       "proof_ledger_surface": "datacube-tiles",
       "maturity": "implemented",
