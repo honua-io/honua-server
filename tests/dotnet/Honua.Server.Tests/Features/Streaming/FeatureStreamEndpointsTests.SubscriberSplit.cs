@@ -171,7 +171,7 @@ public sealed partial class FeatureStreamEndpointsTests
         var ct = timeout.Token;
         var issuer = fixture.GetService<IPortalTokenIssuer>();
         var alice = await IssueSplitTokenAsync(issuer, "alice", ["reader"], "tenant-a", ct);
-        var bob = await IssueSplitTokenAsync(issuer, "bob", ["admin"], "tenant-b", ct);
+        var bob = await IssueSplitTokenAsync(issuer, "bob", ["admin", "reader"], "tenant-b", ct);
         var anchor = await fixture.GetService<IFeatureChangeEventStore>().AppendAsync(new FeatureChangeEventRequest
         {
             ServiceId = "test",
@@ -329,6 +329,7 @@ public sealed partial class FeatureStreamEndpointsTests
             socketClient.ConfigureRequest = request =>
             {
                 configure?.Invoke(request);
+                request.Headers["X-Honua-Test-Schema"] = fixture.CurrentSchema;
                 request.Headers.Referer = SplitReferer;
             };
             var socket = await socketClient.ConnectAsync(new Uri("ws://localhost" + path), cancellationToken);
