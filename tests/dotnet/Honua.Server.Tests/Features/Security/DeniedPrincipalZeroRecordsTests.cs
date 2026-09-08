@@ -350,17 +350,17 @@ public sealed class DeniedPrincipalZeroRecordsTests
             return [];
         }
 
-        var ids = new List<long>();
-        foreach (var feature in features.EnumerateArray())
-        {
-            if (feature.TryGetProperty("attributes", out var attributes)
-                && TryReadId(attributes, out var id))
+        return features.EnumerateArray()
+            .Select(feature =>
             {
-                ids.Add(id);
-            }
-        }
-
-        return ids;
+                long id = 0;
+                var hasId = feature.TryGetProperty("attributes", out var attributes)
+                    && TryReadId(attributes, out id);
+                return (HasId: hasId, Id: id);
+            })
+            .Where(result => result.HasId)
+            .Select(result => result.Id)
+            .ToList();
     }
 
     private static List<long> ReadOgcFeatureIds(JsonElement root)
@@ -395,24 +395,23 @@ public sealed class DeniedPrincipalZeroRecordsTests
             return [];
         }
 
-        var ids = new List<long>();
-        foreach (var entry in value.EnumerateArray())
-        {
-            if (TryReadId(entry, out var id))
+        return value.EnumerateArray()
+            .Select(entry =>
             {
-                ids.Add(id);
-            }
-        }
-
-        return ids;
+                var hasId = TryReadId(entry, out var id);
+                return (HasId: hasId, Id: id);
+            })
+            .Where(result => result.HasId)
+            .Select(result => result.Id)
+            .ToList();
     }
 
     private static bool TryReadId(JsonElement container, out long id)
     {
-        foreach (var property in container.EnumerateObject())
+        foreach (var property in container.EnumerateObject()
+            .Where(property => string.Equals(property.Name, "objectid", StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(property.Name, "objectid", StringComparison.OrdinalIgnoreCase)
-                && TryReadNumeric(property.Value, out id))
+            if (TryReadNumeric(property.Value, out id))
             {
                 return true;
             }
