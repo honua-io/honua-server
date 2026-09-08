@@ -208,6 +208,7 @@ class CertificationEvidenceCollector:
         # Nightly envelopes retain their historical best-available skip/pass
         # behavior. Release qualification must retain every observed non-pass.
         self._release_results: dict[str, CertResult] = {}
+        self._release_negative_observations: list[CertResult] = []
 
     # -- recording ---------------------------------------------------------
 
@@ -259,6 +260,8 @@ class CertificationEvidenceCollector:
         existing_release = self._release_results.get(test_case_id)
         if existing_release is None or _prefer(candidate, existing_release, release=True):
             self._release_results[test_case_id] = candidate
+        if candidate.status in {"fail", "skip"}:
+            self._release_negative_observations.append(candidate)
 
     def try_record(self, test_case_id: str, status: str, **kwargs) -> bool:
         """Record only if this lane declares the case applicable.
@@ -371,6 +374,14 @@ class CertificationEvidenceCollector:
                 f"image_digest {self.runtime.image_digest!r} is not a sha256 registry digest; "
                 "a locally built image cannot produce a release receipt."
             )
+
+        # A richer result must not hide another invocation's missing provenance,
+        # including the report hook that follows a measured failed/skipped case.
+        for observation in self._release_negative_observations:
+            if _release_provenance(observation, self.client_id or "") is None:
+                raise ValueError(
+                    f"Cannot omit nonpassing observation {observation.test_case_id}: "
+                    "release request provenance is missing or invalid.")
 
         envelope = self.build_envelope()
         substantiated: list[dict] = []

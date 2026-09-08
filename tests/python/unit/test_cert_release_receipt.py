@@ -190,6 +190,25 @@ def test_unsubstantiated_negative_cannot_disappear_beside_a_pass(tmp_path: Path,
         instance.write_release_receipt(path)
     assert not path.exists(), "a partial receipt must not publish the remaining passing observation"
 
+
+@pytest.mark.parametrize("case_id", ["CERT-CONN-01", "NB-OWS-OAF-LAND-01"])
+@pytest.mark.parametrize("status", ["fail", "skip"])
+@pytest.mark.parametrize("hook_first", [False, True])
+def test_richer_negative_cannot_hide_an_unsubstantiated_hook(
+    tmp_path: Path, case_id: str, status: str, hook_first: bool,
+) -> None:
+    instance = collector()
+    record_substantiated(instance)
+    if hook_first:
+        instance.record(case_id, status)
+    record_substantiated(instance, test_case_id=case_id, status=status, measured_count=3)
+    if not hook_first:
+        instance.record(case_id, status)
+    path = tmp_path / "owslib.cert.json"
+    with pytest.raises(ValueError, match="nonpassing observation.*" + case_id):
+        instance.write_release_receipt(path)
+    assert not path.exists()
+
 @pytest.mark.parametrize(
     "binding",
     ["image_digest", "producer_source_sha", "auth_policy_revision", "deployment_target"])
