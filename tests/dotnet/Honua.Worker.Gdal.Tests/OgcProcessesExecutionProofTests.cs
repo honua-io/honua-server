@@ -24,6 +24,7 @@ using NetTopologySuite.IO;
 using StackExchange.Redis;
 using Xunit;
 using Xunit.Sdk;
+using TestProtocols = Honua.TestKit.Constants.ProtocolNames;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -210,7 +211,13 @@ public sealed class OgcProcessesExecutionProofTests(RedisFixture redis) : IClass
                     services.AddSingleton(runner);
                     services.AddSingleton<IJobExecutor, GdalDispatchJobExecutor>();
                 }
-                services.AddJobWorker();
+                // The test host can register Redis after the serving composition's
+                // Redis gate. Ensure the production queue drainer and terminal
+                // callback are present, using the same services as AddJobWorker.
+                services.TryAddSingleton<ExecutionJobCancellationTokens>();
+                services.TryAddSingleton<IJobCancellationNotifier>(sp => sp.GetRequiredService<ExecutionJobCancellationTokens>());
+                services.TryAddEnumerable(ServiceDescriptor.Singleton<IJobTerminalCallback, GeoprocessingJobTerminalCallback>());
+                services.AddHostedService<JobExecutionService>();
             });
 
     private static async Task<JsonDocument> SubmitAndGetResults(HttpClient client, string processId, string body)
