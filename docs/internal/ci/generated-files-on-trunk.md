@@ -44,6 +44,8 @@ existing emitters in dependency order. The PR Gate already builds their test
 assemblies, so its invocation uses `--no-build --no-restore`. Existing byte
 equality tests run against fresh projections and still catch nondeterminism;
 proof-ledger, schema, route coverage, judgment and OpenAPI checks stay hard.
+The trailing Server foundation family also refreshes before its validators,
+so it cannot race the post-merge writer against stale committed projections.
 The separate capability aggregation check now also reports drift with a notice.
 The existing normalization producer/consumer remains in observation mode and
 continues its bounded reproducibility checks without modifying PR branches.
