@@ -500,6 +500,7 @@ public sealed partial class RasterExecutionProofTests : IDisposable
             "raster.interpolate-idw" or "raster.interpolate-kriging" =>
                 new GdalRasterInterpolateJobExecutor(_runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
             "raster.histogram" => new GdalRasterStatisticsJobExecutor(_runner, options, NullLogger<GdalRasterStatisticsJobExecutor>.Instance),
+            "conversion.rasterize" => new GdalRasterizeJobExecutor(_runner, options, NullLogger<GdalRasterizeJobExecutor>.Instance),
             _ => throw new ArgumentOutOfRangeException(nameof(id))
         };
         var job = GdalJobFactory.Job(id, inputs);
