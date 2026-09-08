@@ -44,6 +44,10 @@ and scoped teardown with these packages. It used an existing Windows host with
 a new installation directory and virtual environment, not a clean-machine RC
 qualification.
 
+The [documentation validation record](../guides/deploy/evidence/customer-install-docs-4300.json) separately records
+a Linux runtime replay of the updated commands, database and file-storage restore,
+and native PowerShell syntax checks. It is not a clean-Windows qualification.
+
 ## 1. Create a private, isolated installation
 
 Choose an unused loopback port if `18080` is occupied. Keep this PowerShell
