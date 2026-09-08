@@ -23,17 +23,26 @@ def github_page(endpoint: str, parameters: dict) -> dict:
     command = ["gh", "api", "--method", "GET", endpoint]
     for key, value in parameters.items():
         command.extend(["-f", f"{key}={value}"])
+    deadline = time.monotonic() + 300
     for delay in (10, 30, 60, 120, None):
-        result = subprocess.run(command, capture_output=True, text=True, timeout=90)
-        if result.returncode == 0:
-            return json.loads(result.stdout)
-        # Never re-authenticate on 403. Authorization failures remain errors.
-        transient = any(message in result.stderr.lower() for message in (
+        try:
+            result = subprocess.run(command, capture_output=True, text=True,
+                                    timeout=max(1, min(90, deadline - time.monotonic())))
+            if result.returncode == 0:
+                return json.loads(result.stdout)
+            error = result.stderr.strip()
+        except subprocess.TimeoutExpired:
+            error = "GitHub catalog request timed out"
+        transient = any(message in error.lower() for message in (
             "error connecting", "could not resolve host", "connection reset",
             "timeout", "timed out", "http 502", "http 503", "http 504",
         ))
-        if not transient or "403" in result.stderr or delay is None:
-            raise RuntimeError(result.stderr.strip())
+        # A forbidden response is not a transport error. Back off within the
+        # same bound, then fail visibly; never change authentication.
+        forbidden = "403" in error
+        remaining = deadline - time.monotonic()
+        if not (transient or forbidden) or delay is None or remaining <= delay:
+            raise RuntimeError(error)
         time.sleep(delay)
     raise AssertionError("unreachable")
 

@@ -410,8 +410,11 @@ def _valid_observer_run(run: dict[str, Any], workflow: str, cutoff: datetime) ->
         and isinstance(run.get("run_attempt"), int)
         and run["run_attempt"] > 0
         and run.get("event") in ALLOWED_OBSERVER_EVENTS
-        and run.get("status") == "completed"
-        and run.get("conclusion") in TERMINAL_CONCLUSIONS
+        and (
+            (run.get("status") == "completed" and run.get("conclusion") in TERMINAL_CONCLUSIONS)
+            or (run.get("status") in {"queued", "in_progress", "waiting", "pending", "requested"}
+                and run.get("conclusion") is None)
+        )
         and run.get("path") == workflow
         and run.get("head_branch") == DEFAULT_BRANCH
         and SHA.fullmatch(str(run.get("head_sha", ""))) is not None
@@ -503,15 +506,15 @@ def _discover_stream(
             failures.append({"stream": stream, "reason": "observer-run-id-invalid"})
             continue
         seen_runs.add(run_id)
-        if run.get("status") in {"queued", "in_progress", "waiting", "pending", "requested"}:
-            exclusions.append({"stream": stream, "producer_run_id": run_id,
-                               "reason": "observer-run-incomplete"})
-            continue
         try:
             if not _valid_observer_run(run, workflow, cutoff):
                 raise ValueError("observer workflow run is invalid")
         except (TypeError, ValueError) as error:
             failures.append({"stream": stream, "producer_run_id": run_id, "reason": str(error)})
+            continue
+        if run["status"] != "completed":
+            exclusions.append({"stream": stream, "producer_run_id": run_id,
+                               "reason": "observer-run-incomplete"})
             continue
         if run["conclusion"] != "success":
             exclusions.append({
@@ -1933,7 +1936,7 @@ def main() -> int:
         # which both moves the declared total under it and shifts every
         # newest-first page by one. Closing the window makes each slice a set
         # that can actually be read whole.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         cutoff_value = receipt_cutoff(policy, now)
         cutoff = cutoff_value.isoformat().replace("+00:00", "Z")
         image_cutoff = (

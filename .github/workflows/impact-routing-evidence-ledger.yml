@@ -42,7 +42,7 @@ jobs:
         run: |
           python3 scripts/ci/collect-impact-routing-runs.test.py
           python3 scripts/ci/audit-impact-routing-evidence.test.py
-          node --test scripts/ci/trusted-pr-workflow-run.test.js
+          node scripts/ci/trusted-pr-workflow-run.test.js
 
   audit:
     name: Audit trusted impact-routing observations
@@ -51,7 +51,7 @@ jobs:
     # Indexing the PR Gate stream's receipts (previously invisible to the
     # reader, see PR_GATE_ARTIFACT) roughly doubles the number of receipt
     # archives this job downloads.
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - name: Checkout trusted ledger policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -69,6 +69,7 @@ jobs:
 
       - name: Validate impact-routing evidence fixtures
         run: |
+          python3 scripts/ci/collect-impact-routing-runs.test.py
           python3 scripts/ci/classify-pr-gate-impact.test.py
           python3 scripts/ci/audit-impact-routing-evidence.test.py
 
