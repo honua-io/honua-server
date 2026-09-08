@@ -1,0 +1,53 @@
+name: Regenerate Generated Files on Trunk
+
+on:
+  push:
+    branches: [trunk]
+
+permissions:
+  contents: read
+  packages: read
+
+# Do not cancel a writer. Each queued run checks out current trunk, so an older
+# event can never publish projections computed from its stale event SHA.
+concurrency:
+  group: generated-files-on-trunk
+  cancel-in-progress: false
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  regenerate:
+    # The merge-train credential emits push events. This exact commit subject
+    # stops the generated commit from starting another generation cycle.
+    if: "!startsWith(github.event.head_commit.message, 'ci: regenerate generated files on trunk')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: trunk
+          # Existing ruleset-bypass credential also used by merge-train.yml.
+          # No GITHUB_TOKEN fallback: that identity cannot write protected trunk.
+          token: ${{ secrets.MERGE_TRAIN_TOKEN }}
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Regenerate repository projections
+        run: bash scripts/ci/regenerate-generated-files.sh --configuration Release
+
+      - name: Validate authored inputs against fresh projections
+        run: |
+          python3 scripts/ci/validate-cite-openapi-compliance.py
+          dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            --filter 'FullyQualifiedName~FeatureCatalog|FullyQualifiedName~GeoServicesParityMatrixDriftTests|FullyQualifiedName~PublicInterfaceProofLedgerTests'
+
+      - name: Commit changed projections once
+        run: bash scripts/ci/commit-generated-files.sh --commit
