@@ -137,12 +137,13 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
         var updateDelta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
         updateDelta.Should().NotBeNull("the update must reach the subscriber");
-        updateDelta!.Value.GetProperty("objectId").GetInt64().Should().Be(objectId);
-        updateDelta.Value.GetProperty("operation").GetString().Should().Be("update");
-        updateDelta.Value.GetProperty("attributes").GetProperty("name").GetString().Should().Be(updated,
+        var updateFrame = updateDelta ?? throw new InvalidOperationException("The update did not reach the subscriber.");
+        updateFrame.GetProperty("objectId").GetInt64().Should().Be(objectId);
+        updateFrame.GetProperty("operation").GetString().Should().Be("update");
+        updateFrame.GetProperty("attributes").GetProperty("name").GetString().Should().Be(updated,
             "an update's streamed after-image must carry the exact new value");
-        AssertEditedPointGeometry(updateDelta.Value);
-        updateDelta.Value.GetRawText().Should().NotContain(
+        AssertEditedPointGeometry(updateFrame);
+        updateFrame.GetRawText().Should().NotContain(
             inserted,
             "the after-image must not replay the superseded value");
 
@@ -152,8 +153,9 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
         var deleteDelta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
         deleteDelta.Should().NotBeNull("the delete must reach the subscriber");
-        deleteDelta!.Value.GetProperty("objectId").GetInt64().Should().Be(objectId);
-        deleteDelta.Value.GetProperty("operation").GetString().Should().Be(
+        var deleteFrame = deleteDelta ?? throw new InvalidOperationException("The delete did not reach the subscriber.");
+        deleteFrame.GetProperty("objectId").GetInt64().Should().Be(objectId);
+        deleteFrame.GetProperty("operation").GetString().Should().Be(
             "delete",
             "a subscriber's materialized view can only drop the row if the removal is announced");
     }
