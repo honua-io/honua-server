@@ -8,12 +8,6 @@ permissions:
   contents: read
   packages: read
 
-# Do not cancel a writer. Each queued run checks out current trunk, so an older
-# event can never publish projections computed from its stale event SHA.
-concurrency:
-  group: generated-files-on-trunk
-  cancel-in-progress: false
-
 env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
@@ -26,6 +20,11 @@ jobs:
     if: >-
       !(startsWith(github.event.head_commit.message, 'ci: regenerate generated files on trunk')
       && contains(github.event.head_commit.message, 'Generated-From: '))
+    # Guard before queueing: skipped self-generated events must not replace a
+    # pending real merge. Each eligible writer checks out current trunk.
+    concurrency:
+      group: generated-files-on-trunk
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
