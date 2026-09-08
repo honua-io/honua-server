@@ -18,29 +18,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-/// <summary>
-/// #4427: the delivery-level authorization split the realtime suite did not have.
-/// <para>
-/// Across sixteen streaming test files exactly three lines turned the F1 development-authentication
-/// bypass off, and none of the three was a delivery test. Everywhere else the bypass returned an
-/// <c>admin</c> principal before any header was read, so <c>IsAdmin(context.User)</c> was always
-/// true and <c>StreamSubscriberSecurity</c> was only ever exercised with one connection and one
-/// identity. The subscriber row/field policy tests are good, but their policies are NSubstitute
-/// fakes returning <c>Role = "*"</c> and there is a single dev-bypass admin subscriber: they prove
-/// the projection function runs on the wire, not that two differently-authorized subscribers get
-/// different streams.
-/// </para>
-/// <para>
-/// The split below is deliberately built on the <b>row</b> policy rather than on layer access or
-/// tenant scope. Both of those are enforced at <i>admission</i>: a subscriber that may not read a
-/// layer — including one whose credential carries the wrong tenant — is refused the connection
-/// outright by <c>RequireStreamLayerAccess</c>, which is the property
-/// <c>Stream_RealPortalCredentialExpiresOrIsRevoked_TerminatesAndReplacementResumes</c> already
-/// proves. To make the split observable <i>on delivery</i> both subscribers must be admitted on
-/// the same layer under the same scope, differing only in identity — which is exactly what a
-/// role-derived row predicate does.
-/// </para>
-/// </summary>
+/// <summary>Concurrent delivery proofs using distinct, genuinely authenticated subscribers.</summary>
 public sealed partial class FeatureStreamEndpointsTests
 {
     private const string SplitReferer = "https://subscriber-split-proof.example/";
@@ -163,11 +141,66 @@ public sealed partial class FeatureStreamEndpointsTests
         bobSeen.Should().Contain(frame => frame.Raw.Contains("beta-only-secret-2"));
     }
 
-    /// <summary>
-    /// #4427: the WebSocket counterpart of the existing SSE unauthenticated-connect rejection.
-    /// Only the SSE case existed; the two WebSocket <c>ThrowsAsync</c> sites are session-limit
-    /// (503) assertions, not authentication ones.
-    /// </summary>
+    /// <summary>Tenant policy must filter even an administrator's unfiltered live stream.</summary>
+    [IntegrationTheory]
+    [Operation(Operations.Streaming)]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Stream_TwoConcurrentTenants_ForeignEventIsAbsentBeforeOwnSentinel(bool webSocket)
+    {
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+        await fixture.InitializeAsync();
+        fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with { Tenant = "tenant-a" });
+        fixture.MutateV2ResourceObjectMetadata(1, metadata => metadata with { Tenant = "tenant-b" });
+        fixture.UpdateV2ResourceMetadata(0, accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] });
+        fixture.UpdateV2ResourceMetadata(1, accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        var ct = timeout.Token;
+        var issuer = fixture.GetService<IPortalTokenIssuer>();
+        var alice = await IssueSplitTokenAsync(issuer, "alice", "reader", ct, "tenant-a");
+        var bob = await IssueSplitTokenAsync(issuer, "bob", "admin", ct, "tenant-b");
+        var anchor = await fixture.GetService<IFeatureChangeEventStore>().AppendAsync(new FeatureChangeEventRequest
+        {
+            ServiceId = "test", LayerId = 0, ObjectId = 89000, Operation = "update",
+            Protocol = "rest", RequestId = "tenant-split-anchor"
+        }, ct);
+
+        await using var aliceStream = await OpenSplitStreamAsync(fixture, webSocket,
+            $"/api/v1/streaming/features?serviceId=test&layers=0&cursor={anchor.Cursor}&token={alice}", ct);
+        // No service, layer or row filter can conceal a broken tenant delivery policy here.
+        await using var bobStream = await OpenSplitStreamAsync(fixture, webSocket,
+            $"/api/v1/streaming/features?cursor={anchor.Cursor}&token={bob}", ct);
+        var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
+        async Task PublishAsync(int layerId, long objectId, string marker) =>
+            await publisher.PublishAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = "test", LayerId = layerId, ObjectId = objectId, Operation = "update",
+                Protocol = "rest", RequestId = marker, PropertiesJson = JsonSerializer.Serialize(new { name = marker })
+            }, ct);
+
+        await PublishAsync(1, 89201, "tenant-b-before");
+        await PublishAsync(0, 89101, "tenant-a-private-value");
+        var aliceSeen = await ReadFeatureChangesUntilAsync(aliceStream, 89101, ct);
+        aliceSeen.Select(frame => frame.ObjectId).Should().Equal(89101);
+        aliceSeen.Single().Raw.Should().Contain("tenant-a-private-value").And.NotContain("tenant-b-before");
+
+        // A later permitted event is an ordered positive control: Bob has processed the
+        // foreign event before this sentinel, so absence is not inferred from a timeout.
+        await PublishAsync(1, 89202, "tenant-b-after");
+        var bobSeen = await ReadFeatureChangesUntilAsync(bobStream, 89202, ct);
+        bobSeen.Select(frame => frame.ObjectId).Should().Equal(89201, 89202);
+        bobSeen.Should().NotContain(frame => frame.ObjectId == 89101);
+        bobSeen.Should().OnlyContain(frame => !frame.Raw.Contains("tenant-a-private-value"));
+        bobSeen[0].Raw.Should().Contain("tenant-b-before");
+        bobSeen[1].Raw.Should().Contain("tenant-b-after");
+    }
+
+    /// <summary>The WebSocket counterpart of the SSE unauthenticated-connect rejection.</summary>
     [IntegrationTest]
     [Operation(Operations.Streaming)]
     [Endpoint("GET /api/v1/streaming/features")]
@@ -206,12 +239,13 @@ public sealed partial class FeatureStreamEndpointsTests
         IPortalTokenIssuer issuer,
         string principalId,
         string role,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? tenantId = null)
         => (await issuer.IssueAsync(
             new PortalTokenIssueRequest(
                 principalId,
                 principalId,
-                TenantId: null,
+                TenantId: tenantId,
                 [role],
                 PortalTokenClientType.Referer,
                 SplitReferer,

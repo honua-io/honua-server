@@ -108,6 +108,22 @@ def qualify(source):
 
 
 class RealtimeCandidateQualificationTests(unittest.TestCase):
+    def test_tenant_isolation_ledger_discloses_external_receipt_even_when_source_claims_local_execution(self):
+        source = complete_evidence()
+        for row in source["rows"]:
+            row["evidenceOrigin"] = {"kind": "server-local", "serverSuiteExecutedByQualifier": True}
+        receipt = qualify(source)
+        self.assertEqual("qualified", receipt["status"])
+        isolation = [row for row in receipt["rows"] if row["scenario"] == "tenant-isolation"]
+        self.assertEqual(5, len(isolation))
+        for row in isolation:
+            self.assertEqual({
+                "kind": "external-self-reported-receipt",
+                "repository": "honua-io/honua-sdk-js",
+                "artifactUrl": expected()["sourceArtifactUrl"],
+                "serverSuiteExecutedByQualifier": False,
+            }, row["evidenceOrigin"])
+
     def test_revocation_requires_a_live_credential_and_termination_before_expiry(self):
         # Independently specified clock cases: issuance 06:35, revocation 06:36,
         # termination 06:36:01, expiry 06:37. An expiry cannot prove revocation.
