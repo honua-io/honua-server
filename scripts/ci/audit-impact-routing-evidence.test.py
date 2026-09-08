@@ -1972,6 +1972,86 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
         "## Impact-routing ledger promotion trend"
     )
 
+def test_seven_day_receipt_store_replay() -> None:
+    """Replay concurrent, independent run/attempt artifacts and discarded heads."""
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    quiet = {"generic": False, "lambda": False, "functions": False}
+    now = datetime(2026, 8, 22, 0, tzinfo=timezone.utc)
+    window_policy = MODULE.load_policy(json.loads(
+        (REPOSITORY_ROOT / ".github/impact-routing-promotion.json").read_text()
+    ))
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        producers = {"pr": [], "native": []}
+        images = []
+        for day in range(15, 22):
+            created = f"2026-08-{day}T12:00:00Z"
+            head = f"{day:040x}"
+            for stream, workflow in (("pr", MODULE.PR_GATE_WORKFLOW),
+                                     ("native", MODULE.NATIVE_WORKFLOW)):
+                identity = day * 10 + (1 if stream == "pr" else 2)
+                producer = run(identity, workflow)
+                producer.update(created_at=created, updated_at=created)
+                producers[stream].append(producer)
+                item = artifact(identity, producer, artifact_name(
+                    MODULE.PR_GATE_STREAM if stream == "pr" else MODULE.NATIVE_STREAM))
+                item["created_at"] = created
+                if stream == "pr":
+                    # Every full-mode artifact must be indexed, not just docs-only.
+                    item["name"] = f"pr-gate-impact-full-v3-attempt-1"
+                    receipt = pr_gate_receipt(blobs, head)
+                    receipt.update(mode="full", reason="path-requires-full-gate")
+                else:
+                    empty = day >= 20
+                    receipt = native_receipt(blobs, pr=day, head=head, worker=not empty,
+                        serving=quiet if empty else None,
+                        legacy_serving=quiet if empty else None,
+                        legacy_worker=not empty, changed_paths=[] if empty else None)
+                    if not empty:
+                        images.append(image_run(day, MODULE.SERVING_WORKFLOW, head, day,
+                            started=created, completed=created, live_head=HEAD_D))
+                artifact_catalog(root / f"{stream}-artifacts", producer, [item])
+                archive(root / "archives", identity,
+                        MODULE.PR_GATE_STREAM if stream == "pr" else MODULE.NATIVE_STREAM, receipt)
+            # A second native writer discards a moved PR after observation.
+            discarded = run(day * 10 + 3, MODULE.NATIVE_WORKFLOW)
+            discarded.update(created_at=created, updated_at=created)
+            producers["native"].append(discarded)
+            artifact_catalog(root / "native-artifacts", discarded, [])
+        for stream in producers:
+            pages(root / f"{stream}-runs", "workflow_runs", producers[stream])
+        pages(root / "serving", "workflow_runs", images)
+        pages(root / "worker", "workflow_runs", [
+            {**image, "path": MODULE.WORKER_WORKFLOW} for image in images
+        ])
+        def audit():
+            index = MODULE.discover(root / "pr-runs", root / "native-runs",
+                root / "pr-artifacts", root / "native-artifacts", window_policy, now,
+                datetime(2026, 8, 15, tzinfo=timezone.utc))
+            return MODULE.summarize(index, root / "archives", root / "serving",
+                root / "worker", window_policy, REPOSITORY_ROOT, now=now)
+        before = audit()
+        assert before["receipt_loss_regression"] is True
+        for producer in producers["native"]:
+            if producer["id"] % 10 != 3:
+                continue
+            marker = artifact(producer["id"], producer,
+                "native-image-impact-skipped-pull-request-identity-moved-during-observation-attempt-1")
+            marker["created_at"] = producer["created_at"]
+            artifact_catalog(root / "native-artifacts", producer, [marker])
+        after = audit()
+        assert after == audit()  # rerunning the reader cannot append or double count
+        assert after["counts"]["integrity_failures"] == 0, after["integrity_failures"]
+        assert after["counts"]["authoritative_image_outcome_failures"] == 0
+        assert after["receipt_loss_regression"] is False
+        assert after["receipt_emission"]["all"]["receipts_indexed"] == 14
+        assert after["receipt_emission"]["all"]["receipts_skipped"] == 7
+        assert after["receipt_emission"]["all"]["receipts_missing"] == 0
+        print("seven-day-receipt-replay=ok before_loss=7/21 after_loss=0/14 "
+              "integrity_failures=0 native_outcome_failures=0 skips=7")
+
+
+test_seven_day_receipt_store_replay()
 test_policy_and_discovery()
 test_policy_generation_ignores_routing_irrelevant_workflow_edits()
 test_expired_receipt_is_reclassified_as_loss()
