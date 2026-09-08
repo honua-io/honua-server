@@ -408,17 +408,18 @@ public sealed class DeniedPrincipalZeroRecordsTests
 
     private static bool TryReadId(JsonElement container, out long id)
     {
-        foreach (var property in container.EnumerateObject()
-            .Where(property => string.Equals(property.Name, "objectid", StringComparison.OrdinalIgnoreCase)))
-        {
-            if (TryReadNumeric(property.Value, out id))
+        var result = container.EnumerateObject()
+            .Where(property => string.Equals(property.Name, "objectid", StringComparison.OrdinalIgnoreCase))
+            .Select(property =>
             {
-                return true;
-            }
-        }
+                var hasId = TryReadNumeric(property.Value, out var value);
+                return (HasId: hasId, Id: value);
+            })
+            .Where(candidate => candidate.HasId)
+            .FirstOrDefault();
 
-        id = 0;
-        return false;
+        id = result.Id;
+        return result.HasId;
     }
 
     private static bool TryReadNumeric(JsonElement element, out long value)
