@@ -34,8 +34,15 @@ public sealed class HostValidationEnvironmentAliasTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
-    public void StartupValidation_StrictProductionWithBlankPrimary_AcceptsRunningServerAliasConfiguration()
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/features")]
+    public async Task StartupValidation_StrictProductionWithBlankPrimary_AcceptsRunningServerAliasConfiguration()
     {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/ogc/features?f=json");
+        request.Headers.Host = "alias.honua.test";
+        using var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
         var errors = ConfigurationValidationService.ValidateConfiguration(
             _fixture.GetService<IConfiguration>(), NullLogger.Instance,
             isDevelopment: false, isTest: false);
