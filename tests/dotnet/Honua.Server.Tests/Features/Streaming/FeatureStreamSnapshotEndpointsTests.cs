@@ -107,16 +107,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             "deltas resume strictly after the captured baseline cursor");
     }
 
-    /// <summary>
-    /// #4427: a real UPDATE and a real DELETE reaching a subscriber.
-    /// <para>
-    /// Both real-edit helpers in this file were insert-only, and every other streaming test
-    /// injected a <c>FeatureChangeEventRequest</c> straight into the publisher. So nothing proved
-    /// that the two mutation kinds a materialized subscriber most depends on — the after-image of
-    /// an update, and the removal contract of a delete — travel the canonical GeoServices edit
-    /// pipeline onto the wire at all.
-    /// </para>
-    /// </summary>
+    /// <summary>Real GeoServices mutations must reach a subscriber with the edited values and ID.</summary>
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_RealUpdateAndDelete_ReachTheSubscriberCorrelatedToTheEdit()
@@ -148,9 +139,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         updateDelta.Should().NotBeNull("the update must reach the subscriber");
         updateDelta!.Value.GetProperty("objectId").GetInt64().Should().Be(objectId);
         updateDelta.Value.GetProperty("operation").GetString().Should().Be("update");
-        updateDelta.Value.GetRawText().Should().Contain(
-            updated,
-            "an update's streamed after-image must carry the new value, not the old one");
+        updateDelta.Value.GetProperty("attributes").GetProperty("name").GetString().Should().Be(updated,
+            "an update's streamed after-image must carry the exact new value");
         updateDelta.Value.GetRawText().Should().NotContain(
             inserted,
             "the after-image must not replay the superseded value");
@@ -1926,15 +1916,6 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     /// Inserts one correlated feature through the canonical GeoServices edit pipeline and
     /// returns the object id the server assigned.
     /// </summary>
-    /// <remarks>
-    /// #4427: this helper used to return <see cref="Task"/>. Every caller generated a
-    /// correlation GUID, wrote it into the edit's <c>name</c> attribute, and then never read it
-    /// back — the complete set of <c>correlation</c> references in this file was four
-    /// assignments, four passes to this helper, the parameter and the interpolation, and
-    /// <b>no assertion ever correlated</b>. Any other event on that layer at that moment
-    /// satisfied the "the mutation is observed" claim. Returning the assigned object id lets
-    /// each caller assert that the delta it observed is the edit it made.
-    /// </remarks>
     private async Task<long> ApplyEditAsync(string correlation, CancellationToken cancellationToken)
     {
         var payload = $$"""
@@ -1997,9 +1978,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             editedObjectId,
             "the observed delta must be the edit this test made, not any event on the layer");
         delta.GetProperty("operation").GetString().Should().Be("insert");
-        delta.GetRawText().Should().Contain(
-            correlation,
-            "the streamed after-image must carry the marker the edit wrote");
+        delta.GetProperty("attributes").GetProperty("name").GetString().Should().Be(correlation,
+            "the streamed after-image must carry the exact marker the edit wrote");
     }
 
     private async Task<long> ApplyEditsAsync(string payload, string resultsProperty, CancellationToken cancellationToken)

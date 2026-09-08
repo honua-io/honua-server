@@ -73,6 +73,17 @@ public sealed partial class FeatureStreamEndpointsTests
         var alice = await IssueSplitTokenAsync(issuer, "alice", AlphaRole, ct);
         var bob = await IssueSplitTokenAsync(issuer, "bob", BetaRole, ct);
 
+        using (var unfiltered = new HttpRequestMessage(HttpMethod.Get,
+            $"/api/v1/streaming/features?token={alice}"))
+        {
+            unfiltered.Headers.Referrer = new Uri(SplitReferer);
+            unfiltered.Headers.Accept.ParseAdd("text/event-stream");
+            using var denied = await fixture.Client.SendAsync(unfiltered, HttpCompletionOption.ResponseHeadersRead, ct);
+            denied.StatusCode.Should().Be(System.Net.HttpStatusCode.Forbidden,
+                "a valid non-admin credential cannot open an unfiltered SSE stream");
+            (await denied.Content.ReadAsStringAsync(ct)).Should().NotContain("feature-change");
+        }
+
         var anchor = await fixture.GetService<IFeatureChangeEventStore>().AppendAsync(new FeatureChangeEventRequest
         {
             ServiceId = "test",
@@ -116,12 +127,10 @@ public sealed partial class FeatureStreamEndpointsTests
         // Alice must also have advanced past round 2's alpha row without ever seeing beta.
         aliceSeen.AddRange(await ReadFeatureChangesUntilAsync(aliceStream, 88102, ct));
 
-        aliceSeen.Select(frame => frame.ObjectId).Should().OnlyContain(
-            objectId => objectId == 88101 || objectId == 88102,
-            "the alpha-entitled subscriber must receive only the rows its credential entitles it to");
-        bobSeen.Select(frame => frame.ObjectId).Should().OnlyContain(
-            objectId => objectId == 88201 || objectId == 88202,
-            "the beta-entitled subscriber must receive only the rows its credential entitles it to");
+        aliceSeen.Select(frame => frame.ObjectId).Should().Equal(88101, 88102,
+            "Alice must receive each entitled row exactly once and no Bob row");
+        bobSeen.Select(frame => frame.ObjectId).Should().Equal(88201, 88202,
+            "Bob must receive each entitled row exactly once and no Alice row");
 
         foreach (var frame in aliceSeen)
         {
@@ -223,16 +232,9 @@ public sealed partial class FeatureStreamEndpointsTests
             new Uri("ws://localhost/api/v1/streaming/features?serviceId=test&layers=0"),
             ct));
 
-        // The TestHost client reports the refused upgrade as
-        // "Incomplete handshake, status code: {status}". Assert on the status it names rather
-        // than with a regular expression: FluentAssertions applies a match timeout, and under a
-        // loaded host that timeout — not the assertion — is what fails.
-        exception.Message.Should().ContainAny(
-            ["401", "403"],
-            "an unauthenticated WebSocket subscriber must be refused the upgrade, not handed a "
-            + "socket; the client reported: {0}",
-            exception.Message);
-        exception.Message.Should().NotContain("101", "no protocol upgrade may be completed");
+        exception.Message.Should().Contain("status code: 401",
+            "an unauthenticated subscriber must receive the typed unauthorized handshake outcome");
+
     }
 
     private static async Task<string> IssueSplitTokenAsync(
