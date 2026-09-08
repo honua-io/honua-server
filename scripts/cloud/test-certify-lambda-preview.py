@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -94,6 +95,15 @@ if name == "dotnet":
     emit({"version": s["alias"], "status": "RolledBack" if action == "rollback" else "Succeeded"})
 if name != "aws": bad()
 service, op = args[:2]
+if service == "secretsmanager":
+    assert op == "get-secret-value"
+    if fail == "secret-access-denied":
+        print("An error occurred (AccessDeniedException): offline-sensitive-canary", file=sys.stderr)
+        bad()
+    if fail == "secret-read-failed":
+        print("offline-sensitive-canary", file=sys.stderr)
+        bad()
+    emit({"SecretString": "" if fail == "secret-empty" else "offline-sensitive-canary"})
 function = arg("--function-name", "")
 if service == "sts": emit("123456789012")
 if service == "ecr":
@@ -184,7 +194,7 @@ if op == "get-function":
     if query == "Configuration.FunctionArn": emit("arn:offline:ephemeral")
     variables = {"ConnectionStrings__DefaultConnection": "aws:secretsmanager:offline-db",
                  "ConnectionStrings__redis": "aws:secretsmanager:offline-redis",
-                 "HONUA_ADMIN_PASSWORD": "aws:secretsmanager:offline-admin", "HONUA_SKIP_MIGRATIONS": "false",
+                 "HONUA_ADMIN_PASSWORD": os.environ.get("STUB_ADMIN_REFERENCE", "aws:secretsmanager:offline-admin"), "HONUA_SKIP_MIGRATIONS": "false",
                  # The scratch-layer write is a Pro surface, so a certifiable standing function
                  # carries a signed license envelope and the key that verifies its signature.
                  "Licensing__LicenseContentSecretRef": "aws:secretsmanager:offline-license",
@@ -204,6 +214,7 @@ if op == "get-function":
     if fail == "admin-unconfigured" and ephemeral: variables.pop("HONUA_ADMIN_PASSWORD")
     vpc = {"SubnetIds": [], "SecurityGroupIds": []} if fail == "missing-vpc" else {"SubnetIds":["subnet-cert"], "SecurityGroupIds":["sg-cert"]}
     emit({"Configuration": {"RevisionId": "rev", "Description": "honua-cert-run=123-1" if arg("--qualifier") == "8" else "standing", "PackageType": "Image", "Architectures": [os.environ["HONUA_LAMBDA_ARCHITECTURE"]],
+         "FunctionArn": "arn:aws:lambda:us-east-1:123456789012:function:honua-cert-cert-server",
          "Environment": {"Variables": variables}, "VpcConfig": vpc},
          "Code": {"ResolvedImageUri": image}})
 if op == "create-function":
@@ -273,6 +284,8 @@ event = json.loads(Path(payload[7:]).read_text() if payload.startswith("file://"
 # The shell's invoke has no --output json; Python's helper adds it after the response path.
 response_path = Path(args[args.index("--payload")+2])
 route = event["rawPath"]
+if route not in ("/healthz/live", "/api/v1/admin/api-keys"):
+    assert event["headers"]["x-api-key"] == (os.environ.get("HONUA_LAMBDA_CERT_ADMIN_KEY") or "offline-sensitive-canary")
 status = 200
 body = {}
 headers = None
@@ -315,7 +328,7 @@ elif route.startswith("/api/v1/admin/api-keys"):
     # scoped principal, that principal is refused the same surface, and teardown revokes it.
     presented = event["headers"].get("x-api-key")
     override = os.environ.get("HONUA_LAMBDA_CERT_DENIED_KEY", "")
-    admin = presented is not None and presented == os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
+    admin = presented is not None and presented == (os.environ.get("HONUA_LAMBDA_CERT_ADMIN_KEY") or "offline-sensitive-canary")
     minted = next((k for k in s["keys"] if k["value"] == presented), None)
     scoped = bool(override and presented == override) or bool(minted and minted["status"] == "active")
     tail = route[len("/api/v1/admin/api-keys"):].strip("/")
@@ -488,6 +501,104 @@ def as_ecr_schema2(manifest):
 CANDIDATE_TAG = "candidate-" + "a" * 12 + "-" + "a" * 12 + "-x86_64"
 
 
+class AdminCredentialTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("lambda_certification", SCRIPT_PATH.with_name("lambda-certification.py"))
+        self.driver = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.driver)
+        self.environment = unittest.mock.patch.dict(os.environ, {
+            "HONUA_LAMBDA_CERT_ADMIN_KEY": "", "HONUA_LAMBDA_CERT_DENIED_KEY": "denied-key",
+            "HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE": "true",
+            "REALAWS_CERT_LAMBDA_FUNCTION": "honua-cert-cert-server", "AWS_REGION": "us-east-1",
+            "GITHUB_ACTIONS": "false"}, clear=True)
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+        self.current = {"Configuration": {
+            "FunctionArn": "arn:aws:lambda:us-east-1:123456789012:function:honua-cert-cert-server",
+            "Environment": {"Variables": {"HONUA_ADMIN_PASSWORD": "aws:secretsmanager:cert/admin"}}}}
+
+    def test_reference_names_arns_and_version_options(self):
+        arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:cert/admin-Ab12Cd"
+        cases = [
+            ("aws:secretsmanager:cert/admin", ["--secret-id", "cert/admin"]),
+            ("AWS:SecretsManager:" + arn, ["--secret-id", arn, "--region", "us-west-2"]),
+            ("aws:secretsmanager:cert/admin?versionStage=AWSPREVIOUS&versionId=id%2B1",
+             ["--secret-id", "cert/admin", "--version-stage", "AWSPREVIOUS", "--version-id", "id+1"]),
+            ("aws:secretsmanager:cert/admin?VersionStage=first&versionStage=last+stage",
+             ["--secret-id", "cert/admin", "--version-stage", "last+stage"])]
+        for reference, expected in cases:
+            with self.subTest(reference=reference):
+                self.assertEqual(expected, self.driver.secret_reference(reference)[1])
+
+    def test_invalid_references_never_echo_the_value(self):
+        for reference in (None, "", "inline-private-key", "aws:secretsmanager:",
+                          "aws:secretsmanager:bad\n::warning::private", "aws:secretsmanager:name?versionId=%ZZ",
+                          "aws:secretsmanager:arn:aws:ssm:us-east-1:123456789012:parameter/admin"):
+            with self.subTest(reference=reference):
+                with self.assertRaises(RuntimeError) as error:
+                    self.driver.secret_reference(reference)
+                if reference:
+                    self.assertNotIn(reference, str(error.exception))
+
+    def test_resolution_uses_standing_configuration_and_caches_in_memory(self):
+        with unittest.mock.patch.object(self.driver, "config", return_value=self.current) as config, \
+                unittest.mock.patch.object(self.driver, "aws", return_value={"SecretString": "resolved-private-key"}) as aws:
+            self.assertEqual("resolved-private-key", self.driver.admin_key())
+            self.assertEqual("resolved-private-key", self.driver.admin_key())
+            config.assert_called_once_with("honua-cert-cert-server")
+            aws.assert_called_once_with("secretsmanager", "get-secret-value", "--secret-id", "cert/admin")
+            self.assertEqual("[redacted]", self.driver.redacted("resolved-private-key", 60))
+            self.assertEqual("", os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"])
+
+    def test_override_takes_precedence_without_configuration_or_secret_reads(self):
+        os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"] = "override-private-key"
+        with unittest.mock.patch.object(self.driver, "aws") as aws, unittest.mock.patch.object(self.driver, "config") as config:
+            self.assertEqual("override-private-key", self.driver.admin_key())
+            aws.assert_not_called()
+            config.assert_not_called()
+
+    def test_masks_resolved_and_override_values_with_workflow_escaping(self):
+        value = "private%value\r\n::warning::injected"
+        for override in (False, True):
+            self.driver._admin_key = None
+            os.environ["GITHUB_ACTIONS"] = "true"
+            os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"] = value if override else ""
+            output = io.StringIO()
+            with unittest.mock.patch.object(self.driver, "aws", return_value={"SecretString": value}), \
+                    unittest.mock.patch("sys.stdout", output):
+                self.assertEqual(value, self.driver.admin_key(self.current))
+                self.driver.admin_key()
+            self.assertEqual("::add-mask::private%25value%0D%0A::warning::injected\n", output.getvalue())
+        output = io.StringIO()
+        os.environ["GITHUB_ACTIONS"] = "false"
+        with unittest.mock.patch("sys.stdout", output):
+            self.driver.mask_secret(value)
+        self.assertEqual("", output.getvalue())
+
+    def test_binary_empty_missing_and_denied_principal(self):
+        cases = [({"SecretBinary": "YmluYXJ5LWtleQ=="}, "binary-key"),
+                 ({"SecretString": ""}, None), ({"SecretString": "  "}, None), ({}, None),
+                 ({"SecretString": "denied-key"}, None)]
+        for response, expected in cases:
+            self.driver._admin_key = None
+            with self.subTest(response=response), unittest.mock.patch.object(self.driver, "aws", return_value=response):
+                if expected:
+                    self.assertEqual(expected, self.driver.admin_key(self.current))
+                else:
+                    with self.assertRaises(RuntimeError):
+                        self.driver.admin_key(self.current)
+
+    def test_access_denied_reports_only_the_required_secret_arn(self):
+        arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:cert/admin-Ab12Cd"
+        for identifier, pattern in (("cert/admin", "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert/admin-??????"), (arn, arn)):
+            self.current["Configuration"]["Environment"]["Variables"]["HONUA_ADMIN_PASSWORD"] = "aws:secretsmanager:" + identifier
+            with unittest.mock.patch.object(self.driver, "aws", side_effect=self.driver.SecretReadDenied("private diagnostic")):
+                with self.assertRaises(RuntimeError) as error:
+                    self.driver.admin_key(self.current)
+                self.assertIn("STOP: OIDC role needs secretsmanager:GetSecretValue on " + pattern, str(error.exception))
+                self.assertNotIn("private diagnostic", str(error.exception))
+
+
 class LambdaPreviewLaneContractTests(unittest.TestCase):
     def run_lane(self, failure="", ecr=None, **overrides):
         with tempfile.TemporaryDirectory() as temp:
@@ -513,7 +624,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                    "HONUA_LAMBDA_CERT_DENIED_KEY": "offline-scoped-key", "HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE": "false",
                    "HONUA_LAMBDA_ARCHITECTURE": "x86_64", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
                    "AWS_REGION": "us-east-1", "REALAWS_CERT_LAMBDA_FUNCTION": "honua-cert-cert-server",
-                   "REALAWS_CERT_LAMBDA_ALIAS": "live", "HONUA_LAMBDA_CERT_ADMIN_KEY": "offline-sensitive-canary",
+                   "REALAWS_CERT_LAMBDA_ALIAS": "live", "HONUA_LAMBDA_CERT_ADMIN_KEY": "", "GITHUB_ACTIONS": "false",
                    "HONUA_LAMBDA_WRITE_BASE_URL": "https://cert.lambda-url.us-east-1.on.aws",
                    "HONUA_DEMO_BASE_URL": "https://demo.invalid", "HONUA_LAMBDA_PREVIEW_RECEIPT": str(directory / "receipt.json"),
                    "HONUA_LAMBDA_PREVIEW_REPOSITORY": "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-lambda-preview",
@@ -555,6 +666,24 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertEqual(["8"], state["deleted_versions"])
                 self.assertEqual(original, state["image"])
                 self.assertFalse(state["function"] or state["logs"] or state["row"])
+
+    def test_optional_override_skips_secret_reads(self):
+        result, receipt, state, _ = self.run_lane("secret-access-denied", HONUA_LAMBDA_CERT_ADMIN_KEY="offline-sensitive-canary")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("pass", receipt["result"])
+        self.assertFalse(any("secretsmanager" in call for call in state["calls"]))
+        self.assertIn("HONUA_LAMBDA_CERT_ADMIN_KEY: ${{ secrets.REALAWS_CERT_ADMIN_KEY }}", WORKFLOW)
+
+    def test_secret_failures_stop_before_resources_or_invocations(self):
+        for failure in ("secret-access-denied", "secret-read-failed", "secret-empty"):
+            with self.subTest(failure=failure):
+                result, receipt, state, _ = self.run_lane(failure)
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual("noProof", receipt["serving"]["result"])
+                self.assertFalse(state["function"] or state["logs"] or state["backend"])
+                self.assertFalse(any("invoke" in call or "docker" in call for call in state["calls"]))
+                if failure == "secret-access-denied":
+                    self.assertIn("secretsmanager:GetSecretValue on arn:aws:secretsmanager:us-east-1:123456789012:secret:offline-admin-??????", result.stderr)
 
     def test_mirror_copies_the_exact_source_manifest_and_never_re_encodes_it(self):
         source = "sha256:" + "a" * 64
@@ -1132,7 +1261,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
 
     def test_missing_required_inputs_fail(self):
         for name in ("HONUA_LAMBDA_ARCHITECTURE", "REALAWS_CERT_LAMBDA_FUNCTION", "REALAWS_CERT_LAMBDA_ALIAS",
-                     "HONUA_DEMO_BASE_URL", "HONUA_LAMBDA_CERT_ADMIN_KEY"):
+                     "HONUA_DEMO_BASE_URL"):
             with self.subTest(name=name):
                 result, receipt, state, _ = self.run_lane(**{name: ""})
                 self.assertNotEqual(0, result.returncode)

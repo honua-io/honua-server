@@ -25,7 +25,36 @@ Keep the existing image/revision/repository/execution-role inputs. Supply:
 | `REALAWS_CERT_LAMBDA_WRITE_BASE_URL` repo variable | Function URL belonging to that exact alias; verified through AWS before any writes. |
 | `HONUA_DEMO_BASE_URL` repo variable | Demo read URL. Matching write/read hosts, including case, port and trailing-slash variants, are refused. |
 | `REALAWS_CERT_DENIED_KEY` cert secret | **Optional override, deprecated.** The lane mints its own scoped `read:layers` principal per run (see below). For one release, explicitly selecting the workflow input `use_denied_key_override: true` sends this key instead and mints and revokes nothing. An existing secret alone does not select the override. Remove the secret once this release has shipped. |
-| `REALAWS_CERT_ADMIN_KEY` cert secret | Admin key for the standing certification function and its cloned configuration. It must equal what `HONUA_ADMIN_PASSWORD` resolves to on that function, so rotating the admin credential without re-issuing this secret makes every administrative assertion 401. Never stored in evidence. |
+| `REALAWS_CERT_ADMIN_KEY` cert secret (optional, one release) | Temporary override, mapped to `HONUA_LAMBDA_CERT_ADMIN_KEY`. A nonempty override takes precedence over Secrets Manager; leave it unset to follow credential rotation automatically. Never stored in evidence. |
+
+By default, preparation reads `HONUA_ADMIN_PASSWORD` from the standing function's
+configuration and calls `secretsmanager:GetSecretValue` for that reference before
+mirroring or creating resources. References use `aws:secretsmanager:<name-or-ARN>`,
+with optional `?versionStage=<stage>&versionId=<id>` URI-escaped selectors, matching
+the server resolver. An ARN selects its own region; a name uses `AWS_REGION`.
+The admin secret must contain the password as a nonempty `SecretString` (or UTF-8
+`SecretBinary`). Missing, malformed, inline or unreadable references fail closed
+when no override is set.
+
+The selected value is registered with GitHub Actions log masking before use as
+`x-api-key`. It stays in process memory and private, temporary invocation payloads;
+it is never exported to job outputs, receipts or artifacts. The serving process
+resolves again from the configuration captured during preparation and caches the
+value for that process. Outside Actions, no mask command containing a key is
+printed. The explicit override is masked and checked against the denied principal
+in the same way. Remove the override after this release; leaving a copied override
+set retains the rotation drift risk.
+
+The cert OIDC role needs `secretsmanager:GetSecretValue` on that exact secret via
+honua-iac's existing `CertificationStackSecretsRead` grant (honua-iac #175).
+Access denial stops the lane with the required resource ARN: a configured ARN is
+reported directly; a name becomes
+`arn:<partition>:secretsmanager:<region>:<account>:secret:<name>-??????` (only the
+six-character AWS suffix is wildcarded). Report that diagnostic to the iac owner;
+do not widen policy or trust in this lane. Raw AWS errors and secret values remain
+suppressed. A secret rotation during a run, or an alias version whose frozen
+configuration names a different secret, can still fail serving assertions and
+requires checking that configuration before retrying.
 
 The ephemeral function inherits the standing function's PostGIS connection/secret
 reference, authentication configuration and VPC attachments. Its execution role
@@ -82,7 +111,7 @@ Two properties of the serving assertions are environment, not fixture, and the s
 function has to supply them:
 
 - **The lane is an authenticated principal.** `invoke()` defaults to `authenticated=True` and
-  sends `REALAWS_CERT_ADMIN_KEY` on every serving call except the two explicit denial probes.
+  sends the resolved admin credential on every serving call except the two explicit denial probes.
   The snapshot's `allowAnonymous` policy is what makes the *denial* probes meaningful; it is not
   what admits the fixture reads or the scratch-layer writes.
 - **`test_service/10` writes need a licensed function.** FeatureServer edits are gated on the
@@ -361,7 +390,7 @@ resolving a secret would print.
 
 ## An administrative 401 has to say which of its causes it is
 
-The lane authenticates as the bootstrap administrator: it sends `HONUA_LAMBDA_CERT_ADMIN_KEY` as
+The lane authenticates as the bootstrap administrator: it sends the resolved credential (or the temporary override) as
 `x-api-key`, and `ApiKeyAuthenticationHandler` compares that against whatever `HONUA_ADMIN_PASSWORD`
 resolves to on the function under test — a Secrets Manager reference the handler re-resolves per
 request in the AWS serverless configuration. The lane clones that configuration and never injects a
@@ -372,8 +401,8 @@ credential of its own, so there is exactly one way in and three ways to lose it:
   the execution role lost read access to the secret, the secret resolves empty, or the refreshed
   value fails `AdminPasswordValidation` in a Production environment. `ResolveAdminPasswordAsync`
   catches that and fails the request; or
-- it resolves to a password the lane's key no longer equals — because the admin credential was
-  rotated, or the cert bootstrap secret was re-issued, and the other side was not.
+- it resolves to a password the lane's key no longer equals — because an explicit override is
+  stale, the secret rotated during the run, or the alias version names a different reference.
 
 All three are HTTP 401, all three are the admin Problem Details document, and all three carry the
 title `Unauthorized`. Run 21 (34222614774) failed its first serving assertion with nothing but that
@@ -399,7 +428,7 @@ touching any credential:
 | --- | --- | --- | --- |
 | `absent` | `Admin authentication not configured` | The deployment has no administrator. | Restore the variable in the cert stack; do **not** rotate anything. |
 | `present` | `Admin authentication not configured` | The reference is there but did not resolve to a usable password: execution-role access, an empty secret, or a production complexity failure. | Fix the IAM grant or the secret's contents. Rotating the bootstrap key changes nothing. |
-| `present` | `API key required.` | The function has an administrator; this key is not it. | Re-issue `REALAWS_CERT_ADMIN_KEY` from the credential the standing function resolves. |
+| `present` | `API key required.` | The function has an administrator; this key is not it. | Remove a stale `REALAWS_CERT_ADMIN_KEY` override; check rotation timing and the published version’s reference, then rerun. |
 
 `presence` is read from the function actually invoked, which for the alias phases is the published
 version's own frozen environment rather than `$LATEST`. Every echoed field is a name or a
