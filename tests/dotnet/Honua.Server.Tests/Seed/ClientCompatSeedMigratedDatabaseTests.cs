@@ -64,6 +64,11 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Delete)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
     public async Task ClientCompatSeed_OnServerMigratedDatabase_ServesTheTenFixtureNamesAndAcceptsScratchLayerWrites()
     {
         await using var container = new PostgreSqlBuilder()
