@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:0a0919c3b92b55387d7186f6c4427f01b7594752b50f7e4b31927ddb40516126` |
+| `fixtureRevision` | `sha256:5d4255077b525fccb4071098241390bda39e35bb3ed3c323819c45fa96a0738e` |
 | `serverConfigRevision` | `sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -44,7 +44,7 @@ $ LC_ALL=C sha256sum docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed
     tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
     tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum
-0a0919c3b92b55387d7186f6c4427f01b7594752b50f7e4b31927ddb40516126  -
+5d4255077b525fccb4071098241390bda39e35bb3ed3c323819c45fa96a0738e  -
 $ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
 d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a  -
 ```
