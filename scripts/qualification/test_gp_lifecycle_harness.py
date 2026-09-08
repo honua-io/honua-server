@@ -69,6 +69,11 @@ class GpQualificationHarnessTests(unittest.TestCase):
         self.assertEqual("intentional assertion failure", receipts["assertion-failure"]["finding"])
         self.assertEqual("pass", receipts["follow-up"]["outcome"])
         self.assertIsNone(receipts["follow-up"]["finding"])
+        self.assertEqual("x" * 262144, receipts["follow-up"]["evidence"]["payload"])
+        self.assertEqual(
+            "x" * 262144,
+            next(item for item in summary["scenarios"] if item["scenario"] == "follow-up")["evidence"]["payload"],
+        )
         for receipt in receipts.values():
             self.assertLessEqual(receipt["started_at"], receipt["completed_at"])
             self.assertIn("attempt_count", receipt)
