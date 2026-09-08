@@ -352,6 +352,24 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("publication.metadata-release", "publication", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("upload.file", "upload", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("edit.features", "edit", FeatureCatalog.FeatureServerEditsKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+
+            // Collaborative-editing leases (#4402). The lease itself IS enforced on every
+            // feature-write path, so this is Implemented/Served; what a deployment may or may
+            // not have is an IFeatureLockAuthorizer, and that is reported as configured-or-not
+            // rather than as support — the shipped authorizer grants no lease at all.
+            ("collaboration.feature-locks", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+
+            // The two recorded 2026.1 feature-lock gaps (#4402), declared here so a client
+            // reads them off the manifest instead of off the docs page: a lease is node-local,
+            // and the GeoServices applyEdits surface honours no client-supplied version token.
+            // The version-token gap is named for the ONE surface that has it: OGC API Features
+            // enforces If-Match/412 on PUT, merge-PATCH and DELETE and the store-level
+            // precondition path is untouched, so a generically-named "edit.version-tokens"
+            // would tell a client to disable optimistic concurrency where it works.
+            // Planned maturity + the KnownGap status below is the same shape the unimplemented
+            // file-format writers already publish (supported=false, lifecycle "planned").
+            ("collaboration.feature-locks.cross-node", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
+            ("edit.geoservices-version-tokens", "edit", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
             // Branch versioning (VMS REST surface) — built-experimental (ADR-0058 / BH6-001/BH6-002 fix).
             // The VMS endpoints are gated OFF the GA surface by default (versioning.branch descriptor).
             // Opt in via Capabilities:Experimental:versioning.branch:Enabled=true.
@@ -370,6 +388,13 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Category = category,
                 Kind = kind,
                 Maturity = maturity,
+                // A roster entry declared Planned is a declared implementation gap, not a
+                // served capability: the gate resolver must refuse it with
+                // capability-not-implemented and the manifest must publish supported=false.
+                // Same pairing FileFormatDirection uses for an unimplemented codec direction.
+                ImplementationStatus = maturity == CapabilityMaturity.Planned
+                    ? CapabilityImplementationStatus.KnownGap
+                    : CapabilityImplementationStatus.Served,
                 RequiresOptIn = id is not ("serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages"),
                 EntitlementKey = entitlementKey,
                 MinimumEdition = ResolveMinimumEdition(entitlementKey),

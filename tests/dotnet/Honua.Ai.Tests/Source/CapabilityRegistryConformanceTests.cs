@@ -91,6 +91,9 @@ public sealed class CapabilityRegistryConformanceTests
         "publication.metadata-release",
         "upload.file",
         "edit.features",
+        "collaboration.feature-locks",
+        "collaboration.feature-locks.cross-node",
+        "edit.geoservices-version-tokens",
         "versioning.branch",
         "operate.status",
     ];
