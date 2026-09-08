@@ -823,6 +823,11 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_gitops_change_records_status ON honua.gitops_change_records(status);"
   - "CREATE INDEX IF NOT EXISTS idx_gitops_change_records_approval ON honua.gitops_change_records(pending_approval_id) WHERE pending_approval_id IS NOT NULL;"
   - |
+      -- Import-table DDL below mirrors src/Honua.Server/Migrations/111_PreserveImportOrdinateDimensions.sql:
+      -- a GEOMETRY(Geometry, srid) typmod is XY-only and rejects every XYZ/XYM row (KML altitudes,
+      -- GPX elevations) with "Geometry has Z dimension but column does not". Integration tests seed
+      -- this file instead of running migrations, so a typmod here silently empties those imports
+      -- while production keeps them (honua-server#4419).
       CREATE OR REPLACE FUNCTION honua.create_import_table(schema_name text, table_name text, target_srid integer DEFAULT 4326)
       RETURNS void
       LANGUAGE plpgsql
@@ -855,7 +860,7 @@ sql:
           EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
           EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, table_name);
           EXECUTE format(
-              'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+              'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
               schema_name, table_name, target_srid);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || table_name || '_properties', schema_name, table_name);
@@ -944,7 +949,7 @@ sql:
 
           EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
           EXECUTE format(
-              'CREATE TABLE IF NOT EXISTS %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+              'CREATE TABLE IF NOT EXISTS %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
               schema_name, table_name, target_srid);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || table_name || '_properties', schema_name, table_name);
@@ -998,7 +1003,7 @@ sql:
           EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
           EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
           EXECUTE format(
-              'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+              'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
               schema_name, staging_name, target_srid);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || staging_name || '_geometry', schema_name, staging_name);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || staging_name || '_properties', schema_name, staging_name);

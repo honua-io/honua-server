@@ -505,7 +505,12 @@ public class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("Kml");
 
         // #4419: without this read-back an importer that dropped the second placemark, or that
-        // read KML's lon,lat pair as lat,lon, passed this test.
+        // read KML's lon,lat pair as lat,lon, passed this test. Assert the envelope too, so a
+        // failed or empty import names its own reason instead of surfacing as an empty table.
+        var result = DeserializeImportResult(responseContent);
+        result.Success.Should().BeTrue(responseContent);
+        result.FeatureCount.Should().Be(2, responseContent);
+
         var rows = await ReadImportedRowsAsync("kml_import_table");
         rows.Should().HaveCount(2, "both placemarks must be stored");
         rows[0].Name.Should().Be("Oakland");
@@ -555,6 +560,10 @@ public class StreamingImportTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("kmz_import_table");
         responseContent.Should().Contain("Kml");
+
+        var kmzResult = DeserializeImportResult(responseContent);
+        kmzResult.Success.Should().BeTrue(responseContent);
+        kmzResult.FeatureCount.Should().Be(1, responseContent);
 
         var rows = await ReadImportedRowsAsync("kmz_import_table");
         rows.Should().ContainSingle("the archived document holds one placemark");
@@ -1164,9 +1173,9 @@ public class StreamingImportTests : IAsyncLifetime
         await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT ST_X(geometry), ST_Y(geometry), ST_SRID(geometry), attributes->>'{nameAttribute}' " +
+            $"SELECT ST_X(geometry), ST_Y(geometry), ST_SRID(geometry), properties->>'{nameAttribute}' " +
             $"FROM {QuoteIdentifier("honua_data")}.{QuoteIdentifier("imported_" + tableName)} " +
-            $"ORDER BY attributes->>'{nameAttribute}'";
+            $"ORDER BY properties->>'{nameAttribute}'";
         var rows = new List<(double, double, int, string?)>();
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
