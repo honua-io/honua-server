@@ -245,7 +245,8 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         string path,
         Dictionary<string, string> form)
     {
-        using var response = await client.PostAsync(path, new FormUrlEncodedContent(form));
+        using var content = new FormUrlEncodedContent(form);
+        using var response = await client.PostAsync(path, content);
         return await ReadServingJsonAsync("POST", path, response);
     }
 
