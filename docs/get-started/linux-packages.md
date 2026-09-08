@@ -293,10 +293,16 @@ docker image inspect "$HONUA_IMAGE" --format '{{json .RepoDigests}}'
 python3 -m pip --python "$Python" freeze
 ```
 
-For port conflicts, edit `HONUA_HTTP_PORT` in `.env`, rerun `dc up -d` and reload
+For port conflicts, edit `HONUA_HTTP_PORT` or `HONUA_GRPC_PORT` in `.env`,
+rerun `dc up -d` and reload
 startup variables. For startup errors, retain the digest and error and inspect
 logs; do not disable Production preflight. Public registry downloads require no
 credentials. Share only redacted logs and package identities, never `.env`.
+
+After a partial import or publication failure, inspect the logs and staging table,
+then rerun `journey.py` from this installation. It reuses `windows-local`; MCP
+ingest replaces the named staging dataset. After publication saves
+`published-layer.json`, use `--verify-only` to read the retained layer.
 
 Stop only this installation, retaining its volumes:
 

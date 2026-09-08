@@ -368,7 +368,8 @@ For support, retain the image digest, installed-package list, HTTP status,
 timestamp, and relevant error/correlation ID. Inspect logs before sharing them;
 do not send `.env`, full Compose rendering, credentials, or customer records.
 
-- **Port already allocated:** choose a different `HONUA_HTTP_PORT` in `.env`, run
+- **Port already allocated:** change the conflicting `HONUA_HTTP_PORT` or
+  `HONUA_GRPC_PORT` in `.env`, run
   `dc up -d`, and reload the variables in step 2.
 - **Startup exits or readiness times out:** inspect `dc logs`. A published-image
   defect is a failed rehearsal, even if PostgreSQL is healthy. Keep the digest
