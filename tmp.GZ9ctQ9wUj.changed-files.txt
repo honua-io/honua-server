@@ -1,3 +1,0 @@
-scripts/cloud/lambda-certification.md
-scripts/cloud/lambda-certification.py
-scripts/cloud/test-certify-lambda-preview.py

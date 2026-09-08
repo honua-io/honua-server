@@ -1,8 +1,0 @@
-{
-  "solution": {
-    "path": "Honua.sln",
-    "projects": [
-      "tests\\dotnet\\Honua.Architecture.Tests\\Honua.Architecture.Tests.csproj"
-    ]
-  }
-}
