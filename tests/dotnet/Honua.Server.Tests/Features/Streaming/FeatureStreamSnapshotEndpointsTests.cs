@@ -1988,7 +1988,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
     {
         delta.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
         delta.GetProperty("geometry").GetProperty("coordinates").EnumerateArray()
-            .Select(value => value.GetDouble()).Should().Equal([-122.0, 47.0],
+            .Select(value => value.GetDouble()).Should().Equal([-157.85, 21.30],
                 "the stream must preserve the fixture's longitude and latitude ordinates");
         delta.GetProperty("geometryCrs").GetString().Should().Be("EPSG:4326");
     }

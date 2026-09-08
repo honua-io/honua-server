@@ -29,6 +29,8 @@ public sealed partial class FeatureStreamEndpointsTests
     /// <summary>Role held by the second subscriber, and the row value it entitles.</summary>
     private const string BetaRole = "beta-reader";
 
+    private const string ControlRole = "split-control";
+
     /// <summary>
     /// Two concurrent subscribers, one layer, one scope, two identities: each receives only the
     /// rows its own credential entitles it to, and the other subscriber's rows never appear.
@@ -70,8 +72,8 @@ public sealed partial class FeatureStreamEndpointsTests
         var ct = timeout.Token;
 
         var issuer = fixture.GetService<IPortalTokenIssuer>();
-        var alice = await IssueSplitTokenAsync(issuer, "alice", AlphaRole, null, ct);
-        var bob = await IssueSplitTokenAsync(issuer, "bob", BetaRole, null, ct);
+        var alice = await IssueSplitTokenAsync(issuer, "alice", [AlphaRole, ControlRole], null, ct);
+        var bob = await IssueSplitTokenAsync(issuer, "bob", [BetaRole, ControlRole], null, ct);
 
         using (var unfiltered = new HttpRequestMessage(HttpMethod.Get,
             $"/api/v1/streaming/features?token={alice}"))
@@ -113,23 +115,20 @@ public sealed partial class FeatureStreamEndpointsTests
         await using var aliceStream = await OpenSplitStreamAsync(fixture, webSocket, path + alice, ct);
         await using var bobStream = await OpenSplitStreamAsync(fixture, webSocket, path + bob, ct);
 
-        // Round 1: Bob's row first, then Alice's. Delivery is ordered, so Alice reading up to
-        // hers proves Bob's row was never going to be delivered to her.
         await PublishAsync(88201, BetaRole, "beta-only-secret-1");
         await PublishAsync(88101, AlphaRole, "alpha-only-secret-1");
-        var aliceSeen = await ReadFeatureChangesUntilAsync(aliceStream, 88101, ct);
-
-        // Round 2: the mirror image for Bob.
         await PublishAsync(88102, AlphaRole, "alpha-only-secret-2");
         await PublishAsync(88202, BetaRole, "beta-only-secret-2");
-        var bobSeen = await ReadFeatureChangesUntilAsync(bobStream, 88202, ct);
 
-        // Alice must also have advanced past round 2's alpha row without ever seeing beta.
-        aliceSeen.AddRange(await ReadFeatureChangesUntilAsync(aliceStream, 88102, ct));
+        // Both credentials entitle this control row. Reading both streams through the same
+        // ordered boundary observes every private event, including the final Bob event.
+        await PublishAsync(88999, ControlRole, "shared-boundary");
+        var aliceSeen = await ReadFeatureChangesUntilAsync(aliceStream, 88999, ct);
+        var bobSeen = await ReadFeatureChangesUntilAsync(bobStream, 88999, ct);
 
-        aliceSeen.Select(frame => frame.ObjectId).Should().Equal([88101L, 88102L],
+        aliceSeen.Select(frame => frame.ObjectId).Should().Equal([88101L, 88102L, 88999L],
             "Alice must receive each entitled row exactly once and no Bob row");
-        bobSeen.Select(frame => frame.ObjectId).Should().Equal([88201L, 88202L],
+        bobSeen.Select(frame => frame.ObjectId).Should().Equal([88201L, 88202L, 88999L],
             "Bob must receive each entitled row exactly once and no Alice row");
 
         foreach (var frame in aliceSeen)
@@ -171,8 +170,8 @@ public sealed partial class FeatureStreamEndpointsTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         var ct = timeout.Token;
         var issuer = fixture.GetService<IPortalTokenIssuer>();
-        var alice = await IssueSplitTokenAsync(issuer, "alice", "reader", "tenant-a", ct);
-        var bob = await IssueSplitTokenAsync(issuer, "bob", "admin", "tenant-b", ct);
+        var alice = await IssueSplitTokenAsync(issuer, "alice", ["reader"], "tenant-a", ct);
+        var bob = await IssueSplitTokenAsync(issuer, "bob", ["admin"], "tenant-b", ct);
         var anchor = await fixture.GetService<IFeatureChangeEventStore>().AppendAsync(new FeatureChangeEventRequest
         {
             ServiceId = "test",
@@ -249,7 +248,7 @@ public sealed partial class FeatureStreamEndpointsTests
     private static async Task<string> IssueSplitTokenAsync(
         IPortalTokenIssuer issuer,
         string principalId,
-        string role,
+        string[] roles,
         string? tenantId,
         CancellationToken cancellationToken)
         => (await issuer.IssueAsync(
@@ -257,7 +256,7 @@ public sealed partial class FeatureStreamEndpointsTests
                 principalId,
                 principalId,
                 TenantId: tenantId,
-                [role],
+                roles,
                 PortalTokenClientType.Referer,
                 SplitReferer,
                 DateTimeOffset.UtcNow.AddMinutes(10)),
