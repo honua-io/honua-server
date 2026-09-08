@@ -9969,6 +9969,7 @@
         "Honua.Server.Tests.LimitsEnforcementTests.QueryGet_NoRecordCount_UsesDefaultLimit",
         "Honua.Server.Tests.Seed.AdminSampleSeedFeatureServerTests.FeatureServerGeoJsonQuery_WithProjectedAdminRoute_ReturnsWgs84Coordinates",
         "Honua.Server.Tests.Seed.AdminSampleSeedFixtureTests.AdminSampleSeed_DeclaresPreviewableFeatureServerFixture",
+        "Honua.Server.Tests.Seed.ClientCompatSeedMigratedDatabaseTests.ClientCompatSeed_OnServerMigratedDatabase_ServesTheTenFixtureNamesAndAcceptsScratchLayerWrites",
         "Honua.Server.Tests.SpatialCorrectnessTests.Query_AntimeridianCrossingBbox_ReturnsValidPacificFeatures",
         "Honua.Server.Tests.SpatialCorrectnessTests.Query_BeyondWebMercatorLimits_HandlesUnprojectableRegions",
         "Honua.Server.Tests.SpatialCorrectnessTests.Query_BufferOperation_CrossesAntimeridian",
@@ -19195,7 +19196,8 @@
       "proving_tests": [
         "Honua.Server.Tests.FeatureServerEndpointTests.AddFeatures_WithFeaturePayload_ReturnsAddResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState",
+        "Honua.Server.Tests.Seed.ClientCompatSeedMigratedDatabaseTests.ClientCompatSeed_OnServerMigratedDatabase_ServesTheTenFixtureNamesAndAcceptsScratchLayerWrites"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -19353,7 +19355,8 @@
         "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_BlocksEditAndDeleteOfHiddenRow_OnDefaultObjectIdLayer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState",
-        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.DeleteFeatures_DeleteGrantOverridesCoarseDenyForObjectIdsPath"
+        "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.DeleteFeatures_DeleteGrantOverridesCoarseDenyForObjectIdsPath",
+        "Honua.Server.Tests.Seed.ClientCompatSeedMigratedDatabaseTests.ClientCompatSeed_OnServerMigratedDatabase_ServesTheTenFixtureNamesAndAcceptsScratchLayerWrites"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
