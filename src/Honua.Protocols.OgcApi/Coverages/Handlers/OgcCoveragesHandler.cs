@@ -233,9 +233,9 @@ internal sealed class OgcCoveragesHandler
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
             // Walk OGC API Coverages publications: each is a (resource, service) pair gated
-            // on protocol enablement + access policy. Dedupe to one publication per resource
-            // (prefer IsPrimary), since coverage routes use a single storage layer id key.
-            var byResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.Ordinal);
+            // on protocol enablement + access policy. Dedupe by public collection identity
+            // (prefer IsPrimary): multiple resources may share the same storage layer id.
+            var byCollection = new Dictionary<int, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>();
             foreach (var publication in snapshot.Graph.Publications)
             {
                 if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
@@ -255,14 +255,19 @@ internal sealed class OgcCoveragesHandler
                 {
                     continue;
                 }
-                if (!byResource.TryGetValue(resource!.Metadata.Id, out var existing) ||
+                var collectionId = snapshot.ResolveStorageLayerId(publication);
+                if (!collectionId.HasValue)
+                {
+                    continue;
+                }
+                if (!byCollection.TryGetValue(collectionId.Value, out var existing) ||
                     (publication.IsPrimary && !existing.Publication.IsPrimary))
                 {
-                    byResource[resource.Metadata.Id] = (publication, service, resource!);
+                    byCollection[collectionId.Value] = (publication, service, resource!);
                 }
             }
 
-            var visible = byResource.Values
+            var visible = byCollection.Values
                 .OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue)
                 .ToArray();
 
