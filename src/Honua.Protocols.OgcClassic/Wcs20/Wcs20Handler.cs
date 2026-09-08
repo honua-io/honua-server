@@ -1068,7 +1068,7 @@ internal sealed class Wcs20Handler
         }
 
         children.Add(new XElement(Wcs + "CoverageId", FormatCoverageId(coverage.LayerId)));
-        children.Add(new XElement(Wcs + "CoverageSubtype", "gmlcov:RectifiedGridCoverage"));
+        children.Add(new XElement(Wcs + "CoverageSubtype", "RectifiedGridCoverage"));
 
         return new XElement(Wcs + "CoverageSummary", children);
     }
@@ -1101,7 +1101,9 @@ internal sealed class Wcs20Handler
         }
 
         var coverageId = FormatCoverageId(coverage.LayerId);
-        var srsName = CreateEpsgUri(srid);
+        // Coverage coordinates use x/y order. CRS84 declares longitude/latitude;
+        // EPSG:4326 would instead declare latitude/longitude to WCS clients.
+        var srsName = srid == 4326 ? SpatialReferenceHelpers.Crs84Uri : CreateEpsgUri(srid);
         description = new XElement(Wcs + "CoverageDescription",
             new XAttribute(Gml + "id", coverageId),
             new XElement(Gml + "boundedBy",
@@ -1134,7 +1136,7 @@ internal sealed class Wcs20Handler
                     Enumerable.Range(1, Math.Max(coverage.Raster.BandCount, 1))
                         .Select(band => BuildBandField(coverage.Raster, band)))),
             new XElement(Wcs + "ServiceParameters",
-                new XElement(Wcs + "CoverageSubtype", "gmlcov:RectifiedGridCoverage"),
+                new XElement(Wcs + "CoverageSubtype", "RectifiedGridCoverage"),
                 new XElement(Wcs + "nativeFormat", Wcs20Utilities.TiffContentType)));
 
         return true;
@@ -2816,9 +2818,13 @@ internal sealed class Wcs20Handler
         var geoTransform = raster.GeoTransform;
         if (geoTransform is { Length: >= 6 })
         {
-            origin = new Coordinate(geoTransform[0], geoTransform[3]);
             xVector = new Coordinate(geoTransform[1], geoTransform[4]);
             yVector = new Coordinate(geoTransform[2], geoTransform[5]);
+            // GDAL transforms locate the pixel corner; GML grid coordinates locate
+            // the sample center. Include both vectors for rotated grids.
+            origin = new Coordinate(
+                geoTransform[0] + (xVector.X + yVector.X) / 2,
+                geoTransform[3] + (xVector.Y + yVector.Y) / 2);
             return true;
         }
 
@@ -2830,14 +2836,17 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        origin = new Coordinate(extent.XMin, extent.YMax);
         xVector = new Coordinate((extent.XMax - extent.XMin) / raster.Width, 0);
         yVector = new Coordinate(0, -((extent.YMax - extent.YMin) / raster.Height));
+        origin = new Coordinate(extent.XMin + xVector.X / 2, extent.YMax + yVector.Y / 2);
         return true;
     }
 
     private static IEnumerable<XAttribute> RootNamespaceAttributes()
     {
+        // CoverageSubtype is a QName. Keep its GML coverage namespace binding
+        // while using the unprefixed spelling accepted by ArcGIS Pro's WCS driver.
+        yield return new XAttribute("xmlns", Wcs20Utilities.GmlcovNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "wcs", Wcs20Utilities.WcsNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "ows", Wcs20Utilities.OwsNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "crs", Wcs20Utilities.CrsNamespace);
