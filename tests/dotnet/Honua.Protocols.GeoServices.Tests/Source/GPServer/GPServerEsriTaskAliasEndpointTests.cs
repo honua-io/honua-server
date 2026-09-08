@@ -478,6 +478,7 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             Category = "custom",
             ExecutionKind = ProcessExecutionKind.Job,
             SupportedExecutionModes = ProcessExecutionModes.Async,
+            SupportedEntryPoints = ProcessEntryPoints.Job,
             Parameters =
             [
                 new ProcessParameterSpec

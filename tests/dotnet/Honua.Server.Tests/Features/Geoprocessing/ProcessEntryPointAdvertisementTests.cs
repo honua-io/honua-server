@@ -120,17 +120,14 @@ public sealed class ProcessEntryPointAdvertisementTests
         nodes.Should().OnlyContain(node => node.CapabilityFlags.Executable);
     }
 
-    /// <summary>
-    /// The declaration must be part of the callability predicate, not a parallel fact
-    /// about it. For the built-in catalog the two can never disagree, because
-    /// <c>Classify</c> derives the entry points from the execution kind — so this test
-    /// builds the disagreement by hand, which is exactly what a replacement
-    /// <c>IProcessCatalog</c> can supply. Without the declaration in the predicate, such
-    /// a definition is advertised and accepted on every job surface while its own public
-    /// metadata says it has no callable entry point.
-    /// </summary>
+    [Theory]
+    [InlineData(ProcessEntryPoints.None, false)]
+    [InlineData(ProcessEntryPoints.Protocol, false)]
+    [InlineData(ProcessEntryPoints.Workflow, false)]
+    [InlineData(ProcessEntryPoints.Job, true)]
+    [InlineData(ProcessEntryPoints.Job | ProcessEntryPoints.Workflow, true)]
     [UnitTest]
-    public void DefinitionDeclaringNoEntryPoint_IsNotCallable_EvenWhenItsKindAndModesSayJob()
+    public void JobCallability_RequiresTheMatchingEntryPoint(ProcessEntryPoints entryPoints, bool expected)
     {
         var undeclared = new ProcessDefinition
         {
@@ -142,21 +139,17 @@ public sealed class ProcessEntryPointAdvertisementTests
             OutputArtifactKinds = [],
             ExecutionKind = ProcessExecutionKind.Job,
             SupportedExecutionModes = ProcessExecutionModes.Async,
-            SupportedEntryPoints = ProcessEntryPoints.None
+            SupportedEntryPoints = entryPoints
         };
 
-        ProcessExecutionEligibility.IsJobCallable(undeclared).Should().BeFalse(
-            "an operation that declares no entry point is callable nowhere, whatever its execution kind");
-        ProcessExecutionCapabilityCatalog.IsOgcCallable(undeclared).Should().BeFalse();
-        GPServerExecutionPolicy.IsJobCallable(undeclared).Should().BeFalse();
-        ProcessExecutionCapabilityCatalog.IsWorkflowComposable(undeclared).Should().BeFalse();
+        ProcessExecutionEligibility.IsJobCallable(undeclared).Should().Be(expected);
+        ProcessExecutionCapabilityCatalog.IsOgcCallable(undeclared).Should().Be(expected);
+        GPServerExecutionPolicy.IsJobCallable(undeclared).Should().Be(expected);
 
-        var workflowKindWithoutDeclaration = undeclared with
-        {
-            ProcessId = "test.undeclared-workflow-entry-point",
-            ExecutionKind = ProcessExecutionKind.WorkflowOnly
-        };
-        ProcessExecutionEligibility.IsWorkflowCallable(workflowKindWithoutDeclaration).Should().BeFalse();
+        var workflow = undeclared with { ExecutionKind = ProcessExecutionKind.WorkflowOnly };
+        ProcessExecutionEligibility.IsWorkflowCallable(workflow).Should().Be(
+            (entryPoints & ProcessEntryPoints.Workflow) != 0);
+
     }
 
     [UnitTest]

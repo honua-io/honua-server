@@ -261,6 +261,7 @@ public sealed class GeoprocessingJobServiceTests
             Parameters = [],
             OutputArtifactKinds = [],
             ExecutionKind = ProcessExecutionKind.Job,
+            SupportedEntryPoints = ProcessEntryPoints.Job,
             SupportedExecutionModes = ProcessExecutionModes.Sync
         };
         var catalog = Substitute.For<IProcessCatalog>();
@@ -630,6 +631,7 @@ public sealed class GeoprocessingJobServiceTests
             Parameters = [],
             OutputArtifactKinds = [],
             ExecutionKind = ProcessExecutionKind.WorkflowOnly,
+            SupportedEntryPoints = ProcessEntryPoints.Workflow,
             SupportedExecutionModes = ProcessExecutionModes.Sync
         };
         var catalog = Substitute.For<IProcessCatalog>();

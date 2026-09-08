@@ -115,14 +115,17 @@ internal sealed class OrdinaryKriging
         var n = points.Length;
         var size = n + 1;
 
-        // Bordered semivariance matrix [Γ 1; 1ᵀ 0] with right-hand side [z; 0].
+        // Normalize Γ by its sill so its entries and the fixed constraint entries have
+        // comparable scales. The dual weights then absorb the sill; prediction uses
+        // the same normalized semivariances and preserves the original value units.
+        // Bordered semivariance matrix [Γ/sill 1; 1ᵀ 0], right-hand side [z; 0].
         var matrix = new double[size * size];
         var rhs = new double[size];
         for (var i = 0; i < n; i++)
         {
             for (var j = i + 1; j < n; j++)
             {
-                var gamma = variogram.Evaluate(Distance(points[i], points[j]));
+                var gamma = variogram.Evaluate(Distance(points[i], points[j])) / variogram.Sill;
                 matrix[(i * size) + j] = gamma;
                 matrix[(j * size) + i] = gamma;
             }
@@ -134,14 +137,8 @@ internal sealed class OrdinaryKriging
 
         if (!TrySolveInPlace(matrix, rhs, size, out var solution))
         {
-            // NOT a nugget problem: gamma(0) is defined as exactly zero whatever the
-            // nugget, which is what makes the estimator exact at sample locations, so
-            // coincident points keep identical rows for every permitted nugget value.
-            // Suggesting a larger nugget would send the caller round a loop that cannot
-            // terminate; consolidating duplicate locations is the only fix.
-            failure = "the kriging system is singular; consolidate sample points that share "
-                + "a location (a larger 'nugget' cannot resolve this: the semivariogram is "
-                + "zero at zero lag by definition, so duplicated locations stay identical)";
+            // Gamma(0) stays zero for every nugget, so duplicates retain identical rows.
+            failure = "the kriging system is singular; consolidate sample points that share a location";
             return false;
         }
 
@@ -185,7 +182,7 @@ internal sealed class OrdinaryKriging
             var sample = _samples[i];
             var dx = x - sample.X;
             var dy = y - sample.Y;
-            estimate += _weights[i] * _variogram.Evaluate(Math.Sqrt((dx * dx) + (dy * dy)));
+            estimate += _weights[i] * (_variogram.Evaluate(Math.Sqrt((dx * dx) + (dy * dy))) / _variogram.Sill);
         }
 
         return estimate;
@@ -248,50 +245,31 @@ internal sealed class OrdinaryKriging
     {
         solution = rhs;
 
-        // IMPLICIT ROW SCALING. A single global threshold is wrong for this system: the
-        // bordered matrix mixes semivariances, whose magnitude is the sill and therefore
-        // the square of the value units, with the unbiasedness constraint's exact 1s. A
-        // global tolerance taken from the largest entry scales with the sill while the
-        // constraint pivot does not, so merely expressing the same data in larger units
-        // (samples 0 and 2000 give a default sill of 1e6) pushes a perfectly well-posed
-        // system under the threshold and reports it singular. Comparing each candidate
-        // pivot against ITS OWN row's magnitude keeps the test invariant to units and to
-        // the row-to-row scale difference that is inherent to the bordered form.
-        var rowScale = new double[size];
-        for (var row = 0; row < size; row++)
+        // Scale the singularity threshold by the magnitude of the system so the test is
+        // invariant to the units of the input values (metres vs. degrees vs. counts).
+        double scale = 0d;
+        for (var i = 0; i < matrix.Length; i++)
         {
-            double largest = 0d;
-            for (var column = 0; column < size; column++)
-            {
-                largest = Math.Max(largest, Math.Abs(matrix[(row * size) + column]));
-            }
-
-            if (largest == 0d)
-            {
-                // An all-zero row is structurally singular whatever the scaling.
-                return false;
-            }
-
-            rowScale[row] = largest;
+            scale = Math.Max(scale, Math.Abs(matrix[i]));
         }
+
+        var tolerance = scale * size * 1e-12;
 
         for (var column = 0; column < size; column++)
         {
             var pivotRow = column;
-            var pivotScore = Math.Abs(matrix[(column * size) + column]) / rowScale[column];
+            var pivotMagnitude = Math.Abs(matrix[(column * size) + column]);
             for (var row = column + 1; row < size; row++)
             {
-                var candidate = Math.Abs(matrix[(row * size) + column]) / rowScale[row];
-                if (candidate > pivotScore)
+                var candidate = Math.Abs(matrix[(row * size) + column]);
+                if (candidate > pivotMagnitude)
                 {
-                    pivotScore = candidate;
+                    pivotMagnitude = candidate;
                     pivotRow = row;
                 }
             }
 
-            // Singular only when the best available pivot is negligible RELATIVE TO the
-            // row it comes from, which is the scale-free statement of rank deficiency.
-            if (pivotScore <= size * 1e-12)
+            if (pivotMagnitude <= tolerance)
             {
                 return false;
             }
@@ -305,13 +283,13 @@ internal sealed class OrdinaryKriging
                 }
 
                 (rhs[column], rhs[pivotRow]) = (rhs[pivotRow], rhs[column]);
-                (rowScale[column], rowScale[pivotRow]) = (rowScale[pivotRow], rowScale[column]);
             }
 
             var pivot = matrix[(column * size) + column];
             for (var row = column + 1; row < size; row++)
             {
                 var factor = matrix[(row * size) + column] / pivot;
+                // Skip only exact zero: all nonzero factors, however small, must be applied.
                 if (factor == 0d)
                 {
                     continue;

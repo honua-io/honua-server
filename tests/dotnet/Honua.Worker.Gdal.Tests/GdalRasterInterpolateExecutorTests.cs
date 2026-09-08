@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -252,16 +253,19 @@ public sealed class GdalRasterInterpolateExecutorTests
     /// cost is their product. That work runs in managed code before the GDAL child process
     /// exists, so ToolTimeout does not bound it; the combined budget must refuse it up front.
     /// </summary>
+    [Theory]
+    [InlineData(1_000, ExecutionJobStatus.Failed)]
+    [InlineData(40_000, ExecutionJobStatus.Succeeded)]
     [UnitTest]
-    public async Task Kriging_WithinBothIndividualCapsButOverTheCombinedBudget_FailsBeforeSolving()
+    public async Task Kriging_CombinedBudget_EnforcesTheBoundary(long budget, ExecutionJobStatus expected)
     {
-        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("ok"));
         var scratch = GdalCli.NewScratch(ScratchSuite);
         var executor = new GdalRasterInterpolateJobExecutor(
             runner,
             // 4 samples and a 100x100 grid are each well inside their own cap; the product
             // (40,000 evaluations) is not inside a budget of 1,000.
-            GdalJobFactory.Options(scratch, maxKrigingSamples: 16, maxKrigingCells: 1_000_000, maxKrigingPredictionWork: 1_000),
+            GdalJobFactory.Options(scratch, maxKrigingSamples: 16, maxKrigingCells: 1_000_000, maxKrigingPredictionWork: budget),
             NullLogger<GdalRasterInterpolateJobExecutor>.Instance);
         try
         {
@@ -274,9 +278,16 @@ public sealed class GdalRasterInterpolateExecutorTests
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
-            result.Status.Should().Be(ExecutionJobStatus.Failed);
-            result.ErrorMessage.Should().Contain("MaxKrigingPredictionWork");
-            runner.Invocations.Should().BeEmpty("the budget must be refused before any solve or CLI work");
+            result.Status.Should().Be(expected, result.ErrorMessage);
+            if (expected == ExecutionJobStatus.Failed)
+            {
+                result.ErrorMessage.Should().Contain("MaxKrigingPredictionWork");
+                runner.Invocations.Should().BeEmpty("the budget must be refused before any solve or CLI work");
+            }
+            else
+            {
+                runner.Invocations.Should().ContainSingle();
+            }
         }
         finally
         {
@@ -284,37 +295,55 @@ public sealed class GdalRasterInterpolateExecutorTests
         }
     }
 
-    /// <summary>
-    /// AAIGrid cells are fixed-point text, so serialized size scales with value magnitude.
-    /// A finite-but-astronomical sample must be refused at the boundary rather than
-    /// expanding into a multi-gigabyte document during the write.
-    /// </summary>
+    [Theory]
+    [InlineData(1e300, "sample value")]
+    [InlineData(1e12, "prediction")]
     [UnitTest]
-    public async Task Kriging_SampleMagnitudeBeyondTheSupportedRange_FailsBeforeSolving()
+    public async Task Kriging_ExcessiveSampleOrPredictionMagnitude_FailsBeforeEncoding(double value, string error)
     {
         var runner = FakeGdalCommandRunner.Failing(1, "n/a");
         var executor = NewExecutor(runner, out var scratch);
         try
         {
-            const string astronomical = """
+            var points = FormattableString.Invariant($$"""
             {"type":"FeatureCollection","features":[
-              {"type":"Feature","properties":{"value":1e300},"geometry":{"type":"Point","coordinates":[0,0]}},
-              {"type":"Feature","properties":{"value":2e300},"geometry":{"type":"Point","coordinates":[4,4]}}]}
-            """;
+              {"type":"Feature","properties":{"value":0},"geometry":{"type":"Point","coordinates":[0,0]}},
+              {"type":"Feature","properties":{"value":{{value}}},"geometry":{"type":"Point","coordinates":[0,1]}},
+              {"type":"Feature","properties":{"value":{{value}}},"geometry":{"type":"Point","coordinates":[1,0]}}]}
+            """);
             var job = GdalJobFactory.Job(
                 GdalRasterInterpolateJobExecutor.KrigingProcessId,
-                ("points", Base64(astronomical)),
-                ("zField", "value"));
+                ("points", Base64(points)), ("zField", "value"),
+                ("model", "gaussian"), ("range", "10"), ("sill", "1"), ("width", "2"), ("height", "2"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
             result.Status.Should().Be(ExecutionJobStatus.Failed);
-            result.ErrorMessage.Should().Contain("magnitude");
+            result.ErrorMessage.Should().Contain("magnitude").And.Contain(error);
             runner.Invocations.Should().BeEmpty();
         }
         finally
         {
             CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task WriteGridAsync_LongRowAtMagnitudeLimit_PreservesCellsAcrossBatches()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var values = Enumerable.Repeat(-KrigingGridInputs.MaxAbsValue, 2048).ToArray();
+            await KrigingGridInputs.WriteGridAsync(path, new KrigingGrid(0, 0, 1, 1, 2048, 1), values, default);
+            new FileInfo(path).Length.Should().BeLessThan(35 * values.Length + 256);
+            var rows = await File.ReadAllLinesAsync(path);
+            rows.Should().HaveCount(6);
+            rows[5].Split(' ').Select(cell => double.Parse(cell, CultureInfo.InvariantCulture)).Should().Equal(values);
+        }
+        finally
+        {
+            File.Delete(path);
         }
     }
 

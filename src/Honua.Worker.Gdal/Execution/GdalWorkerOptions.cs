@@ -182,15 +182,9 @@ internal sealed class GdalWorkerOptions
     public long MaxKrigingCells { get; set; } = 4_000_000L;
 
     /// <summary>
-    /// Maximum COMBINED prediction work for <c>raster.interpolate-kriging</c>, counted in
-    /// sample-cell evaluations (<c>samples x cells</c>). The sample and cell caps bound the
-    /// factorization and the output buffer respectively, but the dual-form prediction pass
-    /// costs their PRODUCT, and the two caps multiply out to over four billion distance and
-    /// semivariogram evaluations — minutes of unbroken managed CPU on a native worker, all
-    /// of it before the per-invocation <see cref="ToolTimeout"/> that governs the GDAL child
-    /// process even exists. A submission inside both individual caps could therefore
-    /// monopolize a worker far past its configured timeout, so the product carries its own
-    /// budget. Default 250 million evaluations (#4409).
+    /// Maximum sample-cell evaluations for managed kriging prediction, which runs before
+    /// the GDAL tool timeout. Default 250 million; combined with MaxKrigingSamples, this
+    /// bounds the prediction pass and the factorization independently.
     /// </summary>
     [Range(1L, long.MaxValue, ErrorMessage = "MaxKrigingPredictionWork must be a positive evaluation count")]
     public long MaxKrigingPredictionWork { get; set; } = 250_000_000L;

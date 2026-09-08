@@ -120,9 +120,11 @@ public sealed class OrdinaryKrigingTests
     /// elevation or concentration job failing purely because of its units.
     /// </summary>
     [Theory]
+    [InlineData(2e-6)]
     [InlineData(2d)]
     [InlineData(2_000d)]
     [InlineData(2_000_000d)]
+    [InlineData(1e12)]
     [UnitTest]
     public void TrySolve_WellSeparatedSamples_IsNotReportedSingularAtAnyValueScale(double high)
     {

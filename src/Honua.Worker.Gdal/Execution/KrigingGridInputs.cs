@@ -26,12 +26,10 @@ namespace Honua.Worker.Gdal.Execution;
 internal static class KrigingGridInputs
 {
     /// <summary>
-    /// Largest sample magnitude accepted for <c>raster.interpolate-kriging</c>. The bound
-    /// exists because the AAIGrid payload is fixed-point text, so serialized size scales
-    /// with value magnitude; 1e12 keeps a full-size grid's text bounded while covering
-    /// every physical quantity these surfaces interpolate.
+    /// Maximum magnitude for samples and predictions, bounding fixed-point cell text
+    /// to 34 characters including sign and decimal places, and keeping Float32 finite.
     /// </summary>
-    internal const double MaxAbsSampleValue = 1e12;
+    internal const double MaxAbsValue = 1e12;
 
     /// <summary>
     /// Parses a GeoJSON <c>FeatureCollection</c> of points into kriging samples. The
@@ -106,16 +104,10 @@ internal static class KrigingGridInputs
                 return false;
             }
 
-            // BOUND THE MAGNITUDE. AAIGrid is written in fixed-point notation (exponent
-            // notation is read inconsistently by AAIGrid consumers), so a cell's serialized
-            // width grows with the VALUE, not just the cell count: a finite but astronomical
-            // sample such as 1e300 yields a ~300-character cell, and a permitted grid then
-            // serializes to over a gigabyte of text. Refuse the input at the boundary rather
-            // than discovering it as an out-of-memory failure mid-write.
-            if (Math.Abs(value) > MaxAbsSampleValue)
+            if (Math.Abs(value) > MaxAbsValue)
             {
                 failure = $"sample value {value.ToString("R", CultureInfo.InvariantCulture)} exceeds the "
-                    + $"supported magnitude {MaxAbsSampleValue.ToString("R", CultureInfo.InvariantCulture)}; "
+                    + $"supported magnitude {MaxAbsValue.ToString("R", CultureInfo.InvariantCulture)}; "
                     + "rescale the values (for example to different units) before interpolating";
                 return false;
             }
@@ -192,11 +184,8 @@ internal static class KrigingGridInputs
     {
         ArgumentNullException.ThrowIfNull(values);
 
-        // STREAM the payload. AAIGrid is a text format, so the serialized size is driven
-        // by per-cell digit count, not by a fixed stride: buffering the whole grid in a
-        // StringBuilder and then calling ToString() holds TWO full copies of a
-        // multi-hundred-megabyte document in managed memory before a single byte reaches
-        // the disk. Writing row by row keeps the working set to one row.
+        // Flush bounded batches even for a one-row grid; never buffer the whole payload.
+        cancellationToken.ThrowIfCancellationRequested();
         await using var writer = new StreamWriter(rasterPath, false, new UTF8Encoding(false));
         await writer.WriteAsync("ncols " + Format(grid.Width) + "\n").ConfigureAwait(false);
         await writer.WriteAsync("nrows " + Format(grid.Height) + "\n").ConfigureAwait(false);
@@ -217,10 +206,15 @@ internal static class KrigingGridInputs
                 }
 
                 line.Append(FormatCell(values[(row * grid.Width) + column]));
+                if (line.Length >= 8192)
+                {
+                    await writer.WriteAsync(line.ToString().AsMemory(), cancellationToken).ConfigureAwait(false);
+                    line.Clear();
+                }
             }
 
             line.Append('\n');
-            await writer.WriteAsync(line.ToString()).ConfigureAwait(false);
+            await writer.WriteAsync(line.ToString().AsMemory(), cancellationToken).ConfigureAwait(false);
         }
 
         await writer.FlushAsync(cancellationToken).ConfigureAwait(false);

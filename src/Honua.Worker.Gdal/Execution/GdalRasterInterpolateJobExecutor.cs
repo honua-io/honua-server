@@ -311,12 +311,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
             return JobExecutionResult.Failed($"Invalid kriging inputs: {samplesError}");
         }
 
-        // COMBINED BUDGET. MaxKrigingSamples bounds the factorization and MaxKrigingCells
-        // bounds the output buffer, but the prediction pass costs their product, and both
-        // caps can be satisfied by a submission whose product is billions of evaluations.
-        // That work runs here, in managed code, before the GDAL child process (and its
-        // ToolTimeout) exists, so it is unbounded from the timeout's point of view. Refuse
-        // it up front with a message that names the actual budget.
+        // Managed prediction runs before the GDAL timeout and costs samples × cells.
         var predictionWork = (long)samples.Count * width * height;
         if (predictionWork > opts.MaxKrigingPredictionWork)
         {
@@ -368,6 +363,13 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
                     return JobExecutionResult.Failed(
                         "Kriging failed: the fitted variogram produced a non-finite prediction; "
                         + "supply an explicit 'range'/'sill' or raise 'nugget'.");
+                }
+
+                // Kriging can overshoot its samples; bound the serialized predictions too.
+                if (Math.Abs(prediction) > KrigingGridInputs.MaxAbsValue)
+                {
+                    return JobExecutionResult.Failed(
+                        "Kriging failed: prediction exceeds the supported magnitude 1e12; rescale the values.");
                 }
 
                 values[(row * width) + column] = prediction;
