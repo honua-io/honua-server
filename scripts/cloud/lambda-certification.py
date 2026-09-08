@@ -79,7 +79,9 @@ def prepare(directory):
     # Authentication is cloned, not supplied: the lane never injects a credential of its own, so a
     # standing environment without this variable can only answer every administrative assertion with
     # 401. Refuse by name before anything is mirrored or created, rather than after the deploy.
-    require(variables.get(ADMIN_CREDENTIAL_VARIABLE),
+    # Whitespace is not a credential: ResolveAdminPasswordAsync treats an all-whitespace value as
+    # unconfigured, so it must fail here rather than 401 every administrative assertion later.
+    require(variables.get(ADMIN_CREDENTIAL_VARIABLE, "").strip(),
             f"Standing function carries no {ADMIN_CREDENTIAL_VARIABLE}: the cert admin key cannot be accepted")
     require(cfg["VpcConfig"].get("SubnetIds") and cfg["VpcConfig"].get("SecurityGroupIds"), "Cert PostGIS VPC is missing")
     # The standing function already reaches the cert stack's private PostGIS and resolves its secrets.
@@ -94,12 +96,30 @@ def admin_key():
     return os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
 
 
+# A whole key is not the only thing worth refusing to print. Filtering and truncating a diagnostic
+# can leave a key that carried an excluded character, or one longer than the cap, behind as a
+# normalized or truncated fragment that no longer equals the secret. Treat any run of this many
+# consecutive key characters as the key itself: server-authored refusal details are fixed English
+# constants, so a collision this long with a real credential does not happen by accident.
+SECRET_FRAGMENT = 12
+
+
+def leaks(text, secret):
+    if len(secret) <= SECRET_FRAGMENT:
+        return secret in text
+    return any(secret[index:index + SECRET_FRAGMENT] in text
+               for index in range(len(secret) - SECRET_FRAGMENT + 1))
+
+
 def redacted(value, limit):
-    # Server-authored diagnostics only: strip everything outside a narrow printable set, cap the
-    # length, and drop the whole field outright if either runtime key ever appears inside it.
-    text = re.sub(r"[^A-Za-z0-9 ._:/-]", "", str(value))[:limit]
+    # Server-authored diagnostics only: strip everything outside a narrow printable set and cap the
+    # length, then drop the whole field outright if either runtime key shows through. The comparison
+    # runs against the ORIGINAL text as well as the filtered one, because filtering first is exactly
+    # what would let a key survive the check in a form that no longer matches it.
+    original = str(value)
+    text = re.sub(r"[^A-Za-z0-9 ._:/-]", "", original)[:limit]
     for secret in (os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"], os.environ["HONUA_LAMBDA_CERT_DENIED_KEY"]):
-        if secret and secret in text:
+        if secret and (leaks(original, secret) or leaks(text, secret)):
             return "[redacted]"
     return text
 
@@ -132,8 +152,8 @@ def admin_credential_state(function):
         variables = config(function)["Configuration"]["Environment"]["Variables"]
     except (RuntimeError, KeyError, ValueError, OSError):
         return "unreadable", "unknown"
-    value = variables.get(ADMIN_CREDENTIAL_VARIABLE)
-    if not value:
+    value = variables.get(ADMIN_CREDENTIAL_VARIABLE, "")
+    if not value.strip():
         return "absent", "none"
     return "present", ("secretsmanager-reference"
                        if value.lower().startswith(SECRET_REFERENCE_PREFIX) else "inline")
