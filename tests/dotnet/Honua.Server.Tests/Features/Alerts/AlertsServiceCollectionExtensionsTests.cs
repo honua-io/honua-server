@@ -15,7 +15,9 @@ namespace Honua.Server.Tests.Features.Alerts;
 
 public sealed class AlertsServiceCollectionExtensionsTests
 {
-    [UnitTheory]
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [InlineData(null, false)]
     [InlineData("true", false)]
     [InlineData("true", true)]
@@ -40,7 +42,9 @@ public sealed class AlertsServiceCollectionExtensionsTests
         resolveWorkerOptions.Should().Throw<OptionsValidationException>();
     }
 
-    [UnitTheory]
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [InlineData("false", false, true, true, true)]
     [InlineData("true", true, false, true, false)]
     [InlineData(null, false, true, false, false)]
