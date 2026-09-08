@@ -1,19 +1,21 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
 /// <summary>
 /// Fake-runner coverage for <see cref="GdalRasterInterpolateJobExecutor"/>: the
-/// gdal_grid IDW argument projection plus the flagged Kriging path that fails fast
-/// with a clear unsupported-dependency message (no silent stub, #2141).
+/// gdal_grid IDW argument projection plus the ordinary-kriging path, whose predictions
+/// are solved in managed code and handed to gdal_translate for encoding (#3932).
 /// </summary>
 public sealed class GdalRasterInterpolateExecutorTests
 {
@@ -165,27 +167,243 @@ public sealed class GdalRasterInterpolateExecutorTests
     }
 
     [UnitTest]
-    public async Task Kriging_IsFlaggedUnsupported_FailsFastWithClearMessage_AndNeverRunsCli()
+    public async Task Kriging_ValidPoints_SolvesTheSurfaceAndEncodesItWithGdalTranslate()
     {
-        var runner = FakeGdalCommandRunner.Failing(1, "should-not-run");
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("kriging-tif"));
         var executor = NewExecutor(runner, out var scratch);
         try
         {
-            // Even with valid inputs, kriging must fail fast with the unsupported
-            // message rather than silently substituting another algorithm.
             var job = GdalJobFactory.Job(
                 GdalRasterInterpolateJobExecutor.KrigingProcessId,
-                ("points", Base64("points")),
-                ("zField", "elevation"));
+                ("points", Base64(PointsGeoJson)),
+                ("zField", "value"),
+                ("width", "4"),
+                ("height", "2"));
             var context = new RecordingJobExecutionContext(job.OperationId);
 
             var result = await executor.ExecuteAsync(job, context, default);
 
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            context.Artifacts.Should().ContainSingle();
+            context.Artifacts[0].Should().StartWith("data:image/tiff");
+
+            // The predictions are the worker's own; GDAL is still what materializes the
+            // raster, so the executor must reach the pinned toolchain exactly once.
+            var invocation = runner.Invocations.Single();
+            invocation.Tool.Should().Be("gdal_translate");
+            invocation.Arguments.Should().ContainInOrder("-of", "GTiff");
+            invocation.Arguments.Should().ContainInOrder("-a_srs", "EPSG:4326");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Kriging_ExplicitSrid_IsPassedThroughToTheEncoder()
+    {
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("ok"));
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.KrigingProcessId,
+                ("points", Base64(PointsGeoJson)),
+                ("zField", "value"),
+                ("srid", "3857"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            runner.Invocations.Single().Arguments.Should().ContainInOrder("-a_srs", "EPSG:3857");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Kriging_UnknownVariogramModel_FailsBeforeReachingTheCli()
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.KrigingProcessId,
+                ("points", Base64(PointsGeoJson)),
+                ("zField", "value"),
+                ("model", "matern"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
             result.Status.Should().Be(ExecutionJobStatus.Failed);
-            result.ErrorMessage.Should().Be(GdalRasterInterpolateJobExecutor.KrigingUnsupportedMessage);
-            result.ErrorMessage.Should().Contain("not available in this build");
+            result.ErrorMessage.Should().Contain("spherical, exponential, gaussian");
             runner.Invocations.Should().BeEmpty();
-            context.Artifacts.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    /// <summary>
+    /// The sample cap and the cell cap can BOTH be satisfied by a request whose prediction
+    /// cost is their product. That work runs in managed code before the GDAL child process
+    /// exists, so ToolTimeout does not bound it; the combined budget must refuse it up front.
+    /// </summary>
+    [Theory]
+    [InlineData(1_000, ExecutionJobStatus.Failed)]
+    [InlineData(40_000, ExecutionJobStatus.Succeeded)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task Kriging_CombinedBudget_EnforcesTheBoundary(long budget, ExecutionJobStatus expected)
+    {
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("ok"));
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterInterpolateJobExecutor(
+            runner,
+            // 4 samples and a 100x100 grid are each well inside their own cap; the product
+            // (40,000 evaluations) is not inside a budget of 1,000.
+            GdalJobFactory.Options(scratch, maxKrigingSamples: 16, maxKrigingCells: 1_000_000, maxKrigingPredictionWork: budget),
+            NullLogger<GdalRasterInterpolateJobExecutor>.Instance);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.KrigingProcessId,
+                ("points", Base64(PointsGeoJson)),
+                ("zField", "value"),
+                ("width", "100"),
+                ("height", "100"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(expected, result.ErrorMessage);
+            if (expected == ExecutionJobStatus.Failed)
+            {
+                result.ErrorMessage.Should().Contain("MaxKrigingPredictionWork");
+                runner.Invocations.Should().BeEmpty("the budget must be refused before any solve or CLI work");
+            }
+            else
+            {
+                runner.Invocations.Should().ContainSingle();
+            }
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [Theory]
+    [InlineData(1e300, "sample value")]
+    [InlineData(-1e300, "sample value")]
+    [InlineData((double)float.MaxValue, "prediction")]
+    [InlineData(-(double)float.MaxValue, "prediction")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task Kriging_ExcessiveSampleOrPredictionMagnitude_FailsBeforeEncoding(double value, string error)
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var points = FormattableString.Invariant($$$"""
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","properties":{"value":0},"geometry":{"type":"Point","coordinates":[0,0]}},
+              {"type":"Feature","properties":{"value":{{{value}}}},"geometry":{"type":"Point","coordinates":[0,1]}},
+              {"type":"Feature","properties":{"value":{{{value}}}},"geometry":{"type":"Point","coordinates":[1,0]}}]}
+            """);
+            var job = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.KrigingProcessId,
+                ("points", Base64(points)), ("zField", "value"),
+                ("model", "gaussian"), ("range", "10"), ("sill", "1"), ("width", "2"), ("height", "2"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("magnitude").And.Contain(error);
+            runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task WriteGridAsync_LongRowAtMagnitudeLimit_PreservesCellsAcrossBatches()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var values = Enumerable.Repeat(-KrigingGridInputs.MaxAbsValue, 2048).ToArray();
+            await KrigingGridInputs.WriteGridAsync(path, new KrigingGrid(0, 0, 1, 1, 2048, 1), values, default);
+            new FileInfo(path).Length.Should().BeLessThan(61 * values.Length + 256);
+            var rows = await File.ReadAllLinesAsync(path);
+            rows.Should().HaveCount(6);
+            rows[5].Split(' ').Select(cell => float.Parse(cell, CultureInfo.InvariantCulture))
+                .Should().Equal(values.Select(value => (float)value));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [UnitTest]
+    public async Task Kriging_MoreSamplesThanTheConfiguredCap_FailsBeforeSolving()
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var scratch = GdalCli.NewScratch(ScratchSuite);
+        var executor = new GdalRasterInterpolateJobExecutor(
+            runner,
+            GdalJobFactory.Options(scratch, maxKrigingSamples: 2),
+            NullLogger<GdalRasterInterpolateJobExecutor>.Instance);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.KrigingProcessId,
+                ("points", Base64(PointsGeoJson)),
+                ("zField", "value"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("MaxKrigingSamples");
+            runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Kriging_CoincidentSamples_FailsWithASingularSystemMessage()
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            const string coincident = """
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","properties":{"value":1},"geometry":{"type":"Point","coordinates":[0,0]}},
+              {"type":"Feature","properties":{"value":9},"geometry":{"type":"Point","coordinates":[0,0]}}]}
+            """;
+            var job = GdalJobFactory.Job(
+                GdalRasterInterpolateJobExecutor.KrigingProcessId,
+                ("points", Base64(coincident)),
+                ("zField", "value"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("share a location");
+            result.ErrorMessage.Should().NotContain("raise 'nugget'");
+            runner.Invocations.Should().BeEmpty();
         }
         finally
         {
@@ -224,6 +442,14 @@ public sealed class GdalRasterInterpolateExecutorTests
             CleanupScratch(scratch);
         }
     }
+
+    private const string PointsGeoJson = """
+        {"type":"FeatureCollection","features":[
+          {"type":"Feature","properties":{"value":10},"geometry":{"type":"Point","coordinates":[0,0]}},
+          {"type":"Feature","properties":{"value":20},"geometry":{"type":"Point","coordinates":[4,0]}},
+          {"type":"Feature","properties":{"value":30},"geometry":{"type":"Point","coordinates":[0,4]}},
+          {"type":"Feature","properties":{"value":40},"geometry":{"type":"Point","coordinates":[4,4]}}]}
+        """;
 
     private static GdalRasterInterpolateJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {

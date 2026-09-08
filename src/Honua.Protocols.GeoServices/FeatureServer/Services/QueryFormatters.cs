@@ -564,7 +564,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         return value switch
         {
             sbyte or byte or short or ushort or int or uint => CreateRuntimeFieldInfo(name, "esriFieldTypeInteger", "INTEGER"),
-            long or ulong => CreateRuntimeFieldInfo(name, "esriFieldTypeInteger64", "BIGINT"),
+            long or ulong => CreateRuntimeFieldInfo(name, "esriFieldTypeBigInteger", "BIGINT"),
             float => CreateRuntimeFieldInfo(name, "esriFieldTypeSingle", "REAL"),
             double or decimal => CreateRuntimeFieldInfo(name, "esriFieldTypeDouble", "DOUBLE PRECISION"),
             bool => CreateRuntimeFieldInfo(name, "esriFieldTypeSmallInteger", "BOOLEAN"),
@@ -663,7 +663,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         {
             MetadataV2FieldType.String => "esriFieldTypeString",
             MetadataV2FieldType.Integer => "esriFieldTypeInteger",
-            MetadataV2FieldType.BigInteger => "esriFieldTypeInteger64",
+            MetadataV2FieldType.BigInteger => "esriFieldTypeBigInteger",
             MetadataV2FieldType.Double => "esriFieldTypeDouble",
             MetadataV2FieldType.Float => "esriFieldTypeSingle",
             MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",

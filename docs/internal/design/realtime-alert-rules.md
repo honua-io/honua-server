@@ -6,6 +6,14 @@ dispatch-backlog health check, a per-channel notification rate cap, and a second
 deploy/job-event notifications). The customer surface remains OFF by default and requires the canonical
 `Capabilities:Experimental:alerts.geofence:Enabled` opt-in plus `Alerts:Enabled`.
 
+**Worker isolation restriction (#3859):** Enabled alert workers refuse startup when
+tenant resolution (`MultiTenancy:Enabled`, default `true`) or tenant schema routing
+(`MultiTenancy:SchemaRouting:Enabled`) is enabled. Their evaluation, state and delivery
+keys are instance-wide, and HTTP tenant authorization does not apply to those workers.
+Keep `Alerts:Enabled=false` on multi-tenant instances. Preview alert processing requires
+a separate single-tenant instance with both tenancy settings explicitly disabled.
+This is a fail-closed restriction, not certification of two-tenant alert delivery.
+
 > **Upgrade note (#3055):** The binding fix makes `Alerts:Enabled` (or `Alerts__Enabled` as an
 > environment variable) effective with the source-generated configuration binder. Deployments that
 > already set it to `true` will start the alert processing workers after upgrading and restarting

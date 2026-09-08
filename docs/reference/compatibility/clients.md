@@ -75,6 +75,14 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   reports the full add set and later syncs do not provide DB-level incremental
   change tracking. Suitable for short-lived sync and client validation, not a full
   ArcGIS offline-geodatabase replacement.
+- **GeoServices 64-bit fields require client support.** Ordinary BigInteger
+  fields use Esri's `esriFieldTypeBigInteger` in layer metadata and JSON queries,
+  and field enum 13 in PBF; object identifiers retain `esriFieldTypeOID`.
+  Stock QGIS 3.40.15's ArcGIS REST provider does not recognize BigInteger fields.
+  Native table/export testing retained a missing-column failure; correcting
+  Honua's former invalid `esriFieldTypeInteger64` token does not establish a
+  QGIS type-preservation pass. See [the server defect](https://github.com/honua-io/honua-server/issues/4551)
+  and [the version-specific QGIS converter](https://github.com/qgis/QGIS/blob/final-3_40_15/src/core/providers/arcgis/qgsarcgisrestutils.cpp#L59).
 - **WMS 1.1.1 passes its CITE profile.** It is served (with `SRS`, `X`/`Y`, and
   lon/lat EPSG:4326 BBOX order); both WMS 1.1.1 and WMS 1.3 have current
   all-pass CITE evidence.

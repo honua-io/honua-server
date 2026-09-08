@@ -397,18 +397,25 @@ denominator names *symbolic* revisions such as `docker/cng/seed.sql@<source_sha>
 `HONUA_FIXTURE_REVISION` and `HONUA_SERVER_CONFIG_REVISION`. Every one of them is
 unset at nightly and developer tier, where the revisions stay content digests.
 
-Two differences from the nightly envelope are deliberate:
+Three differences from the nightly envelope are deliberate:
 
 - **Status vocabulary.** The governed vocabulary is `pass`, `fail`, `skip`,
   `not_applicable` — underscored. The nightly envelope, the baseline diff and the
   matrix documentation all use the hyphenated `not-applicable`. The translation
   happens once, in `build_release_receipt`, so the nightly contract is untouched.
-- **Omission over invention.** An observation that cannot name the request it
+- **Nonpassing observations take precedence.** For a repeated test ID, release
+  emission selects failure before skip before pass, for common-core and extension
+  observations alike. A passing invocation cannot erase a skipped invocation.
+  Nightly skip/pass selection retains its existing behavior.
+- **Omission over invention.** A passing observation that cannot name the request it
   performed, that recorded a `client_identity` other than the governed client, or
   that did not name the facets it exercised, is omitted from the release receipt and
   listed under `unsubstantiated`. The governed aggregator emits a requirement it
   sees no observation for as a `skip`, which the release gate fails closed on, so
-  omission costs one cell; publishing a malformed row would cost the entire receipt.
+  publishing a malformed row would cost the entire receipt. An observed failure or
+  skip without valid provenance rejects emission entirely: omitting that negative
+  could let a different test credit the same governed operation. Automatically
+  generated placeholders for cases with no observation remain unsubstantiated.
   `summary` is recomputed over what the receipt actually publishes, so an omitted
   observation cannot leave a pass count the receipt does not support.
 

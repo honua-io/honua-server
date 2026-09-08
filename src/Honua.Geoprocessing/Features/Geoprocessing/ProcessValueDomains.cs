@@ -125,6 +125,14 @@ internal static class ProcessValueDomains
     internal static readonly IReadOnlyList<string> RasterMosaicOperator = ["first", "last"];
 
     /// <summary>
+    /// Isotropic semivariogram models <c>raster.interpolate-kriging</c> can fit. Mirrors
+    /// the worker's <c>OrdinaryKriging</c> solver so a plan accepted at submit is accepted
+    /// at execution.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> KrigingVariogramModel =
+        ["spherical", "exponential", "gaussian"];
+
+    /// <summary>
     /// Output raster formats accepted by <c>conversion.raster-format</c>.
     /// </summary>
     internal static readonly IReadOnlyList<string> RasterFormat =

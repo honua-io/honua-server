@@ -918,12 +918,19 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "raster.interpolate-kriging",
             Title = "Interpolate (Kriging)",
-            Description = "FLAGGED / UNSUPPORTED in this build: kriging interpolation requires a kriging-capable numerical backend that the worker image does not bundle (stock GDAL gdal_grid has no kriging algorithm). The process is advertised so callers can discover the limitation; a submitted job FAILS with a clear message rather than silently substituting a different algorithm. Use raster.interpolate-idw for inverse-distance-weighted interpolation.",
+            Description = "Interpolates a continuous raster surface from scattered points using ordinary kriging under an isotropic semivariogram. Executed out-of-process by the heavyweight GDAL worker: the predictor is solved by the worker's bundled kriging implementation (stock GDAL gdal_grid has no kriging algorithm) and the surface is materialized as a GeoTIFF by gdal_translate. Reads a base64-encoded GeoJSON point FeatureCollection from 'points'; predicts at the centres of a width×height grid spanning the point extent; publishes the GeoTIFF as a data-URI artifact. The estimator is exact at the sample locations and reproduces a constant field exactly. Omitted variogram parameters are derived from the sample set: total sill = sample variance, range = one third of the largest pairwise separation, nugget = 0.",
             Category = "raster",
             Parameters =
             [
-                Param("points", "Points", "Source points as a base64-encoded GeoJSON FeatureCollection.", ProcessParameterValueType.Text, required: true),
-                Param("zField", "Z Field", "Attribute name holding the value to interpolate.", ProcessParameterValueType.Text),
+                Param("points", "Points", "Source points as a base64-encoded GeoJSON FeatureCollection. Required by the native worker execution path. Bounded by the worker's MaxKrigingSamples setting (1024 by default) because the kriging system is factored once per job.", ProcessParameterValueType.Text, required: true),
+                Param("zField", "Z Field", "Attribute name holding the value to interpolate. When omitted, the point geometry's Z ordinate is used.", ProcessParameterValueType.Text),
+                Param("model", "Variogram Model", "Semivariogram model. Defaults to spherical.", ProcessParameterValueType.Text, defaultValue: "spherical", allowedValues: ProcessValueDomains.KrigingVariogramModel),
+                Param("nugget", "Nugget", "Semivariance at zero separation. Must be >= 0. Defaults to 0.", ProcessParameterValueType.FloatingPoint, defaultValue: "0"),
+                Param("sill", "Sill", "TOTAL sill the semivariogram reaches at the range, including the nugget. Must be > 0 and >= 'nugget'. Defaults to the sample variance.", ProcessParameterValueType.FloatingPoint),
+                Param("range", "Range", "Separation at which the semivariogram reaches the sill, in the points' coordinate units. Must be > 0. Defaults to one third of the largest pairwise separation.", ProcessParameterValueType.FloatingPoint),
+                Param("srid", "Spatial Reference", "SRID assigned to the output raster. Defaults to 4326, the CRS GeoJSON coordinates are defined in.", ProcessParameterValueType.Srid, defaultValue: "4326"),
+                Param("width", "Width", "Optional output raster width in pixels. Must be > 0 and supplied together with 'height'. Defaults to 256.", ProcessParameterValueType.WholeNumber),
+                Param("height", "Height", "Optional output raster height in pixels. Must be > 0 and supplied together with 'width'. Defaults to 256.", ProcessParameterValueType.WholeNumber),
             ],
             OutputArtifactKinds = [ArtifactKind.Raster],
             RuntimeProfile = RuntimeProfiles.Native

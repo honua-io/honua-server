@@ -156,6 +156,59 @@ def test_extension_results_stay_in_their_own_array() -> None:
 # fail-closed emission
 # ---------------------------------------------------------------------------
 
+@pytest.mark.parametrize("case_id", ["CERT-DISC-01", "NB-OWS-OAF-LAND-01"])
+@pytest.mark.parametrize("statuses", [("pass", "skip"), ("skip", "pass"), ("pass", "skip", "fail")])
+def test_release_file_retains_nonpassing_observations(tmp_path: Path, case_id: str, statuses: tuple[str, ...]) -> None:
+    instance = collector()
+    for status in statuses:
+        record_substantiated(instance, test_case_id=case_id, status=status)
+    path = tmp_path / "owslib.cert.json"
+    instance.write_release_receipt(path)
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    entries = receipt["results"] if case_id.startswith("CERT-") else receipt["extensions"]
+    observed = next(entry for entry in entries if entry["test_case_id"] == case_id)
+    assert observed["status"] == ("fail" if "fail" in statuses else "skip")
+    assert observed["request_url"] == "https://candidate.test/collections"
+    assert observed["performed_by"] == "OWSLib"
+    assert receipt["server_commit"] == CANDIDATE_SHA
+    assert receipt["image_digest"] == CANDIDATE_DIGEST
+    assert receipt["client_version"] == "0.36.0"
+    if "fail" not in statuses:
+        nightly = instance.build_envelope()
+        nightly_entries = nightly["results"] if case_id.startswith("CERT-") else nightly["extensions"]
+        assert next(entry for entry in nightly_entries if entry["test_case_id"] == case_id)["status"] == "pass"
+
+
+@pytest.mark.parametrize("case_id", ["CERT-CONN-01", "NB-OWS-OAF-LAND-01"])
+@pytest.mark.parametrize("status", ["fail", "skip"])
+def test_unsubstantiated_negative_cannot_disappear_beside_a_pass(tmp_path: Path, case_id: str, status: str) -> None:
+    instance = collector()
+    record_substantiated(instance)
+    instance.record(case_id, status, notes="No request provenance was captured.")
+    path = tmp_path / "owslib.cert.json"
+    with pytest.raises(ValueError, match="nonpassing observation.*" + case_id):
+        instance.write_release_receipt(path)
+    assert not path.exists(), "a partial receipt must not publish the remaining passing observation"
+
+
+@pytest.mark.parametrize("case_id", ["CERT-CONN-01", "NB-OWS-OAF-LAND-01"])
+@pytest.mark.parametrize("status", ["fail", "skip"])
+@pytest.mark.parametrize("hook_first", [False, True])
+def test_richer_negative_cannot_hide_an_unsubstantiated_hook(
+    tmp_path: Path, case_id: str, status: str, hook_first: bool,
+) -> None:
+    instance = collector()
+    record_substantiated(instance)
+    if hook_first:
+        instance.record(case_id, status)
+    record_substantiated(instance, test_case_id=case_id, status=status, measured_count=3)
+    if not hook_first:
+        instance.record(case_id, status)
+    path = tmp_path / "owslib.cert.json"
+    with pytest.raises(ValueError, match="nonpassing observation.*" + case_id):
+        instance.write_release_receipt(path)
+    assert not path.exists()
+
 @pytest.mark.parametrize(
     "binding",
     ["image_digest", "producer_source_sha", "auth_policy_revision", "deployment_target"])
