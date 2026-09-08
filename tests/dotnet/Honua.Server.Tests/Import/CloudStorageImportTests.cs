@@ -169,6 +169,7 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
               "sourceUrl": "https://s3.amazonaws.com/bucket/zones.zip",
               "tableName": "{{tableName}}",
               "sourceSrid": 3750,
+              "targetSrid": 4326,
               "overwriteExisting": true
             }
             """));
