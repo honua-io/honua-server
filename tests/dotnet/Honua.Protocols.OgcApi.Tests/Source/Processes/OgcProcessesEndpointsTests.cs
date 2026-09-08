@@ -516,32 +516,6 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_RasterSurfaceProcess_IsNotRejectedAsUnknownProcess()
-    {
-        // #2698: direct execution of a raster/surface id must reach the shared async
-        // submission pipeline (201 async, or 503 when Redis is unavailable in this
-        // test env) rather than 404 no-such-process. A single-step honua-geoprocessing
-        // plan wrapping surface.slope has always executed; the direct id now does too.
-        using var request = new HttpRequestMessage(HttpMethod.Post,
-            "/ogc/processes/processes/surface.slope/execution");
-        request.Headers.Add("Prefer", "respond-async");
-        request.Content = new StringContent(
-            """{"inputs":{"source":"AAAA","units":"degrees"}}""",
-            Encoding.UTF8, "application/json");
-
-        var response = await _fixture.Client.SendAsync(request);
-
-        response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
-        response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.Created,
-            HttpStatusCode.ServiceUnavailable,
-            HttpStatusCode.InternalServerError);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ProcessExecution)]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_RasterSurfaceProcess_InvalidEnumValue_Returns400()
     {
         // Parity with the vector path: the same shared catalog validation applies on
@@ -750,35 +724,6 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             // 503 when Redis unavailable — skip header assertion
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ProcessExecution)]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_FirstSliceVectorProcess_SubmitsConcreteProcessId()
-    {
-        var body = $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}";
-        using var request = new HttpRequestMessage(HttpMethod.Post,
-            "/ogc/processes/processes/geometry.buffer/execution");
-        request.Headers.Add("Prefer", "respond-async");
-        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.SendAsync(request);
-
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
-        response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
-        response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ProcessExecution)]
-    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_FirstSliceProcessWithValueOutputSelection_Submits()
-    {
-        using var request = CreateFirstSliceProcessWithOutputSelectionRequest("value");
-
-        using var response = await _fixture.Client.SendAsync(request);
-
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
     }
 
     [IntegrationTest]

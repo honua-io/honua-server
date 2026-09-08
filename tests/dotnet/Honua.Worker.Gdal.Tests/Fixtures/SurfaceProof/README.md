@@ -65,3 +65,25 @@ exists, qualification must consume #3848's same-source server/worker identities.
 Heavier native surface canaries can reuse this fixture version and these oracles
 under #3857; this PR does not claim seven scheduled candidate-bound intervals.
 No candidate identity or lifecycle success is inferred from a local/PR TRX.
+
+## Public API execution proof (#4400)
+
+`OgcProcessesExecutionProofTests` retains and strengthens the three execution
+cases moved from `OgcProcessesEndpointsTests`: direct slope submission, direct
+buffer submission, and explicit value output selection. Each requires real
+Redis and the production job loop, requires HTTP 201, polls to `successful`,
+and asserts the HTTP result document. It runs in the existing required
+`Category=RasterExecutionProof` selection. Missing dependencies fail the proof.
+
+Slope uses `plane-hole.tif`, the native production dispatcher/executor and the
+same pinned GDAL transport as the executor proofs. The HTTP artifact is decoded
+with `RasterProof/decode.py`; the independent rise/run formula checks all 25
+cells, including border/hole nodata and masks, EPSG:3857 and every affine
+ordinate. Passing through the input GeoTIFF fails the same oracle. Buffer uses
+literal POINT(100 200), SRID 3857 and radius 25.5; the decoded polygon must have
+that center, envelope and every vertex radius, valid topology and area within
+1% of the analytical disk. Explicit value selection must return inline GeoJSON.
+
+These tests supply public API execution evidence for the whole-catalog GP GA
+promise. The opaque staged-payload, zonal parser and imagery pass-through tests
+remain transport/parser proofs; they are not substituted for these executions.
