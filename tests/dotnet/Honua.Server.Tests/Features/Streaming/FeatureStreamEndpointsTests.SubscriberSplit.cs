@@ -175,8 +175,12 @@ public sealed partial class FeatureStreamEndpointsTests
         var bob = await IssueSplitTokenAsync(issuer, "bob", "admin", "tenant-b", ct);
         var anchor = await fixture.GetService<IFeatureChangeEventStore>().AppendAsync(new FeatureChangeEventRequest
         {
-            ServiceId = "test", LayerId = 0, ObjectId = 89000, Operation = "update",
-            Protocol = "rest", RequestId = "tenant-split-anchor"
+            ServiceId = "test",
+            LayerId = 0,
+            ObjectId = 89000,
+            Operation = "update",
+            Protocol = "rest",
+            RequestId = "tenant-split-anchor"
         }, ct);
 
         await using var aliceStream = await OpenSplitStreamAsync(fixture, webSocket,
@@ -188,8 +192,13 @@ public sealed partial class FeatureStreamEndpointsTests
         async Task PublishAsync(int layerId, long objectId, string marker) =>
             await publisher.PublishAsync(new FeatureChangeEventRequest
             {
-                ServiceId = "test", LayerId = layerId, ObjectId = objectId, Operation = "update",
-                Protocol = "rest", RequestId = marker, PropertiesJson = JsonSerializer.Serialize(new { name = marker })
+                ServiceId = "test",
+                LayerId = layerId,
+                ObjectId = objectId,
+                Operation = "update",
+                Protocol = "rest",
+                RequestId = marker,
+                PropertiesJson = JsonSerializer.Serialize(new { name = marker })
             }, ct);
 
         await PublishAsync(1, 89201, "tenant-b-before");
