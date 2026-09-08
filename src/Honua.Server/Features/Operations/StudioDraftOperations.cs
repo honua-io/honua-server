@@ -408,7 +408,7 @@ internal sealed class StudioSaveVersionExecutor(IStudioPackageLifecycleService l
 internal sealed class StudioCreatePublicationRequestExecutor(
     IStudioPackageLifecycleService lifecycle,
     TimeProvider clock,
-    IStudioPackageValidator? validator = null)
+    IStudioPackageValidator validator)
     : StudioDraftMutationExecutor<StudioPublicationRequestPayload, StudioPublicationRequest>(lifecycle, clock)
 {
     public override string OperationId => StudioDraftOperations.CreatePublicationRequest;
@@ -444,8 +444,12 @@ internal sealed class StudioCreatePublicationRequestExecutor(
         // maps every pre-policy throw onto an unclassified Failed envelope (500); a verdict
         // carries ErrorKind, which reaches the REST surface as the same errorKind=argument the
         // actuation path emits, so the caller still gets 400 with the validator diagnostics.
-        var intentValidation = validator?.ValidatePublicationIntent(payload.Intent);
-        if (intentValidation?.Status == StudioPackageValidationStatus.Invalid)
+        // The validator is a required dependency, not an optional one: AddStudioPackageLifecycle
+        // registers IStudioPackageValidator and IStudioPackageLifecycleService together, so any
+        // host that can construct this executor can supply it, and an optional default would
+        // silently drop the guard in precisely the composition that failed to register it.
+        var intentValidation = validator.ValidatePublicationIntent(payload.Intent);
+        if (intentValidation.Status == StudioPackageValidationStatus.Invalid)
         {
             return new OperationValidation
             {

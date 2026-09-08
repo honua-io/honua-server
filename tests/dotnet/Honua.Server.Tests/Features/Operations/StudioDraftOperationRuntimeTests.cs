@@ -50,7 +50,7 @@ public sealed class StudioDraftOperationRuntimeTests
             });
         lifecycle.GetPointersAsync(itemId, Arg.Any<CancellationToken>()).Returns(
             new StudioContentItemPointers { ItemId = itemId, CurrentVersionId = versionId });
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var executor = PublicationExecutor(lifecycle);
         var payload = JsonSerializer.Serialize(
             new StudioPublicationRequestPayload
             {
@@ -99,7 +99,7 @@ public sealed class StudioDraftOperationRuntimeTests
                 Validation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Invalid },
                 CreatedAt = DateTimeOffset.UtcNow,
             });
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var executor = PublicationExecutor(lifecycle);
         var payload = JsonSerializer.Serialize(
             new StudioPublicationRequestPayload
             {
@@ -126,7 +126,7 @@ public sealed class StudioDraftOperationRuntimeTests
     {
         var store = new InMemoryStudioPackageStore();
         var lifecycle = BuildLifecycle(store);
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var executor = PublicationExecutor(lifecycle);
         var approved = await SaveFirstVersionAsync(lifecycle);
         var payload = PublicationPayload(approved);
 
@@ -158,7 +158,7 @@ public sealed class StudioDraftOperationRuntimeTests
     {
         var store = new InMemoryStudioPackageStore();
         var lifecycle = BuildLifecycle(store);
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var executor = PublicationExecutor(lifecycle);
         var approved = await SaveFirstVersionAsync(lifecycle);
         var payload = PublicationPayload(approved);
 
@@ -186,12 +186,8 @@ public sealed class StudioDraftOperationRuntimeTests
     public async Task PublicationRequestValidation_InvalidIntent_RejectsAsArgumentBeforePolicyRouting()
     {
         var store = new InMemoryStudioPackageStore();
-        var services = BuildStudioServices(store);
-        var lifecycle = services.GetRequiredService<IStudioPackageLifecycleService>();
-        var executor = new StudioCreatePublicationRequestExecutor(
-            lifecycle,
-            TimeProvider.System,
-            services.GetRequiredService<IStudioPackageValidator>());
+        var lifecycle = BuildLifecycle(store);
+        var executor = PublicationExecutor(lifecycle);
         var saved = await SaveFirstVersionAsync(lifecycle);
 
         var validation = await executor.ValidateAsync(
@@ -209,12 +205,8 @@ public sealed class StudioDraftOperationRuntimeTests
     public async Task PublicationRequest_RequireApproval_InvalidIntentFailsAsArgumentWithoutProposal()
     {
         var store = new InMemoryStudioPackageStore();
-        var services = BuildStudioServices(store);
-        var lifecycle = services.GetRequiredService<IStudioPackageLifecycleService>();
-        var executor = new StudioCreatePublicationRequestExecutor(
-            lifecycle,
-            TimeProvider.System,
-            services.GetRequiredService<IStudioPackageValidator>());
+        var lifecycle = BuildLifecycle(store);
+        var executor = PublicationExecutor(lifecycle);
         var saved = await SaveFirstVersionAsync(lifecycle);
         var bridge = new DurableApprovalBridge();
         var dispatcher = new OperationDispatcher(
@@ -249,16 +241,28 @@ public sealed class StudioDraftOperationRuntimeTests
         },
         StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
 
-    private static ServiceProvider BuildStudioServices(IStudioPackageStore store)
+    private static IStudioPackageLifecycleService BuildLifecycle(IStudioPackageStore store)
     {
         var services = new ServiceCollection();
         services.AddSingleton(store);
         services.AddStudioPackageLifecycle();
-        return services.BuildServiceProvider();
+        return services.BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
     }
 
-    private static IStudioPackageLifecycleService BuildLifecycle(IStudioPackageStore store)
-        => BuildStudioServices(store).GetRequiredService<IStudioPackageLifecycleService>();
+    // StudioCreatePublicationRequestExecutor takes IStudioPackageValidator as a required
+    // dependency so the pre-policy intent guard can never be silently dropped by a host that
+    // forgot to register it. The validator is store-independent (it inspects envelopes and
+    // intents only), so every construction here resolves the same production type
+    // AddStudioPackageLifecycle composes.
+    private static StudioCreatePublicationRequestExecutor PublicationExecutor(
+        IStudioPackageLifecycleService lifecycle)
+        => new(
+            lifecycle,
+            TimeProvider.System,
+            new ServiceCollection()
+                .AddStudioPackageLifecycle()
+                .BuildServiceProvider()
+                .GetRequiredService<IStudioPackageValidator>());
 
     private static async Task<StudioContentVersion> SaveFirstVersionAsync(IStudioPackageLifecycleService lifecycle)
     {
