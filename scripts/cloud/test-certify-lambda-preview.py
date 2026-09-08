@@ -139,10 +139,24 @@ if service == "logs":
         # The real CLI paginates and prints one count per page; the pass path
         # must survive a multi-page answer, and the query must be bounded.
         assert "--start-time" in args, "filter-log-events must be bounded by --start-time"
+        if arg("--query") == "events[0].logStreamName":
+            # One stream is one execution environment; delivery names it before it carries the
+            # platform lines, and answers None until the request id itself has been delivered.
+            emit(s["stream"] or "None")
         if "events[].message" in args:
-            # Platform lines read back from CloudWatch when the invoke tail lacks them.
+            # Platform lines read back from CloudWatch when the invoke tail lacks them. The group
+            # holds one stream per execution environment this run forced, so the query must name
+            # the stream its invoke ran in: an unscoped read would see every other attempt too.
             pattern = args[args.index("--filter-pattern") + 1]
-            if os.environ.get("STUB_CLOUDWATCH_INIT") == "invoke" and pattern == "INIT_REPORT":
+            assert "--log-stream-names" in args, "cold-start evidence must be scoped to one stream"
+            stream = arg("--log-stream-names")
+            s["stream_scoped"] = True
+            s["stream_queries"].append(stream)
+            s["platform_queries"] += 1
+            # Delivery of the platform lines lags the request id by minutes.
+            delivered = s["platform_queries"] > int(os.environ.get("STUB_CLOUDWATCH_LAG", "0"))
+            if (os.environ.get("STUB_CLOUDWATCH_INIT") == "invoke" and pattern == "INIT_REPORT"
+                    and delivered and stream in s["cold_streams"]):
                 emit(["INIT_REPORT Init Duration: 21364.18 ms\tPhase: invoke\tStatus: ok"])
             emit([])
         emit("0\n0" if fail == "cloudwatch" else "0\n0\n1\n0")
@@ -194,6 +208,17 @@ if op == "create-function":
         sys.exit(254)
     s["function"] = True
     emit({"FunctionArn":"arn:offline:ephemeral"})
+if op == "update-function-configuration":
+    # The nonce discards every execution environment the function holds. It must never displace
+    # the cloned standing configuration, and it must differ on every attempt.
+    env = json.loads(Path(arg("--environment")[7:]).read_text())
+    assert env["Variables"]["HONUA_SKIP_MIGRATIONS"] == "false"
+    assert env["Variables"]["ConnectionStrings__DefaultConnection"]
+    nonce = env["Variables"]["HONUA_LAMBDA_CERT_COLD_START"]
+    assert nonce.startswith(os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"] + "-")
+    s["environments"] += 1
+    s["nonces"].append(nonce)
+    emit({"FunctionArn": "arn:offline:ephemeral", "LastUpdateStatus": "InProgress"})
 if op == "list-tags": emit({"honua-cert-run": "wrong" if fail == "ownership" else "123-1"})
 if op == "delete-function":
     if arg("--qualifier"):
@@ -255,6 +280,17 @@ elif route.endswith("/deleteFeatures"):
     body = {"deleteResults":[{"success":fail != "delete" or "where" in form,"objectId":1234}]}
 else: bad()
 log = "REPORT RequestId: offline-id Duration: 20.00 ms Billed Duration: 30 ms Init Duration: 150.25 ms"
+if event["requestContext"]["http"]["userAgent"] == "honua-lambda-preview-cert":
+    # Only the cold-start evidence invoke carries that user agent. Lambda proactively initializes an
+    # execution environment while a create or a configuration update settles; STUB_PROACTIVE_INIT is
+    # how many of this run's environments it wins that race for, and an invoke landing on one
+    # reports no Init Duration and emits no INIT_REPORT at all.
+    s["stream"] = "2026/09/08/[$LATEST]offline-environment-%d" % s["environments"]
+    s["warm"] = s["environments"] <= int(os.environ.get("STUB_PROACTIVE_INIT", "0"))
+    s["invokes"].append("warm" if s["warm"] else "cold")
+    # Only a stream whose environment initialized inside its invoke ever carries an INIT_REPORT.
+    if not s["warm"]: s["cold_streams"].append(s["stream"])
+    if s["warm"]: log = "REPORT RequestId: offline-id Duration: 20.00 ms Billed Duration: 30 ms"
 if fail == "report": log = "no report"
 if fail == "cold-start": log = "REPORT RequestId: offline-id Duration: 20.00 ms"
 if fail == "cold-zero": log = "REPORT RequestId: offline-id Init Duration: 0 ms"
@@ -308,6 +344,9 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                                              "alias": "7", "image": original, "versions": ["7"], "deleted_versions": [],
                                              "shifted": False, "rolledback": False, "row": False,
                                              "ecr": ecr, "mirrored": None, "vpc": None,
+                                             "environments": 0, "nonces": [], "invokes": [],
+                                             "warm": False, "stream": None, "platform_queries": 0,
+                                             "stream_scoped": False, "stream_queries": [], "cold_streams": [],
                                              "deleted_tags": []}))
             env = {**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"], "STUB_STATE": str(state_path),
                    "STUB_FAIL": failure, "STUB_INDEX": "", "HONUA_LAMBDA_SOURCE_IMAGE": "ghcr.io/honua-io/honua-server:nightly-lambda-aot-test-amd64",
@@ -338,6 +377,9 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertEqual(150.25, receipt["verification"]["coldStartInitDurationMs"])
                 self.assertEqual("init", receipt["verification"]["coldStartInitPhase"])
                 self.assertEqual("tail", receipt["verification"]["coldStartEvidenceSource"])
+                self.assertTrue(receipt["verification"]["coldStartEnvironmentForced"])
+                self.assertEqual(1, receipt["verification"]["coldStartInvokeAttempts"])
+                self.assertEqual(["cold"], state["invokes"])
                 serving = receipt["serving"]
                 self.assertEqual({"beforeVersion":"7", "afterVersion":"8", "rollbackVersion":"7"}, serving["alias"])
                 for phase in ("deployed", "baseline", "candidate", "rollback"):
@@ -478,6 +520,61 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
         self.assertEqual("pass", receipt["result"])
         self.assertEqual(21364.18, receipt["verification"]["coldStartInitDurationMs"])
         self.assertEqual("invoke", receipt["verification"]["coldStartInitPhase"])
+
+    def test_a_pre_initialized_environment_is_retried_until_the_invoke_is_cold(self):
+        """Lambda pre-initializes the environment it activates; the certified invoke needs a new one."""
+        result, receipt, state, _ = self.run_lane(STUB_PROACTIVE_INIT="1")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("pass", receipt["result"])
+        self.assertEqual(150.25, receipt["verification"]["coldStartInitDurationMs"])
+        self.assertTrue(receipt["verification"]["coldStartEnvironmentForced"])
+        self.assertEqual(2, receipt["verification"]["coldStartInvokeAttempts"])
+        # Every attempt reconfigured the function, so every invoke ran on an environment this run
+        # forced into existence, and the pass came from the one that was actually cold.
+        self.assertEqual(2, len(state["nonces"]))
+        self.assertEqual(len(set(state["nonces"])), len(state["nonces"]))
+        self.assertEqual(["warm", "cold"], state["invokes"])
+
+    def test_an_environment_that_is_never_cold_fails_closed(self):
+        """The retry forces fresh environments; it never lets a warm invoke stand in for a cold one."""
+        result, receipt, state, _ = self.run_lane(STUB_PROACTIVE_INIT="9")
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotEqual("pass", receipt.get("result"))
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        self.assertIn("no forced execution environment produced a positive cold-start", result.stderr)
+        self.assertEqual(3, len(state["nonces"]))
+        self.assertEqual(["warm", "warm", "warm"], state["invokes"])
+        self.assertFalse(state["function"] or state["logs"] or state["row"])
+
+    def test_a_warm_attempts_late_line_is_never_credited_to_the_certified_invoke(self):
+        """Each attempt reads its own environment's stream, so the group's other attempts cannot supply the evidence."""
+        result, receipt, state, _ = self.run_lane("cold-start", STUB_PROACTIVE_INIT="1",
+                                                  STUB_CLOUDWATCH_INIT="invoke")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("pass", receipt["result"])
+        self.assertEqual(2, receipt["verification"]["coldStartInvokeAttempts"])
+        self.assertEqual("cloudwatch", receipt["verification"]["coldStartEvidenceSource"])
+        self.assertEqual(["warm", "cold"], state["invokes"])
+        # The warm attempt searched only its own stream and found nothing there; the pass came from
+        # the second environment's stream, which is the one the recorded request id ran in.
+        self.assertTrue(state["stream_queries"])
+        self.assertEqual([state["stream"]], state["cold_streams"])
+        self.assertNotEqual(state["stream_queries"][0], state["stream"])
+        self.assertEqual(state["stream"], state["stream_queries"][-1])
+
+    def test_cold_start_evidence_survives_cloudwatch_delivery_lag(self):
+        """Platform-line delivery lags by minutes; the bounded poll waits, scoped to the invoke's stream."""
+        result, receipt, state, _ = self.run_lane("cold-start", STUB_CLOUDWATCH_INIT="invoke",
+                                                  STUB_CLOUDWATCH_LAG="6")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("pass", receipt["result"])
+        self.assertEqual("cloudwatch", receipt["verification"]["coldStartEvidenceSource"])
+        self.assertEqual(21364.18, receipt["verification"]["coldStartInitDurationMs"])
+        self.assertEqual(1, receipt["verification"]["coldStartInvokeAttempts"])
+        # The query narrowed to the execution environment the certified invoke ran in, and kept
+        # asking past the empty answers rather than reading the lag as an absent cold start.
+        self.assertTrue(state["stream_scoped"])
+        self.assertGreater(state["platform_queries"], 6)
 
     def test_indeterminate_get_function_is_never_recorded_as_deletion(self):
         """A throttle or service error during teardown must not publish teardown.functionDeleted."""
