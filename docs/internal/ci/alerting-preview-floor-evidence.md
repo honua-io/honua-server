@@ -64,3 +64,31 @@ The required PR gate runs `AlertPreviewFloorTests` in its Server governance step
 The feature catalog is generated with `FeatureCatalogEmitter`; it is never
 hand-edited. Final catalog/architecture verification and head-specific CI results
 are recorded in the pull request.
+
+## Worker startup isolation (#3859)
+
+The HTTP filter does not authorize background evaluation or delivery. Enabled
+workers now refuse startup when tenant resolution (including its enabled default)
+or schema routing is enabled. A multi-tenant instance must leave alert workers
+disabled; Preview processing requires a separate single-tenant instance.
+
+On 2026-09-08, Linux .NET 10.0.400 Release validation passed 16 focused startup and
+tenant-admin filter cases with zero failures/skips (`alerts-isolation-startup.trx`).
+The configuration fixtures independently require rejection for default/explicit
+tenant resolution and schema routing, while preserving single-tenant enabled,
+multi-tenant disabled and non-opted-in worker states. They invoke the real startup
+options validator and assert the exact rejection and effective worker option.
+
+Four real HTTP/Postgres cases also passed with zero failures/skips
+(`alerts-http-postgres.trx`): tenant A/B denial without disclosure or mutation,
+scope filtering over two persisted rules, and the eight-action lifecycle with
+the geometry and audit expectations above. Production dependencies compiled in
+Release before the focused test build; the rerun reused those unchanged outputs
+after correcting the test declaration to the repository's standard Fast theory.
+All dotnet commands used the lane shim and its four-node cap.
+
+This proves a startup restriction and retains the administration floor. It does
+not qualify concurrent two-tenant evaluation, tenant-owned state/dispatch/redrive,
+or two signed receivers: alert persistence still has no tenant ownership keys.
+Those pre-cut obligations remain open. The exact-candidate HTTP/SQL/receiver/audit/
+TRX artifact is separately released under ruling B until the candidate exists.

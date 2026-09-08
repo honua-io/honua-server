@@ -5,6 +5,7 @@ using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Abstractions;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Alerts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -21,6 +22,14 @@ internal static class AlertsServiceCollectionExtensions
         services
             .AddOptions<AlertOptions>()
             .Bind(configuration.GetSection(AlertOptions.SectionName))
+            // These workers use instance-wide persistence, outside the HTTP tenant
+            // middleware. Admin route denial cannot isolate evaluation or delivery.
+            .Validate(options => !options.Enabled ||
+                (!configuration.GetValue("MultiTenancy:Enabled", new TenantContextOptions().Enabled) &&
+                 !configuration.GetValue<bool>("MultiTenancy:SchemaRouting:Enabled")),
+                "Alert processing cannot run with tenant resolution or schema routing enabled: " +
+                "alert evaluation and delivery stores are instance-wide. Set Alerts:Enabled=false " +
+                "on multi-tenant instances; use a separate single-tenant instance for Preview alerts.")
             .ValidateOnStart();
 
         services.AddSingleton<IValidateOptions<AlertOptions>, AlertOptionsValidator>();
