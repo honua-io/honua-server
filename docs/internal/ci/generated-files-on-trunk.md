@@ -103,3 +103,6 @@ syntax checks, and all 12 capability-matrix generator unit tests passed.
 The complete `validate-ci-router.sh` suite also passed: 1,383 Server test
 classes are claimed, all 73 shard filters select tests, and the four foundation
 families cover 26 projects.
+
+The local Release build and `FeatureCatalogEmitter` also passed using PATH's
+lane-capped `dotnet`, shared compilation, and the trunk writer's analyzer policy.
