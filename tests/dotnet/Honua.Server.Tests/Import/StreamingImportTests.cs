@@ -471,13 +471,13 @@ public class StreamingImportTests : IAsyncLifetime
                     <name>San Francisco</name>
                     <description>A beautiful city</description>
                     <Point>
-                        <coordinates>-122.4194,37.7749,0</coordinates>
+                        <coordinates>-122.4194,37.7749</coordinates>
                     </Point>
                 </Placemark>
                 <Placemark>
                     <name>Oakland</name>
                     <Point>
-                        <coordinates>-122.2711,37.8044,0</coordinates>
+                        <coordinates>-122.2711,37.8044</coordinates>
                     </Point>
                 </Placemark>
             </Document>
@@ -504,8 +504,22 @@ public class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("kml_import_table");
         responseContent.Should().Contain("Kml");
 
+        // A failed import also echoes the table name and the format, so the two assertions above
+        // hold for an import that stored nothing. Check the outcome the endpoint reports first,
+        // then the rows it actually wrote.
+        var result = DeserializeImportResult(responseContent);
+        result.Success.Should().BeTrue(responseContent);
+        result.FeatureCount.Should().Be(2, responseContent);
+
         // #4419: without this read-back an importer that dropped the second placemark, or that
         // read KML's lon,lat pair as lat,lon, passed this test.
+        //
+        // The fixture coordinates are lon,lat with no altitude component, matching the KML files in
+        // tests/fixtures/external-format-corpus. A three-component KML coordinate parses to a
+        // CoordinateZ, and the import target this database builds is still the pre-#111
+        // geometry(Geometry,4326) typmod, which rejects a Z ordinate — every row then fails while
+        // the endpoint still reports success with featureCount 0. That stale-schema gap is tracked
+        // separately; it is not what this test is proving.
         var rows = await ReadImportedRowsAsync("kml_import_table");
         rows.Should().HaveCount(2, "both placemarks must be stored");
         rows[0].Name.Should().Be("Oakland");
@@ -528,7 +542,7 @@ public class StreamingImportTests : IAsyncLifetime
                 <Placemark>
                     <name>San Francisco</name>
                     <Point>
-                        <coordinates>-122.4194,37.7749,0</coordinates>
+                        <coordinates>-122.4194,37.7749</coordinates>
                     </Point>
                 </Placemark>
             </Document>
@@ -556,6 +570,11 @@ public class StreamingImportTests : IAsyncLifetime
         responseContent.Should().Contain("kmz_import_table");
         responseContent.Should().Contain("Kml");
 
+        var result = DeserializeImportResult(responseContent);
+        result.Success.Should().BeTrue(responseContent);
+        result.FeatureCount.Should().Be(1, responseContent);
+
+        // Two-dimensional coordinates for the same reason as Import_KmlFile_StreamsPlacemarks.
         var rows = await ReadImportedRowsAsync("kmz_import_table");
         rows.Should().ContainSingle("the archived document holds one placemark");
         rows[0].Name.Should().Be("San Francisco");

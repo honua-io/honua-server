@@ -169,6 +169,7 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
               "sourceUrl": "https://s3.amazonaws.com/bucket/zones.zip",
               "tableName": "{{tableName}}",
               "sourceSrid": 3750,
+              "targetSrid": 4326,
               "overwriteExisting": true
             }
             """));
@@ -187,7 +188,9 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
         // datum-realization UTM names (#2743): their zone arithmetic differs from plain NAD83,
         // and the ESRI WKT does not match spatial_ref_sys srtext verbatim, so the importer asks
         // for the source SRID rather than guessing. The file-upload shapefile tests supply one
-        // for the same reason (ShapefileImportTestHelpers.CreateImportContent).
+        // for the same reason (ShapefileImportTestHelpers.CreateImportContent). targetSrid is
+        // explicit because ImportUrlImportRequest leaves it at 0, which the importer rejects —
+        // the sibling FileGdb URL test in this file sends it for the same reason.
         using var document = JsonDocument.Parse(content);
         document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(content);
         document.RootElement.GetProperty("featureCount").GetInt64().Should().BeGreaterThan(0, content);
