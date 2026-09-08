@@ -260,7 +260,8 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
             for (var px = 0; px < 8; px++)
             {
                 var column = px / 2;
-                var value = Sample(level, row, column);
+                // Normalize in double precision so byte midpoint rounding stays exact.
+                double value = Sample(level, row, column);
                 var grey = (byte)Math.Clamp((int)Math.Round((value - min) / (max - min) * 255.0), 0, 255);
                 image.Pixel(px, py).Should().Be(
                     (grey, grey, grey, (byte)255),
