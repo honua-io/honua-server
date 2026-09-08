@@ -1,11 +1,13 @@
 """Offline execution of the complete lane with stateful AWS CLI/container/backend doubles."""
 from pathlib import Path
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = ROOT / "scripts/cloud/certify-lambda-preview.sh"
@@ -184,6 +186,12 @@ if op == "get-function":
                  "HONUA_ADMIN_PASSWORD": "aws:secretsmanager:offline-admin", "HONUA_SKIP_MIGRATIONS": "false"}
     if fail == "skip-config": variables["HONUA_SKIP_MIGRATIONS"] = "true"
     if fail == "missing-db": variables.pop("ConnectionStrings__DefaultConnection")
+    if fail == "missing-admin-key": variables.pop("HONUA_ADMIN_PASSWORD")
+    # Whitespace is not a credential: ResolveAdminPasswordAsync treats it as unconfigured.
+    if fail == "blank-admin-key": variables["HONUA_ADMIN_PASSWORD"] = "   "
+    # The deployed function lost the credential the standing configuration still carries, which is
+    # what a published version with its own frozen environment, or a republish, can leave behind.
+    if fail == "admin-unconfigured" and ephemeral: variables.pop("HONUA_ADMIN_PASSWORD")
     vpc = {"SubnetIds": [], "SecurityGroupIds": []} if fail == "missing-vpc" else {"SubnetIds":["subnet-cert"], "SecurityGroupIds":["sg-cert"]}
     emit({"Configuration": {"RevisionId": "rev", "Description": "honua-cert-run=123-1" if arg("--qualifier") == "8" else "standing", "PackageType": "Image", "Architectures": [os.environ["HONUA_LAMBDA_ARCHITECTURE"]],
          "Environment": {"Variables": variables}, "VpcConfig": vpc},
@@ -243,6 +251,7 @@ response_path = Path(args[args.index("--payload")+2])
 route = event["rawPath"]
 status = 200
 body = {}
+headers = None
 version = s["alias"] if ":" in function else "$LATEST"
 phase = "rollback" if s["rolledback"] else "candidate" if s["shifted"] else "deployed" if function.startswith("honua-certrun-") else "baseline"
 if fail == "candidate-query" and phase == "candidate": fail = "query"
@@ -252,6 +261,18 @@ if route == "/healthz/live":
     if fail == "health-status": status = 500
 elif route.endswith("/migrations"):
     body = {"status":"succeeded", "isReady":True, "isFailed":False, "planAvailable":True, "upgradeRequired":False, "pendingScripts":[]}
+    if fail in ("admin-401", "admin-unconfigured", "admin-unresolvable"):
+        # What an administrative refusal actually looks like: one problem document whose title is
+        # "Unauthorized" whichever cause produced it, and the challenge the handler appends. Payload
+        # format 2.0 folds the two WWW-Authenticate values the server writes into a single header.
+        # "admin-unresolvable" is the third cause: the variable is there, but the handler could not
+        # turn the reference into a usable password, so it answers exactly as it does for an absent one.
+        status = 401
+        body = {"type":"https://honua.io/problems/admin", "title":"Unauthorized", "status":401,
+                "detail":"API key required. Provide a valid API key in the X-API-Key header."
+                         if fail == "admin-401" else "Admin authentication not configured"}
+        headers = {"content-type":"application/problem+json",
+                   "www-authenticate":'ApiKey realm="Honua Admin", header="X-API-Key", Basic realm="Honua Admin", charset="UTF-8"'}
     if fail == "migrations": body["status"] = "skipped"
     if fail == "migration-pending": body["pendingScripts"] = ["001"]
     if fail == "migration-plan": body["planAvailable"] = False
@@ -296,7 +317,9 @@ if fail == "cold-start": log = "REPORT RequestId: offline-id Duration: 20.00 ms"
 if fail == "cold-zero": log = "REPORT RequestId: offline-id Init Duration: 0 ms"
 if fail == "init-error": log = "INIT_REPORT Init Duration: 21364.18 ms\tPhase: invoke\tStatus: error\nREPORT RequestId: offline-id Duration: 20.00 ms"
 if os.environ.get("STUB_INIT_PHASE") == "invoke": log = "INIT_REPORT Init Duration: 21364.18 ms\tPhase: invoke\tStatus: ok\nREPORT RequestId: offline-id Duration: 20.00 ms Billed Duration: 30 ms"
-response_path.write_text(json.dumps({"statusCode":status,"body":body if isinstance(body,str) else json.dumps(body)}))
+response = {"statusCode":status,"body":body if isinstance(body,str) else json.dumps(body)}
+if headers: response["headers"] = headers
+response_path.write_text(json.dumps(response))
 meta = {"StatusCode":200,"ExecutedVersion":"99" if fail == "executed-version" else version,"LogResult":base64.b64encode(log.encode()).decode()}
 if fail == "invoke": meta["FunctionError"] = "Unhandled"
 emit(meta)
@@ -488,7 +511,9 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
 
     def test_each_check_fails_closed(self):
         for failure in ("architecture", "ecr-platform", "revision", "adapter", "digest", "mirror", "layers", "rootfs",
-                        "skip-config", "missing-db", "resolved-image", "health-status", "health-body", "invoke",
+                        "skip-config", "missing-db", "missing-admin-key", "blank-admin-key",
+                        "admin-401", "admin-unconfigured", "admin-unresolvable",
+                        "resolved-image", "health-status", "health-body", "invoke",
                         "report", "cold-start", "cold-zero", "init-error", "cloudwatch", "migrations", "migration-pending", "migration-plan",
                         "query", "fixture-names", "create", "readback", "delete", "delete-remains",
                         "denial-status", "denial-body", "denial-records", "denial-nested", "scoped-unauthenticated", "scoped-allowed", "scoped-records", "executed-version", "weighted",
@@ -608,6 +633,71 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
         # so an empty paramfile can never reach the CLI as an opaque argument error.
         self.assertIn('if [[ ! -s "$scratch/$paramfile" ]]; then', SCRIPT)
         self.assertIn("""((.SubnetIds // []) | length) > 0 and ((.SecurityGroupIds // []) | length) > 0""", SCRIPT)
+
+    def test_a_standing_environment_without_the_admin_credential_fails_closed_before_create(self):
+        """The lane clones authentication and never injects a credential of its own, so a standing
+        environment that lost the variable can only answer every administrative assertion with 401."""
+        # Whitespace is not a credential either: ResolveAdminPasswordAsync treats an all-whitespace
+        # value as unconfigured, so an environment carrying one must fail at the same point.
+        for failure in ("missing-admin-key", "blank-admin-key"):
+            with self.subTest(failure=failure):
+                result, receipt, state, _ = self.run_lane(failure)
+                self.assertNotEqual(0, result.returncode)
+                self.assertNotEqual("pass", receipt.get("result"))
+                self.assertEqual("noProof", receipt["serving"]["result"])
+                self.assertIn("Standing function carries no HONUA_ADMIN_PASSWORD", result.stderr)
+                # Refused from the standing configuration: nothing was mirrored, created or invoked.
+                self.assertIsNone(state["mirrored"])
+                self.assertFalse(state["function"] or state["logs"] or state["row"])
+
+    def test_unauthorized_serving_assertion_names_the_credential_and_the_challenge(self):
+        """Run 21 (34222614774) stopped at a 401 whose title was "Unauthorized" and nothing else, and
+        separating a deployment with no administrator from one this key no longer matches took the
+        standing configuration and a manual probe. One run must now answer that question."""
+        # The three causes the operator table in lambda-certification.md separates: no administrator
+        # at all, a reference the handler could not resolve, and one this key no longer matches.
+        cases = (("admin-401", "present", "secretsmanager-reference", "API key required"),
+                 ("admin-unresolvable", "present", "secretsmanager-reference", "Admin authentication not configured"),
+                 ("admin-unconfigured", "absent", "none", "Admin authentication not configured"))
+        for failure, presence, source, detail in cases:
+            with self.subTest(failure=failure):
+                result, receipt, state, _ = self.run_lane(failure)
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual("noProof", receipt["serving"]["result"])
+                assertion = [line for line in result.stderr.splitlines() if line.startswith("serving-assertion:")]
+                diagnosis = [line for line in result.stderr.splitlines() if line.startswith("serving-401:")]
+                self.assertEqual(1, len(diagnosis), result.stderr)
+                self.assertIn("phase=deployed", assertion[0])
+                self.assertIn("status=401", assertion[0])
+                self.assertIn("variable=HONUA_ADMIN_PASSWORD", diagnosis[0])
+                self.assertIn("presence=" + presence, diagnosis[0])
+                self.assertIn("source=" + source, diagnosis[0])
+                # The scheme that refused, parsed out of the folded challenge header rather than
+                # split on its commas: "header=" and "charset=" are parameters, not schemes.
+                self.assertIn("challenge=ApiKey+Basic", diagnosis[0])
+                self.assertIn(detail, diagnosis[0])
+                # Names and the server's own fixed strings only, never the value behind the variable.
+                self.assertNotIn("offline-admin", diagnosis[0])
+                self.assertFalse(state["function"] or state["logs"] or state["row"])
+
+    def test_diagnostic_redaction_compares_before_it_filters_or_truncates(self):
+        """A key is matched against the original text, not the normalized-and-capped one, and a long
+        fragment of one counts as the key: filtering and truncating are what produce those."""
+        spec = importlib.util.spec_from_file_location(
+            "lambda_certification", ROOT / "scripts/cloud/lambda-certification.py")
+        driver = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(driver)
+        # A key carrying a character the sanitizer strips, and one longer than the cap: filtering or
+        # truncating first would leave "abcdefKey" and a surviving 60-character prefix in the log.
+        admin, denied = "abc$def-Key!", "s" * 200
+        environment = {**os.environ, "HONUA_LAMBDA_CERT_ADMIN_KEY": admin,
+                       "HONUA_LAMBDA_CERT_DENIED_KEY": denied}
+        with unittest.mock.patch.dict(driver.os.environ, environment, clear=True):
+            for value in (admin, denied, "leading " + admin + " trailing", denied[:120]):
+                self.assertEqual("[redacted]", driver.redacted(value, 60), value[:40])
+            # A server-authored refusal detail still comes through intact.
+            detail = "Admin authentication not configured"
+            self.assertEqual(detail, driver.redacted(detail, 120))
 
     def test_create_failure_reports_a_redacted_aws_error(self):
         result, receipt, state, _ = self.run_lane("create-error")

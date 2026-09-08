@@ -97,7 +97,7 @@ internal sealed class ImageServerMetadataHandler
             }
 
             var aggregateExtent = ImageServerMosaicHelpers.ComputeAggregateExtent(rasters);
-            var referenceRaster = CreateMosaicReferenceRaster(rasters, aggregateExtent);
+            var referenceRaster = rasters[0];
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
 
             // Discover multidimensional coverage metadata (cubes) registered for the
@@ -194,9 +194,9 @@ internal sealed class ImageServerMetadataHandler
                 StorageInfo = null,
                 BlockWidth = null,
                 BlockHeight = null,
-                SpatialReference = CreateSpatialReference(referenceRaster.Srid),
-                PixelSizeX = CalculatePixelSize(extent.Value, referenceRaster.Width),
-                PixelSizeY = CalculatePixelSize(extent.Value, referenceRaster.Height, isHeight: true),
+                SpatialReference = CreateSpatialReference(extent.Value.Srid ?? referenceRaster.Srid),
+                PixelSizeX = CalculatePixelSize(rasters, extent.Value),
+                PixelSizeY = CalculatePixelSize(rasters, extent.Value, isHeight: true),
                 BandCount = referenceRaster.BandCount,
                 PixelType = MapPixelType(referenceRaster.PixelType),
                 MinPixelSize = MinPixelSize,
@@ -264,8 +264,24 @@ internal sealed class ImageServerMetadataHandler
         SpatialReference = CreateSpatialReference(extent.Srid)
     };
 
-    private static double CalculatePixelSize(Core.Features.Raster.Domain.RasterExtent extent, int pixelCount, bool isHeight = false)
+    private static double CalculatePixelSize(RasterInfo[] rasters, RasterExtent extent, bool isHeight = false)
     {
+        var transformIndex = isHeight ? 5 : 1;
+        var nativePixelSize = rasters
+            .Select(r => r.GeoTransform is { } transform && transform.Length > transformIndex
+                ? Math.Abs(transform[transformIndex])
+                : 0d)
+            .Where(value => double.IsFinite(value) && value > 0)
+            .DefaultIfEmpty(0d)
+            .Min();
+        if (nativePixelSize > 0)
+        {
+            // Service resolution is the finest source resolution, independent of
+            // mosaic alignment and floating-point rounding of aggregate bounds.
+            return nativePixelSize;
+        }
+
+        var pixelCount = isHeight ? rasters[0].Height : rasters[0].Width;
         if (pixelCount <= 0)
             return 0;
 
@@ -316,43 +332,6 @@ internal sealed class ImageServerMetadataHandler
             TrackIdField = timeHints.TrackIdField,
             TimeExtent = timeExtent,
             TimeReference = new ImageServerTimeReference()
-        };
-    }
-
-    private static RasterInfo CreateMosaicReferenceRaster(
-        RasterInfo[] rasters,
-        RasterExtent? aggregateExtent)
-    {
-        var primary = rasters[0];
-        if (aggregateExtent is not { } extent)
-        {
-            return primary;
-        }
-
-        var pixelWidth = rasters
-            .Select(r => r.GeoTransform is { Length: >= 2 } ? Math.Abs(r.GeoTransform[1]) : 0d)
-            .Where(v => v > 0)
-            .DefaultIfEmpty(0d)
-            .Min();
-        var pixelHeight = rasters
-            .Select(r => r.GeoTransform is { Length: >= 6 } ? Math.Abs(r.GeoTransform[5]) : 0d)
-            .Where(v => v > 0)
-            .DefaultIfEmpty(0d)
-            .Min();
-
-        var width = pixelWidth > 0
-            ? Math.Max(1, (int)Math.Ceiling((extent.XMax - extent.XMin) / pixelWidth))
-            : primary.Width;
-        var height = pixelHeight > 0
-            ? Math.Max(1, (int)Math.Ceiling((extent.YMax - extent.YMin) / pixelHeight))
-            : primary.Height;
-
-        return primary with
-        {
-            Width = width,
-            Height = height,
-            Srid = extent.Srid ?? primary.Srid,
-            Extent = extent
         };
     }
 

@@ -438,7 +438,7 @@ internal static class ConfigurationValidationService
             return;
         }
 
-        if (HasConfiguredHostAllowlist(configuration) || HasValidPublicBaseUrl(configuration))
+        if (HasConfiguredHostAllowlist(configuration) || BaseUrlResolver.TryGetConfiguredBaseUrl(configuration, out _))
         {
             return;
         }
@@ -481,19 +481,6 @@ internal static class ConfigurationValidationService
         }
 
         return configuredHosts.Any(IsExplicitAllowedHost);
-    }
-
-    private static bool HasValidPublicBaseUrl(IConfiguration configuration)
-    {
-        var value = configuration["Public:BaseUrl"] ?? configuration["PUBLIC_BASE_URL"];
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        return Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) &&
-               (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsExplicitAllowedHost(string? hostEntry)

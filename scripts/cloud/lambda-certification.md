@@ -25,7 +25,7 @@ Keep the existing image/revision/repository/execution-role inputs. Supply:
 | `REALAWS_CERT_LAMBDA_WRITE_BASE_URL` repo variable | Function URL belonging to that exact alias; verified through AWS before any writes. |
 | `HONUA_DEMO_BASE_URL` repo variable | Demo read URL. Matching write/read hosts, including case, port and trailing-slash variants, are refused. |
 | `REALAWS_CERT_DENIED_KEY` cert secret | Valid, pre-existing scoped API key with only `read:layers`, as in `AdminApiKeyEndpointsTests.GenuinelyScopedApiKey_IsDeniedAdminEndpoint`. It must authenticate but lack admin rights. |
-| `REALAWS_CERT_ADMIN_KEY` cert secret | Admin key for the standing certification function and its cloned configuration. Never stored in evidence. |
+| `REALAWS_CERT_ADMIN_KEY` cert secret | Admin key for the standing certification function and its cloned configuration. It must equal what `HONUA_ADMIN_PASSWORD` resolves to on that function, so rotating the admin credential without re-issuing this secret makes every administrative assertion 401. Never stored in evidence. |
 
 The ephemeral function inherits the standing function's PostGIS connection/secret
 reference, authentication configuration and VPC attachments. Its execution role
@@ -230,6 +230,56 @@ The assertion itself is unchanged and still fail-closed: a passing receipt carri
 `Init Duration` that this run observed, from a `REPORT` line or from a non-error `INIT_REPORT`.
 Three forced environments that all come back warm fail the run (exit 14), and the failure now
 reports the attempt count alongside the tail shape.
+
+## An administrative 401 has to say which of its causes it is
+
+The lane authenticates as the bootstrap administrator: it sends `HONUA_LAMBDA_CERT_ADMIN_KEY` as
+`x-api-key`, and `ApiKeyAuthenticationHandler` compares that against whatever `HONUA_ADMIN_PASSWORD`
+resolves to on the function under test — a Secrets Manager reference the handler re-resolves per
+request in the AWS serverless configuration. The lane clones that configuration and never injects a
+credential of its own, so there is exactly one way in and three ways to lose it:
+
+- the deployed environment carries no `HONUA_ADMIN_PASSWORD` at all;
+- it carries the reference, but the handler cannot turn it into a usable password this request —
+  the execution role lost read access to the secret, the secret resolves empty, or the refreshed
+  value fails `AdminPasswordValidation` in a Production environment. `ResolveAdminPasswordAsync`
+  catches that and fails the request; or
+- it resolves to a password the lane's key no longer equals — because the admin credential was
+  rotated, or the cert bootstrap secret was re-issued, and the other side was not.
+
+All three are HTTP 401, all three are the admin Problem Details document, and all three carry the
+title `Unauthorized`. Run 21 (34222614774) failed its first serving assertion with nothing but that
+title, and separating them took the standing configuration and a manual probe.
+
+Two things close that gap. Preparation refuses a standing environment whose `HONUA_ADMIN_PASSWORD`
+is missing or blank **by name**, before anything is mirrored or created, because such a run can only
+end in 401. And any 401 on a serving assertion now prints a second line naming the credential
+variable, whether the *deployed* function carries it (`present`/`absent`/`unreadable`, never its
+value), whether it is a Secrets Manager reference or an inline value, the scheme that issued the
+challenge as parsed from the response's own `WWW-Authenticate`, and the server's fixed refusal
+detail:
+
+```
+serving-assertion: phase=deployed path=/api/v1/admin/observability/migrations status=401 body-kind=json error=Unauthorized
+serving-401: variable=HONUA_ADMIN_PASSWORD presence=present source=secretsmanager-reference challenge=ApiKey+Basic detail=API key required. Provide a valid API key in the X-API-Key header.
+```
+
+`presence` and `detail` together name the cause, and they are what an operator should read before
+touching any credential:
+
+| `presence` | `detail` | Cause | Action |
+| --- | --- | --- | --- |
+| `absent` | `Admin authentication not configured` | The deployment has no administrator. | Restore the variable in the cert stack; do **not** rotate anything. |
+| `present` | `Admin authentication not configured` | The reference is there but did not resolve to a usable password: execution-role access, an empty secret, or a production complexity failure. | Fix the IAM grant or the secret's contents. Rotating the bootstrap key changes nothing. |
+| `present` | `API key required.` | The function has an administrator; this key is not it. | Re-issue `REALAWS_CERT_ADMIN_KEY` from the credential the standing function resolves. |
+
+`presence` is read from the function actually invoked, which for the alias phases is the published
+version's own frozen environment rather than `$LATEST`. Every echoed field is a name or a
+server-authored constant, capped and character-filtered, and dropped outright if either runtime key
+shows through. That comparison runs against the unfiltered text as well as the filtered one, and
+treats any run of twelve consecutive key characters as the key: filtering and truncation are exactly
+what would otherwise leave a key behind as a normalized or truncated fragment that no longer matches
+it.
 
 ## Live proof
 
