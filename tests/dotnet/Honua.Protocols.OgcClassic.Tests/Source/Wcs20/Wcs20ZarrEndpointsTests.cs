@@ -340,7 +340,12 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
     /// </para>
     /// </remarks>
     private static float Sample(int level, int row, int column)
-        => (level * 1000f) + (row * 10f) + (column * (level + 1));
+    {
+        float l = level;
+        float r = row;
+        float c = column;
+        return (l * 1000f) + (r * 10f) + (c * (l + 1f));
+    }
 
     private static Dictionary<string, byte[]> BuildVerticalStore(
         string root,

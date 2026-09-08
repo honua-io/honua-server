@@ -122,7 +122,15 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
     /// </list>
     /// Every value is a small exactly-representable integer (0..6464 on this grid).
     /// </remarks>
-    private static float Sample(int row, int col) => (row * row * 100f) + (col * col);
+    private static float Sample(int row, int col)
+    {
+        // Evaluated in float space from the start rather than multiplying as integers and casting
+        // at the end, so there is no integer-overflow-into-float pattern for the analyzer (or a
+        // future larger grid) to flag. Every value on this grid is exactly representable.
+        float r = row;
+        float c = col;
+        return (r * r * 100f) + (c * c);
+    }
 
     private static TestMetadataV2GraphProvider BuildProtectedLayerGraphProvider()
         => new TestMetadataV2GraphBuilder()
