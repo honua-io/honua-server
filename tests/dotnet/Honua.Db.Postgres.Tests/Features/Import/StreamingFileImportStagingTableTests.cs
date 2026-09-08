@@ -206,6 +206,210 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         }
     }
 
+    // honua-server#4002 fixture. The expected rows below are read off the fixture file and the
+    // seed statements by hand, never captured from a run of the importer.
+    private const string OverwriteGuardFixtureFileName = "overwrite-existing-false.geojson";
+
+    private static readonly (string Name, int Code, string Wkt)[] SeededLiveRows =
+    [
+        ("live-one", 1001, "POINT(1.5 2.25)"),
+        ("live-two", 1002, "POINT(-3.75 4.5)"),
+    ];
+
+    private static readonly (string Name, int Code, string Wkt)[] OverwriteGuardFixtureRows =
+    [
+        ("import-alpha", 4002, "POINT(11.25 -22.5)"),
+        ("import-beta", 4003, "POINT(-33.75 44.125)"),
+    ];
+
+    /// <summary>
+    /// honua-server#4002 (P0) — <c>ImportFileAsync</c> replaced a live target even when the
+    /// caller explicitly declined the overwrite. The importer always took the replace path, so
+    /// an import of two features with <c>OverwriteExisting = false</c> reported
+    /// <c>Success = true</c> while every pre-existing row was silently destroyed.
+    ///
+    /// The request below is the exact reported shape: the legacy flag is set to
+    /// <see langword="false"/> and <see cref="ImportRequest.LoadMode"/> is left at its default,
+    /// so the reconciliation in <see cref="ImportRequest.EffectiveLoadMode"/> is what has to
+    /// hold. Every expected value is computed from the seed statements and the fixture file:
+    /// the seeded rows keep their ordinates, properties and surrogate ids, and the two fixture
+    /// features are appended verbatim. <c>pg_class.oid</c> is the structural witness — append
+    /// streams into the live relation, so its identity must survive rather than being replaced
+    /// by a promoted staging sibling.
+    /// </summary>
+    [IntegrationTest]
+    public async Task ImportFileAsync_ExistingTarget_WithOverwriteFalse_DoesNotReplaceLiveRows()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("overwrite_guard");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await SeedOverwriteGuardTargetAsync(schema);
+            var relationIdBefore = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
+
+            var result = await ImportOverwriteGuardFixtureAsync(schema, overwriteExisting: false);
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(2);
+            result.PhysicalTableName.Should().Be(OverwriteGuardPhysicalTable);
+
+            // The live relation itself must be the one that was loaded: a replace promotes a
+            // staging sibling with ALTER TABLE ... RENAME, which changes the relation's oid.
+            (await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable))
+                .Should().Be(relationIdBefore, "an explicit non-overwrite import must not replace the live relation");
+
+            var rows = await ReadOverwriteGuardRowsAsync(schema);
+
+            // Both seeded rows survive unchanged — same surrogate id, same ordinates, same
+            // properties — and the fixture's two features are appended after them.
+            rows.Should().HaveCount(4);
+            rows.Take(2).Should().Equal(
+                (1, SeededLiveRows[0].Name, SeededLiveRows[0].Code, SeededLiveRows[0].Wkt),
+                (2, SeededLiveRows[1].Name, SeededLiveRows[1].Code, SeededLiveRows[1].Wkt));
+            rows.Skip(2).Select(row => (row.Name, row.Code, row.Wkt)).Should().Equal(
+                OverwriteGuardFixtureRows[0],
+                OverwriteGuardFixtureRows[1]);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    /// <summary>
+    /// The discriminating control for
+    /// <see cref="ImportFileAsync_ExistingTarget_WithOverwriteFalse_DoesNotReplaceLiveRows"/>:
+    /// the same seed and the same fixture with <c>OverwriteExisting = true</c> must still
+    /// replace the live rows and promote a new relation. Without this the preservation
+    /// assertion above could be satisfied by an importer that never replaces anything.
+    /// </summary>
+    [IntegrationTest]
+    public async Task ImportFileAsync_ExistingTarget_WithOverwriteTrue_ReplacesLiveRows()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("overwrite_guard_replace");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await SeedOverwriteGuardTargetAsync(schema);
+            var relationIdBefore = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
+
+            var result = await ImportOverwriteGuardFixtureAsync(schema, overwriteExisting: true);
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(2);
+
+            (await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable))
+                .Should().NotBe(relationIdBefore, "replace promotes a freshly built staging sibling over the live table");
+
+            var rows = await ReadOverwriteGuardRowsAsync(schema);
+            rows.Should().HaveCount(2);
+            rows.Select(row => (row.Name, row.Code, row.Wkt)).Should().Equal(
+                OverwriteGuardFixtureRows[0],
+                OverwriteGuardFixtureRows[1]);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private const string OverwriteGuardLogicalTable = "overwrite_guard";
+    private const string OverwriteGuardPhysicalTable = "imported_" + OverwriteGuardLogicalTable;
+
+    private async Task SeedOverwriteGuardTargetAsync(string schema)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            CREATE TABLE "{schema}"."{OverwriteGuardPhysicalTable}" (
+                id SERIAL PRIMARY KEY,
+                geometry GEOMETRY(Geometry, 4326),
+                properties JSONB,
+                created_at TIMESTAMPTZ DEFAULT NOW());
+            INSERT INTO "{schema}"."{OverwriteGuardPhysicalTable}" (geometry, properties)
+            VALUES
+                (ST_GeomFromText(@wkt_one, 4326), jsonb_build_object('name', @name_one, 'code', @code_one)),
+                (ST_GeomFromText(@wkt_two, 4326), jsonb_build_object('name', @name_two, 'code', @code_two));
+            """;
+        command.Parameters.AddWithValue("wkt_one", SeededLiveRows[0].Wkt);
+        command.Parameters.AddWithValue("name_one", SeededLiveRows[0].Name);
+        command.Parameters.AddWithValue("code_one", SeededLiveRows[0].Code);
+        command.Parameters.AddWithValue("wkt_two", SeededLiveRows[1].Wkt);
+        command.Parameters.AddWithValue("name_two", SeededLiveRows[1].Name);
+        command.Parameters.AddWithValue("code_two", SeededLiveRows[1].Code);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task<ImportResult> ImportOverwriteGuardFixtureAsync(string schema, bool overwriteExisting)
+    {
+        var provider = new TestConnectionProvider(fixture.DataSource, schema);
+        var service = new StreamingFileImportService(
+            provider,
+            new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+            new TestFileFormatDetectionService(),
+            new NoopPerformanceMonitor(),
+            NullLogger<StreamingFileImportService>.Instance);
+
+        // All segments are fixed literals and can never be rooted, so Path.Join cannot drop
+        // earlier segments here (cs/path-combine false positive).
+        var fixturePath = Path.Join(
+            AppContext.BaseDirectory,
+            "Features",
+            "Import",
+            "Fixtures",
+            "LoadMode",
+            OverwriteGuardFixtureFileName);
+
+        await using var stream = File.OpenRead(fixturePath);
+        return await service.ImportFileAsync(new ImportRequest
+        {
+            FileStream = stream,
+            FileName = OverwriteGuardFixtureFileName,
+            TableName = OverwriteGuardLogicalTable,
+            TargetSchema = schema,
+            SourceSrid = 4326,
+            TargetSrid = 4326,
+            // The reported shape: the legacy flag alone, with LoadMode left at its default.
+            OverwriteExisting = overwriteExisting,
+        });
+    }
+
+    private async Task<long> ReadRelationIdAsync(string schema, string table)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT c.oid::bigint
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = @schema_name AND c.relname = @table_name
+            """;
+        command.Parameters.AddWithValue("schema_name", schema);
+        command.Parameters.AddWithValue("table_name", table);
+        var relationId = await command.ExecuteScalarAsync();
+        relationId.Should().NotBeNull($"{schema}.{table} must exist");
+        return (long)relationId!;
+    }
+
+    private async Task<List<(int Id, string Name, int Code, string Wkt)>> ReadOverwriteGuardRowsAsync(string schema)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT id, properties->>'name', (properties->>'code')::int, ST_AsText(geometry)
+            FROM "{schema}"."{OverwriteGuardPhysicalTable}"
+            ORDER BY id
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        var rows = new List<(int, string, int, string)>();
+        while (await reader.ReadAsync())
+        {
+            rows.Add((reader.GetInt32(0), reader.GetString(1), reader.GetInt32(2), reader.GetString(3)));
+        }
+
+        return rows;
+    }
+
     [Fact]
     public async Task ImportFileAsync_TruncatedLegacyPrefix_DoesNotClaimDifferentLogicalName()
     {

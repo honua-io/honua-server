@@ -60,6 +60,9 @@
     <None Update="Features/Import/Fixtures/RetryResume/*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="Features/Import/Fixtures/LoadMode/*.geojson">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
