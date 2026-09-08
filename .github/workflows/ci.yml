@@ -762,20 +762,11 @@ jobs:
         # in format coverage. Identical to the lean gate's own format line.
         run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
 
-  # Foundation test FAMILIES (#3567). This lane used to be a single serial job
-  # whose per-family steps ran back to back: on the 2026-08-27 batch run
-  # 33097133234 it spanned 39m19s (Core 18m23s of which ~18m was Coverlet
-  # instrumentation of the 39-assembly closure for an 8-second test run, Core
-  # Security 2m52s, Server Fast 2m08s, Protocol Fast 2m29s, everything else
-  # under 1m30s each) and the merge train waited on all of it. The families are
-  # now four concurrent runners; scripts/ci/run-foundation-family.sh owns the
-  # family -> project/filter mapping so the "same tests run after the split"
-  # invariant lives in one file. `dotnet-foundation-tests` below fans them back
-  # in, keeping the `.NET Foundation Tests` check name that `test-all`, the
-  # merge-train real-gate regex (scripts/ci/merge-train/select.sh) and the
-  # coverage artifacts already depend on. A matrix (rather than four hand-rolled
-  # jobs) is deliberate: adding a family cannot leave a job un-required, because
-  # `test-all` needs the single matrix job id.
+  # Three foundation runners, balanced from runs 34213652573 / 34218744642:
+  # Core 8m54s / 8m14s; Server 10m36s / 9m14s; Protocols 8m33s / 6m36s;
+  # Providers 7m41s / 6m31s. Combine the two shortest families to save one
+  # runner's setup and shared build while retaining every project and filter.
+  # The fan-in preserves the `.NET Foundation Tests` check and artifact names.
   dotnet-foundation-family-tests:
     name: .NET Foundation Tests (${{ matrix.family_name }})
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
@@ -786,7 +777,7 @@ jobs:
     # Per-family budget. The pre-split job carried a single 110-minute
     # orchestrator timeout covering every step; these are the same
     # step budgets regrouped, with headroom over the measured family time
-    # (Core ~13m, Server ~13m, Protocols ~10m, Providers ~8m projected).
+    # (the combined Protocols/Providers work remains below the 22-minute target).
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
@@ -798,12 +789,9 @@ jobs:
           - family: server
             family_name: Server
             timeout_minutes: 40
-          - family: protocols
-            family_name: Protocols
-            timeout_minutes: 30
-          - family: providers
-            family_name: Providers
-            timeout_minutes: 30
+          - family: protocols-providers
+            family_name: Protocols and Providers
+            timeout_minutes: 45
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -838,7 +826,7 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: scripts/ci/dotnet-restore-retry.sh Honua.sln
+        run: scripts/ci/run-foundation-family.sh restore ${{ matrix.family }}
 
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
@@ -880,7 +868,7 @@ jobs:
         with:
           name: foundation-coverage-${{ matrix.family }}
           path: tests/TestResults/**/coverage.cobertura.xml
-          if-no-files-found: ignore
+          if-no-files-found: ${{ matrix.family == 'core' && 'error' || 'ignore' }}
           retention-days: 7
 
   # Fan-in for the family matrix above. Deliberately keeps the job id
@@ -919,10 +907,25 @@ jobs:
           path: tests/TestResults
           merge-multiple: true
 
+      # Download the coverage artifacts explicitly. Each report retains its
+      # collector GUID directory; Codecov merges the unchanged report set.
+      - name: Download family coverage
+        uses: actions/download-artifact@v8
+        with:
+          pattern: foundation-coverage-*
+          path: tests/FoundationCoverage
+          merge-multiple: true
+
       - name: Verify merged foundation results
         run: |
           trx_count=$(find tests/TestResults -name '*.trx' 2>/dev/null | wc -l)
-          cobertura_count=$(find tests/TestResults -name 'coverage.cobertura.xml' 2>/dev/null | wc -l)
+          cobertura_count=$(find tests/FoundationCoverage -name 'coverage.cobertura.xml' 2>/dev/null | wc -l)
+          # Exactly one collector today; missing coverage must fail even if
+          # every test produced a TRX file. Do not upload a partial report set.
+          if [[ "${cobertura_count}" -ne 1 ]]; then
+            echo "::error::Expected the Core cobertura report; found ${cobertura_count}."
+            exit 1
+          fi
           expected_trx=$(scripts/ci/run-foundation-family.sh expected-trx-count)
           family_result='${{ needs.dotnet-foundation-family-tests.result }}'
 
@@ -967,7 +970,7 @@ jobs:
         timeout-minutes: 5
         with:
           name: foundation-coverage
-          path: tests/TestResults/**/coverage.cobertura.xml
+          path: tests/FoundationCoverage/**/coverage.cobertura.xml
           if-no-files-found: warn
           retention-days: 7
 
@@ -981,7 +984,7 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: tests/TestResults/**/coverage.cobertura.xml
+          files: tests/FoundationCoverage/**/coverage.cobertura.xml
           flags: foundation
           name: foundation-tests
           fail_ci_if_error: false

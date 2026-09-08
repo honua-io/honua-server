@@ -5,7 +5,7 @@
 # belong to each parallel `.NET Foundation Tests (<family>)` job in
 # .github/workflows/ci.yml. Before this script the whole foundation lane was one
 # serial job whose steps ran back to back for ~39 minutes; the families here are
-# exactly those steps, regrouped so four runners can execute them concurrently.
+# exactly those steps, regrouped so three runners can execute them concurrently.
 # Keeping the mapping in one file (rather than inline in the matrix) means the
 # "same tests run after the split" invariant is checkable in one place, and
 # `list-all` below lets a guard prove no project was dropped.
@@ -15,6 +15,7 @@
 #   run-foundation-family.sh projects <family>     # csproj paths to build
 #   run-foundation-family.sh list <family>         # human-readable plan
 #   run-foundation-family.sh list-all              # every csproj across families
+#   run-foundation-family.sh restore <family>      # restore only the family closure
 #   run-foundation-family.sh build <family>        # one dotnet build for the family
 #   run-foundation-family.sh run <family>          # dotnet test each project
 #
@@ -38,6 +39,10 @@ CONFIGURATION="${FOUNDATION_CONFIGURATION:-Release}"
 
 foundation_family_specs() {
   case "$1" in
+    protocols-providers)
+      foundation_family_specs protocols
+      foundation_family_specs providers
+      ;;
     # Honua.Core.Tests is the only coverage-collecting project in the lane, and
     # the collector dominates its runtime, so it gets a runner to itself
     # alongside the two small always-on unit suites.
@@ -100,7 +105,7 @@ SPEC
 }
 
 foundation_families() {
-  printf '%s\n' core server protocols providers
+  printf '%s\n' core server protocols-providers
 }
 
 foundation_projects() {
@@ -118,9 +123,15 @@ foundation_build_projects() {
 }
 
 foundation_build() {
-  local family="$1"
+  local family="$1" operation="${2:-build}"
   local slnf projects
-  mapfile -t projects < <(foundation_build_projects "${family}")
+  # Validate before process substitution (which does not propagate failures).
+  foundation_family_specs "${family}" >/dev/null
+  if [[ "${operation}" == restore ]]; then
+    mapfile -t projects < <(foundation_projects "${family}")
+  else
+    mapfile -t projects < <(foundation_build_projects "${family}")
+  fi
   # `dotnet build` takes ONE project (MSB1008), so build the family through a
   # generated solution FILTER: MSBuild then walks the family's shared closure
   # once and parallelises across the independent projects, instead of N
@@ -140,12 +151,16 @@ foundation_build() {
     printf '\n    ]\n  }\n}\n'
   } >"${slnf}"
 
-  echo "::group::dotnet build (${family}: ${#projects[@]} project(s))"
+  echo "::group::dotnet ${operation} (${family}: ${#projects[@]} project(s))"
   local rc=0
   # The required PR Gate and merge-queue build already run the full solution
   # with analyzers and warnings-as-errors. Foundation jobs consume that signal
   # independently, so do not pay to repeat analyzers in this test-only rebuild.
-  dotnet build "${slnf}" --no-restore --configuration "${CONFIGURATION}" -graphBuild /p:RunAnalyzers=false || rc=$?
+  if [[ "${operation}" == restore ]]; then
+    scripts/ci/dotnet-restore-retry.sh "${slnf}" || rc=$?
+  else
+    dotnet build "${slnf}" --no-restore --configuration "${CONFIGURATION}" -graphBuild /p:RunAnalyzers=false || rc=$?
+  fi
   echo "::endgroup::"
   rm -f "${slnf}"
   return "${rc}"
@@ -221,10 +236,11 @@ main() {
     expected-trx-count) local f n=0; for f in $(foundation_families); do n=$((n + $(foundation_projects "${f}" | grep -c .))); done; printf '%s\n' "${n}" ;;
     list)       foundation_family_specs "${2:?family required}" ;;
     list-all)   local f; for f in $(foundation_families); do foundation_projects "${f}"; done ;;
+    restore)    foundation_build "${2:?family required}" restore ;;
     build)      foundation_build "${2:?family required}" ;;
     run)        foundation_run "${2:?family required}" ;;
     *)
-      echo "usage: $0 {families|projects <family>|build-projects <family>|expected-trx-count|list <family>|list-all|build <family>|run <family>}" >&2
+      echo "usage: $0 {families|projects <family>|build-projects <family>|expected-trx-count|list <family>|list-all|restore <family>|build <family>|run <family>}" >&2
       return 2
       ;;
   esac

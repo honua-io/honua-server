@@ -1795,5 +1795,8 @@ fi
 
 echo "Validating .NET Foundation Tests family split..."
 scripts/ci/validate-foundation-families.sh
+if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-foundation-execution.py
+fi
 
 echo "CI router validation passed."
