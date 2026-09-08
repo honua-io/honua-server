@@ -22,6 +22,10 @@ on:
         description: Exact 40-character server revision bound to the image
         required: true
         type: string
+      use_denied_key_override:
+        description: Use the deprecated scoped-key secret instead of minting a key (one release only)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -46,6 +50,7 @@ jobs:
       HONUA_DEMO_BASE_URL: ${{ vars.HONUA_DEMO_BASE_URL }}
       # Optional override for one release: the lane mints its own scoped denial principal per run.
       HONUA_LAMBDA_CERT_DENIED_KEY: ${{ secrets.REALAWS_CERT_DENIED_KEY }}
+      HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE: ${{ inputs.use_denied_key_override }}
       HONUA_LAMBDA_CERT_ADMIN_KEY: ${{ secrets.REALAWS_CERT_ADMIN_KEY }}
       HONUA_LAMBDA_ARCHITECTURE: ${{ inputs.architecture }}
       HONUA_LAMBDA_SOURCE_IMAGE: ${{ inputs.source_image }}

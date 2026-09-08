@@ -22,8 +22,7 @@ ADMIN_CREDENTIAL_VARIABLE = "HONUA_ADMIN_PASSWORD"
 SECRET_REFERENCE_PREFIX = "aws:secretsmanager:"
 ADMIN_API_KEYS = "/api/v1/admin/api-keys"
 # The authorization assertion needs a principal that authenticates and holds no admin rights. An
-# API key is a database row, so a hand-minted bootstrap key is only as durable as the cert database
-# it was minted into: re-seeding or re-migrating that database turns the documented 403 into a 401,
+# API key lives in Redis (or process-local memory), so losing its store turns a bootstrap key's 403 into a 401,
 # and a 401 certifies a missing credential rather than authorization. The lane therefore mints its
 # own scoped principal for the run and revokes it at teardown. The bootstrap secret remains an
 # optional override for one release so existing bootstraps keep working.
@@ -63,6 +62,8 @@ def config(function, qualifier=None):
 
 def inputs():
     override = override_denied_key()
+    require(not use_denied_key_override() or override,
+            "Denied-key override was requested but HONUA_LAMBDA_CERT_DENIED_KEY is missing")
     require(not override or override != os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"],
             "Denied principal must differ from the administrator")
     function = os.environ["REALAWS_CERT_LAMBDA_FUNCTION"]
@@ -90,6 +91,13 @@ def prepare(directory):
     variables = cfg["Environment"]["Variables"]
     require(variables.get("HONUA_SKIP_MIGRATIONS", "false").lower() == "false", "Standing function skips migrations: noProof")
     require(variables.get("ConnectionStrings__DefaultConnection"), "Cert PostGIS connection is missing")
+    if not use_denied_key_override():
+        # Configuration alone cannot prove the Redis multiplexer was selected at runtime. After
+        # minting, certify also requires the standing alias to see the candidate's exact key record.
+        for target_variables in (variables, config(function, alias)["Configuration"]["Environment"]["Variables"]):
+            require(any(str(value).strip() for name, value in target_variables.items()
+                        if name.lower() in ("connectionstrings__redis", "aspire__stackexchange__redis__connectionstring")),
+                    "Per-run denial keys require shared Redis configuration on candidate and standing alias")
     # Authentication is cloned, not supplied: the lane never injects a credential of its own, so a
     # standing environment without this variable can only answer every administrative assertion with
     # 401. Refuse by name before anything is mirrored or created, rather than after the deploy.
@@ -110,10 +118,14 @@ def admin_key():
     return os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
 
 
+def use_denied_key_override():
+    return os.environ.get("HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE", "").lower() == "true"
+
+
 def override_denied_key():
     # Optional for one release so an existing bootstrap keeps working. Blank is absent, not a key.
     value = os.environ.get(DENIED_KEY_VARIABLE, "")
-    return value if value.strip() else ""
+    return value if use_denied_key_override() and value.strip() else ""
 
 
 # The denied principal this run is actually sending, and what it knows about that record. A minted
@@ -128,7 +140,7 @@ def denied_key():
 def runtime_secrets():
     # Every credential this run holds, including the one it minted for itself.
     return tuple(value for value in (os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"],
-                                     override_denied_key(), _denied["value"]) if value)
+                                     os.environ.get(DENIED_KEY_VARIABLE, ""), _denied["value"]) if value)
 
 
 # A whole key is not the only thing worth refusing to print. Filtering and truncating a diagnostic
@@ -175,7 +187,8 @@ def challenge_schemes(headers):
             for scheme in CHALLENGE_SCHEME.findall(str(entry)):
                 if scheme not in schemes:
                     schemes.append(scheme)
-    return "+".join(schemes) or "none"
+    summary = "+".join(schemes) or "none"
+    return "[redacted]" if any(leaks(summary, secret) for secret in runtime_secrets()) else summary
 
 
 def admin_credential_state(function):
@@ -275,7 +288,7 @@ def set_phase(name):
 def body_kind(body):
     if body == "":
         return "empty"
-    return "json" if isinstance(body, dict) else "text"
+    return "json" if isinstance(body, (dict, list)) else "text"
 
 
 # What the status alone already settles about the denied principal: 401 is a principal the server
@@ -301,13 +314,11 @@ def denied_record_status(function):
 
 def report_denied(function, status, body, headers):
     # Run 23 (34243173689) failed this assertion with nothing but its message, so the run could not
-    # say which of two opposite things had happened: the scoped key was gone (401 - an API key is a
-    # database row, and this one predated the cert database being migrated and re-seeded), or the
+    # say which of two opposite things had happened: the scoped key was gone (401), or the
     # server served the admin surface to a non-admin principal (200 with records, honua-server#4386).
     # The status, the shape of the body and the challenge separate them in the run that failed.
-    detail, records = "", "0" if body == "" else "unknown"
+    records = str(len(body)) if isinstance(body, list) else "0" if body == "" else "unknown"
     if isinstance(body, dict):
-        detail = redacted(body.get("detail", body.get("title", "")), 120)
         # Counted, never quoted: a leaked record is evidence, and its contents are not the lane's
         # to print. A document carrying none of these keys carries no records at all.
         records = "0"
@@ -318,7 +329,7 @@ def report_denied(function, status, body, headers):
     print(f"serving-403: phase={_phase} principal={_denied['source']} "
           f"key={_denied['name'] or DENIED_KEY_VARIABLE} status={status} body-kind={body_kind(body)} "
           f"authenticated={AUTHENTICATED.get(status, 'unknown')} challenge={challenge_schemes(headers)} "
-          f"records={records} record={denied_record_status(function)} detail={detail or 'none'}",
+          f"records={records} record={denied_record_status(function)}",
           file=sys.stderr)
 
 
@@ -345,6 +356,18 @@ def mint_denied_key(function, record):
             "Minted denial key is not this run's active read:layers principal")
     _denied.update(source="minted", value=key, id=metadata["id"])
     record["created"] = True
+
+
+def verify_shared_denied_key(target, record):
+    set_phase("denied-key-shared-store")
+    status, body, _, _ = invoke(target, ADMIN_API_KEYS + "/" + _denied["id"] + "/effective-permissions")
+    effective = body.get("data") if isinstance(body, dict) else None
+    require(status == 200 and isinstance(effective, dict)
+            and effective.get("id") == _denied["id"] and effective.get("name") == _denied["name"]
+            and effective.get("status") == "active" and effective.get("canAuthenticate") is True
+            and effective.get("permissions") == DENIED_KEY_PERMISSIONS,
+            "Standing alias cannot see the minted denial principal: require a shared Redis-backed API-key store")
+    record["sharedStoreVerified"] = True
 
 
 def retire_through(target, record):
@@ -478,12 +501,14 @@ def certify(directory, ephemeral, digest):
     proof = {"result": "noProof", "candidateDigest": digest.split("@")[-1],
              "deniedKey": {"source": "override" if override_denied_key() else "minted",
                            "permissions": list(DENIED_KEY_PERMISSIONS), "name": None, "created": False,
-                           "revoked": False, "canAuthenticate": None, "activeAfterTeardown": None}}
+                           "revoked": False, "canAuthenticate": None, "activeAfterTeardown": None,
+                           "sharedStoreVerified": False}}
     write_json(directory / "serving.json", proof)
     teardown_errors = []
     try:
         if proof["deniedKey"]["source"] == "minted":
             mint_denied_key(ephemeral, proof["deniedKey"])
+            verify_shared_denied_key(function + ":" + alias, proof["deniedKey"])
         serve(directory, function, alias, ephemeral, digest, proof)
     finally:
         if proof["deniedKey"]["source"] == "minted":

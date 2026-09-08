@@ -183,7 +183,10 @@ if op == "get-function":
     if query == "Code.ResolvedImageUri": emit(image)
     if query == "Configuration.FunctionArn": emit("arn:offline:ephemeral")
     variables = {"ConnectionStrings__DefaultConnection": "aws:secretsmanager:offline-db",
+                 "ConnectionStrings__redis": "aws:secretsmanager:offline-redis",
                  "HONUA_ADMIN_PASSWORD": "aws:secretsmanager:offline-admin", "HONUA_SKIP_MIGRATIONS": "false"}
+    if fail == "missing-redis" or fail == "alias-missing-redis" and arg("--qualifier") == "live":
+        variables.pop("ConnectionStrings__redis")
     if fail == "skip-config": variables["HONUA_SKIP_MIGRATIONS"] = "true"
     if fail == "missing-db": variables.pop("ConnectionStrings__DefaultConnection")
     if fail == "missing-admin-key": variables.pop("HONUA_ADMIN_PASSWORD")
@@ -315,6 +318,8 @@ elif route.startswith("/api/v1/admin/api-keys"):
             status, body = 200, {"success":True, "data":public(target)}
     elif admin and method == "GET" and tail.endswith("/effective-permissions"):
         target = next((k for k in s["keys"] if k["id"] == tail.split("/")[0]), None)
+        if fail == "local-key-store" and function.endswith(":live"):
+            target = None
         if target is None:
             status, body = 404, {"success":False, "message":"API key not found"}
         else:
@@ -426,7 +431,8 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
             env = {**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"], "STUB_STATE": str(state_path),
                    "STUB_FAIL": failure, "STUB_INDEX": "", "HONUA_LAMBDA_SOURCE_IMAGE": "ghcr.io/honua-io/honua-server:nightly-lambda-aot-test-amd64",
                    "HONUA_LAMBDA_SOURCE_DIGEST": "sha256:" + "a" * 64, "HONUA_LAMBDA_SERVER_REVISION": "a" * 40,
-                   "HONUA_LAMBDA_CERT_DENIED_KEY": "", "HONUA_LAMBDA_ARCHITECTURE": "x86_64", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
+                   "HONUA_LAMBDA_CERT_DENIED_KEY": "offline-scoped-key", "HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE": "false",
+                   "HONUA_LAMBDA_ARCHITECTURE": "x86_64", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
                    "AWS_REGION": "us-east-1", "REALAWS_CERT_LAMBDA_FUNCTION": "honua-cert-cert-server",
                    "REALAWS_CERT_LAMBDA_ALIAS": "live", "HONUA_LAMBDA_CERT_ADMIN_KEY": "offline-sensitive-canary",
                    "HONUA_LAMBDA_WRITE_BASE_URL": "https://cert.lambda-url.us-east-1.on.aws",
@@ -439,6 +445,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
             receipt_path = directory / "receipt.json"
             receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
             self.assertNotIn("offline-sensitive-canary", result.stdout + result.stderr + json.dumps(receipt))
+            self.assertNotIn("offline-scoped-key", result.stdout + result.stderr + json.dumps(receipt))
             state = json.loads(state_path.read_text())
             # The key the lane mints for itself is a credential too: it never reaches the log or the receipt.
             for key in state["keys"]:
@@ -754,6 +761,13 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
             # A server-authored refusal detail still comes through intact.
             detail = "Admin authentication not configured"
             self.assertEqual(detail, driver.redacted(detail, 120))
+            driver._denied["value"] = "offline-minted-sensitive"
+            self.assertEqual("[redacted]", driver.redacted(driver._denied["value"], 60))
+            self.assertEqual("[redacted]", driver.challenge_schemes(
+                {"WWW-Authenticate": driver._denied["value"] + ' realm="private"'}))
+            self.assertEqual("ApiKey+Basic", driver.challenge_schemes(
+                {"WWW-Authenticate": 'ApiKey realm="private", Basic realm="private"'}))
+            self.assertEqual("json", driver.body_kind([{"id": "record"}]))
 
     def test_create_failure_reports_a_redacted_aws_error(self):
         result, receipt, state, _ = self.run_lane("create-error")
@@ -825,8 +839,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
     def test_denied_principal_is_minted_per_run_and_revoked_at_teardown(self):
         """The denial assertion carries its own scoped key instead of a hand-minted bootstrap secret.
 
-        An API key is a database row: run 23 (34243173689) failed this assertion because the cert
-        database had been migrated and re-seeded since the bootstrap key was minted into it.
+        Run 23 (34243173689) could not distinguish a lost bootstrap key from an authorization leak.
         """
         result, receipt, state, _ = self.run_lane()
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
@@ -836,6 +849,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
         self.assertEqual(["read:layers"], denied["permissions"])
         self.assertEqual("honua-cert-denied-123-1", denied["name"])
         self.assertTrue(denied["created"])
+        self.assertTrue(denied["sharedStoreVerified"])
         # The deletion is recorded, and it is the server's own view of the record that says so.
         self.assertTrue(denied["revoked"])
         self.assertIs(False, denied["canAuthenticate"])
@@ -852,7 +866,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
 
     def test_bootstrap_denied_key_override_is_still_accepted(self):
         """The cert secret keeps working for one release, and an override mints nothing."""
-        result, receipt, state, _ = self.run_lane(HONUA_LAMBDA_CERT_DENIED_KEY="offline-scoped-key")
+        result, receipt, state, _ = self.run_lane(HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE="true")
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual("pass", receipt["result"])
         denied = receipt["serving"]["deniedKey"]
@@ -871,7 +885,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                   "HONUA_LAMBDA_CERT_DENIED_KEY", "unknown"))
         for selector, status, authenticated, kind, principal, key, record in cases:
             with self.subTest(case=selector):
-                overrides = {"HONUA_LAMBDA_CERT_DENIED_KEY": "offline-scoped-key"} if "override" in selector else {}
+                overrides = {"HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE": "true"} if "override" in selector else {}
                 result, receipt, state, _ = self.run_lane(selector[0], **overrides)
                 self.assertNotEqual(0, result.returncode)
                 self.assertEqual("noProof", receipt["serving"]["result"])
@@ -923,9 +937,35 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
         self.assertNotIn("  HONUA_LAMBDA_CERT_DENIED_KEY\n", SCRIPT)
         # Still passed through, so an existing bootstrap keeps working for one release.
         self.assertIn("HONUA_LAMBDA_CERT_DENIED_KEY: ${{ secrets.REALAWS_CERT_DENIED_KEY }}", WORKFLOW)
+        self.assertIn("HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE: ${{ inputs.use_denied_key_override }}", WORKFLOW)
+        self.assertRegex(WORKFLOW, r"use_denied_key_override:\n(?:.*\n)*?        default: false")
         self.assertIn("**Optional override, deprecated.**", documentation)
         self.assertIn("mints its own scoped `read:layers` principal per run", documentation)
         self.assertIn("serving-403:", documentation)
+
+    def test_mint_requires_shared_redis_and_cross_target_key_visibility(self):
+        for failure in ("missing-redis", "alias-missing-redis", "local-key-store"):
+            with self.subTest(failure=failure):
+                result, receipt, state, _ = self.run_lane(failure)
+                self.assertNotEqual(0, result.returncode)
+                self.assertNotEqual("pass", receipt.get("result"))
+                self.assertIn("shared Redis", result.stderr)
+                self.assertFalse(state["function"] or state["logs"] or state["row"])
+                if failure == "local-key-store":
+                    self.assertFalse(receipt["serving"]["deniedKey"]["sharedStoreVerified"])
+                    self.assertTrue(receipt["serving"]["deniedKey"]["revoked"])
+                else:
+                    self.assertEqual([], state["keys"])
+
+    def test_explicit_override_requires_a_key_and_missing_default_key_mints(self):
+        result, receipt, state, _ = self.run_lane(HONUA_LAMBDA_CERT_DENIED_KEY="")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("minted", receipt["serving"]["deniedKey"]["source"])
+        result, receipt, state, _ = self.run_lane(HONUA_LAMBDA_CERT_DENIED_KEY="",
+                                                 HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE="true")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("override was requested", result.stderr)
+        self.assertEqual([], state["keys"])
 
     def test_manifest_check_accepts_ecr_schema2_and_rejects_a_re_encoded_config(self):
         """Manifest-level check on the real artifact: config/rootfs identity, never manifest identity."""
