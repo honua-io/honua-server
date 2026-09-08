@@ -77,3 +77,7 @@ The final command shows the candidate diff without staging, committing, or
 pushing. The real-Git contract test proves no-op handling, advisory drift,
 identity, the output allowlist, staged-input rejection, repeat-run idempotence,
 and rejection of a stale writer against a concurrently advanced trunk.
+
+Branch validation on 2026-09-07: the four generated-file contracts, the
+lean-gate command contract, actionlint for both affected workflows, shell
+syntax checks, and all 12 capability-matrix generator unit tests passed.
