@@ -41,8 +41,10 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      # PR Gate already enforces analyzers. Match the trailing foundation
+      # rebuild: compiler errors and generator/input validation remain hard.
       - name: Regenerate repository projections
-        run: bash scripts/ci/regenerate-generated-files.sh --configuration Release
+        run: bash scripts/ci/regenerate-generated-files.sh --configuration Release /p:RunAnalyzers=false
 
       - name: Validate authored inputs against fresh projections
         run: |

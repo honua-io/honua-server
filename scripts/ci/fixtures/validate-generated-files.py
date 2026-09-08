@@ -24,6 +24,7 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertIn('token: ${{ secrets.MERGE_TRAIN_TOKEN }}', workflow)
         self.assertLess(workflow.index('regenerate-generated-files.sh'), workflow.index('commit-generated-files.sh --commit'))
         self.assertNotIn('continue-on-error:', workflow)
+        self.assertIn('regenerate-generated-files.sh --configuration Release /p:RunAnalyzers=false', workflow)
 
     def test_pr_generation_is_hard_and_precedes_strict_validators(self):
         action = (ROOT / '.github/actions/lean-gate/action.yml').read_text()

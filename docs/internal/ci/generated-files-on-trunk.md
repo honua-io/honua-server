@@ -46,7 +46,10 @@ and validation stay intact.
 ## Execution and write contract
 
 The single allowlist is `scripts/ci/generated-files.sh`. Regeneration uses the
-existing emitters in dependency order. The PR Gate already builds their test
+existing emitters in dependency order. Like the existing trailing foundation
+build, the trunk writer skips the duplicate analyzer pass with
+`/p:RunAnalyzers=false`; PR Gate still enforces analyzers and warnings-as-errors.
+Compiler errors, generator execution, and authored-input tests remain strict. The PR Gate already builds their test
 assemblies, so its invocation uses `--no-build --no-restore`. Existing byte
 equality tests run against fresh projections and still catch nondeterminism;
 proof-ledger, schema, route coverage, judgment and OpenAPI checks stay hard.
@@ -76,7 +79,7 @@ Run from an isolated worktree (the generators overwrite the six projections):
 ```bash
 python3 scripts/ci/fixtures/validate-generated-files.py
 bash scripts/ci/validate-ci-router.sh
-UseSharedCompilation=true bash scripts/ci/regenerate-generated-files.sh --configuration Release
+UseSharedCompilation=true bash scripts/ci/regenerate-generated-files.sh --configuration Release /p:RunAnalyzers=false
 bash scripts/ci/report-generated-file-drift.sh
 bash scripts/ci/commit-generated-files.sh --dry-run
 ```
