@@ -3,10 +3,12 @@
 
 using System.Net;
 using FluentAssertions;
+using Honua.Server.Features.Admin.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Security;
 
@@ -22,6 +24,7 @@ public sealed class HostValidationEnvironmentAliasTests : IAsyncLifetime
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["HostValidation:Enabled"] = "true",
+                ["HostValidation:RequireExplicitHosts"] = "true",
                 ["Public:BaseUrl"] = string.Empty,
                 ["PUBLIC_BASE_URL"] = "https://alias.honua.test"
             })));
@@ -29,6 +32,17 @@ public sealed class HostValidationEnvironmentAliasTests : IAsyncLifetime
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    public void StartupValidation_StrictProductionWithBlankPrimary_AcceptsRunningServerAliasConfiguration()
+    {
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            _fixture.GetService<IConfiguration>(), NullLogger.Instance,
+            isDevelopment: false, isTest: false);
+
+        errors.Should().NotContain(error =>
+            error.Contains("Host validation is enabled", StringComparison.OrdinalIgnoreCase));
+    }
 
     [IntegrationTheory]
     [InlineData("alias.honua.test", HttpStatusCode.OK)]

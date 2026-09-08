@@ -35,7 +35,8 @@ geometry fidelity, error handling, rendering).
 Set `Public:BaseUrl` (or its `Public__BaseUrl` environment form) or
 `PUBLIC_BASE_URL` to the public HTTP(S) origin used by desktop clients. A blank
 `Public:BaseUrl` falls back to `PUBLIC_BASE_URL`; a nonblank primary setting takes
-precedence. Host validation and generated links use the same URL resolution.
+precedence. Request host validation, strict startup validation
+(`HostValidation:RequireExplicitHosts=true`) and generated links use the same URL resolution.
 An explicit host allowlist still takes precedence over the public URL, and
 unrelated request hosts remain rejected when host validation is enabled.
 
