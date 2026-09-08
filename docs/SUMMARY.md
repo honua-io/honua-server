@@ -6,7 +6,7 @@
 - [Windows: install published packages](get-started/windows-packages.md)
   * [Linux: install published packages](get-started/linux-packages.md)
   * [Registry clients and credentials](get-started/registry-clients.md)
-- [Source quickstart: zero to a map](get-started/quickstart.md)
+- [Quickstart: install, publish, and query](get-started/quickstart.md)
 - [Your first dataset](get-started/first-dataset.md)
 - [Your first map](get-started/first-map.md)
 

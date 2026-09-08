@@ -1,7 +1,8 @@
 # Quickstart: install, publish, and query
 
 Run these blocks in order in **Windows PowerShell 5.1 or PowerShell 7** with
-Docker Desktop using Linux containers and Python 3.11 or later. Start Docker
+Docker Desktop using Linux containers, **Docker Compose 2.23.1+**, and Python 3.11
+or later. Start Docker
 Desktop first. Keep the same terminal and installation directory throughout.
 For a Linux shell, use the equivalent [Linux package quickstart](linux-packages.md).
 For a lasting deployment, continue to [production Compose](../guides/deploy/docker-compose.md).
@@ -50,13 +51,17 @@ and native PowerShell syntax checks. It is not a clean-Windows qualification.
 
 ## 1. Create a private, isolated installation
 
-Choose an unused loopback port if `18080` is occupied. Keep this PowerShell
+Choose unused loopback ports if `18080` (HTTP) or `18081` (native gRPC) is occupied.
+Set `HONUA_GRPC_PORT` in `.env` to override the gRPC default. Keep this PowerShell
 session open through verification. Each new installation gets its own Compose
 project, network, three volumes, and directory. Do not regenerate credentials
 for an existing database.
 
 ```powershell
 $ErrorActionPreference = 'Stop'
+$ComposeVersion = docker compose version --short
+if ($LASTEXITCODE -ne 0) { throw 'Docker Compose is required' }
+if ([version]($ComposeVersion.TrimStart('v') -split '-', 2)[0] -lt [version]'2.23.1') { throw 'Update Docker Desktop: Compose 2.23.1+ is required' }
 $Project = 'honua-' + [Guid]::NewGuid().ToString('N').Substring(0, 12)
 $Install = Join-Path (Get-Location) $Project
 New-Item -ItemType Directory -Path $Install | Out-Null
@@ -89,8 +94,8 @@ function dc {
 }
 ```
 
-Save the following customer configuration verbatim. Only Honua's HTTP port is
-published, on loopback; PostgreSQL and Redis are reachable only on this project's
+Save the following customer configuration verbatim. Honua's HTTP and native gRPC ports are
+published on loopback; PostgreSQL and Redis are reachable only on this project's
 network. The inline SQL initializes a fresh database before the final postmaster
 becomes healthy. An existing incompatible database still fails server preflight.
 
@@ -102,6 +107,7 @@ services:
     platform: linux/amd64
     ports:
       - "127.0.0.1:${HONUA_HTTP_PORT:?Set an unused port}:8080"
+      - "127.0.0.1:${HONUA_GRPC_PORT:-18081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       AllowedHosts: "localhost;127.0.0.1"
@@ -193,13 +199,26 @@ $env:HONUA_BASE_URL = 'http://localhost:' + $values['HONUA_HTTP_PORT']
 $env:HONUA_ADMIN_PASSWORD = $values['HONUA_ADMIN_PASSWORD']
 $env:POSTGRES_PASSWORD = $values['POSTGRES_PASSWORD']
 function Wait-HonuaReady {
-    $deadline = (Get-Date).AddMinutes(3)
-    do {
-        $ready = $false
-        try { $ready = (Invoke-WebRequest "$env:HONUA_BASE_URL/healthz/ready" -UseBasicParsing).StatusCode -eq 200 } catch { }
-        if (-not $ready) { Start-Sleep -Seconds 2 }
-    } until ($ready -or (Get-Date) -ge $deadline)
-    if (-not $ready) { throw 'Readiness failed; use the diagnostics below before proceeding' }
+    @'
+import os, time
+from honua_admin import HonuaAdminClient
+from honua_sdk.errors import HonuaHttpError, HonuaTransportError
+with HonuaAdminClient(os.environ['HONUA_BASE_URL'], api_key=os.environ['HONUA_ADMIN_PASSWORD'], timeout=5, max_retries=0) as admin:
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
+        try:
+            admin.get_config()
+            break
+        except HonuaHttpError as error:
+            if error.status_code != 429 and error.status_code < 500:
+                raise
+        except HonuaTransportError:
+            pass
+        time.sleep(2)
+    else:
+        raise RuntimeError('Readiness failed; inspect Compose logs')
+'@ | & $Python -
+    if ($LASTEXITCODE -ne 0) { throw 'Readiness/authentication verification failed' }
 }
 Wait-HonuaReady
 @'
@@ -278,10 +297,12 @@ if '--verify-only' not in sys.argv:
         for name, (value, lon, lat) in expected.items()]}
     Path('points.geojson').write_text(json.dumps(fixture), encoding='utf-8')
     with HonuaAdminClient(base, api_key=key) as admin:
-        connection = admin.create_connection(CreateSecureConnectionRequest(
-            name='windows-local', host='postgres', port=5432, database_name='honua',
-            username='honua', password=os.environ['POSTGRES_PASSWORD'],
-            ssl_mode='Disable', ssl_required=False))
+        connection = next((c for c in admin.list_connections() if c.name == 'windows-local'), None)
+        if connection is None:
+            connection = admin.create_connection(CreateSecureConnectionRequest(
+                name='windows-local', host='postgres', port=5432, database_name='honua',
+                username='honua', password=os.environ['POSTGRES_PASSWORD'],
+                ssl_mode='Disable', ssl_required=False))
         result = asyncio.run(ingest_fixture())
         layer = admin.publish_layer(connection.connection_id, PublishLayerRequest(
             schema=result['schema'], table=result['table'], layer_name='windows-points',
@@ -359,7 +380,8 @@ do not send `.env`, full Compose rendering, credentials, or customer records.
   Check network/proxy policy and retry. The optional NuGet client uses a different
   registry; see [registry clients](registry-clients.md) only if you need .NET.
 - **Import partially completed:** inspect the import result and discovered table
-  before retrying. MCP ingest replaces its named staging dataset; use a new
+  before retrying `journey.py` in the same installation. The script reuses the
+  registered `windows-local` connection by name. MCP ingest replaces its named staging dataset; use a new
   isolated project for a new clean-room rehearsal. After successful publication,
   the saved state makes this recipe refuse another import; use `--verify-only`.
 

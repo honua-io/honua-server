@@ -26,7 +26,7 @@ docker compose ps
 
 Open <http://localhost:8080/healthz/ready> in a browser and wait for `Ready`.
 
-The bootstrap generates per-install datastore passwords in a private `.env` file; retain it with your volumes. All published ports default to loopback. The default `docker-compose.yml` builds the server image from source on first run, so expect the first `up` to take a few minutes; for an instant start use the pre-built image below. PostGIS, Redis, and Honua Server start automatically; migrations run on first boot. HTTP/1 REST and gRPC-Web are at `http://localhost:8080`, native h2c gRPC at `http://localhost:8081`. Continue with the [quickstart](docs/get-started/quickstart.md) to import a dataset and see it on a map, or add the web Console with `docker compose --profile console up -d` (set `HONUA_CONSOLE_IMAGE` to a [honua-console](https://github.com/honua-io/honua-console) image you have built or mirrored — no public Console image is published yet; Operate serves at `http://localhost:5174/operate`).
+The bootstrap generates per-install datastore passwords in a private `.env` file; retain it with your volumes. All published ports default to loopback. The default `docker-compose.yml` builds the server image from source on first run, so expect the first `up` to take a few minutes; for an instant start use the pre-built image below. PostGIS, Redis, and Honua Server start automatically; migrations run on first boot. HTTP/1 REST and gRPC-Web are at `http://localhost:8080`, native h2c gRPC at `http://localhost:8081`. Use the [package quickstart](docs/get-started/quickstart.md) for an isolated install, import, publish, and verified SDK query; continue this source installation with the [source quickstart](docs/internal/developer/source-quickstart.md) to see a browser map, or add the web Console with `docker compose --profile console up -d` (set `HONUA_CONSOLE_IMAGE` to a [honua-console](https://github.com/honua-io/honua-console) image you have built or mirrored — no public Console image is published yet; Operate serves at `http://localhost:5174/operate`).
 
 **Pre-built image** (bring your own PostGIS):
 
@@ -172,7 +172,8 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 
 | I want to… | Go to |
 |---|---|
-| Import a dataset and see a map in 10 minutes | [Quickstart](docs/get-started/quickstart.md) |
+| Install published packages, import, publish, and query a dataset | [Quickstart](docs/get-started/quickstart.md) |
+| Build from source and see a browser map | [Source quickstart](docs/internal/developer/source-quickstart.md) |
 | Deploy to production | [Docker Compose](docs/guides/deploy/docker-compose.md) · [Kubernetes](docs/guides/deploy/kubernetes.md) · [Cloud deployments](docs/guides/deploy/cloud-deployments.md) |
 | Operate, monitor, back up, scale | [Operating Honua](docs/guides/operate/README.md) · [Monitoring](docs/guides/deploy/monitoring.md) |
 | Connect a client | [ArcGIS Pro](docs/guides/connect/arcgis-pro.md) · [QGIS](docs/guides/connect/qgis.md) · [Excel/Power BI](docs/guides/connect/excel-power-bi.md) · [MapLibre](docs/guides/connect/maplibre-web-maps.md) · [AI agents (MCP)](docs/guides/connect/ai-agents-mcp.md) |

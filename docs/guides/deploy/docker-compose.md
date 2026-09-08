@@ -55,7 +55,8 @@ and native PowerShell syntax checks. It is not a clean-Windows qualification.
 
 ## 1. Create a private, isolated installation
 
-Choose an unused loopback port if `18080` is occupied. Keep this PowerShell
+Choose unused loopback ports if `18080` (HTTP) or `18081` (native gRPC) is occupied.
+Set `HONUA_GRPC_PORT` in `.env` to override the gRPC default. Keep this PowerShell
 session open through verification. Each new installation gets its own Compose
 project, network, three volumes, and directory. Do not regenerate credentials
 for an existing database.
@@ -94,8 +95,8 @@ function dc {
 }
 ```
 
-Save the following customer configuration verbatim. Only Honua's HTTP port is
-published, on loopback; PostgreSQL and Redis are reachable only on this project's
+Save the following customer configuration verbatim. Honua's HTTP and native gRPC ports are
+published on loopback; PostgreSQL and Redis are reachable only on this project's
 network. The inline SQL initializes a fresh database before the final postmaster
 becomes healthy. An existing incompatible database still fails server preflight.
 
@@ -107,6 +108,7 @@ services:
     platform: linux/amd64
     ports:
       - "127.0.0.1:${HONUA_HTTP_PORT:?Set an unused port}:8080"
+      - "127.0.0.1:${HONUA_GRPC_PORT:-18081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       AllowedHosts: "localhost;127.0.0.1"
@@ -198,13 +200,26 @@ $env:HONUA_BASE_URL = 'http://localhost:' + $values['HONUA_HTTP_PORT']
 $env:HONUA_ADMIN_PASSWORD = $values['HONUA_ADMIN_PASSWORD']
 $env:POSTGRES_PASSWORD = $values['POSTGRES_PASSWORD']
 function Wait-HonuaReady {
-    $deadline = (Get-Date).AddMinutes(3)
-    do {
-        $ready = $false
-        try { $ready = (Invoke-WebRequest "$env:HONUA_BASE_URL/healthz/ready" -UseBasicParsing).StatusCode -eq 200 } catch { }
-        if (-not $ready) { Start-Sleep -Seconds 2 }
-    } until ($ready -or (Get-Date) -ge $deadline)
-    if (-not $ready) { throw 'Readiness failed; use the diagnostics below before proceeding' }
+    @'
+import os, time
+from honua_admin import HonuaAdminClient
+from honua_sdk.errors import HonuaHttpError, HonuaTransportError
+with HonuaAdminClient(os.environ['HONUA_BASE_URL'], api_key=os.environ['HONUA_ADMIN_PASSWORD'], timeout=5, max_retries=0) as admin:
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
+        try:
+            admin.get_config()
+            break
+        except HonuaHttpError as error:
+            if error.status_code != 429 and error.status_code < 500:
+                raise
+        except HonuaTransportError:
+            pass
+        time.sleep(2)
+    else:
+        raise RuntimeError('Readiness failed; inspect Compose logs')
+'@ | & $Python -
+    if ($LASTEXITCODE -ne 0) { throw 'Readiness/authentication verification failed' }
 }
 Wait-HonuaReady
 @'
@@ -283,10 +298,12 @@ if '--verify-only' not in sys.argv:
         for name, (value, lon, lat) in expected.items()]}
     Path('points.geojson').write_text(json.dumps(fixture), encoding='utf-8')
     with HonuaAdminClient(base, api_key=key) as admin:
-        connection = admin.create_connection(CreateSecureConnectionRequest(
-            name='windows-local', host='postgres', port=5432, database_name='honua',
-            username='honua', password=os.environ['POSTGRES_PASSWORD'],
-            ssl_mode='Disable', ssl_required=False))
+        connection = next((c for c in admin.list_connections() if c.name == 'windows-local'), None)
+        if connection is None:
+            connection = admin.create_connection(CreateSecureConnectionRequest(
+                name='windows-local', host='postgres', port=5432, database_name='honua',
+                username='honua', password=os.environ['POSTGRES_PASSWORD'],
+                ssl_mode='Disable', ssl_required=False))
         result = asyncio.run(ingest_fixture())
         layer = admin.publish_layer(connection.connection_id, PublishLayerRequest(
             schema=result['schema'], table=result['table'], layer_name='windows-points',
@@ -344,9 +361,10 @@ regenerate `.env` to bypass a migration or credential failure.
 
 ## Public TLS edge
 
-The installed server binds only `127.0.0.1:18080` (or your selected port).
+The installed server publishes loopback ports `127.0.0.1:18080` for HTTP/1 REST
+and gRPC-Web, and `127.0.0.1:18081` for native HTTP/2 gRPC (or your selected ports).
 For a public deployment, put an existing TLS-terminating reverse proxy on the
-same host in front of that loopback port, arrange DNS and certificates for your
+same host in front of those loopback ports, arrange DNS and certificates for your
 hostname, and permit access to the proxy through the host firewall. Do not expose
 PostgreSQL, Redis or the unauthenticated health probe on a separate public port.
 Docker Desktop must be configured to restart after host reboot.
@@ -398,6 +416,26 @@ PowerShell session, use the `dc` definition above if you configured this overlay
 Recheck the proxy source address after replacing the proxy or Docker network.
 Never disable certificate validation to make public readback pass. DNS, TLS and
 host reboot behavior must also be checked on the actual deployment host.
+
+### Native gRPC at the TLS edge
+
+Enable HTTP/2 on the public TLS listener and route native gRPC requests to the
+h2c upstream `127.0.0.1:18081`, preserving the service/method path, authorization
+metadata and gRPC trailers. Keep HTTP/1 REST and gRPC-Web on `127.0.0.1:18080`.
+A proxy that downgrades the native gRPC upstream to HTTP/1 cannot serve it.
+
+Configure your proxy's native gRPC route by content type (`application/grpc`,
+including its `+proto` form), excluding `application/grpc-web` traffic. For NGINX,
+use a dedicated native gRPC TLS virtual host with `http2 on` and a `location /`
+containing `grpc_pass grpc://127.0.0.1:18081`; add that hostname to `AllowedHosts`,
+provide its DNS/certificate, and preserve `Host`, `X-Forwarded-Proto` and the
+trusted proxy's `X-Forwarded-For`. The [NGINX gRPC module](https://nginx.org/en/docs/http/ngx_http_grpc_module.html)
+documents HTTP/2 forwarding and trailer handling.
+
+Validate the proxy configuration and perform an authenticated native gRPC SDK
+query through its public hostname before admitting traffic. The HTTP readback
+above verifies the REST route only; TLS/gRPC qualification must use the actual
+proxy and deployment host.
 
 ## Redis is optional; PostGIS is not
 
@@ -470,7 +508,7 @@ If any Linux backup command fails, retain its error and run `dc start honua` to
 resume service after investigation; do not use a partial backup. Store a verified
 copy of the private backup off-host using your organization's backup system.
 
-**Restore is destructive to this installation's database.** Use it only when you
+**Restore is destructive to this installation's database and file storage.** Use it only when you
 intend to replace the database with the saved backup. Stop incoming requests and
 Honua first. These commands restore into the same project using the original
 credentials. They drop and recreate only the `honua` database in this project
@@ -478,8 +516,9 @@ to restore partitioned tables without inherited-constraint conflicts; they do no
 delete volumes or touch other projects. For a fresh
 host, restore the saved private installation files first, install the recorded
 clients, then start only PostgreSQL and Redis before continuing. File storage
-must be empty or restored into a fresh volume when replacing a newer snapshot;
-an archive extraction alone does not remove files created after the backup.
+is cleared inside this project’s mounted `/var/lib/honua/storage` directory before
+extraction, including hidden files and nested paths. Keep Honua stopped if any
+restore command fails; do not resume with a partial database or storage restore.
 
 PowerShell (enter the full path of the verified backup):
 
@@ -491,7 +530,7 @@ dc stop honua
 dc cp (Join-Path $Backup 'database.dump') postgres:/tmp/honua-restore.dump
 dc exec -T postgres dropdb -U honua --force --if-exists honua
 dc exec -T postgres pg_restore -U honua -d postgres --create --exit-on-error /tmp/honua-restore.dump
-dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "${Backup}:/backup:ro" honua -xzf /backup/storage.tar.gz -C /var/lib/honua/storage
+dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint sh -v "${Backup}:/backup:ro" honua -c 'tar -tzf /backup/storage.tar.gz >/dev/null && find /var/lib/honua/storage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/storage.tar.gz -C /var/lib/honua/storage'
 dc start honua
 Wait-HonuaReady
 & $Python journey.py --verify-only
@@ -507,7 +546,7 @@ dc stop honua
 dc cp "$Backup/database.dump" postgres:/tmp/honua-restore.dump
 dc exec -T postgres dropdb -U honua --force --if-exists honua
 dc exec -T postgres pg_restore -U honua -d postgres --create --exit-on-error /tmp/honua-restore.dump
-dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "$Backup:/backup:ro" honua -xzf /backup/storage.tar.gz -C /var/lib/honua/storage
+dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint sh -v "$Backup:/backup:ro" honua -c 'tar -tzf /backup/storage.tar.gz >/dev/null && find /var/lib/honua/storage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/storage.tar.gz -C /var/lib/honua/storage'
 dc start honua
 wait_honua_ready
 "$Python" journey.py --verify-only
@@ -546,7 +585,8 @@ do not send `.env`, full Compose rendering, credentials, or customer records.
   Check network/proxy policy and retry. The optional NuGet client uses a different
   registry; see [registry clients](../../get-started/registry-clients.md) only if you need .NET.
 - **Import partially completed:** inspect the import result and discovered table
-  before retrying. MCP ingest replaces its named staging dataset; use a new
+  before retrying `journey.py` in the same installation. The script reuses the
+  registered `windows-local` connection by name. MCP ingest replaces its named staging dataset; use a new
   isolated project for a new clean-room rehearsal. After successful publication,
   the saved state makes this recipe refuse another import; use `--verify-only`.
 

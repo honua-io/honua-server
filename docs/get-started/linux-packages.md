@@ -9,7 +9,8 @@ selects `linux/amd64`; use an amd64 host for this rehearsal.
 
 ## Create an isolated installation
 
-Choose an unused loopback port if 18080 is occupied. A new directory, Compose
+Choose unused loopback ports if 18080 (HTTP) or 18081 (native gRPC) is occupied.
+Set `HONUA_GRPC_PORT` in `.env` to override the gRPC default. A new directory, Compose
 project, network and three volumes isolate this installation. Keep `.env` private
 and retain it with the volumes; recreating it does not rotate database passwords.
 
@@ -39,6 +40,7 @@ services:
     platform: linux/amd64
     ports:
       - "127.0.0.1:${HONUA_HTTP_PORT:?Set an unused port}:8080"
+      - "127.0.0.1:${HONUA_GRPC_PORT:-18081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       AllowedHosts: "localhost;127.0.0.1"
@@ -125,17 +127,23 @@ set +a
 export HONUA_BASE_URL="http://localhost:$HONUA_HTTP_PORT"
 function wait_honua_ready {
     "$Python" - <<'PYTHON'
-import os, time, urllib.request
-for attempt in range(90):
-    try:
-        with urllib.request.urlopen(os.environ['HONUA_BASE_URL'] + '/healthz/ready', timeout=5) as response:
-            if response.status == 200:
-                break
-    except OSError:
-        pass
-    time.sleep(2)
-else:
-    raise RuntimeError('Readiness failed; inspect Compose logs')
+import os, time
+from honua_admin import HonuaAdminClient
+from honua_sdk.errors import HonuaHttpError, HonuaTransportError
+with HonuaAdminClient(os.environ['HONUA_BASE_URL'], api_key=os.environ['HONUA_ADMIN_PASSWORD'], timeout=5, max_retries=0) as admin:
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
+        try:
+            admin.get_config()
+            break
+        except HonuaHttpError as error:
+            if error.status_code != 429 and error.status_code < 500:
+                raise
+        except HonuaTransportError:
+            pass
+        time.sleep(2)
+    else:
+        raise RuntimeError('Readiness failed; inspect Compose logs')
 PYTHON
 }
 wait_honua_ready
@@ -210,10 +218,12 @@ if '--verify-only' not in sys.argv:
         for name, (value, lon, lat) in expected.items()]}
     Path('points.geojson').write_text(json.dumps(fixture), encoding='utf-8')
     with HonuaAdminClient(base, api_key=key) as admin:
-        connection = admin.create_connection(CreateSecureConnectionRequest(
-            name='windows-local', host='postgres', port=5432, database_name='honua',
-            username='honua', password=os.environ['POSTGRES_PASSWORD'],
-            ssl_mode='Disable', ssl_required=False))
+        connection = next((c for c in admin.list_connections() if c.name == 'windows-local'), None)
+        if connection is None:
+            connection = admin.create_connection(CreateSecureConnectionRequest(
+                name='windows-local', host='postgres', port=5432, database_name='honua',
+                username='honua', password=os.environ['POSTGRES_PASSWORD'],
+                ssl_mode='Disable', ssl_required=False))
         result = asyncio.run(ingest_fixture())
         layer = admin.publish_layer(connection.connection_id, PublishLayerRequest(
             schema=result['schema'], table=result['table'], layer_name='windows-points',
