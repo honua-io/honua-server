@@ -120,15 +120,17 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
     [IntegrationTest]
     public async Task HonuaLayerSink_FailingRow_RollsBackKeyDeletionAndAllInsertedRows()
     {
+        var original = (await Read()).Should().ContainSingle().Which;
         var failed = await Run("upsert", "failed-batch", """
             {"type":"FeatureCollection","features":[
             {"type":"Feature","geometry":{"type":"Point","coordinates":[70,80]},"properties":{"key":"A","value":70}},
             {"type":"Feature","geometry":{"type":"Point","coordinates":[11,22]},"properties":{"key":"bad","value":-1}}]}
             """);
         failed.Result.Status.Should().Be(ExecutionJobStatus.Failed);
+        failed.Result.ErrorMessage.Should().Be("sink.honua-layer load failed: PostgresException.");
         failed.Artifacts.Should().BeEmpty();
         var rows = await Read();
-        rows.Should().ContainSingle();
+        rows.Should().ContainSingle().Which.Id.Should().Be(original.Id);
         AssertRow(rows, "A", 5, -5, 6, null);
     }
 
