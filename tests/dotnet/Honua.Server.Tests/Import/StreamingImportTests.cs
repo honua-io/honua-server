@@ -1164,9 +1164,9 @@ public class StreamingImportTests : IAsyncLifetime
         await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT ST_X(geometry), ST_Y(geometry), ST_SRID(geometry), attributes->>'{nameAttribute}' " +
+            $"SELECT ST_X(geometry), ST_Y(geometry), ST_SRID(geometry), properties->>'{nameAttribute}' " +
             $"FROM {QuoteIdentifier("honua_data")}.{QuoteIdentifier("imported_" + tableName)} " +
-            $"ORDER BY attributes->>'{nameAttribute}'";
+            $"ORDER BY properties->>'{nameAttribute}'";
         var rows = new List<(double, double, int, string?)>();
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
