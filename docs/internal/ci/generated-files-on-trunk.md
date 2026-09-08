@@ -112,3 +112,9 @@ This reused the completed binaries because the host's build-slot limiter also
 queues `dotnet test --no-build`. Admin parity verification and both Python
 generators passed (115 capabilities). The publication dry run reported only
 `examples/manifest.json` drift: one candidate commit, without staging or pushing.
+Restoring the committed snapshots and rerunning all emitters reproduced all six
+SHA-256 hashes exactly. Against those fresh projections, CITE/OpenAPI validation,
+67 focused architecture tests (catalog, GeoServices parity, and public-interface
+proof ledger), and all three admin parity tests passed. Dry-run snapshots were
+restored afterward; this change carries no generated-file or generator-source
+edits. The full pre-PR build/test matrix was not run for this CI-only change.
