@@ -37,7 +37,7 @@ namespace Honua.Server.Tests.Features.Streaming;
 /// WebSocket connect, SSE connect, heartbeat delivery, slow-consumer disconnect,
 /// cursor replay on reconnect, and admin session visibility.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.FeatureStreamEndpoints")]
 [Protocol(TestProtocols.Streaming)]
 [Operation(Operations.Streaming)]
 public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
