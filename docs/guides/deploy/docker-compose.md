@@ -469,7 +469,9 @@ copy of the private backup off-host using your organization's backup system.
 **Restore is destructive to this installation's database.** Use it only when you
 intend to replace the database with the saved backup. Stop incoming requests and
 Honua first. These commands restore into the same project using the original
-credentials; they do not delete volumes or touch other projects. For a fresh
+credentials. They drop and recreate only the `honua` database in this project
+to restore partitioned tables without inherited-constraint conflicts; they do not
+delete volumes or touch other projects. For a fresh
 host, restore the saved private installation files first, install the recorded
 clients, then start only PostgreSQL and Redis before continuing. File storage
 must be empty or restored into a fresh volume when replacing a newer snapshot;
@@ -483,7 +485,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $Backup 'database.dump'))) { throw '
 if (-not (Test-Path -LiteralPath (Join-Path $Backup 'storage.tar.gz'))) { throw 'Storage backup not found' }
 dc stop honua
 dc cp (Join-Path $Backup 'database.dump') postgres:/tmp/honua-restore.dump
-dc exec -T postgres pg_restore -U honua -d honua --clean --if-exists --exit-on-error /tmp/honua-restore.dump
+dc exec -T postgres dropdb -U honua --force --if-exists honua
+dc exec -T postgres pg_restore -U honua -d postgres --create --exit-on-error /tmp/honua-restore.dump
 dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "${Backup}:/backup:ro" honua -xzf /backup/storage.tar.gz -C /var/lib/honua/storage
 dc start honua
 Wait-HonuaReady
@@ -498,7 +501,8 @@ test -f "$Backup/database.dump"
 test -f "$Backup/storage.tar.gz"
 dc stop honua
 dc cp "$Backup/database.dump" postgres:/tmp/honua-restore.dump
-dc exec -T postgres pg_restore -U honua -d honua --clean --if-exists --exit-on-error /tmp/honua-restore.dump
+dc exec -T postgres dropdb -U honua --force --if-exists honua
+dc exec -T postgres pg_restore -U honua -d postgres --create --exit-on-error /tmp/honua-restore.dump
 dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "$Backup:/backup:ro" honua -xzf /backup/storage.tar.gz -C /var/lib/honua/storage
 dc start honua
 wait_honua_ready
