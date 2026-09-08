@@ -49,8 +49,9 @@ The single allowlist is `scripts/ci/generated-files.sh`. Regeneration uses the
 existing emitters in dependency order. Like the existing trailing foundation
 build, the trunk writer skips the duplicate analyzer pass with
 `/p:RunAnalyzers=false`; PR Gate still enforces analyzers and warnings-as-errors.
-Compiler errors, generator execution, and authored-input tests remain strict. The PR Gate already builds their test
-assemblies, so its invocation uses `--no-build --no-restore`. Existing byte
+Compiler errors, generator execution, and authored-input tests remain strict.
+PR Gate already builds their test assemblies, so its invocation uses
+`--no-build --no-restore`. Existing byte
 equality tests run against fresh projections and still catch nondeterminism;
 proof-ledger, schema, route coverage, judgment and OpenAPI checks stay hard.
 The trailing Server foundation family also refreshes before its validators,
@@ -66,11 +67,12 @@ trusted trunk code. A serialized writer checks out current trunk, validates,
 stages only the six outputs, and creates at most one commit with author and
 committer `Mike McDougall <mike@honua.io>` and footer `Refs #3213`.
 
-No diff produces no commit. The generated commit subject plus its `Generated-From` trailer skip its own
-push-triggered job; a similarly titled ordinary merge still regenerates.
+No diff produces no commit. The generated commit subject plus its
+`Generated-From` trailer skip its own push-triggered job; a similarly titled
+ordinary merge still regenerates.
 Concurrency is scoped to that job, so skipped self-events cannot replace a
-pending real merge in the writer queue. Reruns are idempotent for unchanged inputs. Pushes never
-force or rebase generated blobs: if trunk advances during generation, the push
+pending real merge in the writer queue. Reruns are idempotent for unchanged
+inputs. Pushes never force or rebase generated blobs: if trunk advances during generation, the push
 fails safely and the newer push's queued run regenerates from current trunk.
 Transient push failures retry with 10/30/60/120-second backoff.
 
@@ -96,7 +98,7 @@ identity, the output allowlist, staged-input rejection, repeat-run idempotence,
 and rejection of a stale writer against a concurrently advanced trunk.
 
 Branch validation on 2026-09-07: the four generated-file contracts, the
-lean-gate command contract, actionlint for both affected workflows, shell
+lean-gate command contract, actionlint for all three affected workflows, shell
 syntax checks, and all 12 capability-matrix generator unit tests passed.
 The complete `validate-ci-router.sh` suite also passed: 1,383 Server test
 classes are claimed, all 73 shard filters select tests, and the four foundation
