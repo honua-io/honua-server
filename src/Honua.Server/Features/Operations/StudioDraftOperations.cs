@@ -408,7 +408,7 @@ internal sealed class StudioSaveVersionExecutor(IStudioPackageLifecycleService l
 internal sealed class StudioCreatePublicationRequestExecutor(
     IStudioPackageLifecycleService lifecycle,
     TimeProvider clock,
-    IStudioPackageValidator? validator = null)
+    IStudioPackageValidator validator)
     : StudioDraftMutationExecutor<StudioPublicationRequestPayload, StudioPublicationRequest>(lifecycle, clock)
 {
     public override string OperationId => StudioDraftOperations.CreatePublicationRequest;
@@ -435,10 +435,29 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             throw new InvalidOperationException("The supplied content hash does not match the saved Studio version.");
         }
 
-        var intentValidation = validator?.ValidatePublicationIntent(payload.Intent);
-        if (intentValidation?.Status == StudioPackageValidationStatus.Invalid)
+        // honua-server#3980 follow-up: the intent must be rejected HERE, before policy routing.
+        // OperationDispatcher stops after ValidateAsync whenever the decision is not Allow, so an
+        // Enterprise policy rule that puts this operation behind approval never reaches
+        // CreatePublicationRequestAsync -- the downstream authority on intent validity -- and an
+        // invalid intent would be persisted as an approval proposal and answered 202. The
+        // rejection is returned as a blocking verdict rather than thrown because the dispatcher
+        // maps every pre-policy throw onto an unclassified Failed envelope (500); a verdict
+        // carries ErrorKind, which reaches the REST surface as the same errorKind=argument the
+        // actuation path emits, so the caller still gets 400 with the validator diagnostics.
+        // The validator is a required dependency, not an optional one: AddStudioPackageLifecycle
+        // registers IStudioPackageValidator and IStudioPackageLifecycleService together, so any
+        // host that can construct this executor can supply it, and an optional default would
+        // silently drop the guard in precisely the composition that failed to register it.
+        var intentValidation = validator.ValidatePublicationIntent(payload.Intent);
+        if (intentValidation.Status == StudioPackageValidationStatus.Invalid)
         {
-            throw new ArgumentException("The publication intent is invalid.", nameof(request));
+            return new OperationValidation
+            {
+                IsValid = false,
+                Status = "invalid",
+                ErrorKind = "argument",
+                Messages = [FormatIntentValidationFailure(intentValidation.Diagnostics)],
+            };
         }
 
         return new OperationValidation
@@ -460,6 +479,13 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             },
         };
     }
+
+    // Mirrors StudioPackageLifecycleService.FormatValidationFailure so a pre-policy rejection
+    // and the actuation-path ArgumentException carry byte-identical diagnostics.
+    private static string FormatIntentValidationFailure(IReadOnlyList<StudioValidationDiagnostic> diagnostics)
+        => diagnostics.Count == 0
+            ? "Publication intent is invalid."
+            : "Publication intent is invalid: " + string.Join("; ", diagnostics.Select(static diagnostic => diagnostic.Message));
 
     protected override async Task<StudioPublicationRequest> ActuateAsync(
         StudioPublicationRequestPayload payload,
