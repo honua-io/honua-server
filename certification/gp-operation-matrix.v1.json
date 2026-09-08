@@ -1184,7 +1184,7 @@
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourceExecutionProofTests.cs",
           "test": "HonuaLayerSource_RealCatalogFilterBboxAndFields_PublishesExactProjectedSelection",
-          "assertion": "Production composed source artifact from real PostGIS: exact where/bbox selection, field masking, analytical projected coordinates and output SRID."
+          "assertion": "Workflow-only entry point: production composed source artifact from real PostGIS; exact where/bbox selection, field masking, analytical projected coordinates and output SRID. The same oracle rejects real artifacts with each constraint lost."
         },
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourceExecutionProofTests.cs",
@@ -1206,7 +1206,12 @@
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/EsriSourceExecutionProofTests.cs",
           "test": "EsriSource_PagedFilteredFixture_PublishesEverySelectedFeatureExactlyOnce",
-          "assertion": "Real HTTP client, connector and executor over a deterministic paged fixture: exact IDs/attributes/coordinates, offsets once, where/watermark/fields/SRID parameters."
+          "assertion": "Workflow-only entry point: real HTTP client, connector and executor over a deterministic paged fixture; literal IDs/attributes/null/coordinates, output SRID, offsets once and where/watermark/fields/SRID parameters."
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/EsriSourceExecutionProofTests.cs",
+          "test": "EsriSource_WellFormedWrongFixtureOutput_FailsSemanticOracle",
+          "assertion": "Production executor publishes valid artifacts from duplicate-page, swapped-axis and changed-attribute fixtures; the unchanged literal semantic oracle rejects each."
         }
       ]
     },
@@ -1297,7 +1302,7 @@
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSinkExecutionProofTests.cs",
           "test": "HonuaLayerSink_AppendThenKeyedUpsert_ReadsExactCommittedGeometryAttributesAndReceipts",
-          "assertion": "Real sink executor into published PostGIS target, read through canonical metadata provider router: exact append/upsert rows, geometry, attributes, batch provenance, counts and rejection receipts."
+          "assertion": "Workflow-only entry point: real sink executor into published PostGIS target, read through canonical metadata provider router; exact append/upsert rows, geometry, attributes, batch provenance, counts and rejection receipts. The same oracle rejects actual append-instead-of-upsert persistence and corrupted values/axes."
         },
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSinkExecutionProofTests.cs",
