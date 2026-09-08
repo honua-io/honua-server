@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -277,10 +278,35 @@ internal static class LayerValidationHelpers
     /// is matched against publication serviceLocalId, path, name, or id (case-insensitive),
     /// in that order. For unambiguous routing, callers should ensure publications carry a
     /// distinct <c>ServiceLocalId</c>.
+    /// Storage-keyed surfaces can opt into numeric storage-layer identity; their
+    /// discovery and detail routes then share publication selection and access checks.
     /// </summary>
-    public static async Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
+    public static Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
         HttpContext context,
         string collectionId,
+        AccessScope scope = AccessScope.Read,
+        string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
+        CancellationToken cancellationToken = default)
+        => ValidateCollectionWithAccessV2CoreAsync(
+            context, collectionId, false, scope, requiredProtocol, cancellationToken);
+
+    /// <summary>
+    /// Validates numeric collection IDs as storage identities, sharing publication
+    /// selection with discovery. Nonnumeric publication aliases retain existing routing.
+    /// </summary>
+    public static Task<MetadataV2ValidationResult> ValidateStorageCollectionWithAccessV2Async(
+        HttpContext context,
+        string collectionId,
+        AccessScope scope = AccessScope.Read,
+        string? requiredProtocol = null,
+        CancellationToken cancellationToken = default)
+        => ValidateCollectionWithAccessV2CoreAsync(
+            context, collectionId, true, scope, requiredProtocol, cancellationToken);
+
+    private static async Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2CoreAsync(
+        HttpContext context,
+        string collectionId,
+        bool resolveByStorageLayerId,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
         CancellationToken cancellationToken = default)
@@ -296,6 +322,17 @@ internal static class LayerValidationHelpers
         }
 
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+
+        if (resolveByStorageLayerId &&
+            int.TryParse(collectionId, NumberStyles.None, CultureInfo.InvariantCulture, out var storageLayerId))
+        {
+            var collections = await ResolveStorageCollectionsWithAccessV2Async(
+                context, snapshot, requiredProtocol, scope, storageLayerId, cancellationToken).ConfigureAwait(false);
+            return collections.TryGetValue(storageLayerId, out var collection)
+                ? collection
+                : new MetadataV2ValidationResult(false, null, null, null,
+                    StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
+        }
 
         bool MatchesCollectionId(MetadataV2Publication p)
         {
@@ -401,6 +438,52 @@ internal static class LayerValidationHelpers
         }
 
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
+    }
+
+    /// <summary>
+    /// Selects one publication per storage-keyed collection for both discovery and
+    /// detail routes. Accessible candidates precede denied aliases, then primary
+    /// publications win; graph order breaks remaining ties. Denied-only entries
+    /// retain the shared access error for detail routes and are hidden by discovery.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<int, MetadataV2ValidationResult>> ResolveStorageCollectionsWithAccessV2Async(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        string? requiredProtocol,
+        AccessScope scope = AccessScope.Read,
+        int? storageLayerId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var collections = new Dictionary<int, MetadataV2ValidationResult>();
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var id = snapshot.ResolveStorageLayerId(publication);
+            if (!id.HasValue || (storageLayerId.HasValue && id.Value != storageLayerId.Value))
+            {
+                continue;
+            }
+
+            var service = ResolveVisibleProtocolService(context, snapshot, publication, requiredProtocol);
+            if (service is null)
+            {
+                continue;
+            }
+
+            var resource = snapshot.ResolveResource(publication)!;
+            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context, resource, service, scope, cancellationToken).ConfigureAwait(false);
+            var candidate = new MetadataV2ValidationResult(
+                accessError is null, publication, resource, service, accessError, snapshot);
+            if (!collections.TryGetValue(id.Value, out var existing) ||
+                (candidate.IsValid && !existing.IsValid) ||
+                (candidate.IsValid == existing.IsValid && publication.IsPrimary && !existing.Publication!.IsPrimary))
+            {
+                collections[id.Value] = candidate;
+            }
+        }
+
+        return collections;
     }
 
     /// <summary>

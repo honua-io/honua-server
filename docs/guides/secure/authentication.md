@@ -116,6 +116,20 @@ Esri clients (ArcGIS Pro, Maps SDKs) authenticate against the portal token endpo
 
 Use `PortalCompat.generateToken` from `@honua/sdk-js/esri-compat` with `username`, `password`, `client: "referer"`, `referer: "https://app.example.com"`, and `expiration: 60`. ArcGIS Pro and other Esri clients discover the same endpoint automatically when they prompt for credentials.
 
+The local admin credential bridge accepts the bootstrap admin password and managed
+API keys that already confer full administration. Service/layer keys, narrow admin
+or operations grants, and approved-operation replay credentials cannot be exchanged
+through this admin bridge: issuance returns the Esri `400` "Unable to generate
+token" error. Continue using those keys through their supported API-key transport;
+configured OIDC identities use the separate identity-provider bridge. A refused
+exchange is not a successful scoped Portal-token workflow.
+
+When upgrading the bridge, address previously issued tokens as well. The fix
+prevents new privilege elevation but does not change existing cached token records;
+they remain valid until revoked or expired. Revoke tokens that may have been issued
+from constrained keys and require affected clients to authenticate again. Upgrade
+all token-issuance nodes before resuming those exchanges.
+
 The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side (Redis when enabled), and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the Esri SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400). An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider — register every redirect URI in `Authentication__PortalToken__OAuth2__AllowedRedirectUris` before enabling it.
 
 For non-interactive service-to-service clients, an opt-in OAuth2 `client_credentials` grant (off by default; ADR-0053) exchanges an existing API key for an OAuth2 access token. Enable it with `Authentication__PortalToken__OAuth2__EnableClientCredentials=true`, then `POST /sharing/rest/oauth2/token` with `grant_type=client_credentials`, `client_id=<key-name>`, and `client_secret=<api-key>` (or HTTP Basic). The returned `access_token` is the same opaque, IP-bound portal token, carries the API key's permissions, and has no refresh token (the client re-requests with its secret). With the flag off the grant is rejected with `unsupported_grant_type` — no behaviour change for existing deployments.

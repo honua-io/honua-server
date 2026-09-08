@@ -24,7 +24,7 @@ Keep the existing image/revision/repository/execution-role inputs. Supply:
 | `REALAWS_CERT_LAMBDA_ALIAS` repo variable | Standing published, unweighted certification alias. |
 | `REALAWS_CERT_LAMBDA_WRITE_BASE_URL` repo variable | Function URL belonging to that exact alias; verified through AWS before any writes. |
 | `HONUA_DEMO_BASE_URL` repo variable | Demo read URL. Matching write/read hosts, including case, port and trailing-slash variants, are refused. |
-| `REALAWS_CERT_DENIED_KEY` cert secret | Valid, pre-existing scoped API key with only `read:layers`, as in `AdminApiKeyEndpointsTests.GenuinelyScopedApiKey_IsDeniedAdminEndpoint`. It must authenticate but lack admin rights. |
+| `REALAWS_CERT_DENIED_KEY` cert secret | **Optional override, deprecated.** The lane mints its own scoped `read:layers` principal per run (see below). For one release, explicitly selecting the workflow input `use_denied_key_override: true` sends this key instead and mints and revokes nothing. An existing secret alone does not select the override. Remove the secret once this release has shipped. |
 | `REALAWS_CERT_ADMIN_KEY` cert secret | Admin key for the standing certification function and its cloned configuration. It must equal what `HONUA_ADMIN_PASSWORD` resolves to on that function, so rotating the admin credential without re-issuing this secret makes every administrative assertion 401. Never stored in evidence. |
 
 The ephemeral function inherits the standing function's PostGIS connection/secret
@@ -231,6 +231,76 @@ The assertion itself is unchanged and still fail-closed: a passing receipt carri
 Three forced environments that all come back warm fail the run (exit 14), and the failure now
 reports the attempt count alongside the tail shape.
 
+## The denial principal is minted per run, not carried by the bootstrap
+
+Certification run 23 (`34243173689`) reached the authorization assertion for the first time — cold
+start, admin authentication and the `client-compat-v1` fixture all passed — and failed it with
+`Scoped principal must receive an empty HTTP 403 (zero records)`.
+
+The key it sent came from `REALAWS_CERT_DENIED_KEY`, minted at bootstrap on 2026-09-06.
+Server-managed API keys live in Redis when an eligible multiplexer is registered; otherwise they
+live in process-local memory (`Program.cs`, `IAdminApiKeyStore` registration). They are not PostGIS
+rows. Loss of that store could cause a 401; run 23 did not log the returned status, so neither a
+missing key nor a 200 authorization leak is confirmed.
+
+The default path requires Redis configuration on both standing `$LATEST` and the published alias.
+After minting, it also reads the exact active key and its effective permissions through the standing
+alias before serving assertions begin. This verifies shared visibility at runtime, including when
+Redis is configured but not eligible and the server falls back to an in-memory store. A visibility
+failure retires the candidate's key and leaves `noProof`.
+
+For direct shell runs, the deprecated override requires both `HONUA_LAMBDA_CERT_DENIED_KEY` and
+`HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE=true`. Explicitly requesting an override without a key
+fails before provisioning.
+
+The lane already holds the administrator, so it does not have to depend on a credential some
+earlier bootstrap left behind. It mints its own instead:
+
+- Before the first serving assertion, the lane creates `honua-cert-denied-<run id>-<attempt>`
+  through `POST /api/v1/admin/api-keys` with exactly the `read:layers` grant — the genuinely scoped,
+  non-admin principal of `AdminApiKeyEndpointsTests.GenuinelyScopedApiKey_IsDeniedAdminEndpoint` —
+  and asserts the record came back active with those permissions and no others.
+- Every phase (`deployed`, `baseline`, `candidate`, `rollback`) sends that key for the denial
+  assertion. All four must share the Redis API-key store, so one record serves the whole run —
+  including the baseline and rollback phases, which validate the candidate's key with the
+  *previous* published version's code. A key that authenticates in one phase and not another is an
+  API-key compatibility break between those two versions, and the diagnostic below names the phase.
+- The mint carries a two-hour expiry, because an abandoned credential is a standing one and a run
+  can die between the mint and the revoke.
+- The API exposes revocation rather than physical deletion. Teardown revokes the key by its unique
+  name — which also recovers the row a lost create response left
+  behind — then re-reads the record and requires the server's own view of it to be `revoked` with
+  `canAuthenticate: false` and no active record of this run's name remaining. Revocation is
+  attempted against the candidate function first and the standing alias second, so a candidate that
+  cannot serve is not also the run that leaves a credential behind. A key that could not be retired
+  fails the run even when every serving assertion passed.
+
+No new AWS permission is involved: the mint and the revoke are ordinary administrative requests to
+the function under test, sent the same way as every other serving assertion.
+
+### A denial that is not the documented 403 has to say which way it failed
+
+Run 23 printed neither the status nor the shape of what it got, so the run could not distinguish
+its two opposite causes: the scoped key was gone (401), or the server served admin records to a
+non-admin principal (200 — honua-server#4386). A failed denial assertion now prints:
+
+```
+serving-403: phase=deployed principal=override key=HONUA_LAMBDA_CERT_DENIED_KEY status=401 body-kind=json authenticated=no challenge=ApiKey+Basic records=0 record=unknown
+```
+
+| Field | What it says |
+| --- | --- |
+| `principal` / `key` | `minted` and this run's key name, or `override` and the *name* of the variable the key came from. Never key material. |
+| `status` / `body-kind` | The status actually returned, and whether the body was the documented empty one, a JSON document, or text. |
+| `authenticated` | Inferred from the endpoint's status contract: `no` for 401, `yes` for 403 or 200, `unknown` otherwise. This separates a missing key from a leak without claiming a separate authentication probe. |
+| `challenge` | The scheme that issued the `WWW-Authenticate` challenge, parsed as in the 401 diagnostic above; `none` when absent. |
+| `records` | How many records the answer carried. Zero for the documented refusal; anything else is a leak, counted rather than quoted. |
+| `record` | For a minted key, the server's own status for that record (`active`, `revoked`, `expired`, `missing`); `unknown` for an override, because no plaintext key can be mapped back to its row. |
+
+`authenticated=no` on a minted key means the credential the lane just created was refused by the
+function under test, which is an authentication defect, not a bootstrap gap. `authenticated=yes`
+with a nonzero `records` is the authorization leak the assertion exists to catch.
+
 ## An administrative 401 has to say which of its causes it is
 
 The lane authenticates as the bootstrap administrator: it sends `HONUA_LAMBDA_CERT_ADMIN_KEY` as
@@ -291,8 +361,9 @@ it.
 2. Require migration status `succeeded`, ready, no failure, available plan, no
    upgrade and zero pending scripts. Query exactly ten named fixture records.
 3. Require an anonymous principal's `GET /api/v1/admin/api-keys` to return the
-   documented admin Problem Details 401 with zero records, and a valid scoped
-   principal to receive HTTP 403 with an empty body (zero records). Create one uniquely
+   documented admin Problem Details 401 with zero records, and this run's own scoped
+   `read:layers` principal to receive HTTP 403 with an empty body (zero records).
+   Create one uniquely
    named feature, read its ID and value through the API, delete it, and verify
    absence. An ambiguous create response also triggers marker-scoped cleanup.
 4. Prove the baseline alias serves. Update only standing `$LATEST` code and publish
@@ -336,6 +407,14 @@ alias, so requests do not depend on public ingress or redirect behavior.
   fixture name/hash, expected/actual row count and name verification; created,
   read-back, deleted and remaining row counts; distinct write target; denial
   principal/operation/expected and actual status/zero records, anonymous 401; executed version.
+- `serving.deployed.authorization.principalSource`: `minted` for this run's own key, `override`
+  when the deprecated bootstrap secret supplied it.
+- `serving.deniedKey`: `source`, the granted `permissions`, this run's key `name` (never its
+  value), whether it was `created`, whether teardown `revoked` it, the server's own
+  `canAuthenticate` for the revoked record, and `activeAfterTeardown` — how many records bearing
+  this run's name were still active when the lane finished, which a passing receipt requires to be
+  zero. `sharedStoreVerified` records the standing alias's visibility of the minted key before
+  serving begins. An `override` run creates and revokes nothing.
 - `serving.alias.beforeVersion`, `.afterVersion`, `.rollbackVersion`.
 - `serving.teardown.candidateVersionDeleted`, `.standingLatestRestored`.
 
@@ -366,7 +445,11 @@ their fail-closed variants are exercised end to end. They also model proactive i
 of the platform lines, and CloudWatch delivery lag (`STUB_CLOUDWATCH_LAG`), so the retry that
 reaches a cold environment, the fail-closed run where none of them is ever cold, the stream-scoped
 poll that outwaits the lag, and the warm attempt whose stream must not supply a later attempt's
-evidence are all covered offline; an unscoped evidence read fails the doubles outright. The separately built driver compiles the unchanged production
+evidence are all covered offline; an unscoped evidence read fails the doubles outright. The doubles
+carry a stateful admin API-key store, so the per-run mint, the denial, the revoke and the receipt's
+`activeAfterTeardown` proof run end to end, together with a key that no longer authenticates (401),
+one the server serves records to (200), a refused mint, a mint whose response is lost and whose row
+teardown still has to find by name, and a revocation that fails and fails the otherwise-passing run. The separately built driver compiles the unchanged production
 backend/client. Actual AWS IAM, VPC/PostGIS connectivity, fixture bootstrap,
 cold-start behavior and serving across real published versions still require the
 credentialed workflow run.

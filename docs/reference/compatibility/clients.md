@@ -40,6 +40,21 @@ precedence. Request host validation, strict startup validation
 An explicit host allowlist still takes precedence over the public URL, and
 unrelated request hosts remain rejected when host validation is enabled.
 
+## Managed API keys and Portal token exchange
+
+The default local admin bridge for `/sharing/rest/generateToken` accepts bootstrap
+admin credentials and managed keys with full administrative authority. Scoped
+service/layer keys, narrow admin or operations keys, and approved-operation replay
+keys receive an Esri `400` issuance error rather than an elevated admin token.
+The restriction applies with both `admin` and other supplied usernames. Direct
+API-key authorization retains the key's existing grants; configured OIDC token
+issuance uses its existing identity projection.
+
+This is an explicit unsupported exchange, not evidence that scoped Portal-token
+authentication works in a desktop client. Native acquisition, storage, lifecycle
+and protocol authorization still require separate client evidence. See
+[authentication setup and token revocation during upgrades](../../guides/secure/authentication.md#4-issue-arcgis-compatible-tokens).
+
 ## Realtime credentials and reconnects
 
 Protected FeatureServer and SensorThings SSE/WebSocket subscriptions revalidate
@@ -109,7 +124,13 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   QGIS or ArcGIS Pro raster certification.
 - **OGC API Coverages is MVP-scoped**: GeoTIFF/PNG retrieval with bbox/CRS/scale
   parameters; `datetime`, `subset`, CoverageJSON, NetCDF, and tiled coverage
-  delivery are not implemented.
+  delivery are not implemented. Collection discovery emits each accessible
+  storage-layer identifier once even when feature and raster resources share
+  that storage binding. Access filtering precedes deduplication, with a primary
+  publication preferred among accessible aliases. Numeric collection detail URLs
+  use the same storage identity and accessible-publication selection as discovery,
+  including when publication IDs differ from the storage-layer ID. Other protocols
+  retain their existing publication-identifier routing.
 - **OData v4 delta tracking uses durable authorized query snapshots.** Clients
   apply key-preserving `@removed` entries for deletes and filter exits. Legacy
   timestamp tokens require a new baseline after typed 410 recovery. Tracking

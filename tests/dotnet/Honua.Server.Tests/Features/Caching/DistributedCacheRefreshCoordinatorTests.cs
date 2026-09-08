@@ -21,6 +21,7 @@ namespace Honua.Server.Tests.Features.Caching;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 {
+    private readonly ManualTimeProvider _timeProvider = new();
     private readonly DistributedCacheRefreshCoordinator _coordinator;
     private readonly IConnectionMultiplexer _redis;
     private readonly CancellationTokenSource _cts;
@@ -41,7 +42,8 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
             options,
             Substitute.For<IPerformanceMonitor>(),
             NullLogger<DistributedCacheRefreshCoordinator>.Instance,
-            _redis);
+            _redis,
+            timeProvider: _timeProvider);
 
         _cts = new CancellationTokenSource();
     }
@@ -427,10 +429,17 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask)
             .Should().BeFalse("recent failures should back off immediate retries");
 
-        await Task.Delay(TimeSpan.FromMilliseconds(1200));
+        // Runner scheduling must not consume the backoff before we can assert it.
+        // Check both sides of the exact one-second boundary using controlled time.
+        _timeProvider.Advance(TimeSpan.FromSeconds(1) - TimeSpan.FromTicks(1));
 
         _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask)
-            .Should().BeTrue("the retry backoff should eventually expire");
+            .Should().BeFalse("the retry backoff should remain active until its deadline");
+
+        _timeProvider.Advance(TimeSpan.FromTicks(1));
+
+        _coordinator.TryEnqueueRefresh("layer:1", _ => Task.CompletedTask)
+            .Should().BeTrue("the retry backoff should expire at its deadline");
     }
 
     [UnitTest]
@@ -684,5 +693,14 @@ public sealed class DistributedCacheRefreshCoordinatorTests : IDisposable
 
         await coordinator.StopAsync(cts.Token);
         coordinator.Dispose();
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long _utcTicks = DateTimeOffset.UnixEpoch.UtcTicks;
+
+        public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref _utcTicks), TimeSpan.Zero);
+
+        public void Advance(TimeSpan duration) => Interlocked.Add(ref _utcTicks, duration.Ticks);
     }
 }

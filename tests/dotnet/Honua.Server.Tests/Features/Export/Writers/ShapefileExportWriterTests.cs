@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NetTopologySuite.IO.Esri;
+using NetTopologySuite.IO.Esri.Shapefiles.Readers;
 using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 using WkbWriter = NetTopologySuite.IO.WKBWriter;
 
@@ -57,7 +58,7 @@ public sealed class ShapefileExportWriterTests
             }
 
             var shpPath = Directory.GetFiles(extractedDir, "*.shp").Single();
-            using var reader = Shapefile.OpenRead(shpPath);
+            using var reader = Shapefile.OpenRead(shpPath, new ShapefileReaderOptions());
 
             reader.Read(out var deleted, out var exportedFeature).Should().BeTrue();
             deleted.Should().BeFalse();
@@ -105,7 +106,7 @@ public sealed class ShapefileExportWriterTests
             }
 
             var shpPath = Directory.GetFiles(extractedDir, "*.shp").Single();
-            using var reader = Shapefile.OpenRead(shpPath);
+            using var reader = Shapefile.OpenRead(shpPath, new ShapefileReaderOptions());
 
             reader.ShapeType.Should().Be(ShapeType.PointZM,
                 "3D input must select the Z-capable shape type instead of flattening to 2D (#2744)");
@@ -153,7 +154,7 @@ public sealed class ShapefileExportWriterTests
             }
 
             var shpPath = Directory.GetFiles(extractedDir, "*.shp").Single();
-            using var reader = Shapefile.OpenRead(shpPath);
+            using var reader = Shapefile.OpenRead(shpPath, new ShapefileReaderOptions());
             reader.ShapeType.Should().Be(ShapeType.Point, "2D input keeps the plain 2D shape type");
         }
         finally
@@ -201,7 +202,7 @@ public sealed class ShapefileExportWriterTests
             }
 
             var shpPath = Directory.GetFiles(extractedDir, "*.shp").Single();
-            using var reader = Shapefile.OpenRead(shpPath);
+            using var reader = Shapefile.OpenRead(shpPath, new ShapefileReaderOptions());
 
             reader.ShapeType.Should().Be(ShapeType.PolyLineZM);
             reader.Read(out _, out var exportedFeature).Should().BeTrue();
@@ -360,7 +361,7 @@ public sealed class ShapefileExportWriterTests
                 zip.ExtractToDirectory(extractedDir);
             }
 
-            using var reader = Shapefile.OpenRead(Directory.GetFiles(extractedDir, "*.shp").Single());
+            using var reader = Shapefile.OpenRead(Directory.GetFiles(extractedDir, "*.shp").Single(), new ShapefileReaderOptions());
             var byName = reader.Fields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
 
             byName["name"].Should().BeOfType<NetTopologySuite.IO.Esri.Dbf.Fields.DbfCharacterField>();
@@ -417,7 +418,7 @@ public sealed class ShapefileExportWriterTests
             }
 
             var shpPath = Directory.GetFiles(extractedDir, "*.shp").Single();
-            var options = new NetTopologySuite.IO.Esri.Shapefiles.Readers.ShapefileReaderOptions
+            var options = new ShapefileReaderOptions
             {
                 Encoding = System.Text.Encoding.UTF8
             };
