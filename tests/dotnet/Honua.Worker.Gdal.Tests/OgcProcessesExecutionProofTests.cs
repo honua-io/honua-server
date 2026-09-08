@@ -54,19 +54,10 @@ public sealed class OgcProcessesExecutionProofTests(RedisFixture redis) : IClass
             var body = $$"""{"inputs":{"source":"{{Convert.ToBase64String(source)}}","units":"degrees","zFactor":2}}""";
             using var results = await SubmitAndGetResults(client, "surface.slope", body);
             var output = results.RootElement.GetProperty("outputRaster");
-            output.GetProperty("type").GetString().Should().StartWith("image/tiff");
-            var uri = output.GetProperty("href").GetString()!;
-            byte[] bytes;
-            if (uri.StartsWith("data:", StringComparison.Ordinal))
-            {
-                bytes = GdalCli.DecodeDataUri(uri);
-            }
-            else
-            {
-                using var content = await client.GetAsync(uri);
-                content.StatusCode.Should().Be(HttpStatusCode.OK);
-                bytes = await content.Content.ReadAsByteArrayAsync();
-            }
+            output.GetProperty("mediaType").GetString().Should().StartWith("image/tiff");
+            output.GetProperty("encoding").GetString().Should().Be("base64");
+            output.TryGetProperty("href", out _).Should().BeFalse();
+            var bytes = Convert.FromBase64String(output.GetProperty("value").GetString()!);
 
             Directory.CreateDirectory(scratch);
             await File.WriteAllBytesAsync(Path.Join(scratch, "slope.tif"), bytes);
@@ -242,6 +233,8 @@ public sealed class OgcProcessesExecutionProofTests(RedisFixture redis) : IClass
             status.StatusCode.Should().Be(HttpStatusCode.OK);
             var statusBody = await status.Content.ReadAsStringAsync();
             using var terminal = JsonDocument.Parse(statusBody);
+            terminal.RootElement.GetProperty("jobID").GetString().Should().Be(jobId);
+            terminal.RootElement.GetProperty("processID").GetString().Should().Be(processId);
             var state = terminal.RootElement.GetProperty("status").GetString();
             if (state is "successful" or "failed" or "dismissed")
             {
