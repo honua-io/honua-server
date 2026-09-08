@@ -17,6 +17,9 @@ native_payload="$(jq -cn --arg source "${native_source}" '{inputs:{source:$sourc
 mkdir -p "${receipt_root}"
 
 case "${lane}" in
+  output-store)
+    declared_scenarios=(topology output-store-attestation cleanup)
+    ;;
   lifecycle)
     declared_scenarios=(topology output-store-attestation sync async cancel-claimed cancel-native-process-started \
       cancel-output-bytes-written-unpublished cancel-artifact-reference-published-terminal-cas-pending \
@@ -35,7 +38,7 @@ case "${lane}" in
     declared_scenarios=(assertion-failure follow-up cleanup)
     ;;
   *)
-    echo "HONUA_GP_LANE must be lifecycle, resilience, or self-test" >&2
+    echo "HONUA_GP_LANE must be output-store, lifecycle, resilience, or self-test" >&2
     exit 2
     ;;
 esac
@@ -190,12 +193,8 @@ verify_image_revision() {
 }
 
 write_receipt() {
-  local evidence='{}'
-  if [[ -f "$scenario_evidence_file" ]]; then
-    evidence="$(<"$scenario_evidence_file")"
-  fi
   local scenario="$1" outcome="$2" finding="${3:-}" job_id="${4:-}" terminal="${5:-}" output_sha="${6:-}"
-  local path="${receipt_root}/${scenario}.json" completed_at attempts transitions disruptions state candidate
+  local path="${receipt_root}/${scenario}.json" completed_at attempts candidate_file
   if [[ -e "${path}" ]]; then
     receipt_written["${scenario}"]=$(( ${receipt_written["${scenario}"]:-0} + 1 ))
     return 1
@@ -203,21 +202,24 @@ write_receipt() {
   [[ -n "${output_sha}" ]] && jq --arg sha "${output_sha}" '.sha256=$sha' "${scenario_state_file}" > "${scenario_state_file}.tmp" && mv "${scenario_state_file}.tmp" "${scenario_state_file}"
   completed_at="$(now)"
   attempts=1; [[ -f "${scenario_attempt_file}" ]] && attempts="$(<"${scenario_attempt_file}")"
-  transitions='[]'; [[ -f "${scenario_transition_file}" ]] && transitions="$(jq -s '.' "${scenario_transition_file}")"
-  disruptions='[]'; [[ -f "${scenario_disruption_file}" ]] && disruptions="$(jq -s '.' "${scenario_disruption_file}")"
-  state='{"sha256":null,"bytes":0}'; [[ -f "${scenario_state_file}" ]] && state="$(<"${scenario_state_file}")"
-  candidate='{"requested":{"server_image":"","worker_image":"","source_sha":""},"observed":null}'
-  [[ -f "${observed_candidate_file}" ]] && candidate="$(<"${observed_candidate_file}")"
+  candidate_file="${observed_candidate_file}"
+  if [[ ! -f "${candidate_file}" ]]; then
+    candidate_file="${receipt_root}/.empty-candidate.json"
+    printf '%s\n' '{"requested":{"server_image":"","worker_image":"","source_sha":""},"observed":null}' > "${candidate_file}"
+  fi
+  # Evidence and transition histories can exceed the OS argument-size limit.
+  # Read their files directly, then atomically publish only a complete receipt.
   jq -n \
-    --argjson evidence "$evidence" \
+    --slurpfile evidence "${scenario_evidence_file}" \
     --arg schema "honua.gp-lifecycle-receipt.v2" \
     --arg lane "${lane}" --arg scenario "${scenario}" --arg outcome "${outcome}" --arg finding "${finding}" \
     --arg job_id "${job_id}" --arg terminal "${terminal}" --arg source_sha "${candidate_source_sha}" \
     --arg started_at "${scenario_started_at:-${completed_at}}" --arg completed_at "${completed_at}" \
-    --arg run_url "${run_url}" --argjson attempts "${attempts}" --argjson transitions "${transitions}" \
-    --argjson disruptions "${disruptions}" --argjson output "${state}" --argjson candidate "${candidate}" \
-    '{schema:$schema,lane:$lane,scenario:$scenario,outcome:$outcome,finding:(if $finding=="" then null else $finding end),started_at:$started_at,completed_at:$completed_at,attempt_count:$attempts,state_transitions:$transitions,disruptions:$disruptions,output:{bytes:$output.bytes,sha256:(if $output.sha256==null then null else $output.sha256 end)},job:{id:(if $job_id=="" then null else $job_id end),terminal_state:(if $terminal=="" then null else $terminal end)},evidence:$evidence,candidate:$candidate,source_sha:$source_sha,github:{run_url:$run_url,run_id:(env.GITHUB_RUN_ID // "local"),run_attempt:(env.GITHUB_RUN_ATTEMPT // "1")}}' \
-    > "${path}"
+    --arg run_url "${run_url}" --argjson attempts "${attempts}" --slurpfile transitions "${scenario_transition_file}" \
+    --slurpfile disruptions "${scenario_disruption_file}" --slurpfile output "${scenario_state_file}" --slurpfile candidate "${candidate_file}" \
+    '{schema:$schema,lane:$lane,scenario:$scenario,outcome:$outcome,finding:(if $finding=="" then null else $finding end),started_at:$started_at,completed_at:$completed_at,attempt_count:$attempts,state_transitions:$transitions,disruptions:$disruptions,output:$output[0],job:{id:(if $job_id=="" then null else $job_id end),terminal_state:(if $terminal=="" then null else $terminal end)},evidence:$evidence[0],candidate:$candidate[0],source_sha:$source_sha,github:{run_url:$run_url,run_id:(env.GITHUB_RUN_ID // "local"),run_attempt:(env.GITHUB_RUN_ATTEMPT // "1")}}' \
+    > "${path}.tmp" || { rm -f "${path}.tmp"; return 1; }
+  mv "${path}.tmp" "${path}" || return 1
   receipt_written["${scenario}"]=1
 }
 
@@ -482,6 +484,7 @@ run_output_store_attestation() {
   local ephemeral_root ephemeral_log ephemeral_code attestation
   local before_ids after_ids objects worker_before worker_after worker_attestation
   local content_before content_after sha_before sha_after descriptor_before descriptor_after
+  local content_type_before content_type_after content_bytes
   local -a rejection
 
   declared="$(compose_staging_value ConfigurationDigest)"
@@ -500,6 +503,11 @@ run_output_store_attestation() {
   )
   timeout 180 docker compose --project-name "${project_name}" -f "${compose_file}" "${rejection[@]}" > "${ephemeral_log}" 2>&1
   ephemeral_code=$?
+  if (( ephemeral_code == 124 || ephemeral_code == 137 )); then
+    rm -f "${ephemeral_log}"
+    write_receipt "${scenario}" fail "FINDING: unattested store startup timed out rather than failing closed"
+    return 1
+  fi
   if (( ephemeral_code == 0 )); then
     rm -f "${ephemeral_log}"
     write_receipt "${scenario}" fail "FINDING: an unattested container-local directory satisfied the supported-store precondition"
@@ -544,12 +552,24 @@ run_output_store_attestation() {
   }
 
   content_before="$(mktemp)"
-  auth_curl "${base_url}/api/geoprocessing/jobs/${job}/artifacts/0/content" > "${content_before}" || {
+  content_type_before="$(auth_curl -o "${content_before}" -w '%{content_type}' "${base_url}/api/geoprocessing/jobs/${job}/artifacts/0/content")" || {
     rm -f "${content_before}"
     write_receipt "${scenario}" fail "FINDING: staged artifact was unreadable through the normal server read path" "${job}" "${state}"
     return 1
   }
+  content_bytes="$(wc -c < "${content_before}")"
+  if [[ "${content_type_before%%;*}" != application/geo+json ]] || (( content_bytes <= 1024 )); then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: staged GeoJSON media type or byte length is incorrect" "${job}" "${state}"
+    return 1
+  fi
+  jq -n --argjson bytes "${content_bytes}" '{sha256:null,bytes:$bytes}' > "${scenario_state_file}"
   sha_before="$(sha256sum "${content_before}" | cut -d' ' -f1)"
+  if ! python3 "${repo_root}/scripts/qualification/verify-gp-store-artifact.py" "${content_before}"; then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: staged output differs from independently expected fixture values and coordinates" "${job}" "${state}"
+    return 1
+  fi
   descriptor_before="$(auth_curl "${base_url}/ogc/processes/jobs/${job}/results")" || {
     rm -f "${content_before}"
     write_receipt "${scenario}" fail "FINDING: staged output descriptor was unreadable" "${job}" "${state}"
@@ -607,7 +627,7 @@ run_output_store_attestation() {
 
   # Read back through a replacement host that never produced these bytes.
   content_after="$(mktemp)"
-  auth_curl "${peer_url}/api/geoprocessing/jobs/${job}/artifacts/0/content" > "${content_after}" || {
+  content_type_after="$(auth_curl -o "${content_after}" -w '%{content_type}' "${peer_url}/api/geoprocessing/jobs/${job}/artifacts/0/content")" || {
     rm -f "${content_before}" "${content_after}"
     write_receipt "${scenario}" fail "FINDING: staged artifact was lost across server and worker replacement" "${job}" "${state}"
     return 1
@@ -618,7 +638,7 @@ run_output_store_attestation() {
     write_receipt "${scenario}" fail "FINDING: staged output descriptor was lost across replacement" "${job}" "${state}"
     return 1
   }
-  if ! cmp -s "${content_before}" "${content_after}"; then
+  if [[ "${content_type_after}" != "${content_type_before}" ]] || ! cmp -s "${content_before}" "${content_after}"; then
     rm -f "${content_before}" "${content_after}"
     write_receipt "${scenario}" fail "FINDING: staged output bytes changed across server and worker replacement" "${job}" "${state}"
     return 1
@@ -1002,7 +1022,7 @@ run_soak() {
 
 run_topology() {
   local name value backlog_jobs backlog_cap soak_seconds soak_concurrency
-  for name in docker curl jq; do
+  for name in docker curl jq python3; do
     command -v "${name}" >/dev/null || { preflight_failure="missing required command: ${name}"; return 1; }
   done
   require_digest HONUA_SERVER_IMAGE || { preflight_failure="HONUA_SERVER_IMAGE is not an exact digest"; return 1; }
@@ -1086,27 +1106,35 @@ run_scenario() {
 }
 
 self_test_assertion_failure() { scenario_fail "intentional assertion failure"; }
-self_test_follow_up() { [[ -z "${scenario_finding}" ]] || return 1; return 0; }
+self_test_follow_up() {
+  [[ -z "${scenario_finding}" ]] || return 1
+  # A real replacement proof carries a decoded results document larger than
+  # Linux's single-argument limit. Exercise receipt and summary serialization
+  # with that boundary, without depending on Docker or an executed job.
+  jq -n '{payload: ("x" * 262144)}' > "${scenario_evidence_file}"
+}
 self_test_cleanup() { return 0; }
 
 write_summary() {
-  local declared_json missing_json duplicates_json receipts_json scenario missing_count duplicate_count receipt_count
+  local declared_json missing_json duplicates_json scenario missing_count duplicate_count receipt_count
+  local receipts_file="${receipt_root}/.summary-receipts.ndjson"
   declared_json="$(printf '%s\n' "${declared_scenarios[@]}" | jq -Rsc 'split("\n")|map(select(length>0))')"
-  missing_json='[]'; duplicates_json='[]'; receipts_json='[]'
+  missing_json='[]'; duplicates_json='[]'
+  : > "${receipts_file}"
   for scenario in "${declared_scenarios[@]}"; do
-    if [[ ! -f "${receipt_root}/${scenario}.json" ]]; then
+    if [[ ! -f "${receipt_root}/${scenario}.json" ]] || ! jq -se 'length == 1 and (.[0] | type == "object" and (.outcome == "pass" or .outcome == "fail"))' "${receipt_root}/${scenario}.json" >/dev/null 2>&1; then
       missing_json="$(jq --arg scenario "${scenario}" '. + [$scenario]' <<<"${missing_json}")"
     else
-      receipts_json="$(jq --slurpfile receipt "${receipt_root}/${scenario}.json" '. + $receipt' <<<"${receipts_json}")"
+      jq -c . "${receipt_root}/${scenario}.json" >> "${receipts_file}" || return 1
     fi
     if (( ${receipt_written["${scenario}"]:-0} > 1 )); then
       duplicates_json="$(jq --arg scenario "${scenario}" --argjson count "${receipt_written["${scenario}"]}" '. + [{scenario:$scenario,attempts:$count}]' <<<"${duplicates_json}")"
     fi
   done
-  missing_count="$(jq 'length' <<<"${missing_json}")"; duplicate_count="$(jq 'length' <<<"${duplicates_json}")"; receipt_count="$(jq 'length' <<<"${receipts_json}")"
+  missing_count="$(jq 'length' <<<"${missing_json}")"; duplicate_count="$(jq 'length' <<<"${duplicates_json}")"; receipt_count="$(jq -s 'length' "${receipts_file}")"
   jq -n --arg schema "honua.gp-qualification-summary.v2" --arg lane "${lane}" \
     --arg generated_at "$(now)" --arg run_url "${run_url}" --argjson declared "${declared_json}" \
-    --argjson receipts "${receipts_json}" --argjson missing "${missing_json}" --argjson duplicates "${duplicates_json}" \
+    --slurpfile receipts "${receipts_file}" --argjson missing "${missing_json}" --argjson duplicates "${duplicates_json}" \
     --argjson declared_count "${#declared_scenarios[@]}" --argjson receipt_count "${receipt_count}" \
     --argjson missing_count "${missing_count}" --argjson duplicate_count "${duplicate_count}" \
     '{schema:$schema,lane:$lane,generated_at:$generated_at,github_run_url:$run_url,declared_scenarios:$declared,declared_scenario_count:$declared_count,receipt_count:$receipt_count,missing_scenarios:$missing,duplicate_receipts:$duplicates,passed:($receipts|map(select(.outcome=="pass"))|length),failed:($receipts|map(select(.outcome=="fail"))|length),scenarios:$receipts}' \
@@ -1155,7 +1183,9 @@ else
     fill_missing_receipts
   }
   if [[ -z "${preflight_failure}" ]]; then
-    if [[ "${lane}" == lifecycle ]]; then
+    if [[ "${lane}" == output-store ]]; then
+      run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
+    elif [[ "${lane}" == lifecycle ]]; then
       run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
       run_scenario sync run_sync || failures=$((failures + 1))
       run_scenario async run_async_baseline || failures=$((failures + 1))
