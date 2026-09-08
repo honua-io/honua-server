@@ -769,6 +769,25 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 {"WWW-Authenticate": 'ApiKey realm="private", Basic realm="private"'}))
             self.assertEqual("json", driver.body_kind([{"id": "record"}]))
 
+    def test_denial_requires_an_empty_http_body_not_a_json_empty_string(self):
+        spec = importlib.util.spec_from_file_location(
+            "lambda_certification", ROOT / "scripts/cloud/lambda-certification.py")
+        driver = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(driver)
+        environment = {"HONUA_LAMBDA_WRITE_BASE_URL": "https://cert.example.test"}
+        for raw in ("", '""', " "):
+            with self.subTest(raw=raw):
+                def respond(*args):
+                    Path(args[-1]).write_text(json.dumps({"statusCode": 403, "body": raw}))
+                    return {"StatusCode": 200}
+                with unittest.mock.patch.dict(driver.os.environ, environment), \
+                        unittest.mock.patch.object(driver, "aws", side_effect=respond):
+                    status, body, _, _ = driver.invoke("candidate", driver.ADMIN_API_KEYS,
+                                                      authenticated=False)
+                self.assertEqual(403, status)
+                self.assertEqual(raw, body)
+                self.assertEqual(raw == "", body == "")
+
     def test_create_failure_reports_a_redacted_aws_error(self):
         result, receipt, state, _ = self.run_lane("create-error")
         self.assertNotEqual(0, result.returncode)

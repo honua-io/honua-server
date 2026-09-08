@@ -239,6 +239,10 @@ def invoke(function, path, *, method="GET", query=None, body=None, json_body=Non
             raw = base64.b64decode(raw).decode()
         try:
             parsed = json.loads(raw)
+            # A JSON string literal (including "") is a nonempty HTTP body. Preserve its bytes
+            # so the zero-body 403 assertion cannot accept a JSON-encoded empty string.
+            if isinstance(parsed, str):
+                parsed = raw
         except json.JSONDecodeError:
             parsed = raw
         return result.get("statusCode"), parsed, meta, result.get("headers")
@@ -337,7 +341,7 @@ def mint_denied_key(function, record):
     """Mint this run's own scoped principal through the admin API-key endpoint.
 
     The lane already holds the administrator, so the denial assertion does not have to depend on a
-    key some earlier bootstrap left in the cert database.
+    key some earlier bootstrap left in the API-key store.
     """
     set_phase("denied-key-mint")
     name = "honua-cert-denied-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"]
