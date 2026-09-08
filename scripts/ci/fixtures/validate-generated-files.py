@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Workflow contracts and real-Git dry-run/commit/race tests (no network/build)."""
 from pathlib import Path
+import json
 import os
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -20,12 +22,45 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertIn('    concurrency:\n      group: generated-files-on-trunk\n      cancel-in-progress: false', workflow)
         self.assertLess(workflow.index('    if:'), workflow.index('    concurrency:'))
         self.assertIn('ref: trunk', workflow)
-        self.assertIn("!(startsWith(github.event.head_commit.message, 'ci: regenerate generated files on trunk')", workflow)
-        self.assertIn("&& contains(github.event.head_commit.message, 'Generated-From: '))", workflow)
+        self.assertIn('needs: provenance', workflow)
+        self.assertIn("if: needs.provenance.outputs.generated != 'true'", workflow)
         self.assertIn('token: ${{ secrets.MERGE_TRAIN_TOKEN }}', workflow)
         self.assertLess(workflow.index('regenerate-generated-files.sh'), workflow.index('commit-generated-files.sh --commit'))
         self.assertNotIn('continue-on-error:', workflow)
         self.assertIn('regenerate-generated-files.sh --configuration Release /p:RunAnalyzers=false', workflow)
+
+    def test_skip_requires_exact_subject_and_single_parent_provenance(self):
+        workflow = (ROOT / '.github/workflows/generated-files-on-trunk.yml').read_text()
+        script = textwrap.dedent(workflow.split('          script: |\n', 1)[1].split('\n  regenerate:', 1)[0])
+        parent, other = 'a' * 40, 'b' * 40
+        subject = 'ci: regenerate generated files on trunk'
+        message = f'{subject}\n\nGenerated-From: {parent}\n\nRefs #3213'
+        cases = [
+            (message, [parent], True),
+            (message, [other], False),  # Inherited squash/cherry-pick trailer.
+            (message, [parent, other], False),
+            (message, [], False),
+            (subject, [parent], False),
+            (message.replace(subject, subject + ' (#4540)'), [parent], False),
+            (message.replace('Generated-From:', 'quoted Generated-From:'), [parent], False),
+            (message + f'\nGenerated-From: {other}', [parent], False),
+        ]
+        for body, parents, expected in cases:
+            with self.subTest(body=body, parents=parents):
+                commit = {'message': body, 'parents': [{'sha': sha} for sha in parents]}
+                harness = """
+const assert = require('node:assert/strict');
+const context = {repo: {owner: 'honua-io', repo: 'honua-server'}, sha: 'event-sha'};
+const core = {setOutput: (key, value) => {assert.equal(key, 'generated'); console.log(value);}};
+const github = {rest: {git: {getCommit: async args => {
+  assert.deepEqual(args, {...context.repo, commit_sha: context.sha});
+  return {data: COMMIT};
+}}}};
+(async () => {SCRIPT})().catch(error => {console.error(error); process.exit(1);});
+""".replace('COMMIT', json.dumps(commit)).replace('SCRIPT', script)
+                result = subprocess.run(['node', '-e', harness], text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), str(expected).lower())
 
     def test_pr_generation_is_hard_and_precedes_strict_validators(self):
         action = (ROOT / '.github/actions/lean-gate/action.yml').read_text()

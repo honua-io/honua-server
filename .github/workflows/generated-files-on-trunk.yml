@@ -14,12 +14,32 @@ env:
   DOTNET_NOLOGO: true
 
 jobs:
+  provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      generated: ${{ steps.commit.outputs.generated }}
+    steps:
+      - name: Verify generated commit provenance
+        id: commit
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { data: commit } = await github.rest.git.getCommit({
+              ...context.repo, commit_sha: context.sha,
+            });
+            const message = commit.message;
+            const trailers = message.match(/^Generated-From:.*$/gm) || [];
+            const source = trailers.length === 1 &&
+              trailers[0].match(/^Generated-From: ([0-9a-f]{40})$/);
+            const generated = message.split('\n')[0] === 'ci: regenerate generated files on trunk' &&
+              Boolean(source) && commit.parents.length === 1 && commit.parents[0].sha === source[1];
+            core.setOutput('generated', String(generated));
+
   regenerate:
-    # The merge-train credential emits push events. Require both the reserved
-    # subject and provenance trailer so a similarly titled PR still regenerates.
-    if: >-
-      !(startsWith(github.event.head_commit.message, 'ci: regenerate generated files on trunk')
-      && contains(github.event.head_commit.message, 'Generated-From: '))
+    needs: provenance
+    # Inherited subjects/trailers cannot suppress regeneration of a new source.
+    if: needs.provenance.outputs.generated != 'true'
     # Guard before queueing: skipped self-generated events must not replace a
     # pending real merge. Each eligible writer checks out current trunk.
     concurrency:
