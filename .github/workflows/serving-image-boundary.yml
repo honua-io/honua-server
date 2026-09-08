@@ -179,8 +179,7 @@ jobs:
             description: canonical native-AOT serving image
             dockerfile: docker/Dockerfile.aot
             tag: honua-server:aot-boundary
-            # Cache scopes are unchanged from the serial job on purpose: warm
-            # `pr-*-boundary` caches survive this refactor.
+            # Share the nightly/release cache for this Dockerfile and architecture.
             cache_scope: honua-aot-amd64
           - variant: lambda
             digest_key: serving_lambda

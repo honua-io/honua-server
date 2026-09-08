@@ -326,6 +326,8 @@ public sealed class ServingImageBoundaryTests
 
         // PR verification, nightly and release builds share per-variant caches.
         // Keep the architecture explicit so amd64 and arm64 exports cannot collide.
+        var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"));
+        var release = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy-platform-images.yml"));
         foreach (var cacheScope in new[]
                  {
                      "honua-aot-amd64",
@@ -334,6 +336,14 @@ public sealed class ServingImageBoundaryTests
                  })
         {
             workflow.Should().Contain($"cache_scope: {cacheScope}");
+            var variantScope = cacheScope[..^"-amd64".Length];
+            var nightlyScope = variantScope == "honua-functions-aot"
+                ? cacheScope
+                : variantScope + "-${{ matrix.arch }}";
+            nightly.Should().Contain($"buildcache:{nightlyScope}", Exactly.Twice(),
+                "nightly must import and export the same per-variant cache as PR builds");
+            release.Should().Contain($"cache_scope: {variantScope}",
+                "release builds must share the same variant scope before appending their architecture");
         }
 
         workflow.Should().Contain("http://localhost:8080/healthz/live");
