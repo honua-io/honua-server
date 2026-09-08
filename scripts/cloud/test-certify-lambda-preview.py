@@ -501,6 +501,35 @@ def as_ecr_schema2(manifest):
 CANDIDATE_TAG = "candidate-" + "a" * 12 + "-" + "a" * 12 + "-x86_64"
 
 
+class WorkflowBootstrapTests(unittest.TestCase):
+    def test_bootstrap_allows_optional_override_and_requires_other_inputs(self):
+        step = WORKFLOW.split("      - name: Require the certified bootstrap\n", 1)[1].split("\n      - name:", 1)[0]
+        script = step.split("        run: |\n", 1)[1]
+        environment = dict.fromkeys((
+            "ROLE_ARN", "HONUA_LAMBDA_PREVIEW_REPOSITORY",
+            "HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN", "REALAWS_CERT_LAMBDA_FUNCTION",
+            "REALAWS_CERT_LAMBDA_ALIAS", "HONUA_LAMBDA_WRITE_BASE_URL",
+            "HONUA_DEMO_BASE_URL"), "offline-bootstrap-value")
+        for override in (None, "", "offline-admin-override"):
+            with self.subTest(override=override):
+                env = dict(environment)
+                if override is not None:
+                    env["HONUA_LAMBDA_CERT_ADMIN_KEY"] = override
+                result = subprocess.run(["/bin/bash", "-c", script], env=env, capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        for name in environment:
+            for value in (None, ""):
+                with self.subTest(missing=name, value=value):
+                    env = dict(environment)
+                    if value is None:
+                        del env[name]
+                    else:
+                        env[name] = value
+                    result = subprocess.run(["/bin/bash", "-c", script], env=env, capture_output=True, text=True)
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertIn(f"Missing cert bootstrap variable: {name}", result.stdout)
+
+
 class AdminCredentialTests(unittest.TestCase):
     def setUp(self):
         spec = importlib.util.spec_from_file_location("lambda_certification", SCRIPT_PATH.with_name("lambda-certification.py"))
