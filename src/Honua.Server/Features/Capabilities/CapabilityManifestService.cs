@@ -516,6 +516,24 @@ internal sealed class CapabilityManifestService(
             Capability("publication.metadata-release", "publication", context, policyCapability: "catalog.publish", requiresEnvironment: true),
             Capability("upload.file", "upload", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("edit.features", "edit", context, entitlementKey: FeatureCatalog.FeatureServerEditsKey, policyCapability: "features.edit"),
+
+            // Collaborative-editing leases (#4402). Enforcement ships on every feature-write
+            // path, so `supported` is true unconditionally; `available` follows whether the
+            // deployment supplied an IFeatureLockAuthorizer, because the shipped one denies
+            // every claim and an "available" lease nobody can take is the exact over-claim
+            // this manifest exists to prevent.
+            Capability("collaboration.feature-locks", "collaboration", context,
+                configured: runtimeInventory.FeatureLockAuthorizerConfigured,
+                requiresAuthentication: true),
+            // The two recorded 2026.1 gaps, published rather than left to the docs page: a
+            // lease is node-local, and GeoServices applyEdits honours no client-supplied
+            // version token. Same wire shape as an unimplemented file-format writer.
+            Capability("collaboration.feature-locks.cross-node", "collaboration", context,
+                maturity: CapabilityMaturity.Planned,
+                supported: false),
+            Capability("edit.version-tokens", "edit", context,
+                maturity: CapabilityMaturity.Planned,
+                supported: false),
             // Branch versioning (VMS) — built-experimental, gated OFF the GA surface by
             // default (#2480 / ADR-0058). Mirrors the registry descriptor order
             // (CapabilityRegistry.BuildManifestCapabilityDescriptors) so the hand-curated and
@@ -559,6 +577,10 @@ internal sealed class CapabilityManifestService(
 
             var spec = specs.GetValueOrDefault(descriptor.Id, ManifestCapabilitySpec.Default);
             var resolution = CapabilityGateResolver.Resolve(descriptor, gateContext);
+            // A declared implementation gap is not supported, whatever its spec says. Derived
+            // from the descriptor rather than restated in the spec map so this path and the
+            // hand-curated roster cannot disagree about which capabilities are gaps.
+            var served = descriptor.ImplementationStatus == CapabilityImplementationStatus.Served;
             var lifecycleEnabled = descriptor.Maturity is not (CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
                 || !IsExperimentalDisabled(resolution);
             var configured = spec.Configured && lifecycleEnabled;
@@ -567,7 +589,7 @@ internal sealed class CapabilityManifestService(
                 descriptor.Category,
                 context,
                 maturity: descriptor.Maturity,
-                supported: spec.Supported,
+                supported: spec.Supported && served,
                 configured: configured,
                 unavailableReasonOverride: lifecycleEnabled
                     ? null
@@ -690,6 +712,11 @@ internal sealed class CapabilityManifestService(
             ["publication.metadata-release"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
             ["upload.file"] = new() { EntitlementKey = "import.file", PolicyCapability = "metadata.write" },
             ["edit.features"] = new() { EntitlementKey = FeatureCatalog.FeatureServerEditsKey, PolicyCapability = "features.edit" },
+            ["collaboration.feature-locks"] = new()
+            {
+                Configured = runtimeInventory.FeatureLockAuthorizerConfigured,
+                RequiresAuthentication = true,
+            },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
             ["ops.findings"] = new() { RequiresAuthentication = true },

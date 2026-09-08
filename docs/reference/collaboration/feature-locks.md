@@ -27,9 +27,20 @@ underlying feature data.
 | Is lease authorization configured out of the box? | **No.** The shipped authorizer denies every claim, so until you supply your own no lease is granted at all (see [Authorization](#authorization)). |
 | Is a lease atomic with the write it guards? | **No.** The check happens immediately before the mutation, not inside the writer transaction. See [What a lease does not promise](#what-a-lease-does-not-promise). |
 
-These are the recorded dispositions for honua-server#4402. Anything answered
-"not implemented" above is also reported that way by the capability manifest, so a client
-can discover it without reading this page.
+These are the recorded dispositions for honua-server#4402. Every one of them is also
+published by `GET /api/v1/capabilities/manifest`, so a client can discover them without
+reading this page:
+
+| Manifest capability | What it reports |
+| --- | --- |
+| `collaboration.feature-locks` | `supported: true` — enforcement ships on every feature-write path. `available` is `true` only once you supply an [authorizer](#authorization); until then it is `false` with `reasonCode: disabled-by-configuration`, because a lease that can never be granted is not an available capability. |
+| `collaboration.feature-locks.cross-node` | `supported: false`, `lifecycle: planned`, `reasonCode: unsupported` — leases do not span nodes. See [Single-node scope](#single-node-scope). |
+| `edit.version-tokens` | `supported: false`, `lifecycle: planned`, `reasonCode: unsupported` — the GeoServices `applyEdits` surface honours no client-supplied version token. |
+
+That is the same shape the manifest already uses for an unimplemented file-format writer,
+so a client that can read one can read these. Lease atomicity is a property of the
+enforcement point rather than a separate capability; see
+[What a lease does not promise](#what-a-lease-does-not-promise).
 
 ## Endpoints
 

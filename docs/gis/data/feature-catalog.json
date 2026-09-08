@@ -4502,6 +4502,10 @@
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenCustomerAlertingAndRealtimePreviewsOptedIn_DeclaresPreviewLifecycle",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalEnabledPerCapability_IncludesExactlyThatCapability",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenLifecycleFlagsAreEmpty_ReportsEveryAdoptedCapabilityUnavailable",
+        "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockCapabilityManifestTests.Manifest_CompositionPaths_AgreeOnEveryFeatureLockRow",
+        "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockCapabilityManifestTests.Manifest_DeclaresTheRecordedGaps_AsUnsupported",
+        "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockCapabilityManifestTests.Manifest_OutOfTheBox_ReportsLeasesEnforcedButUngrantable",
+        "Honua.Server.Tests.Features.Collaboration.FeatureLocks.FeatureLockCapabilityManifestTests.Manifest_WhenAnAuthorizerIsSupplied_ReportsLeasesAvailable",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Manifest_PublishesTheImmutableRevisionUnderBothNames",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_ExposesImmutableDeploymentRevisionSeparatelyFromServerVersion",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_RejectsMalformedDeploymentRevisionRatherThanEchoingIt"
