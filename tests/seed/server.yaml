@@ -2139,7 +2139,17 @@ sql:
   # The mobile seed owns and self-cleans its own IDs, so exclude that fixture's footprint here —
   # this keeps the deterministic server-catalog reset while leaving the mobile fixture intact and
   # does not touch the advisory-lock serialization that fixes the 40P01 deadlock.
-  - "DELETE FROM honua.scene_datasets WHERE id <> 'downtown-honolulu';"
+  #
+  # #3773 follow-up: SceneGrpcIntegrationTests moved into its own Database.SceneGrpc collection and
+  # therefore now runs CONCURRENTLY with the Database collection (SceneGrpcAuthorizationTests,
+  # ElevationGrpcAuthorizationTests) and the rest of the Operator Eval shard. This seed is applied on
+  # EVERY WebAppFixture.InitializeAsync — i.e. before every test method of every database-backed
+  # class — so a peer fixture initializing mid-test used to delete that class's already-registered
+  # 'extent-scene' row out from under it, and ListScenes_WithOverlappingExtent_IncludesScene then saw
+  # only the config scenes. Same ownership rule as the mobile seed above: SceneGrpcIntegrationTests
+  # owns and self-cleans 'extent-scene' (it clears the id before registering and again in
+  # DisposeAsync, both under the shared schema-mutation advisory lock), so exclude it here.
+  - "DELETE FROM honua.scene_datasets WHERE id NOT IN ('downtown-honolulu', 'extent-scene');"
   # v1 metadata-graph tables dropped by migration 038_DropV1MetadataGraphTables.sql.
   - "DELETE FROM honua.relationships WHERE layer_id NOT IN (68910, 68920) AND related_layer_id NOT IN (68910, 68920);"
   - "DELETE FROM honua.service_layers WHERE service_name <> 'mobile_offline_demo' AND layer_id NOT IN (68910, 68920);"

@@ -64,6 +64,11 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     private Proto.ElevationService.ElevationServiceClient? _elevationClient;
     private Metadata? _headers;
 
+    // Set once this instance owns the process-global 'extent-scene' row, so DisposeAsync only
+    // reaches for _fixture.Postgres (which throws when the fixture never initialized) on a path
+    // that actually registered the row.
+    private bool _ownsExtentScene;
+
     public SceneGrpcIntegrationTests()
     {
         var fixtureRoot = ResolveFixtureRoot();
@@ -138,8 +143,19 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     /// included or excluded by an extent constraint (configuration scenes carry
     /// no extent and so are always included).
     /// </summary>
+    /// <remarks>
+    /// #3773 follow-up: honua.scene_datasets is schema-qualified to the literal global
+    /// honua schema, so the per-test search_path isolation does NOT scope it and this
+    /// fixed-id row is process-global. tests/seed/server.yaml therefore excludes
+    /// 'extent-scene' from its unscoped catalog wipe (a peer fixture initializing in a
+    /// parallel collection used to delete it mid-test), which makes this class the row's
+    /// owner: clear the id first so a leaked row from a crashed prior instance cannot trip
+    /// scene_datasets_id_unique, and clear it again in DisposeAsync.
+    /// </remarks>
     private async Task RegisterExtentSceneAsync()
     {
+        await DeleteExtentSceneAsync();
+
         var registration = _fixture.GetService<ISceneRegistrationService>();
         await registration.RegisterAsync(new SceneDatasetRecord
         {
@@ -156,11 +172,30 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
             CreatedAt = DateTimeOffset.UtcNow,
             CreatedBy = "test",
         });
+
+        _ownsExtentScene = true;
     }
+
+    /// <summary>
+    /// Removes this fixture's process-global <c>honua.scene_datasets</c> row. Routed through
+    /// <see cref="PostgresFixture.ApplyGlobalSeedSqlAsync(string, string?, CancellationToken)"/>
+    /// so the delete serializes on the shared schema-mutation advisory lock like every other
+    /// global-catalog mutation (honua-server#1568 / #2020) instead of racing the catalog locks.
+    /// </summary>
+    private Task DeleteExtentSceneAsync()
+        => _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            $"DELETE FROM honua.scene_datasets WHERE id = '{ExtentSceneId}';");
 
     public async Task DisposeAsync()
     {
         _channel?.Dispose();
+
+        // Self-clean the owned global row before the fixture (and its Postgres handle) goes away.
+        if (_ownsExtentScene)
+        {
+            await DeleteExtentSceneAsync();
+        }
+
         await _fixture.DisposeAsync();
 
         foreach (var root in new[] { _missingContentRoot, _missingTilesetRoot, _malformedTilesetRoot, _oversizedTileRoot })
