@@ -40,6 +40,21 @@ precedence. Request host validation, strict startup validation
 An explicit host allowlist still takes precedence over the public URL, and
 unrelated request hosts remain rejected when host validation is enabled.
 
+## Managed API keys and Portal token exchange
+
+The default local admin bridge for `/sharing/rest/generateToken` accepts bootstrap
+admin credentials and managed keys with full administrative authority. Scoped
+service/layer keys, narrow admin or operations keys, and approved-operation replay
+keys receive an Esri `400` issuance error rather than an elevated admin token.
+The restriction applies with both `admin` and other supplied usernames. Direct
+API-key authorization retains the key's existing grants; configured OIDC token
+issuance uses its existing identity projection.
+
+This is an explicit unsupported exchange, not evidence that scoped Portal-token
+authentication works in a desktop client. Native acquisition, storage, lifecycle
+and protocol authorization still require separate client evidence. See
+[authentication setup and token revocation during upgrades](../../guides/secure/authentication.md#4-issue-arcgis-compatible-tokens).
+
 ## Realtime credentials and reconnects
 
 Protected FeatureServer and SensorThings SSE/WebSocket subscriptions revalidate
