@@ -1216,6 +1216,7 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     assert "collect_runs serving-image-boundary.yml" in ledger
     assert '--receipt-cutoff "${RECEIPT_CUTOFF}"' in ledger
     assert "collect_runs worker-gdal-image.yml" in ledger
+    assert '-f branch="${DEFAULT_BRANCH}"' in ledger
     assert "actions: write" not in ledger
     assert "contents: write" not in ledger
     assert "pull_request_target" not in ledger

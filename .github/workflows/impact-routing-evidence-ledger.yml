@@ -242,6 +242,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RETAINED_LEDGER_RUNS: "20"
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           mkdir -p evidence/history
@@ -249,6 +250,7 @@ jobs:
           gh api --method GET \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/impact-routing-evidence-ledger.yml/runs" \
             -F per_page="${RETAINED_LEDGER_RUNS}" -F page=1 -F status=completed \
+            -f branch="${DEFAULT_BRANCH}" \
             --jq '.workflow_runs[].id' > evidence/history-run-ids.txt
           while read -r prior; do
             [[ "${prior}" =~ ^[1-9][0-9]*$ ]] || continue
