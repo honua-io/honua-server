@@ -17,7 +17,6 @@ required=(
   HONUA_LAMBDA_WRITE_BASE_URL
   HONUA_DEMO_BASE_URL
   HONUA_LAMBDA_CERT_ADMIN_KEY
-  HONUA_LAMBDA_CERT_DENIED_KEY
   AWS_REGION
   HONUA_LAMBDA_SOURCE_DIGEST
   HONUA_LAMBDA_SERVER_REVISION
@@ -105,7 +104,9 @@ report_create_error() {
   if [[ -s "$scratch/environment.json" ]]; then
     mapfile -t secrets < <(jq -r '.Variables // {} | .[] | select(type == "string" and length >= 4)' "$scratch/environment.json" 2>/dev/null)
   fi
-  secrets+=("$HONUA_LAMBDA_CERT_ADMIN_KEY" "$HONUA_LAMBDA_CERT_DENIED_KEY")
+  # The denied-principal override is optional now that the lane mints its own scoped key; an
+  # unset variable is not a secret, and the loop below already skips empty entries.
+  secrets+=("$HONUA_LAMBDA_CERT_ADMIN_KEY" "${HONUA_LAMBDA_CERT_DENIED_KEY:-}")
   if [[ ! -s "$scratch/create-error.log" ]]; then
     echo "create-function error: the AWS CLI reported no diagnostics" >&2
     return
@@ -630,6 +631,6 @@ jq -n \
   '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourcePlatformDigest:$source_platform_digest,sourceConfigDigest:$source_config_digest,sourceRootfsFingerprint:$source_rootfs_fingerprint,ecrDigest:$ecr_digest,mirrorOutcome:$mirror_outcome,repositoryFingerprint:$repository_fingerprint,mirrorTool:"crane",configDigestPreserved:true,rootfsPreserved:true,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,coldStartInitPhase:$cold_start_phase,coldStartEvidenceSource:$cold_start_source,coldStartEnvironmentForced:true,coldStartInvokeAttempts:$cold_start_attempt,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
   > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
 
-jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourcePlatformDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourceConfigDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.mirrorOutcome | test("^(pushed|skipped-existing|replaced-stale)$")) and .artifact.configDigestPreserved and .artifact.rootfsPreserved and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and .verification.coldStartInitDurationMs > 0 and .verification.coldStartEnvironmentForced and .verification.coldStartInvokeAttempts >= 1' \
+jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourcePlatformDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourceConfigDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.mirrorOutcome | test("^(pushed|skipped-existing|replaced-stale)$")) and .artifact.configDigestPreserved and .artifact.rootfsPreserved and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and (.serving.deniedKey.source == "override" or (.serving.deniedKey.created and .serving.deniedKey.revoked and .serving.deniedKey.activeAfterTeardown == 0)) and .verification.coldStartInitDurationMs > 0 and .verification.coldStartEnvironmentForced and .verification.coldStartInvokeAttempts >= 1' \
   "$HONUA_LAMBDA_PREVIEW_RECEIPT" >/dev/null
 echo "Lambda Preview certification passed; ECR digest: ${ecr_digest}"

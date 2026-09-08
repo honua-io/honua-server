@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Private lane driver. AWS responses and credentials stay in a private temporary directory."""
 import base64
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -19,6 +20,17 @@ FIXTURE = ROOT / "tests/seed/client-compat-v1.sql"
 # the door while it equals what this variable resolves to on the function under test.
 ADMIN_CREDENTIAL_VARIABLE = "HONUA_ADMIN_PASSWORD"
 SECRET_REFERENCE_PREFIX = "aws:secretsmanager:"
+ADMIN_API_KEYS = "/api/v1/admin/api-keys"
+# The authorization assertion needs a principal that authenticates and holds no admin rights. An
+# API key lives in Redis (or process-local memory), so losing its store turns a bootstrap key's 403 into a 401,
+# and a 401 certifies a missing credential rather than authorization. The lane therefore mints its
+# own scoped principal for the run and revokes it at teardown. The bootstrap secret remains an
+# optional override for one release so existing bootstraps keep working.
+DENIED_KEY_VARIABLE = "HONUA_LAMBDA_CERT_DENIED_KEY"
+DENIED_KEY_PERMISSIONS = ["read:layers"]
+# An abandoned credential is a standing one: this bound retires the minted key anyway if the run
+# dies between the mint and the revoke. It is far longer than a certification run.
+DENIED_KEY_LIFETIME_HOURS = 2
 
 
 def require(condition, message):
@@ -49,7 +61,10 @@ def config(function, qualifier=None):
 
 
 def inputs():
-    require(os.environ["HONUA_LAMBDA_CERT_DENIED_KEY"] != os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"],
+    override = override_denied_key()
+    require(not use_denied_key_override() or override,
+            "Denied-key override was requested but HONUA_LAMBDA_CERT_DENIED_KEY is missing")
+    require(not override or override != os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"],
             "Denied principal must differ from the administrator")
     function = os.environ["REALAWS_CERT_LAMBDA_FUNCTION"]
     alias = os.environ["REALAWS_CERT_LAMBDA_ALIAS"]
@@ -76,6 +91,13 @@ def prepare(directory):
     variables = cfg["Environment"]["Variables"]
     require(variables.get("HONUA_SKIP_MIGRATIONS", "false").lower() == "false", "Standing function skips migrations: noProof")
     require(variables.get("ConnectionStrings__DefaultConnection"), "Cert PostGIS connection is missing")
+    if not use_denied_key_override():
+        # Configuration alone cannot prove the Redis multiplexer was selected at runtime. After
+        # minting, certify also requires the standing alias to see the candidate's exact key record.
+        for target_variables in (variables, config(function, alias)["Configuration"]["Environment"]["Variables"]):
+            require(any(str(value).strip() for name, value in target_variables.items()
+                        if name.lower() in ("connectionstrings__redis", "aspire__stackexchange__redis__connectionstring")),
+                    "Per-run denial keys require shared Redis configuration on candidate and standing alias")
     # Authentication is cloned, not supplied: the lane never injects a credential of its own, so a
     # standing environment without this variable can only answer every administrative assertion with
     # 401. Refuse by name before anything is mirrored or created, rather than after the deploy.
@@ -94,6 +116,31 @@ def prepare(directory):
 def admin_key():
     # Runtime-only secret; not written to a receipt, stdout, or a repository path.
     return os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
+
+
+def use_denied_key_override():
+    return os.environ.get("HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE", "").lower() == "true"
+
+
+def override_denied_key():
+    # Optional for one release so an existing bootstrap keeps working. Blank is absent, not a key.
+    value = os.environ.get(DENIED_KEY_VARIABLE, "")
+    return value if use_denied_key_override() and value.strip() else ""
+
+
+# The denied principal this run is actually sending, and what it knows about that record. A minted
+# key carries an id, so its state can be read back from the server; an override is opaque by design.
+_denied = {"source": "override", "value": "", "id": None, "name": None}
+
+
+def denied_key():
+    return _denied["value"] or override_denied_key()
+
+
+def runtime_secrets():
+    # Every credential this run holds, including the one it minted for itself.
+    return tuple(value for value in (os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"],
+                                     os.environ.get(DENIED_KEY_VARIABLE, ""), _denied["value"]) if value)
 
 
 # A whole key is not the only thing worth refusing to print. Filtering and truncating a diagnostic
@@ -118,8 +165,8 @@ def redacted(value, limit):
     # what would let a key survive the check in a form that no longer matches it.
     original = str(value)
     text = re.sub(r"[^A-Za-z0-9 ._:/-]", "", original)[:limit]
-    for secret in (os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"], os.environ["HONUA_LAMBDA_CERT_DENIED_KEY"]):
-        if secret and (leaks(original, secret) or leaks(text, secret)):
+    for secret in runtime_secrets():
+        if leaks(original, secret) or leaks(text, secret):
             return "[redacted]"
     return text
 
@@ -140,7 +187,8 @@ def challenge_schemes(headers):
             for scheme in CHALLENGE_SCHEME.findall(str(entry)):
                 if scheme not in schemes:
                     schemes.append(scheme)
-    return "+".join(schemes) or "none"
+    summary = "+".join(schemes) or "none"
+    return "[redacted]" if any(leaks(summary, secret) for secret in runtime_secrets()) else summary
 
 
 def admin_credential_state(function):
@@ -159,12 +207,15 @@ def admin_credential_state(function):
                        if value.lower().startswith(SECRET_REFERENCE_PREFIX) else "inline")
 
 
-def invoke(function, path, *, method="GET", query=None, body=None, authenticated=True, api_key=None, expected_version=None):
+def invoke(function, path, *, method="GET", query=None, body=None, json_body=None,
+           authenticated=True, api_key=None, expected_version=None):
     headers = {"accept": "application/json", "host": urlsplit(os.environ["HONUA_LAMBDA_WRITE_BASE_URL"]).netloc}
     if api_key is not None or authenticated:
         headers["x-api-key"] = api_key if api_key is not None else admin_key()
     if body is not None:
         headers["content-type"] = "application/x-www-form-urlencoded"
+    elif json_body is not None:
+        headers["content-type"] = "application/json"
     event = {"version": "2.0", "routeKey": f"{method} {path}", "rawPath": path,
              "rawQueryString": urlencode(query or {}), "headers": headers,
              "requestContext": {"http": {"method": method, "path": path, "protocol": "HTTP/1.1",
@@ -172,6 +223,8 @@ def invoke(function, path, *, method="GET", query=None, body=None, authenticated
              "isBase64Encoded": False}
     if body is not None:
         event["body"] = urlencode(body)
+    elif json_body is not None:
+        event["body"] = json.dumps(json_body)
     with tempfile.TemporaryDirectory(prefix="honua-cert-invoke-") as temporary:
         payload, response = Path(temporary) / "payload.json", Path(temporary) / "response.json"
         write_json(payload, event)
@@ -186,14 +239,18 @@ def invoke(function, path, *, method="GET", query=None, body=None, authenticated
             raw = base64.b64decode(raw).decode()
         try:
             parsed = json.loads(raw)
+            # A JSON string literal (including "") is a nonempty HTTP body. Preserve its bytes
+            # so the zero-body 403 assertion cannot accept a JSON-encoded empty string.
+            if isinstance(parsed, str):
+                parsed = raw
         except json.JSONDecodeError:
             parsed = raw
         return result.get("statusCode"), parsed, meta, result.get("headers")
 
 
-def ok(function, path, **kwargs):
+def ok(function, path, *, expect=200, **kwargs):
     status, body, _, headers = invoke(function, path, **kwargs)
-    if not (status == 200 and isinstance(body, dict) and "error" not in body):
+    if not (status == expect and isinstance(body, dict) and "error" not in body):
         # Diagnosable without leaking: the path is a fixed lane constant, the
         # status is a number, and only a short, alphanumeric error code/title
         # from the body is echoed (never the body, headers, or a key). Live run
@@ -205,8 +262,8 @@ def ok(function, path, **kwargs):
             if isinstance(err, dict):
                 code = redacted(err.get("code", ""), 40)
             code = code or redacted(body.get("title", body.get("type", "")), 60)
-        print(f"serving-assertion: phase={_phase} path={path} status={status} "
-              f"body-kind={'json' if isinstance(body, dict) else 'text'} error={code or 'none'}", file=sys.stderr)
+        print(f"serving-assertion: phase={_phase} path={path} status={status} expected={expect} "
+              f"body-kind={body_kind(body)} error={code or 'none'}", file=sys.stderr)
         if status == 401:
             # Every administrative assertion authenticates as the bootstrap administrator, and the
             # title of that refusal is "Unauthorized" whatever the cause. Run 21 (34222614774)
@@ -232,6 +289,133 @@ def set_phase(name):
     _phase = name
 
 
+def body_kind(body):
+    if body == "":
+        return "empty"
+    return "json" if isinstance(body, (dict, list)) else "text"
+
+
+# What the status alone already settles about the denied principal: 401 is a principal the server
+# did not recognize, 403 is one it recognized and refused, and 200 is one it recognized and served.
+AUTHENTICATED = {200: "yes", 401: "no", 403: "yes"}
+
+
+def denied_record_status(function):
+    # Only a key this run minted has a record it can ask about by id; an override is opaque by
+    # design, and no plaintext key can be mapped back to its row.
+    if not _denied["id"]:
+        return "unknown"
+    try:
+        status, body, _, _ = invoke(function, ADMIN_API_KEYS + "/" + _denied["id"] + "/effective-permissions")
+        if status == 404:
+            return "missing"
+        if status != 200 or not isinstance(body, dict):
+            return "unreadable"
+        return redacted((body.get("data") or {}).get("status", ""), 20) or "unknown"
+    except Exception:  # noqa: BLE001 - a diagnostic must never replace the assertion it explains
+        return "unreadable"
+
+
+def report_denied(function, status, body, headers):
+    # Run 23 (34243173689) failed this assertion with nothing but its message, so the run could not
+    # say which of two opposite things had happened: the scoped key was gone (401), or the
+    # server served the admin surface to a non-admin principal (200 with records, honua-server#4386).
+    # The status, the shape of the body and the challenge separate them in the run that failed.
+    records = str(len(body)) if isinstance(body, list) else "0" if body == "" else "unknown"
+    if isinstance(body, dict):
+        # Counted, never quoted: a leaked record is evidence, and its contents are not the lane's
+        # to print. A document carrying none of these keys carries no records at all.
+        records = "0"
+        for key in ("data", "features", "records", "layers", "items", "apiKeys"):
+            if key in body:
+                records = str(len(body[key])) if isinstance(body[key], (list, dict)) else "unknown"
+                break
+    print(f"serving-403: phase={_phase} principal={_denied['source']} "
+          f"key={_denied['name'] or DENIED_KEY_VARIABLE} status={status} body-kind={body_kind(body)} "
+          f"authenticated={AUTHENTICATED.get(status, 'unknown')} challenge={challenge_schemes(headers)} "
+          f"records={records} record={denied_record_status(function)}",
+          file=sys.stderr)
+
+
+def mint_denied_key(function, record):
+    """Mint this run's own scoped principal through the admin API-key endpoint.
+
+    The lane already holds the administrator, so the denial assertion does not have to depend on a
+    key some earlier bootstrap left in the API-key store.
+    """
+    set_phase("denied-key-mint")
+    name = "honua-cert-denied-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"]
+    # Named before the call, so teardown can still find the record a lost create response left behind.
+    _denied["name"] = record["name"] = name
+    expires = datetime.now(timezone.utc) + timedelta(hours=DENIED_KEY_LIFETIME_HOURS)
+    issued = ok(function, ADMIN_API_KEYS, expect=201, method="POST", json_body={
+        "name": name, "permissions": list(DENIED_KEY_PERMISSIONS),
+        "expiresAt": expires.strftime("%Y-%m-%dT%H:%M:%SZ")}).get("data") or {}
+    key, metadata = issued.get("key"), issued.get("apiKey") or {}
+    require(isinstance(key, str) and key and key != admin_key(),
+            "Minted denial principal must be a key of its own")
+    require(isinstance(metadata.get("id"), str) and metadata["id"], "Minted denial key has no record id")
+    require(metadata.get("name") == name and metadata.get("status") == "active"
+            and list(metadata.get("permissions") or []) == DENIED_KEY_PERMISSIONS,
+            "Minted denial key is not this run's active read:layers principal")
+    _denied.update(source="minted", value=key, id=metadata["id"])
+    record["created"] = True
+
+
+def verify_shared_denied_key(target, record):
+    set_phase("denied-key-shared-store")
+    status, body, _, _ = invoke(target, ADMIN_API_KEYS + "/" + _denied["id"] + "/effective-permissions")
+    effective = body.get("data") if isinstance(body, dict) else None
+    require(status == 200 and isinstance(effective, dict)
+            and effective.get("id") == _denied["id"] and effective.get("name") == _denied["name"]
+            and effective.get("status") == "active" and effective.get("canAuthenticate") is True
+            and effective.get("permissions") == DENIED_KEY_PERMISSIONS,
+            "Standing alias cannot see the minted denial principal: require a shared Redis-backed API-key store")
+    record["sharedStoreVerified"] = True
+
+
+def retire_through(target, record):
+    name = _denied["name"]
+    listed = ok(target, ADMIN_API_KEYS).get("data") or []
+    # The name carries this run's id and attempt and only this lane ever mints it, so every match
+    # is this run's own: revoke all of them rather than refusing an ambiguity that would leave a
+    # live credential behind.
+    owned = [entry for entry in listed if isinstance(entry, dict) and entry.get("name") == name]
+    for entry in owned:
+        if entry.get("status") != "revoked":
+            revoked = ok(target, ADMIN_API_KEYS + "/" + str(entry.get("id")) + "/revoke",
+                         method="POST", json_body={}).get("data") or {}
+            require(revoked.get("status") == "revoked", "Denial key was not revoked")
+    if _denied["id"]:
+        # Say it from the server's own view of the record rather than from the call that revoked it.
+        effective = ok(target, ADMIN_API_KEYS + "/" + _denied["id"] + "/effective-permissions").get("data") or {}
+        require(effective.get("status") == "revoked" and effective.get("canAuthenticate") is False,
+                "Revoked denial key still reports it can authenticate")
+        record["canAuthenticate"] = effective["canAuthenticate"]
+    remaining = [entry for entry in (ok(target, ADMIN_API_KEYS).get("data") or [])
+                 if isinstance(entry, dict) and entry.get("name") == name and entry.get("status") != "revoked"]
+    record["activeAfterTeardown"] = len(remaining)
+    require(not remaining, "Denial key is still active after teardown")
+    record["revoked"] = True
+
+
+def retire_denied_key(targets, record):
+    """Revoke this run's key by its unique name, including one a lost create response left behind.
+
+    The row outlives the functions this run creates, so it must not outlive the run: the candidate
+    is tried first, and the standing alias after it, because a candidate that cannot serve is
+    exactly the run that would otherwise leave the credential behind.
+    """
+    set_phase("denied-key-retire")
+    for target in targets:
+        try:
+            retire_through(target, record)
+            return
+        except Exception:  # noqa: BLE001 - whatever one target answered, the other still has to try
+            continue
+    require(False, "Denial key could not be revoked on any target")
+
+
 def smoke(function, expected_version=None):
     common = {"expected_version": expected_version}
     migration = ok(function, "/api/v1/admin/observability/migrations", **common)
@@ -248,7 +432,7 @@ def smoke(function, expected_version=None):
     require(sorted(feature["attributes"]["name"] for feature in rows.get("features", [])) == expected_names,
             "Fixture records do not match client-compat-v1")
     # The anonymous principal has no admin rights. This documented 401 must contain no records.
-    status, denial, _, _ = invoke(function, "/api/v1/admin/api-keys", authenticated=False, **common)
+    status, denial, _, _ = invoke(function, ADMIN_API_KEYS, authenticated=False, **common)
     require(status == 401 and isinstance(denial, dict), "Authorization denial must be HTTP 401")
     require(denial.get("status") == 401 and denial.get("type") == "https://honua.io/problems/admin",
             "Authorization refusal body is not the documented error")
@@ -256,10 +440,11 @@ def smoke(function, expected_version=None):
             "Authorization denial leaked records")
     require(all(not isinstance(value, (dict, list)) for value in denial.values()),
             "Authorization denial contains structured records")
-    # This is authorization, not merely a missing-credential challenge: a valid
-    # pre-existing read:layers key must authenticate and receive the documented 403.
-    status, denial, _, _ = invoke(function, "/api/v1/admin/api-keys",
-                                  api_key=os.environ["HONUA_LAMBDA_CERT_DENIED_KEY"], **common)
+    # This is authorization, not merely a missing-credential challenge: this run's own read:layers
+    # key must authenticate and receive the documented 403.
+    status, denial, _, headers = invoke(function, ADMIN_API_KEYS, api_key=denied_key(), **common)
+    if not (status == 403 and denial == ""):
+        report_denied(function, status, denial, headers)
     require(status == 403 and denial == "", "Scoped principal must receive an empty HTTP 403 (zero records)")
     write_path = "/rest/services/test_service/FeatureServer/10"
     marker = "honua-certrun-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"]
@@ -292,7 +477,8 @@ def smoke(function, expected_version=None):
     return {"result": "pass", "migrations": {"status": "succeeded", "pendingScripts": 0, "upgradeRequired": False},
             "fixture": {"name": "client-compat-v1", "sha256": fingerprint(FIXTURE.read_text()), "expectedRows": 10, "actualRows": 10, "namesVerified": True},
             "write": {"createdRows": 1, "readBackRows": 1, "deletedRows": 1, "remainingRows": 0, "distinctWriteUrl": True},
-            "authorization": {"principal": "scoped-api-key", "operation": "GET /api/v1/admin/api-keys", "expectedStatus": 403, "actualStatus": 403, "records": 0, "anonymousStatus": 401},
+            "authorization": {"principal": "scoped-api-key", "principalSource": _denied["source"],
+                              "operation": "GET /api/v1/admin/api-keys", "expectedStatus": 403, "actualStatus": 403, "records": 0, "anonymousStatus": 401},
             "executedVersion": expected_version or "$LATEST"}
 
 
@@ -316,8 +502,30 @@ def alias_state(function, alias, expected=None):
 
 def certify(directory, ephemeral, digest):
     function, alias = inputs()
-    proof = {"result": "noProof", "candidateDigest": digest.split("@")[-1]}
+    proof = {"result": "noProof", "candidateDigest": digest.split("@")[-1],
+             "deniedKey": {"source": "override" if override_denied_key() else "minted",
+                           "permissions": list(DENIED_KEY_PERMISSIONS), "name": None, "created": False,
+                           "revoked": False, "canAuthenticate": None, "activeAfterTeardown": None,
+                           "sharedStoreVerified": False}}
     write_json(directory / "serving.json", proof)
+    teardown_errors = []
+    try:
+        if proof["deniedKey"]["source"] == "minted":
+            mint_denied_key(ephemeral, proof["deniedKey"])
+            verify_shared_denied_key(function + ":" + alias, proof["deniedKey"])
+        serve(directory, function, alias, ephemeral, digest, proof)
+    finally:
+        if proof["deniedKey"]["source"] == "minted":
+            try:
+                retire_denied_key((ephemeral, function + ":" + alias), proof["deniedKey"])
+            except Exception as error:  # noqa: BLE001 - recorded, then raised as a lane failure
+                teardown_errors.append(error)
+                proof["result"] = "noProof"
+        write_json(directory / "serving.json", proof)
+    require(not teardown_errors, "Denial key teardown failed")
+
+
+def serve(directory, function, alias, ephemeral, digest, proof):
     set_phase("deployed")
     proof["deployed"] = smoke(ephemeral)
     previous = alias_state(function, alias)
@@ -432,7 +640,7 @@ if __name__ == "__main__":
     except RuntimeError as error:
         print(f"{error}; serving noProof", file=sys.stderr)
         sys.exit(1)
-    except (KeyError, ValueError, OSError):
+    except Exception:  # noqa: BLE001
         # Raw API exceptions/bodies can contain secrets. Receipts remain noProof on any error.
         print("Lambda certification assertion failed; serving noProof", file=sys.stderr)
         sys.exit(1)
