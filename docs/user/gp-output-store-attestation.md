@@ -94,6 +94,15 @@ mount loss, replacement host instances, and a restored volume read through the
 server route after the source volume is removed. The restore fixture is deterministic
 storage payload data, not a raster algorithm correctness receipt.
 
+For the pre-cut deployment proof alone, run `scripts/qualification/gp-lifecycle-harness.sh`
+with `HONUA_GP_LANE=output-store`, digest-addressed `HONUA_SERVER_IMAGE` and
+`HONUA_WORKER_IMAGE`, and their common full revision in `HONUA_GP_SOURCE_SHA`.
+This lane declares exactly topology, output-store-attestation and cleanup; it does
+not certify the full lifecycle matrix. The replacement scenario also remains in
+the lifecycle lane. It decodes the forced-staged GeoJSON and checks all 500 feature
+IDs and two-dimensional WGS84 coordinates against an independent integer-grid
+oracle before comparing bytes and descriptors across replacement.
+
 `GeoprocessingOutputStoreTopologyTests` enumerates the checked-in topology
 denominator on every build: each Compose service that enables staging must bind a
 complete store contract, its declared digest is recomputed from that topology's own

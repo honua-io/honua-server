@@ -1,5 +1,7 @@
 """Executable tests for the GP qualification receipt boundary."""
 
+import copy
+import importlib.util
 import json
 import os
 import subprocess
@@ -14,6 +16,16 @@ STREAK = ROOT / "scripts/qualification/gp-canary-streak.sh"
 
 
 class GpQualificationHarnessTests(unittest.TestCase):
+    def test_output_store_preflight_never_counts_unexecuted_proof_as_passed(self):
+        completed, receipts, summary = self.run_harness(
+            "output-store", HONUA_SERVER_IMAGE="unattested:latest"
+        )
+        self.assertNotEqual(0, completed.returncode)
+        self.assertEqual(["topology", "output-store-attestation", "cleanup"], summary["declared_scenarios"])
+        self.assertEqual(3, summary["receipt_count"])
+        self.assertEqual("fail", receipts["output-store-attestation"]["outcome"])
+        self.assertIn("preflight failure", receipts["output-store-attestation"]["finding"])
+
     def run_harness(self, lane, **overrides):
         with tempfile.TemporaryDirectory(prefix="gp-qualification-") as directory:
             environment = os.environ.copy()
@@ -124,6 +136,52 @@ class GpQualificationHarnessTests(unittest.TestCase):
                 "https://github.com/honua-io/honua-server/actions/runs/9876",
                 result["runs"][0]["url"],
             )
+
+
+class OutputStoreArtifactOracleTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location(
+            "store_oracle", ROOT / "scripts/qualification/verify-gp-store-artifact.py"
+        )
+        cls.oracle = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.oracle)
+
+    def fixture(self):
+        # The submitted grid uses decimal-degree offsets; the oracle computes
+        # expected ordinates independently from integer ten-thousandths.
+        return {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "properties": {"id": i}, "geometry": {
+                "type": "Point", "coordinates": [
+                    -157.8583 + (i % 100) / 10000,
+                    21.3069 + (i % 50) / 10000,
+                ]}}
+            for i in range(500)
+        ]}
+
+    def test_independent_grid_survives_feature_reordering(self):
+        document = self.fixture()
+        document["features"].reverse()
+        self.oracle.verify(document)
+
+    def test_wrong_values_geometries_and_metadata_are_rejected(self):
+        original = self.fixture()
+        mutations = {
+            "missing feature": lambda d: d["features"].pop(),
+            "duplicate id": lambda d: d["features"][1]["properties"].update(id=0),
+            "wrong value": lambda d: d["features"][0]["properties"].update(id=501),
+            "swapped axes": lambda d: d["features"][0]["geometry"]["coordinates"].reverse(),
+            "null ordinate": lambda d: d["features"][0]["geometry"].update(coordinates=[None, 21.3069]),
+            "extra ordinate": lambda d: d["features"][0]["geometry"]["coordinates"].append(0),
+            "wrong geometry": lambda d: d["features"][0].update(geometry=None),
+            "wrong CRS": lambda d: d.update(crs={"type": "name", "properties": {"name": "EPSG:3857"}}),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                document = copy.deepcopy(original)
+                mutate(document)
+                with self.assertRaises(ValueError):
+                    self.oracle.verify(document)
 
 
 if __name__ == "__main__":

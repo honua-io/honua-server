@@ -17,6 +17,9 @@ native_payload="$(jq -cn --arg source "${native_source}" '{inputs:{source:$sourc
 mkdir -p "${receipt_root}"
 
 case "${lane}" in
+  output-store)
+    declared_scenarios=(topology output-store-attestation cleanup)
+    ;;
   lifecycle)
     declared_scenarios=(topology output-store-attestation sync async cancel-claimed cancel-native-process-started \
       cancel-output-bytes-written-unpublished cancel-artifact-reference-published-terminal-cas-pending \
@@ -35,7 +38,7 @@ case "${lane}" in
     declared_scenarios=(assertion-failure follow-up cleanup)
     ;;
   *)
-    echo "HONUA_GP_LANE must be lifecycle, resilience, or self-test" >&2
+    echo "HONUA_GP_LANE must be output-store, lifecycle, resilience, or self-test" >&2
     exit 2
     ;;
 esac
@@ -500,6 +503,11 @@ run_output_store_attestation() {
   )
   timeout 180 docker compose --project-name "${project_name}" -f "${compose_file}" "${rejection[@]}" > "${ephemeral_log}" 2>&1
   ephemeral_code=$?
+  if (( ephemeral_code == 124 || ephemeral_code == 137 )); then
+    rm -f "${ephemeral_log}"
+    write_receipt "${scenario}" fail "FINDING: unattested store startup timed out rather than failing closed"
+    return 1
+  fi
   if (( ephemeral_code == 0 )); then
     rm -f "${ephemeral_log}"
     write_receipt "${scenario}" fail "FINDING: an unattested container-local directory satisfied the supported-store precondition"
@@ -550,6 +558,11 @@ run_output_store_attestation() {
     return 1
   }
   sha_before="$(sha256sum "${content_before}" | cut -d' ' -f1)"
+  if ! python3 "${repo_root}/scripts/qualification/verify-gp-store-artifact.py" "${content_before}"; then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: staged output differs from independently expected fixture values and coordinates" "${job}" "${state}"
+    return 1
+  fi
   descriptor_before="$(auth_curl "${base_url}/ogc/processes/jobs/${job}/results")" || {
     rm -f "${content_before}"
     write_receipt "${scenario}" fail "FINDING: staged output descriptor was unreadable" "${job}" "${state}"
@@ -1155,7 +1168,9 @@ else
     fill_missing_receipts
   }
   if [[ -z "${preflight_failure}" ]]; then
-    if [[ "${lane}" == lifecycle ]]; then
+    if [[ "${lane}" == output-store ]]; then
+      run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
+    elif [[ "${lane}" == lifecycle ]]; then
       run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
       run_scenario sync run_sync || failures=$((failures + 1))
       run_scenario async run_async_baseline || failures=$((failures + 1))
