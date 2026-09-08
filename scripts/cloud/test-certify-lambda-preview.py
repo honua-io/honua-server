@@ -579,6 +579,21 @@ class AdminCredentialTests(unittest.TestCase):
             self.assertEqual("[redacted]", self.driver.redacted("resolved-private-key", 60))
             self.assertEqual("", os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"])
 
+    def test_resolved_admin_redaction_preserves_minted_key_redaction(self):
+        del os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
+        self.driver._denied["value"] = "minted-private-key"
+        with unittest.mock.patch.object(self.driver, "aws", return_value={"SecretString": "resolved-private-key"}):
+            self.driver.admin_key(self.current)
+        for key in ("resolved-private-key", "minted-private-key"):
+            self.assertEqual("[redacted]", self.driver.redacted(key, 60))
+            self.assertEqual("[redacted]", self.driver.challenge_schemes(
+                {"WWW-Authenticate": key + ' realm="private"'}))
+
+    def test_unselected_denied_override_does_not_reject_resolved_admin(self):
+        os.environ["HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE"] = "false"
+        with unittest.mock.patch.object(self.driver, "aws", return_value={"SecretString": "denied-key"}):
+            self.assertEqual("denied-key", self.driver.admin_key(self.current))
+
     def test_override_takes_precedence_without_configuration_or_secret_reads(self):
         os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"] = "override-private-key"
         with unittest.mock.patch.object(self.driver, "aws") as aws, unittest.mock.patch.object(self.driver, "config") as config:
@@ -703,6 +718,15 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
         self.assertEqual("pass", receipt["result"])
         self.assertFalse(any("secretsmanager" in call for call in state["calls"]))
         self.assertIn("HONUA_LAMBDA_CERT_ADMIN_KEY: ${{ secrets.REALAWS_CERT_ADMIN_KEY }}", WORKFLOW)
+
+    def test_both_overrides_unset_resolves_admin_and_mints_and_revokes_denied_key(self):
+        result, receipt, state, _ = self.run_lane(
+            HONUA_LAMBDA_CERT_ADMIN_KEY=None, HONUA_LAMBDA_CERT_DENIED_KEY=None)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("pass", receipt["result"])
+        self.assertEqual("minted", receipt["serving"]["deniedKey"]["source"])
+        self.assertTrue(receipt["serving"]["deniedKey"]["revoked"])
+        self.assertTrue(any("get-secret-value" in call for call in state["calls"]))
 
     def test_unset_override_resolves_secret_even_on_create_failure(self):
         result, receipt, state, _ = self.run_lane("create-error", HONUA_LAMBDA_CERT_ADMIN_KEY=None)
