@@ -23,6 +23,10 @@ moving branch.
 - A Kubernetes cluster with `kubectl` and Helm 3 access.
 - PostGIS and Redis endpoints reachable from the cluster. Redis is required by
   the chart for non-development deployments, including the single-node path.
+  Configure it for **durability**: `appendonly yes`, `appendfsync everysec` (or
+  `always`), and `maxmemory-policy noeviction`. Without all three the server
+  still starts and still runs jobs, but non-durably — see
+  [Redis durability](#redis-durability) below.
 - A default StorageClass for the single-node persistent volume.
 - An OpenTelemetry collector reachable at the endpoint used below.
 - An ingress controller and a TLS secret named `honua-tls`.
@@ -325,6 +329,38 @@ kubectl -n honua rollout restart deployment/honua-honua
 kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 ```
 
+## Redis durability
+
+Redis holds acknowledged control-plane state — durable jobs, the job queue, and
+execution logs. At startup the server inspects the Redis persistence policy once
+and records a typed attestation, which is accepted only when all three of these
+hold:
+
+| Redis setting | Required value |
+|---|---|
+| `appendonly` | `yes` (`INFO persistence` reports `aof_enabled:1`) |
+| `appendfsync` | `everysec` or `always` |
+| `maxmemory-policy` | `noeviction` |
+
+Managed Redis defaults vary and a stock `redis:7-alpine` sidecar defaults to
+`appendonly no`, so set the policy explicitly on whatever Redis the cluster
+points `ConnectionStrings__redis` at. On AWS ElastiCache enable AOF (or use a
+Redis version/tier with durable persistence); on Azure Cache for Redis enable
+data persistence on a tier that supports it.
+
+**A failed attestation degrades; it does not stop the pod.** Jobs still run, the
+server logs one warning naming the typed cause and its remediation, the `redis`
+health entry reports `Degraded` on the ops-health snapshot, and the capability
+manifest withholds `jobs.runner` rather than advertising durability the cluster
+cannot provide. `/healthz/ready` stays `Ready`, so an AOF-less Redis does not
+depool every pod in the deployment.
+
+If a cluster must not serve at all without an attested durable store, set
+`Jobs__RequireDurableStore: "true"` in `config.env`. A rejected attestation then
+exits with a single typed startup error naming the cause and its remediation —
+and, because the readiness probe never passes, the rollout stops instead of
+silently running non-durably.
+
 ## Troubleshoot
 
 - **Helm rejects multiple replicas** — keep one `SingleInstance` replica, or
@@ -343,6 +379,9 @@ kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 - **Native gRPC is unreachable** — this chart contract publishes the HTTP and
   gRPC-Web listener on port 8080. Native h2c gRPC on port 8081 needs a
   separately managed Service/Ingress until the chart exposes that listener.
+- **Pods log "Redis durability attestation was REJECTED"** — the cluster's Redis
+  does not meet the persistence policy above. Pods stay `Ready` and jobs keep
+  running, but non-durably; see [Redis durability](#redis-durability).
 
 ## Next steps
 

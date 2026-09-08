@@ -254,12 +254,12 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
 
         // When at least one feature matches the click + time filter, the
-        // response carries the FeatureInfoResponse envelope. The seeded layer
+        // response carries the FeatureCollection envelope. The seeded layer
         // has a global extent so the central pixel intersects features.
         if (!string.IsNullOrWhiteSpace(content))
         {
             using var json = JsonDocument.Parse(content);
-            json.RootElement.GetProperty("type").GetString().Should().Be("FeatureInfoResponse");
+            json.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
         }
     }
 

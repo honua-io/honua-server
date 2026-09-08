@@ -3,7 +3,6 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Protocols.Ogc.Classic.Wms;
 using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Classic;
@@ -13,9 +12,9 @@ namespace Honua.Protocols.Ogc.Classic;
 /// Includes the shared OGC GeoJSON wire models so WFS 2.0 GeoJSON output is
 /// serialized by this protocol-local context rather than the OGC API context.
 /// </summary>
-[JsonSerializable(typeof(WmsFeatureInfoResponse))]
-[JsonSerializable(typeof(WmsFeatureInfoFeature))]
-[JsonSerializable(typeof(WmsFeatureInfoFeature[]))]
+[JsonSerializable(typeof(OgcClassicFeatureInfoResponse))]
+[JsonSerializable(typeof(OgcClassicFeatureInfoFeature))]
+[JsonSerializable(typeof(OgcClassicFeatureInfoFeature[]))]
 [JsonSerializable(typeof(FeatureCollection))]
 [JsonSerializable(typeof(GeoJsonFeature))]
 [JsonSerializable(typeof(GeoJsonFeature[]))]

@@ -96,6 +96,16 @@ public sealed class DurableJobSubstrateOptions
     /// <returns>The cause to report to callers.</returns>
     public DurableJobSubstrateCause Classify(bool jobStorePresent, bool jobQueuePresent)
     {
+        // Entitlement is checked BEFORE durability, and fails closed (honua-server#4502). The
+        // durability inspection runs against whatever infrastructure Redis is connected, which in
+        // non-Development/Test deployments happens even when Redis is unentitled — so an
+        // unentitled deployment whose Redis DOES attest would otherwise report Available and
+        // advertise 'jobs.runner'. A present store never upgrades a missing entitlement.
+        if (!RedisEntitled && RedisConfigured)
+        {
+            return DurableJobSubstrateCause.RedisNotEntitled;
+        }
+
         if (jobStorePresent && jobQueuePresent)
         {
             return RedisDurabilityAttestation is not null

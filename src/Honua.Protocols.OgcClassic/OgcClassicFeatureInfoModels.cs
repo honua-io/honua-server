@@ -3,24 +3,24 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Protocols.Ogc.Classic.Wms;
+namespace Honua.Protocols.Ogc.Classic;
 
 /// <summary>
-/// WMS GetFeatureInfo JSON response in the GeoJSON shape used by native clients.
+/// WMS/WMTS GetFeatureInfo JSON response in the GeoJSON shape used by native clients.
 /// </summary>
-internal sealed class WmsFeatureInfoResponse
+internal sealed class OgcClassicFeatureInfoResponse
 {
     [JsonPropertyName("type")]
     public string Type { get; init; } = "FeatureCollection";
 
     [JsonPropertyName("features")]
-    public required WmsFeatureInfoFeature[] Features { get; init; }
+    public required OgcClassicFeatureInfoFeature[] Features { get; init; }
 }
 
 /// <summary>
-/// Single WMS GetFeatureInfo JSON result.
+/// Single WMS/WMTS GetFeatureInfo JSON result.
 /// </summary>
-internal sealed class WmsFeatureInfoFeature
+internal sealed class OgcClassicFeatureInfoFeature
 {
     [JsonPropertyName("type")]
     public string Type { get; init; } = "Feature";
@@ -35,7 +35,7 @@ internal sealed class WmsFeatureInfoFeature
     public Dictionary<string, object?> Properties => Attributes;
 
     // Retain the existing members as GeoJSON foreign members for consumers
-    // that read the earlier WMS response's layer and attributes directly.
+    // that read layer and attributes directly from earlier feature-info responses.
     [JsonPropertyName("layer")]
     public required string Layer { get; init; }
 

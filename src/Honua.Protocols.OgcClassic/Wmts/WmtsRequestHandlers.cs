@@ -966,8 +966,7 @@ internal static class WmtsRequestHandlers
         var remaining = Math.Min(featureCount, 1000);
 
         var plainText = new StringBuilder();
-        var jsonText = new StringBuilder();
-        var hasJsonFeature = false;
+        var jsonFeatures = new List<OgcClassicFeatureInfoFeature>();
         var layerName = GetWmsLayerName(layer.Resource, layer.Publication);
 
         var featureQuery = new FeatureQuery
@@ -992,60 +991,23 @@ internal static class WmtsRequestHandlers
             }
 
             remaining--;
+            var attributes = BuildVisibleFeatureInfoAttributes(item);
             if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
             {
-                if (!hasJsonFeature)
+                jsonFeatures.Add(new OgcClassicFeatureInfoFeature
                 {
-                    jsonText.Append("{\"type\":\"FeatureInfoResponse\",\"features\":[");
-                    hasJsonFeature = true;
-                }
-                else
-                {
-                    jsonText.Append(',');
-                }
-
-                jsonText.Append("{\"layer\":");
-                AppendJsonString(jsonText, layerName);
-                jsonText.Append(",\"attributes\":{");
-
-                var isFirstAttribute = true;
-                foreach (var attribute in item.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
-                {
-                    // Match the WMS GetFeatureInfo path: hide internal bookkeeping columns
-                    // and normalize values before serializing.
-                    if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
-                    {
-                        continue;
-                    }
-
-                    if (!isFirstAttribute)
-                    {
-                        jsonText.Append(',');
-                    }
-
-                    isFirstAttribute = false;
-                    AppendJsonString(jsonText, attribute.Key);
-                    jsonText.Append(':');
-                    AppendJsonString(jsonText, FormatFeatureInfoValue(FeatureAttributeValueNormalizer.Normalize(attribute.Value)));
-                }
-
-                jsonText.Append("}}");
+                    Layer = layerName,
+                    Attributes = attributes
+                });
                 continue;
             }
 
             plainText.Append("Layer=").Append(layerName).AppendLine();
-            foreach (var attribute in item.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+            foreach (var attribute in attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
             {
-                // Match the WMS GetFeatureInfo path: hide internal bookkeeping columns
-                // and normalize values before serializing.
-                if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
-                {
-                    continue;
-                }
-
                 plainText.Append(attribute.Key)
                     .Append('=')
-                    .Append(FormatFeatureInfoValue(FeatureAttributeValueNormalizer.Normalize(attribute.Value)))
+                    .Append(FormatFeatureInfoValue(attribute.Value))
                     .AppendLine();
             }
 
@@ -1054,13 +1016,12 @@ internal static class WmtsRequestHandlers
 
         if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
         {
-            if (!hasJsonFeature)
+            var payload = new OgcClassicFeatureInfoResponse
             {
-                return Results.Content("{\"type\":\"FeatureInfoResponse\",\"features\":[]}", JsonMimeType);
-            }
+                Features = [.. jsonFeatures]
+            };
 
-            jsonText.Append("]}");
-            return Results.Content(jsonText.ToString(), JsonMimeType);
+            return Results.Json(payload, OgcClassicJsonContext.Default.OgcClassicFeatureInfoResponse, contentType: JsonMimeType);
         }
 
         var body = plainText.Length > 0
@@ -2869,55 +2830,6 @@ internal static class WmtsRequestHandlers
             "xml" => "application/xml",
             _ => extension
         };
-    }
-
-    private static void AppendJsonString(StringBuilder sb, string? value)
-    {
-        sb.Append('\"');
-        if (value is not null)
-        {
-            foreach (var ch in value)
-            {
-                switch (ch)
-                {
-                    case '\\':
-                        sb.Append("\\\\");
-                        break;
-                    case '\"':
-                        sb.Append("\\\"");
-                        break;
-                    case '\b':
-                        sb.Append("\\b");
-                        break;
-                    case '\f':
-                        sb.Append("\\f");
-                        break;
-                    case '\n':
-                        sb.Append("\\n");
-                        break;
-                    case '\r':
-                        sb.Append("\\r");
-                        break;
-                    case '\t':
-                        sb.Append("\\t");
-                        break;
-                    default:
-                        if (ch < 32)
-                        {
-                            sb.Append("\\u");
-                            sb.Append(((int)ch).ToString("x4", CultureInfo.InvariantCulture));
-                        }
-                        else
-                        {
-                            sb.Append(ch);
-                        }
-
-                        break;
-                }
-            }
-        }
-
-        sb.Append('\"');
     }
 
     private readonly record struct WmtsDimensionDefinition(

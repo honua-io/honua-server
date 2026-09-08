@@ -395,6 +395,30 @@ assert_descriptor \
   "targeted" \
   "false" \
   "GeoServices MapServer"
+assert_descriptor \
+  "mapserver-source-split-export" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerExportEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices MapServer Export"
+assert_descriptor \
+  "mapserver-source-split-identify" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerIdentifyEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices MapServer Identify"
+assert_descriptor \
+  "mapserver-source-split-shared-export" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTestBase.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices MapServer Export"
+assert_descriptor \
+  "mapserver-source-split-shared-identify" \
+  "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTestBase.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices MapServer Identify"
 # The MapServer minor classes moved into an existing shard rather than a new one;
 # that shard must now be selected by a MapServer diff.
 assert_descriptor \
@@ -1532,6 +1556,14 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices MapServer" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices MapServer Export" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices MapServer Identify" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \

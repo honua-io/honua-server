@@ -27,13 +27,21 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// Executes the Redis durability attestation and durable-job registration seams against real
 /// Redis containers. The recovery case intentionally kills the container process abruptly so
 /// graceful shutdown cannot stand in for AOF recovery evidence.
+/// <para>
+/// honua-server#4502 changed what a REJECTED attestation means: the durable job substrate is
+/// still composed (every consumer of <see cref="IExecutionJobStore"/> is registered
+/// unconditionally, so composing it out aborted startup at DI validation), and the rejection is
+/// carried instead by <see cref="DurableJobSubstrateOptions.Classify"/>, the health-check
+/// roll-up and one startup warning. The rejection cases below therefore assert
+/// <em>composed-but-unadvertised</em>, not <em>absent</em>; the attestation itself is unchanged.
+/// </para>
 /// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
 public sealed class RedisDurabilityAttestationIntegrationTests
 {
     [IntegrationTest]
-    public async Task NonPersistentRedis_IsRejectedBeforeDurableJobRegistration()
+    public async Task NonPersistentRedis_IsRejectedButStillComposesJobSubstrate()
     {
         await using var redis = await StartRedisAsync(appendOnly: false, evictionPolicy: "noeviction");
         var inspection = await RedisDurabilityAttestor.InspectAsync(redis.Multiplexer);
@@ -41,20 +49,22 @@ public sealed class RedisDurabilityAttestationIntegrationTests
         inspection.Accepted.Should().BeFalse();
         inspection.FailureCause.Should().Be(DurableJobSubstrateCause.RedisPersistenceDisabled, inspection.FailureDetail);
 
-        var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
-        provider.GetService<IExecutionJobStore>().Should().BeNull();
-        provider.GetService<IJobQueue>().Should().BeNull();
+        using var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
+        AssertDegradedButComposed(provider);
 
+        // The store and queue ARE composed now (#4502), and the classification must STILL report
+        // the rejection: what an unattested Redis costs is the advertised durability, not the
+        // runtime. Classify(true, true) is therefore the assertion that matters.
         new DurableJobSubstrateOptions
         {
             RedisConfigured = true,
             RedisEntitled = true,
             RedisDurabilityFailure = inspection.FailureCause
-        }.Classify(false, false).Should().Be(DurableJobSubstrateCause.RedisPersistenceDisabled);
+        }.Classify(jobStorePresent: true, jobQueuePresent: true).Should().Be(DurableJobSubstrateCause.RedisPersistenceDisabled);
     }
 
     [IntegrationTest]
-    public async Task EvictingRedis_IsRejectedBeforeDurableJobRegistration()
+    public async Task EvictingRedis_IsRejectedButStillComposesJobSubstrate()
     {
         await using var redis = await StartRedisAsync(appendOnly: true, evictionPolicy: "allkeys-lru");
         var inspection = await RedisDurabilityAttestor.InspectAsync(redis.Multiplexer);
@@ -62,20 +72,22 @@ public sealed class RedisDurabilityAttestationIntegrationTests
         inspection.Accepted.Should().BeFalse();
         inspection.FailureCause.Should().Be(DurableJobSubstrateCause.RedisEvictionPolicyUnsafe, inspection.FailureDetail);
 
-        var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
-        provider.GetService<IExecutionJobStore>().Should().BeNull();
-        provider.GetService<IJobQueue>().Should().BeNull();
+        using var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
+        AssertDegradedButComposed(provider);
 
+        // The store and queue ARE composed now (#4502), and the classification must STILL report
+        // the rejection: what an unattested Redis costs is the advertised durability, not the
+        // runtime. Classify(true, true) is therefore the assertion that matters.
         new DurableJobSubstrateOptions
         {
             RedisConfigured = true,
             RedisEntitled = true,
             RedisDurabilityFailure = inspection.FailureCause
-        }.Classify(false, false).Should().Be(DurableJobSubstrateCause.RedisEvictionPolicyUnsafe);
+        }.Classify(jobStorePresent: true, jobQueuePresent: true).Should().Be(DurableJobSubstrateCause.RedisEvictionPolicyUnsafe);
     }
 
     [IntegrationTest]
-    public async Task UnsafeFsyncRedis_IsRejectedBeforeDurableJobRegistration()
+    public async Task UnsafeFsyncRedis_IsRejectedButStillComposesJobSubstrate()
     {
         await using var redis = await StartRedisAsync(
             appendOnly: true,
@@ -86,13 +98,12 @@ public sealed class RedisDurabilityAttestationIntegrationTests
         inspection.Accepted.Should().BeFalse();
         inspection.FailureCause.Should().Be(DurableJobSubstrateCause.RedisWritePolicyUnsafe, inspection.FailureDetail);
 
-        var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
-        provider.GetService<IExecutionJobStore>().Should().BeNull();
-        provider.GetService<IJobQueue>().Should().BeNull();
+        using var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
+        AssertDegradedButComposed(provider);
     }
 
     [IntegrationTest]
-    public async Task RedisWithoutPolicyReadPermission_IsRejectedBeforeDurableJobRegistration()
+    public async Task RedisWithoutPolicyReadPermission_IsRejectedButStillComposesJobSubstrate()
     {
         await using var redis = await StartRedisAsync(
             appendOnly: true,
@@ -103,9 +114,111 @@ public sealed class RedisDurabilityAttestationIntegrationTests
         inspection.Accepted.Should().BeFalse();
         inspection.FailureCause.Should().Be(DurableJobSubstrateCause.RedisAttestationUnavailable, inspection.FailureDetail);
 
-        var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
-        provider.GetService<IExecutionJobStore>().Should().BeNull();
-        provider.GetService<IJobQueue>().Should().BeNull();
+        using var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
+        AssertDegradedButComposed(provider);
+    }
+
+    /// <summary>
+    /// The end-to-end #4502 contract against the exact substrate the honua-release Slice-1
+    /// candidate harness runs — a stock <c>redis:7-alpine</c> with <c>appendonly no</c>. The
+    /// composed store must actually serve job records, the health-check roll-up must report the
+    /// degradation with its typed cause and remediation, and readiness must stay READY: a 503 on
+    /// <c>/healthz/ready</c> is what turned "AOF is off" into "server not ready at
+    /// http://localhost:8080" for all 13 scenarios.
+    /// </summary>
+    [IntegrationTest]
+    public async Task NonPersistentRedis_ServesJobsAndReportsDegradedWhileStayingReady()
+    {
+        await using var redis = await StartRedisAsync(appendOnly: false, evictionPolicy: "noeviction");
+        var inspection = await RedisDurabilityAttestor.InspectAsync(redis.Multiplexer);
+        inspection.Accepted.Should().BeFalse();
+        inspection.FailureCause.Should().Be(DurableJobSubstrateCause.RedisPersistenceDisabled, inspection.FailureDetail);
+
+        var substrate = Options.Create(new DurableJobSubstrateOptions
+        {
+            RedisConfigured = true,
+            RedisEntitled = true,
+            RedisDurabilityFailure = inspection.FailureCause
+        });
+
+        // 1. The composed store is not a placeholder — it round-trips a real job record.
+        using var provider = ComposeJobServices(redis.Multiplexer, inspection.Attestation);
+        var jobStore = provider.GetRequiredService<IExecutionJobStore>();
+        var queue = provider.GetRequiredService<IJobQueue>();
+        var operationId = $"degraded-{Guid.NewGuid():N}";
+
+        (await jobStore.TryCreateAsync(CreateJob(operationId))).Should().BeTrue();
+        await queue.EnqueueAsync(operationId);
+        (await jobStore.GetAsync(operationId))!.Status.Should().Be(ExecutionJobStatus.Queued);
+
+        // 2. The operations status surface reports DEGRADED — not Unhealthy — naming the cause,
+        //    the operating consequence, and the remediation.
+        var cacheServices = new ServiceCollection();
+        cacheServices.AddStackExchangeRedisCache(options => options.Configuration = redis.ConnectionString);
+        using var cacheProvider = cacheServices.BuildServiceProvider();
+        var healthCheck = new Honua.Server.Features.HealthCheck.RedisHealthCheck(
+            redis.Multiplexer,
+            cacheProvider.GetRequiredService<IDistributedCache>(),
+            NullLogger<Honua.Server.Features.HealthCheck.RedisHealthCheck>.Instance,
+            substrate);
+        var health = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        health.Status.Should().Be(HealthStatus.Degraded);
+        health.Data["cause"].Should().Be(nameof(DurableJobSubstrateCause.RedisPersistenceDisabled));
+        health.Data["durabilityAttested"].Should().Be(false);
+        health.Data["remediation"].Should().Be(
+            DurableJobSubstrateRemediation.For(DurableJobSubstrateCause.RedisPersistenceDisabled));
+        health.Data["consequence"].Should().Be(DurableJobSubstrateRemediation.NonDurableConsequence);
+
+        // 3. Durability stays UNADVERTISED even though the runtime is fully composed — the #4141
+        //    guarantee this fix must not weaken.
+        substrate.Value.Classify(jobStorePresent: true, jobQueuePresent: true)
+            .Should().Be(DurableJobSubstrateCause.RedisPersistenceDisabled);
+    }
+
+    /// <summary>
+    /// A startup-time durability rejection must not MASK a later Redis outage. The health check
+    /// runs its ping and cache write/read/delete probes first and only reports the durability
+    /// degradation once connectivity is proven; otherwise an operator whose Redis has AOF off
+    /// would keep reading "durability is not attested" while the actual failure is that Redis is
+    /// unreachable (honua-server#4502 review).
+    /// </summary>
+    [IntegrationTest]
+    public async Task RejectedDurability_WithUnreachableRedis_ReportsTheOutageNotTheDurabilityVerdict()
+    {
+        await using var redis = await StartRedisAsync(appendOnly: false, evictionPolicy: "noeviction");
+        var inspection = await RedisDurabilityAttestor.InspectAsync(redis.Multiplexer);
+        inspection.Accepted.Should().BeFalse();
+
+        var substrate = Options.Create(new DurableJobSubstrateOptions
+        {
+            RedisConfigured = true,
+            RedisEntitled = true,
+            RedisDurabilityFailure = inspection.FailureCause
+        });
+
+        var cacheServices = new ServiceCollection();
+        cacheServices.AddStackExchangeRedisCache(options => options.Configuration = redis.ConnectionString);
+        using var cacheProvider = cacheServices.BuildServiceProvider();
+        var healthCheck = new Honua.Server.Features.HealthCheck.RedisHealthCheck(
+            redis.Multiplexer,
+            cacheProvider.GetRequiredService<IDistributedCache>(),
+            NullLogger<Honua.Server.Features.HealthCheck.RedisHealthCheck>.Instance,
+            substrate);
+
+        // While Redis serves, the durability rejection IS the diagnosis.
+        (await healthCheck.CheckHealthAsync(new HealthCheckContext())).Status
+            .Should().Be(HealthStatus.Degraded);
+
+        // Take Redis away. The same startup-time rejection is still on the options, but the
+        // reported condition must now be the outage.
+        await redis.Container.StopAsync();
+
+        var outage = await healthCheck.CheckHealthAsync(new HealthCheckContext());
+
+        outage.Status.Should().Be(HealthStatus.Unhealthy,
+            "a connectivity failure outranks the durability verdict it would otherwise hide");
+        outage.Description.Should().NotContain("durability is not attested");
     }
 
     [IntegrationTest]
@@ -264,6 +377,22 @@ public sealed class RedisDurabilityAttestationIntegrationTests
         (await queue.GetQueueDepthAsync()).Should().Be(1);
     }
 
+    /// <summary>
+    /// The #4502 contract for a rejected attestation: the Redis-backed job substrate is fully
+    /// composed and usable, and the health-check roll-up reports it as DEGRADED (not Unhealthy,
+    /// which before this fix also failed <c>/healthz/ready</c> and took the whole node out of
+    /// rotation) with the typed cause and its remediation.
+    /// </summary>
+    private static void AssertDegradedButComposed(ServiceProvider provider)
+    {
+        provider.GetService<IExecutionJobStore>().Should().NotBeNull(
+            "every consumer of IExecutionJobStore stays registered when Redis is connected, so "
+            + "composing the store out aborts startup at DI validation (honua-server#4502)");
+        provider.GetService<IJobQueue>().Should().NotBeNull();
+        provider.GetService<IExecutionLogStore>().Should().NotBeNull();
+        provider.GetService<IGeoprocessingResultPackageStore>().Should().NotBeNull();
+    }
+
     private static ServiceProvider ComposeJobServices(
         IConnectionMultiplexer redis,
         RedisDurabilityAttestation? attestation)
@@ -271,6 +400,13 @@ public sealed class RedisDurabilityAttestationIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(redis);
+
+        // Entitlement and durability attestation are separate gates (honua-server#4502). These
+        // cases all model an ENTITLED deployment whose Redis does or does not attest, so the
+        // marker the composition root publishes for 'caching.redis' is always present here; the
+        // unentitled case is covered by DurableJobSubstrateRegistrationTests.
+        services.AddSingleton(new DurableJobSubstrateEntitlement());
+
         if (attestation is not null)
         {
             services.AddSingleton(attestation);
