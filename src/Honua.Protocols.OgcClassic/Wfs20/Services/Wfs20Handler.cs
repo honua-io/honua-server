@@ -273,7 +273,12 @@ internal sealed partial class Wfs20Handler
             throw new ArgumentException(validation.ErrorMessage ?? "Invalid WFS query parameters.");
         }
 
-        return _queryProcessor.ToFeatureQuery(unifiedQuery, resource);
+        return _queryProcessor.ToFeatureQuery(unifiedQuery, resource) with
+        {
+            // Providers may interpret empty OutFields as all columns. Preserve an
+            // explicit geometry-only projection through the shared exclusion flag.
+            ExcludeAttributes = projectedFields is { Length: 0 }
+        };
     }
 
 
@@ -409,12 +414,26 @@ internal sealed partial class Wfs20Handler
         }
 
         var resolved = ImmutableArray.CreateBuilder<string>();
+        var geometryField = resource.FindPrimaryGeometryField();
         foreach (var requestedProperty in requestedProperties)
         {
-            var fieldName = WfsPropertyNameResolver.Resolve(resource, requestedProperty, allowGeometryAlias: true)
-                ?? throw new ArgumentException($"Unknown property '{requestedProperty}' for feature type '{resource.Metadata.Name}'.");
+            var fieldName = WfsPropertyNameResolver.Resolve(resource, requestedProperty, allowGeometryAlias: true);
+            if (fieldName is null)
+            {
+                // A spatial resource with no geometry schema field still advertises a geometry
+                // property (ResolveGeometryPropertyName), and DescribeFeatureType and the GML
+                // writers both emit it. Field resolution has no field to match, so accept the
+                // advertised property here instead of rejecting the request as unknown.
+                if (geometryField is null &&
+                    ResolveGeometryPropertyName(resource) is { } fallbackGeometryProperty &&
+                    WfsPropertyNameResolver.MatchesGeometryProperty(requestedProperty, fallbackGeometryProperty))
+                {
+                    continue;
+                }
 
-            var geometryField = resource.FindPrimaryGeometryField();
+                throw new ArgumentException($"Unknown property '{requestedProperty}' for feature type '{resource.Metadata.Name}'.");
+            }
+
             if (geometryField != null &&
                 fieldName.Equals(geometryField.Name, StringComparison.OrdinalIgnoreCase))
             {
