@@ -17,6 +17,55 @@ public sealed class PbfQueryFormatterTests
 {
     private readonly PbfQueryFormatter _sut = new(Options.Create(new LimitsOptions()));
 
+    [Theory]
+    [InlineData(true, 9007199254740991L)]
+    [InlineData(true, -9007199254740991L)]
+    [InlineData(true, 2147483648L)]
+    [InlineData(true, null)]
+    [InlineData(false, 9007199254740991L)]
+    [InlineData(false, -9007199254740991L)]
+    [InlineData(false, 2147483648L)]
+    public void FormatAsPbf_BigInteger_EmitsIntegerTypeAndPreservesValue(bool declared, long? value)
+    {
+        var layer = CreatePointLayer();
+        if (declared)
+        {
+            layer = layer with
+            {
+                SchemaFields = [new MetadataV2Field { Name = "large_int", Type = MetadataV2FieldType.BigInteger }]
+            };
+        }
+        var feature = Feature.Create(42, geometry: null,
+            ImmutableDictionary<string, object?>.Empty.Add("large_int", value));
+        var (response, contentType) = _sut.FormatAsPbf(
+            QueryResult<Feature>.Create(1, [feature]), layer, returnGeometry: false, outputSrid: null,
+            returnZ: false, returnM: false, geometryPrecision: null, maxAllowableOffset: null,
+            outFields: ["large_int"]);
+
+        contentType.Should().Be("application/x-protobuf");
+        var query = GetFirstLengthDelimitedField(response, 2);
+        var result = GetFirstLengthDelimitedField(query, 1);
+        var fieldIndex = declared ? 0 : 1;
+        var field = GetFirstLengthDelimitedField(result, 13, fieldIndex);
+        System.Text.Encoding.UTF8.GetString(GetFirstLengthDelimitedField(field, 1)).Should().Be("large_int");
+        // Esri FeatureCollection.proto FieldType.esriFieldTypeBigInteger = 13.
+        GetFirstVarintField(field, 2).Should().Be(13);
+        var objectIdField = GetFirstLengthDelimitedField(result, 13, declared ? 1 : 0);
+        System.Text.Encoding.UTF8.GetString(GetFirstLengthDelimitedField(objectIdField, 1)).Should().Be("objectid");
+        GetFirstVarintField(objectIdField, 2).Should().Be(6, "object identifiers retain OID semantics");
+        var outputFeature = GetFirstLengthDelimitedField(result, 15);
+        var attribute = GetFirstLengthDelimitedField(outputFeature, 1, fieldIndex);
+        GetFirstVarintField(attribute, 11).Should().Be((ulong)fieldIndex);
+        if (value.HasValue)
+        {
+            unchecked((long)GetFirstVarintField(attribute, 6)).Should().Be(value.Value);
+        }
+        else
+        {
+            GetFirstVarintField(attribute, 10).Should().Be(1, "the null oneof must be present");
+        }
+    }
+
     // ── Basic response structure ───────────────────────────────
 
     [Fact]
@@ -536,7 +585,7 @@ public sealed class PbfQueryFormatterTests
         return DecodePackedSInt64Values(packedCoords);
     }
 
-    private static byte[] GetFirstLengthDelimitedField(ReadOnlySpan<byte> message, int fieldNumber)
+    private static byte[] GetFirstLengthDelimitedField(ReadOnlySpan<byte> message, int fieldNumber, int occurrence = 0)
     {
         var offset = 0;
         while (offset < message.Length)
@@ -563,7 +612,7 @@ public sealed class PbfQueryFormatterTests
 
                         var payload = message.Slice(offset, length);
                         offset += length;
-                        if (currentField == fieldNumber)
+                        if (currentField == fieldNumber && occurrence-- == 0)
                         {
                             return payload.ToArray();
                         }
@@ -579,6 +628,38 @@ public sealed class PbfQueryFormatterTests
         }
 
         throw new InvalidOperationException($"Field {fieldNumber} was not found.");
+    }
+
+    private static ulong GetFirstVarintField(ReadOnlySpan<byte> message, int fieldNumber)
+    {
+        var offset = 0;
+        while (offset < message.Length)
+        {
+            var tag = ReadVarint(message, ref offset);
+            switch (tag & 7)
+            {
+                case 0:
+                    var value = ReadVarint(message, ref offset);
+                    if ((int)(tag >> 3) == fieldNumber)
+                    {
+                        return value;
+                    }
+                    break;
+                case 1:
+                    offset += 8;
+                    break;
+                case 2:
+                    var length = checked((int)ReadVarint(message, ref offset));
+                    offset += length;
+                    break;
+                case 5:
+                    offset += 4;
+                    break;
+                default:
+                    throw new InvalidOperationException("Unexpected protobuf wire type.");
+            }
+        }
+        throw new InvalidOperationException($"Varint field {fieldNumber} was not found.");
     }
 
     private static List<long> DecodePackedSInt64Values(ReadOnlySpan<byte> payload)

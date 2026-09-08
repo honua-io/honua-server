@@ -723,7 +723,7 @@ internal static partial class MapServerEndpoints
         {
             MetadataV2FieldType.String => "esriFieldTypeString",
             MetadataV2FieldType.Integer => "esriFieldTypeInteger",
-            MetadataV2FieldType.BigInteger => "esriFieldTypeInteger64",
+            MetadataV2FieldType.BigInteger => "esriFieldTypeBigInteger",
             MetadataV2FieldType.Double => "esriFieldTypeDouble",
             MetadataV2FieldType.Float => "esriFieldTypeSingle",
             MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
