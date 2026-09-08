@@ -293,18 +293,13 @@ def test_policy_and_discovery() -> None:
     MODULE.load_policy(policy())
     for invalid in (
         policy(receipt_retention_days=91),
-        policy(maximum_runs_per_query=4001),
-        policy(maximum_producer_run_catalogs=3001, maximum_runs_per_query=4000),
+        policy(maximum_runs_per_query=1001),
+        policy(maximum_producer_run_catalogs=3001, maximum_runs_per_query=1000),
         policy(
             maximum_receipt_downloads=2501,
             maximum_producer_run_catalogs=3000,
-            maximum_runs_per_query=4000,
+            maximum_runs_per_query=1000,
         ),
-        # The three bounds have to nest. A query bound tighter than the catalog
-        # bound is what actually broke collection: 8 pages admitted 800 runs
-        # while the catalog bound advertised 3,000, so the ledger failed outright
-        # once an observer stream passed 800 runs in the retention window.
-        policy(maximum_runs_per_query=39),
         # The catalog bound must never be tighter than the download bound, or
         # it silently becomes the binding cap on window size again.
         policy(maximum_producer_run_catalogs=19),
@@ -1211,17 +1206,16 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     # download budgets instead of being a page count that silently undercut
     # both. Pages are then derived from that total, never fixed.
     assert "MAXIMUM_RUNS: ${{ steps.policy.outputs.maximum_runs_per_query }}" in ledger
-    assert "expected_total > MAXIMUM_RUNS" in ledger
-    assert "maximum_pages=$(( (expected_total + 99) / 100 ))" in ledger
-    assert "MAXIMUM_PAGES" not in ledger
+    assert "collect-impact-routing-runs.py" in ledger
+    assert 'COLLECTION_UPPER: ${{ steps.policy.outputs.collection_upper }}' in ledger
     assert 'id: download' in ledger
     assert 'zipfile.is_zipfile(sys.argv[1])' in ledger
     assert 'receipt artifact %s was unavailable or invalid after 4 attempts' in ledger
     assert "steps.download.outcome == 'success'" in ledger
     assert 'DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}' in ledger
-    assert "serving-image-boundary.yml/runs" in ledger
+    assert "collect_runs serving-image-boundary.yml" in ledger
     assert '--receipt-cutoff "${RECEIPT_CUTOFF}"' in ledger
-    assert "worker-gdal-image.yml/runs" in ledger
+    assert "collect_runs worker-gdal-image.yml" in ledger
     assert "actions: write" not in ledger
     assert "contents: write" not in ledger
     assert "pull_request_target" not in ledger

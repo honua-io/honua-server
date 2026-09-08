@@ -6,7 +6,7 @@
   "receipt_index_grace_minutes": 90,
   "maximum_receipt_loss_ratio": 0.05,
   "promotion_green_days": 7,
-  "maximum_runs_per_query": 4000,
+  "maximum_runs_per_query": 1000,
   "maximum_producer_run_catalogs": 3000,
   "maximum_receipt_downloads": 2500,
   "minimum_docs_only_heads": 20,

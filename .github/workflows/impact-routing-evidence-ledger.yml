@@ -10,6 +10,13 @@ name: Impact Routing Evidence Ledger
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/impact-routing-evidence-ledger.yml'
+      - '.github/workflows/native-image-impact-observe.yml'
+      - '.github/impact-routing-*.json'
+      - 'scripts/ci/*impact*'
+      - 'scripts/ci/trusted-pr-workflow-run*'
   schedule:
     - cron: "47 13 * * *"
 
@@ -18,10 +25,25 @@ permissions:
   contents: read
 
 concurrency:
-  group: impact-routing-evidence-ledger
+  group: impact-routing-evidence-ledger-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  replay:
+    name: Replay seven-day receipt evidence
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Verify receipt collection and seven-day audit
+        run: |
+          python3 scripts/ci/collect-impact-routing-runs.test.py
+          python3 scripts/ci/audit-impact-routing-evidence.test.py
+          node --test scripts/ci/trusted-pr-workflow-run.test.js
+
   audit:
     name: Audit trusted impact-routing observations
     if: github.ref_name == github.event.repository.default_branch
@@ -57,6 +79,7 @@ jobs:
           RECEIPT_CUTOFF: ${{ steps.policy.outputs.receipt_cutoff }}
           PRODUCER_RUN_CUTOFF: ${{ steps.policy.outputs.producer_run_cutoff }}
           IMAGE_RUN_CUTOFF: ${{ steps.policy.outputs.image_run_cutoff }}
+          COLLECTION_UPPER: ${{ steps.policy.outputs.collection_upper }}
           MAXIMUM_RUNS: ${{ steps.policy.outputs.maximum_runs_per_query }}
           MAXIMUM_CATALOGS: ${{ steps.policy.outputs.maximum_producer_run_catalogs }}
         run: |
@@ -64,77 +87,14 @@ jobs:
           mkdir -p evidence/runs/{pr-gate,native,serving,worker} \
             evidence/artifacts/{pr-gate,native} evidence/archives
 
-          collect_pages() {
-            local endpoint="$1"
-            local collection="$2"
-            local output_root="$3"
-            shift 3
-            local expected_total=''
-            local maximum_pages=''
-            local complete=false
-            local page=1
-            while [[ -z "${maximum_pages}" ]] || (( page <= maximum_pages )); do
-              local output
-              output="$(printf '%s/%03d.json' "${output_root}" "${page}")"
-              gh api --method GET "${endpoint}" \
-                -F per_page=100 \
-                -F page="${page}" \
-                "$@" > "${output}"
-              local total count
-              total="$(jq -er '.total_count | select(type == "number" and floor == . and . >= 0)' "${output}")"
-              count="$(jq -er --arg collection "${collection}" \
-                '.[$collection] | arrays | length' "${output}")"
-              if [[ -z "${expected_total}" ]]; then
-                expected_total="${total}"
-                # The budget is a bound on RUNS, and the declared total states
-                # up front how many there are. Fail before paging rather than
-                # discovering the shortfall at the tail, and page exactly as
-                # far as this window actually needs.
-                if (( expected_total > MAXIMUM_RUNS )); then
-                  # Fail closed and say exactly what to change. A truncated
-                  # catalog cannot degrade gracefully here: `discover` and
-                  # `summarize` count observed heads and reconcile
-                  # authoritative image outcomes against these pages, so
-                  # silently dropping the tail would turn a collection
-                  # shortfall into fabricated integrity/outcome failures.
-                  printf '::error::%s catalog declares %s run(s), over the %s-run budget. Raise maximum_runs_per_query in .github/impact-routing-promotion.json (and the catalog/download bounds with it) or shorten receipt_retention_days.\n' \
-                    "${collection}" "${expected_total}" "${MAXIMUM_RUNS}" >&2
-                  exit 1
-                fi
-                maximum_pages=$(( (expected_total + 99) / 100 ))
-                if (( maximum_pages < 1 )); then
-                  maximum_pages=1
-                fi
-              elif [[ "${total}" != "${expected_total}" ]]; then
-                echo "${collection} total changed during pagination" >&2
-                exit 1
-              fi
-              if (( page * 100 >= expected_total )); then
-                complete=true
-                break
-              fi
-              if (( count != 100 )); then
-                echo "${collection} catalog ended before its declared total" >&2
-                exit 1
-              fi
-              page=$((page + 1))
-            done
-            if [[ "${complete}" != true ]]; then
-              printf '::error::%s catalog ended after %s page(s) without reaching its declared total %s.\n' \
-                "${collection}" "${maximum_pages}" "${expected_total}" >&2
-              exit 1
-            fi
+          collect_runs() {
+            python3 scripts/ci/collect-impact-routing-runs.py \
+              --endpoint "repos/${GITHUB_REPOSITORY}/actions/workflows/$1/runs" \
+              --lower "$2" --upper "${COLLECTION_UPPER}" \
+              --maximum "${MAXIMUM_RUNS}" --output "$3" "${@:4}"
           }
-
-          created_filter=">=${PRODUCER_RUN_CUTOFF}"
-          collect_pages \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/pr-gate-impact-observe.yml/runs" \
-            workflow_runs evidence/runs/pr-gate \
-            -f status=completed -f "created=${created_filter}"
-          collect_pages \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/native-image-impact-observe.yml/runs" \
-            workflow_runs evidence/runs/native \
-            -f status=completed -f "created=${created_filter}"
+          collect_runs pr-gate-impact-observe.yml "${PRODUCER_RUN_CUTOFF}" evidence/runs/pr-gate
+          collect_runs native-image-impact-observe.yml "${PRODUCER_RUN_CUTOFF}" evidence/runs/native
 
           # Only a SUCCESSFUL observer run can have uploaded a receipt or a
           # skip marker, so only those need an artifact catalog. Non-success
@@ -168,15 +128,8 @@ jobs:
           jq -r '.workflow_runs[] | select(.conclusion == "success") | .id' \
             evidence/runs/native/*.json | sort -nu \
             | collect_run_artifacts evidence/artifacts/native
-          image_created_filter=">=${IMAGE_RUN_CUTOFF}"
-          collect_pages \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/serving-image-boundary.yml/runs" \
-            workflow_runs evidence/runs/serving \
-            -f event=pull_request -f "created=${image_created_filter}"
-          collect_pages \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/worker-gdal-image.yml/runs" \
-            workflow_runs evidence/runs/worker \
-            -f event=pull_request -f "created=${image_created_filter}"
+          collect_runs serving-image-boundary.yml "${IMAGE_RUN_CUTOFF}" evidence/runs/serving --event pull_request
+          collect_runs worker-gdal-image.yml "${IMAGE_RUN_CUTOFF}" evidence/runs/worker --event pull_request
 
       - id: discover
         name: Select exact current-attempt observation receipts

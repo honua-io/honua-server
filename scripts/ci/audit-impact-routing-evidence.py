@@ -71,6 +71,8 @@ NATIVE_SKIP_ARTIFACT = re.compile(
 PR_GATE_RECEIPT = "pr-gate-impact-observation.json"
 NATIVE_RECEIPT = "native-image-impact-observation.json"
 NATIVE_SUMMARY = "native-image-impact-summary.md"
+# `<slice>-<page>.json`, written by the collector's sliced pagination.
+QUERY_PAGE = re.compile(r"^(?P<query>q[0-9]{3,})-(?P<page>[0-9]{3,})\.json$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
@@ -177,14 +179,20 @@ def load_policy(value: object) -> dict[str, Any]:
     )
     if lookback > 48:
         raise ValueError("image outcome lookback exceeds the policy bound")
-    # Bound the run catalog in RUNS, not pages. A page cap is a bound on the
-    # same work expressed in a unit the policy cannot compare against anything
-    # else, and that is precisely how it broke: `maximum_pages_per_query: 8`
-    # admitted 800 runs per query while the catalog and download bounds below
-    # admitted 3,000 and 2,500, so the loosest-looking knob was silently the
-    # binding one and the ledger failed collection outright once either
-    # observer stream passed 800 runs in the retention window.
+    # Bound one QUERY in runs, not pages, because the thing being bounded is
+    # not a budget we chose — it is GitHub's hard ceiling. The Actions
+    # workflow-runs listing serves at most 1,000 records for a filter: asking
+    # for record 1,001 returns `total_count: 0` with an empty page at any
+    # `per_page`, which is indistinguishable from a genuinely short catalog
+    # unless the real total is already known. No page budget could ever have
+    # collected the seven-day window once either observer stream passed 1,000
+    # runs (both were at ~1,360 on 2026-09-07); the window has to be collected
+    # as disjoint time slices, each small enough to be served whole. This bound
+    # is per slice. The bound on the WINDOW stays
+    # `maximum_producer_run_catalogs` / `maximum_receipt_downloads` below.
     runs = positive_int(value.get("maximum_runs_per_query"), "maximum runs per query")
+    if runs > 1000:
+        raise ValueError("maximum runs per query exceeds GitHub's listing ceiling")
     downloads = positive_int(value.get("maximum_receipt_downloads"), "maximum downloads")
     # Listing one run's artifact catalog is a cheap paged GET; downloading a
     # receipt is a real archive transfer. Conflating the two made the download
@@ -197,16 +205,10 @@ def load_policy(value: object) -> dict[str, Any]:
     # 1,000-download ceiling rejected the policy's required retention period.
     # Keep finite ceilings above current throughput while still failing closed
     # before an accidental policy edit can make the API work unbounded.
-    if runs > 4000 or downloads > 2500 or catalogs > 3000:
-        raise ValueError("GitHub query, catalog, or download bound is unsafe")
-    # One query's runs are the population every later bound draws from, so the
-    # three have to nest. Any other ordering makes a bound unreachable and
-    # turns organic fleet growth into a collection failure rather than a
-    # budget the operator can read and raise deliberately.
-    if runs < catalogs or catalogs < downloads:
-        raise ValueError(
-            "query, catalog, and download bounds must not widen as they narrow"
-        )
+    if downloads > 2500 or catalogs > 3000:
+        raise ValueError("GitHub catalog or download bound is unsafe")
+    if catalogs < downloads:
+        raise ValueError("catalog bound must not be smaller than the download bound")
     for field in (
         "minimum_docs_only_heads",
         "minimum_native_heads",
@@ -348,30 +350,54 @@ def current_blobs(root: Path) -> dict[str, str]:
 
 
 def flatten_pages(root: Path, collection: str) -> list[dict[str, Any]]:
+    """Flatten one window collected as several disjoint, individually paged queries.
+
+    GitHub will not serve past record 1,000 of a workflow-runs listing, so the
+    collector slices the window by creation time until each slice fits and
+    pages each slice separately. Completeness is therefore a per-SLICE property:
+    every page of a slice must agree on that slice's declared total and the
+    slice's items must add up to it exactly. Verifying it window-wide instead
+    would let a slice that silently lost its tail hide behind the others.
+    """
     files = sorted(root.glob("*.json"))
     if not files:
         raise ValueError(f"{collection} query pages are missing")
-    expected_total: int | None = None
-    items: list[dict[str, Any]] = []
+    queries: dict[str, list[Path]] = defaultdict(list)
     for file in files:
-        page = load_json(file)
-        if not isinstance(page, dict) or not isinstance(page.get("total_count"), int):
-            raise ValueError(f"{collection} query page is invalid")
-        values = page.get(collection)
-        if not isinstance(values, list):
-            raise ValueError(f"{collection} query collection is invalid")
-        if expected_total is None:
-            expected_total = page["total_count"]
-        elif expected_total != page["total_count"]:
-            raise ValueError(f"{collection} query total changed during pagination")
-        if not all(isinstance(item, dict) for item in values):
-            raise ValueError(f"{collection} query item is invalid")
-        items.extend(values)
-    if expected_total is None or len(items) != expected_total:
-        raise ValueError(f"{collection} query is truncated")
+        match = QUERY_PAGE.fullmatch(file.name)
+        if match is None:
+            # Retained ledgers predate sliced catalogs; preserve their replay.
+            if re.fullmatch(r"[0-9]{3,}\.json", file.name):
+                queries["legacy"].append(file)
+                continue
+            raise ValueError(f"{collection} query page filename is invalid")
+        queries[match.group("query")].append(file)
+    items: list[dict[str, Any]] = []
+    for query in sorted(queries):
+        expected_total: int | None = None
+        sliced: list[dict[str, Any]] = []
+        for file in sorted(queries[query]):
+            page = load_json(file)
+            if not isinstance(page, dict) or not isinstance(page.get("total_count"), int):
+                raise ValueError(f"{collection} query page is invalid")
+            values = page.get(collection)
+            if not isinstance(values, list):
+                raise ValueError(f"{collection} query collection is invalid")
+            if expected_total is None:
+                expected_total = page["total_count"]
+            elif expected_total != page["total_count"]:
+                raise ValueError(f"{collection} query total changed during pagination")
+            if not all(isinstance(item, dict) for item in values):
+                raise ValueError(f"{collection} query item is invalid")
+            sliced.extend(values)
+        if expected_total is None or len(sliced) != expected_total:
+            raise ValueError(f"{collection} query is truncated")
+        items.extend(sliced)
     identifiers = [item.get("id") for item in items]
     if any(isinstance(item, bool) or not isinstance(item, int) for item in identifiers):
         raise ValueError(f"{collection} query identity is invalid")
+    # Slices are disjoint by construction, so a run seen twice means the
+    # collector's slice boundaries overlapped and the window is not a partition.
     if len(set(identifiers)) != len(identifiers):
         raise ValueError(f"{collection} query contains duplicate identities")
     return items
@@ -477,6 +503,10 @@ def _discover_stream(
             failures.append({"stream": stream, "reason": "observer-run-id-invalid"})
             continue
         seen_runs.add(run_id)
+        if run.get("status") in {"queued", "in_progress", "waiting", "pending", "requested"}:
+            exclusions.append({"stream": stream, "producer_run_id": run_id,
+                               "reason": "observer-run-incomplete"})
+            continue
         try:
             if not _valid_observer_run(run, workflow, cutoff):
                 raise ValueError("observer workflow run is invalid")
@@ -1898,7 +1928,13 @@ def main() -> int:
         return 0
     policy = load_policy(load_json(args.policy))
     if args.command == "policy":
-        cutoff_value = receipt_cutoff(policy)
+        # One fixed upper bound for the whole collection. An open-ended
+        # `created>=` filter keeps admitting runs while the collector pages,
+        # which both moves the declared total under it and shifts every
+        # newest-first page by one. Closing the window makes each slice a set
+        # that can actually be read whole.
+        now = datetime.now(timezone.utc)
+        cutoff_value = receipt_cutoff(policy, now)
         cutoff = cutoff_value.isoformat().replace("+00:00", "Z")
         image_cutoff = (
             cutoff_value - timedelta(hours=policy["image_outcome_lookback_hours"])
@@ -1909,6 +1945,7 @@ def main() -> int:
                 cutoff_value - timedelta(hours=1)
             ).isoformat().replace("+00:00", "Z"),
             "image_run_cutoff": image_cutoff,
+            "collection_upper": now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "maximum_runs_per_query": policy["maximum_runs_per_query"],
             "maximum_producer_run_catalogs": policy["maximum_producer_run_catalogs"],
             "maximum_receipt_downloads": policy["maximum_receipt_downloads"],
