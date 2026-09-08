@@ -8479,6 +8479,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerErrorHandlingTests.GetServiceInfo_NonExistentLayer_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.GetServiceInfo_AggregatesExtentAndTimeExtentAcrossLayerRasters",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.GetServiceInfo_ServesBandStatisticsFromPersistedMosaicSnapshot",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicPixelSizeTests.GetServiceInfo_MosaicExtents_PreservesNativePixelResolution",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.GetServiceInfo_PjsonFormat_DoesNotReturnBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.GetServiceInfo_ValidRequest_ReturnsExpectedStructure",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.GetServiceInfo_WithoutFormatParameter_DoesNotReturnBadRequest"

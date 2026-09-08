@@ -90,6 +90,13 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
 - **WCS 2.0.1 is a thin slice over the primary raster.** Range subset/band
   selection, scaling/interpolation extensions, XML POST, NetCDF, and
   temporal/multidimensional slicing are not implemented.
+- **ImageServer metadata retains native mosaic resolution.** `pixelSizeX` and
+  `pixelSizeY` advertise the finest finite positive source geotransform scale
+  on each axis. Aggregate extent rounding or offsets between source rasters
+  do not change these values. If an axis has no usable geotransform scale,
+  metadata retains the aggregate-extent/primary-dimension fallback. This
+  contract is covered by HTTP regressions and does not establish native
+  QGIS or ArcGIS Pro raster certification.
 - **OGC API Coverages is MVP-scoped**: GeoTIFF/PNG retrieval with bbox/CRS/scale
   parameters; `datetime`, `subset`, CoverageJSON, NetCDF, and tiled coverage
   delivery are not implemented.
