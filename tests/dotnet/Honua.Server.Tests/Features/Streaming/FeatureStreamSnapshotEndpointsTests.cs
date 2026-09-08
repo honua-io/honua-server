@@ -142,7 +142,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         updateFrame.GetProperty("operation").GetString().Should().Be("update");
         updateFrame.GetProperty("attributes").GetProperty("name").GetString().Should().Be(updated,
             "an update's streamed after-image must carry the exact new value");
-        AssertEditedPointGeometry(updateFrame);
+        AssertEditedPointGeometry(updateFrame, -157.90, 21.35);
         updateFrame.GetRawText().Should().NotContain(
             inserted,
             "the after-image must not replay the superseded value");
@@ -1946,7 +1946,8 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                     "id": 0,
                     "updates": [
                         {
-                            "attributes": { "objectid": {{objectId}}, "name": "{{correlation}}" }
+                            "attributes": { "objectid": {{objectId}}, "name": "{{correlation}}" },
+                            "geometry": { "x": -157.90, "y": 21.35 }
                         }
                     ]
                 }
@@ -1983,14 +1984,14 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         delta.GetProperty("operation").GetString().Should().Be("insert");
         delta.GetProperty("attributes").GetProperty("name").GetString().Should().Be(correlation,
             "the streamed after-image must carry the exact marker the edit wrote");
-        AssertEditedPointGeometry(delta);
+        AssertEditedPointGeometry(delta, -157.85, 21.30);
     }
 
-    private static void AssertEditedPointGeometry(JsonElement delta)
+    private static void AssertEditedPointGeometry(JsonElement delta, double longitude, double latitude)
     {
         delta.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
         delta.GetProperty("geometry").GetProperty("coordinates").EnumerateArray()
-            .Select(value => value.GetDouble()).Should().Equal([-157.85, 21.30],
+            .Select(value => value.GetDouble()).Should().Equal([longitude, latitude],
                 "the stream must preserve the fixture's longitude and latitude ordinates");
         delta.GetProperty("geometryCrs").GetString().Should().Be("EPSG:4326");
     }
