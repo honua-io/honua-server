@@ -11,7 +11,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
-using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -232,63 +231,28 @@ internal sealed class OgcCoveragesHandler
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            // Walk OGC API Coverages publications: each is a (resource, service) pair gated
-            // on protocol enablement + access policy. Dedupe by public collection identity
-            // (prefer IsPrimary): multiple resources may share the same storage layer id.
-            var byCollection = new Dictionary<int, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>();
-            foreach (var publication in snapshot.Graph.Publications)
-            {
-                if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
-                {
-                    continue;
-                }
-                if (!IsProtocolEnabled(service, CoveragesProtocol))
-                {
-                    continue;
-                }
-                var resource = snapshot.ResolveResource(publication);
-                if (!snapshot.IsRoutable(publication))
-                {
-                    continue;
-                }
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
-                {
-                    continue;
-                }
-                var collectionId = snapshot.ResolveStorageLayerId(publication);
-                if (!collectionId.HasValue)
-                {
-                    continue;
-                }
-                if (!byCollection.TryGetValue(collectionId.Value, out var existing) ||
-                    (publication.IsPrimary && !existing.Publication.IsPrimary))
-                {
-                    byCollection[collectionId.Value] = (publication, service, resource!);
-                }
-            }
-
-            var visible = byCollection.Values
-                .OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue)
+            var byCollection = await LayerValidationHelpers.ResolveStorageCollectionsWithAccessV2Async(
+                context, snapshot, CoveragesProtocol, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var visible = byCollection
+                .Where(entry => entry.Value.IsValid)
+                .OrderBy(entry => entry.Key)
                 .ToArray();
 
             var projected = await ProjectWithLimitedConcurrencyAsync(
                 visible,
                 async (entry, ct) =>
                 {
-                    var storageLayerId = snapshot.ResolveStorageLayerId(entry.Publication);
-                    if (!storageLayerId.HasValue)
-                    {
-                        return null;
-                    }
-                    var raster = await GetPrimaryRasterWithExtentAsync(storageLayerId.Value, ct).ConfigureAwait(false);
+                    var storageLayerId = entry.Key;
+                    var resource = entry.Value.Resource!;
+                    var raster = await GetPrimaryRasterWithExtentAsync(storageLayerId, ct).ConfigureAwait(false);
                     if (raster is null)
                     {
-                        var zarr = await _zarrCoverages.FindServableRegistrationAsync(storageLayerId.Value, ct).ConfigureAwait(false);
+                        var zarr = await _zarrCoverages.FindServableRegistrationAsync(storageLayerId, ct).ConfigureAwait(false);
                         return zarr is null
                             ? null
-                            : Services.ZarrCoverageService.CreateCollection(entry.Resource, storageLayerId.Value, zarr, baseUrl);
+                            : Services.ZarrCoverageService.CreateCollection(resource, storageLayerId, zarr, baseUrl);
                     }
-                    return await CreateCollectionAsync(entry.Resource, entry.Service, storageLayerId.Value, raster.Value, baseUrl, ct)
+                    return await CreateCollectionAsync(resource, entry.Value.Service, storageLayerId, raster.Value, baseUrl, ct)
                         .ConfigureAwait(false);
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -594,7 +558,7 @@ internal sealed class OgcCoveragesHandler
         string collectionId,
         CancellationToken cancellationToken)
     {
-        var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+        var validation = await LayerValidationHelpers.ValidateStorageCollectionWithAccessV2Async(
                 context,
                 collectionId,
                 requiredProtocol: CoveragesProtocol,
@@ -608,7 +572,7 @@ internal sealed class OgcCoveragesHandler
         var resource = validation.Resource!;
         var publication = validation.Publication!;
         var service = validation.Service;
-        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = validation.Snapshot!;
         var storageLayerId = snapshot.ResolveStorageLayerId(publication);
         if (!storageLayerId.HasValue)
         {
@@ -1770,9 +1734,6 @@ internal sealed class OgcCoveragesHandler
 
     private static string CreateEpsgUri(int srid)
         => FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{srid}");
-
-    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
-        => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
     private static string FormatContentCrsHeader(int srid)
         => FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid}>");

@@ -28,15 +28,21 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages;
 public sealed class OgcCoveragesCollectionIdentityTests
 {
     [IntegrationTheory]
-    [InlineData(false, false, false, 1)]
-    [InlineData(false, false, true, 1)]
-    [InlineData(true, false, false, 2)]
-    [InlineData(false, true, true, 1)]
-    [InlineData(true, true, true, 1)]
+    [InlineData(false, false, false, 1, false)]
+    [InlineData(false, false, true, 1, false)]
+    [InlineData(true, false, false, 2, false)]
+    [InlineData(false, true, true, 1, false)]
+    [InlineData(true, true, true, 1, false)]
+    [InlineData(false, false, false, 1, true)]
+    [InlineData(false, false, true, 1, true)]
+    [InlineData(true, false, false, 2, true)]
+    [InlineData(false, true, true, 1, true)]
+    [InlineData(true, true, true, 1, true)]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/coverages/collections")]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}")]
     public async Task Collections_ResourceAliases_ReturnUniqueAccessibleCollectionIds(
-        bool distinctStorage, bool privateAlias, bool primaryAlias, int expectedAnonymousCount)
+        bool distinctStorage, bool privateAlias, bool primaryAlias, int expectedAnonymousCount, bool distinctPublicIds)
     {
         var aliasLayer = distinctStorage ? 2001 : 2000;
         var graph = new TestMetadataV2GraphBuilder()
@@ -49,9 +55,9 @@ public sealed class OgcCoveragesCollectionIdentityTests
             .AddService("base-service", "base_coverage", protocols: ["OGC-API-Coverages"])
             .AddService("alias-service", "alias_coverage", protocols: ["OGC-API-Coverages"])
             .AddPublication("base-publication", "base-service", "base-resource",
-                layerIndex: 2000, storageBindingId: "base-storage")
+                layerIndex: distinctPublicIds ? 5000 : 2000, storageBindingId: "base-storage")
             .AddPublication("alias-publication", "alias-service", "alias-resource",
-                layerIndex: aliasLayer, storageBindingId: "alias-storage", isPrimary: primaryAlias)
+                layerIndex: distinctPublicIds ? 6000 : aliasLayer, storageBindingId: "alias-storage", isPrimary: primaryAlias)
             .BuildProvider();
         var store = Substitute.For<IRasterStore>();
         store.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
@@ -84,9 +90,11 @@ public sealed class OgcCoveragesCollectionIdentityTests
         try
         {
             using var anonymous = fixture.CreateClient();
-            await AssertCollectionsAsync(anonymous, expectedAnonymousCount);
+            await AssertCollectionsAsync(anonymous, expectedAnonymousCount,
+                !distinctStorage && primaryAlias && !privateAlias ? "Alias coverage" : "Base coverage");
             using var admin = fixture.CreateAdminClient();
-            await AssertCollectionsAsync(admin, distinctStorage ? 2 : 1);
+            await AssertCollectionsAsync(admin, distinctStorage ? 2 : 1,
+                !distinctStorage && primaryAlias ? "Alias coverage" : "Base coverage");
         }
         finally
         {
@@ -94,7 +102,7 @@ public sealed class OgcCoveragesCollectionIdentityTests
         }
     }
 
-    private static async Task AssertCollectionsAsync(HttpClient client, int expectedCount)
+    private static async Task AssertCollectionsAsync(HttpClient client, int expectedCount, string expectedPrimaryTitle)
     {
         using var response = await client.GetAsync("/ogc/coverages/collections");
         var body = await response.Content.ReadAsStringAsync();
@@ -105,5 +113,19 @@ public sealed class OgcCoveragesCollectionIdentityTests
         ids.Should().OnlyHaveUniqueItems();
         ids.Should().HaveCount(expectedCount);
         ids.Should().Contain("2000");
+        collections.Single(collection => collection.GetProperty("id").GetString() == "2000")
+            .GetProperty("title").GetString().Should().Be(expectedPrimaryTitle);
+        foreach (var collection in collections)
+        {
+            var self = collection.GetProperty("links").EnumerateArray()
+                .Single(link => link.GetProperty("rel").GetString() == "self")
+                .GetProperty("href").GetString();
+            using var detailResponse = await client.GetAsync(self);
+            var detailBody = await detailResponse.Content.ReadAsStringAsync();
+            detailResponse.StatusCode.Should().Be(HttpStatusCode.OK, detailBody);
+            using var detail = JsonDocument.Parse(detailBody);
+            detail.RootElement.GetProperty("id").GetString().Should().Be(collection.GetProperty("id").GetString());
+            detail.RootElement.GetProperty("title").GetString().Should().Be(collection.GetProperty("title").GetString());
+        }
     }
 }
