@@ -900,10 +900,13 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_ProcessWhoseExecutorAlwaysFails_IsNotCertifiedExecutable()
     {
-        // analytics.cluster validates cleanly but is ProtocolOnly: it runs only through
-        // its owning synchronous protocol endpoint, so the canonical job runtime a
-        // translated tool executes on can never dispatch it. A report that certifies it
-        // tells a migrating user a tool works when it can never execute (#3040 review).
+        // analytics.cluster validates cleanly under a complete DBSCAN mapping but is
+        // ProtocolOnly: it runs only through its owning synchronous protocol endpoint, so
+        // the canonical job runtime a translated tool executes on can never dispatch it.
+        // The mapping has to satisfy the static parameter contract first, because the
+        // executability probe only runs once no required parameter is missing. A report
+        // that certifies it tells a migrating user a tool works when it can never
+        // execute (#3040 review).
         // (raster.interpolate-kriging used to stand here; #3932 made it executable, and
         // the catalog now classifies no process Unavailable.)
         var response = await PostJsonAsync(
@@ -917,7 +920,10 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
                   "toolName": "Cluster",
                   "targetProcessId": "analytics.cluster",
                   "parameterMappings": [
-                    { "sourceName": "in_features", "targetParameter": "features" }
+                    { "sourceName": "in_layer", "targetParameter": "layerId" },
+                    { "sourceName": "cluster_method", "targetParameter": "algorithm" },
+                    { "sourceName": "search_distance", "targetParameter": "eps" },
+                    { "sourceName": "min_features", "targetParameter": "minPoints" }
                   ]
                 }
               ]
