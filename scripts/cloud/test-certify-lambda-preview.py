@@ -276,16 +276,68 @@ elif route.endswith("/migrations"):
     if fail == "migrations": body["status"] = "skipped"
     if fail == "migration-pending": body["pendingScripts"] = ["001"]
     if fail == "migration-plan": body["planAvailable"] = False
-elif route == "/api/v1/admin/api-keys":
-    status = 200 if fail == "denial-status" else 401
-    body = {"status":401, "type":"https://honua.io/problems/admin"}
-    if fail == "denial-body": body["status"] = 403
-    if fail == "denial-records": body["data"] = [{"key":"leaked"}]
-    if fail == "denial-nested": body["unexpectedExtension"] = {"records":[{"key":"leaked"}]}
-    if "x-api-key" in event["headers"]:
-        assert event["headers"]["x-api-key"] == "offline-scoped-key"
-        status = 401 if fail == "scoped-unauthenticated" else 200 if fail == "scoped-allowed" else 403
-        body = {"records":[1]} if fail == "scoped-records" else ""
+elif route.startswith("/api/v1/admin/api-keys"):
+    # The admin API-key lifecycle the lane now drives itself: the administrator mints this run's
+    # scoped principal, that principal is refused the same surface, and teardown revokes it.
+    presented = event["headers"].get("x-api-key")
+    override = os.environ.get("HONUA_LAMBDA_CERT_DENIED_KEY", "")
+    admin = presented is not None and presented == os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
+    minted = next((k for k in s["keys"] if k["value"] == presented), None)
+    scoped = bool(override and presented == override) or bool(minted and minted["status"] == "active")
+    tail = route[len("/api/v1/admin/api-keys"):].strip("/")
+    method = event["requestContext"]["http"]["method"]
+    def public(key):
+        return {"id":key["id"], "name":key["name"], "keyPrefix":key["value"][:8],
+                "permissions":key["permissions"], "status":key["status"]}
+    if admin and method == "POST" and not tail:
+        request = json.loads(event["body"])
+        assert request["permissions"] == ["read:layers"], request
+        assert request["name"].startswith("honua-cert-denied-"), request
+        # An abandoned credential is a standing one, so the mint itself has to bound the key.
+        assert request["expiresAt"].endswith("Z") and request["expiresAt"] > "2026", request
+        if fail == "mint-refused":
+            status, body = 400, {"success":False, "message":"Validation failed: permissions are required"}
+        else:
+            key = {"id":"00000000-0000-4000-8000-%012d" % (len(s["keys"]) + 1), "name":request["name"],
+                   "value":"offline-minted-key-%d" % (len(s["keys"]) + 1),
+                   "permissions":request["permissions"], "status":"active"}
+            s["keys"].append(key)
+            # A create can be applied and still lose its response; the record is already there.
+            if fail == "mint-response-lost": bad()
+            status, body = 201, {"success":True, "data":{"apiKey":public(key), "key":key["value"]}}
+    elif admin and method == "POST" and tail.endswith("/revoke"):
+        target = next((k for k in s["keys"] if k["id"] == tail.split("/")[0]), None)
+        if target is None or fail == "revoke-refused":
+            status, body = 404, {"success":False, "message":"API key not found"}
+        else:
+            target["status"] = "revoked"
+            s["revoked"].append(target["id"])
+            status, body = 200, {"success":True, "data":public(target)}
+    elif admin and method == "GET" and tail.endswith("/effective-permissions"):
+        target = next((k for k in s["keys"] if k["id"] == tail.split("/")[0]), None)
+        if target is None:
+            status, body = 404, {"success":False, "message":"API key not found"}
+        else:
+            status = 200
+            body = {"success":True, "data":{"id":target["id"], "name":target["name"], "status":target["status"],
+                                            "permissions":target["permissions"],
+                                            "canAuthenticate":target["status"] == "active"}}
+    elif admin and method == "GET" and not tail:
+        status, body = 200, {"success":True, "data":[public(k) for k in s["keys"]]}
+    elif scoped:
+        # Authenticated, not authorized: the documented empty 403 with zero records.
+        status = 401 if fail in ("scoped-unauthenticated", "denied-key-missing") else 200 if fail in ("scoped-allowed", "denied-key-leaks") else 403
+        body = {"data":[{"id":"leaked","name":"leaked"}]} if fail in ("scoped-records", "denied-key-leaks") else ""
+        if fail == "denied-key-missing":
+            body = {"type":"https://honua.io/problems/admin", "title":"Unauthorized", "status":401,
+                    "detail":"API key required. Provide a valid API key in the X-API-Key header."}
+            headers = {"www-authenticate":'ApiKey realm="Honua Admin", header="X-API-Key", Basic realm="Honua Admin"'}
+    else:
+        status = 200 if fail == "denial-status" else 401
+        body = {"status":401, "type":"https://honua.io/problems/admin"}
+        if fail == "denial-body": body["status"] = 403
+        if fail == "denial-records": body["data"] = [{"key":"leaked"}]
+        if fail == "denial-nested": body["unexpectedExtension"] = {"records":[{"key":"leaked"}]}
 elif route.endswith("/0/query"):
     if "returnCountOnly" in event["rawQueryString"]: body = {"count":9 if fail == "query" else 10}
     else: body = {"features":[{"attributes":{"name":n}} for n in ["alpha","beta","gamma","delta","epsilon","zeta","eta","theta","iota","lambda"]]}
@@ -370,11 +422,11 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                                              "environments": 0, "nonces": [], "invokes": [],
                                              "warm": False, "stream": None, "platform_queries": 0,
                                              "stream_scoped": False, "stream_queries": [], "cold_streams": [],
-                                             "deleted_tags": []}))
+                                             "deleted_tags": [], "keys": [], "revoked": []}))
             env = {**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"], "STUB_STATE": str(state_path),
                    "STUB_FAIL": failure, "STUB_INDEX": "", "HONUA_LAMBDA_SOURCE_IMAGE": "ghcr.io/honua-io/honua-server:nightly-lambda-aot-test-amd64",
                    "HONUA_LAMBDA_SOURCE_DIGEST": "sha256:" + "a" * 64, "HONUA_LAMBDA_SERVER_REVISION": "a" * 40,
-                   "HONUA_LAMBDA_CERT_DENIED_KEY": "offline-scoped-key", "HONUA_LAMBDA_ARCHITECTURE": "x86_64", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
+                   "HONUA_LAMBDA_CERT_DENIED_KEY": "", "HONUA_LAMBDA_ARCHITECTURE": "x86_64", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
                    "AWS_REGION": "us-east-1", "REALAWS_CERT_LAMBDA_FUNCTION": "honua-cert-cert-server",
                    "REALAWS_CERT_LAMBDA_ALIAS": "live", "HONUA_LAMBDA_CERT_ADMIN_KEY": "offline-sensitive-canary",
                    "HONUA_LAMBDA_WRITE_BASE_URL": "https://cert.lambda-url.us-east-1.on.aws",
@@ -388,6 +440,9 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
             receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
             self.assertNotIn("offline-sensitive-canary", result.stdout + result.stderr + json.dumps(receipt))
             state = json.loads(state_path.read_text())
+            # The key the lane mints for itself is a credential too: it never reaches the log or the receipt.
+            for key in state["keys"]:
+                self.assertNotIn(key["value"], result.stdout + result.stderr + json.dumps(receipt))
             return result, receipt, state, original
 
     def test_pass_both_manifest_architectures(self):
@@ -517,6 +572,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                         "report", "cold-start", "cold-zero", "init-error", "cloudwatch", "migrations", "migration-pending", "migration-plan",
                         "query", "fixture-names", "create", "readback", "delete", "delete-remains",
                         "denial-status", "denial-body", "denial-records", "denial-nested", "scoped-unauthenticated", "scoped-allowed", "scoped-records", "executed-version", "weighted",
+                        "denied-key-missing", "denied-key-leaks", "mint-refused", "mint-response-lost", "revoke-refused",
                         "function-delete", "log-delete", "version-delete", "ownership", "get-function-transient"):
             with self.subTest(failure=failure):
                 result, receipt, state, _ = self.run_lane(failure)
@@ -759,12 +815,117 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
 
     def test_missing_required_inputs_fail(self):
         for name in ("HONUA_LAMBDA_ARCHITECTURE", "REALAWS_CERT_LAMBDA_FUNCTION", "REALAWS_CERT_LAMBDA_ALIAS",
-                     "HONUA_DEMO_BASE_URL", "HONUA_LAMBDA_CERT_ADMIN_KEY", "HONUA_LAMBDA_CERT_DENIED_KEY"):
+                     "HONUA_DEMO_BASE_URL", "HONUA_LAMBDA_CERT_ADMIN_KEY"):
             with self.subTest(name=name):
                 result, receipt, state, _ = self.run_lane(**{name: ""})
                 self.assertNotEqual(0, result.returncode)
                 self.assertNotEqual("pass", receipt.get("result"))
                 self.assertEqual([], state["calls"])
+
+    def test_denied_principal_is_minted_per_run_and_revoked_at_teardown(self):
+        """The denial assertion carries its own scoped key instead of a hand-minted bootstrap secret.
+
+        An API key is a database row: run 23 (34243173689) failed this assertion because the cert
+        database had been migrated and re-seeded since the bootstrap key was minted into it.
+        """
+        result, receipt, state, _ = self.run_lane()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("pass", receipt["result"])
+        denied = receipt["serving"]["deniedKey"]
+        self.assertEqual("minted", denied["source"])
+        self.assertEqual(["read:layers"], denied["permissions"])
+        self.assertEqual("honua-cert-denied-123-1", denied["name"])
+        self.assertTrue(denied["created"])
+        # The deletion is recorded, and it is the server's own view of the record that says so.
+        self.assertTrue(denied["revoked"])
+        self.assertIs(False, denied["canAuthenticate"])
+        self.assertEqual(0, denied["activeAfterTeardown"])
+        for phase in ("deployed", "baseline", "candidate", "rollback"):
+            self.assertEqual(403, receipt["serving"][phase]["authorization"]["actualStatus"])
+            self.assertEqual("minted", receipt["serving"][phase]["authorization"]["principalSource"])
+        # Exactly one key was minted, it was this run's, and it is revoked in the cert database.
+        self.assertEqual(1, len(state["keys"]))
+        self.assertEqual("honua-cert-denied-123-1", state["keys"][0]["name"])
+        self.assertEqual(["read:layers"], state["keys"][0]["permissions"])
+        self.assertEqual("revoked", state["keys"][0]["status"])
+        self.assertEqual([state["keys"][0]["id"]], state["revoked"])
+
+    def test_bootstrap_denied_key_override_is_still_accepted(self):
+        """The cert secret keeps working for one release, and an override mints nothing."""
+        result, receipt, state, _ = self.run_lane(HONUA_LAMBDA_CERT_DENIED_KEY="offline-scoped-key")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("pass", receipt["result"])
+        denied = receipt["serving"]["deniedKey"]
+        self.assertEqual("override", denied["source"])
+        self.assertFalse(denied["created"])
+        self.assertFalse(denied["revoked"])
+        self.assertEqual([], state["keys"])
+        self.assertEqual("override", receipt["serving"]["deployed"]["authorization"]["principalSource"])
+
+    def test_a_denied_principal_that_is_not_forbidden_says_which_way_it_failed(self):
+        """Run 23 could not say whether the scoped key was gone or the server had leaked records."""
+        cases = ((["denied-key-missing"], 401, "no", "json", "minted", "honua-cert-denied-123-1", "active"),
+                 (["denied-key-leaks"], 200, "yes", "json", "minted", "honua-cert-denied-123-1", "active"),
+                 # Run 23 itself: a bootstrap override the lane can say nothing else about.
+                 (["denied-key-missing", "override"], 401, "no", "json", "override",
+                  "HONUA_LAMBDA_CERT_DENIED_KEY", "unknown"))
+        for selector, status, authenticated, kind, principal, key, record in cases:
+            with self.subTest(case=selector):
+                overrides = {"HONUA_LAMBDA_CERT_DENIED_KEY": "offline-scoped-key"} if "override" in selector else {}
+                result, receipt, state, _ = self.run_lane(selector[0], **overrides)
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual("noProof", receipt["serving"]["result"])
+                diagnosis = [line for line in result.stderr.splitlines() if line.startswith("serving-403:")]
+                self.assertTrue(diagnosis, result.stderr)
+                self.assertIn("phase=deployed", diagnosis[0])
+                self.assertIn("status=%d" % status, diagnosis[0])
+                self.assertIn("body-kind=" + kind, diagnosis[0])
+                self.assertIn("authenticated=" + authenticated, diagnosis[0])
+                self.assertIn("principal=" + principal, diagnosis[0])
+                self.assertIn("key=" + key, diagnosis[0])
+                self.assertIn("record=" + record, diagnosis[0])
+                if status == 401:
+                    # The challenge names the scheme that refused, exactly as the 401 line does.
+                    self.assertIn("challenge=ApiKey+Basic", diagnosis[0])
+                else:
+                    # A leak (honua-server#4386) is counted, not quoted.
+                    self.assertIn("records=1", diagnosis[0])
+                    self.assertNotIn("leaked", diagnosis[0])
+                self.assertFalse(state["function"] or state["logs"] or state["row"])
+
+    def test_a_lost_mint_response_still_revokes_the_record_it_created(self):
+        """A create can be applied and lose its response; the row it left behind is this run's."""
+        result, receipt, state, _ = self.run_lane("mint-response-lost")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        self.assertEqual(1, len(state["keys"]))
+        # Resolved by this run's unique key name, since the lane never saw the id.
+        self.assertEqual("revoked", state["keys"][0]["status"])
+        self.assertTrue(receipt["serving"]["deniedKey"]["revoked"])
+        self.assertFalse(receipt["serving"]["deniedKey"]["created"])
+        self.assertFalse(state["function"] or state["logs"] or state["row"])
+
+    def test_a_denial_key_left_behind_fails_the_run(self):
+        """Serving can pass and the run still not certify: the credential must not outlive it."""
+        result, receipt, state, _ = self.run_lane("revoke-refused")
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotEqual("pass", receipt.get("result"))
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        # The serving assertions themselves passed; teardown is what refused the run.
+        self.assertEqual(403, receipt["serving"]["deployed"]["authorization"]["actualStatus"])
+        self.assertFalse(receipt["serving"]["deniedKey"]["revoked"])
+        self.assertIn("Denial key", result.stderr)
+        self.assertEqual("active", state["keys"][0]["status"])
+
+    def test_the_denied_key_secret_is_no_longer_a_required_bootstrap_input(self):
+        documentation = (ROOT / "scripts/cloud/lambda-certification.md").read_text()
+        self.assertNotIn("HONUA_LAMBDA_CERT_ADMIN_KEY HONUA_LAMBDA_CERT_DENIED_KEY", WORKFLOW)
+        self.assertNotIn("  HONUA_LAMBDA_CERT_DENIED_KEY\n", SCRIPT)
+        # Still passed through, so an existing bootstrap keeps working for one release.
+        self.assertIn("HONUA_LAMBDA_CERT_DENIED_KEY: ${{ secrets.REALAWS_CERT_DENIED_KEY }}", WORKFLOW)
+        self.assertIn("**Optional override, deprecated.**", documentation)
+        self.assertIn("mints its own scoped `read:layers` principal per run", documentation)
+        self.assertIn("serving-403:", documentation)
 
     def test_manifest_check_accepts_ecr_schema2_and_rejects_a_re_encoded_config(self):
         """Manifest-level check on the real artifact: config/rootfs identity, never manifest identity."""
