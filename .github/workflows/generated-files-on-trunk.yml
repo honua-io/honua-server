@@ -21,9 +21,11 @@ env:
 
 jobs:
   regenerate:
-    # The merge-train credential emits push events. This exact commit subject
-    # stops the generated commit from starting another generation cycle.
-    if: "!startsWith(github.event.head_commit.message, 'ci: regenerate generated files on trunk')"
+    # The merge-train credential emits push events. Require both the reserved
+    # subject and provenance trailer so a similarly titled PR still regenerates.
+    if: >-
+      !(startsWith(github.event.head_commit.message, 'ci: regenerate generated files on trunk')
+      && contains(github.event.head_commit.message, 'Generated-From: '))
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:

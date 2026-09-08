@@ -63,8 +63,8 @@ trusted trunk code. A serialized writer checks out current trunk, validates,
 stages only the six outputs, and creates at most one commit with author and
 committer `Mike McDougall <mike@honua.io>` and footer `Refs #3213`.
 
-No diff produces no commit. The exact generated commit subject skips its own
-push-triggered job. Reruns are idempotent for unchanged inputs. Pushes never
+No diff produces no commit. The generated commit subject plus its `Generated-From` trailer skip its own
+push-triggered job; a similarly titled ordinary merge still regenerates. Reruns are idempotent for unchanged inputs. Pushes never
 force or rebase generated blobs: if trunk advances during generation, the push
 fails safely and the newer push's queued run regenerates from current trunk.
 Transient push failures retry with 10/30/60/120-second backoff.
