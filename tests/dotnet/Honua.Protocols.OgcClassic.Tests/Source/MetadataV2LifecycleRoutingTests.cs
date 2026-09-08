@@ -56,22 +56,29 @@ public sealed class MetadataV2LifecycleRoutingTests
             .Length.Should().Be(0);
     }
 
-    [UnitTest]
-    public void WcsLayerResolver_WithRetiredBinding_OmitsCoverage()
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(MetadataV2LifecycleStatus.Active, true)]
+    [InlineData(MetadataV2LifecycleStatus.Retired, false)]
+    public void WcsLayerResolver_RespectsBindingLifecycle(
+        MetadataV2LifecycleStatus bindingLifecycle, bool expectedResolved)
     {
         var snapshot = CreateSnapshot(
             publicationLifecycle: MetadataV2LifecycleStatus.Active,
-            bindingLifecycle: MetadataV2LifecycleStatus.Retired);
+            bindingLifecycle: bindingLifecycle,
+            resourceType: MetadataV2ResourceType.RasterDataset);
         var method = typeof(Wcs20Handler).GetMethod(
             "TryResolveResourceForLayer",
             BindingFlags.NonPublic | BindingFlags.Static);
         method.Should().NotBeNull();
-        object?[] arguments = [snapshot, 7, null];
+        object?[] arguments = [snapshot, 7, null, null];
 
         var resolved = (bool)method!.Invoke(null, arguments)!;
 
-        resolved.Should().BeFalse();
-        arguments[2].Should().BeNull();
+        resolved.Should().Be(expectedResolved);
+        arguments[2].Should().Be(expectedResolved ? snapshot.Graph.Resources.Single() : null);
+        arguments[3].Should().Be(expectedResolved ? snapshot.Graph.Services.Single() : null);
     }
 
     [UnitTest]
@@ -109,7 +116,8 @@ public sealed class MetadataV2LifecycleRoutingTests
         MetadataV2LifecycleStatus publicationLifecycle,
         MetadataV2LifecycleStatus resourceLifecycle = MetadataV2LifecycleStatus.Active,
         MetadataV2LifecycleStatus bindingLifecycle = MetadataV2LifecycleStatus.Active,
-        MetadataV2LifecycleStatus serviceLifecycle = MetadataV2LifecycleStatus.Active)
+        MetadataV2LifecycleStatus serviceLifecycle = MetadataV2LifecycleStatus.Active,
+        MetadataV2ResourceType resourceType = MetadataV2ResourceType.FeatureDataset)
     {
         var service = new MetadataV2Service
         {
@@ -123,7 +131,7 @@ public sealed class MetadataV2LifecycleRoutingTests
         var resource = new MetadataV2Resource
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-7", Name = "layer-7" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = resourceType,
             StorageBindingIds = ["binding-7"],
             PrimaryStorageBindingId = "binding-7",
             Spatial = new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.Point },
