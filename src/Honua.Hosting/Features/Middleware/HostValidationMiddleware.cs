@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.Middleware;
@@ -228,14 +229,12 @@ internal sealed class HostValidationMiddleware(
 
     private static string? ResolvePublicBaseUrlHost(IConfiguration configuration)
     {
-        var configuredBaseUrl = configuration["Public:BaseUrl"] ?? configuration["PUBLIC_BASE_URL"];
-        if (string.IsNullOrWhiteSpace(configuredBaseUrl))
+        if (!BaseUrlResolver.TryGetConfiguredBaseUrl(configuration, out var configuredBaseUrl))
         {
             return null;
         }
 
-        var trimmed = configuredBaseUrl.Trim();
-        return Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host)
+        return Uri.TryCreate(configuredBaseUrl, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host)
             ? uri.Host
             : null;
     }

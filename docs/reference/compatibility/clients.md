@@ -30,6 +30,16 @@ Cesium lanes are re-certified automatically in CI. See the
 per-lane test-case coverage (connection, auth, discovery, schema, query, paging,
 geometry fidelity, error handling, rendering).
 
+## Public URL and host validation
+
+Set `Public:BaseUrl` (or its `Public__BaseUrl` environment form) or
+`PUBLIC_BASE_URL` to the public HTTP(S) origin used by desktop clients. A blank
+`Public:BaseUrl` falls back to `PUBLIC_BASE_URL`; a nonblank primary setting takes
+precedence. Request host validation, strict startup validation
+(`HostValidation:RequireExplicitHosts=true`) and generated links use the same URL resolution.
+An explicit host allowlist still takes precedence over the public URL, and
+unrelated request hosts remain rejected when host validation is enabled.
+
 ## Realtime credentials and reconnects
 
 Protected FeatureServer and SensorThings SSE/WebSocket subscriptions revalidate

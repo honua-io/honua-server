@@ -93,6 +93,30 @@ public sealed class ConfigurationValidationServiceTests
             error.Contains("Host validation is enabled", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData(null, "https://alias.honua.test", false)]
+    [InlineData("", "https://alias.honua.test", false)]
+    [InlineData(" \t ", "https://alias.honua.test", false)]
+    [InlineData("https://primary.honua.test", "not-a-url", false)]
+    [InlineData("not-a-url", "https://alias.honua.test", true)]
+    [InlineData("", "ftp://alias.honua.test", true)]
+    public void ValidateConfiguration_StrictHostValidation_PublicUrlAliasPreservesResolutionContract(
+        string? primaryUrl, string aliasUrl, bool expectedError)
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["HostValidation:RequireExplicitHosts"] = "true",
+            ["Public:BaseUrl"] = primaryUrl,
+            ["PUBLIC_BASE_URL"] = aliasUrl
+        });
+
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            configuration, NullLogger.Instance, isDevelopment: false);
+
+        errors.Any(error => error.Contains("Host validation is enabled", StringComparison.OrdinalIgnoreCase))
+            .Should().Be(expectedError);
+    }
+
     [Fact]
     public void ValidateConfiguration_Development_WithDevAuthEnabled_ReturnsError()
     {

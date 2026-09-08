@@ -6696,6 +6696,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetLandingPage_IncludesDatasetMapLink",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetLandingPage_WithContentNegotiation_ReturnsCorrectFormat",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesHostHeaderTests.LandingPage_WithForgedHostHeader_DoesNotReflectAttackerHostInLinks",
+        "Honua.Server.Tests.Features.Security.HostValidationEnvironmentAliasTests.Request_BlankPrimaryPublicUrl_UsesAliasAndRejectsForgedHost",
+        "Honua.Server.Tests.Features.Security.HostValidationEnvironmentAliasTests.StartupValidation_StrictProductionWithBlankPrimary_AcceptsRunningServerAliasConfiguration",
         "Honua.Server.Tests.Features.Security.HostValidationFallbackTests.Request_WithForgedIpHostHeader_AndNoAllowlist_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Security.HostValidationMiddlewareTests.Request_WithConfiguredPublicHost_AllowsRequest",
         "Honua.Server.Tests.Features.Security.HostValidationMiddlewareTests.Request_WithForgedHostHeader_ReturnsBadRequest",
