@@ -44,6 +44,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
     // drained before shutdown to avoid losing in-flight invalidations on a clean stop.
     private readonly ConcurrentQueue<Task> _pendingFireAndForgetTasks = new();
 
+    private readonly TimeProvider _timeProvider;
     private readonly CacheOptions _options;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<DistributedCacheRefreshCoordinator> _logger;
@@ -61,9 +62,11 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         IPerformanceMonitor performanceMonitor,
         ILogger<DistributedCacheRefreshCoordinator> logger,
         IConnectionMultiplexer? redis = null,
-        bool allowFallback = true)
+        bool allowFallback = true,
+        TimeProvider? timeProvider = null)
     {
         _options = options.Value;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _performanceMonitor = performanceMonitor;
         _logger = logger;
         _instanceId = Environment.MachineName + "_" + Guid.NewGuid().ToString("N")[..8];
@@ -193,7 +196,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
     /// <inheritdoc />
     public bool TryEnqueueRefresh(string key, Func<CancellationToken, Task> refreshCallback)
     {
-        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+        var nowTicks = _timeProvider.GetUtcNow().UtcTicks;
         if (IsWithinRetryBackoff(key, nowTicks))
         {
             return false;
@@ -210,7 +213,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
         // Re-check after the pending claim to close the race with a recently failed
         // refresh that may have published its retry backoff concurrently.
-        if (IsWithinRetryBackoff(key, DateTimeOffset.UtcNow.UtcTicks))
+        if (IsWithinRetryBackoff(key, _timeProvider.GetUtcNow().UtcTicks))
         {
             EnqueueAndTrackFireAndForget(ReleaseRefreshClaimAsync(key).AsTask());
             return false;
@@ -767,7 +770,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
     private void SetRetryBackoff(string key)
     {
-        _retryAfterUtcTicks[key] = DateTimeOffset.UtcNow.Add(FailureBackoff).UtcTicks;
+        _retryAfterUtcTicks[key] = _timeProvider.GetUtcNow().Add(FailureBackoff).UtcTicks;
     }
 
     private bool ShouldUseRedis()
