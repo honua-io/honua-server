@@ -351,6 +351,11 @@ if [[ "$(aws logs describe-log-groups --log-group-name-prefix "$log_group" \
   exit 94
 fi
 
+# Everything this group will ever hold belongs to this run: the group is created here, is named
+# for the run, and is deleted at teardown. Anchoring the evidence queries to its creation (with
+# slack for clock skew) is therefore both bounded and complete — unlike a window measured back
+# from the invoke, which loses any initialization that happened while the function was activating.
+log_group_started_ms=$(( $(date +%s) * 1000 - 120000 ))
 aws logs create-log-group --log-group-name "$log_group"
 log_group_created=true
 aws logs put-retention-policy --log-group-name "$log_group" --retention-in-days 1
@@ -396,37 +401,37 @@ if [[ "$resolved_image" != "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" ]]
 fi
 
 payload='{"version":"2.0","routeKey":"GET /healthz/live","rawPath":"/healthz/live","rawQueryString":"","headers":{"accept":"application/json","host":"lambda-cert.invalid"},"requestContext":{"http":{"method":"GET","path":"/healthz/live","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"honua-lambda-preview-cert"}},"isBase64Encoded":false}'
-# Bound the CloudWatch evidence query to this invoke (milliseconds, with slack
-# for clock skew between the runner and the service).
-invoke_started_ms=$(( $(date +%s) * 1000 - 120000 ))
-invoke_meta="$(aws lambda invoke --function-name "$function_name" --cli-binary-format raw-in-base64-out \
-  --invocation-type RequestResponse --log-type Tail --payload "$payload" "$scratch/response.json")"
-if [[ "$(jq -r '.StatusCode' <<<"$invoke_meta")" != "200" || "$(jq -r '.FunctionError // empty' <<<"$invoke_meta")" != "" ]]; then
-  # Ninth live run: StatusCode 204 with no ExecutedVersion, i.e. the API treated
-  # the call as a dry run. Say exactly what came back so the next failure is
-  # diagnosable from the job log (Lambda's own log tail, never the env).
-  echo "Lambda invocation failed" >&2
-  jq -c '{StatusCode, ExecutedVersion, FunctionError}' <<<"$invoke_meta" >&2
-  jq -r '.LogResult // empty' <<<"$invoke_meta" | base64 -d 2>/dev/null | tail -n 20 | sed 's/^/lambda-log: /' >&2
-  exit 6
-fi
-if [[ "$(jq -r '.statusCode' "$scratch/response.json")" != "200" ]]; then
-  echo "representative HTTP operation did not return status 200" >&2
-  exit 7
-fi
-response_body="$(jq -r '.body' "$scratch/response.json")"
-if [[ "$response_body" != *Healthy* && "$response_body" != *healthy* ]]; then
-  echo "representative HTTP operation did not return a healthy response" >&2
-  exit 8
-fi
 
-tail_log="$(jq -er '.LogResult' <<<"$invoke_meta" | base64 -d)"
-request_id="$(sed -nE 's/^REPORT RequestId: ([^[:space:]]+).*/\1/p' <<<"$tail_log" | tail -n 1)"
-if [[ -z "$request_id" ]]; then
-  echo "Lambda invoke tail did not contain a REPORT request id" >&2
-  exit 9
-fi
-
+# Lambda proactively initializes an execution environment while a newly created function
+# transitions to Active, so "the first invoke of a freshly created function" is not the same thing
+# as a cold invoke. The eighteenth live run (34203568834) was the first Lambda deployment of its
+# source digest, so the platform had to download and optimize the image before the function became
+# Active; the roughly 21 s initialization finished inside that transition and the certified invoke
+# landed on an already-initialized environment. Its REPORT carried no Init Duration, no INIT_REPORT
+# was emitted at all, and there was nothing for the tail or for CloudWatch to find. Runs that
+# activated in seconds, on a digest the platform had already optimized, invoked before the
+# proactive initialization completed and did observe it: the flakiness is that race, not the query.
+#
+# A configuration change discards every execution environment a function holds, so bumping an inert
+# nonce and invoking as soon as the update settles puts the initialization ahead of the invoke
+# rather than behind it. This never stands in for the artifact — the resolved image digest is
+# re-read after every update — and it never weakens the assertion: a pass still requires a positive
+# Init Duration this run actually observed.
+cold_start_nonce=0
+force_cold_environment() {
+  cold_start_nonce=$(( cold_start_nonce + 1 ))
+  jq --arg nonce "${run_token}-${cold_start_nonce}" \
+    '.Variables["HONUA_LAMBDA_CERT_COLD_START"] = $nonce' \
+    "$scratch/environment.json" > "$scratch/environment-cold-start.json"
+  aws lambda update-function-configuration --function-name "$function_name" \
+    --environment "file://$scratch/environment-cold-start.json" >/dev/null
+  aws lambda wait function-updated-v2 --function-name "$function_name"
+  if [[ "$(aws lambda get-function --function-name "$function_name" \
+    --query 'Code.ResolvedImageUri' --output text)" != "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" ]]; then
+    echo "Lambda stopped resolving the expected ECR artifact digest after the cold-start nonce update" >&2
+    exit 5
+  fi
+}
 
 # CloudWatch delivery for a fresh function's first invoke lags: the thirteenth
 # live run (34084763377) created its log stream at +0s, the first query ran at
@@ -443,23 +448,6 @@ count_events() {
   aws logs filter-log-events --log-group-name "$log_group" --start-time "$invoke_started_ms" "$@" \
     --query 'length(events)' --output text | awk '{ total += $1 } END { print total + 0 }'
 }
-cloudwatch_verified=false
-for _ in {1..36}; do
-  event_count="$(count_events --filter-pattern "\"${request_id}\"")"
-  if [[ "$event_count" =~ ^[1-9][0-9]*$ ]]; then
-    cloudwatch_verified=true
-    break
-  fi
-  sleep 5
-done
-if ! $cloudwatch_verified; then
-  echo "matching invocation evidence did not arrive in CloudWatch Logs" >&2
-  stream_count="$(aws logs describe-log-streams --log-group-name "$log_group" \
-    --query 'length(logStreams)' --output text 2>/dev/null)" || stream_count="unknown"
-  any_events="$(count_events 2>/dev/null)" || any_events="unknown"
-  echo "cloudwatch-evidence: log-streams=${stream_count} events-in-group=${any_events} request-id-fingerprint=$(fingerprint "$request_id")" >&2
-  exit 10
-fi
 
 # A cold start reports its Init Duration on the REPORT line when the runtime
 # initialized inside Lambda's init window. When initialization exceeds that
@@ -482,27 +470,119 @@ cold_start_from_lines() {
   fi
   [[ -n "$ms" ]] && printf '%s %s\n' "$ms" "$phase"
 }
+# One log stream is one execution environment, so the stream the certified invoke ran in is where
+# that environment's initialization was reported — whenever it happened. Searching it from the log
+# group's own creation covers the whole life of the environment, including any initialization that
+# preceded the invoke; a window measured back from the invoke does not, and a slow image
+# optimization pushes activation past it. The search is scoped to that one stream and never widened
+# to the group: the group also holds the earlier forced environments, and a late-delivered
+# INIT_REPORT from one of those is another invoke's cold start, not this receipt's.
+invoke_stream=""
 platform_lines() {
   # JSON output aggregates every page; text output would split them.
-  aws logs filter-log-events --log-group-name "$log_group" --start-time "$invoke_started_ms" \
-    --filter-pattern "$1" --query 'events[].message' --output json | jq -r '.[]?'
+  aws logs filter-log-events --log-group-name "$log_group" --start-time "$log_group_started_ms" \
+    --log-stream-names "$invoke_stream" --filter-pattern "$1" --query 'events[].message' \
+    --output json | jq -r '.[]?'
 }
-cold_start_source="tail"
-read -r cold_start_ms cold_start_phase < <(cold_start_from_lines "$tail_log") || true
-if [[ -z "${cold_start_ms:-}" ]]; then
-  # The request-id evidence above proves delivery has started, not that the
-  # platform lines are in yet: INIT_REPORT carries no request id and ships on
-  # its own schedule. Poll for the cold-start line itself, bounded.
-  cold_start_source="cloudwatch"
-  for _ in {1..24}; do
-    read -r cold_start_ms cold_start_phase < <(cold_start_from_lines "$(platform_lines REPORT; platform_lines INIT_REPORT)") || true
-    [[ -n "${cold_start_ms:-}" ]] && break
+resolve_invoke_stream() {
+  local stream
+  stream="$(aws logs filter-log-events --log-group-name "$log_group" --start-time "$log_group_started_ms" \
+    --filter-pattern "\"${request_id}\"" --query 'events[0].logStreamName' --output text 2>/dev/null |
+    awk '$1 != "None" && NF { print $1; exit }')"
+  if [[ -n "$stream" ]]; then
+    invoke_stream="$stream"
+  fi
+}
+
+cold_start_attempts=3
+cold_start_ms=""
+cold_start_phase=""
+cold_start_source=""
+for cold_start_attempt in $(seq 1 "$cold_start_attempts"); do
+  force_cold_environment
+  # Bound the CloudWatch delivery query to this invoke (milliseconds, with slack
+  # for clock skew between the runner and the service).
+  invoke_started_ms=$(( $(date +%s) * 1000 - 120000 ))
+  invoke_meta="$(aws lambda invoke --function-name "$function_name" --cli-binary-format raw-in-base64-out \
+    --invocation-type RequestResponse --log-type Tail --payload "$payload" "$scratch/response.json")"
+  if [[ "$(jq -r '.StatusCode' <<<"$invoke_meta")" != "200" || "$(jq -r '.FunctionError // empty' <<<"$invoke_meta")" != "" ]]; then
+    # Ninth live run: StatusCode 204 with no ExecutedVersion, i.e. the API treated
+    # the call as a dry run. Say exactly what came back so the next failure is
+    # diagnosable from the job log (Lambda's own log tail, never the env).
+    echo "Lambda invocation failed" >&2
+    jq -c '{StatusCode, ExecutedVersion, FunctionError}' <<<"$invoke_meta" >&2
+    jq -r '.LogResult // empty' <<<"$invoke_meta" | base64 -d 2>/dev/null | tail -n 20 | sed 's/^/lambda-log: /' >&2
+    exit 6
+  fi
+  if [[ "$(jq -r '.statusCode' "$scratch/response.json")" != "200" ]]; then
+    echo "representative HTTP operation did not return status 200" >&2
+    exit 7
+  fi
+  response_body="$(jq -r '.body' "$scratch/response.json")"
+  if [[ "$response_body" != *Healthy* && "$response_body" != *healthy* ]]; then
+    echo "representative HTTP operation did not return a healthy response" >&2
+    exit 8
+  fi
+
+  tail_log="$(jq -er '.LogResult' <<<"$invoke_meta" | base64 -d)"
+  request_id="$(sed -nE 's/^REPORT RequestId: ([^[:space:]]+).*/\1/p' <<<"$tail_log" | tail -n 1)"
+  if [[ -z "$request_id" ]]; then
+    echo "Lambda invoke tail did not contain a REPORT request id" >&2
+    exit 9
+  fi
+
+  # Every attempt proves delivery of its own request id, not just the first: the receipt records
+  # the last attempt's request fingerprint, and cloudWatchLogsVerified has to be about that invoke.
+  # Delivery of the id is also what names the stream the invoke ran in, which is the only place the
+  # cold-start evidence below is read from.
+  cloudwatch_verified=false
+  invoke_stream=""
+  for _ in {1..36}; do
+    event_count="$(count_events --filter-pattern "\"${request_id}\"")"
+    if [[ "$event_count" =~ ^[1-9][0-9]*$ ]]; then
+      resolve_invoke_stream
+      if [[ -n "$invoke_stream" ]]; then
+        cloudwatch_verified=true
+        break
+      fi
+    fi
     sleep 5
   done
-fi
+  if ! $cloudwatch_verified; then
+    echo "matching invocation evidence did not arrive in CloudWatch Logs" >&2
+    stream_count="$(aws logs describe-log-streams --log-group-name "$log_group" \
+      --query 'length(logStreams)' --output text 2>/dev/null)" || stream_count="unknown"
+    any_events="$(count_events 2>/dev/null)" || any_events="unknown"
+    echo "cloudwatch-evidence: log-streams=${stream_count} events-in-group=${any_events} request-id-fingerprint=$(fingerprint "$request_id")" >&2
+    exit 10
+  fi
+
+  cold_start_ms=""
+  cold_start_phase=""
+  cold_start_source="tail"
+  read -r cold_start_ms cold_start_phase < <(cold_start_from_lines "$tail_log") || true
+  if [[ -z "${cold_start_ms:-}" ]]; then
+    # The request-id evidence above proves delivery has started, not that the
+    # platform lines are in yet: INIT_REPORT carries no request id and ships on
+    # its own schedule. Poll the invoke's own stream for the cold-start line
+    # itself, bounded.
+    cold_start_source="cloudwatch"
+    for _ in {1..24}; do
+      read -r cold_start_ms cold_start_phase < <(cold_start_from_lines "$(platform_lines REPORT; platform_lines INIT_REPORT)") || true
+      [[ -n "${cold_start_ms:-}" ]] && break
+      sleep 5
+    done
+  fi
+  if [[ -n "${cold_start_ms:-}" ]] && awk -v value="$cold_start_ms" 'BEGIN { exit !(value > 0) }'; then
+    break
+  fi
+  if (( cold_start_attempt < cold_start_attempts )); then
+    echo "certified invoke ${cold_start_attempt} of ${cold_start_attempts} reported no cold start; forcing a new execution environment" >&2
+  fi
+done
 if [[ -z "${cold_start_ms:-}" ]] || ! awk -v value="$cold_start_ms" 'BEGIN { exit !(value > 0) }'; then
-  echo "first invoke REPORT/INIT_REPORT has no positive cold-start Init Duration (tail and CloudWatch)" >&2
-  echo "cold-start-evidence: tail-bytes=${#tail_log} tail-has-init-report=$(grep -cE '^INIT_REPORT' <<<"$tail_log" || true) tail-has-report=$(grep -cE '^REPORT ' <<<"$tail_log" || true)" >&2
+  echo "no forced execution environment produced a positive cold-start Init Duration in its REPORT/INIT_REPORT (tail and CloudWatch)" >&2
+  echo "cold-start-evidence: attempts=${cold_start_attempts} tail-bytes=${#tail_log} tail-has-init-report=$(grep -cE '^INIT_REPORT' <<<"$tail_log" || true) tail-has-report=$(grep -cE '^REPORT ' <<<"$tail_log" || true)" >&2
   exit 14
 fi
 
@@ -531,6 +611,7 @@ jq -n \
   --argjson cold_start_ms "$cold_start_ms" \
   --arg cold_start_phase "$cold_start_phase" \
   --arg cold_start_source "$cold_start_source" \
+  --argjson cold_start_attempt "$cold_start_attempt" \
   --argjson serving "$serving_proof" \
   --arg schema "honua.lambda-preview-certification/v1" \
   --arg server_revision "$HONUA_LAMBDA_SERVER_REVISION" \
@@ -546,9 +627,9 @@ jq -n \
   --arg function_fingerprint "$(fingerprint "$function_name")" \
   --arg request_fingerprint "$(fingerprint "$request_id")" \
   --arg run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${GITHUB_RUN_ID}" \
-  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourcePlatformDigest:$source_platform_digest,sourceConfigDigest:$source_config_digest,sourceRootfsFingerprint:$source_rootfs_fingerprint,ecrDigest:$ecr_digest,mirrorOutcome:$mirror_outcome,repositoryFingerprint:$repository_fingerprint,mirrorTool:"crane",configDigestPreserved:true,rootfsPreserved:true,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,coldStartInitPhase:$cold_start_phase,coldStartEvidenceSource:$cold_start_source,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
+  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourcePlatformDigest:$source_platform_digest,sourceConfigDigest:$source_config_digest,sourceRootfsFingerprint:$source_rootfs_fingerprint,ecrDigest:$ecr_digest,mirrorOutcome:$mirror_outcome,repositoryFingerprint:$repository_fingerprint,mirrorTool:"crane",configDigestPreserved:true,rootfsPreserved:true,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,coldStartInitPhase:$cold_start_phase,coldStartEvidenceSource:$cold_start_source,coldStartEnvironmentForced:true,coldStartInvokeAttempts:$cold_start_attempt,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
   > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
 
-jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourcePlatformDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourceConfigDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.mirrorOutcome | test("^(pushed|skipped-existing|replaced-stale)$")) and .artifact.configDigestPreserved and .artifact.rootfsPreserved and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and .verification.coldStartInitDurationMs > 0' \
+jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourcePlatformDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourceConfigDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.mirrorOutcome | test("^(pushed|skipped-existing|replaced-stale)$")) and .artifact.configDigestPreserved and .artifact.rootfsPreserved and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and .verification.coldStartInitDurationMs > 0 and .verification.coldStartEnvironmentForced and .verification.coldStartInvokeAttempts >= 1' \
   "$HONUA_LAMBDA_PREVIEW_RECEIPT" >/dev/null
 echo "Lambda Preview certification passed; ECR digest: ${ecr_digest}"
