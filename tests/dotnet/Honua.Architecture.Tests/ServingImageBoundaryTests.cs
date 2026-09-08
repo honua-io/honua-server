@@ -324,14 +324,13 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("fail-fast: false",
             "one variant's failure must not cancel and hide the evidence for the others");
 
-        // Warm per-variant caches must survive the serial-to-matrix refactor; a
-        // renamed scope would silently make every leg cold for a build that
-        // takes tens of minutes cold and roughly a minute warm.
+        // PR verification, nightly and release builds share per-variant caches.
+        // Keep the architecture explicit so amd64 and arm64 exports cannot collide.
         foreach (var cacheScope in new[]
                  {
-                     "pr-aot-boundary",
-                     "pr-lambda-aot-boundary",
-                     "pr-functions-aot-boundary"
+                     "honua-aot-amd64",
+                     "honua-lambda-aot-amd64",
+                     "honua-functions-aot-amd64"
                  })
         {
             workflow.Should().Contain($"cache_scope: {cacheScope}");

@@ -65,7 +65,7 @@ jobs:
             image_name: Lambda Development JIT Image
             dockerfile: docker/Dockerfile.lambda
             tag_suffix: -lambda-jit
-            cache_scope: release-lambda-jit
+            cache_scope: honua-lambda-jit
             sarif_output: trivy-results-lambda
             sarif_category: trivy-lambda
             arch: arm64
@@ -77,7 +77,7 @@ jobs:
             image_name: Lambda AOT Image
             dockerfile: docker/Dockerfile.lambda.aot
             tag_suffix: -lambda-aot
-            cache_scope: release-lambda-aot
+            cache_scope: honua-lambda-aot
             sarif_output: trivy-results-lambda-aot
             sarif_category: trivy-lambda-aot
             arch: arm64
@@ -89,7 +89,7 @@ jobs:
             image_name: Functions Development JIT Image
             dockerfile: docker/Dockerfile.functions
             tag_suffix: -functions-jit
-            cache_scope: release-functions-jit
+            cache_scope: honua-functions-jit
             sarif_output: trivy-results-functions
             sarif_category: trivy-functions
             arch: amd64
