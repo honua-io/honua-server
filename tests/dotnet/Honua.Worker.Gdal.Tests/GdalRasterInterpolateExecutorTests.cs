@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit.Attributes;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
