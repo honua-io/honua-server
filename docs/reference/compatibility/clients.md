@@ -109,7 +109,13 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   QGIS or ArcGIS Pro raster certification.
 - **OGC API Coverages is MVP-scoped**: GeoTIFF/PNG retrieval with bbox/CRS/scale
   parameters; `datetime`, `subset`, CoverageJSON, NetCDF, and tiled coverage
-  delivery are not implemented.
+  delivery are not implemented. Collection discovery emits each accessible
+  storage-layer identifier once even when feature and raster resources share
+  that storage binding. Access filtering precedes deduplication, with a primary
+  publication preferred among accessible aliases. Numeric collection detail URLs
+  use the same storage identity and accessible-publication selection as discovery,
+  including when publication IDs differ from the storage-layer ID. Other protocols
+  retain their existing publication-identifier routing.
 - **OData v4 delta tracking uses durable authorized query snapshots.** Clients
   apply key-preserving `@removed` entries for deletes and filter exits. Legacy
   timestamp tokens require a new baseline after typed 410 recovery. Tracking
