@@ -126,7 +126,8 @@ public sealed class ProcessEntryPointAdvertisementTests
     [InlineData(ProcessEntryPoints.Workflow, false)]
     [InlineData(ProcessEntryPoints.Job, true)]
     [InlineData(ProcessEntryPoints.Job | ProcessEntryPoints.Workflow, true)]
-    [UnitTest]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     public void JobCallability_RequiresTheMatchingEntryPoint(ProcessEntryPoints entryPoints, bool expected)
     {
         var undeclared = new ProcessDefinition
@@ -149,7 +150,6 @@ public sealed class ProcessEntryPointAdvertisementTests
         var workflow = undeclared with { ExecutionKind = ProcessExecutionKind.WorkflowOnly };
         ProcessExecutionEligibility.IsWorkflowCallable(workflow).Should().Be(
             (entryPoints & ProcessEntryPoints.Workflow) != 0);
-
     }
 
     [UnitTest]

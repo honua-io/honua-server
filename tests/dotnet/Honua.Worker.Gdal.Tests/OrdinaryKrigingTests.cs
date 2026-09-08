@@ -97,11 +97,16 @@ public sealed class OrdinaryKrigingTests
         kriging.Predict(2, 0).Should().BeApproximately(20, 1e-9);
     }
 
-    [UnitTest]
-    public void TrySolve_CoincidentSamples_ReportsASingularSystem()
+    [Theory]
+    [InlineData(0d)]
+    [InlineData(0.5d)]
+    [InlineData(1d)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public void TrySolve_CoincidentSamples_ReportsASingularSystem(double nugget)
     {
         KrigingSample[] duplicated = [new(1, 1, 5), new(1, 1, 9), new(4, 4, 2)];
-        var variogram = new Variogram(VariogramModel.Spherical, 0, 1, 4);
+        var variogram = new Variogram(VariogramModel.Spherical, nugget, 1, 4);
 
         OrdinaryKriging.TrySolve(duplicated, variogram, out _, out var failure).Should().BeFalse();
         failure.Should().Contain("share a location");
@@ -125,7 +130,8 @@ public sealed class OrdinaryKrigingTests
     [InlineData(2_000d)]
     [InlineData(2_000_000d)]
     [InlineData(1e12)]
-    [UnitTest]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     public void TrySolve_WellSeparatedSamples_IsNotReportedSingularAtAnyValueScale(double high)
     {
         KrigingSample[] samples = [new(0, 0, 0), new(10, 0, high)];

@@ -369,7 +369,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
                 if (Math.Abs(prediction) > KrigingGridInputs.MaxAbsValue)
                 {
                     return JobExecutionResult.Failed(
-                        "Kriging failed: prediction exceeds the supported magnitude 1e12; rescale the values.");
+                        "Kriging failed: prediction exceeds the supported Float32 magnitude; rescale the values.");
                 }
 
                 values[(row * width) + column] = prediction;

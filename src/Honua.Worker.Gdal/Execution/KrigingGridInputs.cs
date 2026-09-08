@@ -27,9 +27,9 @@ internal static class KrigingGridInputs
 {
     /// <summary>
     /// Maximum magnitude for samples and predictions, bounding fixed-point cell text
-    /// to 34 characters including sign and decimal places, and keeping Float32 finite.
+    /// to 60 characters including sign and decimal places, and keeping Float32 finite.
     /// </summary>
-    internal const double MaxAbsValue = 1e12;
+    internal const double MaxAbsValue = float.MaxValue;
 
     /// <summary>
     /// Parses a GeoJSON <c>FeatureCollection</c> of points into kriging samples. The

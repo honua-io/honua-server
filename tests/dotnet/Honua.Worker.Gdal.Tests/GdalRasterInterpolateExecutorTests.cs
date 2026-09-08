@@ -256,7 +256,8 @@ public sealed class GdalRasterInterpolateExecutorTests
     [Theory]
     [InlineData(1_000, ExecutionJobStatus.Failed)]
     [InlineData(40_000, ExecutionJobStatus.Succeeded)]
-    [UnitTest]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     public async Task Kriging_CombinedBudget_EnforcesTheBoundary(long budget, ExecutionJobStatus expected)
     {
         var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("ok"));
@@ -297,8 +298,11 @@ public sealed class GdalRasterInterpolateExecutorTests
 
     [Theory]
     [InlineData(1e300, "sample value")]
-    [InlineData(1e12, "prediction")]
-    [UnitTest]
+    [InlineData(-1e300, "sample value")]
+    [InlineData((double)float.MaxValue, "prediction")]
+    [InlineData(-(double)float.MaxValue, "prediction")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     public async Task Kriging_ExcessiveSampleOrPredictionMagnitude_FailsBeforeEncoding(double value, string error)
     {
         var runner = FakeGdalCommandRunner.Failing(1, "n/a");
@@ -336,10 +340,11 @@ public sealed class GdalRasterInterpolateExecutorTests
         {
             var values = Enumerable.Repeat(-KrigingGridInputs.MaxAbsValue, 2048).ToArray();
             await KrigingGridInputs.WriteGridAsync(path, new KrigingGrid(0, 0, 1, 1, 2048, 1), values, default);
-            new FileInfo(path).Length.Should().BeLessThan(35 * values.Length + 256);
+            new FileInfo(path).Length.Should().BeLessThan(61 * values.Length + 256);
             var rows = await File.ReadAllLinesAsync(path);
             rows.Should().HaveCount(6);
-            rows[5].Split(' ').Select(cell => double.Parse(cell, CultureInfo.InvariantCulture)).Should().Equal(values);
+            rows[5].Split(' ').Select(cell => float.Parse(cell, CultureInfo.InvariantCulture))
+                .Should().Equal(values.Select(value => (float)value));
         }
         finally
         {
