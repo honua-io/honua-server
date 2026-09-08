@@ -102,6 +102,9 @@ not certify the full lifecycle matrix. The replacement scenario also remains in
 the lifecycle lane. It decodes the forced-staged GeoJSON and checks all 500 feature
 IDs and two-dimensional WGS84 coordinates against an independent integer-grid
 oracle before comparing bytes and descriptors across replacement.
+The [2026-09-08 pre-cut execution receipt](../internal/evidence/gp-output-store-replacement-2026-09-08.md)
+records the tested image pair, topology, independent expectation and remaining
+candidate qualification.
 
 `GeoprocessingOutputStoreTopologyTests` enumerates the checked-in topology
 denominator on every build: each Compose service that enables staging must bind a
