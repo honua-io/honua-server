@@ -724,15 +724,28 @@ internal sealed class Wcs20Handler
         var matchingBindings = snapshot.Graph.StorageBindings
             .Where(candidate => candidate.StorageLayerId == layerId)
             .ToArray();
-        foreach (var binding in matchingBindings)
+
+        // Storage-layer ids are not unique across stores — the default test graph binds
+        // both a feature resource and a raster resource at id 0 — so a coverage route
+        // must prefer the raster resource rather than whichever binding happens to come
+        // first. Taking the first match would let an unrelated feature service's policy
+        // decide a coverage request.
+        var routable = matchingBindings
+            .Select(binding => snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var candidate)
+                && binding.IsRoutable(candidate)
+                    ? candidate
+                    : null)
+            .Where(candidate => candidate is not null)
+            .Select(candidate => candidate!)
+            .ToArray();
+
+        var preferred = routable.FirstOrDefault(candidate => candidate.Type == MetadataV2ResourceType.RasterDataset)
+            ?? routable.FirstOrDefault();
+        if (preferred is not null)
         {
-            if (snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var byBinding) &&
-                binding.IsRoutable(byBinding))
-            {
-                resource = byBinding;
-                owningService = FindOwningService(snapshot, byBinding);
-                return true;
-            }
+            resource = preferred;
+            owningService = FindOwningService(snapshot, preferred);
+            return true;
         }
         if (matchingBindings.Length > 0)
         {
@@ -760,13 +773,21 @@ internal sealed class Wcs20Handler
     }
 
     /// <summary>
-    /// Finds the service that publishes <paramref name="resource"/>, so the layer-scoped
-    /// WCS route can honour a service-level access policy (honua-server#4388). The route
-    /// is keyed by an integer storage-layer handle and carries no service segment, so the
-    /// owning service has to be recovered from the publication graph. Returns
-    /// <see langword="null"/> when no routable publication references the resource, which
-    /// leaves the decision resting on the resource policy alone, as before.
+    /// Finds the service that publishes <paramref name="resource"/> over a coverage
+    /// surface, so the layer-scoped WCS route can honour a service-level access policy
+    /// (honua-server#4388). The route is keyed by an integer storage-layer handle and
+    /// carries no service segment, so the owning service has to be recovered from the
+    /// publication graph.
     /// </summary>
+    /// <remarks>
+    /// Only services that actually expose this route — those enabling ImageServer or
+    /// WCS — are considered. A resource can be published by several services, and
+    /// borrowing the policy of one that cannot serve coverages at all (a feature
+    /// service, say) would let an unrelated policy decide a coverage request in either
+    /// direction. Returns <see langword="null"/> when no such publication carries a
+    /// policy, which leaves the decision resting on the resource policy alone, exactly
+    /// as before this seam existed.
+    /// </remarks>
     private static MetadataV2Service? FindOwningService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource)
     {
         foreach (var publication in snapshot.Graph.Publications)
@@ -778,7 +799,9 @@ internal sealed class Wcs20Handler
             }
 
             if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
-                service.AccessPolicy is not null)
+                service.AccessPolicy is not null &&
+                (IsProtocolEnabled(service, WcsProtocolName) ||
+                 IsProtocolEnabled(service, ServiceProtocols.ImageServer)))
             {
                 return service;
             }
