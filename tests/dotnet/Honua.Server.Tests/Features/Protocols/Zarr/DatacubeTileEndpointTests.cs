@@ -101,11 +101,28 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
 
     /// <summary>The cube's cell value at storage row <paramref name="row"/>, column <paramref name="col"/>.</summary>
     /// <remarks>
-    /// Asymmetric (<c>Sample(r, c) != Sample(c, r)</c> off the diagonal) so a render that swapped
-    /// the X and Y strides is visibly different, and strictly increasing along both axes so the
-    /// grey ramp's endpoints are the window's north-west and south-east cells.
+    /// Three properties, each load-bearing for an assertion below:
+    /// <list type="bullet">
+    ///   <item><description>
+    ///     Asymmetric (<c>Sample(r, c) != Sample(c, r)</c> off the diagonal), so a render that
+    ///     swapped the X and Y strides is a visibly different image.
+    ///   </description></item>
+    ///   <item><description>
+    ///     Strictly increasing along both axes, so the auto-stretch ramp's endpoints are any
+    ///     window's north-west and south-east cells and the corner anchors are computable.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <em>Quadratic</em>, not linear. With no colormap the renderer normalises each selected
+    ///     window to that window's own minimum and maximum, so a linear <c>row * 10 + col</c> ramp
+    ///     would make every translated window an affine image of every other one: serving the
+    ///     north-west quadrant for a north-east tile request would produce byte-identical pixels
+    ///     and identical black/white corners. Squaring both axes makes a shifted window a different
+    ///     shape, which the stretch cannot undo, so the pixels do pin the x/y tile selection.
+    ///   </description></item>
+    /// </list>
+    /// Every value is a small exactly-representable integer (0..6464 on this grid).
     /// </remarks>
-    private static float Sample(int row, int col) => (row * 10f) + col;
+    private static float Sample(int row, int col) => (row * row * 100f) + (col * col);
 
     private static TestMetadataV2GraphProvider BuildProtectedLayerGraphProvider()
         => new TestMetadataV2GraphBuilder()
@@ -218,30 +235,36 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// The tile index must select the matching window of the cube, not the whole cube (#4395).
+    /// Each tile index must select its own window of the cube, not the whole cube (#4395).
     /// </summary>
     /// <remarks>
     /// A renderer that ignored z/x/y and drew the full cube into every tile satisfied every
-    /// assertion this route previously carried. The zoom-1 north-east tile spans x in [0, E] and
-    /// y in [0, E] of a cube covering [-E, E] on both axes, so the half-open index window is
-    /// columns [4, 9) and rows [0, 5).
+    /// assertion this route previously carried. Over a cube covering [-E, E] on both axes, the
+    /// zoom-1 north-east tile spans x in [0, E] and y in [0, E], so its half-open index window is
+    /// columns [4, 9) and rows [0, 5); the north-west tile's is columns [0, 5) and rows [0, 5).
+    /// Both are asserted against their own cells, and the two responses must differ — see
+    /// <see cref="Sample"/> for why a linear fixture could not tell them apart.
     /// </remarks>
     [IntegrationTest]
     [Endpoint("GET /api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}")]
-    public async Task DatacubeTile_ZoomOneNorthEastTile_RendersOnlyThatWindowOfTheCube()
+    public async Task DatacubeTile_ZoomOneQuadrants_EachRenderTheirOwnWindowOfTheCube()
     {
         var client = await StartCubeAsync();
-        var response = await client.GetAsync(
-            $"/api/v1/datacubes/{CubeLayerId}/tiles/WebMercatorQuad/1/1/0");
 
-        var png = await ReadTilePngAsync(response);
+        var northEast = await ReadTilePngAsync(
+            await client.GetAsync($"/api/v1/datacubes/{CubeLayerId}/tiles/WebMercatorQuad/1/1/0"));
+        var northWest = await ReadTilePngAsync(
+            await client.GetAsync($"/api/v1/datacubes/{CubeLayerId}/tiles/WebMercatorQuad/1/0/0"));
 
-        var image = AssertTilePixels(png, windowRow: 0, windowCol: 4, windowRows: 5, windowCols: 5);
+        var image = AssertTilePixels(northEast, windowRow: 0, windowCol: 4, windowRows: 5, windowCols: 5);
+        AssertTilePixels(northWest, windowRow: 0, windowCol: 0, windowRows: 5, windowCols: 5);
 
-        // Corner anchors stated in cube terms rather than pixel terms: the tile's north-west pixel
-        // is the window's north-west cell (row 0, col 4) — the ramp minimum, so pure black — and its
-        // south-east pixel is (row 4, col 8), the ramp maximum, so pure white. A transposed, flipped
-        // or whole-cube render moves at least one of them.
+        northEast.Should().NotEqual(northWest, "each tile index selects a different window of the cube");
+
+        // Corner anchors stated in cube terms rather than pixel terms: the north-east tile's
+        // north-west pixel is that window's north-west cell (row 0, col 4) — the ramp minimum, so
+        // pure black — and its south-east pixel is (row 4, col 8), the ramp maximum, so pure white.
+        // A transposed, flipped or whole-cube render moves at least one of them.
         image.Pixel(0, 0).Should().Be(((byte)0, (byte)0, (byte)0, (byte)255));
         image.Pixel(TileSize - 1, TileSize - 1).Should().Be(((byte)255, (byte)255, (byte)255, (byte)255));
     }
