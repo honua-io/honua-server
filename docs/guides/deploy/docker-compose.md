@@ -425,7 +425,9 @@ this recipe with live customer data.
 
 PowerShell: create a private backup directory inside the private installation,
 write binary files inside the containers, and copy them to the host. This avoids
-PowerShell 5.1 binary redirection corruption. `$Backup` is retained for restore.
+PowerShell 5.1 binary redirection corruption. The one-off archive container runs
+as root with file ownership/access capabilities to preserve the storage owner;
+the running server keeps its unprivileged, dropped-capabilities configuration. `$Backup` is retained for restore.
 
 ```powershell
 $Backup = Join-Path $Install ('backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -436,7 +438,7 @@ dc stop honua
 try {
     dc exec -T postgres pg_dump -U honua -d honua -Fc -f /tmp/honua-backup.dump
     dc cp postgres:/tmp/honua-backup.dump (Join-Path $Backup 'database.dump')
-    dc run --rm --no-deps --user 0 --entrypoint tar -v "${Backup}:/backup" honua -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
+    dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "${Backup}:/backup" honua -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
     Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Backup 'database.dump'), (Join-Path $Backup 'storage.tar.gz') | Format-Table
 } finally { dc start honua }
 Wait-HonuaReady
@@ -453,7 +455,7 @@ cp .env compose.yaml journey.py published-layer.json installed-packages.txt "$Ba
 dc stop honua
 dc exec -T postgres pg_dump -U honua -d honua -Fc -f /tmp/honua-backup.dump
 dc cp postgres:/tmp/honua-backup.dump "$Backup/database.dump"
-dc run --rm --no-deps --user 0 --entrypoint tar -v "$Backup:/backup" honua -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
+dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "$Backup:/backup" honua -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
 sha256sum "$Backup/database.dump" "$Backup/storage.tar.gz"
 dc start honua
 wait_honua_ready
@@ -482,7 +484,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $Backup 'storage.tar.gz'))) { throw 
 dc stop honua
 dc cp (Join-Path $Backup 'database.dump') postgres:/tmp/honua-restore.dump
 dc exec -T postgres pg_restore -U honua -d honua --clean --if-exists --exit-on-error /tmp/honua-restore.dump
-dc run --rm --no-deps --user 0 --entrypoint tar -v "${Backup}:/backup:ro" honua -xzf /backup/storage.tar.gz -C /var/lib/honua/storage
+dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "${Backup}:/backup:ro" honua -xzf /backup/storage.tar.gz -C /var/lib/honua/storage
 dc start honua
 Wait-HonuaReady
 & $Python journey.py --verify-only
@@ -497,7 +499,7 @@ test -f "$Backup/storage.tar.gz"
 dc stop honua
 dc cp "$Backup/database.dump" postgres:/tmp/honua-restore.dump
 dc exec -T postgres pg_restore -U honua -d honua --clean --if-exists --exit-on-error /tmp/honua-restore.dump
-dc run --rm --no-deps --user 0 --entrypoint tar -v "$Backup:/backup:ro" honua -xzf /backup/storage.tar.gz -C /var/lib/honua/storage
+dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "$Backup:/backup:ro" honua -xzf /backup/storage.tar.gz -C /var/lib/honua/storage
 dc start honua
 wait_honua_ready
 "$Python" journey.py --verify-only

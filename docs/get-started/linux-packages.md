@@ -1,6 +1,6 @@
 # Linux: install published packages
 
-Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv,
+Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv and pip 22.3+,
 and a Bash terminal. The configuration runs the same Production image, registry
 clients and two-feature journey as the [Windows quickstart](quickstart.md).
 Read its [artifact identity and qualification](quickstart.md#artifact-identity-and-qualification)
@@ -115,10 +115,10 @@ No activation or system Python package installation is needed. Run the next
 block in the same terminal.
 
 ```bash
-python3 -m venv .venv
+python3 -m venv --without-pip .venv
 Python="$Install/.venv/bin/python"
-"$Python" -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.8' 'honua-sdk==0.1.11' 'mcp==2.1.1'
-"$Python" -m pip freeze > installed-packages.txt
+python3 -m pip --python "$Python" install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.8' 'honua-sdk==0.1.11' 'mcp==2.1.1'
+python3 -m pip --python "$Python" freeze > installed-packages.txt
 set -a
 source .env
 set +a
@@ -280,7 +280,7 @@ container recreation alone is not a backup.
 dc ps
 dc logs --no-color --tail 150 honua postgres redis
 docker image inspect "$HONUA_IMAGE" --format '{{json .RepoDigests}}'
-"$Python" -m pip freeze
+python3 -m pip --python "$Python" freeze
 ```
 
 For port conflicts, edit `HONUA_HTTP_PORT` in `.env`, rerun `dc up -d` and reload
