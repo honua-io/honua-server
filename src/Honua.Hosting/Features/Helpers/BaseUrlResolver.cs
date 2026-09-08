@@ -49,7 +49,7 @@ internal static class BaseUrlResolver
         return TryGetConfiguredBaseUrl(configuration, out baseUrl);
     }
 
-    private static bool TryGetConfiguredBaseUrl(IConfiguration configuration, out string baseUrl)
+    internal static bool TryGetConfiguredBaseUrl(IConfiguration configuration, out string baseUrl)
     {
         baseUrl = string.Empty;
         var configured = GetFirstNonEmpty(
