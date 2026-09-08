@@ -9,7 +9,10 @@ name: GDAL Worker Image
 # limited to inputs that DEFINE the image: the worker Docker context, worker-owned
 # managed source, the build context filter, the in-image restore helper, the
 # boundary verifier, the production-image certification test and its CI setup,
-# and this workflow. Shared managed-source and build-graph
+# the real-PDAL execution proof and the [PdalCliFact]/[GdalCliFact] attribute
+# helper it depends on (honua-server#4401 — this workflow is the ONLY lane that
+# runs Category=PDAL, so a PR that deletes the attribute, retraits the case or
+# weakens its assertions must land here to be seen), and this workflow. Shared managed-source and build-graph
 # inputs (`src/Honua.Core/**`, `src/Honua.Core.Abstractions/**`,
 # `src/Honua.Analyzers/**`, `src/Honua.Geoprocessing/**`, `src/Honua.Jobs/**`,
 # `src/Honua.Geometry/**`, `src/Honua.Hosting/**`,
@@ -43,6 +46,8 @@ on:
       - 'scripts/docker/restore-dotnet-with-github-packages.sh'
       - 'scripts/ci/verify-serving-image-boundary.py'
       - 'tests/dotnet/Honua.Worker.Gdal.Tests/ProductionWorkerContainerHandoffTests.cs'
+      - 'tests/dotnet/Honua.Worker.Gdal.Tests/PdalPointCloudRealCliTests.cs'
+      - 'tests/dotnet/Honua.Worker.Gdal.Tests/GdalCli.cs'
       - 'tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj'
       - '.github/actions/setup-dotnet-ci/**'
       - '.github/workflows/worker-gdal-image.yml'
@@ -118,6 +123,7 @@ jobs:
           --worker-redis 127.0.0.1:6379
 
       - name: Certify production worker queue handoff
+        id: worker-handoff
         env:
           HONUA_WORKER_IMAGE: honua-worker-gdal:boundary
         run: >-
@@ -125,6 +131,116 @@ jobs:
           --configuration Release
           --filter FullyQualifiedName~ProductionWorkerContainerHandoffTests
           --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=worker-container-handoff.trx"
+          --results-directory tests/TestResults
+
+      - name: Prove the container handoff cases ran, not skipped
+        # honua-server#4401. ProductionWorkerContainerHandoffTests is a
+        # [RequiredEnvironmentFact("HONUA_WORKER_IMAGE")] with no require-override:
+        # if that env var is ever dropped from the step above, every case skips
+        # cleanly and `dotnet test` still exits 0, so this lane would report green
+        # having executed zero cases. Assert on the TRX counts, not the exit code.
+        # Same idiom as ci.yml's Category=GDAL tripwire.
+        if: ${{ !cancelled() && steps.worker-handoff.conclusion != 'skipped' }}
+        run: |
+          set -euo pipefail
+          trx=tests/TestResults/worker-container-handoff.trx
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for ProductionWorkerContainerHandoffTests"
+            exit 1
+          fi
+          # `|| true` is load-bearing under `set -euo pipefail`: grep exits 1 when
+          # it matches nothing, which is the healthy case for the skipped count.
+          count_outcome() {
+            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
+          }
+          passed=$(count_outcome Passed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Production worker container handoff'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} container handoff case(s) were skipped — HONUA_WORKER_IMAGE was not seen by the test host"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no container handoff case passed — the production-image certification has silently disappeared"
+            exit 1
+          fi
+
+      - name: Prove real PDAL executes in the production worker image
+        # honua-server#4401: PDAL had never been executed by any test — a repo-wide
+        # grep for PdalCliFact / HONUA_REQUIRE_PDAL returned nothing, no workflow
+        # installed it, and the only invocation anywhere was `pdal --version`. So
+        # pcloud.translate's GA claim rested entirely on argument assertions against
+        # a fake runner. HONUA_REQUIRE_PDAL_CLI turns an absent PDAL into a failure
+        # rather than a skip, and the counts tripwire below catches every other way
+        # the coverage could vanish.
+        #
+        # `dotnet test` runs on the RUNNER, and no Ubuntu release publishes a `pdal`
+        # package — that is exactly why docker/worker-gdal/Dockerfile compiles the
+        # pinned upstream source — so the tool cannot be apt-provisioned here. The
+        # proof therefore dispatches every pdal invocation INTO the image just built,
+        # through the production DockerGdalCommandRunner that HONUA_WORKER_IMAGE
+        # selects (GdalCli.CreatePdalRunner): identical-path bind mount, executor code
+        # path unchanged, and the PDAL binary under test is the one the worker ships.
+        # HONUA_GDAL_PROOF_USER pins the container uid:gid to the runner's own so the
+        # LAS/LAZ files written into the bind-mounted scratch stay host-readable.
+        id: pdal-proof
+        env:
+          HONUA_WORKER_IMAGE: honua-worker-gdal:boundary
+          HONUA_REQUIRE_PDAL_CLI: "true"
+        run: |
+          set -euo pipefail
+          # Fail fast and legibly if the image lost PDAL, rather than inside a test.
+          docker run --rm --network none --entrypoint pdal honua-worker-gdal:boundary --version
+          export HONUA_GDAL_PROOF_USER="$(id -u):$(id -g)"
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+            --configuration Release \
+            --filter "Category=PDAL" \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=worker-pdal-proof.trx" \
+            --results-directory tests/TestResults
+
+      - name: Prove the PDAL cases ran, not skipped
+        if: ${{ !cancelled() && steps.pdal-proof.conclusion != 'skipped' }}
+        run: |
+          set -euo pipefail
+          trx=tests/TestResults/worker-pdal-proof.trx
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for the Category=PDAL subset"
+            exit 1
+          fi
+          count_outcome() {
+            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
+          }
+          passed=$(count_outcome Passed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Real-PDAL coverage'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} PDAL case(s) were skipped — the only real-PDAL coverage in the repository has disappeared"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no PDAL case passed — pcloud.translate has no executed receipt"
+            exit 1
+          fi
+
+      - name: Upload worker certification results
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: worker-gdal-certification
+          path: tests/TestResults/*.trx
+          if-no-files-found: warn
 
       - name: Create worker vulnerability report
         uses: aquasecurity/trivy-action@v0.36.0
