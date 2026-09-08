@@ -630,6 +630,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                    "HONUA_LAMBDA_PREVIEW_REPOSITORY": "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-lambda-preview",
                    "HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN": "arn:aws:iam::123456789012:role/cert", **overrides}
             # A stale success must be invalidated even when required inputs are absent.
+            env = {key: value for key, value in env.items() if value is not None}
             (directory / "receipt.json").write_text('{"result":"pass"}')
             result = subprocess.run(["bash", str(SCRIPT_PATH)], env=env, capture_output=True, text=True, timeout=180)
             receipt_path = directory / "receipt.json"
@@ -673,6 +674,14 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
         self.assertEqual("pass", receipt["result"])
         self.assertFalse(any("secretsmanager" in call for call in state["calls"]))
         self.assertIn("HONUA_LAMBDA_CERT_ADMIN_KEY: ${{ secrets.REALAWS_CERT_ADMIN_KEY }}", WORKFLOW)
+
+    def test_unset_override_resolves_secret_even_on_create_failure(self):
+        result, receipt, state, _ = self.run_lane("create-error", HONUA_LAMBDA_CERT_ADMIN_KEY=None)
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        self.assertIn("create-function error:", result.stderr)
+        self.assertNotIn("unbound variable", result.stderr)
+        self.assertTrue(any("get-secret-value" in call for call in state["calls"]))
 
     def test_secret_failures_stop_before_resources_or_invocations(self):
         for failure in ("secret-access-denied", "secret-read-failed", "secret-empty"):

@@ -164,7 +164,7 @@ def secret_reference(reference):
 
 def secret_arn_pattern(secret_id, current):
     if secret_id.startswith("arn:"):
-        return secret_id
+        return secret_id if re.search(r"-[A-Za-z0-9]{6}$", secret_id) else secret_id + "-??????"
     # Names need the ARN's six-character Secrets Manager suffix, never a stack-wide wildcard.
     function_arn = current["Configuration"]["FunctionArn"]
     match = re.fullmatch(r"arn:(aws(?:-[a-z-]+)?):lambda:([a-z0-9-]+):(\d{12}):function:[A-Za-z0-9_-]+", function_arn)

@@ -103,9 +103,8 @@ report_create_error() {
   if [[ -s "$scratch/environment.json" ]]; then
     mapfile -t secrets < <(jq -r '.Variables // {} | .[] | select(type == "string" and length >= 4)' "$scratch/environment.json" 2>/dev/null)
   fi
-  # The denied-principal override is optional now that the lane mints its own scoped key; an
-  # unset variable is not a secret, and the loop below already skips empty entries.
-  secrets+=("$HONUA_LAMBDA_CERT_ADMIN_KEY" "${HONUA_LAMBDA_CERT_DENIED_KEY:-}")
+  # Both credential overrides are optional; the loop below skips empty entries.
+  secrets+=("${HONUA_LAMBDA_CERT_ADMIN_KEY:-}" "${HONUA_LAMBDA_CERT_DENIED_KEY:-}")
   if [[ ! -s "$scratch/create-error.log" ]]; then
     echo "create-function error: the AWS CLI reported no diagnostics" >&2
     return
