@@ -106,8 +106,11 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
         assertWrongMode.Should().Throw<XunitException>();
 
         var b = rows.Single(f => Attributes(f).GetProperty("key").GetString() == "B");
-        var wrongValue = b with { Attributes = b.Attributes.SetItem("attributes",
-            JsonSerializer.SerializeToElement(new { key = "B", value = 12, __pipeline_batch_id = "upsert-batch" })) };
+        var wrongValue = b with
+        {
+            Attributes = b.Attributes.SetItem("attributes",
+            JsonSerializer.SerializeToElement(new { key = "B", value = 12, __pipeline_batch_id = "upsert-batch" }))
+        };
         var wrongGeometry = b with { Geometry = new WKTReader().Read("POINT (40 30)").AsBinary() };
         foreach (var corrupted in new[] { wrongValue, wrongGeometry })
         {
@@ -136,7 +139,9 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
 
     private static void AssertUpsertedRows(Feature[] rows)
     {
-        rows.Should().HaveCount(3);
+        // Report the scalar count: formatting an entire Feature on failure walks
+        // default ImmutableArray metadata unrelated to this persistence oracle.
+        rows.Length.Should().Be(3);
         AssertRow(rows, "A", 5, -5, 6, null);
         AssertRow(rows, "B", 24, 30, 40, "upsert-batch");
         AssertRow(rows, "C", 36, 50, 60, "upsert-batch");

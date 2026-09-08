@@ -94,10 +94,10 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
         foreach (var lostConstraint in new[] { "where", "bbox", "outFields", "outSrid" })
         {
             using var wrong = await Execute(executor, "source.honua-layer", ("layerId", "0"),
-                ("where", lostConstraint == "where" ? "1 = 1" : "category = 'proof'"),
-                ("bbox", lostConstraint == "bbox" ? "0,0,10000000,10000000" :
+                ("where", lostConstraint == "where" ? "" : "category = 'proof'"),
+                ("bbox", lostConstraint == "bbox" ? "" :
                     lostConstraint == "outSrid" ? "10,25,18,40" : "1000000,3000000,2000000,5000000"),
-                ("outFields", lostConstraint == "outFields" ? "*" : "objectid,name,category"),
+                ("outFields", lostConstraint == "outFields" ? "" : "objectid,name,category"),
                 ("outSrid", lostConstraint == "outSrid" ? "4326" : "3857"));
             Action assert = () => AssertSelected(wrong.RootElement, fieldsRestricted: true);
             assert.Should().Throw<XunitException>($"losing {lostConstraint} must fail the output oracle");
