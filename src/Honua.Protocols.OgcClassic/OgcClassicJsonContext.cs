@@ -28,7 +28,14 @@ namespace Honua.Protocols.Ogc.Classic;
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(long))]
 [JsonSerializable(typeof(double))]
+// Feature-info attributes retain provider CLR types in object-valued slots.
+// Register them explicitly so serialization does not require reflection in AOT.
+[JsonSerializable(typeof(float))]
+[JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(Guid))]
+[JsonSerializable(typeof(byte[]))]
+[JsonSerializable(typeof(DateOnly))]
 [JsonSerializable(typeof(DateTime))]
 [JsonSerializable(typeof(DateTimeOffset))]
 [JsonSourceGenerationOptions(
