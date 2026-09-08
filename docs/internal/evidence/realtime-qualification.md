@@ -4,6 +4,22 @@ Realtime Preview qualification is transport-, surface-, execution-, and candidat
 The required `Realtime Preview Qualification` workflow consumes the immutable SDK artifact;
 local copies and route availability never qualify a row.
 
+Every projected ledger row records `evidenceOrigin.kind = external-self-reported-receipt`,
+the producing repository and artifact URL, and `serverSuiteExecutedByQualifier = false`.
+This includes every Preview tenant-isolation row. The server qualification workflow validates
+identity, required assertions and transcripts submitted by `honua-sdk-js`; it does not execute
+the server conformance suite or independently observe delivery. A qualified projection must
+therefore be described as validation of an external receipt, not as server-local execution.
+
+The server-local regressions in `FeatureStreamEndpointsTests.SubscriberSplit.cs` open two
+concurrent SSE or WebSocket connections with development authentication disabled and distinct
+portal credentials. They prove role-derived row isolation and tenant isolation (including an
+unfiltered administrator in the other tenant) using later permitted events as ordered positive
+controls for absence of foreign payloads. `FeatureStreamSnapshotEndpointsTests` correlates
+all four snapshot-to-live tests with the inserted object ID and marker, and proves a real
+GeoServices update and delete reach the subscriber. These source-built regressions do not
+replace the immutable candidate receipt.
+
 The SDK artifact must be produced by `.github/workflows/realtime-live-conformance.yml`, be named
 `realtime-cross-transport-conformance-<run-id>`, and contain `realtime-preview-evidence.json` in
 `honua.realtime-preview-evidence.v2` format. It binds the server commit and image digest, SDK

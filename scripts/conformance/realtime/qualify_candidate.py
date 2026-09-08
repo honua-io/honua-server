@@ -308,6 +308,12 @@ def qualify(evidence: dict, expected: dict, *, now: datetime, max_age: timedelta
             "surface": surface,
             "transport": transport,
             "scenario": scenario,
+            "evidenceOrigin": {
+                "kind": "external-self-reported-receipt",
+                "repository": expected["workflowRepository"],
+                "artifactUrl": expected["sourceArtifactUrl"],
+                "serverSuiteExecutedByQualifier": False,
+            },
             "state": "qualified" if not reasons and not diagnostics else "rejected",
             "reasons": reasons + (["receipt identity/admissibility validation failed"] if diagnostics else []),
         })

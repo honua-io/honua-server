@@ -95,15 +95,69 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
         // One correlated mutation through the canonical GeoServices edit pipeline.
         var correlation = $"snapshot-delta-{Guid.NewGuid():N}";
-        await ApplyEditAsync(correlation, cts.Token);
+        var editedObjectId = await ApplyEditAsync(correlation, cts.Token);
 
         var delta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
         delta.Should().NotBeNull("the mutation must be observed on the stream after the baseline");
         var deltaFrame = delta!.Value;
+        AssertCorrelatedInsert(deltaFrame, editedObjectId, correlation);
         deltaFrame.GetProperty("sequence").GetInt64().Should().Be(baseline.Sequences.Count,
             "the first delta continues the baseline's subscription-local sequence");
         deltaFrame.GetProperty("cursor").GetInt64().Should().BeGreaterThan(baselineCursor,
             "deltas resume strictly after the captured baseline cursor");
+    }
+
+    /// <summary>Real GeoServices mutations must reach a subscriber with the edited values and ID.</summary>
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public async Task Sse_RealUpdateAndDelete_ReachTheSubscriberCorrelatedToTheEdit()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        using var request = BuildSseRequest(
+            $"/api/v1/streaming/features?serviceId={TestServiceId}&layers=0&mode=snapshot");
+        var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        _ = await ReadBaselineAsync(reader, cts.Token);
+
+        var inserted = $"mutation-kinds-insert-{Guid.NewGuid():N}";
+        var objectId = await ApplyEditAsync(inserted, cts.Token);
+
+        var insertDelta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
+        insertDelta.Should().NotBeNull("the insert must reach the subscriber");
+        AssertCorrelatedInsert(insertDelta!.Value, objectId, inserted);
+
+        // ---- UPDATE -------------------------------------------------------------------
+        var updated = $"mutation-kinds-update-{Guid.NewGuid():N}";
+        var updatedObjectId = await ApplyUpdateAsync(objectId, updated, cts.Token);
+        updatedObjectId.Should().Be(objectId, "the update targets the row the insert created");
+
+        var updateDelta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
+        updateDelta.Should().NotBeNull("the update must reach the subscriber");
+        var updateFrame = updateDelta ?? throw new InvalidOperationException("The update did not reach the subscriber.");
+        updateFrame.GetProperty("objectId").GetInt64().Should().Be(objectId);
+        updateFrame.GetProperty("operation").GetString().Should().Be("update");
+        updateFrame.GetProperty("attributes").GetProperty("name").GetString().Should().Be(updated,
+            "an update's streamed after-image must carry the exact new value");
+        AssertEditedPointGeometry(updateFrame, -157.90, 21.35);
+        updateFrame.GetRawText().Should().NotContain(
+            inserted,
+            "the after-image must not replay the superseded value");
+
+        // ---- DELETE -------------------------------------------------------------------
+        var deletedObjectId = await ApplyDeleteAsync(objectId, cts.Token);
+        deletedObjectId.Should().Be(objectId);
+
+        var deleteDelta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
+        deleteDelta.Should().NotBeNull("the delete must reach the subscriber");
+        var deleteFrame = deleteDelta ?? throw new InvalidOperationException("The delete did not reach the subscriber.");
+        deleteFrame.GetProperty("objectId").GetInt64().Should().Be(objectId);
+        deleteFrame.GetProperty("operation").GetString().Should().Be(
+            "delete",
+            "a subscriber's materialized view can only drop the row if the removal is announced");
     }
 
     // ── REQ-001/002/003: batched baseline framing (mode=snapshot-then-delta) ────
@@ -158,11 +212,12 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         var baselineCursor = snapshot.GetProperty("cursor").GetInt64();
 
         var correlation = $"batched-snapshot-{Guid.NewGuid():N}";
-        await ApplyEditAsync(correlation, cts.Token);
+        var editedObjectId = await ApplyEditAsync(correlation, cts.Token);
 
         var delta = await ReadUntilEventAsync(reader, FeatureChange, cts.Token);
         delta.Should().NotBeNull();
         var deltaFrame = delta!.Value;
+        AssertCorrelatedInsert(deltaFrame, editedObjectId, correlation);
         deltaFrame.GetProperty("sequence").GetInt64().Should().Be(1,
             "the first delta continues the batched baseline's single sequence");
         deltaFrame.GetProperty("cursor").GetInt64().Should().BeGreaterThan(baselineCursor);
@@ -207,7 +262,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
             .Should().Be(snapshot.GetProperty("features").GetArrayLength());
 
         var correlation = $"batched-ws-{Guid.NewGuid():N}";
-        await ApplyEditAsync(correlation, cts.Token);
+        var editedObjectId = await ApplyEditAsync(correlation, cts.Token);
 
         JsonElement? delta = null;
         while (!cts.IsCancellationRequested)
@@ -222,6 +277,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         }
 
         delta.Should().NotBeNull();
+        AssertCorrelatedInsert(delta!.Value, editedObjectId, correlation);
         delta!.Value.GetProperty("sequence").GetInt64().Should().Be(1,
             "SSE and WebSocket must expose the same batched-baseline sequence semantics");
     }
@@ -302,7 +358,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         var baselineCursor = begin.GetProperty("cursor").GetInt64();
 
         var correlation = $"ws-snapshot-delta-{Guid.NewGuid():N}";
-        await ApplyEditAsync(correlation, cts.Token);
+        var editedObjectId = await ApplyEditAsync(correlation, cts.Token);
 
         // This admin socket carries both the implicit "default" subscription and the
         // explicit "snap" one, and each delivers the edit on its own independent stream
@@ -323,6 +379,7 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
 
         delta.Should().NotBeNull();
         var deltaFrame = delta!.Value;
+        AssertCorrelatedInsert(deltaFrame, editedObjectId, correlation);
         deltaFrame.GetProperty("sequence").GetInt64().Should().Be(sequences.Count);
         deltaFrame.GetProperty("cursor").GetInt64().Should().BeGreaterThan(baselineCursor);
 
@@ -1858,7 +1915,11 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
         return request;
     }
 
-    private async Task ApplyEditAsync(string correlation, CancellationToken cancellationToken)
+    /// <summary>
+    /// Inserts one correlated feature through the canonical GeoServices edit pipeline and
+    /// returns the object id the server assigned.
+    /// </summary>
+    private async Task<long> ApplyEditAsync(string correlation, CancellationToken cancellationToken)
     {
         var payload = $$"""
             [
@@ -1873,12 +1934,88 @@ public sealed class FeatureStreamSnapshotEndpointsTests : IAsyncLifetime
                 }
             ]
             """;
+        return await ApplyEditsAsync(payload, "addResults", cancellationToken);
+    }
+
+    /// <summary>Updates one existing feature through the same pipeline (#4427).</summary>
+    private async Task<long> ApplyUpdateAsync(long objectId, string correlation, CancellationToken cancellationToken)
+    {
+        var payload = $$"""
+            [
+                {
+                    "id": 0,
+                    "updates": [
+                        {
+                            "attributes": { "objectid": {{objectId}}, "name": "{{correlation}}" },
+                            "geometry": { "x": -157.90, "y": 21.35 }
+                        }
+                    ]
+                }
+            ]
+            """;
+        return await ApplyEditsAsync(payload, "updateResults", cancellationToken);
+    }
+
+    /// <summary>Deletes one existing feature through the same pipeline (#4427).</summary>
+    private async Task<long> ApplyDeleteAsync(long objectId, CancellationToken cancellationToken)
+    {
+        var payload = $$"""
+            [
+                {
+                    "id": 0,
+                    "deletes": [{{objectId}}]
+                }
+            ]
+            """;
+        return await ApplyEditsAsync(payload, "deleteResults", cancellationToken);
+    }
+
+    /// <summary>
+    /// #4427: asserts the observed delta IS the edit this test made — the object id the server
+    /// assigned, an <c>insert</c> operation, and the run's unique correlation marker carried in
+    /// the streamed after-image. Without all three, any concurrent event on the layer satisfies
+    /// "the mutation was observed".
+    /// </summary>
+    private static void AssertCorrelatedInsert(JsonElement delta, long editedObjectId, string correlation)
+    {
+        delta.GetProperty("objectId").GetInt64().Should().Be(
+            editedObjectId,
+            "the observed delta must be the edit this test made, not any event on the layer");
+        delta.GetProperty("operation").GetString().Should().Be("insert");
+        delta.GetProperty("attributes").GetProperty("name").GetString().Should().Be(correlation,
+            "the streamed after-image must carry the exact marker the edit wrote");
+        AssertEditedPointGeometry(delta, -157.85, 21.30);
+    }
+
+    private static void AssertEditedPointGeometry(JsonElement delta, double longitude, double latitude)
+    {
+        delta.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
+        delta.GetProperty("geometry").GetProperty("coordinates").EnumerateArray()
+            .Select(value => value.GetDouble()).Should().Equal([longitude, latitude],
+                "the stream must preserve the fixture's longitude and latitude ordinates");
+        delta.GetProperty("geometryCrs").GetString().Should().Be("EPSG:4326");
+    }
+
+    private async Task<long> ApplyEditsAsync(string payload, string resultsProperty, CancellationToken cancellationToken)
+    {
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         using var response = await _client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits",
             content,
             cancellationToken);
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        using var document = JsonDocument.Parse(body);
+        // Service-level applyEdits answers with ServiceApplyEditsResponse: an object carrying
+        // `editResults`, one entry per layer, each with all three per-layer result arrays.
+        var editResults = document.RootElement.GetProperty("editResults");
+        editResults.GetArrayLength().Should().Be(1, "the edit targets exactly one layer; body: {0}", body);
+        var results = editResults[0].GetProperty(resultsProperty);
+        results.GetArrayLength().Should().Be(1, "the edit must produce exactly one result; body: {0}", body);
+        var result = results[0];
+        result.GetProperty("success").GetBoolean().Should().BeTrue("body: {0}", body);
+        return result.GetProperty("objectId").GetInt64();
     }
 
     private readonly record struct BaselineFrames(

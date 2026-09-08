@@ -2532,7 +2532,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 5,
-      "provingTestCount": 108,
+      "provingTestCount": 112,
       "maturity": {
         "implemented": 3,
         "preview": 2
