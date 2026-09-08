@@ -51,7 +51,7 @@ public sealed class OgcProcessesExecutionProofTests(RedisFixture redis) : IClass
         {
             using var client = fixture.CreateAdminClient();
             var source = await File.ReadAllBytesAsync(Path.Join(AppContext.BaseDirectory, "Fixtures", "SurfaceProof", "plane-hole.tif"));
-            var body = $$"""{"inputs":{"source":"{{Convert.ToBase64String(source)}}","units":"degrees","zFactor":2}}""";
+            var body = "{\"inputs\":{\"source\":\"" + Convert.ToBase64String(source) + "\",\"units\":\"degrees\",\"zFactor\":2}}";
             using var results = await SubmitAndGetResults(client, "surface.slope", body);
             var output = results.RootElement.GetProperty("outputRaster");
             output.GetProperty("mediaType").GetString().Should().StartWith("image/tiff");
@@ -110,7 +110,7 @@ public sealed class OgcProcessesExecutionProofTests(RedisFixture redis) : IClass
         var point = new Point(100, 200) { SRID = 3857 };
         var wkb = Convert.ToBase64String(new WKBWriter().Write(point));
         var selection = selectValue ? """, "outputs":{"outputFeatureLayer":{"transmissionMode":"value"}}""" : "";
-        var body = $$"""{"inputs":{"wkb":"{{wkb}}","srid":3857,"distance":25.5}{{selection}}} """;
+        var body = "{\"inputs\":{\"wkb\":\"" + wkb + "\",\"srid\":3857,\"distance\":25.5}" + selection + "}";
         using var results = await SubmitAndGetResults(client, "geometry.buffer", body);
         var output = results.RootElement.GetProperty("outputFeatureLayer");
         output.TryGetProperty("href", out _).Should().BeFalse();
