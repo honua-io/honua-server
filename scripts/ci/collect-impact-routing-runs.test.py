@@ -74,3 +74,31 @@ except ValueError as error:
 else:
     raise AssertionError('unsplittable query accepted')
 print('seven-day-catalog-replay=ok runs=1400 before=800-page-budget-failure after=1400/1400')
+
+# Real command retry behavior: timeouts and 503 retry, 403 sleeps without auth,
+# a permanent 404 fails, and exhausted retries never return a partial catalog.
+from unittest.mock import patch
+import subprocess
+
+success = subprocess.CompletedProcess([], 0, '{"total_count": 0, "workflow_runs": []}', '')
+for failure in (
+    subprocess.TimeoutExpired(['gh'], 90),
+    subprocess.CompletedProcess([], 1, '', 'gh: HTTP 503'),
+    subprocess.CompletedProcess([], 1, '', 'gh: HTTP 403'),
+):
+    with patch.object(module.subprocess, 'run', side_effect=[failure, success]) as request, \
+         patch.object(module.time, 'sleep') as sleep:
+        assert module.github_page('runs', {})['total_count'] == 0
+        sleep.assert_called_once_with(10)
+        assert request.call_args_list[0] == request.call_args_list[1] or (
+            request.call_args_list[0].args == request.call_args_list[1].args)
+for error, expected_calls in (('gh: HTTP 404', 1), ('gh: HTTP 503', 5)):
+    with patch.object(module.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', error)) as request, \
+         patch.object(module.time, 'sleep'):
+        try:
+            module.github_page('runs', {})
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError('failed request accepted')
+        assert request.call_count == expected_calls

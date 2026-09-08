@@ -1976,7 +1976,7 @@ def test_seven_day_receipt_store_replay() -> None:
     """Replay concurrent, independent run/attempt artifacts and discarded heads."""
     blobs = MODULE.current_blobs(REPOSITORY_ROOT)
     quiet = {"generic": False, "lambda": False, "functions": False}
-    now = datetime(2026, 8, 22, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 8, 0, tzinfo=timezone.utc)
     window_policy = MODULE.load_policy(json.loads(
         (REPOSITORY_ROOT / ".github/impact-routing-promotion.json").read_text()
     ))
@@ -1984,8 +1984,8 @@ def test_seven_day_receipt_store_replay() -> None:
         root = Path(temporary)
         producers = {"pr": [], "native": []}
         images = []
-        for day in range(15, 22):
-            created = f"2026-08-{day}T12:00:00Z"
+        for day in range(1, 8):
+            created = f"2026-09-{day:02d}T12:00:00Z"
             head = f"{day:040x}"
             for stream, workflow in (("pr", MODULE.PR_GATE_WORKFLOW),
                                      ("native", MODULE.NATIVE_WORKFLOW)):
@@ -2002,7 +2002,7 @@ def test_seven_day_receipt_store_replay() -> None:
                     receipt = pr_gate_receipt(blobs, head)
                     receipt.update(mode="full", reason="path-requires-full-gate")
                 else:
-                    empty = day >= 20
+                    empty = day >= 6
                     receipt = native_receipt(blobs, pr=day, head=head, worker=not empty,
                         serving=quiet if empty else None,
                         legacy_serving=quiet if empty else None,
@@ -2027,7 +2027,7 @@ def test_seven_day_receipt_store_replay() -> None:
         def audit():
             index = MODULE.discover(root / "pr-runs", root / "native-runs",
                 root / "pr-artifacts", root / "native-artifacts", window_policy, now,
-                datetime(2026, 8, 15, tzinfo=timezone.utc))
+                datetime(2026, 9, 1, tzinfo=timezone.utc))
             return MODULE.summarize(index, root / "archives", root / "serving",
                 root / "worker", window_policy, REPOSITORY_ROOT, now=now)
         before = audit()
