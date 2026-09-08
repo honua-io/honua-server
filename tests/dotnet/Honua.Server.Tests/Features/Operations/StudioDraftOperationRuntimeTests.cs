@@ -50,7 +50,7 @@ public sealed class StudioDraftOperationRuntimeTests
             });
         lifecycle.GetPointersAsync(itemId, Arg.Any<CancellationToken>()).Returns(
             new StudioContentItemPointers { ItemId = itemId, CurrentVersionId = versionId });
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var executor = PublicationExecutor(lifecycle);
         var payload = JsonSerializer.Serialize(
             new StudioPublicationRequestPayload
             {
@@ -99,7 +99,7 @@ public sealed class StudioDraftOperationRuntimeTests
                 Validation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Invalid },
                 CreatedAt = DateTimeOffset.UtcNow,
             });
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var executor = PublicationExecutor(lifecycle);
         var payload = JsonSerializer.Serialize(
             new StudioPublicationRequestPayload
             {
@@ -126,7 +126,7 @@ public sealed class StudioDraftOperationRuntimeTests
     {
         var store = new InMemoryStudioPackageStore();
         var lifecycle = BuildLifecycle(store);
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var executor = PublicationExecutor(lifecycle);
         var approved = await SaveFirstVersionAsync(lifecycle);
         var payload = PublicationPayload(approved);
 
@@ -158,7 +158,7 @@ public sealed class StudioDraftOperationRuntimeTests
     {
         var store = new InMemoryStudioPackageStore();
         var lifecycle = BuildLifecycle(store);
-        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var executor = PublicationExecutor(lifecycle);
         var approved = await SaveFirstVersionAsync(lifecycle);
         var payload = PublicationPayload(approved);
 
@@ -177,6 +177,70 @@ public sealed class StudioDraftOperationRuntimeTests
         pointers.CurrentVersionId.Should().Be(approved.VersionId);
     }
 
+    // honua-server#3980 follow-up: OperationDispatcher stops after ValidateAsync for every
+    // non-Allow decision, so an approval-gated deployment never reaches
+    // CreatePublicationRequestAsync -- the actuation-path authority on intent validity. An
+    // invalid intent therefore has to be rejected pre-policy, and the rejection has to keep the
+    // errorKind=argument taxonomy the REST surface maps to 400 rather than degrading to 500.
+    [UnitTest]
+    public async Task PublicationRequestValidation_InvalidIntent_RejectsAsArgumentBeforePolicyRouting()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var executor = PublicationExecutor(lifecycle);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+
+        var validation = await executor.ValidateAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, InvalidIntentPayload(saved)));
+
+        validation.IsValid.Should().BeFalse();
+        validation.Status.Should().Be("invalid");
+        validation.ErrorKind.Should().Be("argument");
+        validation.ApprovalPlan.Should().BeNull("a rejected intent must never seed an approval plan");
+        validation.Messages.Should().ContainSingle()
+            .Which.Should().Contain("Publication intent is invalid").And.Contain("route must start with '/'");
+    }
+
+    [UnitTest]
+    public async Task PublicationRequest_RequireApproval_InvalidIntentFailsAsArgumentWithoutProposal()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var executor = PublicationExecutor(lifecycle);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+        var bridge = new DurableApprovalBridge();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [executor],
+            new RequireApprovalPolicy(),
+            TimeProvider.System,
+            approvalBridge: bridge,
+            instanceStore: new VolatileOperationInstanceStore(),
+            auditLog: new VolatileOperationAuditLog());
+
+        var handle = await dispatcher.SubmitAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, InvalidIntentPayload(saved)),
+            new OperationPolicyContext { PrincipalId = "studio-operator" });
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Status.Should().NotBe(OperationHandleStatus.RequiresApproval);
+        handle.Result!.Details["errorKind"].Should().Be("argument");
+        handle.Reason.Should().Contain("Publication intent is invalid").And.Contain("route must start with '/'");
+        bridge.Request.Should().BeNull("an invalid intent must never be persisted as an approval proposal");
+        (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().BeNull();
+    }
+
+    private static string InvalidIntentPayload(StudioContentVersion version) => JsonSerializer.Serialize(
+        new StudioPublicationRequestPayload
+        {
+            ItemId = version.ItemId,
+            VersionId = version.VersionId,
+            ContentHash = version.ContentHash,
+            Intent = new StudioPublicationIntent { Route = "relative", Visibility = "organization" },
+            ActorId = "studio-author",
+        },
+        StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+
     private static IStudioPackageLifecycleService BuildLifecycle(IStudioPackageStore store)
     {
         var services = new ServiceCollection();
@@ -184,6 +248,21 @@ public sealed class StudioDraftOperationRuntimeTests
         services.AddStudioPackageLifecycle();
         return services.BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
     }
+
+    // StudioCreatePublicationRequestExecutor takes IStudioPackageValidator as a required
+    // dependency so the pre-policy intent guard can never be silently dropped by a host that
+    // forgot to register it. The validator is store-independent (it inspects envelopes and
+    // intents only), so every construction here resolves the same production type
+    // AddStudioPackageLifecycle composes.
+    private static StudioCreatePublicationRequestExecutor PublicationExecutor(
+        IStudioPackageLifecycleService lifecycle)
+        => new(
+            lifecycle,
+            TimeProvider.System,
+            new ServiceCollection()
+                .AddStudioPackageLifecycle()
+                .BuildServiceProvider()
+                .GetRequiredService<IStudioPackageValidator>());
 
     private static async Task<StudioContentVersion> SaveFirstVersionAsync(IStudioPackageLifecycleService lifecycle)
     {

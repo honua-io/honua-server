@@ -248,10 +248,14 @@ public sealed class OperationDispatcher : IOperationInvoker
 
         if (!validation.IsValid)
         {
+            // A blocking validation verdict is terminal and never reaches policy routing, so it
+            // must be able to carry its own taxonomy: without it every pre-policy rejection is
+            // indistinguishable from an internal fault at the caller-facing surface.
             return await PersistFailureAsync(
                     envelope,
                     string.Join(" ", validation.Messages),
-                    cancellationToken)
+                    cancellationToken,
+                    validation.ErrorKind)
                 .ConfigureAwait(false);
         }
 
@@ -466,13 +470,24 @@ public sealed class OperationDispatcher : IOperationInvoker
     private async Task<OperationHandle> PersistFailureAsync(
         OperationHandle envelope,
         string reason,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? errorKind = null)
     {
         var failed = envelope with
         {
             Status = OperationHandleStatus.Failed,
             UpdatedAt = _clock.GetUtcNow(),
             Reason = reason,
+            Result = string.IsNullOrWhiteSpace(errorKind)
+                ? envelope.Result
+                : new OperationResultSummary
+                {
+                    Summary = reason,
+                    Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["errorKind"] = errorKind,
+                    },
+                },
         };
         try
         {

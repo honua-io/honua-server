@@ -106,6 +106,12 @@ public sealed class OperationsToolsetTests
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns("Test");
         services.AddSingleton(Substitute.For<Honua.Core.Features.Studio.Abstractions.IStudioPackageLifecycleService>());
+        // StudioCreatePublicationRequestExecutor rejects an invalid publication intent before the
+        // dispatcher routes the operation to approval, so it takes the Studio validator as a hard
+        // dependency rather than an optional one -- an optional default would silently drop that
+        // guard in any host that forgot to compose the Studio slice. This container stands in for
+        // such a host, so it supplies the validator the way AddStudioPackageLifecycle does.
+        services.AddSingleton(Substitute.For<Honua.Core.Features.Studio.Abstractions.IStudioPackageValidator>());
         services.AddSingleton(Substitute.For<IReadinessCheckService>());
 
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);

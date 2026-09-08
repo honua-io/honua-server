@@ -158,6 +158,15 @@ public sealed record OperationValidation
     public IReadOnlyList<string> Messages { get; init; } = [];
 
     /// <summary>
+    /// Optional error taxonomy for a blocking validation failure (for example <c>argument</c>,
+    /// <c>not-found</c>, <c>conflict</c>). Pre-policy rejections carry no actuation handle of
+    /// their own, so this is the only seam that lets a caller-facing surface map a rejection
+    /// raised before policy routing onto the same status code it would get from actuation.
+    /// <see langword="null"/> keeps the historical opaque-failure behavior.
+    /// </summary>
+    public string? ErrorKind { get; init; }
+
+    /// <summary>
     /// Typed, validated approval plan produced from the accepted request. When policy requires
     /// approval, this exact plan is persisted with the proposal and consumed during replay.
     /// </summary>
