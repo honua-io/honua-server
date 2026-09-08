@@ -978,7 +978,7 @@ jobs:
       # Unchanged from the pre-split job except that the files it uploads are
       # now the merged set from every family.
       - name: Upload coverage to Codecov
-        if: ${{ always() && env.CODECOV_TOKEN != '' }}
+        if: ${{ success() && needs.dotnet-foundation-family-tests.result == 'success' && env.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v7
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

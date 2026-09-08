@@ -21,6 +21,34 @@ class FoundationExecution(unittest.TestCase):
             actual.extend(subprocess.check_output([RUNNER, 'list', family], text=True).splitlines())
         self.assertEqual(sorted(actual), PLAN)
 
+    def test_coverage_fan_in_rejects_missing_report(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        job = workflow.split('  dotnet-foundation-tests:', 1)[1].split('  server-tests:', 1)[0]
+        self.assertIn('name: .NET Foundation Tests\n', job)
+        self.assertIn('needs: [changes, dotnet-foundation-family-tests]', job)
+        self.assertIn('pattern: foundation-coverage-*', job)
+        step = job.split('      - name: Verify merged foundation results\n        run: |\n', 1)[1].split('\n      # Republish', 1)[0]
+        script = '\n'.join(line[10:] for line in step.splitlines())
+        script = script.replace("'${{ needs.dotnet-foundation-family-tests.result }}'", "'success'")
+        with tempfile.TemporaryDirectory() as temp:
+            temp = Path(temp)
+            (temp / 'scripts/ci').mkdir(parents=True)
+            (temp / 'scripts/ci/run-foundation-family.sh').symlink_to(RUNNER)
+            results = temp / 'tests/TestResults'
+            results.mkdir(parents=True)
+            for index in range(len(PLAN)):
+                (results / f'{index}.trx').touch()
+            coverage = temp / 'tests/FoundationCoverage'
+            coverage.mkdir(parents=True)
+            env = dict(os.environ, GITHUB_STEP_SUMMARY=str(temp / 'summary'))
+            def verify():
+                return subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', script], cwd=temp, env=env, capture_output=True)
+            self.assertNotEqual(verify().returncode, 0)
+            (coverage / 'coverage.cobertura.xml').write_text('<coverage/>')
+            self.assertEqual(verify().returncode, 0)
+            (results / '0.trx').unlink()
+            self.assertNotEqual(verify().returncode, 0)
+
     def test_scoped_restore_build_and_failure_propagation(self):
         with tempfile.TemporaryDirectory() as temp:
             temp = Path(temp)
