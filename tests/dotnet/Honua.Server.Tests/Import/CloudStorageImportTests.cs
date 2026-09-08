@@ -168,6 +168,8 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
             {
               "sourceUrl": "https://s3.amazonaws.com/bucket/zones.zip",
               "tableName": "{{tableName}}",
+              "sourceSrid": 3750,
+              "targetSrid": 4326,
               "overwriteExisting": true
             }
             """));
@@ -176,6 +178,11 @@ public sealed class CloudStorageImportTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain(tableName);
 
+        // The fixture's .prj is ArcGIS-authored WKT for NAD83(HARN) / UTM zone 4N (EPSG:3750)
+        // carrying no AUTHORITY node, and CrsDetectionService deliberately refuses to guess at
+        // ESRI datum-variant names (#2743) - NAD_1983_HARN is not NAD_1983. The request has to
+        // declare the source SRID; without it the import correctly fails
+        // import.source_srid_required and never reaches the assertions below.
         // honua-server#4419: the test name says ImportsData but the assertions did not check
         // success — and UploadUrl_MultiLayerFileGdbFromS3_FailsWithoutMergingLayers in this same
         // file proves a FAILED import also returns a payload containing the table name, so a
