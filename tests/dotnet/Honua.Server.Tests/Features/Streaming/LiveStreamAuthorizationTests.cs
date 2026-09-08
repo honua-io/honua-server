@@ -86,11 +86,13 @@ public sealed class LiveStreamAuthorizationTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
-    public async Task Filter_RevalidationCancelsEndpoint_EndsOnlyAnAlreadyStartedStream(bool responseStarted)
+    public async Task Filter_RevalidationCancelsEndpoint_EndsOnlyAnAlreadyStartedStream(bool responseStarted, bool swallowCancellation)
     {
         var authentication = Substitute.For<IAuthenticationService>();
         authentication.AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<string>())
@@ -107,13 +109,22 @@ public sealed class LiveStreamAuthorizationTests
         using var output = new MemoryStream();
         var response = Substitute.For<IHttpResponseFeature>();
         response.HasStarted.Returns(responseStarted);
+        response.StatusCode = StatusCodes.Status200OK;
         context.Features.Set(response);
         context.Response.Body = output;
 
         var result = await new LiveStreamAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(context), async invocation =>
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, invocation.HttpContext.RequestAborted)
-                .WaitAsync(TimeSpan.FromSeconds(30));
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, invocation.HttpContext.RequestAborted)
+                    .WaitAsync(TimeSpan.FromSeconds(30));
+            }
+            catch (OperationCanceledException) when (swallowCancellation && invocation.HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                // SSE endpoints can catch cancellation during their first write
+                // and return normally before the response has started.
+            }
             return Results.Empty;
         });
 
@@ -125,6 +136,8 @@ public sealed class LiveStreamAuthorizationTests
         }
         else
         {
+            await ((IResult)result!).ExecuteAsync(context);
+            context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
             ((IStatusCodeHttpResult)result!).StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
             output.Length.Should().Be(0, "cancellation before streaming starts must return an HTTP denial");
         }
