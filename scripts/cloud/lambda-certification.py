@@ -14,6 +14,11 @@ from urllib.parse import urlencode, urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests/seed/client-compat-v1.sql"
+# The administrator the lane authenticates as is the bootstrap credential the server compares
+# x-api-key against (ApiKeyAuthenticationHandler), so HONUA_LAMBDA_CERT_ADMIN_KEY only opens
+# the door while it equals what this variable resolves to on the function under test.
+ADMIN_CREDENTIAL_VARIABLE = "HONUA_ADMIN_PASSWORD"
+SECRET_REFERENCE_PREFIX = "aws:secretsmanager:"
 
 
 def require(condition, message):
@@ -71,6 +76,11 @@ def prepare(directory):
     variables = cfg["Environment"]["Variables"]
     require(variables.get("HONUA_SKIP_MIGRATIONS", "false").lower() == "false", "Standing function skips migrations: noProof")
     require(variables.get("ConnectionStrings__DefaultConnection"), "Cert PostGIS connection is missing")
+    # Authentication is cloned, not supplied: the lane never injects a credential of its own, so a
+    # standing environment without this variable can only answer every administrative assertion with
+    # 401. Refuse by name before anything is mirrored or created, rather than after the deploy.
+    require(variables.get(ADMIN_CREDENTIAL_VARIABLE),
+            f"Standing function carries no {ADMIN_CREDENTIAL_VARIABLE}: the cert admin key cannot be accepted")
     require(cfg["VpcConfig"].get("SubnetIds") and cfg["VpcConfig"].get("SecurityGroupIds"), "Cert PostGIS VPC is missing")
     # The standing function already reaches the cert stack's private PostGIS and resolves its secrets.
     # Clone its configuration, including authentication; never substitute a loopback connection.
@@ -82,6 +92,51 @@ def prepare(directory):
 def admin_key():
     # Runtime-only secret; not written to a receipt, stdout, or a repository path.
     return os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
+
+
+def redacted(value, limit):
+    # Server-authored diagnostics only: strip everything outside a narrow printable set, cap the
+    # length, and drop the whole field outright if either runtime key ever appears inside it.
+    text = re.sub(r"[^A-Za-z0-9 ._:/-]", "", str(value))[:limit]
+    for secret in (os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"], os.environ["HONUA_LAMBDA_CERT_DENIED_KEY"]):
+        if secret and secret in text:
+            return "[redacted]"
+    return text
+
+
+# Payload format 2.0 folds repeated response headers into one comma-joined value, so the two
+# challenges the server appends arrive as `ApiKey realm="...", header="...", Basic realm="..."`.
+# Match scheme tokens rather than splitting on commas: `header=` and `charset=` are parameters of
+# the scheme before them, not schemes of their own.
+CHALLENGE_SCHEME = re.compile(r"(?:^|,)\s*([A-Za-z][A-Za-z0-9._-]{0,31})(?=\s+[A-Za-z]|\s*$)")
+
+
+def challenge_schemes(headers):
+    schemes = []
+    for name, value in (headers or {}).items():
+        if str(name).lower() != "www-authenticate":
+            continue
+        for entry in (value if isinstance(value, list) else [value]):
+            for scheme in CHALLENGE_SCHEME.findall(str(entry)):
+                if scheme not in schemes:
+                    schemes.append(scheme)
+    return "+".join(schemes) or "none"
+
+
+def admin_credential_state(function):
+    # Names only. An environment value is a credential and never leaves the function, but whether
+    # the variable is there at all - and whether it is a Secrets Manager reference the function
+    # resolves per request, or an inline value - is what separates "this deployment has no
+    # administrator" from "it has one this key no longer matches".
+    try:
+        variables = config(function)["Configuration"]["Environment"]["Variables"]
+    except (RuntimeError, KeyError, ValueError, OSError):
+        return "unreadable", "unknown"
+    value = variables.get(ADMIN_CREDENTIAL_VARIABLE)
+    if not value:
+        return "absent", "none"
+    return "present", ("secretsmanager-reference"
+                       if value.lower().startswith(SECRET_REFERENCE_PREFIX) else "inline")
 
 
 def invoke(function, path, *, method="GET", query=None, body=None, authenticated=True, api_key=None, expected_version=None):
@@ -113,11 +168,11 @@ def invoke(function, path, *, method="GET", query=None, body=None, authenticated
             parsed = json.loads(raw)
         except json.JSONDecodeError:
             parsed = raw
-        return result.get("statusCode"), parsed, meta
+        return result.get("statusCode"), parsed, meta, result.get("headers")
 
 
 def ok(function, path, **kwargs):
-    status, body, _ = invoke(function, path, **kwargs)
+    status, body, _, headers = invoke(function, path, **kwargs)
     if not (status == 200 and isinstance(body, dict) and "error" not in body):
         # Diagnosable without leaking: the path is a fixed lane constant, the
         # status is a number, and only a short, alphanumeric error code/title
@@ -128,11 +183,23 @@ def ok(function, path, **kwargs):
         if isinstance(body, dict):
             err = body.get("error")
             if isinstance(err, dict):
-                code = str(err.get("code", ""))[:40]
-            code = code or str(body.get("title", body.get("type", "")))[:60]
-        code = re.sub(r"[^A-Za-z0-9 ._:/-]", "", code)
+                code = redacted(err.get("code", ""), 40)
+            code = code or redacted(body.get("title", body.get("type", "")), 60)
         print(f"serving-assertion: phase={_phase} path={path} status={status} "
               f"body-kind={'json' if isinstance(body, dict) else 'text'} error={code or 'none'}", file=sys.stderr)
+        if status == 401:
+            # Every administrative assertion authenticates as the bootstrap administrator, and the
+            # title of that refusal is "Unauthorized" whatever the cause. Run 21 (34222614774)
+            # stopped here and neither the deployed configuration nor the challenge was in the log,
+            # so telling "this function has no administrator" apart from "it has one this key no
+            # longer matches" took the standing configuration and a manual probe. Say both in the
+            # run that failed: the credential variable by NAME (never its value), and the scheme
+            # that issued the challenge with the server's own fixed refusal detail.
+            presence, source = admin_credential_state(function)
+            detail = redacted(body.get("detail", ""), 120) if isinstance(body, dict) else ""
+            print(f"serving-401: variable={ADMIN_CREDENTIAL_VARIABLE} presence={presence} "
+                  f"source={source} challenge={challenge_schemes(headers)} "
+                  f"detail={detail or 'none'}", file=sys.stderr)
         require(False, "Serving HTTP assertion failed")
     return body
 
@@ -161,7 +228,7 @@ def smoke(function, expected_version=None):
     require(sorted(feature["attributes"]["name"] for feature in rows.get("features", [])) == expected_names,
             "Fixture records do not match client-compat-v1")
     # The anonymous principal has no admin rights. This documented 401 must contain no records.
-    status, denial, _ = invoke(function, "/api/v1/admin/api-keys", authenticated=False, **common)
+    status, denial, _, _ = invoke(function, "/api/v1/admin/api-keys", authenticated=False, **common)
     require(status == 401 and isinstance(denial, dict), "Authorization denial must be HTTP 401")
     require(denial.get("status") == 401 and denial.get("type") == "https://honua.io/problems/admin",
             "Authorization refusal body is not the documented error")
@@ -171,8 +238,8 @@ def smoke(function, expected_version=None):
             "Authorization denial contains structured records")
     # This is authorization, not merely a missing-credential challenge: a valid
     # pre-existing read:layers key must authenticate and receive the documented 403.
-    status, denial, _ = invoke(function, "/api/v1/admin/api-keys",
-                               api_key=os.environ["HONUA_LAMBDA_CERT_DENIED_KEY"], **common)
+    status, denial, _, _ = invoke(function, "/api/v1/admin/api-keys",
+                                  api_key=os.environ["HONUA_LAMBDA_CERT_DENIED_KEY"], **common)
     require(status == 403 and denial == "", "Scoped principal must receive an empty HTTP 403 (zero records)")
     write_path = "/rest/services/test_service/FeatureServer/10"
     marker = "honua-certrun-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ["GITHUB_RUN_ATTEMPT"]
