@@ -84,6 +84,12 @@ must also precede expiry. A token that expires while the revocation scenario is 
 cannot qualify the revocation row: the same disconnect could be caused by expiry alone.
 The expiry/revocation boundary and termination must both fall inside the source workflow
 execution window. These checks preserve separate expiry and revocation proof obligations.
+The pre-boundary observation must be within the token lifetime, and `terminatedAt`
+must equal the timestamp of a raw authorization outcome: an SSE `event: status` with
+JSON `status: error` and `code: authorization-ended`; a serialized WebSocket close
+event with `type: close`, `code: 1008`, and `reason: authorization-ended`; or an OData
+HTTP 401 status line (or serialized response with numeric `status: 401`). A reason
+string embedded in an ordinary data payload does not count as termination.
 
 Required assertion IDs are `no-cross-tenant-payload` and `invalid-credentials-rejected`;
 expiry/revocation also require `old-credential-terminated` and `replacement-resume`, and

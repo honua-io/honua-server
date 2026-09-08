@@ -73,7 +73,11 @@ def complete_evidence():
                 "terminationReason": "unauthorized" if transport == "odata" else "authorization-ended",
                 "observations": [
                     {"at": "2026-09-02T06:35:30Z", "raw": '{"objectId":"a-before"}'},
-                    {"at": "2026-09-02T06:36:01Z", "raw": '{"code":"authorization-ended"}'},
+                    {"at": "2026-09-02T06:36:01Z", "raw": {
+                        "sse": 'event: status\ndata: {"status":"error","code":"authorization-ended"}\n\n',
+                        "websocket": '{"type":"close","code":1008,"reason":"authorization-ended"}',
+                        "odata": 'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n',
+                    }[transport]},
                 ],
             }
     return {
@@ -109,6 +113,7 @@ class RealtimeCandidateQualificationTests(unittest.TestCase):
         # termination 06:36:01, expiry 06:37. An expiry cannot prove revocation.
         cases = (
             ("revokedAt", "2026-09-02T06:34:59Z", "revocation must occur during the token lifetime"),
+            ("issuedAt", "2026-09-02T06:36:00Z", "revocation must occur during the token lifetime"),
             ("expiresAt", "2026-09-02T06:36:00Z", "revocation must occur during the token lifetime"),
             ("expiresAt", "2026-09-02T06:35:59Z", "revocation must occur during the token lifetime"),
             ("expiresAt", "2026-09-02T06:36:01Z", "revocation termination must precede token expiry"),
@@ -132,6 +137,33 @@ class RealtimeCandidateQualificationTests(unittest.TestCase):
                     self.assertIn(reason, " ".join(rejected[0]["reasons"]))
                     self.assertEqual(SERVER_SHA, receipt["candidate"]["serverRevision"])
                     self.assertEqual(SERVER_IMAGE, receipt["candidate"]["serverImage"])
+
+    def test_claimed_termination_must_match_the_actual_transport_observation(self):
+        for transport in ("sse", "websocket", "odata"):
+            for change in ("late", "missing", "wrong-outcome", "data-payload"):
+                with self.subTest(transport=transport, change=change):
+                    source = complete_evidence()
+                    target = next(row for row in source["rows"] if row["transport"] == transport
+                                  and row["scenario"] == "token-revocation")
+                    terminal = target["authorization"]["observations"][1]
+                    if change == "late":
+                        terminal["at"] = "2026-09-02T06:38:00Z"
+                    elif change == "missing":
+                        terminal["raw"] = "heartbeat"
+                    elif change == "data-payload":
+                        terminal["raw"] = '{"data":"authorization-ended","status":200}'
+                    else:
+                        terminal["raw"] = {
+                            "sse": 'event: feature\ndata: {"status":"error","code":"authorization-ended"}\n\n',
+                            "websocket": '{"type":"close","code":1000,"reason":"authorization-ended"}',
+                            "odata": 'HTTP/1.1 200 OK\r\n\r\n{"code":"authorization-ended"}',
+                        }[transport]
+                    receipt = qualify(source)
+                    self.assertEqual("rejected", receipt["status"])
+                    row = next(row for row in receipt["rows"] if row["transport"] == transport
+                               and row["scenario"] == "token-revocation")
+                    self.assertIn("termination timestamp must match a raw authorization outcome",
+                                  " ".join(row["reasons"]))
 
     def test_authorization_boundary_and_termination_must_be_observed_in_the_live_run(self):
         for scenario in ("token-expiry", "token-revocation"):

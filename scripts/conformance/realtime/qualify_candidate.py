@@ -47,6 +47,29 @@ PREVIEW_ROWS = tuple(
 AUTH_SCENARIOS = {"token-expiry", "token-revocation", "tenant-isolation", "tenant-scope-change"}
 
 
+def _is_authorization_termination(raw: str, transport: str) -> bool:
+    """Decode the transport outcome; a reason string inside a data payload is not termination."""
+    if transport == "odata" and re.match(r"^HTTP/(?:1\.[01]|[23](?:\.0)?) 401(?:[ \r\n]|$)", raw):
+        return True
+    if transport == "sse":
+        lines = raw.splitlines()
+        if [line[6:].strip() for line in lines if line.startswith("event:")] != ["status"]:
+            return False
+        raw = "\n".join(line[5:].lstrip(" ") for line in lines if line.startswith("data:"))
+    try:
+        frame = json.loads(raw)
+    except ValueError:
+        return False
+    if not isinstance(frame, dict):
+        return False
+    if transport == "sse":
+        return frame.get("status") == "error" and frame.get("code") == "authorization-ended"
+    if transport == "websocket":
+        return (frame.get("type") == "close" and frame.get("code") == 1008
+                and frame.get("reason") == "authorization-ended")
+    return transport == "odata" and frame.get("status") == 401
+
+
 def _authorization_diagnostics(row: dict, workflow: dict) -> list[str]:
     """Require the live authorization transcript, not just a projected green cell."""
     reasons: list[str] = []
@@ -78,6 +101,7 @@ def _authorization_diagnostics(row: dict, workflow: dict) -> list[str]:
 
     observations = proof.get("observations")
     observation_times = []
+    termination_times = []
     started = _timestamp(workflow.get("startedAt"), "workflow.startedAt", reasons)
     completed = _timestamp(workflow.get("completedAt"), "workflow.completedAt", reasons)
     if not isinstance(observations, list) or len(observations) < 2:
@@ -90,6 +114,8 @@ def _authorization_diagnostics(row: dict, workflow: dict) -> list[str]:
             at = _timestamp(observation.get("at"), "authorization.observation.at", reasons)
             if at is not None:
                 observation_times.append(at)
+                if _is_authorization_termination(observation["raw"], row["transport"]):
+                    termination_times.append(at)
                 if started is not None and completed is not None and not started <= at <= completed:
                     reasons.append("authorization observation falls outside its claimed live workflow")
 
@@ -107,7 +133,7 @@ def _authorization_diagnostics(row: dict, workflow: dict) -> list[str]:
         terminated = _timestamp(proof.get("terminatedAt"), "authorization.terminatedAt", reasons)
         if row["scenario"] == "token-revocation":
             if (issued is not None and boundary is not None and expires is not None
-                    and not issued <= boundary < expires):
+                    and not issued < boundary < expires):
                 reasons.append("authorization revocation must occur during the token lifetime")
             if terminated is not None and expires is not None and terminated >= expires:
                 reasons.append("authorization revocation termination must precede token expiry")
@@ -115,12 +141,14 @@ def _authorization_diagnostics(row: dict, workflow: dict) -> list[str]:
             if (timestamp is not None and started is not None and completed is not None
                     and not started <= timestamp <= completed):
                 reasons.append(f"authorization {label} falls outside its claimed live workflow")
+        if terminated is not None and terminated not in termination_times:
+            reasons.append("authorization termination timestamp must match a raw authorization outcome")
         bound = proof.get("enforcementBoundMilliseconds")
         if isinstance(bound, bool) or not isinstance(bound, int) or not 0 < bound <= 5000:
             reasons.append("authorization enforcement bound must be positive and at most 5000 ms")
         elif boundary is not None and terminated is not None and not boundary <= terminated <= boundary + timedelta(milliseconds=bound):
             reasons.append("authorization termination exceeded the declared enforcement bound")
-        if boundary is not None and (not any(at < boundary for at in observation_times)
+        if boundary is not None and (not any(issued is not None and issued <= at < boundary for at in observation_times)
                                      or not any(at >= boundary for at in observation_times)):
             reasons.append("authorization transcript must observe both sides of expiry/revocation")
         expected_reason = "unauthorized" if row["transport"] == "odata" else "authorization-ended"
