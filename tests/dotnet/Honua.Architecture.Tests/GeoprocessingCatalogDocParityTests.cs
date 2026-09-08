@@ -31,8 +31,8 @@ public sealed class GeoprocessingCatalogDocParityTests
         processes.Should().NotContain(
             process => process.ExecutionKind == ProcessExecutionKind.Unclassified,
             "protocol adapters must not guess whether a catalog process is directly callable");
-        processes.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(81);
-        processes.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(5);
+        processes.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(82);
+        processes.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(4);
         processes.Count(process => process.ExecutionKind == ProcessExecutionKind.WorkflowOnly).Should().Be(12);
         processes.Should().NotContain(
             process => process.ExecutionKind == ProcessExecutionKind.Unavailable,
