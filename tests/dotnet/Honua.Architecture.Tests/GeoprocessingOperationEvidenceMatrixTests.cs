@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Xunit;
 
@@ -97,6 +98,59 @@ public sealed class GeoprocessingOperationEvidenceMatrixTests
             "partial and unproven operations require one-issue-per-operation follow-up");
     }
 
+    /// <summary>
+    /// The 2026-09-06 entry-point ruling (#4409): GA is defined per entry point, so a
+    /// verdict is only meaningful together with the entry point it was proved through.
+    /// A row that claims <c>proven</c> through an entry point the catalog does not declare
+    /// for that operation is not a proof of the shipped capability — it is a proof of a
+    /// path callers cannot take — so the gate refuses it.
+    /// </summary>
+    [Fact]
+    public void ManifestRows_ProveTheirVerdictThroughADeclaredEntryPoint()
+    {
+        using var manifest = ReadManifest();
+        var catalog = new BuiltInProcessCatalog();
+
+        var definitions = manifest.RootElement.GetProperty("entryPointDefinitions");
+        foreach (var entryPoint in new[] { "job", "protocol", "workflow" })
+        {
+            RequiredString(definitions, entryPoint).Should().NotBeNullOrWhiteSpace(
+                $"the matrix must define what proving an operation through the '{entryPoint}' entry point means");
+        }
+
+        foreach (var row in manifest.RootElement.GetProperty("operations").EnumerateArray())
+        {
+            var processId = RequiredString(row, "processId");
+            var entryPoint = RequiredString(row, "entryPoint");
+            entryPoint.Should().BeOneOf("job", "protocol", "workflow");
+
+            var definition = catalog.GetProcess(processId);
+            definition.Should().NotBeNull($"matrix row '{processId}' must name a catalog operation");
+
+            var declared = ProcessExecutionEligibility.DescribeEntryPoints(definition!);
+            declared.Should().NotBeEmpty(
+                $"catalog operation '{processId}' is advertised, so it must declare at least one callable "
+                + "entry point; there is no advertised-but-unexecutable state");
+
+            var status = RequiredString(row, "status");
+            if (status == "proven")
+            {
+                declared.Should().Contain(
+                    entryPoint,
+                    $"proven operation '{processId}' claims a proof through the '{entryPoint}' entry point, "
+                    + $"which the catalog does not declare for it (declared: {string.Join(", ", declared)}); "
+                    + "downgrade the row to partially-proven or prove it through a declared entry point");
+            }
+            else
+            {
+                declared.Should().Contain(
+                    entryPoint,
+                    $"{status} operation '{processId}' must name a declared entry point as the one its missing "
+                    + $"proof has to go through (declared: {string.Join(", ", declared)})");
+            }
+        }
+    }
+
     [Fact]
     public void ManifestSummaryAndSharedRuntimeReferences_MatchRows()
     {
@@ -113,6 +167,13 @@ public sealed class GeoprocessingOperationEvidenceMatrixTests
         {
             byStatus.GetProperty(status).GetInt32().Should().Be(
                 operations.Count(row => RequiredString(row, "status") == status));
+        }
+
+        var byEntryPoint = summary.GetProperty("byEntryPoint");
+        foreach (var entryPoint in new[] { "job", "protocol", "workflow" })
+        {
+            byEntryPoint.GetProperty(entryPoint).GetInt32().Should().Be(
+                operations.Count(row => RequiredString(row, "entryPoint") == entryPoint));
         }
 
         var sharedRuntimeGaps = root.GetProperty("sharedRuntimeGaps")

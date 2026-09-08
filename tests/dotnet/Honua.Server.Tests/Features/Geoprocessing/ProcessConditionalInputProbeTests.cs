@@ -113,15 +113,25 @@ public sealed class ProcessConditionalInputProbeTests
     // -----------------------------------------------------------------------
 
     [UnitTest]
-    public void FindAdmissibilityViolations_AdvertisedButNotExecutableProcess_IsNotJobExecutable()
+    public void FindAdmissibilityViolations_ProtocolOnlyProcess_IsNotJobExecutable()
     {
-        // raster.interpolate-kriging validates cleanly (points is its only required input) but
-        // no kriging backend is bundled, so its executor fails every job.
+        // conversion.geometry-format is reachable only through its owning synchronous
+        // protocol endpoint, so a translated toolbox tool targeting it can never run.
+        var violations = Probe().FindAdmissibilityViolations("conversion.geometry-format", ["geometry", "targetFormat"]);
+
+        violations.Should().Contain(violation =>
+            violation.Kind == ProcessAdmissibilityViolationKind.NotJobExecutable);
+    }
+
+    [UnitTest]
+    public void FindAdmissibilityViolations_KrigingIsNowJobExecutable()
+    {
+        // raster.interpolate-kriging was the catalog's one advertised-but-unexecutable
+        // entry. It is implemented (#3932/#4409), so a toolbox tool may target it.
         var violations = Probe().FindAdmissibilityViolations("raster.interpolate-kriging", ["points"]);
 
-        violations.Should().ContainSingle();
-        violations[0].Kind.Should().Be(ProcessAdmissibilityViolationKind.NotJobExecutable);
-        violations[0].Message.Should().Contain("raster.interpolate-idw");
+        violations.Should().NotContain(violation =>
+            violation.Kind == ProcessAdmissibilityViolationKind.NotJobExecutable);
     }
 
     [UnitTest]
@@ -460,13 +470,13 @@ public sealed class ProcessConditionalInputProbeTests
     }
 
     [UnitTest]
-    public void AdvertisedButNotExecutableProcesses_KeysResolveToCatalogProcesses()
+    public void AdvertisedButNotExecutableProcesses_IsEmpty()
     {
-        // The set is keyed by process id and consulted with an exact string lookup, so a typo
-        // (or a process rename) silently disables the check with no other symptom — the report
-        // would quietly go back to certifying a tool whose executor can only fail. Pin the keys
-        // to real catalog entries so that failure mode is loud.
-        BuiltInProcessCatalog.AdvertisedButNotExecutableProcesses.Should().NotBeEmpty();
+        // The catalog entry-point ruling (#4409) admits no advertised-but-unexecutable
+        // state: an operation is callable through a declared entry point or it is not in
+        // the catalog. The set is retained as fail-closed machinery — a future addition
+        // that lands in it is refused by the gate rather than quietly becoming a dead end.
+        BuiltInProcessCatalog.AdvertisedButNotExecutableProcesses.Should().BeEmpty();
 
         foreach (var (processId, reason) in BuiltInProcessCatalog.AdvertisedButNotExecutableProcesses)
         {

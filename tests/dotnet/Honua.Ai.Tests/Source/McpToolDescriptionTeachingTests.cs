@@ -219,7 +219,7 @@ public sealed class McpToolDescriptionTeachingTests
 
         AssertPlanStepDocumentsCatalog(McpToolSchemas.ExecutePlanArgumentSchema, jobCallableIds);
         ExtractProcessIdExamples(McpToolSchemas.ExecutePlanArgumentSchema)
-            .Should().NotContain(["analytics.cluster", "source.geojson", "raster.interpolate-kriging"]);
+            .Should().NotContain(["analytics.cluster", "source.geojson"]);
         ExtractProcessIdDescription(McpToolSchemas.ExecutePlanArgumentSchema)
             .Should().Contain("executionKind=Job")
             .And.Contain("supportedExecutionModes includes Async");

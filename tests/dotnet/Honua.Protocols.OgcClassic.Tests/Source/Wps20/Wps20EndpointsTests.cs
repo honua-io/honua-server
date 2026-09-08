@@ -54,8 +54,57 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         xml.Should().Contain("processVersion=\"1.0.0\"");
         advertisedProcessIds.Should().NotContain("source.geojson");
         advertisedProcessIds.Should().NotContain("analytics.cluster");
-        advertisedProcessIds.Should().NotContain("raster.interpolate-kriging");
+        var krigingProcess = document
+            .Descendants(wps + "ProcessSummary")
+            .Single(summary => summary.Element(ows + "Identifier")?.Value == "raster.interpolate-kriging");
+        krigingProcess.Attribute("jobControlOptions")?.Value.Should().Be("async-execute");
         xml.Should().NotContain("Operation name=\"Dismiss\"").And.NotContain("jobControlOptions=\"sync-execute\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /wps")]
+    [InterfaceOperation(TestProtocols.Wps202, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wps202, "DescribeProcess")]
+    public async Task Discovery_RequiresExplicitJobEntryPoint()
+    {
+        var undeclared = new ProcessDefinition
+        {
+            ProcessId = "test.undeclared",
+            Title = "Undeclared",
+            Description = "An asynchronous job without a declared entry point.",
+            Category = "test",
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Async,
+            Parameters = [],
+            OutputArtifactKinds = []
+        };
+        var declared = undeclared with
+        {
+            ProcessId = "test.declared",
+            SupportedEntryPoints = ProcessEntryPoints.Job
+        };
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.ListProcesses().Returns(new[] { undeclared, declared });
+        catalog.GetProcess(undeclared.ProcessId).Returns(undeclared);
+        catalog.GetProcess(declared.ProcessId).Returns(declared);
+        await using var fixture = new WebAppFixture().ReplaceService(catalog);
+        await fixture.InitializeAsync();
+
+        using var capabilities = await fixture.Client.GetAsync("/wps?service=WPS&request=GetCapabilities&version=2.0.0");
+        var xml = await capabilities.Content.ReadAsStringAsync();
+        capabilities.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        XNamespace wps = "http://www.opengis.net/wps/2.0";
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        XDocument.Parse(xml).Descendants(wps + "ProcessSummary")
+            .Select(summary => summary.Element(ows + "Identifier")?.Value)
+            .Should().Equal(declared.ProcessId);
+
+        using var excluded = await fixture.Client.GetAsync($"/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier={undeclared.ProcessId}");
+        excluded.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await excluded.Content.ReadAsStringAsync()).Should().Contain("NoSuchProcess");
+        using var included = await fixture.Client.GetAsync($"/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier={declared.ProcessId}");
+        included.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [IntegrationTest]

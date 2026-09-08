@@ -166,7 +166,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var processes = json.RootElement.GetProperty("processes").EnumerateArray().ToArray();
-        processes.Should().HaveCount(81, "the canonical plan process plus all 80 catalog Job processes are projected once");
+        processes.Should().HaveCount(82, "the canonical plan process plus all 81 catalog Job processes are projected once");
 
         var first = processes[0];
         first.GetProperty("id").GetString().Should().Be("honua-geoprocessing");
@@ -182,13 +182,13 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             "data-management.copy-features",
             "proximity.near",
             "statistics.summarize",
+            "raster.interpolate-kriging",
             "transform.reproject"]);
         ids.Should().NotContain([
             "analytics.cluster",
             "analytics.density",
             "source.geojson",
-            "sink.geojson-file",
-            "raster.interpolate-kriging"]);
+            "sink.geojson-file"]);
     }
 
     [IntegrationTest]
@@ -373,6 +373,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
             "proximity.near",
             "statistics.summarize",
             "transform.reproject",
+            "raster.interpolate-kriging",
         ];
 
         foreach (var processId in processIds)
@@ -391,7 +392,6 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
         [
             "analytics.cluster",
             "source.geojson",
-            "raster.interpolate-kriging",
         ];
 
         foreach (var processId in processIds)
@@ -566,7 +566,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_NonJobCatalogEntries_Return404()
     {
-        foreach (var processId in new[] { "analytics.cluster", "source.geojson", "raster.interpolate-kriging" })
+        foreach (var processId in new[] { "analytics.cluster", "source.geojson" })
         {
             using var content = new StringContent("{\"inputs\":{}}", Encoding.UTF8, "application/json");
             var response = await _fixture.Client.PostAsync(
@@ -575,6 +575,20 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound, $"'{processId}' is not a directly callable Job process");
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_KrigingWithoutRequiredInputs_Returns400()
+    {
+        using var content = new StringContent("{\"inputs\":{}}", Encoding.UTF8, "application/json");
+        using var response = await _fixture.Client.PostAsync(
+            "/ogc/processes/processes/raster.interpolate-kriging/execution", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("detail").GetString().Should().Contain("points");
     }
 
     [IntegrationTest]
