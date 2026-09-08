@@ -288,6 +288,7 @@ jobs:
             --filter 'Category=LayerExecutionProof' \
             --logger 'trx;LogFileName=layer-execution-proof.trx' \
             --results-directory tests/TestResults
+
       - name: Prove the raster execution cases ran, not skipped
         # honua-server#4401. The step above is on the REQUIRED gate, but
         # `dotnet test` exits 0 when a --filter matches nothing and when every
