@@ -109,6 +109,7 @@ public sealed class LiveStreamAuthorizationTests
         using var output = new MemoryStream();
         var response = Substitute.For<IHttpResponseFeature>();
         response.HasStarted.Returns(responseStarted);
+        response.StatusCode = StatusCodes.Status200OK;
         context.Features.Set(response);
         context.Response.Body = output;
 
@@ -135,9 +136,9 @@ public sealed class LiveStreamAuthorizationTests
         }
         else
         {
-            ((IStatusCodeHttpResult)result!).StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
             await ((IResult)result!).ExecuteAsync(context);
             context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+            ((IStatusCodeHttpResult)result!).StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
             output.Length.Should().Be(0, "cancellation before streaming starts must return an HTTP denial");
         }
     }
