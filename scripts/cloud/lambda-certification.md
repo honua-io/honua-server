@@ -32,7 +32,10 @@ reference, authentication configuration and VPC attachments. Its execution role
 must already permit those VPC attachments and resolution of the cert secrets.
 No IAM policies or trust are changed by this lane. Bootstrap must also already
 permit code update/publish, version reads/deletion, alias URL reads, and the
-production deploy backend's alias SDK calls on the standing cert function.
+production deploy backend's alias SDK calls on the standing cert function, and
+`lambda:UpdateFunctionConfiguration` on the run-namespaced `honua-certrun-lambda-*`
+function — that is how the lane forces the cold execution environment it certifies
+(see below), and it is the one AWS action the lane did not previously call.
 
 The referenced `real-aws-certification.yml` contains control-plane tests, and
 `aws-cert/ecs-alb-cert.tf` runs nginx behind an internal ALB; neither seeds a Honua
@@ -162,11 +165,79 @@ artifact and must never be the reason a prior run's artifact is deleted. A stale
 be removed fails the run (exit 4) rather than being left for the verification to accept. Bootstrap must permit
 `ecr:DescribeImages` and `ecr:BatchDeleteImage` on that repository.
 
+## The certified invoke has to be made cold, not assumed cold
+
+Run 18 (`34203568834`) exited 14 at the cold-start check with
+`tail-has-init-report=0 tail-has-report=1`: the invoke's `REPORT` carried no `Init Duration`,
+no `INIT_REPORT` existed to fall back to, and the serving assertions never ran.
+
+Neither shape of "a previous run left something warm behind" explains it, and neither is
+possible in this lane:
+
+- **There is no pre-existing published version to land on.** The evidence invoke targets
+  `honua-certrun-lambda-<run id>-<attempt>`, a function this run creates and tears down; the lane
+  refuses to start at all if that name already exists (exit 93). Nothing is published or aliased
+  until step 4, which runs *after* certification. Run 17 also certified a different source digest
+  (`0b526ccb…`, against run 18's `f11bfdc9…`), so it left neither a function nor a mirror tag that
+  run 18 could have reused.
+- **Nothing invokes the function between create and the evidence invoke.** That invoke is the
+  first `aws lambda invoke` of the run, and it addresses the function, not the standing alias.
+
+What actually happened is that the environment was already initialized before the invoke reached
+it. **Lambda proactively initializes an execution environment while a newly created function
+transitions to `Active`**, so `wait function-active-v2` followed by an invoke is not a cold start —
+it is a race, and which side wins is set by how long activation takes:
+
+| Run | Source digest | Mirror verified → step outcome | Outcome |
+| --- | --- | --- | --- |
+| 17 (`34118866591`) | `0b526ccb…`, deployed to Lambda by earlier runs | 29 s, and by then it had already *failed a serving assertion* | Activation, the evidence invoke and the first serving calls all fit in half a minute: the invoke beat the ~21 s initialization, so the cold start was observed and the run got past this check |
+| 18 (`34203568834`) | `f11bfdc9…`, first Lambda deployment of that digest | 4 min 19 s to exit 14, of which at least 2 min is the lane's own bounded polling | Activation was slow — the platform had not yet cached an optimized copy of this image — so the initialization finished inside it and the invoke landed on the completed environment |
+
+That also accounts for the earlier `INIT_REPORT ... Phase: invoke` runs (13 and 15): there the
+proactive initialization lost the race, the invoke did its own initialization, the ~21 s needed to
+resolve secrets and open the database over the VPC blew Lambda's init window, and the runtime
+re-ran it inside the invoke. Nothing about the queries was wrong in run 18 — there was no
+initialization inside the invocation for the tail *or* CloudWatch to report.
+
+Two changes make the evidence robust without touching the assertion:
+
+- **The lane forces the environment it certifies.** A configuration change discards every execution
+  environment a function holds, so before each evidence invoke the lane writes an inert nonce
+  (`HONUA_LAMBDA_CERT_COLD_START=<run token>-<n>`) into the cloned standing environment, waits for
+  the update to settle, and invokes immediately — putting the initialization ahead of the invoke
+  instead of behind it. The nonce never stands in for the artifact: `Code.ResolvedImageUri` is
+  re-read after every update and must still be the mirrored digest (exit 5). Because proactive
+  initialization can win again, the lane makes up to three such attempts, each with a new nonce and
+  therefore a new environment, and says so in the job log when one comes back warm.
+- **The CloudWatch query follows the environment, not a window around the invoke.** One log stream
+  is one execution environment, so the lane resolves the stream its invoke ran in (from the
+  delivered request id) and searches *that* stream from the log group's own creation. The group is
+  created by this run and deleted at teardown, so the widened range is still entirely this run's.
+  The previous `invoke − 120 s` window was a second race with the same cause: an activation slower
+  than two minutes — exactly the slow-image-optimization case — put anything pre-invoke outside it.
+  Delivery of the platform lines lags the request id by minutes, so the search is a bounded poll,
+  and an empty answer is never read as an absent cold start until the poll is spent.
+
+  The search is scoped to that one stream and is never widened back to the group, because forcing
+  environments is exactly what puts *other* attempts' streams in it: a group-wide read could credit
+  one attempt's late-delivered `INIT_REPORT` to a later attempt's invoke, and the receipt would
+  carry an `Init Duration` and a request fingerprint from two different invocations. For the same
+  reason every attempt proves delivery of its *own* request id before reading any evidence — the
+  receipt records the last attempt's fingerprint, so `cloudWatchLogsVerified` has to be about that
+  invoke — and that delivery is also what names the stream, so the two waits are one bounded poll.
+
+The assertion itself is unchanged and still fail-closed: a passing receipt carries a positive
+`Init Duration` that this run observed, from a `REPORT` line or from a non-error `INIT_REPORT`.
+Three forced environments that all come back warm fail the run (exit 14), and the failure now
+reports the attempt count alongside the tail shape.
+
 ## Live proof
 
 1. Mirror and verify the digest, clone the standing cert environment/VPC, and boot
-   an ephemeral function. Keep the first invoke's `REPORT` request ID and positive
-   `Init Duration` in milliseconds, and verify that invocation reached CloudWatch.
+   an ephemeral function. Force a fresh execution environment, then keep that invoke's
+   `REPORT` request ID and positive `Init Duration` in milliseconds, and verify the
+   invocation reached CloudWatch. See "The certified invoke has to be made cold, not
+   assumed cold" above for why the first invoke of a fresh function is not enough.
 2. Require migration status `succeeded`, ready, no failure, available plan, no
    upgrade and zero pending scripts. Query exactly ten named fixture records.
 3. Require an anonymous principal's `GET /api/v1/admin/api-keys` to return the
@@ -207,6 +278,9 @@ alias, so requests do not depend on public ingress or redirect behavior.
   first-invoke Init Duration and the phase that carried it (`init` from the REPORT line, or
   `invoke` from the INIT_REPORT line when initialization exceeded Lambda's init window and
   was re-run inside the first invoke).
+- `verification.coldStartEnvironmentForced` and `verification.coldStartInvokeAttempts`: that the
+  certified invoke ran on an execution environment this run forced into existence, and how many
+  forced environments it took before one was actually cold. Both are asserted in the receipt.
 - `serving.result`, `serving.candidateDigest` (digest only), and `serving.candidateVersion`.
 - `serving.deployed`, `.baseline`, `.candidate`, `.rollback`: migration assertions;
   fixture name/hash, expected/actual row count and name verification; created,
@@ -237,7 +311,12 @@ deploy-driver doubles. It covers pass on both architectures, every assertion,
 missing inputs, URL guards, lost shift/publish responses, rollback failure and
 teardown failure. The doubles model ECR tag immutability — a second `crane copy` to an
 occupied tag is rejected — so the absent / same-digest / different-digest rerun cases and
-their fail-closed variants are exercised end to end. The separately built driver compiles the unchanged production
+their fail-closed variants are exercised end to end. They also model proactive initialization
+(`STUB_PROACTIVE_INIT` is how many forced environments Lambda pre-initializes), per-stream delivery
+of the platform lines, and CloudWatch delivery lag (`STUB_CLOUDWATCH_LAG`), so the retry that
+reaches a cold environment, the fail-closed run where none of them is ever cold, the stream-scoped
+poll that outwaits the lag, and the warm attempt whose stream must not supply a later attempt's
+evidence are all covered offline; an unscoped evidence read fails the doubles outright. The separately built driver compiles the unchanged production
 backend/client. Actual AWS IAM, VPC/PostGIS connectivity, fixture bootstrap,
 cold-start behavior and serving across real published versions still require the
 credentialed workflow run.
