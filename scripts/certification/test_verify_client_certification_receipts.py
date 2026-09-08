@@ -173,7 +173,7 @@ class FailClosedTests(unittest.TestCase):
 
     def test_wrong_client_version_does_not_satisfy_the_cell(self):
         raw = envelope(client_version="0.35.0")
-        self.assert_blocked("missing-envelope", [("other.cert.json", raw)])
+        self.assert_blocked("unresolved-result", [("other.cert.json", raw)])
 
     def test_wrong_surface_does_not_satisfy_the_cell(self):
         raw = envelope(protocol="wfs")
@@ -309,9 +309,9 @@ class WholeReceiptAdmissionTests(unittest.TestCase):
         codes = sorted(defect.partition(": ")[0] for defect in rejected["a.cert.json"])
         self.assertEqual(["candidate-digest-mismatch", "revision-mismatch"], codes)
 
-    def test_a_result_outside_the_bounded_roster_does_not_reject_the_receipt(self):
-        # The bounded roster is a subset of the denominator. A lane legitimately
-        # emits IDs this gate does not govern; they are judged upstream, not here.
+    def test_an_unresolved_result_rejects_the_whole_receipt(self):
+        # The local mirror cannot assume the full denominator admits this result.
+        # The governed consumer requires exactly one match for every observation.
         raw = envelope(results=[
             envelope()["results"][0],
             {"test_case_id": "CERT-QFLT-01", "status": "pass", "performed_by": "OWSLib",
@@ -319,7 +319,60 @@ class WholeReceiptAdmissionTests(unittest.TestCase):
              "exercised_capabilities": ["positive"]},
         ])
         verdict = only_verdict([requirement()], [("a.cert.json", raw)])
-        self.assertEqual("pass", verdict["result"])
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("unresolved-result", blocker_codes(verdict))
+
+    def test_conflicting_observations_cannot_hide_behind_a_pass(self):
+        # Independently specified contract: exactly one observation may certify
+        # a cell. Array order, test ID aliases and array placement cannot choose
+        # which of two observations the gate reads.
+        for status in ("pass", "fail", "skip"):
+            for reverse in (False, True):
+                for extension in (False, True):
+                    for alias in (False, True):
+                        with self.subTest(status=status, reverse=reverse, extension=extension, alias=alias):
+                            row = requirement(test_ids=["CERT-DISC-01", "CERT-CONN-01"])
+                            raw = envelope()
+                            first = raw["results"][0]
+                            second = {**first, "status": status,
+                                      "test_case_id": "CERT-CONN-01" if alias else "CERT-DISC-01"}
+                            observations = [second, first] if reverse else [first, second]
+                            raw["results"] = observations[:1] if extension else observations
+                            raw["extensions"] = observations[1:] if extension else []
+                            verdict = only_verdict([row], [("a.cert.json", raw)])
+                            self.assertEqual("fail", verdict["result"])
+                            self.assertEqual(["ambiguous-cell"], blocker_codes(verdict))
+
+    def test_malformed_extensions_reject_the_whole_receipt_without_crashing(self):
+        for value in (None, 7, {}, "not-an-array"):
+            with self.subTest(value=value):
+                verdict = only_verdict([requirement()], [("a.cert.json", envelope(extensions=value))])
+                self.assertEqual("fail", verdict["result"])
+                self.assertIn("malformed-envelope", blocker_codes(verdict))
+
+    def test_inapplicable_result_still_requires_a_test_id(self):
+        raw = envelope(extensions=[{"status": "not_applicable"}])
+        verdict = only_verdict([requirement()], [("a.cert.json", raw)])
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("malformed-envelope", blocker_codes(verdict))
+
+    def test_plain_http_cannot_substantiate_a_tls_facet(self):
+        row = requirement(scenario_facets=["positive", "tls"])
+        raw = envelope()
+        raw["results"][0].update(request_url="http://candidate.test/collections",
+                                  exercised_capabilities=["positive", "tls"])
+        verdict = only_verdict([row], [("a.cert.json", raw)])
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("provenance-missing", blocker_codes(verdict))
+        raw["results"][0]["request_url"] = "https://candidate.test/collections"
+        self.assertEqual("pass", only_verdict([row], [("a.cert.json", raw)])["result"])
+
+    def test_malformed_request_url_rejects_the_whole_receipt_without_crashing(self):
+        raw = envelope()
+        raw["results"][0]["request_url"] = "https://[invalid/collections"
+        verdict = only_verdict([requirement()], [("a.cert.json", raw)])
+        self.assertEqual("fail", verdict["result"])
+        self.assertIn("provenance-missing", blocker_codes(verdict))
 
     def test_a_result_claiming_two_governed_rows_is_ambiguous(self):
         rows = [

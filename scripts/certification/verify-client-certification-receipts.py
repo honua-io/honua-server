@@ -82,6 +82,7 @@ REASON_CODES = (
     "stale-observation",
     "ambiguous-cell",
     "ambiguous-resolution",
+    "unresolved-result",
     "deployment-target-mismatch",
     "receipt-rejected",
     "cell-skipped",
@@ -128,7 +129,10 @@ def is_publishable_url(value: object) -> bool:
     """An absolute HTTP(S) URL that carries no credential in userinfo or query."""
     if not isinstance(value, str):
         return False
-    parsed = urlparse(value)
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return False
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return False
     if parsed.username is not None or parsed.password is not None:
@@ -275,6 +279,8 @@ def _envelope_defects(envelope: dict, contract: dict, candidate: dict) -> list[s
             f"{contract['envelopeSchemaVersion']!r}")
     if not isinstance(envelope["results"], list):
         defects.append("malformed-envelope: results is not an array")
+    if not isinstance(envelope.get("extensions", []), list):
+        defects.append("malformed-envelope: extensions is not an array")
 
     if not SHA_RE.fullmatch(str(envelope["server_commit"])):
         defects.append(
@@ -353,6 +359,9 @@ def _result_defects(result: dict, requirement: dict, envelope: dict, contract: d
         defects.append(
             f"facets-not-exercised: the governed row requires {missing_facets} which this pass "
             "did not exercise")
+    if (result["status"] == "pass" and "tls" in requirement["scenario_facets"]
+            and is_publishable_url(request_url) and urlparse(request_url).scheme != "https"):
+        defects.append("provenance-missing: a TLS facet requires an HTTPS request_url")
 
     return defects
 
@@ -416,6 +425,9 @@ def _receipt_result_defects(
         if not isinstance(result, dict):
             defects.append(f"malformed-envelope: result {index} is not an object")
             continue
+        if not isinstance(result.get("test_case_id"), str) or not result["test_case_id"].strip():
+            defects.append(f"malformed-envelope: result {index} has no non-empty test_case_id")
+            continue
         if result.get("status") not in contract["resultStatusVocabulary"]:
             defects.append(
                 f"status-not-governed: result {result.get('test_case_id')!r} has status "
@@ -427,8 +439,14 @@ def _receipt_result_defects(
             continue
         claimed = [row for row in rows if result.get("test_case_id") in (row.get("test_ids") or ())]
         if not claimed:
-            # A result outside the bounded roster is not this gate's business: the
-            # governed aggregator judges it against the full denominator.
+            # Absence from this mirror is not proof that some other governed row
+            # admits the observation. The consumer rejects unresolved executable
+            # results wholesale; accepting the other rows here would manufacture
+            # a local pass for evidence the release join cannot consume. Producers
+            # must publish a bounded receipt, or supply the applicable denominator.
+            defects.append(
+                f"unresolved-result: result {result['test_case_id']!r} resolves to no "
+                "governed requirement for this lane, version and surface")
             continue
         if len(claimed) > 1:
             defects.append(
@@ -515,10 +533,10 @@ def verify_release(requirements: dict, receipts: list[tuple[str, dict]], candida
                 f"{requirement['deployment_target']!r}.",
                 "honua-io/honua-server")]))
             continue
-        if len({name for name, _, _ in matches}) > 1:
+        if len(matches) > 1:
             verdicts.append(_verdict(requirement, "fail", blockers=[_blocker(
                 "ambiguous-cell",
-                "More than one producer receipt claims this cell: "
+                f"{len(matches)} observations claim this cell (including results and extensions): "
                 + ", ".join(sorted({name for name, _, _ in matches})),
                 "honua-io/honua-server")]))
             continue
