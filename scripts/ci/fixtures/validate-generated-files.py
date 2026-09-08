@@ -43,6 +43,18 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertLess(generator.index('generate-geoservices-parity.sh'), generator.index('generate-capability-matrix.py'))
         self.assertIn('verify-admin-operation-parity.py', generator)
 
+    def test_generator_failure_stops_the_pipeline(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            scripts = repo / 'scripts'
+            (scripts / 'ci').mkdir(parents=True)
+            shutil.copy(ROOT / 'scripts/ci/regenerate-generated-files.sh', scripts / 'ci')
+            (scripts / 'generate-feature-catalog.sh').write_text('exit 23\n')
+            (scripts / 'generate-admin-operation-parity-exports.sh').write_text('touch should-not-run\n')
+            result = subprocess.run(['bash', 'scripts/ci/regenerate-generated-files.sh'], cwd=repo)
+            self.assertEqual(result.returncode, 23)
+            self.assertFalse((repo / 'should-not-run').exists())
+
     def test_real_git_noop_drift_identity_allowlist_replay_and_race(self):
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)

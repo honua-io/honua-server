@@ -16,7 +16,7 @@ inputs still fail. Generator implementation and serialization are unchanged.
 | `docs/gis/data/capability-matrix.v1.json` | `scripts/ci/generate-capability-matrix.py` (after catalog and parity) | Every trunk push |
 | `examples/manifest.json` | `scripts/examples/generate-manifest.py` | Every trunk push |
 | `src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json` | `scripts/geoparquet/generate-projjson-catalog.py` | Explicit CRS/PROJ dependency update; depends on external pyproj/PROJ data, not trunk evidence |
-| `docs/gis/gap-report.md`, cross-server gap report and SDK compatibility table snapshots | `scripts/client-compat/compare-results.py`, `scripts/ci/generate-cross-server-gap-report.sh`, `scripts/ci/generate-sdk-compatibility-table.sh` | Evidence-run outputs; require measured results, external checkouts or live servers |
+| `docs/gis/gap-report.md`, cross-server gap report and SDK compatibility table snapshots | `scripts/client-compat/diff-baselines.py`, `scripts/ci/generate-cross-server-gap-report.sh`, `scripts/ci/generate-sdk-compatibility-table.sh` | Evidence-run outputs; require measured results, external checkouts or live servers |
 | COG, canonical CNG and curated format corpus fixtures | `scripts/raster/generate-cog-fixtures.py`, `scripts/conformance/cng/generate-canonical-fixtures.py`, `scripts/test-data/generate-*` | Explicit fixture refresh with GDAL/external tooling; runtime test data, not trunk projections |
 
 There are **no tracked `*.generated.*` files**. Compiler-generated JSON/logging,
