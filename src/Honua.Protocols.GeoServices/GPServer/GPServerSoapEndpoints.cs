@@ -129,7 +129,7 @@ internal static class GPServerSoapEndpoints
             new XElement("DisplayName", task.DisplayName),
             new XElement("Category", task.Category),
             new XElement("Help", task.Description),
-            new XElement("ParameterInfo", task.Parameters.Select(parameter => new XElement("GPParameterInfo",
+            new XElement("ParameterInfo", (task.Parameters ?? []).Select(parameter => new XElement("GPParameterInfo",
                 new XElement("Name", parameter.Name),
                 new XElement("DisplayName", parameter.DisplayName),
                 new XElement("Category", string.Empty),
