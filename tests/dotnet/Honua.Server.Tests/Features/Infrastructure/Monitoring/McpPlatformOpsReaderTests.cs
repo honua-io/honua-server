@@ -4,7 +4,6 @@
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.StudioAiProxy;
@@ -60,13 +59,6 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
             : $$"""{"packageId":"package-a","targetEnvironment":"candidate-a","resourceSemanticId":"roads","newFieldName":"speed_limit","idempotencyKey":"{{idempotencyKey}}"}""";
         using var argumentDocument = JsonDocument.Parse(argumentJson);
         var signedArguments = argumentDocument.RootElement.Clone();
-        IMcpTool tool = toolName switch
-        {
-            ProposeDeployOperationTool.ToolName => new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
-            ProposeMetadataReleaseTool.ToolName => new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
-            _ => throw new InvalidOperationException($"Tool '{toolName}' is not a governed proposal tool.")
-        };
-        var descriptor = tool.Describe();
         var request = new StudioAiChatRequest
         {
             Provider = "anthropic",
@@ -74,27 +66,12 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
             Certification = new StudioAiTranscriptCertification
             {
                 CandidateId = "candidate-a",
-                TenantId = "tenant-a",
                 ReleaseId = "2026.1-rc.1",
                 EndpointIdentity = "candidate-proxy",
                 ActionId = "governed-mutation",
                 RunNonce = "nonce-1"
             },
-            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "propose the release mutation" }],
-            Tools =
-            [
-                new StudioAiToolDefinition
-                {
-                    Name = descriptor.Name,
-                    Description = descriptor.Description,
-                    InputSchema = descriptor.InputSchema,
-                }
-            ],
-            ToolChoice = new StudioAiToolChoice
-            {
-                Mode = StudioAiToolChoiceMode.Specific,
-                ToolName = descriptor.Name,
-            },
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "propose the release mutation" }]
         };
         var events = new[]
         {
@@ -104,13 +81,7 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
             new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.ToolCall }
         };
         var privateKey = new Ed25519PrivateKeyParameters(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray(), 0);
-        var signingOptions = new StudioAiProxyConfiguration();
-        signingOptions.TranscriptSigning.OverlapKeys.Add(new StudioAiTranscriptVerificationKeyOptions
-        {
-            KeyId = "candidate-key",
-            PublicKey = Convert.ToBase64String(privateKey.GeneratePublicKey().GetEncoded()),
-        });
-        var signer = new StudioAiTranscriptSigner(Options.Create(signingOptions), TimeProvider.System);
+        var signer = new StudioAiTranscriptSigner(Options.Create(new StudioAiProxyConfiguration()), TimeProvider.System);
         var provenance = signer.Sign(
             new StudioAiTranscriptSigner.SigningKey("candidate-key", privateKey, privateKey.GeneratePublicKey().GetEncoded()),
             request, "anthropic", "claude-sonnet-4-5", events);
@@ -127,29 +98,7 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
             StudioAiProxyJsonContext.Default.ListStudioAiChatEvent)!;
         var verifiedCall = verifiedEvents.Single(item => item.Type == StudioAiChatEventType.ToolCallStop);
         var verifiedToolName = verifiedEvents.Single(item => item.Type == StudioAiChatEventType.ToolCallStart).ToolName;
-        var signedJson = JsonSerializer.Serialize(
-            provenance,
-            StudioAiProxyJsonContext.Default.StudioAiSignedTranscript);
-        using var metadata = JsonDocument.Parse(
-            $$"""{"{{ProposalEvidenceVerifier.MetaProperty}}":{{signedJson}}}""");
-        using var callId = JsonDocument.Parse("17");
-        var proposalEvidence = await new ProposalEvidenceVerifier(signer, TimeProvider.System)
-            .VerifyAsync(
-                tool,
-                verifiedCall.ToolArguments,
-                metadata.RootElement,
-                "tenant-a",
-                "session-candidate-a",
-                callId.RootElement,
-                CancellationToken.None);
 
-        var apiKeys = new InMemoryAdminApiKeyStore(TimeProvider.System);
-        var proposer = await apiKeys.CreateAsync(
-            "proposal-evidence-proposer",
-            ["admin:operation:POST:/api/v1/admin/proposals"],
-            DateTimeOffset.UtcNow.AddMinutes(5),
-            "test",
-            CancellationToken.None);
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var proposalStore = new RedisOperationProposalStore(
             multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
@@ -162,21 +111,20 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
         actuator.PlanAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>())
             .Returns(new OperationProposalPlan());
         var gateway = CanonicalOperationGatewayTestComposition.Build(proposalStore, ladder, [actuator]);
-        var httpContextAccessor = new HttpContextAccessor();
-        using var readerServices = McpPlatformOpsReaderTests.CreateServices(
-            gateway,
-            accessor: httpContextAccessor,
-            apiKeys: apiKeys);
+        using var readerServices = McpPlatformOpsReaderTests.CreateServices(gateway);
         var reader = McpPlatformOpsReaderTests.CreateReader(services: readerServices);
         using var toolServices = new ServiceCollection().AddSingleton<IMcpPlatformOpsReader>(reader).BuildServiceProvider();
         var context = new DefaultHttpContext
         {
             RequestServices = toolServices,
-            User = McpPlatformOpsReaderTests.CreateApiKeyPrincipal(proposer.Record.Id)
+            User = McpPlatformOpsReaderTests.CreatePrincipal()
         };
-        verifiedToolName.Should().Be(tool.Name);
-        context.Items[ProposalEvidenceVerifier.HttpContextItemKey] = proposalEvidence;
-        httpContextAccessor.HttpContext = context;
+        IMcpTool tool = verifiedToolName switch
+        {
+            ProposeDeployOperationTool.ToolName => new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
+            ProposeMetadataReleaseTool.ToolName => new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
+            _ => throw new InvalidOperationException($"Verified tool '{verifiedToolName}' is not a governed proposal tool.")
+        };
 
         var result = await tool.InvokeAsync(context, verifiedCall.ToolArguments, CancellationToken.None);
 
@@ -188,14 +136,6 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
         persisted!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
         persisted.Kind.Should().Be(operationClass);
         persisted.Plan.ExecutionPayload.Should().Contain("candidate-a");
-        persisted.Evidence.Should().NotBeNull();
-        persisted.Evidence!.CandidateId.Should().Be("candidate-a");
-        persisted.Evidence.TenantId.Should().Be("tenant-a");
-        persisted.Evidence.ToolName.Should().Be(toolName);
-        persisted.Evidence.McpSessionId.Should().Be("session-candidate-a");
-        persisted.Evidence.McpCallId.Should().Be("17");
-        persisted.Evidence.AuthorizationDecision.Should().Be("admin-policy-authorized");
-        persisted.Evidence.PolicyRevision.Should().Be(OperationGateway.ComputePolicyRevision(decision));
         await actuator.DidNotReceive().ExecuteAsync(
             Arg.Any<OperationGatewayRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
@@ -746,19 +686,9 @@ public sealed class McpPlatformOpsReaderTests
     internal static ServiceProvider CreateServices(
         IOperationGateway? gateway = null,
         IOperationExecutorCatalog? catalog = null,
-        IOpsFindingsEvidenceSource? findings = null,
-        IHttpContextAccessor? accessor = null,
-        IAdminApiKeyStore? apiKeys = null)
+        IOpsFindingsEvidenceSource? findings = null)
     {
         var services = new ServiceCollection();
-        if (accessor is not null)
-        {
-            services.AddSingleton(accessor);
-        }
-        if (apiKeys is not null)
-        {
-            services.AddSingleton(apiKeys);
-        }
         var envelopeFactory = Substitute.For<IOperationEnvelopeFactory>();
         var now = DateTimeOffset.UtcNow;
         envelopeFactory.CreateAcceptedAsync(
@@ -800,11 +730,6 @@ public sealed class McpPlatformOpsReaderTests
                 new Claim(ClaimTypes.NameIdentifier, "ops-agent"),
             ],
             "test"));
-
-    internal static ClaimsPrincipal CreateApiKeyPrincipal(Guid apiKeyId)
-        => new(new ClaimsIdentity(
-            [new Claim("api_key_id", apiKeyId.ToString("D"))],
-            AuthenticationExtensions.ApiKeyScheme));
 
     private static bool IsOpsReadResource(object resource, ClaimsPrincipal principal)
         => resource is DefaultHttpContext context &&

@@ -400,7 +400,6 @@ public sealed class StudioAiProxyServiceTests
             Certification = new StudioAiTranscriptCertification
             {
                 CandidateId = "candidate-7",
-                TenantId = "tenant-7",
                 ReleaseId = "release-9",
                 EndpointIdentity = "candidate-proxy",
                 ActionId = "deploy",

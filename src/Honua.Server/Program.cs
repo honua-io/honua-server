@@ -652,8 +652,6 @@ if (connectedRedis != null && redisCacheEntitled)
         Honua.ControlPlane.RedisOperationProposalStore>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationGateway,
         Honua.ControlPlane.OperationGateway>();
-    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalEvidenceValidator,
-        Honua.ControlPlane.OperationProposalEvidenceValidator>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.DeployOperationExecutor>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,

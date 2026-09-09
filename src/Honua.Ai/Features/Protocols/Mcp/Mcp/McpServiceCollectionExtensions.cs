@@ -45,11 +45,6 @@ internal static class McpServiceCollectionExtensions
 
         services.AddGroundingServices(configuration);
 
-        if (services.Any(descriptor => descriptor.ServiceType == typeof(Honua.Ai.StudioAiProxy.StudioAiTranscriptSigner)))
-        {
-            services.TryAddSingleton<ProposalEvidenceVerifier>();
-        }
-
         // PlanAnalysisTool resolves its IPlanAnalysisService from the
         // deterministic fixture replay. ADR-0076 (#3255) retired the live,
         // provider-backed planner with the rest of the server-side inference
