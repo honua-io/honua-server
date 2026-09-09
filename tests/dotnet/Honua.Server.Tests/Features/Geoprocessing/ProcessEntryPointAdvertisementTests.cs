@@ -70,7 +70,11 @@ public sealed class ProcessEntryPointAdvertisementTests
     [UnitTest]
     public void GPServerTaskList_AdvertisesExactlyTheJobEntryPointOperations()
     {
-        var advertised = GPServerEndpoints.BuildPublishedTaskNames(_catalog).ToHashSet(StringComparer.Ordinal);
+        var taskNames = GPServerEndpoints.BuildPublishedTaskNames(_catalog).ToArray();
+        taskNames.Should().OnlyHaveUniqueItems();
+        var resolved = taskNames.Select(name => GPServerEndpoints.ResolveTaskDefinition(_catalog, name)).ToArray();
+        resolved.Should().NotContainNulls("every published Esri name must resolve to a canonical process");
+        var advertised = resolved.Select(process => process!.ProcessId).ToHashSet(StringComparer.Ordinal);
 
         foreach (var process in _catalog.ListProcesses())
         {
