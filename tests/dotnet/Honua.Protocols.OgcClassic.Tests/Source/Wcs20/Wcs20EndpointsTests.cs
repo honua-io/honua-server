@@ -10,6 +10,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using NetTopologySuite.IO;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
@@ -197,9 +198,65 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("<wcs:ServiceMetadata>");
         content.Should().Contain("<wcs:Extension>");
         content.Should().Contain("<crs:crsSupported>http://www.opengis.net/def/crs/EPSG/0/3857</crs:crsSupported>");
-        content.Should().Contain("<crs:crsSupported>http://www.opengis.net/def/crs/EPSG/0/4326</crs:crsSupported>");
+        // Longitude/latitude is advertised as CRS84, matching the axis order this service
+        // actually parses subsets and bboxes in; EPSG:4326 declares the reverse order and
+        // is therefore never offered as a choice.
+        content.Should().Contain(
+            "<crs:crsSupported>http://www.opengis.net/def/crs/OGC/1.3/CRS84</crs:crsSupported>");
+        content.Should().NotContain("<crs:crsSupported>http://www.opengis.net/def/crs/EPSG/0/4326</crs:crsSupported>");
         // Advertisement only — the CRS-extension conformance class must not be claimed.
         content.Should().NotContain("crs-extension");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCapabilities_AdvertisesTheSameLonLatIdentifierDescribeCoverageDeclares()
+    {
+        var capabilities = await _fixture.Client.GetStringAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1");
+        var describe = await _fixture.Client.GetStringAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+
+        // A client picking a subsetting/output CRS out of crsSupported must be able to pick
+        // the very identifier the coverage description declares, or it builds its requests
+        // against a different axis order than the coverage it just described.
+        capabilities.Should().Contain(
+            "<crs:crsSupported>http://www.opengis.net/def/crs/OGC/1.3/CRS84</crs:crsSupported>");
+        describe.Should().Contain("srsName=\"http://www.opengis.net/def/crs/OGC/1.3/CRS84\"");
+        describe.Should().NotContain("srsName=\"http://www.opengis.net/def/crs/EPSG/0/4326\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithAdvertisedCrs84Identifier_UsesLongitudeLatitudeSubset()
+    {
+        // The advertised CRS84 URI, used verbatim as a client would copy it out of
+        // crsSupported, is accepted for both subsetting and output.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png" +
+            "&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)" +
+            "&SUBSETTINGCRS=http://www.opengis.net/def/crs/OGC/1.3/CRS84" +
+            "&OUTPUTCRS=http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        bytes.Should().Equal([0x89, 0x50, 0x4E, 0x47]);
+
+        _exportQueries.Should().ContainSingle();
+        var query = _exportQueries.Single();
+        query.OutputSrid.Should().Be(4326);
+        query.ClipRegion.Should().NotBeNull();
+        query.ClipRegion!.Value.Srid.Should().Be(4326);
+        // Longitude drives X and latitude drives Y: the CRS84 axis order, not EPSG:4326's.
+        var clip = new WKBReader().Read(query.ClipRegion!.Value.Geometry).EnvelopeInternal;
+        clip.MinX.Should().BeApproximately(-122.4, 1e-9);
+        clip.MaxX.Should().BeApproximately(-122.3, 1e-9);
+        clip.MinY.Should().BeApproximately(37.7, 1e-9);
+        clip.MaxY.Should().BeApproximately(37.8, 1e-9);
     }
 
     [IntegrationTest]
