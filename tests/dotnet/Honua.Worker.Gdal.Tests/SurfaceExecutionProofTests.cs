@@ -104,8 +104,8 @@ public sealed partial class RasterExecutionProofTests
         var magnitude = await Decode(await File.ReadAllBytesAsync(Path.Join(_scratch, "tpi.tif")));
 
         var expected = RugosityExpected("rugosity-tpi", hole: false);
-        expected[Peak].Should().Be(10.75, "the fixture's peak must carry a positive index");
-        expected[Depression].Should().Be(-7.25, "the fixture's depression must carry a negative index");
+        expected[Peak].Should().BeApproximately(10.75, 1e-9, "the fixture's peak must carry a positive index");
+        expected[Depression].Should().BeApproximately(-7.25, 1e-9, "the fixture's depression must carry a negative index");
 
         // The substitute is a complete, valid TPI-shaped grid; the peak is byte-identical
         // to a correct result, so only the depression's classification is destroyed.
