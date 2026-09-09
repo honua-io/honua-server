@@ -270,7 +270,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Required tier**: nightly (intended on activation: nightly)
 - **Roster origin**: artifact; artifact status Live nightly
 - **Lane binding**: js (sub-lane)
-- **Client version policy**: npm lockfile-resolved `maplibre-gl` version in tests/js-browser (currently 5.22.0).
+- **Client version policy**: npm lockfile-resolved `maplibre-gl` version in tests/js-browser (currently 6.9.0).
 - **Protocol surfaces**: `mvt`, `ogc-maps`, `ogc-tiles`
 - **Applicable operation families**: `CERT-CONN`, `CERT-AUTH`, `CERT-DISC`, `CERT-ERRH`, `CERT-RNDR`
 - **Structurally not applicable**:
