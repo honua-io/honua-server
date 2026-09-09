@@ -940,6 +940,15 @@ if __name__ == "__main__":
             # drifting copy of both in bash.
             set_phase("cold-start-evidence")
             load_cloned_secrets(sys.argv[2])
+            # This stage is its own process, and the administrator is no longer handed to it in the
+            # environment: without resolving it here the redaction set below is missing the one
+            # credential a server-authored error document is most likely to quote. Resolve it from
+            # the configuration prepare already cloned, and never let that resolution be the reason
+            # a diagnostic goes unreported - a set short one secret still redacts the rest.
+            try:
+                admin_key(json.loads((Path(sys.argv[2]) / "standing.json").read_text()))
+            except Exception:  # noqa: BLE001
+                pass
             report_invoke_failure(sys.argv[3], sys.argv[4], json.loads(Path(sys.argv[5]).read_text() or "{}"),
                                   sys.argv[6])
         elif sys.argv[1] == "prepare":

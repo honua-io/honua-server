@@ -466,7 +466,7 @@ if function_error:
         message = "Error: Runtime exited with error: exit status 134"
         # A server-authored diagnostic can quote a credential; the lane must never echo one. Only
         # the candidate's variant carries one, so the other still proves the message is reported.
-        if fail == "invoke": message += " while reading " + os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
+        if fail == "invoke": message += " while reading " + (os.environ.get("HONUA_LAMBDA_CERT_ADMIN_KEY") or "offline-sensitive-canary")
         response = {"errorType": "Runtime.ExitError", "errorMessage": message}
 response_path.write_text(json.dumps(response))
 meta = {"StatusCode":200,"ExecutedVersion":"99" if fail == "executed-version" else version,"LogResult":base64.b64encode(log.encode()).decode()}
