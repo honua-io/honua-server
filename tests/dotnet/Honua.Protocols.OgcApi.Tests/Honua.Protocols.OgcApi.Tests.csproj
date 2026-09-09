@@ -43,7 +43,7 @@
     <ProjectReference Include="..\..\..\src\Honua.Protocols.OgcApi\Honua.Protocols.OgcApi.csproj" />
     <!-- Native execution receipts compose the public API fixture with the worker's
          public registration seam. Production projects retain the lean-worker boundary. -->
-    <ProjectReference Include="..\..\..\src\Honua.Worker.Gdal\Honua.Worker.Gdal.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Worker.Gdal\Honua.Worker.Gdal.csproj" Aliases="NativeWorker" />
   </ItemGroup>
 
 </Project>
