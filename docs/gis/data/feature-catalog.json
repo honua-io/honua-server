@@ -15083,6 +15083,7 @@
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_ExplicitNullArtifactKind_ReturnsBadRequest",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_ForeignArtifactKind_ReturnsBadRequest",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_GenuinelyOptionalParameterOmitted_IsCertifiedTranslated",
+        "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_GeometryFormatNowHasAnExecutor_IsCertifiedExecutable",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_JsonStructuredSuffixContentType_IsAccepted",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_MalformedBody_ReturnsBadRequest",
         "Honua.Server.Tests.Import.ToolboxTranslationEndpointTests.ValidateTranslation_MappedDiscriminatorBranch_IsNotReportedUnsupported",
