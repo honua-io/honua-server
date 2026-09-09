@@ -688,12 +688,20 @@ internal sealed class Wcs20Handler
         // the resource directly from the storage-layer index, with a fallback to
         // publication.LayerIndex for fixtures/graphs that haven't migrated their
         // storage bindings (matches the resolution order used elsewhere in the V2 ports).
-        if (!TryResolveResourceForLayer(snapshot, layerId, out var resource))
+        if (!TryResolveResourceForLayer(snapshot, layerId, out var resource, out var owningService))
         {
             return new LayerCoverageResult(null, null);
         }
 
-        var accessDecision = AccessPolicyHelpers.EvaluateAccess(context, resource.AccessPolicy, servicePolicy: null);
+        // The owning service's policy is part of the decision (honua-server#4388). It
+        // was previously passed as null here, so a service-level read restriction was
+        // discarded on this route: a resource with no policy of its own resolved to
+        // "any authenticated principal", and DescribeCoverage/GetCoverage served the
+        // coverage to a caller the service denies. Every other classic surface (WMS
+        // and WMTS via RequireAnyResourceAccess, WFS via ValidateLayerWithAccessV2Async)
+        // evaluates both policies.
+        var accessDecision = AccessPolicyHelpers.EvaluateAccess(
+            context, resource.AccessPolicy, owningService?.AccessPolicy);
         if (!accessDecision.IsAllowed)
         {
             return failOnAccessDenied
@@ -707,39 +715,99 @@ internal sealed class Wcs20Handler
             : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, null), null);
     }
 
-    private static bool TryResolveResourceForLayer(MetadataV2GraphSnapshot snapshot, int layerId, out MetadataV2Resource resource)
+    private static bool TryResolveResourceForLayer(
+        MetadataV2GraphSnapshot snapshot,
+        int layerId,
+        out MetadataV2Resource resource,
+        out MetadataV2Service? owningService)
     {
         var matchingBindings = snapshot.Graph.StorageBindings
             .Where(candidate => candidate.StorageLayerId == layerId)
             .ToArray();
-        foreach (var binding in matchingBindings)
+
+        // Storage-layer ids are not unique across stores — the default test graph binds
+        // both a feature resource and a raster resource at id 0 — so a coverage route
+        // must prefer the raster resource rather than whichever binding happens to come
+        // first. Taking the first match would let an unrelated feature service's policy
+        // decide a coverage request.
+        var routable = matchingBindings
+            .Select(binding => snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var candidate)
+                && binding.IsRoutable(candidate)
+                    ? candidate
+                    : null)
+            .Where(candidate => candidate is not null)
+            .Select(candidate => candidate!)
+            .ToArray();
+
+        var preferred = routable.FirstOrDefault(candidate => candidate.Type == MetadataV2ResourceType.RasterDataset)
+            ?? routable.FirstOrDefault();
+        if (preferred is not null)
         {
-            if (snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var byBinding) &&
-                binding.IsRoutable(byBinding))
-            {
-                resource = byBinding;
-                return true;
-            }
+            resource = preferred;
+            owningService = FindOwningService(snapshot, preferred);
+            return true;
         }
         if (matchingBindings.Length > 0)
         {
             resource = default!;
+            owningService = null;
             return false;
         }
 
-        var resolved = snapshot.Graph.Publications
+        var candidate = snapshot.Graph.Publications
             .Where(p => p.LayerIndex == layerId)
             .Select(publication => (Publication: publication, Resource: snapshot.ResolveResource(publication)))
-            .FirstOrDefault(candidate => snapshot.IsRoutable(candidate.Publication))
-            .Resource;
-        if (resolved is not null)
+            .FirstOrDefault(entry => snapshot.IsRoutable(entry.Publication));
+        if (candidate.Resource is not null)
         {
-            resource = resolved;
+            resource = candidate.Resource;
+            owningService = snapshot.Index.ServicesById.TryGetValue(candidate.Publication.ServiceId, out var byPublication)
+                ? byPublication
+                : FindOwningService(snapshot, candidate.Resource);
             return true;
         }
 
         resource = default!;
+        owningService = null;
         return false;
+    }
+
+    /// <summary>
+    /// Finds the service that publishes <paramref name="resource"/> over a coverage
+    /// surface, so the layer-scoped WCS route can honour a service-level access policy
+    /// (honua-server#4388). The route is keyed by an integer storage-layer handle and
+    /// carries no service segment, so the owning service has to be recovered from the
+    /// publication graph.
+    /// </summary>
+    /// <remarks>
+    /// Only services that actually expose this route — those enabling ImageServer or
+    /// WCS — are considered. A resource can be published by several services, and
+    /// borrowing the policy of one that cannot serve coverages at all (a feature
+    /// service, say) would let an unrelated policy decide a coverage request in either
+    /// direction. Returns <see langword="null"/> when no such publication carries a
+    /// policy, which leaves the decision resting on the resource policy alone, exactly
+    /// as before this seam existed.
+    /// </remarks>
+    private static MetadataV2Service? FindOwningService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource)
+    {
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            if (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
+                !snapshot.IsRoutable(publication))
+            {
+                continue;
+            }
+
+            if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
+                service.AccessPolicy is not null &&
+                (IsProtocolEnabled(service, WcsProtocolName) ||
+                 IsProtocolEnabled(service, ServiceProtocols.ImageServer)))
+            {
+                return service;
+            }
+        }
+
+        return null;
     }
 
     private static ServiceResolutionResult ResolveService(
