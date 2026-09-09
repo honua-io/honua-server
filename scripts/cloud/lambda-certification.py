@@ -565,6 +565,76 @@ def report_denied(function, status, body, headers):
           file=sys.stderr)
 
 
+# A GeoServices edit reports a per-feature refusal INSIDE addResults, not in the envelope: the
+# response is HTTP 200 carrying a well-formed document with no top-level `error`, so ok() passes it
+# through untouched and the create assertion is the first thing that notices. Run 31 (34381748849)
+# stopped exactly there - the licensed write got past the in-body 402 of run 28 and failed on
+# `Create assertion failed` with nothing else in the job log, because a rolled-back slot, a slot
+# carrying a writer error code, an objectId of the wrong type and an array of the wrong length are
+# all the same silent answer to that assertion. Say what the array actually held.
+#
+# Bounded on both axes: at most this many slots, and every echoed field passes through the same
+# redaction as every other diagnostic. The request body is never printed - it carries the
+# administrator's own credential in its headers - and the objectId is a server-assigned row id, not
+# a secret, so it is reported by type and value rather than counted.
+CREATE_RESULT_SLOTS = 8
+# The status ok() proves before it returns a body.
+SERVING_OK = 200
+
+
+def create_result_summary(results):
+    """The addResults array as evidence: per slot, what the server said and what type it said it in."""
+    if not isinstance(results, list):
+        return {"kind": body_kind(results), "count": None, "results": []}
+    summary = {"kind": "json", "count": len(results), "results": []}
+    for entry in results[:CREATE_RESULT_SLOTS]:
+        if not isinstance(entry, dict):
+            summary["results"].append({"kind": body_kind(entry)})
+            continue
+        # Every slot is reported by TYPE as well as by value. The assertion reads both, and an
+        # objectId the server returned as a string, or omitted, fails it exactly as a refused slot
+        # does and reads identically without this. `type(True) is int` is false in Python, so a
+        # boolean in either position is its own answer. A boolean is the contract for `success` and
+        # passes through as one; anything else there is a value the server chose, so it is echoed
+        # under the same redaction as every other field.
+        success, object_id = entry.get("success"), entry.get("objectId")
+        record = {"success": success if isinstance(success, bool) else redacted(success, 40),
+                  "successType": type(success).__name__,
+                  "objectId": "none" if object_id is None else redacted(object_id, 40),
+                  "objectIdType": type(object_id).__name__}
+        error = entry.get("error")
+        if isinstance(error, dict):
+            record["errorCode"] = redacted(error.get("code", ""), 40) or "none"
+            record["errorDescription"] = redacted(error.get("description", ""), 200) or "none"
+        elif error is not None:
+            record["errorKind"] = body_kind(error)
+        summary["results"].append(record)
+    return summary
+
+
+def report_create(path, status, body, record):
+    """Name the create failure in the run that failed, and keep it in the receipt."""
+    envelope = body.get("success") if isinstance(body, dict) else None
+    summary = create_result_summary(body.get("addResults") if isinstance(body, dict) else None)
+    # The envelope's own verdict is the one a per-slot record cannot carry: an edit whose batch was
+    # rolled back, or that reported a validation error the results array does not repeat, answers
+    # `success:false` beside slots that read as if they had landed.
+    verdict = "none" if envelope is None else envelope if isinstance(envelope, bool) else redacted(envelope, 40)
+    # One record per phase. serve() runs the rollback smoke inside its recovery path, so a candidate
+    # create failure can be followed by a rollback create failure; the second must not displace the
+    # first, which is the one that stopped the run.
+    record.setdefault(_phase, {"envelopeSuccess": verdict, "addResults": summary})
+    print(f"serving-create: phase={_phase} path={path} status={status} "
+          f"envelope-success={json.dumps(verdict)} "
+          f"addResults={json.dumps(summary, separators=(',', ':'), default=str)}", file=sys.stderr)
+
+
+# Filled by smoke() when the run-owned create fails, keyed by the phase that failed and in the order
+# the phases ran, and attached to the proof by certify() so the receipt carries the server's own
+# answer and not only `result: noProof`.
+_create = {}
+
+
 def mint_denied_key(function, record):
     """Mint this run's own scoped principal through the admin API-key endpoint.
 
@@ -683,9 +753,19 @@ def smoke(function, expected_version=None):
     try:
         added = ok(function, write_path + "/addFeatures", method="POST", body={"f": "json", "features": json.dumps([
             {"attributes": {"name": marker}, "geometry": {"x": -122.42, "y": 37.76, "spatialReference": {"wkid": 4326}}}])}, **common)
-        results = added.get("addResults", [])
-        require(len(results) == 1 and results[0].get("success") is True and type(results[0].get("objectId")) is int,
-                "Create assertion failed")
+        # Shape first: `addResults` can be absent, null, or an array of nulls, and indexing one of
+        # those would kill the lane with a TypeError before it could say what it got. The envelope's
+        # own verdict is part of the contract too - a rolled-back batch answers `success:false`
+        # beside slots that can still read as successful.
+        results = added.get("addResults")
+        created = (added.get("success") is True and isinstance(results, list) and len(results) == 1
+                   and isinstance(results[0], dict) and results[0].get("success") is True
+                   and type(results[0].get("objectId")) is int)
+        if not created:
+            # ok() returns only when the response carried its expected status, so the status this
+            # diagnostic reports is that contract and not a second reading of the same call.
+            report_create(write_path + "/addFeatures", SERVING_OK, added, _create)
+        require(created, "Create assertion failed")
         object_id = results[0]["objectId"]
         read = ok(function, write_path + "/query", query=query, **common).get("features", [])
         require(len(read) == 1 and read[0]["attributes"].get("name") == marker
@@ -750,6 +830,17 @@ def certify(directory, ephemeral, digest):
             except Exception as error:  # noqa: BLE001 - recorded, then raised as a lane failure
                 teardown_errors.append(error)
                 proof["result"] = "noProof"
+        # The server's own answer to the run-owned create, when it refused it. Recorded even
+        # though the run has already failed: the receipt is the only evidence that survives the
+        # job, and `result: noProof` alone cannot say which side owns the failure. The phase that
+        # failed FIRST is the one that stopped the run and is reported as `serving.create`; a
+        # rollback-phase failure that followed it is kept beside it rather than in its place.
+        if _create:
+            phase, first = next(iter(_create.items()))
+            proof["create"] = {"phase": phase, **first}
+            later = dict(list(_create.items())[1:])
+            if later:
+                proof["create"]["subsequentPhases"] = later
         write_json(directory / "serving.json", proof)
     require(not teardown_errors, "Denial key teardown failed")
 

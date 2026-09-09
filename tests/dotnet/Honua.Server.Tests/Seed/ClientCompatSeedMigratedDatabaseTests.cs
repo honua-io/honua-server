@@ -53,6 +53,17 @@ namespace Honua.Server.Tests.Seed;
 /// <c>editing.featureserver-edits</c>, so a 402 in certification is a deployment license, never
 /// fixture drift, a bad payload, or a regression in the write path.
 /// </para>
+/// <para>
+/// It then pins what the licensed answer has to look like. Run 31 (34381748849) is the first run
+/// past that 402 - the cert stack carries a Pro license now - and it failed inside the response
+/// instead: <c>Create assertion failed</c>, with nothing else in the job log, because a GeoServices
+/// edit reports a per-feature refusal inside <c>addResults</c> with HTTP 200 and no top-level
+/// <c>error</c>. The lane's assertion collapses five different answers into that one message, so
+/// each is asserted separately here over the same seed, schema and payload: exactly one slot, no
+/// per-slot <c>error</c>, <c>success:true</c>, an <c>objectId</c> of JSON number kind (the
+/// serializer omits a null one outright), and a top-level <c>success:true</c> that a rolled-back
+/// batch would not carry.
+/// </para>
 /// </summary>
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.Infrastructure)]
@@ -224,11 +235,37 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
             ["f"] = "json",
             ["features"] = features
         });
+        // --- the run-31 certification failure, pinned ------------------------------------------
+        // Certification run 31 (34381748849) is the first run to get past run 28's in-body 402: the
+        // cert stack now carries a Pro license and the write was refused no longer by the
+        // entitlement gate but somewhere inside `addResults`. GeoServices reports a per-feature
+        // failure there — HTTP 200, a well-formed document, no top-level `error` — and the standalone
+        // addFeatures endpoint defaults to rollbackOnFailure=true, so a rejected slot comes back as a
+        // rolled-back result. The lane's assertion (`len(results) == 1 and success is True and
+        // type(objectId) is int`) reads a rolled-back slot, a slot carrying a writer error code, an
+        // objectId of the wrong JSON type, an omitted objectId and an empty array as ONE failure.
+        // Assert each of them separately here, over this seed's layer 10, this migrated schema and a
+        // Pro-licensed host, so a certification failure of this shape can never be the seed, the
+        // payload or the layer's editability without this test saying so first.
         var addResults = added.RootElement.GetProperty("addResults");
-        addResults.GetArrayLength().Should().Be(1);
+        addResults.GetArrayLength().Should().Be(
+            1, "the lane requires exactly one result slot for its one-feature payload");
+        addResults[0].TryGetProperty("error", out var slotError).Should().BeFalse(
+            $"a per-feature refusal is reported inside addResults, not in the envelope: {slotError}");
         addResults[0].GetProperty("success").GetBoolean()
             .Should().BeTrue("the scratch layer must accept the lane's run-owned insert");
-        var objectId = addResults[0].GetProperty("objectId").GetInt64();
+        // The lane asserts the JSON TYPE, not merely that the value parses: `objectId` is
+        // serialized from a nullable long through a context that omits nulls entirely
+        // (FeatureServerJsonContext, DefaultIgnoreCondition=WhenWritingNull), so a create the
+        // writer could not identify answers `{"success":true}` with no objectId at all.
+        addResults[0].TryGetProperty("objectId", out var objectIdElement).Should().BeTrue(
+            "a successful create the lane cannot address is a create it can neither read back nor delete");
+        objectIdElement.ValueKind.Should().Be(
+            JsonValueKind.Number, "the lane requires an integer objectId, and a string fails its assertion");
+        objectIdElement.TryGetInt64(out var objectId).Should().BeTrue(
+            "the objectId must be an integer, not a fractional number");
+        added.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(
+            "a rolled-back batch answers success=false with no top-level error at all");
 
         var afterCreate = await GetJsonAsync(client, markerQuery);
         var created = afterCreate.RootElement.GetProperty("features");
