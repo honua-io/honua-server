@@ -136,27 +136,43 @@ internal static class GPServerSoapEndpoints
                 new XElement("Name", parameter.Name),
                 new XElement("DisplayName", parameter.DisplayName),
                 new XElement("Category", string.Empty),
-                new XElement("DataType", parameter.DataType),
+                new XElement("DataType", GetSoapDataType(parameter.DataType)),
                 new XElement("Direction", parameter.Direction),
                 new XElement("ParamType", parameter.ParameterType),
                 parameter.ChoiceList is null ? null : new XElement("ChoiceList", parameter.ChoiceList.Select(value => new XElement("String", value))),
-                BuildDefaultValue(parameter)))));
+                BuildParameterValue(parameter)))));
 
-    private static XElement? BuildDefaultValue(GPParameterInfo parameter)
+    private static string GetSoapDataType(string dataType)
+        => dataType.StartsWith("GPMultiValue:", StringComparison.Ordinal) ? "GPMultiValue" : dataType;
+
+    private static XElement BuildParameterValue(GPParameterInfo parameter)
     {
-        if (parameter.DefaultValue is not { } defaultValue || defaultValue.ValueKind == JsonValueKind.Null)
+        // ArcPy instantiates the parameter from this concrete GPValue object.
+        // Omitting it for an unset default leaves the native parameter untyped.
+        // Empty typed objects describe unset values; they do not add defaults
+        // to the shared process catalog or to REST metadata.
+        var value = new XElement("Value",
+            new XAttribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"),
+                "tns:" + GetSoapDataType(parameter.DataType)));
+        if (parameter.DataType.StartsWith("GPMultiValue:", StringComparison.Ordinal))
         {
-            return null;
+            value.Add(new XElement("MemberDataType", parameter.DataType["GPMultiValue:".Length..]));
         }
 
-        // Scalar defaults are typed GPValue instances, with invariant XML text.
-        // Complex defaults need their own wire mapping before being advertised.
-        return parameter.DataType is "GPString" or "GPLong" or "GPDouble" or "GPBoolean" or "GPDate"
-            ? new XElement("Value", new XAttribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"), "tns:" + parameter.DataType),
-                new XElement("Value", defaultValue.ValueKind == JsonValueKind.String
-                    ? defaultValue.GetString()
-                    : defaultValue.GetRawText()))
-            : null;
+        if (parameter.DefaultValue is not { } defaultValue || defaultValue.ValueKind == JsonValueKind.Null)
+        {
+            return value;
+        }
+
+        // Only scalar defaults have an established SOAP value mapping.
+        if (parameter.DataType is "GPString" or "GPLong" or "GPDouble" or "GPBoolean" or "GPDate")
+        {
+            value.Add(new XElement("Value", defaultValue.ValueKind == JsonValueKind.String
+                ? defaultValue.GetString()
+                : defaultValue.GetRawText()));
+        }
+
+        return value;
     }
 
     private static IResult Complete(HonuaTelemetryScope scope, IResult result)

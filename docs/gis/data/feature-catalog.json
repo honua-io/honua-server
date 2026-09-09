@@ -21073,6 +21073,25 @@
       "capability": "serve.geoservices-root"
     },
     {
+      "id": "post-services-serviceid-gpserver",
+      "route": "/services/{serviceId}/GPServer",
+      "method": "POST",
+      "family": "GeoServices SOAP GPServer",
+      "protocol": "http-route-family",
+      "code_location": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapEndpointsTests.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.DiscoveryOperation_ValidRequest_ReturnsTypedResult",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetToolInfos_ArcPyEnvelope_ReturnsCanonicalTaskAndParameterMetadata",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetToolInfos_ArcPyToolIdentifiers_AreValidUniqueAndRoundTrip",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetToolInfos_ProtectedService_EnforcesCanonicalAuthorization",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.Request_InvalidOrUnsupportedOperation_ReturnsSoapFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.Request_MalformedEnvelope_ReturnsSafeSoapFault"
+      ],
+      "proof_ledger_surface": "gpserver-soap-discovery",
+      "maturity": "implemented",
+      "capability": "process.geoprocessing"
+    },
+    {
       "id": "post-services-serviceid-imageserver",
       "route": "/services/{serviceId}/ImageServer",
       "method": "POST",
