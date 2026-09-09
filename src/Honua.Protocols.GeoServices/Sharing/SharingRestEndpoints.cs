@@ -11,6 +11,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Portal.Abstractions;
 using Honua.Core.Features.Portal.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
@@ -53,6 +54,7 @@ public static class SharingRestEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         endpoints.MapPost("/sharing/rest/generateToken", HandleGenerateTokenAsync)
+            .WithMetadata(CredentialResponseCacheMetadata.Instance)
             .WithDisplayName("ArcGIS Portal Generate Token")
             .WithName("SharingRestGenerateTokenPost")
             .WithSummary("Issue an ArcGIS-compatible portal token")
@@ -66,6 +68,7 @@ public static class SharingRestEndpoints
             .Produces(StatusCodes.Status402PaymentRequired);
 
         endpoints.MapGet("/sharing/rest/generateToken", HandleGenerateTokenAsync)
+            .WithMetadata(CredentialResponseCacheMetadata.Instance)
             .WithDisplayName("ArcGIS Portal Generate Token (GET)")
             .WithName("SharingRestGenerateTokenGet")
             .WithSummary("Issue an ArcGIS-compatible portal token via query parameters")

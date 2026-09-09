@@ -123,13 +123,21 @@ internal static class SensorThingsEndpoints
             return null;
         }
 
+        // Never advertise a continuation the server cannot follow: $skip binds to the
+        // store's 32-bit offset, so a link past int.MaxValue would fail to parse on the
+        // way back in and restart pagination at the first page.
+        if (options.NextSkip is not { } nextSkip)
+        {
+            return null;
+        }
+
         var staBase = BaseUrlResolver.GetBaseUrl(context);
         var path = context.Request.Path.Value ?? string.Empty;
         // Preserve parsed system options only; arbitrary query parameters may contain credentials.
         var query = new Dictionary<string, string?>
         {
             ["$top"] = options.Top.ToString(CultureInfo.InvariantCulture),
-            ["$skip"] = ((long)options.Skip + options.Top).ToString(CultureInfo.InvariantCulture),
+            ["$skip"] = nextSkip.ToString(CultureInfo.InvariantCulture),
             ["$filter"] = options.Filter,
             ["$orderby"] = options.OrderBy,
             ["$select"] = options.Select,
