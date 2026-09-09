@@ -159,11 +159,68 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      skip: ${{ steps.target.outputs.skip }}
+      skip: ${{ steps.stale.outputs.superseded == 'true' && 'true' || steps.target.outputs.skip }}
       pr: ${{ steps.target.outputs.pr }}
       head: ${{ steps.target.outputs.head }}
     steps:
+      - name: Shed superseded review subject
+        id: stale
+        uses: actions/github-script@v9
+        env:
+          RUN_HEAD: ${{ github.event.workflow_run.head_sha }}
+          RUN_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          COMMENT_ISSUE: ${{ github.event.issue.number }}
+          CATCHUP_PR: ${{ inputs.pr }}
+          CATCHUP_HEAD: ${{ inputs.head }}
+        with:
+          script: |
+            // The checkout below and the trusted `workflow_run` binding after it are
+            // the paid work of this job, and a superseded subject is the most common
+            // outcome of the machine triggers -- measured on trunk, 41 of 165 sampled
+            // `resolve` jobs (25%) checked out the tree only to discover the subject
+            // had moved, closed, or gone draft (#3213). Decide that from the API
+            // alone, first.
+            //
+            // ONE-DIRECTIONAL. This step can only WITHHOLD a review; nothing it reads
+            // can admit one. That is why it may read the pull request association
+            // straight off the `workflow_run` payload without weakening anything:
+            // the trusted binding in the next step is still the only thing that can
+            // say yes, and it re-derives the subject from scratch.
+            const shed = async reason => {
+              core.notice(`superseded: ${reason}`);
+              core.summary.addRaw(`Shed superseded review subject: ${reason}`, true);
+              await core.summary.write();
+              core.setOutput('superseded', 'true');
+            };
+
+            let number;
+            let head = '';
+            if (context.eventName === 'workflow_run') {
+              number = Number(process.env.RUN_PR);
+              head = process.env.RUN_HEAD || '';
+            } else if (context.eventName === 'issue_comment') {
+              number = Number(process.env.COMMENT_ISSUE);
+            } else {
+              number = Number(process.env.CATCHUP_PR);
+              head = process.env.CATCHUP_HEAD || '';
+            }
+            if (!Number.isInteger(number) || number <= 0) {
+              // A fork or an association gap lands here. Fall through: the trusted
+              // resolver fails closed on its own and owns that decision.
+              core.info('Event names no single pull request; continuing to trusted resolution.');
+              return;
+            }
+            const { data: pull } = await github.rest.pulls.get({
+              ...context.repo, pull_number: number,
+            });
+            if (pull.state !== 'open') return shed(`PR #${number} is ${pull.state}.`);
+            if (pull.draft) return shed(`PR #${number} is a draft.`);
+            if (head && pull.head.sha !== head) {
+              return shed(`PR #${number} moved past ${head}; a newer head will be reviewed.`);
+            }
+
       - name: Check out trusted reviewer policy
+        if: steps.stale.outputs.superseded != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.sha }}
@@ -172,6 +229,7 @@ jobs:
 
       - name: Resolve the pull request and bind its exact head
         id: target
+        if: steps.stale.outputs.superseded != 'true'
         uses: actions/github-script@v9
         env:
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}

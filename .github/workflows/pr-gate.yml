@@ -264,6 +264,7 @@ jobs:
           path: tests/TestResults/remote-source-execution-proof.trx
 
       - name: Prove raster catalog execution with production GDAL
+        id: raster-execution-proof
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         timeout-minutes: 10
         run: |
@@ -288,12 +289,119 @@ jobs:
             --logger 'trx;LogFileName=layer-execution-proof.trx' \
             --results-directory tests/TestResults
 
+      - name: Prove the raster execution cases ran, not skipped
+        # honua-server#4401. The step above is on the REQUIRED gate, but
+        # `dotnet test` exits 0 when a --filter matches nothing and when every
+        # matched case skips — so a deleted trait, a renamed category or a
+        # cleanly-skipping fixture would turn this gate green with zero executed
+        # raster receipts. Assert on the TRX outcome counts, not the exit code.
+        # Same idiom as ci.yml's Category=GDAL tripwire.
+        #
+        # Runs whenever the proof step itself ran, pass or fail: a failing run can
+        # still have skipped every case, and that is the regression being guarded.
+        if: ${{ !cancelled() && steps.raster-execution-proof.conclusion != 'skipped' }}
+        run: |
+          set -euo pipefail
+          trx=tests/TestResults/raster-execution-proof.trx
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for the Category=RasterExecutionProof subset — the required raster receipts did not run"
+            exit 1
+          fi
+          # `|| true` is load-bearing under `set -euo pipefail`: grep exits 1 when
+          # it matches nothing, and on the healthy path the Failed and NotExecuted
+          # counts are both zero.
+          count_outcome() {
+            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
+          }
+          passed=$(count_outcome Passed)
+          failed=$(count_outcome Failed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Raster catalog execution proof'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Failed: ${failed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} raster execution proof case(s) were skipped — a skipped required cell is non-passing evidence"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no raster execution proof case passed — the RasterExecutionProof trait or the cases themselves are gone"
+            exit 1
+          fi
+
+      - name: Prove the real-GDAL CLI cases run on the required gate
+        # honua-server#4401: the five [GdalCliFact] cases emit Tier=Integration,
+        # which the lean gate's Tier=Fast filter can never match, and ci.yml has no
+        # pull_request trigger — so real gdaldem / ogr2ogr coverage could regress
+        # without blocking a merge. Run them here on the gate runner, over an
+        # apt-provisioned GDAL CLI (the same provisioning ci.yml's worker-gdal-tests
+        # job uses), with the same counts-based tripwire. HONUA_REQUIRE_GDAL_CLI
+        # turns a missing tool into a failure rather than a skip.
+        id: gdal-cli-proof
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        timeout-minutes: 10
+        env:
+          HONUA_REQUIRE_GDAL_CLI: "true"
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          # Category=GDAL is the whole [GdalCliFact] set, not just the gdaldem /
+          # ogr2ogr cases. It also selects the two proximity correctness proofs:
+          # Distance_... shells out to the gdal_proximity.py utility, and
+          # Allocation_... runs the production step Scripts/gdal_euclidean_allocation.py,
+          # which imports the GDAL Python bindings, NumPy and SciPy. `gdal-bin` ships
+          # none of those, so provision the same set ci.yml's worker-gdal-tests job
+          # installs for this identical test surface and prefer the distro interpreter
+          # that owns the apt-installed modules. (GITHUB_PATH only affects LATER steps,
+          # so the PATH edit has to be an export inside this one.)
+          sudo apt-get install -yqq gdal-bin python3-gdal python3-numpy python3-scipy
+          export PATH="/usr/bin:${PATH}"
+          /usr/bin/python3 -c 'from osgeo import gdal; from scipy import ndimage; import numpy'
+          for tool in gdaldem ogr2ogr gdal_translate gdalinfo gdal_proximity.py python3; do
+            command -v "${tool}" >/dev/null \
+              || { echo "::error::${tool} is missing after installing the GDAL CLI packages"; exit 1; }
+          done
+          trx=tests/TestResults/worker-gdal-cli.trx
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+            --configuration Release -maxcpucount:4 \
+            --filter 'Category=GDAL' \
+            --logger 'trx;LogFileName=worker-gdal-cli.trx' \
+            --results-directory tests/TestResults
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for the Category=GDAL subset"
+            exit 1
+          fi
+          count_outcome() {
+            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
+          }
+          passed=$(count_outcome Passed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Real-GDAL CLI coverage (required gate)'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} [GdalCliFact] case(s) were skipped on the required gate"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no [GdalCliFact] case passed — real-GDAL coverage has left the required path"
+            exit 1
+          fi
+
       - name: Upload raster execution proof
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: raster-execution-proof
-          path: tests/TestResults/raster-execution-proof.trx
+          path: |
+            tests/TestResults/raster-execution-proof.trx
+            tests/TestResults/worker-gdal-cli.trx
           if-no-files-found: warn
 
       - name: Upload layer execution proof

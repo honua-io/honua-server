@@ -38,8 +38,8 @@
   "summary": {
     "total": 98,
     "byStatus": {
-      "proven": 90,
-      "partially-proven": 7,
+      "proven": 91,
+      "partially-proven": 6,
       "unproven": 1
     },
     "byEntryPoint": {
@@ -896,19 +896,43 @@
     },
     {
       "processId": "conversion.rasterize",
-      "status": "partially-proven",
+      "status": "proven",
       "entryPoint": "job",
       "evidence": [
         {
-          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterizeExecutorTests.cs",
-          "test": "Rasterize_BurnValueAndCellSize_ProjectsArguments_AndPublishesGeoTiff",
-          "assertion": "Fake-runner grid/arguments and artifact shape only."
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "Rasterize_AttributeMode_BurnsPerFeatureValuesAtPixelCentres",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/rasterize-parcels.geojson",
+          "assertion": "Production executor over pinned production GDAL burns the committed GeoJSON fixture in attribute mode. The decoded GeoTIFF asserts extent, all six geotransform ordinates, CRS, band type, nodata and every one of the 15 cells against a hand-applied pixel-centre oracle."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "Rasterize_BurnValueMode_BurnsTheFixedValueOverEveryCoveredCentre",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/rasterize-parcels.geojson",
+          "assertion": "Burn-value mode over the same fixture and grid writes one fixed value across the identical covered-centre set, so an implementation leaking the per-feature attribute fails."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "Rasterize_SubPixelEdges_DecideBurnByCentreContainment",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/rasterize-parcels.geojson",
+          "assertion": "Sub-pixel discrimination: the sliver that contains the centre (1.5, 2.5) wins exactly that cell, the sliver 0.1 units above it burns nothing at all (it is the fixture's last feature, so a wrong burn would survive rather than be overwritten), and the centres 0.1 units outside both keep the underlying parcel value."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "Rasterize_CellSizeMode_CentresTheGridOnTheLayerEnvelope",
+          "assertion": "cellSize path pins the half-cell-expanded grid, the burn-value domain and strictly interior/exterior cells."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "RasterizeOracle_AllTouchedInsteadOfCentreContainment_IsRejected",
+          "assertion": "Demonstrated negative: real gdal_rasterize -at produces a valid GeoTIFF on the identical grid whose burned set follows all-touched instead of pixel-centre containment (dn=9 claims the top row); the frozen centre-containment oracle rejects it."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "RasterizeOracle_AttributeBurnSubstitutedForTheFixedBurnValue_IsRejected",
+          "assertion": "Demonstrated negative: a real attribute burn on the identical grid, nodata and band type is rejected by the fixed-burn-value oracle at cell 0."
         }
-      ],
-      "gap": {
-        "issue": "https://github.com/honua-io/honua-server/issues/3938",
-        "missing": "Real inside/outside/boundary burned-pixel oracle."
-      }
+      ]
     },
     {
       "processId": "generalization.simplify-layer",
