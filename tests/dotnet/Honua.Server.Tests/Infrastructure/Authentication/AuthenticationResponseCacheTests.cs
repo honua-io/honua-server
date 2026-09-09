@@ -16,7 +16,9 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class AuthenticationErrorCacheTests
 {
-    [UnitTheory]
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", Tiers.Fast)]
     [InlineData("/rest/services/alpha/FeatureServer/0/query", 401)]
     [InlineData("/rest/services/alpha/FeatureServer/0/query", 403)]
     [InlineData("/ogc/features/collections/0/items", 401)]
@@ -65,7 +67,9 @@ public sealed class AuthenticationErrorCacheTests
         cacheControl!.NoStore.Should().BeTrue();
     }
 
-    [UnitTheory]
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", Tiers.Fast)]
     [InlineData(400)]
     [InlineData(404)]
     public void FormatError_NonAuthenticationDecision_PreservesExplicitCachePolicy(int status)
