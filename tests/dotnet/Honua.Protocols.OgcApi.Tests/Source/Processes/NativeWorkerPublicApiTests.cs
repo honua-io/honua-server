@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+extern alias NativeWorker;
+
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -10,7 +12,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Honua.Worker.Gdal;
+using NativeWorker::Honua.Worker.Gdal;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,7 +63,7 @@ public sealed class NativeWorkerPublicApiTests(RedisFixture redis)
             // dropped Z, swapped axes, missing row, or changed attribute cannot satisfy this.
             const string csv = "WKT,name,value\n\"POINT Z (12.25 -4.5 7.75)\",alpha,17\n\"POINT Z (-23.5 8.25 -2.5)\",beta,29\n";
             var source = Convert.ToBase64String(Encoding.UTF8.GetBytes(csv));
-            var body = $$"""{"response":"document","inputs":{"source":"{{source}}","sourceFormat":"CSV","targetFormat":"GeoJSON"}}""";
+            var body = $$$"""{"response":"document","inputs":{"source":"{{{source}}}","sourceFormat":"CSV","targetFormat":"GeoJSON"}}""";
             using var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/processes/processes/gdal.ogr2ogr/execution");
             request.Headers.Add("Prefer", "respond-async");
             request.Content = new StringContent(body, Encoding.UTF8, "application/json");
