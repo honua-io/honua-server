@@ -7291,7 +7291,10 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.JobStatus_CrossOwnerJob_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobOwnershipTests.JobStatus_OwnerlessJob_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobResultsTests.JobStatus_SucceededArtifactBackedJob_ExposesResultsLink",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobStatusOwnershipTests.JobStatus_NonOwnedJob_ReturnsNotFound"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobStatusOwnershipTests.JobStatus_NonOwnedJob_ReturnsNotFound",
+        "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_FirstSliceProcessWithValueOutputSelection_CompletesAndReturnsInlineBuffer",
+        "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_FirstSliceVectorProcess_CompletesAndReturnsBufferGeometry",
+        "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_RasterSurfaceProcess_CompletesAndReturnsAnalyticalSlope"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented",
@@ -7337,7 +7340,10 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesJobResultsTests.JobResults_SucceededArtifactBackedJob_ReturnsNonEmptyResultEvidence",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.JobResults_StagedArtifactWithAdvertisedValueTransmission_ReturnsInlineValue",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactContentTests.JobResults_StagedArtifact_LinksContentRouteWithoutPayload",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactStoreUnavailableTests.JobResults_NoMatchingStore_DoesNotAdvertiseContentLink"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesStagedArtifactStoreUnavailableTests.JobResults_NoMatchingStore_DoesNotAdvertiseContentLink",
+        "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_FirstSliceProcessWithValueOutputSelection_CompletesAndReturnsInlineBuffer",
+        "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_FirstSliceVectorProcess_CompletesAndReturnsBufferGeometry",
+        "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_RasterSurfaceProcess_CompletesAndReturnsAnalyticalSlope"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented",
@@ -17969,8 +17975,6 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_DuplicateStepIds_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ExplicitRespondAsync_ReturnsAsyncAdmission",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_FirstSliceProcessWithReferenceOutputSelection_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_FirstSliceProcessWithValueOutputSelection_Submits",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_FirstSliceVectorProcess_SubmitsConcreteProcessId",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_InvalidProcess_Returns404",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_KrigingWithoutRequiredInputs_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_MissingPlanInput_Returns400",
@@ -17985,7 +17989,6 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_PlanMissingPlanId_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_PlanWithoutGeoprocessStep_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_RasterSurfaceProcess_InvalidEnumValue_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_RasterSurfaceProcess_IsNotRejectedAsUnknownProcess",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ResponseModeDocument_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_ResponseModeRawWithRespondAsync_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesEndpointsTests.Execute_StepMissingKind_Returns400",
@@ -18029,7 +18032,10 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_SynchronousFailure_ReturnsRegisteredJobFailedException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_UnknownInput_DoesNotResolveAnyReferences",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.Execute_UnsafeInputReferences_AreRejectedBeforeSubmission",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.ReferenceDocumentation_ExecuteExample_IsRunnableVerbatim"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesSynchronousExecutionTests.ReferenceDocumentation_ExecuteExample_IsRunnableVerbatim",
+        "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_FirstSliceProcessWithValueOutputSelection_CompletesAndReturnsInlineBuffer",
+        "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_FirstSliceVectorProcess_CompletesAndReturnsBufferGeometry",
+        "Honua.Worker.Gdal.Tests.OgcProcessesExecutionProofTests.Execute_RasterSurfaceProcess_CompletesAndReturnsAnalyticalSlope"
       ],
       "proof_ledger_surface": "ogc-api-processes",
       "maturity": "implemented",
