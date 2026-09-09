@@ -142,8 +142,11 @@ internal static class GPServerSoapEndpoints
                 parameter.ChoiceList is null ? null : new XElement("ChoiceList", parameter.ChoiceList.Select(value => new XElement("String", value))),
                 BuildParameterValue(parameter)))));
 
-    private static string GetSoapDataType(string dataType)
-        => dataType.StartsWith("GPMultiValue:", StringComparison.Ordinal) ? "GPMultiValue" : dataType;
+    private static string GetSoapDataType(string? dataType)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(dataType);
+        return dataType.StartsWith("GPMultiValue:", StringComparison.Ordinal) ? "GPMultiValue" : dataType;
+    }
 
     private static XElement BuildParameterValue(GPParameterInfo parameter)
     {
@@ -154,9 +157,9 @@ internal static class GPServerSoapEndpoints
         var value = new XElement("Value",
             new XAttribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"),
                 "tns:" + GetSoapDataType(parameter.DataType)));
-        if (parameter.DataType.StartsWith("GPMultiValue:", StringComparison.Ordinal))
+        if (parameter.DataType is { } dataType && dataType.StartsWith("GPMultiValue:", StringComparison.Ordinal))
         {
-            value.Add(new XElement("MemberDataType", parameter.DataType["GPMultiValue:".Length..]));
+            value.Add(new XElement("MemberDataType", dataType["GPMultiValue:".Length..]));
         }
 
         if (parameter.DefaultValue is not { } defaultValue || defaultValue.ValueKind == JsonValueKind.Null)
