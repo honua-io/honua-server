@@ -301,6 +301,37 @@ serving-403: phase=deployed principal=override key=HONUA_LAMBDA_CERT_DENIED_KEY 
 function under test, which is an authentication defect, not a bootstrap gap. `authenticated=yes`
 with a nonzero `records` is the authorization leak the assertion exists to catch.
 
+## A Lambda function error has to say which side failed, and how
+
+Lambda reports an initialization failure, a handler exception and a timeout identically at the API:
+HTTP 200 with `FunctionError` set. The reason is only in the invocation's response payload, and the
+platform's own account of it is only in the log tail. Live run 25 (34305710517) — the first run on
+the Redis-enabled cert stack — stopped on nothing but `Lambda invocation failed`, and the receipt
+was the only thing that said where: `deniedKey.created` and `deniedKey.revoked` were both true and
+`sharedStoreVerified` was false, so the candidate had served well enough to mint this run's key and
+to revoke it, and the invocation that failed was the *first invoke of the standing alias*. Neither
+that, nor init-versus-handler, was anywhere in the job log.
+
+Every invoke on both stages now reports through one classifier:
+
+```
+serving-invoke: phase=denied-key-shared-store target=standing-alias path=/api/v1/admin/api-keys/<id>/effective-permissions status=200 executed-version=7 function-error=Unhandled kind=init error-type=Runtime.ExitError error-message=Error: Runtime exited with error: exit status 134
+serving-invoke-log: INIT_REPORT Init Duration: 7412.55 ms Phase: init Status: error Error Type: Runtime.ExitError
+```
+
+| Field | What it says |
+| --- | --- |
+| `phase` | The lane phase the invocation belongs to, as in every other serving diagnostic; `cold-start-evidence` for the shell stage's own `/healthz/live` invokes. |
+| `target` | **Which side of the certification failed**: `candidate` for the per-run function, `standing-alias` for the qualified standing alias. Never a function name — the standing function is a fingerprint everywhere else in this evidence, and the alias qualifier is what separates the two targets the lane invokes. |
+| `status` / `executed-version` / `function-error` | What the invoke API itself answered. `status=204` with no version is the dry-run answer the ninth live run got; `function-error=none` with a non-200 status is an API-level failure rather than a failing function. |
+| `kind` | `init` when the platform's `INIT_REPORT` ended in error or timeout, or the error type is a `Runtime.*`/`Init*` one — the function never reached the handler. `timeout` when the runtime reported the invocation ran out of time. `handler` when the function started and threw. `unknown` when Lambda returned no error document at all. |
+| `error-type` / `error-message` | From the runtime's own error document, redacted and capped exactly as every other echoed diagnostic: the message is dropped whole rather than filtered down to a fragment if either runtime key shows through it. |
+| `serving-invoke-log:` | The last lines of that invocation's own log tail — `--log-type Tail` already carries it back with the response, so an initialization failure's output is in hand without a CloudWatch query, a delivery wait, or a permission on another function's log group. |
+
+`target` is the field to read first. `target=candidate` is a defect in the artifact under
+certification. `target=standing-alias` is not: the candidate is not what failed, and the cert stack
+itself has to be repaired before any run can produce a proof.
+
 ## An administrative 401 has to say which of its causes it is
 
 The lane authenticates as the bootstrap administrator: it sends `HONUA_LAMBDA_CERT_ADMIN_KEY` as

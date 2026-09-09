@@ -376,9 +376,22 @@ if fail == "init-error": log = "INIT_REPORT Init Duration: 21364.18 ms\tPhase: i
 if os.environ.get("STUB_INIT_PHASE") == "invoke": log = "INIT_REPORT Init Duration: 21364.18 ms\tPhase: invoke\tStatus: ok\nREPORT RequestId: offline-id Duration: 20.00 ms Billed Duration: 30 ms"
 response = {"statusCode":status,"body":body if isinstance(body,str) else json.dumps(body)}
 if headers: response["headers"] = headers
+# A function error replaces the HTTP response with the runtime's own error document, and the tail
+# carries the platform's account of the initialization that produced it. "standing-invoke" fails
+# only the alias, which is live run 25 exactly: the candidate served and minted, and the first
+# invoke of the standing alias came back as a Lambda function error.
+function_error = fail == "invoke" or (fail == "standing-invoke" and ":" in function)
+if function_error:
+    log = ("INIT_REPORT Init Duration: 7412.55 ms\tPhase: init\tStatus: error\tError Type: Runtime.ExitError\n"
+           "START RequestId: offline-id Version: " + version)
+    message = "Error: Runtime exited with error: exit status 134"
+    # A server-authored diagnostic can quote a credential; the lane must never echo one. Only the
+    # candidate's variant carries one, so the other still proves the message itself is reported.
+    if fail == "invoke": message += " while reading " + os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
+    response = {"errorType": "Runtime.ExitError", "errorMessage": message}
 response_path.write_text(json.dumps(response))
 meta = {"StatusCode":200,"ExecutedVersion":"99" if fail == "executed-version" else version,"LogResult":base64.b64encode(log.encode()).decode()}
-if fail == "invoke": meta["FunctionError"] = "Unhandled"
+if function_error: meta["FunctionError"] = "Unhandled"
 emit(meta)
 '''
 
@@ -580,6 +593,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                         "query", "fixture-names", "create", "readback", "delete", "delete-remains",
                         "denial-status", "denial-body", "denial-records", "denial-nested", "scoped-unauthenticated", "scoped-allowed", "scoped-records", "executed-version", "weighted",
                         "denied-key-missing", "denied-key-leaks", "mint-refused", "mint-response-lost", "revoke-refused",
+                        "standing-invoke",
                         "function-delete", "log-delete", "version-delete", "ownership", "get-function-transient"):
             with self.subTest(failure=failure):
                 result, receipt, state, _ = self.run_lane(failure)
@@ -742,6 +756,56 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 # Names and the server's own fixed strings only, never the value behind the variable.
                 self.assertNotIn("offline-admin", diagnosis[0])
                 self.assertFalse(state["function"] or state["logs"] or state["row"])
+
+    def test_a_lambda_function_error_says_which_side_failed_and_how(self):
+        """Run 25 (34305710517) stopped on a bare "Lambda invocation failed": the receipt showed the
+        candidate had minted and revoked this run's key, so the invocation that failed was the first
+        one of the standing alias — and nothing in the job log said so, nor whether the function had
+        died initializing or thrown while serving. One run must now answer both."""
+        result, receipt, state, _ = self.run_lane("standing-invoke")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        # The receipt run 25 produced: the candidate served well enough to mint and to revoke, and
+        # the standing alias never confirmed it could see the record.
+        denied = receipt["serving"]["deniedKey"]
+        self.assertTrue(denied["created"] and denied["revoked"])
+        self.assertFalse(denied["sharedStoreVerified"])
+        diagnosis = [line for line in result.stderr.splitlines() if line.startswith("serving-invoke:")]
+        self.assertEqual(1, len(diagnosis), result.stderr)
+        self.assertIn("phase=denied-key-shared-store", diagnosis[0])
+        # Which side of the certification failed, without naming either function.
+        self.assertIn("target=standing-alias", diagnosis[0])
+        self.assertIn("function-error=Unhandled", diagnosis[0])
+        self.assertIn("error-type=Runtime.ExitError", diagnosis[0])
+        # An initialization failure, not a handler exception and not a timeout.
+        self.assertIn("kind=init", diagnosis[0])
+        self.assertIn("Runtime exited with error: exit status 134", diagnosis[0])
+        # The platform's own account of the same invocation, from the invoke's own tail.
+        tail = [line for line in result.stderr.splitlines() if line.startswith("serving-invoke-log:")]
+        self.assertTrue(any("INIT_REPORT" in line and "Status: error" in line for line in tail), tail)
+        self.assertFalse(state["function"] or state["logs"] or state["row"])
+        # The operator table that says which owner a target= points at.
+        documentation = (ROOT / "scripts/cloud/lambda-certification.md").read_text()
+        self.assertIn("serving-invoke:", documentation)
+        self.assertIn("target=standing-alias", documentation)
+
+    def test_a_failed_cold_start_invoke_reports_through_the_same_classifier(self):
+        """The shell stage invokes the candidate itself; its failures must read the same way rather
+        than through a second, drifting copy of the classifier and the redaction in bash."""
+        result, receipt, state, _ = self.run_lane("invoke")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        diagnosis = [line for line in result.stderr.splitlines() if line.startswith("serving-invoke:")]
+        self.assertEqual(1, len(diagnosis), result.stderr)
+        self.assertIn("target=candidate", diagnosis[0])
+        self.assertIn("path=/healthz/live", diagnosis[0])
+        self.assertIn("kind=init", diagnosis[0])
+        self.assertIn("error-type=Runtime.ExitError", diagnosis[0])
+        # The credential the stub's error message quoted never reaches the log: the message is
+        # dropped whole rather than filtered down to a fragment of the key. run_lane asserts the
+        # canary is absent everywhere; this pins which field absorbed it.
+        self.assertIn("error-message=[redacted]", diagnosis[0])
+        self.assertFalse(state["function"] or state["logs"] or state["row"])
 
     def test_diagnostic_redaction_compares_before_it_filters_or_truncates(self):
         """A key is matched against the original text, not the normalized-and-capped one, and a long

@@ -207,6 +207,71 @@ def admin_credential_state(function):
                        if value.lower().startswith(SECRET_REFERENCE_PREFIX) else "inline")
 
 
+# Lambda answers an initialization failure, a handler exception and a timeout the same way at the
+# API: HTTP 200 with FunctionError set, the reason only in the invocation's response payload, and
+# the platform's own account of it only in the log tail. Live run 25 (34305710517) stopped on that
+# bare "Lambda invocation failed" and the job log said nothing else, so the run could not name the
+# side that had failed - the per-run candidate or the standing alias - nor whether the function had
+# died initializing, thrown while serving, or run out of time. Every one of those has a different
+# owner, so say which, from the invoke's own answer.
+INIT_ERROR_TYPE = re.compile(r"^(Runtime[.]|Init)", re.IGNORECASE)
+TIMED_OUT = re.compile(r"task timed out", re.IGNORECASE)
+# The platform's own verdict on the initialization that ran in this environment.
+FAILED_INIT_REPORT = re.compile(r"^INIT_REPORT\b.*Status: (?:error|timeout)", re.MULTILINE)
+INVOKE_LOG_TAIL_LINES = 20
+
+
+def invoke_target(function):
+    # Which side of the certification the invocation landed on, never which function: the standing
+    # function is a fingerprint everywhere else in this evidence, and the alias qualifier the lane
+    # appends is exactly what separates the two targets it invokes.
+    return "standing-alias" if ":" in function else "candidate"
+
+
+def invoke_log_tail(meta):
+    # --log-type Tail already carries this invocation's own log back with the response, so the
+    # initialization that failed is in hand without a CloudWatch query, a delivery wait, or a
+    # permission on another function's log group.
+    try:
+        return base64.b64decode(meta.get("LogResult") or "").decode(errors="replace")
+    except (ValueError, TypeError):
+        return ""
+
+
+def invoke_failure_kind(payload, tail):
+    if FAILED_INIT_REPORT.search(tail):
+        return "init"
+    error_type = str(payload.get("errorType", ""))
+    if INIT_ERROR_TYPE.match(error_type):
+        return "init"
+    if TIMED_OUT.search(str(payload.get("errorMessage", ""))):
+        return "timeout"
+    return "handler" if error_type or payload.get("errorMessage") else "unknown"
+
+
+def report_invoke_failure(target, path, meta, response):
+    # The error document Lambda writes in place of the HTTP response, when there is one: a dry-run
+    # status or a throttled call leaves the previous invocation's file, or none at all.
+    try:
+        payload = json.loads(Path(response).read_text() or "null")
+    except (OSError, ValueError):
+        payload = None
+    payload = payload if isinstance(payload, dict) else {}
+    tail = invoke_log_tail(meta)
+    print(f"serving-invoke: phase={_phase} target={target} path={path} "
+          f"status={meta.get('StatusCode')} "
+          f"executed-version={redacted(meta.get('ExecutedVersion') or '', 20) or 'none'} "
+          f"function-error={redacted(meta.get('FunctionError') or '', 40) or 'none'} "
+          f"kind={invoke_failure_kind(payload, tail)} "
+          f"error-type={redacted(payload.get('errorType', ''), 60) or 'none'} "
+          f"error-message={redacted(payload.get('errorMessage', ''), 200) or 'none'}", file=sys.stderr)
+    # The tail is server- and platform-authored text about this exact request, and it is the only
+    # place a failed initialization's own output appears. It goes through the same redaction as
+    # every other echoed diagnostic, line by line and bounded.
+    for line in [entry for entry in tail.splitlines() if entry.strip()][-INVOKE_LOG_TAIL_LINES:]:
+        print(f"serving-invoke-log: {redacted(line, 200)}", file=sys.stderr)
+
+
 def invoke(function, path, *, method="GET", query=None, body=None, json_body=None,
            authenticated=True, api_key=None, expected_version=None):
     headers = {"accept": "application/json", "host": urlsplit(os.environ["HONUA_LAMBDA_WRITE_BASE_URL"]).netloc}
@@ -230,7 +295,9 @@ def invoke(function, path, *, method="GET", query=None, body=None, json_body=Non
         write_json(payload, event)
         meta = aws("lambda", "invoke", "--function-name", function, "--cli-binary-format", "raw-in-base64-out",
                    "--log-type", "Tail", "--payload", f"file://{payload}", str(response))
-        require(meta.get("StatusCode") == 200 and not meta.get("FunctionError"), "Lambda invocation failed")
+        if meta.get("StatusCode") != 200 or meta.get("FunctionError"):
+            report_invoke_failure(invoke_target(function), path, meta, response)
+            require(False, "Lambda invocation failed")
         if expected_version:
             require(meta.get("ExecutedVersion") == expected_version, "Alias invocation executed the wrong version")
         result = json.loads(response.read_text())
@@ -631,7 +698,14 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
     try:
-        if sys.argv[1] == "prepare":
+        if sys.argv[1] == "invoke-failure":
+            # The shell stage invokes the candidate directly for its cold-start evidence. Report its
+            # failures through the same classifier and the same redaction rather than a second,
+            # drifting copy of both in bash.
+            set_phase("cold-start-evidence")
+            report_invoke_failure(sys.argv[2], sys.argv[3], json.loads(Path(sys.argv[4]).read_text() or "{}"),
+                                  sys.argv[5])
+        elif sys.argv[1] == "prepare":
             prepare(Path(sys.argv[2]))
         elif sys.argv[1] == "certify":
             certify(Path(sys.argv[2]), sys.argv[3], sys.argv[4])

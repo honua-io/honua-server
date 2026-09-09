@@ -509,10 +509,13 @@ for cold_start_attempt in $(seq 1 "$cold_start_attempts"); do
   if [[ "$(jq -r '.StatusCode' <<<"$invoke_meta")" != "200" || "$(jq -r '.FunctionError // empty' <<<"$invoke_meta")" != "" ]]; then
     # Ninth live run: StatusCode 204 with no ExecutedVersion, i.e. the API treated
     # the call as a dry run. Say exactly what came back so the next failure is
-    # diagnosable from the job log (Lambda's own log tail, never the env).
+    # diagnosable from the job log (Lambda's own log tail, never the env). The
+    # driver owns the classifier and the redaction for both stages' invokes, so
+    # this reports through it rather than keeping a second copy of both in bash.
     echo "Lambda invocation failed" >&2
-    jq -c '{StatusCode, ExecutedVersion, FunctionError}' <<<"$invoke_meta" >&2
-    jq -r '.LogResult // empty' <<<"$invoke_meta" | base64 -d 2>/dev/null | tail -n 20 | sed 's/^/lambda-log: /' >&2
+    printf '%s' "$invoke_meta" > "$scratch/invoke-meta.json"
+    python3 "$script_dir/lambda-certification.py" invoke-failure candidate /healthz/live \
+      "$scratch/invoke-meta.json" "$scratch/response.json" || true
     exit 6
   fi
   if [[ "$(jq -r '.statusCode' "$scratch/response.json")" != "200" ]]; then
