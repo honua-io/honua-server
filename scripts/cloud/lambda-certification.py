@@ -137,18 +137,44 @@ def denied_key():
     return _denied["value"] or override_denied_key()
 
 
-def runtime_secrets():
-    # Every credential this run holds, including the one it minted for itself.
-    return tuple(value for value in (os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"],
-                                     os.environ.get(DENIED_KEY_VARIABLE, ""), _denied["value"]) if value)
-
-
+# The lane clones the standing function's whole environment onto the candidate, so a value the
+# lane never chose - an inline connection string, a token - can come back inside a server-authored
+# diagnostic. Those values are secrets of this run too, and every echoed diagnostic has to compare
+# against them, exactly as the shell stage's create-function reporter already does.
+# A declared reference is not one of them: `aws:secretsmanager:<arn>` and `env:<name>` are pointers
+# the lane already reports publicly by kind (admin_credential_state prints
+# `source=secretsmanager-reference`), and treating them as secrets would drop every diagnostic line
+# that so much as names Secrets Manager - which is exactly the line an initialization failure
+# resolving a secret would print. Values below the fragment window are configuration flags
+# ("false", "1024"), not credentials, and matching them would redact by coincidence.
 # A whole key is not the only thing worth refusing to print. Filtering and truncating a diagnostic
 # can leave a key that carried an excluded character, or one longer than the cap, behind as a
 # normalized or truncated fragment that no longer equals the secret. Treat any run of this many
 # consecutive key characters as the key itself: server-authored refusal details are fixed English
 # constants, so a collision this long with a real credential does not happen by accident.
 SECRET_FRAGMENT = 12
+
+
+CLONED_SECRET_REFERENCES = ("aws:secretsmanager:", "env:")
+_cloned = []
+
+
+def load_cloned_secrets(directory):
+    try:
+        variables = json.loads((Path(directory) / "environment.json").read_text()).get("Variables") or {}
+    except (OSError, ValueError, AttributeError):
+        return
+    _cloned[:] = [value for value in variables.values()
+                  if isinstance(value, str) and len(value.strip()) > SECRET_FRAGMENT
+                  and not value.strip().lower().startswith(CLONED_SECRET_REFERENCES)]
+
+
+def runtime_secrets():
+    # Every credential this run holds: the ones it was given, the one it minted for itself, and
+    # every cloned environment value that could be one.
+    return tuple(value for value in (os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"],
+                                     os.environ.get(DENIED_KEY_VARIABLE, ""), _denied["value"],
+                                     *_cloned) if value)
 
 
 def leaks(text, secret):
@@ -214,18 +240,42 @@ def admin_credential_state(function):
 # side that had failed - the per-run candidate or the standing alias - nor whether the function had
 # died initializing, thrown while serving, or run out of time. Every one of those has a different
 # owner, so say which, from the invoke's own answer.
-INIT_ERROR_TYPE = re.compile(r"^(Runtime[.]|Init)", re.IGNORECASE)
+# Only these establish that the runtime never reached the handler. Runtime.ExitError and
+# Runtime.ExitCode are deliberately NOT here: Lambda raises them whenever the runtime process dies,
+# which happens during an invocation as readily as during initialization, so reading them as "init"
+# would send a serving crash to the wrong owner. They get their own answer below.
+INIT_ERROR_TYPE = re.compile(r"^Init", re.IGNORECASE)
+RUNTIME_EXIT = re.compile(r"^Runtime[.]", re.IGNORECASE)
 TIMED_OUT = re.compile(r"task timed out", re.IGNORECASE)
 # The platform's own verdict on the initialization that ran in this environment.
 FAILED_INIT_REPORT = re.compile(r"^INIT_REPORT\b.*Status: (?:error|timeout)", re.MULTILINE)
+# Platform- and runtime-authored lines only. The tail also carries the application's own stdout,
+# and the lane cannot redact what it never held: HONUA_ADMIN_PASSWORD reaches the function as an
+# `aws:secretsmanager:` reference, so the password the server resolves per request is a value no
+# redaction set here can contain. These lines are written by Lambda itself and carry durations,
+# request ids and error types - never configuration or resolved secrets.
+PLATFORM_LOG_LINE = re.compile(
+    r"^(?:START|END|REPORT|INIT_REPORT|RESTORE_REPORT|EXTENSION|Runtime[.]|RequestId:\s+\S+\s+Error:)")
 INVOKE_LOG_TAIL_LINES = 20
+# serve() shifts the standing alias to the newly published candidate version before the candidate
+# phase, so "qualified" and "standing" stop being the same thing for the rest of the run.
+_published_candidate = [""]
+# Phases whose invocations run the candidate artifact whatever they are addressed through.
+CANDIDATE_PHASES = ("deployed", "denied-key-mint", "candidate")
 
 
-def invoke_target(function):
+def invoke_target(function, meta=None):
     # Which side of the certification the invocation landed on, never which function: the standing
-    # function is a fingerprint everywhere else in this evidence, and the alias qualifier the lane
-    # appends is exactly what separates the two targets it invokes.
-    return "standing-alias" if ":" in function else "candidate"
+    # function is a fingerprint everywhere else in this evidence. An unqualified name is the per-run
+    # function. A qualified one is the alias, which serves the candidate's own published version for
+    # part of the run - so the version Lambda says it executed decides it, and the phase answers
+    # when the invoke never reached a version (a dry-run status carries none).
+    if ":" not in function:
+        return "candidate"
+    executed = str((meta or {}).get("ExecutedVersion") or "")
+    if executed and _published_candidate[0]:
+        return "candidate" if executed == _published_candidate[0] else "standing-alias"
+    return "candidate" if _phase in CANDIDATE_PHASES else "standing-alias"
 
 
 def invoke_log_tail(meta):
@@ -239,6 +289,8 @@ def invoke_log_tail(meta):
 
 
 def invoke_failure_kind(payload, tail):
+    # The platform's own verdict first: an INIT_REPORT that ended in error or timeout is an
+    # initialization failure whatever the payload says.
     if FAILED_INIT_REPORT.search(tail):
         return "init"
     error_type = str(payload.get("errorType", ""))
@@ -246,6 +298,10 @@ def invoke_failure_kind(payload, tail):
         return "init"
     if TIMED_OUT.search(str(payload.get("errorMessage", ""))):
         return "timeout"
+    if RUNTIME_EXIT.match(error_type):
+        # The runtime process died and the tail did not say in which phase. Say that, rather than
+        # picking one: an operator reading "init" would go looking at startup for a handler crash.
+        return "runtime-exit"
     return "handler" if error_type or payload.get("errorMessage") else "unknown"
 
 
@@ -265,11 +321,12 @@ def report_invoke_failure(target, path, meta, response):
           f"kind={invoke_failure_kind(payload, tail)} "
           f"error-type={redacted(payload.get('errorType', ''), 60) or 'none'} "
           f"error-message={redacted(payload.get('errorMessage', ''), 200) or 'none'}", file=sys.stderr)
-    # The tail is server- and platform-authored text about this exact request, and it is the only
-    # place a failed initialization's own output appears. It goes through the same redaction as
-    # every other echoed diagnostic, line by line and bounded.
-    for line in [entry for entry in tail.splitlines() if entry.strip()][-INVOKE_LOG_TAIL_LINES:]:
-        print(f"serving-invoke-log: {redacted(line, 200)}", file=sys.stderr)
+    # The platform's own account of this exact request, and the only place a failed initialization
+    # is reported. Restricted to lines Lambda itself wrote (see PLATFORM_LOG_LINE) and still passed
+    # through the same redaction as every other echoed diagnostic, line by line and bounded.
+    platform = [entry for entry in tail.splitlines() if PLATFORM_LOG_LINE.match(entry.strip())]
+    for line in platform[-INVOKE_LOG_TAIL_LINES:]:
+        print(f"serving-invoke-log: {redacted(line.strip(), 200)}", file=sys.stderr)
 
 
 def invoke(function, path, *, method="GET", query=None, body=None, json_body=None,
@@ -296,7 +353,7 @@ def invoke(function, path, *, method="GET", query=None, body=None, json_body=Non
         meta = aws("lambda", "invoke", "--function-name", function, "--cli-binary-format", "raw-in-base64-out",
                    "--log-type", "Tail", "--payload", f"file://{payload}", str(response))
         if meta.get("StatusCode") != 200 or meta.get("FunctionError"):
-            report_invoke_failure(invoke_target(function), path, meta, response)
+            report_invoke_failure(invoke_target(function, meta), path, meta, response)
             require(False, "Lambda invocation failed")
         if expected_version:
             require(meta.get("ExecutedVersion") == expected_version, "Alias invocation executed the wrong version")
@@ -568,6 +625,7 @@ def alias_state(function, alias, expected=None):
 
 
 def certify(directory, ephemeral, digest):
+    load_cloned_secrets(directory)
     function, alias = inputs()
     proof = {"result": "noProof", "candidateDigest": digest.split("@")[-1],
              "deniedKey": {"source": "override" if override_denied_key() else "minted",
@@ -629,6 +687,9 @@ def serve(directory, function, alias, ephemeral, digest, proof):
                         "--revision-id", deployed["Configuration"]["RevisionId"],
                         "--code-sha256", update["CodeSha256"], "--description", ownership)
         candidate = published["Version"]
+        # From here the standing alias serves the candidate for part of the run, so a failure on it
+        # is attributed by the version Lambda executed rather than by the qualifier.
+        _published_candidate[0] = str(candidate)
         require(re.fullmatch(r"[1-9][0-9]*", candidate) and candidate not in versions_before, "Candidate is not a new published version")
         require(config(function, candidate)["Code"]["ResolvedImageUri"] == digest, "Published candidate digest mismatch")
         rollback_needed = True  # Set BEFORE the call: an SDK timeout may follow a successful shift.
@@ -703,8 +764,9 @@ if __name__ == "__main__":
             # failures through the same classifier and the same redaction rather than a second,
             # drifting copy of both in bash.
             set_phase("cold-start-evidence")
-            report_invoke_failure(sys.argv[2], sys.argv[3], json.loads(Path(sys.argv[4]).read_text() or "{}"),
-                                  sys.argv[5])
+            load_cloned_secrets(sys.argv[2])
+            report_invoke_failure(sys.argv[3], sys.argv[4], json.loads(Path(sys.argv[5]).read_text() or "{}"),
+                                  sys.argv[6])
         elif sys.argv[1] == "prepare":
             prepare(Path(sys.argv[2]))
         elif sys.argv[1] == "certify":

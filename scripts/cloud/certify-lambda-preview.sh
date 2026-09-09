@@ -514,7 +514,7 @@ for cold_start_attempt in $(seq 1 "$cold_start_attempts"); do
     # this reports through it rather than keeping a second copy of both in bash.
     echo "Lambda invocation failed" >&2
     printf '%s' "$invoke_meta" > "$scratch/invoke-meta.json"
-    python3 "$script_dir/lambda-certification.py" invoke-failure candidate /healthz/live \
+    python3 "$script_dir/lambda-certification.py" invoke-failure "$scratch" candidate /healthz/live \
       "$scratch/invoke-meta.json" "$scratch/response.json" || true
     exit 6
   fi

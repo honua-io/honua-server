@@ -380,15 +380,29 @@ if headers: response["headers"] = headers
 # carries the platform's account of the initialization that produced it. "standing-invoke" fails
 # only the alias, which is live run 25 exactly: the candidate served and minted, and the first
 # invoke of the standing alias came back as a Lambda function error.
-function_error = fail == "invoke" or (fail == "standing-invoke" and ":" in function)
+# "standing-invoke" fails the FIRST qualified invoke, before the shift: live run 25 exactly.
+# "candidate-phase-invoke" fails the alias AFTER the shift, when the alias serves the candidate's
+# own published version and a failure on it belongs to the candidate, not to the cert stack.
+function_error = (fail == "invoke" or (fail == "standing-invoke" and ":" in function and not s["shifted"])
+                  or (fail == "candidate-phase-invoke" and phase == "candidate"))
 if function_error:
-    log = ("INIT_REPORT Init Duration: 7412.55 ms\tPhase: init\tStatus: error\tError Type: Runtime.ExitError\n"
-           "START RequestId: offline-id Version: " + version)
-    message = "Error: Runtime exited with error: exit status 134"
-    # A server-authored diagnostic can quote a credential; the lane must never echo one. Only the
-    # candidate's variant carries one, so the other still proves the message itself is reported.
-    if fail == "invoke": message += " while reading " + os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
-    response = {"errorType": "Runtime.ExitError", "errorMessage": message}
+    # The application writes to the same stream as the platform, and the lane holds none of what it
+    # can print: HONUA_ADMIN_PASSWORD arrives as a reference, so the resolved password is a value no
+    # redaction set can contain. Only the platform's own lines may be echoed.
+    application = "resolved administrator offline-resolved-password-never-echoed for this environment"
+    if fail == "candidate-phase-invoke":
+        # An invocation that ran out of time: the environment initialized, so there is no failed
+        # INIT_REPORT to read the phase from, and the runtime names no error type.
+        log = application + "\nREPORT RequestId: offline-id Duration: 60000.00 ms Billed Duration: 60000 ms"
+        response = {"errorMessage": "2026-09-09T04:00:00Z offline-id Task timed out after 60.00 seconds"}
+    else:
+        log = ("INIT_REPORT Init Duration: 7412.55 ms\tPhase: init\tStatus: error\tError Type: Runtime.ExitError\n"
+               + application + "\nSTART RequestId: offline-id Version: " + version)
+        message = "Error: Runtime exited with error: exit status 134"
+        # A server-authored diagnostic can quote a credential; the lane must never echo one. Only
+        # the candidate's variant carries one, so the other still proves the message is reported.
+        if fail == "invoke": message += " while reading " + os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
+        response = {"errorType": "Runtime.ExitError", "errorMessage": message}
 response_path.write_text(json.dumps(response))
 meta = {"StatusCode":200,"ExecutedVersion":"99" if fail == "executed-version" else version,"LogResult":base64.b64encode(log.encode()).decode()}
 if function_error: meta["FunctionError"] = "Unhandled"
@@ -593,7 +607,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                         "query", "fixture-names", "create", "readback", "delete", "delete-remains",
                         "denial-status", "denial-body", "denial-records", "denial-nested", "scoped-unauthenticated", "scoped-allowed", "scoped-records", "executed-version", "weighted",
                         "denied-key-missing", "denied-key-leaks", "mint-refused", "mint-response-lost", "revoke-refused",
-                        "standing-invoke",
+                        "standing-invoke", "candidate-phase-invoke",
                         "function-delete", "log-delete", "version-delete", "ownership", "get-function-transient"):
             with self.subTest(failure=failure):
                 result, receipt, state, _ = self.run_lane(failure)
@@ -777,17 +791,90 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
         self.assertIn("target=standing-alias", diagnosis[0])
         self.assertIn("function-error=Unhandled", diagnosis[0])
         self.assertIn("error-type=Runtime.ExitError", diagnosis[0])
-        # An initialization failure, not a handler exception and not a timeout.
+        # An initialization failure, on the platform's own INIT_REPORT verdict: Runtime.ExitError
+        # alone would not have established the phase.
         self.assertIn("kind=init", diagnosis[0])
         self.assertIn("Runtime exited with error: exit status 134", diagnosis[0])
         # The platform's own account of the same invocation, from the invoke's own tail.
         tail = [line for line in result.stderr.splitlines() if line.startswith("serving-invoke-log:")]
         self.assertTrue(any("INIT_REPORT" in line and "Status: error" in line for line in tail), tail)
+        self.assertTrue(any(line.startswith("serving-invoke-log: START ") for line in tail), tail)
+        # The application's own stdout shares that stream and is never echoed: the lane cannot
+        # redact a resolved secret it never held.
+        self.assertNotIn("offline-resolved-password-never-echoed", result.stdout + result.stderr)
         self.assertFalse(state["function"] or state["logs"] or state["row"])
         # The operator table that says which owner a target= points at.
         documentation = (ROOT / "scripts/cloud/lambda-certification.md").read_text()
         self.assertIn("serving-invoke:", documentation)
         self.assertIn("target=standing-alias", documentation)
+
+    def test_a_candidate_phase_alias_failure_is_attributed_to_the_candidate(self):
+        """serve() shifts the standing alias to the newly published candidate version, so from the
+        candidate phase on, a qualified invocation is the candidate. Attributing it to the cert
+        stack would send the artifact's own defect to the wrong owner."""
+        result, receipt, state, _ = self.run_lane("candidate-phase-invoke")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        diagnosis = [line for line in result.stderr.splitlines() if line.startswith("serving-invoke:")]
+        self.assertEqual(1, len(diagnosis), result.stderr)
+        self.assertIn("phase=candidate", diagnosis[0])
+        # Qualified, and still the candidate: the version Lambda executed is the one just published.
+        self.assertIn("target=candidate", diagnosis[0])
+        self.assertIn("executed-version=8", diagnosis[0])
+        # An invocation that ran out of time, not an initialization failure and not a handler throw.
+        self.assertIn("kind=timeout", diagnosis[0])
+        self.assertIn("error-type=none", diagnosis[0])
+        self.assertIn("Task timed out after 60.00 seconds", diagnosis[0])
+        # The alias is put back and the candidate version removed even though the run failed on it.
+        self.assertEqual("7", state["alias"])
+        self.assertFalse(state["function"] or state["logs"] or state["row"])
+
+    def certification_driver(self):
+        spec = importlib.util.spec_from_file_location(
+            "lambda_certification", ROOT / "scripts/cloud/lambda-certification.py")
+        driver = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(driver)
+        return driver
+
+    def test_a_runtime_exit_alone_never_claims_the_phase(self):
+        """Lambda raises Runtime.ExitError whenever the runtime process dies, during an invocation
+        as readily as during initialization. Without a failed INIT_REPORT the phase is unestablished,
+        and saying "init" would send a serving crash to startup."""
+        module = self.certification_driver()
+        self.assertEqual("init", module.invoke_failure_kind(
+            {"errorType": "Runtime.ExitError"},
+            "INIT_REPORT Init Duration: 1.0 ms\tPhase: init\tStatus: error"))
+        self.assertEqual("runtime-exit", module.invoke_failure_kind({"errorType": "Runtime.ExitError"}, ""))
+        self.assertEqual("runtime-exit", module.invoke_failure_kind(
+            {"errorType": "Runtime.ExitError"},
+            "INIT_REPORT Init Duration: 1.0 ms\tPhase: init\tStatus: ok"))
+        self.assertEqual("init", module.invoke_failure_kind({"errorType": "Init.Failure"}, ""))
+        self.assertEqual("timeout", module.invoke_failure_kind({"errorMessage": "Task timed out after 3.00 seconds"}, ""))
+        self.assertEqual("handler", module.invoke_failure_kind({"errorType": "System.InvalidOperationException"}, ""))
+        self.assertEqual("unknown", module.invoke_failure_kind({}, ""))
+
+    def test_cloned_environment_values_join_the_redaction_set(self):
+        """The lane clones the standing environment onto the candidate, so a value it never chose can
+        come back inside a server-authored message. Declared references stay out: they are pointers
+        the lane already reports by kind, and redacting them would drop every line naming the store."""
+        module = self.certification_driver()
+        with tempfile.TemporaryDirectory() as temp, \
+                unittest.mock.patch.dict(module.os.environ,
+                                         {"HONUA_LAMBDA_CERT_ADMIN_KEY": "offline-admin-key"}, clear=True):
+            directory = Path(temp)
+            (directory / "environment.json").write_text(json.dumps({"Variables": {
+                "ConnectionStrings__DefaultConnection": "Host=cert;Password=inline-cloned-secret-value",
+                "HONUA_ADMIN_PASSWORD": "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:1:secret:a",
+                "HONUA_SKIP_MIGRATIONS": "false"}}))
+            # Nothing is cloned until the lane has a prepared environment to read.
+            self.assertIn("inline-cloned-secret-value", module.redacted("was inline-cloned-secret-value", 200))
+            module.load_cloned_secrets(directory)
+            self.assertEqual("[redacted]", module.redacted("failed on Password=inline-cloned-secret-value", 200))
+            # A reference is not a credential, and a configuration flag is not one either.
+            self.assertIn("secretsmanager", module.redacted("resolving aws:secretsmanager:arn ref", 200))
+            self.assertIn("false", module.redacted("HONUA_SKIP_MIGRATIONS is false", 200))
+            # A diagnostic must never fail on its own account: an unreadable paramfile is not fatal.
+            module.load_cloned_secrets(directory / "absent")
 
     def test_a_failed_cold_start_invoke_reports_through_the_same_classifier(self):
         """The shell stage invokes the candidate itself; its failures must read the same way rather
