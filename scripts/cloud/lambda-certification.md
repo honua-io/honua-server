@@ -439,7 +439,7 @@ serving-402: phase=deployed entitlement=editing.featureserver-edits variable=Lic
 
 | Field | What it says |
 | --- | --- |
-| `entitlement` | The entitlement the write surface is gated on: `editing.featureserver-edits`, enforced once for the whole GeoServices write surface in `FeatureServerEditsHandler`. |
+| `entitlement` | `editing.featureserver-edits` when the refused path is a GeoServices write operation (`addFeatures`, `updateFeatures`, `deleteFeatures`, `applyEdits`, `calculate`) — the entitlement `FeatureServerEditsHandler` enforces once for the whole write surface. `none` on any other path, which is `LicenseOperationMiddleware` refusing the **deployment** license outright rather than one gated surface. Those are different owners, so the lane never claims an entitlement for a whole-deployment block. |
 | `variable` / `presence` / `source` | The license envelope variable **by name** on the function actually invoked, whether it is there at all, and whether it is a Secrets Manager reference the server resolves at startup or an inline value. Never the envelope. |
 | `trusted-keys` | How many `Licensing__TrustedKeys__*` variables the function carries. A licensed function with no trusted key cannot verify the signature it was given. |
 | `edition` / `validation` / `entitled` | The server's **own** verdict, read from `/api/v1/admin/license/status` on the same deployment that just refused the write. `LicenseOperationMiddleware` lets the license routes through even when the deployment license itself is blocked, so this answers whatever the license state is. |
@@ -449,6 +449,14 @@ serving-402: phase=deployed entitlement=editing.featureserver-edits variable=Lic
 | `absent` | `NoLicenseConfigured` | The cert stack was never given a license, so the function is Community and FeatureServer editing is gated. | Enable honua-iac `enable_pro_license` on the cert stack (`pro_license_content` + `pro_license_trusted_public_key`, or `pro_license_secret_arn`) and re-apply. Nothing about the fixture or the lane is wrong. |
 | `present` | anything but `Valid` | The function was handed an envelope the server refused: an unresolvable secret reference, a missing or wrong trusted key, an expired license. | Fix the envelope or the trusted key in the cert stack; the fixture and the lane are still not the cause. |
 | `present` | `Valid`, `entitled=false` | The license is valid and does not carry this entitlement. | Re-issue a license whose entitlements include `editing.featureserver-edits`. |
+
+A 402 carrying `entitlement=none` is not in that table at all: the deployment's license is
+unusable and **every** data route is being refused, which the lane meets on its first
+administrative read rather than at the scratch-layer write. Renew or restore the license itself.
+
+The entitlement is enforced for the whole GeoServices write surface, so on an unlicensed
+deployment the lane's own cleanup `deleteFeatures` is refused after the `addFeatures` that failed:
+expect the pair of assertions, not one. Nothing was written, so nothing is left behind.
 
 `ClientCompatSeedMigratedDatabaseTests` pins both halves of this locally: over one migrated PostGIS
 container and this exact seed, the lane's exact `addFeatures` payload is refused with HTTP 200 and

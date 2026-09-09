@@ -29,6 +29,13 @@ LICENSE_CONTENT_VARIABLE = "Licensing__LicenseContentSecretRef"
 LICENSE_TRUSTED_KEY_PREFIX = "Licensing__TrustedKeys__"
 LICENSE_STATUS = "/api/v1/admin/license/status"
 FEATURESERVER_EDITS_ENTITLEMENT = "editing.featureserver-edits"
+# The GeoServices write operations that funnel through FeatureServerEditsHandler, which is where the
+# entitlement is enforced for the whole surface. A 402 anywhere else is LicenseOperationMiddleware
+# refusing the deployment license outright - a different owner - so the entitlement is never claimed
+# for one: an expired license blocking `/api/v1/admin/observability/migrations` must not be reported
+# as an edit-entitlement failure.
+FEATURESERVER_EDIT_OPERATIONS = ("/addFeatures", "/updateFeatures", "/deleteFeatures",
+                                 "/applyEdits", "/calculate")
 # The entitlement refusal is HTTP 402, and the GeoServices formatter carries that status
 # through as the body code (StandardErrorResponseFormatter). Either is the same denial.
 PAYMENT_REQUIRED = 402
@@ -294,7 +301,13 @@ def license_status(function):
         return "unreadable", "unknown", "unknown"
 
 
-def report_payment_required(function):
+def refused_entitlement(path):
+    return (FEATURESERVER_EDITS_ENTITLEMENT
+            if "/FeatureServer/" in path and path.endswith(FEATURESERVER_EDIT_OPERATIONS)
+            else "none")
+
+
+def report_payment_required(function, path):
     # Run 28 (34320738962) reached the run-owned write with everything before it green and stopped
     # on `error=402` alone. A GeoServices refusal is HTTP 200 with the failure only in the body, so
     # the status said nothing, and the two deployments that produce this code - one carrying no
@@ -302,7 +315,10 @@ def report_payment_required(function):
     # from the function's own configuration and the server's own verdict, in the run that failed.
     presence, source, trusted = license_configuration_state(function)
     edition, validation, entitled = license_status(function)
-    print(f"serving-402: phase={_phase} entitlement={FEATURESERVER_EDITS_ENTITLEMENT} "
+    # `entitlement=none` is the whole-deployment refusal: the license itself is unusable and the
+    # server is refusing every gated surface, not this one operation. Reading it as an edit
+    # entitlement would send that to the wrong owner, so the path decides which of the two it is.
+    print(f"serving-402: phase={_phase} entitlement={refused_entitlement(path)} "
           f"variable={LICENSE_CONTENT_VARIABLE} presence={presence} source={source} "
           f"trusted-keys={trusted} edition={edition} validation={validation} "
           f"entitled={entitled}", file=sys.stderr)
@@ -488,7 +504,7 @@ def ok(function, path, *, expect=200, **kwargs):
                   f"source={source} challenge={challenge_schemes(headers)} "
                   f"detail={detail or 'none'}", file=sys.stderr)
         if status == PAYMENT_REQUIRED or body_code == PAYMENT_REQUIRED:
-            report_payment_required(function)
+            report_payment_required(function, path)
         require(False, "Serving HTTP assertion failed")
     return body
 

@@ -253,6 +253,20 @@ if op == "publish-version":
     emit({"Version":"8"})
 if op == "list-aliases": emit({"Aliases":[{"FunctionVersion":s["alias"]}]})
 if op == "list-versions-by-function": emit({"Versions":[{"Version":v,"Description":"honua-cert-run=123-1" if v == "8" else "standing"} for v in s["versions"]]})
+def geoservices_entitlement_refusal(fail):
+    # GeoServices answers a refused operation with HTTP 200 and the whole failure in the envelope.
+    # This is run 28's answer verbatim: FeatureServer editing is gated on the Pro entitlement
+    # `editing.featureserver-edits`, so an unlicensed function refuses the run-owned write and
+    # nothing about the fixture or the payload is wrong.
+    detail = ("FeatureServer Editing requires an active Pro entitlement. Current edition is "
+              "Community; install a license that includes 'editing.featureserver-edits'."
+              if fail == "unlicensed-edits"
+              else "A valid paid license is required. Renew the configured license.")
+    return {"error":{"code":402, "message":"Payment Required",
+                     "details":[detail, "entitlement: editing.featureserver-edits",
+                                "Timestamp: 2026-09-08T00:00:00.000Z"]}}
+
+
 if op != "invoke": bad()
 payload = arg("--payload")
 event = json.loads(Path(payload[7:]).read_text() if payload.startswith("file://") else payload)
@@ -283,6 +297,16 @@ elif route.endswith("/migrations"):
                          if fail == "admin-401" else "Admin authentication not configured"}
         headers = {"content-type":"application/problem+json",
                    "www-authenticate":'ApiKey realm="Honua Admin", header="X-API-Key", Basic realm="Honua Admin", charset="UTF-8"'}
+    if fail == "license-blocked":
+        # LicenseOperationMiddleware refuses the whole deployment rather than one gated surface:
+        # every route outside /healthz and the license/auth admin routes answers HTTP 402 before it
+        # reaches a handler, as a problem document and not a GeoServices envelope. The lane meets
+        # this on its FIRST serving assertion, long before any FeatureServer edit.
+        status = 402
+        body = {"type":"https://honua.io/problems/admin", "title":"Payment Required", "status":402,
+                "detail":"License unavailable or expired. Renew the configured license; "
+                         "re-validation runs every minute, or restart."}
+        headers = {"content-type":"application/problem+json"}
     if fail == "migrations": body["status"] = "skipped"
     if fail == "migration-pending": body["pendingScripts"] = ["001"]
     if fail == "migration-plan": body["planAvailable"] = False
@@ -355,7 +379,8 @@ elif route == "/api/v1/admin/license/status":
     # that was never given a license from one carrying an envelope the server refused - opposite
     # owners that the 402 alone cannot tell apart.
     edition, validation = ("Community", "NoLicenseConfigured") if fail == "unlicensed-edits" else \
-                          ("Pro", "SignatureInvalid") if fail == "license-rejected" else ("Pro", "Valid")
+                          ("Pro", "InvalidSignature") if fail == "license-rejected" else \
+                          ("Pro", "Expired") if fail == "license-blocked" else ("Pro", "Valid")
     entitlements = [] if fail == "unlicensed-edits" else [
         {"key":"editing.featureserver-edits", "name":"FeatureServer Editing", "isActive":validation == "Valid"}]
     body = {"success":True, "data":{"edition":edition, "isValid":validation == "Valid",
@@ -368,24 +393,21 @@ elif route.endswith("/10/query"):
     body = {"features": [{"attributes":{"objectid":1234,"name":"wrong" if fail == "readback" else "honua-certrun-123-1"}}] if s["row"] else []}
 elif route.endswith("/addFeatures"):
     if fail in ("unlicensed-edits", "license-rejected"):
-        # GeoServices answers a refused operation with HTTP 200 and the whole failure in the
-        # envelope. This is run 28's answer: FeatureServer editing is gated on the Pro entitlement
-        # `editing.featureserver-edits`, so an unlicensed function refuses the run-owned write and
-        # nothing about the fixture or the payload is wrong.
-        detail = ("FeatureServer Editing requires an active Pro entitlement. Current edition is "
-                  "Community; install a license that includes 'editing.featureserver-edits'."
-                  if fail == "unlicensed-edits"
-                  else "A valid paid license is required. Renew the configured license.")
-        body = {"error":{"code":402, "message":"Payment Required",
-                         "details":[detail, "entitlement: editing.featureserver-edits",
-                                    "Timestamp: 2026-09-08T00:00:00.000Z"]}}
+        body = geoservices_entitlement_refusal(fail)
     else:
         s["row"] = True
         body = {"addResults":[{"success": fail != "create", "objectId":1234}]}
 elif route.endswith("/deleteFeatures"):
-    form = parse_qs(event["body"])
-    if fail != "delete-remains" or "where" in form: s["row"] = False
-    body = {"deleteResults":[{"success":fail != "delete" or "where" in form,"objectId":1234}]}
+    if fail in ("unlicensed-edits", "license-rejected"):
+        # FeatureServerEditsHandler enforces the entitlement once for the whole GeoServices write
+        # surface, so the lane's own cleanup delete is refused exactly like the add. Model that:
+        # a stub that refused only addFeatures would let the teardown "succeed" against a
+        # deployment where nothing can be written at all.
+        body = geoservices_entitlement_refusal(fail)
+    else:
+        form = parse_qs(event["body"])
+        if fail != "delete-remains" or "where" in form: s["row"] = False
+        body = {"deleteResults":[{"success":fail != "delete" or "where" in form,"objectId":1234}]}
 else: bad()
 log = "REPORT RequestId: offline-id Duration: 20.00 ms Billed Duration: 30 ms Init Duration: 150.25 ms"
 if event["requestContext"]["http"]["userAgent"] == "honua-lambda-preview-cert":
@@ -638,7 +660,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                         "denial-status", "denial-body", "denial-records", "denial-nested", "scoped-unauthenticated", "scoped-allowed", "scoped-records", "executed-version", "weighted",
                         "denied-key-missing", "denied-key-leaks", "mint-refused", "mint-response-lost", "revoke-refused",
                         "standing-invoke", "candidate-phase-invoke",
-                        "unlicensed-edits", "license-rejected",
+                        "unlicensed-edits", "license-rejected", "license-blocked",
                         "function-delete", "log-delete", "version-delete", "ownership", "get-function-transient"):
             with self.subTest(failure=failure):
                 result, receipt, state, _ = self.run_lane(failure)
@@ -812,7 +834,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
         now answer both."""
         cases = (("unlicensed-edits", "absent", "none", "0", "Community", "NoLicenseConfigured",
                   "install a license that includes"),
-                 ("license-rejected", "present", "secretsmanager-reference", "1", "Pro", "SignatureInvalid",
+                 ("license-rejected", "present", "secretsmanager-reference", "1", "Pro", "InvalidSignature",
                   "A valid paid license is required"))
         for failure, presence, source, keys, edition, validation, detail in cases:
             with self.subTest(failure=failure):
@@ -821,34 +843,66 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                 self.assertEqual("noProof", receipt["serving"]["result"])
                 assertion = [line for line in result.stderr.splitlines()
                              if line.startswith("serving-assertion:")]
-                self.assertEqual(1, len(assertion), result.stderr)
+                # The entitlement is enforced once for the whole GeoServices write surface, so the
+                # run-owned add is refused and the lane's own cleanup delete is refused after it.
+                # Both are reported; neither is swallowed by the teardown.
+                self.assertEqual(2, len(assertion), result.stderr)
                 self.assertIn("path=/rest/services/test_service/FeatureServer/10/addFeatures", assertion[0])
-                # The status the lane expected and got: the refusal is entirely in the body.
-                self.assertIn("status=200 expected=200", assertion[0])
-                self.assertIn("error=402", assertion[0])
-                # The two fields the failing run never carried.
-                self.assertIn("message=Payment Required", assertion[0])
-                self.assertIn(detail, assertion[0])
-                # The server's own details array, joined with a separator the redaction keeps.
-                self.assertIn("entitlement: editing.featureserver-edits", assertion[0])
+                self.assertIn("path=/rest/services/test_service/FeatureServer/10/deleteFeatures", assertion[1])
+                for line in assertion:
+                    # The status the lane expected and got: the refusal is entirely in the body.
+                    self.assertIn("status=200 expected=200", line)
+                    self.assertIn("error=402", line)
+                    # The two fields the failing run never carried.
+                    self.assertIn("message=Payment Required", line)
+                    self.assertIn(detail, line)
+                    # The server's own details array, joined with a separator the redaction keeps.
+                    self.assertIn("entitlement: editing.featureserver-edits", line)
                 diagnosis = [line for line in result.stderr.splitlines() if line.startswith("serving-402:")]
-                self.assertEqual(1, len(diagnosis), result.stderr)
-                self.assertIn("phase=deployed", diagnosis[0])
-                self.assertIn("entitlement=editing.featureserver-edits", diagnosis[0])
-                # Which side owns it: the function's own configuration, by variable NAME only...
-                self.assertIn("variable=Licensing__LicenseContentSecretRef", diagnosis[0])
-                self.assertIn("presence=" + presence, diagnosis[0])
-                self.assertIn("source=" + source, diagnosis[0])
-                self.assertIn("trusted-keys=" + keys, diagnosis[0])
-                # ...and the server's own verdict on what it made of it.
-                self.assertIn("edition=" + edition, diagnosis[0])
-                self.assertIn("validation=" + validation, diagnosis[0])
-                self.assertIn("entitled=false", diagnosis[0])
-                # Never the envelope, the licensee or the key behind the variable.
-                self.assertNotIn("offline-license", diagnosis[0])
-                self.assertNotIn("offline-trusted-public-key", diagnosis[0])
-                # A refused write commits nothing, so teardown has no row to clean up.
+                self.assertEqual(2, len(diagnosis), result.stderr)
+                for line in diagnosis:
+                    self.assertIn("phase=deployed", line)
+                    # Both refused operations are GeoServices edits, so both name the entitlement
+                    # rather than reporting a whole-deployment license block.
+                    self.assertIn("entitlement=editing.featureserver-edits", line)
+                    # Which side owns it: the function's own configuration, by variable NAME only...
+                    self.assertIn("variable=Licensing__LicenseContentSecretRef", line)
+                    self.assertIn("presence=" + presence, line)
+                    self.assertIn("source=" + source, line)
+                    self.assertIn("trusted-keys=" + keys, line)
+                    # ...and the server's own verdict on what it made of it.
+                    self.assertIn("edition=" + edition, line)
+                    self.assertIn("validation=" + validation, line)
+                    self.assertIn("entitled=false", line)
+                    # Never the envelope, the licensee or the key behind the variable.
+                    self.assertNotIn("offline-license", line)
+                    self.assertNotIn("offline-trusted-public-key", line)
+                # A refused write commits nothing, so there was no row for the teardown to lose.
                 self.assertFalse(state["row"])
+
+    def test_a_deployment_wide_license_block_is_never_read_as_an_edit_entitlement(self):
+        """402 has two owners on this lane. `LicenseOperationMiddleware` refuses every data route of
+        a deployment whose license expired or went unusable, and that arrives on the FIRST serving
+        assertion as a problem document, not a GeoServices envelope. Naming the FeatureServer edit
+        entitlement there would send a whole-deployment block to the wrong owner, so the refused
+        path decides: only the GeoServices write operations claim the entitlement."""
+        result, receipt, state, _ = self.run_lane("license-blocked")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        assertion = [line for line in result.stderr.splitlines() if line.startswith("serving-assertion:")]
+        self.assertEqual(1, len(assertion), result.stderr)
+        # The lane never reaches the scratch layer: the first administrative read is already refused.
+        self.assertIn("path=/api/v1/admin/observability/migrations", assertion[0])
+        self.assertIn("status=402", assertion[0])
+        diagnosis = [line for line in result.stderr.splitlines() if line.startswith("serving-402:")]
+        self.assertEqual(1, len(diagnosis), result.stderr)
+        self.assertIn("entitlement=none", diagnosis[0])
+        self.assertNotIn("editing.featureserver-edits", diagnosis[0])
+        # The license state is still reported: the envelope is there, and the server refused it.
+        self.assertIn("presence=present", diagnosis[0])
+        self.assertIn("edition=Pro", diagnosis[0])
+        self.assertIn("validation=Expired", diagnosis[0])
+        self.assertFalse(state["row"])
 
     def test_a_lambda_function_error_says_which_side_failed_and_how(self):
         """Run 25 (34305710517) stopped on a bare "Lambda invocation failed": the receipt showed the
