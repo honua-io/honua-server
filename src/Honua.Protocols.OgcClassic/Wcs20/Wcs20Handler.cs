@@ -892,8 +892,10 @@ internal sealed class Wcs20Handler
     /// Resolves the bounded set of transformable CRS values for the supplied coverage
     /// native SRIDs. Seeds each native CRS plus the default identifiers (WGS84, WebMercator),
     /// keeps only those the CRS registry can resolve (== transformable via ST_Transform),
-    /// and returns both the SRID set (for GetCoverage validation) and the ordered EPSG-URI
-    /// list (for GetCapabilities advertisement) so the two always agree.
+    /// and returns both the SRID set (for GetCoverage validation) and the ordered CRS-URI
+    /// list (for GetCapabilities advertisement) so the two always agree. The advertised
+    /// identifiers are the ones this service actually honours, so SRID 4326 is advertised
+    /// as CRS84 (see <see cref="CreateCrsUri"/>).
     /// </summary>
     private async Task<WcsSupportedCrs> ResolveSupportedCrsAsync(
         IEnumerable<int?> nativeSrids,
@@ -926,7 +928,7 @@ internal sealed class Wcs20Handler
             {
                 case true:
                     srids.Add(seed);
-                    uris.Add(CreateEpsgUri(seed));
+                    uris.Add(CreateCrsUri(seed));
                     break;
             }
         }
@@ -1169,9 +1171,8 @@ internal sealed class Wcs20Handler
         }
 
         var coverageId = FormatCoverageId(coverage.LayerId);
-        // Coverage coordinates use x/y order. CRS84 declares longitude/latitude;
-        // EPSG:4326 would instead declare latitude/longitude to WCS clients.
-        var srsName = srid == 4326 ? SpatialReferenceHelpers.Crs84Uri : CreateEpsgUri(srid);
+        // Coverage coordinates use x/y order, which CRS84 declares (see CreateCrsUri).
+        var srsName = CreateCrsUri(srid);
         description = new XElement(Wcs + "CoverageDescription",
             new XAttribute(Gml + "id", coverageId),
             new XElement(Gml + "boundedBy",
@@ -2934,6 +2935,18 @@ internal sealed class Wcs20Handler
 
     private static string CreateEpsgUri(int srid)
         => FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{srid}");
+
+    /// <summary>
+    /// Maps an SRID to the CRS identifier this service both advertises and honours.
+    /// SRID 4326 becomes CRS84 because every coverage envelope, offset vector, SUBSET
+    /// and BBOX here is expressed in longitude/latitude order (TryCreateEnvelope always
+    /// parses east-north); EPSG:4326 declares the opposite latitude/longitude order, so
+    /// advertising it would invite reversed subsets from conforming clients. EPSG:4326
+    /// spellings stay accepted on request for compatibility -- they resolve to the same
+    /// SRID -- but the longitude/latitude identifier is the one clients are offered.
+    /// </summary>
+    private static string CreateCrsUri(int srid)
+        => srid == 4326 ? SpatialReferenceHelpers.Crs84Uri : CreateEpsgUri(srid);
 
     private static string FormatPosition(double x, double y)
         => string.Concat(FormatDouble(x), " ", FormatDouble(y));
