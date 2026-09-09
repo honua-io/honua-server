@@ -42,6 +42,14 @@ unrelated request hosts remain rejected when host validation is enabled.
 
 ## Managed API keys and Portal token exchange
 
+Managed API-key expiry rejects the credential while retaining its registry
+metadata for administrative list, effective-permissions and revoke operations.
+An expired or revoked record does not authorize a desktop request. Internal
+approval replay credentials still expire from Redis. Older registry entries
+need a successful validation, rotation or revocation before their original Redis
+expiry to adopt the new retention behavior; already removed records cannot be
+restored. See the [managed-key lifecycle guide](../../guides/secure/authentication.md).
+
 The default local admin bridge for `/sharing/rest/generateToken` accepts bootstrap
 admin credentials and managed keys with full administrative authority. Scoped
 service/layer keys, narrow admin or operations keys, and approved-operation replay

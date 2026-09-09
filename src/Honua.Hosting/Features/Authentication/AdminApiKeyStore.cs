@@ -247,7 +247,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         var now = _timeProvider.GetUtcNow();
         var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
         var record = new AdminApiKeyRecord(Guid.NewGuid(), name, key[..Math.Min(12, key.Length)], SHA256.HashData(Encoding.UTF8.GetBytes(key)), permissions.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).DefaultIfEmpty("admin:*").ToArray(), now, now, expiresAt, null, null, null, createdBy);
-        await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(record, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(record.ExpiresAt), When.NotExists).ConfigureAwait(false);
+        await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(record, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(record), When.NotExists).ConfigureAwait(false);
         await _database.SetAddAsync(IdsKey, record.Id.ToString("D")).ConfigureAwait(false);
         return new(record, key);
     }
@@ -261,7 +261,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         var now = _timeProvider.GetUtcNow();
         var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
         var updated = existing with { KeyPrefix = key[..Math.Min(12, key.Length)], KeyHash = SHA256.HashData(Encoding.UTF8.GetBytes(key)), UpdatedAt = now, RotatedAt = now, LastUsedAt = null };
-        await _database.StringSetAsync(BuildKey(id), JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated.ExpiresAt)).ConfigureAwait(false);
+        await _database.StringSetAsync(BuildKey(id), JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated)).ConfigureAwait(false);
         return new(updated, key);
     }
 
@@ -270,7 +270,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         var existing = await ReadAsync(id, cancellationToken).ConfigureAwait(false);
         if (existing is null) return null;
         var updated = existing with { UpdatedAt = _timeProvider.GetUtcNow(), RevokedAt = existing.RevokedAt ?? _timeProvider.GetUtcNow() };
-        await _database.StringSetAsync(BuildKey(id), JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated.ExpiresAt)).ConfigureAwait(false);
+        await _database.StringSetAsync(BuildKey(id), JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated)).ConfigureAwait(false);
         return updated;
     }
 
@@ -298,7 +298,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
                 // Do not unconditionally rewrite the snapshot read by ListAsync: a concurrent
                 // revoke or rotate must win, rather than being resurrected by validation.
                 transaction.AddCondition(Condition.StringEqual(key, JsonSerializer.Serialize(current, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord)));
-                _ = transaction.StringSetAsync(key, JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated.ExpiresAt));
+                _ = transaction.StringSetAsync(key, JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated));
                 if (await transaction.ExecuteAsync().ConfigureAwait(false))
                 {
                     return new(updated);
@@ -322,5 +322,18 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
 
     private static AdminApiKeyRecord? Read(RedisValue value) => value.HasValue ? JsonSerializer.Deserialize((string)value!, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord) : null;
     private static string BuildKey(Guid id) => $"{Prefix}{id:D}";
-    private static TimeSpan ResolveTtl(DateTimeOffset? expiresAt) => expiresAt is { } value && value > DateTimeOffset.UtcNow ? value - DateTimeOffset.UtcNow : TimeSpan.FromDays(3650);
+    private TimeSpan ResolveTtl(AdminApiKeyRecord record)
+    {
+        var remaining = record.ExpiresAt - _timeProvider.GetUtcNow();
+        if (remaining.HasValue && record.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+        {
+            // Internal replay credentials remain short-lived, including writes racing expiry.
+            return remaining.Value > TimeSpan.Zero ? remaining.Value : TimeSpan.FromMilliseconds(1);
+        }
+
+        // Credential validity is enforced by ValidateAsync. Keep managed-key metadata
+        // for the existing registry retention period after expiry (or the latest write).
+        var retention = TimeSpan.FromDays(3650);
+        return remaining is { } lifetime && lifetime > TimeSpan.Zero ? lifetime + retention : retention;
+    }
 }
