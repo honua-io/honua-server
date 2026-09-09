@@ -87,7 +87,7 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="Microsoft.OData.Client" Version="8.4.3" />
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="MySqlConnector" Version="2.4.0" />
     <PackageVersion Include="NATS.Net" Version="2.8.2" />
