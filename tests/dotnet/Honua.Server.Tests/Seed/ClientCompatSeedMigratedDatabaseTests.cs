@@ -15,6 +15,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Mixins;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +43,16 @@ namespace Honua.Server.Tests.Seed;
 /// contract the lane asserts (<c>test_service/0</c> serving exactly the ten client-compat-v1 names,
 /// <c>test_service/10</c> accepting a run-owned add/delete) is verified through the FeatureServer
 /// query path of a host bound to that database.
+/// <para>
+/// It also pins what a <c>402</c> on that write is, and is not. Certification run 28
+/// (34320738962) failed <c>test_service/10/addFeatures</c> with HTTP 200 and body code 402 — the
+/// GeoServices shape of a refusal — with every earlier assertion green. The same seed, the same
+/// migrated schema and the same payload are driven here against two hosts that differ only in
+/// licensing: the unlicensed one is refused with that exact body and commits nothing, the licensed
+/// one accepts the write. FeatureServer editing is the Pro entitlement
+/// <c>editing.featureserver-edits</c>, so a 402 in certification is a deployment license, never
+/// fixture drift, a bad payload, or a regression in the write path.
+/// </para>
 /// </summary>
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.Infrastructure)]
@@ -124,37 +135,7 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         // to stay applicable to the database it just produced, not only to the migrated one.
         await ExecuteAsync(connectionString, seedSql);
 
-        await using var factory = ConfiguredWebApplicationFactory.Create(
-            builder =>
-            {
-                // Migrations are already applied by the runner above; the host must read the
-                // database as it finds it, exactly as the certified Lambda image does.
-                builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-                builder.ConfigureAppConfiguration((_, configuration) =>
-                    configuration.AddInMemoryCollection(
-                        WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(
-                            connectionString,
-                            new Dictionary<string, string?>
-                            {
-                                ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword
-                            })));
-
-                // FeatureServer edits are gated on the Pro entitlement
-                // `editing.featureserver-edits`; an unlicensed host answers the lane's
-                // test_service/10 write with HTTP 402 rather than an edit result. The standing
-                // cert function carries a license, this in-process host does not, so grant the
-                // same edition here. Nothing else about the seed contract depends on licensing.
-                builder.ConfigureTestServices(services =>
-                {
-                    var license = new TestLicenseEntitlementService(HonuaEdition.Pro);
-                    services.RemoveAll<ILicenseEntitlementService>();
-                    services.RemoveAll<ILicenseStatusProvider>();
-                    services.AddSingleton<ILicenseEntitlementService>(license);
-                    services.AddSingleton<ILicenseStatusProvider>(license);
-                });
-            },
-            "Test");
+        await using var factory = CreateHost(connectionString, licensed: true);
 
         // No dev-auth bypass. The lane's `invoke` helper defaults to `authenticated=True` and
         // sends the cert admin key on every serving call (scripts/cloud/lambda-certification.py),
@@ -197,6 +178,47 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
                 geometry = new { x = -122.42, y = 37.76, spatialReference = new { wkid = 4326 } }
             }
         });
+        // --- the run-28 certification failure, reproduced ---------------------------------------
+        // Certification run 28 (34320738962) reached exactly this call with every earlier assertion
+        // green and failed with `status=200 expected=200 body-kind=json error=402`. Neither the
+        // seed's layer 10, nor the migrated schema, nor the lane's payload produces that: GeoServices
+        // FeatureServer editing is gated on the Pro entitlement `editing.featureserver-edits`
+        // (FeatureServerEditsHandler), and an unlicensed deployment refuses the write. Drive the
+        // identical request against an unlicensed host over this same seed and schema so the cause
+        // is pinned to licensing, and so the wire shape the lane has to diagnose — HTTP 200 with the
+        // whole refusal in the body — cannot drift without a test saying so.
+        await using (var unlicensed = CreateHost(connectionString, licensed: false))
+        {
+            using var unlicensedClient = unlicensed.CreateClient();
+            unlicensedClient.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
+            using var refused = await PostFormRawAsync(
+                unlicensedClient,
+                ScratchPath + "/addFeatures",
+                new Dictionary<string, string> { ["f"] = "json", ["features"] = features });
+            var refusedPayload = await refused.Content.ReadAsStringAsync();
+            refused.StatusCode.Should().Be(
+                HttpStatusCode.OK,
+                $"GeoServices signals a refused operation in the body, never in the status: {Truncate(refusedPayload)}");
+            using var refusal = JsonDocument.Parse(refusedPayload);
+            var error = refusal.RootElement.GetProperty("error");
+            error.GetProperty("code").GetInt32().Should().Be(
+                402,
+                "an unlicensed deployment refuses FeatureServer editing through the entitlement gate");
+            // The lane echoes the message and the details; the entitlement has to be named in one of
+            // them or a certification log still cannot say which side owns the failure.
+            var said = error.GetProperty("message").GetString() + " " + string.Join(
+                " ",
+                error.GetProperty("details").EnumerateArray().Select(item => item.GetString()));
+            said.Should().Contain(
+                "editing.featureserver-edits",
+                "the refusal must name the entitlement the deployment is missing");
+
+            // A gate, not a partial write: the scratch layer is untouched by the refusal.
+            var afterRefusal = await GetJsonAsync(client, markerQuery);
+            afterRefusal.RootElement.GetProperty("features").GetArrayLength()
+                .Should().Be(0, "a refused edit commits nothing");
+        }
+
         using var added = await PostFormAsync(client, ScratchPath + "/addFeatures", new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -234,10 +256,67 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         finalCount.RootElement.GetProperty("count").GetInt32().Should().Be(10);
     }
 
+    /// <summary>
+    /// A host bound to the already-migrated certification database, exactly as the certified Lambda
+    /// image reads it. <paramref name="licensed"/> is the only difference between the two hosts this
+    /// test drives: GeoServices FeatureServer editing is gated on the Pro entitlement
+    /// <c>editing.featureserver-edits</c> (<c>FeatureServerEditsHandler</c>), so an unlicensed host
+    /// refuses the lane's <c>test_service/10</c> write and a licensed one accepts it — over the same
+    /// seed, the same migrated schema and the same payload.
+    /// </summary>
+    private static WebApplicationFactory<Program> CreateHost(string connectionString, bool licensed)
+        => ConfiguredWebApplicationFactory.Create(
+            builder =>
+            {
+                // Migrations are already applied by the runner above; the host must read the
+                // database as it finds it, exactly as the certified Lambda image does.
+                builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(
+                        WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(
+                            connectionString,
+                            new Dictionary<string, string?>
+                            {
+                                ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword
+                            })));
+
+                if (!licensed)
+                {
+                    return;
+                }
+
+                // The standing cert function carries a license; this in-process host does not, so
+                // grant the same edition here. Nothing else about the seed contract depends on
+                // licensing — the fixture reads are Community surfaces.
+                builder.ConfigureTestServices(services =>
+                {
+                    var license = new TestLicenseEntitlementService(HonuaEdition.Pro);
+                    services.RemoveAll<ILicenseEntitlementService>();
+                    services.RemoveAll<ILicenseStatusProvider>();
+                    services.AddSingleton<ILicenseEntitlementService>(license);
+                    services.AddSingleton<ILicenseStatusProvider>(license);
+                });
+            },
+            "Test");
+
     private static async Task<JsonDocument> GetJsonAsync(HttpClient client, string path)
     {
         using var response = await client.GetAsync(path);
         return await ReadServingJsonAsync("GET", path, response);
+    }
+
+    /// <summary>
+    /// The raw response, for the one assertion that has to read a GeoServices refusal rather than
+    /// fail on it.
+    /// </summary>
+    private static async Task<HttpResponseMessage> PostFormRawAsync(
+        HttpClient client,
+        string path,
+        Dictionary<string, string> form)
+    {
+        using var content = new FormUrlEncodedContent(form);
+        return await client.PostAsync(path, content);
     }
 
     private static async Task<JsonDocument> PostFormAsync(
