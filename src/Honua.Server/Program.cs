@@ -1446,6 +1446,10 @@ Honua.Server.Features.Capabilities.DeploymentCapabilityProfileApplicationBuilder
 // Validate query, form, and selected header inputs before authentication and endpoint execution.
 app.UseInputValidation();
 
+// Authentication decisions and authenticated data must not survive credential changes
+// in client caches, including clients using non-standard credential headers.
+app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
+
 // Validate optional/required client certificates before the regular auth stack so
 // required mTLS surfaces can return machine-readable errors instead of TLS handshakes.
 app.UseHonuaClientCertificateAuthentication();

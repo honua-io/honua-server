@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Security;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Middleware;
 using Honua.ServiceDefaults;
 
@@ -60,6 +61,13 @@ internal static class StandardErrorResponseFormatter
 
         TryRecordRecentError(context, errorResponse);
         var result = FormatProtocolError(context, errorResponse, options);
+        if (errorResponse.StatusCode is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden)
+        {
+            // Apply after protocol formatting so AdditionalHeaders cannot make an
+            // authentication error cacheable, including GeoServices HTTP 200 errors.
+            AuthenticationResponseCachePolicy.PreventStorage(context);
+        }
+
         // The envelope's logical error code can differ from the transport status
         // (GeoServices errors are HTTP 200). Observe the selected result, including
         // protocol aliases, instead of inferring transport semantics from the path.
