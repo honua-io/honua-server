@@ -272,6 +272,31 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
                 // database as it finds it, exactly as the certified Lambda image does.
                 builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+
+                // Opt both hosts into the production provider composition. This test drives real
+                // FeatureServer traffic against a real PostGIS container instead of substituting
+                // providers the way WebAppFixture does, so it needs the composition root to run —
+                // and in the Test environment TestInfrastructureRegistrationPolicy skips it unless
+                // a host asks for it. Without the opt-in the host boots with no Postgres
+                // registrations at all, so IMetadataV2GraphProvider is missing, IResourceValidator
+                // cannot be activated, and every FeatureServer request dies in DI and answers the
+                // GeoServices 500 envelope BEFORE reaching the entitlement gate — which is how the
+                // 402 assertion below read a 500 on trunk (run 34383267811).
+                //
+                // Only the explicit opt-in makes that deterministic. Program resolves it from
+                // configuration but falls back to the process-wide
+                // HONUA_REGISTER_TEST_INFRASTRUCTURE environment variable, and
+                // ConfiguredWebApplicationFactory sets and restores the process-wide
+                // ASPNETCORE_ENVIRONMENT/DOTNET_ENVIRONMENT around host construction. Whether a
+                // host observes "Test" therefore depends on how its entry-point thread interleaves
+                // with another host's restore — the two hosts below landed on opposite sides of
+                // that race in CI, one composed and one not.
+                //
+                // UseSetting rather than ConfigureAppConfiguration because Program reads both
+                // values before ordinary app-configuration callbacks run (the same requirement
+                // DatabaseMigrationStartupTests documents).
+                builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true");
+                builder.UseSetting("DataSource:Provider", "postgres");
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(
                         WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(
