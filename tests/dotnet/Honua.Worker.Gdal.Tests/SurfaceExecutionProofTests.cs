@@ -7,6 +7,7 @@ using FluentAssertions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Xunit;
+using Xunit.Sdk;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -55,25 +56,97 @@ public sealed partial class RasterExecutionProofTests
     [InlineData("roughness", true)]
     public async Task Rugosity_PeakAndDepression_MatchesIndependentNeighborhoodStatistics(string operation, bool hole)
     {
-        static double Elevation(int row, int col) => (row, col) switch { (2, 2) => 12, (1, 1) => -4, _ => 2 };
-        var expected = Neighborhood(5, 5, hole, (row, col) =>
-        {
-            var center = Elevation(row, col);
-            var neighbors = (from r in Enumerable.Range(row - 1, 3)
-                             from c in Enumerable.Range(col - 1, 3)
-                             where r != row || c != col
-                             select Elevation(r, c)).ToArray();
-            return operation switch
-            {
-                "rugosity-tpi" => center - neighbors.Average(),
-                "rugosity-tri" => Math.Sqrt(neighbors.Sum(value => (value - center) * (value - center))),
-                "roughness" => Math.Max(center, neighbors.Max()) - Math.Min(center, neighbors.Min()),
-                _ => throw new ArgumentOutOfRangeException(nameof(operation))
-            };
-        });
         var output = await ExecuteRaster("surface." + operation,
             ("source", SurfaceInput(hole ? "peak-depression-hole.tif" : "peak-depression.tif")), ("windowRadius", "1"));
-        AssertSurface(output, 5, 5, expected);
+        AssertSurface(output, 5, 5, RugosityExpected(operation, hole));
+    }
+
+    /// <summary>
+    /// #3913 requires the TPI assertions to reject a plausible wrong-but-well-formed
+    /// output. The operation's prior coverage bound <c>surface.rugosity-tpi</c> to a
+    /// gdaldem subcommand string against a fake runner, so the defect it structurally
+    /// could not see is a dispatch that routes the operation to a sibling neighbourhood
+    /// statistic over the same DEM. Real execution of that sibling supplies the
+    /// substitute, so nothing here is a hand-built or corrupted raster.
+    /// </summary>
+    [Fact]
+    public async Task TpiOracle_SiblingNeighborhoodStatisticSubstituted_IsRejected()
+    {
+        var substituted = await ExecuteRaster("surface.rugosity-tri",
+            ("source", SurfaceInput("peak-depression.tif")), ("windowRadius", "1"));
+
+        // Every property the two operations share stays valid, so no structural check
+        // separates them: dimensions, CRS, all six affine ordinates, band count, Float32
+        // type, the -9999 sentinel and the border validity mask are the ones a correct
+        // TPI grid would carry.
+        AssertSurface(substituted, 5, 5, RugosityExpected("rugosity-tri", hole: false));
+
+        // Only the signed per-cell TPI oracle rejects it, at the first interior cell.
+        Action assert = () => AssertSurface(substituted, 5, 5, RugosityExpected("rugosity-tpi", hole: false));
+        assert.Should().Throw<XunitException>().Which.Message.Should().Contain("cell " + Depression);
+    }
+
+    /// <summary>
+    /// TPI's sign carries its meaning — a positive index is a peak, a negative one a
+    /// depression — so the proof must reject a magnitude-only index. That substitute is
+    /// maximally well formed: it preserves the grid, the pixel type, the sentinel, the
+    /// mask and even the peak cell's own value, and it is produced by mutating a real
+    /// execution's output in place rather than by synthesising a raster.
+    /// </summary>
+    [Fact]
+    public async Task TpiOracle_UnsignedMagnitudeSubstitutedForSignedIndex_IsRejected()
+    {
+        Directory.CreateDirectory(_scratch);
+        await File.WriteAllBytesAsync(Path.Join(_scratch, "tpi.tif"), await Execute("surface.rugosity-tpi",
+            ("source", SurfaceInput("peak-depression.tif")), ("windowRadius", "1")));
+        await Run("python3", ["-c", "from osgeo import gdal; d=gdal.Open('tpi.tif',gdal.GA_Update); " +
+            "b=d.GetRasterBand(1); a=b.ReadAsArray(); v=a!=b.GetNoDataValue(); a[v]=abs(a[v]); b.WriteArray(a); d=None"]);
+        var magnitude = await Decode(await File.ReadAllBytesAsync(Path.Join(_scratch, "tpi.tif")));
+
+        var expected = RugosityExpected("rugosity-tpi", hole: false);
+        expected[Peak].Should().Be(10.75, "the fixture's peak must carry a positive index");
+        expected[Depression].Should().Be(-7.25, "the fixture's depression must carry a negative index");
+
+        // The substitute is a complete, valid TPI-shaped grid; the peak is byte-identical
+        // to a correct result, so only the depression's classification is destroyed.
+        AssertSurface(magnitude, 5, 5, expected.Select(v => v == NoData ? v : Math.Abs(v)).ToArray());
+        magnitude.GetProperty("bands")[0].GetProperty("values")[Peak].GetDouble()
+            .Should().BeApproximately(10.75, 1e-5, "the peak is indistinguishable from a correct result");
+
+        Action assert = () => AssertSurface(magnitude, 5, 5, expected);
+        assert.Should().Throw<XunitException>().Which.Message.Should().Contain("cell " + Depression);
+    }
+
+    /// <summary>
+    /// The nodata half of the assertions needs its own rejection, because losing a
+    /// source hole is the defect class this surface family has already produced once:
+    /// #3916's viewshed reported its out-of-range domain as an ordinary computed value.
+    /// Dropping the source's nodata declaration makes real execution average the -9999
+    /// sentinel in as an elevation, which fills the hole and its neighbours with finite,
+    /// plausible numbers over an otherwise correct grid.
+    /// </summary>
+    [Fact]
+    public async Task TpiOracle_SourceHoleConsumedAsElevation_IsRejected()
+    {
+        Directory.CreateDirectory(_scratch);
+        File.Copy(SurfaceFixture("peak-depression-hole.tif"), Path.Join(_scratch, "hole.tif"), overwrite: true);
+        await Run("gdal_translate", ["-a_nodata", "none", "hole.tif", "undeclared.tif"]);
+        var output = await ExecuteRaster("surface.rugosity-tpi",
+            ("source", Convert.ToBase64String(await File.ReadAllBytesAsync(Path.Join(_scratch, "undeclared.tif")))),
+            ("windowRadius", "1"));
+
+        // A complete, well-formed TPI grid over the same extent, with the same border.
+        AssertGrid(output, 5, 5, 3857, [1000, 2, 0, 2000, 0, -2], 1);
+        var band = output.GetProperty("bands")[0];
+        band.GetProperty("type").GetString().Should().Be("Float32");
+        band.GetProperty("nodata").GetDouble().Should().Be(NoData);
+
+        // The hole's own cell is now reported as data: -4 - (12 + 6*2 + -9999)/8.
+        band.GetProperty("mask")[Depression].GetInt32().Should().Be(255, "the lost hole reads as a measurement");
+        band.GetProperty("values")[Depression].GetDouble().Should().BeApproximately(1242.875, 1e-3);
+
+        Action assert = () => AssertSurface(output, 5, 5, RugosityExpected("rugosity-tpi", hole: true));
+        assert.Should().Throw<XunitException>();
     }
 
     [Theory]
@@ -166,8 +239,40 @@ public sealed partial class RasterExecutionProofTests
         }
     }
 
-    private static string SurfaceInput(string name) => Convert.ToBase64String(
-        File.ReadAllBytes(Path.Join(AppContext.BaseDirectory, "Fixtures", "SurfaceProof", name)));
+    // Flat indices into the 5x5 peak/depression grid: the +10.75 peak at (2,2) and
+    // the -7.25 depression at (1,1), which is also the corner-hole fixture's hole.
+    private const int Peak = 12;
+    private const int Depression = 6;
+
+    private static string SurfaceFixture(string name)
+        => Path.Join(AppContext.BaseDirectory, "Fixtures", "SurfaceProof", name);
+
+    private static string SurfaceInput(string name) => Convert.ToBase64String(File.ReadAllBytes(SurfaceFixture(name)));
+
+    /// <summary>
+    /// Centre minus eight-neighbour mean (TPI), Riley TRI, and full-neighbourhood range
+    /// (roughness) over the peak/depression DEM, derived here from the fixture's declared
+    /// elevations. Nothing in this method reads an executor's output.
+    /// </summary>
+    private static double[] RugosityExpected(string operation, bool hole)
+    {
+        static double Elevation(int row, int col) => (row, col) switch { (2, 2) => 12, (1, 1) => -4, _ => 2 };
+        return Neighborhood(5, 5, hole, (row, col) =>
+        {
+            var center = Elevation(row, col);
+            var neighbors = (from r in Enumerable.Range(row - 1, 3)
+                             from c in Enumerable.Range(col - 1, 3)
+                             where r != row || c != col
+                             select Elevation(r, c)).ToArray();
+            return operation switch
+            {
+                "rugosity-tpi" => center - neighbors.Average(),
+                "rugosity-tri" => Math.Sqrt(neighbors.Sum(value => (value - center) * (value - center))),
+                "roughness" => Math.Max(center, neighbors.Max()) - Math.Min(center, neighbors.Min()),
+                _ => throw new ArgumentOutOfRangeException(nameof(operation))
+            };
+        });
+    }
 
     private static double[] Neighborhood(int width, int height, bool cornerHole, Func<int, int, double> interior, double nodata = NoData)
         => Enumerable.Range(0, width * height).Select(i =>
