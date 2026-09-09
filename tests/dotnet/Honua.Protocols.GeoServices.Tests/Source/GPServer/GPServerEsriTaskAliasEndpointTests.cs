@@ -33,6 +33,13 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;
+    private static readonly string[] ReservedPythonArguments =
+    [
+        "false", "none", "true", "and", "as", "assert", "async", "await", "break", "class",
+        "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global",
+        "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise",
+        "return", "try", "while", "with", "yield", "gis", "future", "estimate"
+    ];
 
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
@@ -72,6 +79,90 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             using var task = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
             task.RootElement.GetProperty("name").GetString().Should().Be(name);
             task.RootElement.GetProperty("parameters").ValueKind.Should().Be(JsonValueKind.Array);
+            var parameterNames = task.RootElement.GetProperty("parameters").EnumerateArray()
+                .Select(parameter => parameter.GetProperty("name").GetString()!).ToArray();
+            parameterNames.Select(parameter => parameter.ToLowerInvariant()).Should().OnlyHaveUniqueItems();
+            foreach (var parameterName in parameterNames)
+            {
+                parameterName.Should().MatchRegex("^[A-Za-z_][A-Za-z0-9_]*$");
+                ReservedPythonArguments
+                    .Should().NotContain(parameterName.ToLowerInvariant(),
+                        "Esri generates Python arguments and appends its own execution arguments");
+            }
+            foreach (var parameter in task.RootElement.GetProperty("parameters").EnumerateArray())
+            {
+                var defaultValue = parameter.GetProperty("defaultValue");
+                if (defaultValue.ValueKind == JsonValueKind.Null)
+                {
+                    continue;
+                }
+                switch (parameter.GetProperty("dataType").GetString())
+                {
+                    case "GPBoolean":
+                        defaultValue.ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+                        break;
+                    case "GPLong":
+                    case "GPDouble":
+                        defaultValue.ValueKind.Should().Be(JsonValueKind.Number);
+                        break;
+                    case "GPString":
+                        defaultValue.ValueKind.Should().Be(JsonValueKind.String);
+                        break;
+                }
+            }
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("from", false)]
+    [InlineData("HonuaParameter_66726F6D", false)]
+    [InlineData("honuaparameter_66726f6d", false)]
+    [InlineData("HonuaParameter_66726F6D", true)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_KeywordParameterAlias_PreservesCanonicalInputAndRejectsConflicts(string fromName, bool conflict)
+    {
+        var recordingService = new RecordingJobService();
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IGeoprocessingJobService>();
+            services.AddSingleton<IGeoprocessingJobService>(recordingService);
+        });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            var parameters = new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["input"] = "data:application/geo+json;base64," + Convert.ToBase64String(
+                    System.Text.Encoding.UTF8.GetBytes("{\"type\":\"FeatureCollection\",\"features\":[]}")),
+                [fromName] = "old_field",
+                ["to"] = "new_field"
+            };
+            if (conflict)
+            {
+                parameters["from"] = "different_field";
+            }
+            using var content = new FormUrlEncodedContent(parameters);
+            using var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/transform.attribute-rename/submitJob", content);
+            if (conflict)
+            {
+                await response.AssertGeoServicesErrorAsync(400);
+                recordingService.LastPlan.Should().BeNull();
+                return;
+            }
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            recordingService.LastPlan.Should().NotBeNull();
+            var step = recordingService.LastPlan!.Steps.Should().ContainSingle().Which;
+            step.ProcessId.Should().Be("transform.attribute-rename");
+            step.Inputs.Should().Contain("from", "old_field").And.Contain("to", "new_field");
+            step.Inputs.Keys.Should().NotContain(key => key.StartsWith("HonuaParameter_", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
         }
     }
 

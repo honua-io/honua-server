@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Xml.Linq;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Infrastructure.Helpers;
@@ -143,16 +144,18 @@ internal static class GPServerSoapEndpoints
 
     private static XElement? BuildDefaultValue(GPParameterInfo parameter)
     {
-        if (parameter.DefaultValue is null)
+        if (parameter.DefaultValue is not { } defaultValue || defaultValue.ValueKind == JsonValueKind.Null)
         {
             return null;
         }
 
-        // Scalar defaults are typed GPValue instances, not REST defaultValue text.
+        // Scalar defaults are typed GPValue instances, with invariant XML text.
         // Complex defaults need their own wire mapping before being advertised.
         return parameter.DataType is "GPString" or "GPLong" or "GPDouble" or "GPBoolean" or "GPDate"
             ? new XElement("Value", new XAttribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"), "tns:" + parameter.DataType),
-                new XElement("Value", parameter.DefaultValue))
+                new XElement("Value", defaultValue.ValueKind == JsonValueKind.String
+                    ? defaultValue.GetString()
+                    : defaultValue.GetRawText()))
             : null;
     }
 

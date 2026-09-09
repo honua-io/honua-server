@@ -265,6 +265,23 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("geometry.buffer", "geodesic", JsonValueKind.False)]
+    [InlineData("geometry.simplify", "preserveTopology", JsonValueKind.True)]
+    [InlineData("geometry.buffer", "wkb", JsonValueKind.Null)]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_ScalarDefault_HasItsDeclaredJsonType(string taskName, string parameterName, JsonValueKind expectedKind)
+    {
+        using var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{taskName}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var parameter = document.RootElement.GetProperty("parameters").EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == parameterName);
+        parameter.GetProperty("defaultValue").ValueKind.Should().Be(expectedKind,
+            "Esri's SDK generates Python defaults from the JSON value type");
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}")]

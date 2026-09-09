@@ -1619,18 +1619,19 @@ internal static class GPServerEndpoints
     internal static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
     {
         var parameters = new List<GPParameterInfo>(definition.Parameters.Count + definition.OutputArtifactKinds.Count);
+        var parameterPrefix = GPServerParameterNames.GetEncodingPrefix(definition);
         foreach (var parameter in definition.Parameters)
         {
             parameters.Add(new GPParameterInfo
             {
-                Name = parameter.Name,
+                Name = GPServerParameterNames.Publish(parameter.Name, parameterPrefix),
                 DisplayName = parameter.DisplayName,
                 Description = parameter.Description,
                 DataType = parameter.AcceptsGeoJsonDataUri
                     ? "GPFeatureRecordSetLayer"
                     : GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
                 Direction = "esriGPParameterDirectionInput",
-                DefaultValue = parameter.DefaultValue,
+                DefaultValue = GPServerParameterTranslation.TranslateDefaultValue(parameter),
                 ParameterType = parameter.Required
                     ? "esriGPParameterTypeRequired"
                     : "esriGPParameterTypeOptional",
@@ -1701,6 +1702,7 @@ internal static class GPServerEndpoints
         IReadOnlyDictionary<string, string> rawParameters)
     {
         var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var parameterPrefix = GPServerParameterNames.GetEncodingPrefix(definition);
         foreach (var (key, value) in rawParameters)
         {
             if (IsProtocolControlParameter(key))
@@ -1708,7 +1710,12 @@ internal static class GPServerEndpoints
                 continue;
             }
 
-            inputs[key] = value;
+            var canonicalName = GPServerParameterNames.Resolve(key, definition, parameterPrefix);
+            if (inputs.TryGetValue(canonicalName, out var previous) && !string.Equals(previous, value, StringComparison.Ordinal))
+            {
+                return new SubmissionPlanResult(null, "Conflicting values were supplied for a GPServer input parameter.", null);
+            }
+            inputs[canonicalName] = value;
         }
 
         // Additive ArcGIS-compatible input translation: rewrite esriGeometry JSON
@@ -1741,7 +1748,7 @@ internal static class GPServerEndpoints
             }
             try
             {
-                var schema = GPServerEsriOutputTranslation.DescribeInput(canonical, rawParameters.GetValueOrDefault(key));
+                var schema = GPServerEsriOutputTranslation.DescribeInput(canonical, inputs.GetValueOrDefault(key));
                 var geometryType = schema.TryGetProperty("geometryType", out var shape) ? shape.GetString() : null;
                 if (definition.ProcessId == "overlay.merge" && mergeGeometryType is not null &&
                     geometryType is not null && mergeGeometryType != geometryType)
