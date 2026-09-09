@@ -1448,7 +1448,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/PdalExecutionProofTests.cs",
           "test": "Translate_RealLas_PreservesPointsAttributesPrecisionAndCrs",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/PointCloudProof",
-          "assertion": "Required production-pinned PDAL and real LAS: independent binary decode asserts uncompressed LAS, count, all XYZ/attributes, scale, bounds, source metadata, CRS pass-through and analytical reprojection to EPSG:4979; oracle rejects changed intensity in valid LAS."
+          "assertion": "Required production-pinned PDAL and real LAS: independent binary decode asserts uncompressed LAS, count, all XYZ/attributes, scale, bounds, writer header metadata, CRS pass-through and analytical reprojection to EPSG:4979; oracle rejects changed intensity in valid LAS."
         }
       ]
     }
