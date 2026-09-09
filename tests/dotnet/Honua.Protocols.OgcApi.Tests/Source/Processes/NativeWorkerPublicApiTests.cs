@@ -143,11 +143,13 @@ public sealed class NativeWorkerPublicApiTests(RedisFixture redis)
     private static async Task<JsonDocument> PollUntilTerminalAsync(HttpClient client, string jobId)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(90);
+        string? lastResponse = null;
         while (DateTimeOffset.UtcNow < deadline)
         {
             using var response = await client.GetAsync($"/ogc/processes/jobs/{jobId}");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var body = await response.Content.ReadAsStringAsync();
+            lastResponse = body;
             using var doc = JsonDocument.Parse(body);
             var status = doc.RootElement.GetProperty("status").GetString();
             if (status is "successful" or "failed" or "dismissed")
@@ -158,7 +160,7 @@ public sealed class NativeWorkerPublicApiTests(RedisFixture redis)
             await Task.Delay(TimeSpan.FromMilliseconds(250));
         }
 
-        throw new TimeoutException($"Timed out waiting for job '{jobId}' to reach a terminal status.");
+        throw new TimeoutException($"Timed out waiting for job '{jobId}' to reach a terminal status. Last response: {lastResponse}");
     }
 
 }
