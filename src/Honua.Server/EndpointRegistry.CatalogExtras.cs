@@ -43,6 +43,7 @@ public static partial class EndpointRegistry
         new("POST", "/stac/search"),
 
         // OGC SensorThings API (STA v1.1) read surface (#1747)
+        new("GET", "/sta/v1.1"),
         new("GET", "/sta/v1.1/Things"),
         new("GET", "/sta/v1.1/Things({id})"),
         new("GET", "/sta/v1.1/Sensors"),

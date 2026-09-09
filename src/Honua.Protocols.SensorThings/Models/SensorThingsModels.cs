@@ -5,6 +5,38 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.SensorThings.Models;
 
+/// <summary>STA v1.1 service document describing available entity sets.</summary>
+public sealed record StaServiceDocument
+{
+    /// <summary>The entity sets exposed by this service.</summary>
+    [JsonPropertyName("value")]
+    public required IReadOnlyList<StaEntitySetLink> Value { get; init; }
+
+    /// <summary>Service settings and declared conformance requirements.</summary>
+    [JsonPropertyName("serverSettings")]
+    public required StaServerSettings ServerSettings { get; init; }
+}
+
+/// <summary>A named entity-set link in the STA service document.</summary>
+public sealed record StaEntitySetLink
+{
+    /// <summary>The SensorThings entity-set name.</summary>
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    /// <summary>The public URL of the entity set.</summary>
+    [JsonPropertyName("url")]
+    public required string Url { get; init; }
+}
+
+/// <summary>Settings exposed by the STA v1.1 service document.</summary>
+public sealed record StaServerSettings
+{
+    /// <summary>Requirements or complete requirement classes declared by this service.</summary>
+    [JsonPropertyName("conformance")]
+    public IReadOnlyList<string> Conformance { get; init; } = [];
+}
+
 /// <summary>
 /// STA v1.1 entity-collection envelope: a <c>value</c> array plus optional
 /// <c>@iot.count</c> and <c>@iot.nextLink</c> paging members.

@@ -24,6 +24,7 @@ using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
 using Npgsql;
 using NSubstitute;
+using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
@@ -91,25 +92,59 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
             """);
         AssertReceipt(upserted, 2, 0, "Upsert", "upsert-batch");
         rows = await Read();
-        rows.Should().HaveCount(3);
-        AssertRow(rows, "A", 5, -5, 6, null);
-        AssertRow(rows, "B", 24, 30, 40, "upsert-batch");
-        AssertRow(rows, "C", 36, 50, 60, "upsert-batch");
+        AssertUpsertedRows(rows);
+
+        // A successful append in place of keyed upsert produces valid persisted
+        // features and a success receipt, but must fail the same read-back oracle.
+        var wrongMode = await Run("append", "wrong-mode-batch", """
+            {"type":"FeatureCollection","features":[
+            {"type":"Feature","geometry":{"type":"Point","coordinates":[30,40]},"properties":{"key":"B","value":24}}]}
+            """);
+        AssertReceipt(wrongMode, 1, 0, "Append", "wrong-mode-batch");
+        var wrongRows = await Read();
+        Action assertWrongMode = () => AssertUpsertedRows(wrongRows);
+        assertWrongMode.Should().Throw<XunitException>();
+
+        var b = rows.Single(f => Attributes(f).GetProperty("key").GetString() == "B");
+        var wrongValue = b with
+        {
+            Attributes = b.Attributes.SetItem("attributes",
+            JsonSerializer.SerializeToElement(new { key = "B", value = 12, __pipeline_batch_id = "upsert-batch" }))
+        };
+        var wrongGeometry = b with { Geometry = new WKTReader().Read("POINT (40 30)").AsBinary() };
+        foreach (var corrupted in new[] { wrongValue, wrongGeometry })
+        {
+            var corruptedRows = rows.Select(f => f.Id == b.Id ? corrupted : f).ToArray();
+            Action assert = () => AssertUpsertedRows(corruptedRows);
+            assert.Should().Throw<XunitException>();
+        }
     }
 
     [IntegrationTest]
     public async Task HonuaLayerSink_FailingRow_RollsBackKeyDeletionAndAllInsertedRows()
     {
+        var original = (await Read()).Should().ContainSingle().Which;
         var failed = await Run("upsert", "failed-batch", """
             {"type":"FeatureCollection","features":[
             {"type":"Feature","geometry":{"type":"Point","coordinates":[70,80]},"properties":{"key":"A","value":70}},
             {"type":"Feature","geometry":{"type":"Point","coordinates":[11,22]},"properties":{"key":"bad","value":-1}}]}
             """);
         failed.Result.Status.Should().Be(ExecutionJobStatus.Failed);
+        failed.Result.ErrorMessage.Should().Be("sink.honua-layer load failed: PostgresException.");
         failed.Artifacts.Should().BeEmpty();
         var rows = await Read();
-        rows.Should().ContainSingle();
+        rows.Should().ContainSingle().Which.Id.Should().Be(original.Id);
         AssertRow(rows, "A", 5, -5, 6, null);
+    }
+
+    private static void AssertUpsertedRows(Feature[] rows)
+    {
+        // Report the scalar count: formatting an entire Feature on failure walks
+        // default ImmutableArray metadata unrelated to this persistence oracle.
+        rows.Length.Should().Be(3);
+        AssertRow(rows, "A", 5, -5, 6, null);
+        AssertRow(rows, "B", 24, 30, 40, "upsert-batch");
+        AssertRow(rows, "C", 36, 50, 60, "upsert-batch");
     }
 
     private async Task<(JobExecutionResult Result, List<string> Artifacts)> Run(string mode, string batch, string input)
@@ -152,6 +187,11 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
 
     private async Task<Feature[]> Read()
     {
+        // WKB query output need not carry EWKB SRID metadata. Check the physical
+        // PostGIS geometry SRID separately from the canonical content read-back.
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand($"SELECT count(*) FROM \"{_schema}\".sinkproof WHERE geom IS NULL OR ST_SRID(geom) <> 4326", connection);
+        ((long)(await command.ExecuteScalarAsync())!).Should().Be(0);
         var snapshot = await _fixture.GetService<IMetadataV2GraphProvider>().GetCurrentAsync();
         var resource = snapshot.Index.ResourcesByStorageLayerId[_layerId];
         var publication = snapshot.Graph.Publications.First(p => p.ResourceId == resource.Metadata.Id && snapshot.IsRoutable(p));
@@ -174,6 +214,8 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
         var row = rows.Should().ContainSingle(f => Attributes(f).GetProperty("key").GetString() == key).Which;
         var properties = Attributes(row);
         properties.GetProperty("value").GetInt32().Should().Be(value);
+        properties.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
+            batch is null ? ["key", "value"] : new[] { "key", "value", "__pipeline_batch_id" });
         if (batch is not null)
         {
             properties.GetProperty("__pipeline_batch_id").GetString().Should().Be(batch);

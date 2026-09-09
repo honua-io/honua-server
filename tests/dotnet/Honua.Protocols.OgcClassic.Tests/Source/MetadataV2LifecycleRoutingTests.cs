@@ -66,12 +66,33 @@ public sealed class MetadataV2LifecycleRoutingTests
             "TryResolveResourceForLayer",
             BindingFlags.NonPublic | BindingFlags.Static);
         method.Should().NotBeNull();
-        object?[] arguments = [snapshot, 7, null];
 
-        var resolved = (bool)method!.Invoke(null, arguments)!;
+        // Bind the argument array to the live signature rather than a hard-coded arity:
+        // honua-server#4526 added the owning-service out parameter and this reflection
+        // call kept passing three arguments, so the case died with an opaque
+        // TargetParameterCountException instead of proving the retirement boundary.
+        // The resolver is invoked positionally, so a renamed or reordered parameter must
+        // fail here rather than silently feed a value into the wrong slot.
+        var parameters = method!.GetParameters();
+        parameters.Length.Should().BeGreaterThanOrEqualTo(3);
+        parameters[0].Name.Should().Be("snapshot");
+        parameters[1].Name.Should().Be("layerId");
+        parameters[2].Name.Should().Be("resource");
+        var arguments = new object?[parameters.Length];
+        arguments[0] = snapshot;
+        arguments[1] = 7;
+
+        var resolved = (bool)method.Invoke(null, arguments)!;
 
         resolved.Should().BeFalse();
-        arguments[2].Should().BeNull();
+        // Every out parameter must come back empty: neither the resource behind the
+        // retired binding nor the service that owns it may leak to the coverage route.
+        for (var index = 2; index < arguments.Length; index++)
+        {
+            arguments[index].Should().BeNull(
+                "out parameter '{0}' must stay empty when the binding is retired",
+                parameters[index].Name);
+        }
     }
 
     [UnitTest]

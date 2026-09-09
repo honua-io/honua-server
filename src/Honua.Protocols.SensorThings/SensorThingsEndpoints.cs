@@ -35,6 +35,13 @@ internal static class SensorThingsEndpoints
     /// </remarks>
     public static IEndpointRouteBuilder MapSensorThingsEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/sta/v1.1", HandleServiceRoot)
+            .WithDisplayName("STA Service Document")
+            .WithName("StaServiceDocument")
+            .WithSummary("Discover the available SensorThings entity sets")
+            .WithTags("SensorThings")
+            .Produces<StaServiceDocument>(200, "application/json");
+
         // Each route is a literal first argument to MapGet so the source-scan
         // governance can anchor every EndpointRegistry entry to a concrete
         // MapGet call; the typed {id:long} constraint normalises to {id}.
@@ -86,6 +93,26 @@ internal static class SensorThingsEndpoints
             .Produces(404);
 
     private static string StaBase(HttpContext context) => $"{BaseUrlResolver.GetBaseUrl(context)}{BasePath}";
+
+    private static IResult HandleServiceRoot(HttpContext context)
+    {
+        var staBase = StaBase(context);
+        // This preview adapter implements partial requirement classes. Do not
+        // advertise complete conformance classes or unimplemented entity sets.
+        var document = new StaServiceDocument
+        {
+            Value =
+            [
+                new() { Name = "Things", Url = $"{staBase}/Things" },
+                new() { Name = "Sensors", Url = $"{staBase}/Sensors" },
+                new() { Name = "ObservedProperties", Url = $"{staBase}/ObservedProperties" },
+                new() { Name = "Datastreams", Url = $"{staBase}/Datastreams" },
+                new() { Name = "Observations", Url = $"{staBase}/Observations" }
+            ],
+            ServerSettings = new StaServerSettings()
+        };
+        return Results.Json(document, SensorThingsJsonContext.Default.StaServiceDocument);
+    }
 
     private static string? NextLink(HttpContext context, StaQueryOptions options, int returnedCount)
     {

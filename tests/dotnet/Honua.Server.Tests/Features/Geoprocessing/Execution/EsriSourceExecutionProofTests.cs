@@ -19,6 +19,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
@@ -28,7 +29,27 @@ public sealed class EsriSourceExecutionProofTests
     [Trait("Category", "LayerExecutionProof")]
     public async Task EsriSource_PagedFilteredFixture_PublishesEverySelectedFeatureExactlyOnce()
     {
-        using var handler = new FeatureServerFixture();
+        using var output = await ExecuteFixture("none");
+        AssertSelected(output.RootElement);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("duplicate-page")]
+    [InlineData("swapped-axes")]
+    [InlineData("changed-value")]
+    [Trait("Category", "LayerExecutionProof")]
+    public async Task EsriSource_WellFormedWrongFixtureOutput_FailsSemanticOracle(string defect)
+    {
+        using var output = await ExecuteFixture(defect);
+        Action assert = () => AssertSelected(output.RootElement);
+        assert.Should().Throw<XunitException>($"{defect} must fail the output oracle");
+    }
+
+    private static async Task<JsonDocument> ExecuteFixture(string defect)
+    {
+        using var handler = new FeatureServerFixture(defect);
         using var client = new HttpClient(handler);
         var rest = new ArcGisRestClient(client, NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("8.8.8.8") }));
@@ -74,25 +95,35 @@ public sealed class EsriSourceExecutionProofTests
         var result = await executor.ExecuteAsync(job, context, CancellationToken.None);
         result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
         artifacts.Should().ContainSingle();
-        using var json = JsonDocument.Parse(Convert.FromBase64String(artifacts[0][(artifacts[0].IndexOf(',') + 1)..]));
-        json.RootElement.GetProperty("featureCount").GetInt32().Should().Be(3);
-        var features = json.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        handler.Offsets.Should().Equal(0, 2);
+        return JsonDocument.Parse(Convert.FromBase64String(artifacts[0][(artifacts[0].IndexOf(',') + 1)..]));
+    }
+
+    private static void AssertSelected(JsonElement output)
+    {
+        output.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        output.GetProperty("srid").GetInt32().Should().Be(4326);
+        output.GetProperty("featureCount").GetInt32().Should().Be(3);
+        var features = output.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().HaveCount(3);
         features.Select(f => f.GetProperty("properties").GetProperty("OBJECTID").GetDouble()).Should().Equal(11d, 13d, 15d);
+        // Literal expected rows, independent of fixture serialization and conversion.
+        (string? Name, double Value, double X, double Y)[] expected =
+            [("station-11", 77, 11.25, -11.5), (null, 91, 13.25, -13.5), ("station-15", 105, 15.25, -15.5)];
         for (var i = 0; i < features.Length; i++)
         {
-            var id = 11 + 2 * i;
+            features[i].GetProperty("type").GetString().Should().Be("Feature");
             var props = features[i].GetProperty("properties");
-            props.GetProperty("name").GetString().Should().Be("station-" + id);
-            props.GetProperty("value").GetDouble().Should().Be(id * 7);
+            props.GetProperty("name").GetString().Should().Be(expected[i].Name);
+            props.GetProperty("value").GetDouble().Should().Be(expected[i].Value);
             props.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("OBJECTID", "name", "value");
             var geometry = features[i].GetProperty("geometry");
             geometry.GetProperty("type").GetString().Should().Be("Point");
-            geometry.GetProperty("coordinates").EnumerateArray().Select(c => c.GetDouble()).Should().Equal(id + 0.25, -id - 0.5);
+            geometry.GetProperty("coordinates").EnumerateArray().Select(c => c.GetDouble()).Should().Equal(expected[i].X, expected[i].Y);
         }
-        handler.Offsets.Should().Equal(0, 2);
     }
 
-    private sealed class FeatureServerFixture : HttpMessageHandler
+    private sealed class FeatureServerFixture(string defect) : HttpMessageHandler
     {
         public List<int> Offsets { get; } = [];
 
@@ -108,11 +139,15 @@ public sealed class EsriSourceExecutionProofTests
             Offsets.Add(offset);
             // The fixture's selected rows are specified independently of executor output.
             // Even IDs are inactive; row 9 predates the requested watermark.
-            int[] selected = [11, 13, 15];
+            int[] selected = defect == "duplicate-page" ? [11, 13, 13] : [11, 13, 15];
             var features = selected.Skip(offset).Take(2).Select(id => new
             {
-                attributes = new { OBJECTID = id, name = "station-" + id, value = id * 7 },
-                geometry = new { x = id + 0.25, y = -id - 0.5 }
+                attributes = new { OBJECTID = id, name = id == 13 ? null : "station-" + id, value = id * 7 + (defect == "changed-value" ? 1 : 0) },
+                geometry = new
+                {
+                    x = defect == "swapped-axes" ? -id - 0.5 : id + 0.25,
+                    y = defect == "swapped-axes" ? id + 0.25 : -id - 0.5
+                }
             }).ToArray();
             var body = JsonSerializer.Serialize(new
             {

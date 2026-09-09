@@ -301,6 +301,47 @@ serving-403: phase=deployed principal=override key=HONUA_LAMBDA_CERT_DENIED_KEY 
 function under test, which is an authentication defect, not a bootstrap gap. `authenticated=yes`
 with a nonzero `records` is the authorization leak the assertion exists to catch.
 
+## A Lambda function error has to say which side failed, and how
+
+Lambda reports an initialization failure, a handler exception and a timeout identically at the API:
+HTTP 200 with `FunctionError` set. The reason is only in the invocation's response payload, and the
+platform's own account of it is only in the log tail. Live run 25 (34305710517) — the first run on
+the Redis-enabled cert stack — stopped on nothing but `Lambda invocation failed`, and the receipt
+was the only thing that said where: `deniedKey.created` and `deniedKey.revoked` were both true and
+`sharedStoreVerified` was false, so the candidate had served well enough to mint this run's key and
+to revoke it, and the invocation that failed was the *first invoke of the standing alias*. Neither
+that, nor init-versus-handler, was anywhere in the job log.
+
+Every invoke on both stages now reports through one classifier:
+
+```
+serving-invoke: phase=denied-key-shared-store target=standing-alias path=/api/v1/admin/api-keys/<id>/effective-permissions status=200 executed-version=7 function-error=Unhandled kind=init error-type=Runtime.ExitError error-message=Error: Runtime exited with error: exit status 134
+serving-invoke-log: INIT_REPORT Init Duration: 7412.55 ms Phase: init Status: error Error Type: Runtime.ExitError
+```
+
+| Field | What it says |
+| --- | --- |
+| `phase` | The lane phase the invocation belongs to, as in every other serving diagnostic; `cold-start-evidence` for the shell stage's own `/healthz/live` invokes. |
+| `target` | **Which side of the certification failed**: `candidate` or `standing-alias`. Never a function name — the standing function is a fingerprint everywhere else in this evidence. It is not simply "was the name qualified": `serve()` shifts the standing alias to the newly published candidate version, so for the `candidate` phase the alias *is* the candidate. The version Lambda reports it executed decides the attribution, and the phase answers when the invoke never reached a version. |
+| `status` / `executed-version` / `function-error` | What the invoke API itself answered. `status=204` with no version is the dry-run answer the ninth live run got; `function-error=none` with a non-200 status is an API-level failure rather than a failing function. |
+| `kind` | `init` when the platform's `INIT_REPORT` ended in error or timeout, or the error type is an `Init*` one — the function never reached the handler. `timeout` when the runtime reported the invocation ran out of time. `handler` when the function started and threw. `runtime-exit` when the runtime *process* died (`Runtime.ExitError`, `Runtime.ExitCode`) and the tail did not establish the phase — Lambda raises those during an invocation as readily as during initialization, so the lane says the phase is unestablished rather than guessing one. `unknown` when Lambda returned no error document at all. |
+| `error-type` / `error-message` | From the runtime's own error document, redacted and capped exactly as every other echoed diagnostic: the message is dropped whole rather than filtered down to a fragment if either runtime key shows through it. |
+| `serving-invoke-log:` | The last **platform-authored** lines of that invocation's own log tail — `--log-type Tail` already carries it back with the response, so an initialization failure's report is in hand without a CloudWatch query, a delivery wait, or a permission on another function's log group. The tail also carries the application's own stdout, which is never echoed: `HONUA_ADMIN_PASSWORD` reaches the function as an `aws:secretsmanager:` reference, so the password the server resolves per request is a value no redaction set in the lane can hold. |
+
+`target` is the field to read first. `target=candidate` is a defect in the artifact under
+certification — including in the `candidate` phase, where the artifact is reached through the
+standing alias. `target=standing-alias` is not: the candidate is not what failed, and the cert
+stack itself has to be repaired before any run can produce a proof.
+
+Redaction for this diagnostic covers more than the two keys the lane holds. The lane clones the
+standing function's whole environment onto the candidate, so an inline connection string or token
+it never chose can come back inside a server-authored message; every cloned value long enough to
+be a credential joins the comparison set, as it already does for the shell stage's
+`create-function error:` reporter. Declared references (`aws:secretsmanager:<arn>`, `env:<name>`)
+are excluded: they are pointers the lane already reports publicly by kind, and treating them as
+secrets would drop every line that so much as names Secrets Manager — exactly the line a failure
+resolving a secret would print.
+
 ## An administrative 401 has to say which of its causes it is
 
 The lane authenticates as the bootstrap administrator: it sends `HONUA_LAMBDA_CERT_ADMIN_KEY` as
