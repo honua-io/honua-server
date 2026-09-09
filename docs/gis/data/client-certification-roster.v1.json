@@ -509,7 +509,7 @@
       "activationState": "activated",
       "rosterOrigin": "artifact",
       "sourceStatus": "Live nightly",
-      "clientVersionPolicy": "npm lockfile-resolved `maplibre-gl` version in tests/js-browser (currently 5.22.0).",
+      "clientVersionPolicy": "npm lockfile-resolved `maplibre-gl` version in tests/js-browser (currently 6.9.0).",
       "protocolSurfaces": [
         "mvt",
         "ogc-maps",

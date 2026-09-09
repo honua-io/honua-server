@@ -1,14 +1,18 @@
 // Shared helper for creating and managing a MapLibre GL JS map inside a
-// Playwright browser page. Injects maplibre-gl via CDN, creates the map,
-// and waits for the `idle` event (all tiles rendered).
+// Playwright browser page. Serves maplibre-gl off the local proxy origin,
+// creates the map, and waits for the `idle` event (all tiles rendered).
 
 import type { Page } from '@playwright/test';
 import { createServer } from 'node:http';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 
 // Resolve the local maplibre-gl distribution for injection.
 const maplibreDistDir = resolve(import.meta.dirname, '..', '..', 'node_modules', 'maplibre-gl', 'dist');
+// maplibre-gl ships ES modules only: the entry point imports a shared chunk and
+// derives its worker URL from `import.meta.url`, so the dist directory has to be
+// reachable over an origin rather than injected as one inline script.
+const MAPLIBRE_DIST_PREFIX = '/vendor/maplibre/';
 const API_PROXY_PREFIXES = ['/api/', '/tiles/', '/ogc/'];
 const proxyOrigins = new Map<string, Promise<string>>();
 
@@ -85,6 +89,25 @@ async function getProxyOrigin(upstreamOrigin: string): Promise<string> {
         return;
       }
 
+      if (url.pathname.startsWith(MAPLIBRE_DIST_PREFIX)) {
+        // `basename` keeps this confined to the dist directory.
+        const fileName = basename(url.pathname);
+        let body: Buffer;
+        try {
+          body = readFileSync(resolve(maplibreDistDir, fileName));
+        } catch {
+          res.writeHead(404);
+          res.end('Not found');
+          return;
+        }
+
+        res.writeHead(200, {
+          'Content-Type': fileName.endsWith('.css') ? 'text/css' : 'text/javascript',
+        });
+        res.end(body);
+        return;
+      }
+
       if (url.pathname === '/' || url.pathname === '/index.html') {
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(`
@@ -142,11 +165,14 @@ export async function createMap(page: Page, options: MapOptions): Promise<MapHan
   // through the local proxy without relying on permissive CORS from Honua.
   await page.goto(proxyOrigin);
 
-  // Inject maplibre-gl CSS and JS from local node_modules.
+  // Inject maplibre-gl CSS from local node_modules, then import the ES module
+  // from the proxy origin and publish its namespace as the `maplibregl` global
+  // the in-page `evaluate` calls below expect.
   const cssContent = readFileSync(resolve(maplibreDistDir, 'maplibre-gl.css'), 'utf-8');
   await page.addStyleTag({ content: cssContent });
-  const jsContent = readFileSync(resolve(maplibreDistDir, 'maplibre-gl.js'), 'utf-8');
-  await page.addScriptTag({ content: jsContent });
+  await page.evaluate(async (moduleUrl) => {
+    (window as any).maplibregl = await import(moduleUrl);
+  }, `${MAPLIBRE_DIST_PREFIX}maplibre-gl.mjs`);
 
   // Create the map and wait for idle.
   await page.evaluate(
