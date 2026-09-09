@@ -47,6 +47,20 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /sta/v1.1")]
+    [Trait("Tier", "Fast")]
+    public async Task ServiceRoot_WhenFeatureDisabled_Returns404()
+    {
+        foreach (var path in new[] { "/sta/v1.1", "/sta/v1.1/" })
+        {
+            using var response = await _fixture.Client.GetAsync(path);
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                "the discovery document must share the SensorThings experimental feature gate");
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /sta/v1.1/Things")]
     [Trait("Tier", "Fast")]
