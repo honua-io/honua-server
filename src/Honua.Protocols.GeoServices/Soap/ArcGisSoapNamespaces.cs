@@ -3,7 +3,7 @@
 
 using System.Xml.Linq;
 
-namespace Honua.Protocols.GeoServices.ImageServer;
+namespace Honua.Protocols.GeoServices.Soap;
 
 /// <summary>
 /// ArcGIS SOAP schema namespaces accepted by the bounded compatibility surface.

@@ -161,6 +161,11 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         using var soapResponse = await PostSoapAsync(client);
         soapResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var soapDescriptions = ReadSoapEntries(XDocument.Parse(await soapResponse.Content.ReadAsStringAsync()));
+        foreach (var service in soapDescriptions.Where(service => service.Type == "GPServer"))
+        {
+            new Uri(service.SoapUrl).AbsolutePath.Should().Be($"/services/{service.Name}/GPServer");
+            new Uri(service.RestUrl).AbsolutePath.Should().Be($"/rest/services/{service.Name}/GPServer");
+        }
         var soapEntries = soapDescriptions
             .Select(entry => new CatalogEntry(entry.Name, entry.Type, entry.RestUrl))
             .OrderBy(entry => entry.Name, StringComparer.Ordinal)

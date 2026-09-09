@@ -39,6 +39,8 @@ internal static class GPServerEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapGPServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGPServerSoapEndpoints();
+
         // Service info
         endpoints.MapGet(RouteBase,
                 static (HttpContext context, CancellationToken ct) => HandleServiceInfo(context, ct))
@@ -1236,7 +1238,7 @@ internal static class GPServerEndpoints
     // Shared helpers
     // -----------------------------------------------------------------------
 
-    private static Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
+    internal static Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
         HttpContext context,
         string serviceId,
         ILogger logger,
@@ -1569,7 +1571,7 @@ internal static class GPServerEndpoints
     /// table. See <see cref="BuildPublishedTaskNames"/> for the matching publication rule.
     /// </para>
     /// </summary>
-    private static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
+    internal static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
     {
         if (string.IsNullOrWhiteSpace(taskName))
         {
@@ -1605,7 +1607,7 @@ internal static class GPServerEndpoints
             .Any(process => string.Equals(process.ProcessId, taskName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
+    internal static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
     {
         var parameters = new List<GPParameterInfo>(definition.Parameters.Count + definition.OutputArtifactKinds.Count);
         foreach (var parameter in definition.Parameters)
