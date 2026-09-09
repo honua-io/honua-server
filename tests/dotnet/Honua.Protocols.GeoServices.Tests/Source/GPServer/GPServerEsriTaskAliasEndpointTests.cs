@@ -55,7 +55,30 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
-    public async Task ServiceInfo_TaskList_PublishesInternalIdAndEsriAliasWithoutDuplicates()
+    public async Task ServiceInfo_PublishedToolIdentifiers_ArePythonSafeAndRoundTrip()
+    {
+        using var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var catalog = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var names = catalog.RootElement.GetProperty("tasks").EnumerateArray()
+            .Select(item => item.GetString()!).ToArray();
+        names.Should().NotBeEmpty().And.OnlyHaveUniqueItems().And.Contain("Buffer");
+        foreach (var name in names)
+        {
+            name.Should().MatchRegex("^[A-Za-z_][A-Za-z0-9_]*$",
+                "Esri's Python SDK generates function declarations directly from REST task names");
+            using var detail = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{name}?f=json");
+            detail.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var task = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
+            task.RootElement.GetProperty("name").GetString().Should().Be(name);
+            task.RootElement.GetProperty("parameters").ValueKind.Should().Be(JsonValueKind.Array);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public async Task ServiceInfo_TaskList_PublishesSafeIdAndEsriAliasWithoutDuplicates()
     {
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer");
 
@@ -66,14 +89,14 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             .ToArray();
 
         // Both addressing forms are published for an aliased process...
-        tasks.Should().Contain("geometry.buffer");
+        tasks.Should().Contain("Honua_67656F6D657472792E627566666572");
         tasks.Should().Contain("Buffer");
-        // ...including a native job process, published under both its canonical id and
+        // ...including a native job process, published under both its encoded id and
         // its Esri-conventional alias because it declares the job entry point GPServer is.
-        tasks.Count(name => name == "raster.interpolate-kriging").Should().Be(1);
+        tasks.Count(name => name == "Honua_7261737465722E696E746572706F6C6174652D6B726967696E67").Should().Be(1);
         tasks.Count(name => name == "Kriging").Should().Be(1);
-        // ...a non-aliased Honua-specific job process keeps only its internal-ID name...
-        tasks.Should().Contain("analytics.cluster-managed");
+        // ...a non-aliased Honua-specific job process has an encoded name...
+        tasks.Should().Contain("Honua_616E616C79746963732E636C75737465722D6D616E61676564");
         // ...and no task name is ever published twice (duplicate-name handling).
         tasks.Should().OnlyHaveUniqueItems();
     }
@@ -186,10 +209,13 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     // submitJob via alias
     // -----------------------------------------------------------------------
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("Buffer")]
+    [InlineData("geometry.buffer")]
+    [InlineData("Honua_67656F6D657472792E627566666572")]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_ByEsriAlias_ResolvesToCanonicalProcess()
+    public async Task SubmitJob_ByEsriAlias_ResolvesToCanonicalProcess(string taskName)
     {
         var recordingService = new RecordingJobService();
         var submitFixture = new WebAppFixture()
@@ -212,7 +238,7 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             });
 
             var response = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/Buffer/submitJob", content);
+                $"/rest/services/{ServiceId}/GPServer/{taskName}/submitJob", content);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -226,7 +252,7 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             // ...while the protocol binding metadata keeps the addressed task name so
             // job-status/results/cancel round-trips under the same alias route.
             recordingService.LastProtocolMetadata.Should().Contain(
-                new KeyValuePair<string, string>("gpserver.taskName", "Buffer"));
+                new KeyValuePair<string, string>("gpserver.taskName", taskName));
         }
         finally
         {
@@ -258,10 +284,13 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     // execute via alias
     // -----------------------------------------------------------------------
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("Buffer")]
+    [InlineData("geometry.buffer")]
+    [InlineData("Honua_67656F6D657472792E627566666572")]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public async Task Execute_ByEsriAlias_RunsCanonicalProcessInline()
+    public async Task Execute_ByEsriAlias_RunsCanonicalProcessInline(string taskName)
     {
         var executeFixture = new WebAppFixture()
             .ConfigureServices(services =>
@@ -283,7 +312,7 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             });
 
             var response = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/Buffer/execute", content);
+                $"/rest/services/{ServiceId}/GPServer/{taskName}/execute", content);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -341,9 +370,10 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
                 .ToArray();
 
             // The custom process owns the name; the geometry.buffer alias is suppressed
-            // so "Buffer" is published exactly once with exactly one meaning.
-            tasks.Count(name => name == "Buffer").Should().Be(1);
-            tasks.Should().Contain("geometry.buffer");
+            // so its encoded name is published once and the raw route still resolves it.
+            tasks.Should().NotContain("Buffer");
+            tasks.Count(name => name == "Honua_427566666572").Should().Be(1);
+            tasks.Should().Contain("Honua_67656F6D657472792E627566666572");
             tasks.Should().OnlyHaveUniqueItems();
         }
         finally

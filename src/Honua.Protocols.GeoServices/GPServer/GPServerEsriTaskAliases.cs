@@ -13,14 +13,16 @@ namespace Honua.Protocols.GeoServices.GPServer;
 /// protocol adapters" design. Esri/ArcGIS clients browsing or calling a GPServer task
 /// list instead expect Esri-idiomatic tool names (e.g. <c>Buffer</c>). This lookup maps
 /// internal process IDs to their real, documented Esri GP tool-name equivalent so the
-/// GPServer <em>presentation</em> layer can publish both forms without changing the
+/// GPServer <em>presentation</em> layer can publish the alias alongside a Python-safe
+/// encoded process name without changing the
 /// engine's process-ID identity.
 /// </para>
 /// <para>
 /// Only processes with an unambiguous, well-documented Esri GP tool analog are mapped.
 /// Honua-specific operations (analytics/transform/source/sink/gdal/import/pcloud
 /// pipelines, managed-runtime duplicates, and processes whose Esri semantics would
-/// require guessing) intentionally keep only their internal-ID name. Where two internal
+/// require guessing) publish only their encoded name. Original process-ID routes
+/// remain available for existing callers. Where two internal
 /// processes could plausibly share the same Esri name (e.g. the single-geometry
 /// <c>geometry.*</c> primitives vs. the layer-aware <c>overlay.*</c>/<c>proximity.*</c>
 /// counterparts), the alias is assigned to whichever process's parameter contract most
