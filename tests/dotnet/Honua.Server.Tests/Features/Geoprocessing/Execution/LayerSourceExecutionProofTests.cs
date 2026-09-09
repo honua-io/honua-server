@@ -24,6 +24,7 @@ using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NSubstitute;
+using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
@@ -87,6 +88,20 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
             ("outFields", "objectid,name,category"), ("outSrid", "3857"));
         AssertSelected(output.RootElement, fieldsRestricted: true);
         output.RootElement.GetProperty("srid").GetInt32().Should().Be(3857);
+
+        // Challenge the same semantic oracle with real, well-formed artifacts from
+        // production execution with one request constraint deliberately lost.
+        foreach (var lostConstraint in new[] { "where", "bbox", "outFields", "outSrid" })
+        {
+            using var wrong = await Execute(executor, "source.honua-layer", ("layerId", "0"),
+                ("where", lostConstraint == "where" ? "" : "category = 'proof'"),
+                ("bbox", lostConstraint == "bbox" ? "" :
+                    lostConstraint == "outSrid" ? "10,25,18,40" : "1000000,3000000,2000000,5000000"),
+                ("outFields", lostConstraint == "outFields" ? "" : "objectid,name,category"),
+                ("outSrid", lostConstraint == "outSrid" ? "4326" : "3857"));
+            Action assert = () => AssertSelected(wrong.RootElement, fieldsRestricted: true);
+            assert.Should().Throw<XunitException>($"losing {lostConstraint} must fail the output oracle");
+        }
     }
 
     [IntegrationTheory]
@@ -130,6 +145,8 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
 
     private void AssertSelected(JsonElement output, bool fieldsRestricted)
     {
+        output.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        output.GetProperty("srid").GetInt32().Should().Be(3857);
         output.GetProperty("featureCount").GetInt32().Should().Be(1);
         var feature = output.GetProperty("features").EnumerateArray().Should().ContainSingle().Which;
         var attributes = feature.GetProperty("properties");
@@ -144,7 +161,10 @@ public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
         {
             attributes.GetProperty("description").GetString().Should().Be("private-field-must-not-appear");
         }
+        feature.GetProperty("type").GetString().Should().Be("Feature");
+        feature.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
         var coordinates = feature.GetProperty("geometry").GetProperty("coordinates");
+        coordinates.GetArrayLength().Should().Be(2);
         const double radius = 6378137;
         coordinates[0].GetDouble().Should().BeApproximately(radius * 12 * Math.PI / 180, 0.001);
         coordinates[1].GetDouble().Should().BeApproximately(radius * Math.Log(Math.Tan(Math.PI / 4 + 34 * Math.PI / 360)), 0.001);
