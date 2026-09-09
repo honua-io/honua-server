@@ -47,6 +47,18 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 
 The response's `data.key` is shown once — store it immediately. Manage the lifecycle with `POST /api/v1/admin/api-keys/{id}/rotate` (returns a new secret), `POST .../{id}/revoke`, and `GET .../{id}/effective-permissions`.
 
+Credential expiry denies authentication while preserving the managed key's
+metadata, so administrators can still inspect its expired or revoked status.
+Redis retains this metadata for 3,650 days after expiry, or after the latest
+registry write when there is no future expiry. Internal approval replay
+credentials remain short-lived and are removed at their credential expiry.
+
+After upgrading an existing Redis registry, older records retain their original
+Redis expiry until they are rewritten by successful authentication, rotation, or
+revocation. Rotate or revoke these keys before their original expiry to retain
+their metadata. Records already removed by Redis cannot be recovered by this
+change; create a replacement key if access is still needed.
+
 An empty permissions array is normalized to `admin:*` for legacy compatibility and
 therefore grants full admin access; do not use it for CI. Grant only the operations
 the job needs, and prefer a narrower service or layer grant when available.
