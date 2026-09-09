@@ -9751,6 +9751,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.LayerMetadata_LayerWithoutTimeInfo_DoesNotEmitTimeInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTemporalExtentEndpointTests.LayerMetadata_TimeAwareLayer_EmitsTimeInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MetadataClientParameterTests.FeatureServer_LayerMetadata_WithArcGisProClientParameters_ReturnsSameAsPlain",
+        "Honua.Server.Tests.Infrastructure.Authentication.AuthenticationResponseCacheTests.ProtectedMetadata_CredentialState_DoesNotPermitStorage",
+        "Honua.Server.Tests.Infrastructure.Authentication.AuthenticationResponseCacheTests.PublicMetadata_Anonymous_DoesNotDisableStorage",
         "Honua.Server.Tests.LimitsEnforcementTests.LayerMetadata_ExposesConfiguredLimits",
         "Honua.Server.Tests.MapServerSublayerRelationshipMetadataTests.FeatureServerLayerMetadata_SurfacesRelationshipsAndHasAttachments"
       ],
