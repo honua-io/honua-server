@@ -135,6 +135,10 @@ public sealed class StudioAiCertificationEndpointTests
         root.GetProperty("endpointIdentity").GetString().Should().Be("fixture-proxy");
         root.GetProperty("actionId").GetString().Should().Be("fixture-action");
         root.GetProperty("runNonce").GetString().Should().Be("fixture-run");
+        // The tenant is bound by the host from the authenticated request, so it appears in the
+        // signed envelope even though the caller never sent it -- and, for that same reason, it
+        // must not appear inside the signed copy of the caller's request.
+        root.GetProperty("tenantId").GetString().Should().Be("public");
         root.GetProperty("keyId").GetString().Should().Be("fixture-signer");
         root.GetProperty("provider").GetString().Should().Be("fixture");
         root.GetProperty("model").GetString().Should().Be("fixture-model");
