@@ -39,6 +39,18 @@ public sealed class GPServerSoapEndpointsTests
         }
 
         names.Should().Contain("Buffer");
+        foreach (var parameter in tasks.SelectMany(task => task.Element("ParameterInfo")!.Elements("GPParameterInfo")))
+        {
+            var value = parameter.Element("Value");
+            value.Should().NotBeNull("ArcPy needs a concrete parameter value even when its default is unset");
+            value!.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))!.Value
+                .Should().Be("tns:" + parameter.Element("DataType")!.Value);
+            if (parameter.Element("DataType")!.Value == "GPMultiValue")
+            {
+                value.Element("MemberDataType")!.Value.Should().Be("GPString");
+            }
+        }
+
         var canonicalBuffer = tasks.Single(task => task.Element("DisplayName")!.Value == "Buffer" && task.Element("Name")!.Value != "Buffer");
         var publishedName = canonicalBuffer.Element("Name")!.Value;
         using var detail = await PostAsync(client, "GetToolInfo", $"<ToolName>{publishedName}</ToolName>");
@@ -86,7 +98,8 @@ public sealed class GPServerSoapEndpointsTests
             var defaultValue = expected[index].GetProperty("defaultValue");
             if (defaultValue.ValueKind == JsonValueKind.Null)
             {
-                parameters[index].Element("Value").Should().BeNull();
+                parameters[index].Element("Value").Should().NotBeNull();
+                parameters[index].Element("Value")!.Element("Value").Should().BeNull();
             }
             else
             {
