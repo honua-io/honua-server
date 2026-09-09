@@ -45,7 +45,9 @@ public sealed class AuthenticationErrorCacheTests
         StandardErrorResponseFormatter.FormatError(context,
             new StandardErrorResponse(logicalStatus, "Denied", "Authentication decision"), options);
 
-        context.Response.GetTypedHeaders().CacheControl?.NoStore.Should().BeTrue();
+        var cacheControl = context.Response.GetTypedHeaders().CacheControl;
+        cacheControl.Should().NotBeNull();
+        cacheControl!.NoStore.Should().BeTrue();
     }
 
     [UnitTest]
@@ -58,7 +60,9 @@ public sealed class AuthenticationErrorCacheTests
 
         ((IStatusCodeHttpResult)result).StatusCode.Should().Be(200);
         ((ApiErrorResponse)((IValueHttpResult)result).Value!).Error.Code.Should().Be(498);
-        context.Response.GetTypedHeaders().CacheControl?.NoStore.Should().BeTrue();
+        var cacheControl = context.Response.GetTypedHeaders().CacheControl;
+        cacheControl.Should().NotBeNull();
+        cacheControl!.NoStore.Should().BeTrue();
     }
 
     [UnitTheory]
@@ -105,6 +109,7 @@ public sealed class AuthenticationResponseCacheTests
             body.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(expectedError);
         }
 
-        response.Headers.CacheControl?.NoStore.Should().BeTrue();
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
 }
