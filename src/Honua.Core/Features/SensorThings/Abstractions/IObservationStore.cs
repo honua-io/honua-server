@@ -12,6 +12,21 @@ namespace Honua.Core.Features.SensorThings.Abstractions;
 /// </summary>
 public interface IObservationStore
 {
+    /// <summary>Counts all Things in the current catalog, independently of paging.</summary>
+    Task<long> CountThingsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Counts all Sensors in the current catalog, independently of paging.</summary>
+    Task<long> CountSensorsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Counts all ObservedProperties in the current catalog, independently of paging.</summary>
+    Task<long> CountObservedPropertiesAsync(CancellationToken cancellationToken);
+
+    /// <summary>Counts all Datastreams in the current catalog, independently of paging.</summary>
+    Task<long> CountDatastreamsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Counts observations matching the datastream and filter, ignoring paging and ordering.</summary>
+    Task<long> CountObservationsAsync(ObservationQuery query, CancellationToken cancellationToken);
+
     /// <summary>Lists all datastreams in the catalog.</summary>
     /// <param name="skip">Number of leading rows to skip.</param>
     /// <param name="top">Maximum rows to return.</param>
