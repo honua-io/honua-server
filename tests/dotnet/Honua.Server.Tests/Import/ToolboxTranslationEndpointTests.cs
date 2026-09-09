@@ -900,10 +900,51 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_ProcessReachableOnlyThroughItsProtocol_IsNotCertifiedExecutable()
     {
-        // conversion.geometry-format validates cleanly but is reachable only through its
-        // owning synchronous protocol endpoint, and translated tools execute through the
+        // data-management.delete-features validates cleanly but is reachable only through
+        // its owning synchronous protocol endpoint, and translated tools execute through the
         // job runtime. A report that certifies it tells a migrating user a tool works when
         // it can never execute from a toolbox (#3040 review, #4409 entry points).
+        var response = await PostJsonAsync(
+            "/api/v1/admin/import/toolbox/translation/validate",
+            """
+            {
+              "toolboxName": "DataManagementToolbox",
+              "sourceFormat": "pyt",
+              "tools": [
+                {
+                  "toolName": "DeleteFeatures",
+                  "targetProcessId": "data-management.delete-features",
+                  "parameterMappings": [
+                    { "sourceName": "in_layer", "targetParameter": "layerId" },
+                    { "sourceName": "where_clause", "targetParameter": "where" }
+                  ]
+                }
+              ]
+            }
+            """);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = await ReadJsonAsync(response);
+        var tool = report.RootElement.GetProperty("tools")[0];
+
+        tool.GetProperty("classification").GetString().Should().Be("unsupported");
+
+        // ONLY the entry-point issue: the mapping above is complete and correct, so any
+        // parameter issue here means the mapping drifted from the catalog and is masking
+        // the check this test exists for (the validator reports the entry-point verdict
+        // only once the mapping itself is clean).
+        tool.GetProperty("issues").EnumerateArray()
+            .Select(issue => issue.GetProperty("code").GetString())
+            .Should().Equal("process-not-job-executable");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
+    public async Task ValidateTranslation_GeometryFormatNowHasAnExecutor_IsCertifiedExecutable()
+    {
+        // conversion.geometry-format was the protocol-only case above until its managed
+        // executor landed (#3936). It now declares the job entry point, so the translation
+        // report must certify it instead of reporting process-not-job-executable.
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
@@ -927,15 +968,8 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
         using var report = await ReadJsonAsync(response);
         var tool = report.RootElement.GetProperty("tools")[0];
 
-        tool.GetProperty("classification").GetString().Should().Be("unsupported");
-
-        // ONLY the entry-point issue: the mapping above is complete and correct, so any
-        // parameter issue here means the mapping drifted from the catalog and is masking
-        // the check this test exists for (the validator reports the entry-point verdict
-        // only once the mapping itself is clean).
-        tool.GetProperty("issues").EnumerateArray()
-            .Select(issue => issue.GetProperty("code").GetString())
-            .Should().Equal("process-not-job-executable");
+        tool.GetProperty("classification").GetString().Should().Be("translated");
+        tool.GetProperty("issues").GetArrayLength().Should().Be(0);
     }
 
     [IntegrationTest]
