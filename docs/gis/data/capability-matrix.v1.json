@@ -1653,7 +1653,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 47,
-      "provingTestCount": 426,
+      "provingTestCount": 428,
       "maturity": {
         "implemented": 47
       },
@@ -1939,7 +1939,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 30,
-      "provingTestCount": 226,
+      "provingTestCount": 227,
       "maturity": {
         "implemented": 30
       },
@@ -2030,7 +2030,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 290,
+      "provingTestCount": 291,
       "maturity": {
         "implemented": 19
       },
@@ -2187,10 +2187,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 15,
-      "provingTestCount": 34,
+      "entryCount": 16,
+      "provingTestCount": 38,
       "maturity": {
-        "preview": 15
+        "preview": 16
       },
       "noSurface": null,
       "cite": [],
