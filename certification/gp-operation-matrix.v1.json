@@ -653,6 +653,12 @@
           "test": "Statistics_ExplicitValidityMask_ExcludesMaskedCellsAndBandNoData",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/statistics-masked.tif",
           "assertion": "Real gdalinfo metadata and the shared one-pass GDAL statistics reader agree with independently derived masked populations {1,2,3,4} and {5,15,25}, including exact valid counts, extrema, mean and population standard deviations."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "StatisticsOracle_NoDataCountedAsData_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/statistics.tif",
+          "assertion": "Demonstrated negative: dropping the source nodata declaration makes real execution measure the sentinel, giving a well-formed two-band document with counts 6 and sentinel-dragged moments; the hand-derived valid-population oracles reject both bands."
         }
       ]
     },
@@ -780,6 +786,12 @@
           "test": "MapAlgebra_FirstSourceWithoutNoData_UndefinedDivisionUsesTypeDefault",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
           "assertion": "Real GDAL: Float64 and Int16 native nodata defaults preserve valid zeros, invalidate undefined division and mask a later source independently."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "MapAlgebraOracle_SourceNoDataTreatedAsData_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Demonstrated negative: real GDAL evaluates A+2*B over the committed unmasked sources, publishing a well-formed Float64 raster on the same grid whose two formerly masked cells carry 14 and 12; the union-of-masks oracle rejects it."
         }
       ]
     },
@@ -806,6 +818,18 @@
           "test": "Reclassify_SingleValuesRangesGapsAndNoData_MatchesEveryClass",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
           "assertion": "Real GDAL: exact Int16 classes across single values, half-open ranges, first-match overlap, gaps, default/preserve behavior, nodata overrides and full grid/mask metadata."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "ReclassifyOracle_InclusiveUpperBoundClasses_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/reclassify.tif",
+          "assertion": "Demonstrated negative: real GDAL executes the proof's table with closed-interval-equivalent upper bounds, publishing a valid Int16 raster on the same grid in which the boundary samples 2, 5 and 10 take 10, 30 and 40; the hand-derived class oracle rejects it."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "ReclassifyOracle_SourceNoDataRemappedAsData_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/reclassify.tif",
+          "assertion": "Demonstrated negative: dropping the source nodata declaration makes real GDAL classify the sentinel through its own remap entry and publish a fully valid band carrying class 99; the nodata-propagation oracle rejects it."
         }
       ]
     },
