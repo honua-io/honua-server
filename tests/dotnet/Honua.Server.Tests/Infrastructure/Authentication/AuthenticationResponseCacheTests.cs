@@ -87,6 +87,24 @@ public sealed class AuthenticationErrorCacheTests
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class AuthenticationResponseCacheTests
 {
+    [IntegrationTest]
+    [Operation(Operations.GetLayerInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task PublicMetadata_Anonymous_DoesNotDisableStorage()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(alphaServiceMetadata:
+                ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymous: true)));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/alpha/FeatureServer/0?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        body.RootElement.GetProperty("id").GetInt32().Should().Be(0);
+        (response.Headers.CacheControl?.NoStore ?? false).Should().BeFalse();
+    }
+
     [IntegrationTheory]
     [Operation(Operations.GetLayerInfo)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
