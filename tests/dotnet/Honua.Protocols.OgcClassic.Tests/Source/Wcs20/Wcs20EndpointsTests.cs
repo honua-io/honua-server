@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Globalization;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -31,6 +32,100 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs_GetCapabilities_CoverageSubtype_IsBoundUnprefixedQName()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var subtype = XDocument.Parse(content).Descendants(XName.Get("CoverageSubtype", "http://www.opengis.net/wcs/2.0")).Single();
+        subtype.Value.Should().Be("RectifiedGridCoverage");
+        subtype.GetDefaultNamespace().NamespaceName.Should().Be("http://www.opengis.net/gmlcov/1.0");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_DescribeCoverage_GeographicGrid_UsesLongitudeLatitudeAndPixelCenters()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var document = XDocument.Parse(content);
+        XNamespace gml = "http://www.opengis.net/gml/3.2";
+        var envelope = document.Descendants(gml + "Envelope").Single();
+        envelope.Element(gml + "lowerCorner")!.Value.Should().Be("-122.5 37.7");
+        envelope.Element(gml + "upperCorner")!.Value.Should().Be("-122.35 37.84");
+        document.Descendants().Attributes("srsName").Select(attribute => attribute.Value)
+            .Should().HaveCount(4).And.OnlyContain(value => value == "http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+        var position = document.Descendants(gml + "pos").Single().Value.Split(' ')
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture)).ToArray();
+        position[0].Should().BeApproximately(-122.498828125, 1e-10);
+        position[1].Should().BeApproximately(37.83890625, 1e-10);
+        var subtype = document.Descendants(XName.Get("CoverageSubtype", "http://www.opengis.net/wcs/2.0")).Single();
+        subtype.Value.Should().Be("RectifiedGridCoverage");
+        subtype.GetDefaultNamespace().NamespaceName.Should().Be("http://www.opengis.net/gmlcov/1.0");
+        document.Descendants(XName.Get("nilValue", "http://www.opengis.net/swe/2.0")).Single().Value.Should().Be("-9999");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_DescribeCoverage_RotatedProjectedGrid_CentersBothOffsetVectors()
+    {
+        var raster = CreateRasterInfo() with
+        {
+            Srid = 3857,
+            GeoTransform = [100, 10, 2, 200, 4, -20],
+            Extent = new RasterExtent { XMin = 100, YMin = -1080, XMax = 868, YMax = 456, Srid = 3857 }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var document = XDocument.Parse(content);
+        XNamespace gml = "http://www.opengis.net/gml/3.2";
+        document.Descendants(gml + "pos").Single().Value.Should().Be("106 192");
+        document.Descendants(gml + "offsetVector").Select(element => element.Value).Should().Equal("10 4", "2 -20");
+        document.Descendants().Attributes("srsName").Select(attribute => attribute.Value)
+            .Should().HaveCount(4).And.OnlyContain(value => value == "http://www.opengis.net/def/crs/EPSG/0/3857");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_DescribeCoverage_WithoutGeoTransform_CentersExtentDerivedGrid()
+    {
+        var raster = CreateRasterInfo() with
+        {
+            GeoTransform = null,
+            Width = 4,
+            Height = 2,
+            Extent = new RasterExtent { XMin = 10, YMin = 20, XMax = 18, YMax = 28, Srid = 4326 }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var document = XDocument.Parse(content);
+        XNamespace gml = "http://www.opengis.net/gml/3.2";
+        document.Descendants(gml + "pos").Single().Value.Should().Be("11 26");
+        document.Descendants(gml + "offsetVector").Select(element => element.Value).Should().Equal("2 0", "0 -4");
+        document.Descendants(gml + "high").Single().Value.Should().Be("3 1");
+    }
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]

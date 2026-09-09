@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
 using Honua.Infrastructure.Helpers;
@@ -8,6 +9,7 @@ using Honua.Infrastructure.Models;
 using Honua.Protocols.SensorThings.Models;
 using Honua.Protocols.SensorThings.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Protocols.SensorThings;
 
@@ -116,14 +118,25 @@ internal static class SensorThingsEndpoints
 
     private static string? NextLink(HttpContext context, StaQueryOptions options, int returnedCount)
     {
-        if (returnedCount < options.Top)
+        if (options.Top == 0 || returnedCount <= options.Top)
         {
             return null;
         }
 
         var staBase = BaseUrlResolver.GetBaseUrl(context);
         var path = context.Request.Path.Value ?? string.Empty;
-        return $"{staBase}{path}?$top={options.Top}&$skip={options.Skip + options.Top}";
+        // Preserve parsed system options only; arbitrary query parameters may contain credentials.
+        var query = new Dictionary<string, string?>
+        {
+            ["$top"] = options.Top.ToString(CultureInfo.InvariantCulture),
+            ["$skip"] = ((long)options.Skip + options.Top).ToString(CultureInfo.InvariantCulture),
+            ["$filter"] = options.Filter,
+            ["$orderby"] = options.OrderBy,
+            ["$select"] = options.Select,
+            ["$expand"] = options.Expand,
+            ["$count"] = options.Count ? "true" : null
+        };
+        return QueryHelpers.AddQueryString($"{staBase}{path}", query);
     }
 
     // ---- Things ----
@@ -132,11 +145,16 @@ internal static class SensorThingsEndpoints
     {
         var options = StaQueryOptions.FromRequest(context.Request);
         var ct = context.RequestAborted;
-        var things = await store.ListThingsAsync(options.Skip, options.Top, ct).ConfigureAwait(false);
+        var things = await store.ListThingsAsync(options.Skip, options.FetchTop, ct).ConfigureAwait(false);
         var staBase = StaBase(context);
-        var value = things.Select(t => StaEntityMapper.MapThing(t, staBase)).ToList();
+        var value = things.Take(options.Top).Select(t => StaEntityMapper.MapThing(t, staBase)).ToList();
         return Results.Json(
-            new StaEntitySet<StaThing> { Value = value, NextLink = NextLink(context, options, value.Count) },
+            new StaEntitySet<StaThing>
+            {
+                Value = value,
+                Count = options.Count ? await store.CountThingsAsync(ct).ConfigureAwait(false) : null,
+                NextLink = NextLink(context, options, things.Count)
+            },
             SensorThingsJsonContext.Default.StaEntitySetStaThing);
     }
 
@@ -153,11 +171,16 @@ internal static class SensorThingsEndpoints
     private static async Task<IResult> HandleListSensors(HttpContext context, [FromServices] IObservationStore store)
     {
         var options = StaQueryOptions.FromRequest(context.Request);
-        var sensors = await store.ListSensorsAsync(options.Skip, options.Top, context.RequestAborted).ConfigureAwait(false);
+        var sensors = await store.ListSensorsAsync(options.Skip, options.FetchTop, context.RequestAborted).ConfigureAwait(false);
         var staBase = StaBase(context);
-        var value = sensors.Select(s => StaEntityMapper.MapSensor(s, staBase)).ToList();
+        var value = sensors.Take(options.Top).Select(s => StaEntityMapper.MapSensor(s, staBase)).ToList();
         return Results.Json(
-            new StaEntitySet<StaSensor> { Value = value, NextLink = NextLink(context, options, value.Count) },
+            new StaEntitySet<StaSensor>
+            {
+                Value = value,
+                Count = options.Count ? await store.CountSensorsAsync(context.RequestAborted).ConfigureAwait(false) : null,
+                NextLink = NextLink(context, options, sensors.Count)
+            },
             SensorThingsJsonContext.Default.StaEntitySetStaSensor);
     }
 
@@ -174,11 +197,16 @@ internal static class SensorThingsEndpoints
     private static async Task<IResult> HandleListObservedProperties(HttpContext context, [FromServices] IObservationStore store)
     {
         var options = StaQueryOptions.FromRequest(context.Request);
-        var properties = await store.ListObservedPropertiesAsync(options.Skip, options.Top, context.RequestAborted).ConfigureAwait(false);
+        var properties = await store.ListObservedPropertiesAsync(options.Skip, options.FetchTop, context.RequestAborted).ConfigureAwait(false);
         var staBase = StaBase(context);
-        var value = properties.Select(p => StaEntityMapper.MapObservedProperty(p, staBase)).ToList();
+        var value = properties.Take(options.Top).Select(p => StaEntityMapper.MapObservedProperty(p, staBase)).ToList();
         return Results.Json(
-            new StaEntitySet<StaObservedProperty> { Value = value, NextLink = NextLink(context, options, value.Count) },
+            new StaEntitySet<StaObservedProperty>
+            {
+                Value = value,
+                Count = options.Count ? await store.CountObservedPropertiesAsync(context.RequestAborted).ConfigureAwait(false) : null,
+                NextLink = NextLink(context, options, properties.Count)
+            },
             SensorThingsJsonContext.Default.StaEntitySetStaObservedProperty);
     }
 
@@ -196,11 +224,11 @@ internal static class SensorThingsEndpoints
     {
         var options = StaQueryOptions.FromRequest(context.Request);
         var ct = context.RequestAborted;
-        var datastreams = await store.ListDatastreamsAsync(options.Skip, options.Top, ct).ConfigureAwait(false);
+        var datastreams = await store.ListDatastreamsAsync(options.Skip, options.FetchTop, ct).ConfigureAwait(false);
         var staBase = StaBase(context);
 
         var value = new List<StaDatastream>(datastreams.Count);
-        foreach (var datastream in datastreams)
+        foreach (var datastream in datastreams.Take(options.Top))
         {
             value.Add(StaEntityMapper.MapDatastream(
                 datastream,
@@ -209,7 +237,12 @@ internal static class SensorThingsEndpoints
         }
 
         return Results.Json(
-            new StaEntitySet<StaDatastream> { Value = value, NextLink = NextLink(context, options, value.Count) },
+            new StaEntitySet<StaDatastream>
+            {
+                Value = value,
+                Count = options.Count ? await store.CountDatastreamsAsync(ct).ConfigureAwait(false) : null,
+                NextLink = NextLink(context, options, datastreams.Count)
+            },
             SensorThingsJsonContext.Default.StaEntitySetStaDatastream);
     }
 
@@ -293,18 +326,18 @@ internal static class SensorThingsEndpoints
             translation.Parameters,
             options.OrderByDescending,
             options.Skip,
-            options.Top);
+            options.FetchTop);
 
         var observations = await store.QueryObservationsAsync(query, context.RequestAborted).ConfigureAwait(false);
         var staBase = StaBase(context);
-        var value = observations.Select(o => StaEntityMapper.MapObservation(o, staBase)).ToList();
+        var value = observations.Take(options.Top).Select(o => StaEntityMapper.MapObservation(o, staBase)).ToList();
 
         return Results.Json(
             new StaEntitySet<StaObservation>
             {
                 Value = value,
-                Count = options.Count ? value.Count : null,
-                NextLink = NextLink(context, options, value.Count)
+                Count = options.Count ? await store.CountObservationsAsync(query, context.RequestAborted).ConfigureAwait(false) : null,
+                NextLink = NextLink(context, options, observations.Count)
             },
             SensorThingsJsonContext.Default.StaEntitySetStaObservation);
     }
