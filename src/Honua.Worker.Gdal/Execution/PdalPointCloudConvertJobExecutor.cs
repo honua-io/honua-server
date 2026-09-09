@@ -226,29 +226,29 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
 
             // Output is EPSG:4979 degrees, so the source's own scale (metres, for a projected
             // source) would be meaningless here. Pin a scale fine enough for geographic
-            // coordinates — 1e-7 degrees is ~1 cm. Zero offsets fit the complete
-            // longitude/latitude range in signed Int32 at this scale (180 / 1e-7 = 1.8e9 <
-            // 2^31-1); a forwarded projected offset in metres would not.
+            // coordinates — 1e-7 degrees is ~1 cm — and let the writer centre the integer range
+            // on the data with an automatic offset so the int32 point records cannot overflow.
             args.Add("--writers.las.scale_x=0.0000001");
             args.Add("--writers.las.scale_y=0.0000001");
-            args.Add("--writers.las.offset_x=0");
-            args.Add("--writers.las.offset_y=0");
-            // honua-server#4401's scale/offset forwarding is not lost by dropping the former
-            // `else` branch: `--writers.las.forward=all` below is a superset of `scale,offset`
-            // and now applies on BOTH paths, so a "decompress only" conversion still keeps the
-            // producer's scale instead of falling back to the LAS default 0.01. Z is not pinned
-            // here on purpose — it stays metric through the reprojection, so the forwarded
-            // source elevation scale/offset remain correct and keep the source's precision.
+            args.Add("--writers.las.scale_z=0.001");
+            args.Add("--writers.las.offset_x=auto");
+            args.Add("--writers.las.offset_y=auto");
+            args.Add("--writers.las.offset_z=auto");
+        }
+        else
+        {
+            // honua-server#4401: without this, `pdal translate` writes the LAS with its DEFAULT
+            // scale of 0.01 rather than the source's, silently quantising the decompressed cloud.
+            // For a geographic source that is 0.01 degrees — roughly 1.1 km of horizontal error on
+            // a verbatim "decompress only" conversion. Forwarding scale and offset preserves
+            // exactly the resolution the producer chose, whatever CRS the source is in. Found by
+            // the first test that ever executed real PDAL (PdalPointCloudRealCliTests).
+            args.Add("--writers.las.forward=scale,offset");
         }
 
         // Force an uncompressed LAS writer regardless of the output extension so
         // the managed LasPointCloudReader can parse the artifact directly.
         args.Add("--writers.las.compression=false");
-        // Preserve source precision, point format (RGB/GPS time), LAS header and
-        // user metadata. Explicit reprojection scale/offset options above win over
-        // forwarded values; the source elevation scale remains intact.
-        args.Add("--writers.las.forward=all");
-        args.Add("--writers.las.extra_dims=all");
 
         return args;
     }
