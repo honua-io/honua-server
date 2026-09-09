@@ -40,6 +40,21 @@ internal sealed record StaQueryOptions
     /// <summary>Number of leading rows to skip (<c>$skip</c>).</summary>
     public int Skip { get; init; }
 
+    /// <summary>
+    /// The <c>$skip</c> value that addresses the page after this one, or
+    /// <see langword="null"/> when that offset would exceed <see cref="int.MaxValue"/>.
+    /// The store pages on a 32-bit offset, so a wider continuation is one the server
+    /// could not consume: callers must not emit a link for it.
+    /// </summary>
+    public int? NextSkip
+    {
+        get
+        {
+            var next = (long)Skip + Top;
+            return next > int.MaxValue ? null : (int)next;
+        }
+    }
+
     /// <summary>Whether <c>$count=true</c> was requested.</summary>
     public bool Count { get; init; }
 
@@ -70,15 +85,18 @@ internal sealed record StaQueryOptions
         var query = request.Query;
 
         var top = DefaultTop;
-        if (TryGetInt(query, "$top", out var parsedTop) && parsedTop >= 0)
+        if (TryGetPagingValue(query, "$top", out var parsedTop) && parsedTop >= 0)
         {
-            top = Math.Min(parsedTop, MaxTop);
+            top = (int)Math.Min(parsedTop, MaxTop);
         }
 
         var skip = 0;
-        if (TryGetInt(query, "$skip", out var parsedSkip) && parsedSkip >= 0)
+        if (TryGetPagingValue(query, "$skip", out var parsedSkip) && parsedSkip >= 0)
         {
-            skip = parsedSkip;
+            // Clamp rather than reject: an offset past int.MaxValue is past every row a
+            // 32-bit store offset can address, and falling back to 0 would silently
+            // restart pagination at the first page instead of ending it.
+            skip = (int)Math.Min(parsedSkip, int.MaxValue);
         }
 
         var count = false;
@@ -105,10 +123,31 @@ internal sealed record StaQueryOptions
             ? value.ToString()
             : null;
 
-    private static bool TryGetInt(IQueryCollection query, string key, out int value)
+    /// <summary>
+    /// Reads a non-negative paging option as a 64-bit value. A well-formed digit string
+    /// too wide for <see cref="long"/> saturates to <see cref="long.MaxValue"/> so the
+    /// caller clamps it, instead of the parse failing and the option defaulting.
+    /// </summary>
+    private static bool TryGetPagingValue(IQueryCollection query, string key, out long value)
     {
         value = 0;
-        return query.TryGetValue(key, out var raw) &&
-            int.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        if (!query.TryGetValue(key, out var raw))
+        {
+            return false;
+        }
+
+        var text = raw.ToString().Trim();
+        if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
+        {
+            return true;
+        }
+
+        if (text.Length > 0 && text.All(char.IsAsciiDigit))
+        {
+            value = long.MaxValue;
+            return true;
+        }
+
+        return false;
     }
 }
