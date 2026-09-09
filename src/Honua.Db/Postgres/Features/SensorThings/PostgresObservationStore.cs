@@ -224,15 +224,40 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadObservedProperty(reader) : null;
     }
 
-    public async Task<IReadOnlyList<SensorThingsObservation>> QueryObservationsAsync(
-        ObservationQuery query,
-        CancellationToken cancellationToken)
+    public Task<long> CountThingsAsync(CancellationToken cancellationToken) =>
+        CountCatalogAsync(_thingTable, cancellationToken);
+
+    public Task<long> CountSensorsAsync(CancellationToken cancellationToken) =>
+        CountCatalogAsync(_sensorTable, cancellationToken);
+
+    public Task<long> CountObservedPropertiesAsync(CancellationToken cancellationToken) =>
+        CountCatalogAsync(_observedPropertyTable, cancellationToken);
+
+    public Task<long> CountDatastreamsAsync(CancellationToken cancellationToken) =>
+        CountCatalogAsync(_datastreamTable, cancellationToken);
+
+    private async Task<long> CountCatalogAsync(string table, CancellationToken cancellationToken)
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // The table is a schema-qualified internal catalog identifier, never request text.
+        await using var command = new NpgsqlCommand($"SELECT COUNT(*) FROM {table}", lease);
+        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
+    }
 
-        var sql = new System.Text.StringBuilder(
-            $"SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM {_observationTable}");
+    public async Task<long> CountObservationsAsync(ObservationQuery query, CancellationToken cancellationToken)
+    {
+        await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
+        var sql = new System.Text.StringBuilder($"SELECT COUNT(*) FROM {_observationTable}");
+        AppendObservationFilter(sql, query);
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql.ToString(), lease);
+        AddObservationFilterParameters(command, query);
+        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
+    }
 
+    private static void AppendObservationFilter(System.Text.StringBuilder sql, ObservationQuery query)
+    {
         var conditions = new List<string>();
         if (query.DatastreamId.HasValue)
         {
@@ -248,13 +273,10 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         {
             sql.Append(" WHERE ").Append(string.Join(" AND ", conditions));
         }
+    }
 
-        sql.Append(" ORDER BY phenomenon_time ").Append(query.OrderByDescending ? "DESC" : "ASC");
-        sql.Append(", id ").Append(query.OrderByDescending ? "DESC" : "ASC");
-        sql.Append(" OFFSET @skip LIMIT @top");
-
-        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql.ToString(), lease);
+    private static void AddObservationFilterParameters(NpgsqlCommand command, ObservationQuery query)
+    {
         if (query.DatastreamId is { } id)
         {
             command.Parameters.AddWithValue("datastream_id", NpgsqlDbType.Bigint, id);
@@ -266,7 +288,25 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
                 "p" + i.ToString(CultureInfo.InvariantCulture),
                 query.WhereParameters[i] ?? DBNull.Value);
         }
+    }
 
+    public async Task<IReadOnlyList<SensorThingsObservation>> QueryObservationsAsync(
+        ObservationQuery query,
+        CancellationToken cancellationToken)
+    {
+        await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
+
+        var sql = new System.Text.StringBuilder(
+            $"SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM {_observationTable}");
+
+        AppendObservationFilter(sql, query);
+        sql.Append(" ORDER BY phenomenon_time ").Append(query.OrderByDescending ? "DESC" : "ASC");
+        sql.Append(", id ").Append(query.OrderByDescending ? "DESC" : "ASC");
+        sql.Append(" OFFSET @skip LIMIT @top");
+
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql.ToString(), lease);
+        AddObservationFilterParameters(command, query);
         command.Parameters.AddWithValue("skip", NpgsqlDbType.Integer, Math.Max(0, query.Skip));
         command.Parameters.AddWithValue("top", NpgsqlDbType.Integer, Math.Max(0, query.Top));
 

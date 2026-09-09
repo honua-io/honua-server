@@ -34,6 +34,9 @@ internal sealed record StaQueryOptions
     /// <summary>Clamped page size (<c>$top</c>).</summary>
     public int Top { get; init; } = DefaultTop;
 
+    /// <summary>Fetch one extra row to detect continuation without emitting an empty final page.</summary>
+    public int FetchTop => Top == 0 ? 0 : Top + 1;
+
     /// <summary>Number of leading rows to skip (<c>$skip</c>).</summary>
     public int Skip { get; init; }
 
