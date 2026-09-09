@@ -324,17 +324,26 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("fail-fast: false",
             "one variant's failure must not cancel and hide the evidence for the others");
 
-        // Warm per-variant caches must survive the serial-to-matrix refactor; a
-        // renamed scope would silently make every leg cold for a build that
-        // takes tens of minutes cold and roughly a minute warm.
+        // PR verification, nightly and release builds share per-variant caches.
+        // Keep the architecture explicit so amd64 and arm64 exports cannot collide.
+        var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"));
+        var release = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/deploy-platform-images.yml"));
         foreach (var cacheScope in new[]
                  {
-                     "pr-aot-boundary",
-                     "pr-lambda-aot-boundary",
-                     "pr-functions-aot-boundary"
+                     "honua-aot-amd64",
+                     "honua-lambda-aot-amd64",
+                     "honua-functions-aot-amd64"
                  })
         {
             workflow.Should().Contain($"cache_scope: {cacheScope}");
+            var variantScope = cacheScope[..^"-amd64".Length];
+            var nightlyScope = variantScope == "honua-functions-aot"
+                ? cacheScope
+                : variantScope + "-${{ matrix.arch }}";
+            nightly.Should().Contain($"buildcache:{nightlyScope}", Exactly.Twice(),
+                "nightly must import and export the same per-variant cache as PR builds");
+            release.Should().Contain($"cache_scope: {variantScope}",
+                "release builds must share the same variant scope before appending their architecture");
         }
 
         workflow.Should().Contain("http://localhost:8080/healthz/live");
@@ -421,7 +430,6 @@ public sealed class ServingImageBoundaryTests
 
         // The deferral is only safe while those lanes really do build and
         // boundary-verify every production variant post-merge.
-        var nightly = File.ReadAllText(Path.Join(repositoryRoot, ".github/workflows/nightly-container-build.yml"));
         foreach (var productionVariant in new[]
                  {
                      "docker/Dockerfile.aot",
