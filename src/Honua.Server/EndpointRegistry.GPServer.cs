@@ -9,6 +9,9 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> GpServerEndpoints =>
     [
+        // ArcGIS SOAP toolbox discovery over the canonical process catalog.
+        new("POST", "/services/{serviceId}/GPServer"),
+
         // GPServer generic adapter (#723, #1262 sync execute)
         new("GET", "/rest/services/{serviceId}/GPServer"),
         new("POST", "/rest/services/{serviceId}/GPServer"),
