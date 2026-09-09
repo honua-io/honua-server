@@ -19,6 +19,35 @@ public sealed class GPServerSoapEndpointsTests
     private const string Soap12 = "http://www.w3.org/2003/05/soap-envelope";
     private const string ArcGis = "http://www.esri.com/schemas/ArcGIS/10.8";
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    public async Task GetToolInfos_ArcPyToolIdentifiers_AreValidUniqueAndRoundTrip()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var response = await PostAsync(client, "GetToolInfos");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var tasks = XDocument.Parse(await response.Content.ReadAsStringAsync()).Descendants("GPToolInfo").ToArray();
+        var names = tasks.Select(task => task.Element("Name")!.Value).ToArray();
+        names.Should().OnlyHaveUniqueItems();
+        foreach (var name in names)
+        {
+            // ArcPy 3.7 generates `def <Name>(...)` directly. Dots and hyphens
+            // in a canonical process id caused SyntaxError in the real import.
+            name.Should().MatchRegex("^[A-Za-z_][A-Za-z0-9_]*$");
+        }
+
+        names.Should().Contain("Buffer");
+        var canonicalBuffer = tasks.Single(task => task.Element("DisplayName")!.Value == "Buffer" && task.Element("Name")!.Value != "Buffer");
+        var publishedName = canonicalBuffer.Element("Name")!.Value;
+        using var detail = await PostAsync(client, "GetToolInfo", $"<ToolName>{publishedName}</ToolName>");
+        detail.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = XDocument.Parse(await detail.Content.ReadAsStringAsync()).Descendants(XName.Get("GetToolInfoResponse", ArcGis)).Single().Element("Result")!;
+        result.Element("Name")!.Value.Should().Be(publishedName);
+        result.Element("ParameterInfo")!.ToString().Should().Be(canonicalBuffer.Element("ParameterInfo")!.ToString());
+    }
+
     [IntegrationTheory]
     [InlineData(Soap11, "text/xml", ArcGis)]
     [InlineData(Soap12, "application/soap+xml", ArcGis)]
@@ -40,7 +69,7 @@ public sealed class GPServerSoapEndpointsTests
         tasks.Select(task => task.Element("Name")!.Value).Should().Contain("Buffer").And.NotContain("source.geojson");
         using var restResponse = await client.GetAsync("/rest/services/alpha/GPServer?f=json");
         using var rest = JsonDocument.Parse(await restResponse.Content.ReadAsStringAsync());
-        tasks.Select(task => task.Element("Name")!.Value).Should().Equal(rest.RootElement.GetProperty("tasks").EnumerateArray().Select(task => task.GetString()));
+        tasks.Should().HaveCount(rest.RootElement.GetProperty("tasks").GetArrayLength(), "SOAP must retain the complete published catalog");
         var buffer = tasks.Single(task => task.Element("Name")!.Value == "Buffer");
         buffer.Elements().Select(element => element.Name.LocalName).Should().Equal("Name", "DisplayName", "Category", "Help", "ParameterInfo");
         using var parameterResponse = await client.GetAsync("/rest/services/alpha/GPServer/Buffer?f=json");

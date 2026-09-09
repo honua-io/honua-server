@@ -3461,6 +3461,42 @@
       ]
     },
     {
+      "surfaceId": "gpserver-soap-discovery",
+      "displayName": "GeoServices SOAP GPServer Discovery",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices SOAP GPServer",
+      "canonicalIdentifier": "/services/{serviceId}/GPServer",
+      "parentSurfaceId": "gpserver-adapter",
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/services/{serviceId}/GPServer"
+      ],
+      "endpointContains": [],
+      "operationKeys": [
+        "GPServer::GetExecutionType",
+        "GPServer::GetResultMapServerName",
+        "GPServer::GetTaskInfos",
+        "GPServer::GetTaskNames",
+        "GPServer::GetToolInfo",
+        "GPServer::GetToolInfos",
+        "GPServer::GetToolNames"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "SOAP discovery integration tests cover the captured ArcPy envelope, task and parameter metadata, Python-safe tool identifiers with metadata round trips, service authorization, malformed envelopes and unsupported operations. SOAP execution and real-client certification are not claimed by this proof.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#4614",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "printing-tools",
       "displayName": "GeoServices REST PrintingTools",
       "surfaceKind": "http-route-family",

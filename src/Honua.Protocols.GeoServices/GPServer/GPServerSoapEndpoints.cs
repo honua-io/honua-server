@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text;
 using System.Xml.Linq;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Infrastructure.Helpers;
@@ -16,6 +17,10 @@ namespace Honua.Protocols.GeoServices.GPServer;
 /// </summary>
 internal static class GPServerSoapEndpoints
 {
+    private static readonly HashSet<string> PythonKeywords = new(
+        "False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield".Split(' '),
+        StringComparer.Ordinal);
+
     internal static void MapGPServerSoapEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/services/{serviceId}/GPServer", HandleRequestAsync)
@@ -79,7 +84,7 @@ internal static class GPServerSoapEndpoints
                     {
                         return Complete(scope, CreateSoapFault("This operation does not accept arguments.", StatusCodes.Status400BadRequest, soap));
                     }
-                    result = new XElement("Result", GPServerEndpoints.BuildPublishedTaskNames(catalog).Select(task => new XElement("String", task)));
+                    result = new XElement("Result", GPServerEndpoints.BuildPublishedTaskNames(catalog).Select(task => new XElement("String", ToSoapToolName(task))));
                     break;
                 case "GetToolInfo":
                     var arguments = operation.Elements().ToArray();
@@ -88,12 +93,14 @@ internal static class GPServerSoapEndpoints
                         return Complete(scope, CreateSoapFault("GetToolInfo requires one ToolName argument.", StatusCodes.Status400BadRequest, soap));
                     }
                     var taskName = arguments[0].Value;
-                    var definition = GPServerEndpoints.ResolveTaskDefinition(catalog, taskName);
+                    var canonicalName = GPServerEndpoints.BuildPublishedTaskNames(catalog)
+                        .FirstOrDefault(candidate => string.Equals(ToSoapToolName(candidate), taskName, StringComparison.Ordinal));
+                    var definition = canonicalName is null ? null : GPServerEndpoints.ResolveTaskDefinition(catalog, canonicalName);
                     if (definition is null || !GPServerExecutionPolicy.IsJobCallable(definition))
                     {
                         return Complete(scope, CreateSoapFault("The requested task was not found.", StatusCodes.Status404NotFound, soap));
                     }
-                    result = BuildToolInfo(GPServerEndpoints.BuildTaskInfo(taskName, definition));
+                    result = BuildToolInfo(GPServerEndpoints.BuildTaskInfo(canonicalName!, definition));
                     result.Name = "Result";
                     break;
                 case "GetExecutionType":
@@ -125,7 +132,7 @@ internal static class GPServerSoapEndpoints
 
     private static XElement BuildToolInfo(GPTaskInfoResponse task)
         => new("GPToolInfo",
-            new XElement("Name", task.Name),
+            new XElement("Name", ToSoapToolName(task.Name)),
             new XElement("DisplayName", task.DisplayName),
             new XElement("Category", task.Category),
             new XElement("Help", task.Description),
@@ -138,6 +145,17 @@ internal static class GPServerSoapEndpoints
                 new XElement("ParamType", parameter.ParameterType),
                 parameter.ChoiceList is null ? null : new XElement("ChoiceList", parameter.ChoiceList.Select(value => new XElement("String", value))),
                 BuildDefaultValue(parameter)))));
+
+    private static string ToSoapToolName(string name)
+    {
+        // ArcPy builds Python function declarations directly from SOAP Name.
+        // Keep conventional aliases such as Buffer; encode canonical ids with
+        // punctuation without collisions. The underscore reserves the encoded
+        // namespace because an unencoded name contains only letters/digits.
+        return name.Length > 0 && char.IsAsciiLetter(name[0]) && name.All(char.IsAsciiLetterOrDigit) && !PythonKeywords.Contains(name)
+            ? name
+            : "Honua_" + Convert.ToHexString(Encoding.UTF8.GetBytes(name));
+    }
 
     private static XElement? BuildDefaultValue(GPParameterInfo parameter)
     {
