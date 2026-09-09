@@ -322,15 +322,22 @@ serving-invoke-log: INIT_REPORT Init Duration: 7412.55 ms Phase: init Status: er
 | Field | What it says |
 | --- | --- |
 | `phase` | The lane phase the invocation belongs to, as in every other serving diagnostic; `cold-start-evidence` for the shell stage's own `/healthz/live` invokes. |
-| `target` | **Which side of the certification failed**: `candidate` for the per-run function, `standing-alias` for the qualified standing alias. Never a function name — the standing function is a fingerprint everywhere else in this evidence, and the alias qualifier is what separates the two targets the lane invokes. |
+| `target` | **Which side of the certification failed**: `candidate` for code published by this run, `standing-alias` for the standing alias serving the version it already stood on. Never a function name — the standing function is a fingerprint everywhere else in this evidence. It is not read off the alias qualifier alone: in the `candidate` phase the lane has already shifted that alias onto this run's candidate version, so a qualified invoke there is `target=candidate`. Attribution follows what was serving, not how it was addressed; `phase` and `executed-version` still say it was reached through the alias. |
 | `status` / `executed-version` / `function-error` | What the invoke API itself answered. `status=204` with no version is the dry-run answer the ninth live run got; `function-error=none` with a non-200 status is an API-level failure rather than a failing function. |
-| `kind` | `init` when the platform's `INIT_REPORT` ended in error or timeout, or the error type is a `Runtime.*`/`Init*` one — the function never reached the handler. `timeout` when the runtime reported the invocation ran out of time. `handler` when the function started and threw. `unknown` when Lambda returned no error document at all. |
-| `error-type` / `error-message` | From the runtime's own error document, redacted and capped exactly as every other echoed diagnostic: the message is dropped whole rather than filtered down to a fragment if either runtime key shows through it. |
-| `serving-invoke-log:` | The last lines of that invocation's own log tail — `--log-type Tail` already carries it back with the response, so an initialization failure's output is in hand without a CloudWatch query, a delivery wait, or a permission on another function's log group. |
+| `kind` | `init` when the platform's `INIT_REPORT` ended in error or timeout, or the error type is an init-only `Runtime.*`/`Init*` one — the function never reached the handler. `runtime-exit` when the runtime process died (`Runtime.ExitError`, `Runtime.Unknown`) with no failed `INIT_REPORT`: that happens both during initialization and while serving, and nothing in the evidence separates the two, so the phase is left unclaimed rather than guessed. `timeout` when the runtime reported the invocation ran out of time. `handler` when the function started and threw. `unknown` when Lambda returned no error document at all. |
+| `error-type` / `error-message` | From the runtime's own error document, redacted and capped exactly as every other echoed diagnostic: the field is dropped whole rather than filtered down to a fragment. |
+| `serving-invoke-log:` | The last lines of that invocation's own log tail — `--log-type Tail` already carries it back with the response, so an initialization failure's output is in hand without a CloudWatch query, a delivery wait, or a permission on another function's log group. Line by line through the same redaction, because a tail is the function's own output rather than a field the lane parses. |
 
 `target` is the field to read first. `target=candidate` is a defect in the artifact under
 certification. `target=standing-alias` is not: the candidate is not what failed, and the cert stack
 itself has to be repaired before any run can produce a proof.
+
+What that redaction refuses is not just the two keys the lane was handed. The candidate runs on the
+standing function's environment, cloned verbatim, so this run holds the cert stack's PostGIS and
+Redis connection strings as well — and a function that cannot open one says so by quoting it. Every
+value in the environment paramfile the lane deployed is refused alongside the keys, in the driver
+and in the shell stage alike, which is the line `report_create_error` already drew for the AWS
+error it echoes. A dropped field reads `[redacted]`; the platform's own lines are unaffected.
 
 ## An administrative 401 has to say which of its causes it is
 

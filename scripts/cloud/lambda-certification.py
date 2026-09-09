@@ -137,10 +137,19 @@ def denied_key():
     return _denied["value"] or override_denied_key()
 
 
+# Every value the lane cloned into the candidate's environment. The candidate runs on the standing
+# function's own configuration, cloned verbatim, so this run holds the cert stack's PostGIS and Redis
+# connection strings too - and a server- or platform-authored diagnostic quotes them: a connection
+# that cannot be opened names the connection string it tried. They are refused alongside the keys
+# rather than only the keys, which is the line `report_create_error` already draws in the shell stage.
+_cloned = ()
+
+
 def runtime_secrets():
-    # Every credential this run holds, including the one it minted for itself.
+    # Every credential this run holds, including the one it minted for itself and every one it
+    # cloned into the environment it deployed.
     return tuple(value for value in (os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"],
-                                     os.environ.get(DENIED_KEY_VARIABLE, ""), _denied["value"]) if value)
+                                     os.environ.get(DENIED_KEY_VARIABLE, ""), _denied["value"]) if value) + _cloned
 
 
 # A whole key is not the only thing worth refusing to print. Filtering and truncating a diagnostic
@@ -158,9 +167,26 @@ def leaks(text, secret):
                for index in range(len(secret) - SECRET_FRAGMENT + 1))
 
 
+def remember_cloned_environment(directory):
+    """Refuse every value in the environment paramfile the lane deployed, not just the two keys.
+
+    Read from the paramfile rather than the API so both stages agree on the same set, and so a
+    reporting path cannot depend on an AWS call succeeding at the moment something has already
+    failed. A value no longer than a fragment is not a credential and treating one as a secret would
+    redact ordinary English out of every diagnostic: `HONUA_SKIP_MIGRATIONS=false` is in this file.
+    """
+    global _cloned
+    try:
+        variables = json.loads((Path(directory) / "environment.json").read_text() or "{}").get("Variables") or {}
+    except (OSError, ValueError, AttributeError):
+        variables = {}
+    _cloned = tuple({value for value in map(str, variables.values()) if len(value) > SECRET_FRAGMENT})
+
+
 def redacted(value, limit):
     # Server-authored diagnostics only: strip everything outside a narrow printable set and cap the
-    # length, then drop the whole field outright if either runtime key shows through. The comparison
+    # length, then drop the whole field outright if any secret this run holds shows through - the
+    # two runtime keys and every value cloned into the deployed environment. The comparison
     # runs against the ORIGINAL text as well as the filtered one, because filtering first is exactly
     # what would let a key survive the check in a form that no longer matches it.
     original = str(value)
@@ -215,6 +241,14 @@ def admin_credential_state(function):
 # died initializing, thrown while serving, or run out of time. Every one of those has a different
 # owner, so say which, from the invoke's own answer.
 INIT_ERROR_TYPE = re.compile(r"^(Runtime[.]|Init)", re.IGNORECASE)
+# Two of those types are not init-specific. A handler that kills or crashes its runtime process
+# *after* initialization is answered with `Runtime.ExitError` (or `Runtime.Unknown`) and no failed
+# INIT_REPORT, exactly as an init crash is; reading either as init would tell the operator the
+# function never reached the handler when it may have failed while serving. Nothing but the
+# platform's own INIT_REPORT separates the two, so when that is absent, say the process exited and
+# leave the phase unclaimed. Every other `Runtime.*`/`Init*` type can only be raised before the
+# handler ever runs, so this is an exclusion list rather than an enumeration that could miss one.
+RUNTIME_EXIT_ERROR_TYPE = re.compile(r"^Runtime[.](ExitError|Unknown)\b", re.IGNORECASE)
 TIMED_OUT = re.compile(r"task timed out", re.IGNORECASE)
 # The platform's own verdict on the initialization that ran in this environment.
 FAILED_INIT_REPORT = re.compile(r"^INIT_REPORT\b.*Status: (?:error|timeout)", re.MULTILINE)
@@ -224,8 +258,17 @@ INVOKE_LOG_TAIL_LINES = 20
 def invoke_target(function):
     # Which side of the certification the invocation landed on, never which function: the standing
     # function is a fingerprint everywhere else in this evidence, and the alias qualifier the lane
-    # appends is exactly what separates the two targets it invokes.
-    return "standing-alias" if ":" in function else "candidate"
+    # appends is what separates the two targets it invokes.
+    #
+    # The qualifier alone is not the answer, though. By the candidate phase the lane has already
+    # shifted that alias onto this run's candidate version, so a qualified invoke there is running
+    # the candidate's own code and belongs to the candidate's owner - and this field is what the
+    # operator guidance routes on, so labelling it `standing-alias` would send a candidate defect to
+    # the people who maintain the cert stack. Attribute by what is serving, not by how it was
+    # addressed; `phase` and `executed-version` still say it was reached through the alias.
+    if ":" not in function:
+        return "candidate"
+    return "candidate" if _phase == CANDIDATE_PHASE else "standing-alias"
 
 
 def invoke_log_tail(meta):
@@ -242,6 +285,8 @@ def invoke_failure_kind(payload, tail):
     if FAILED_INIT_REPORT.search(tail):
         return "init"
     error_type = str(payload.get("errorType", ""))
+    if RUNTIME_EXIT_ERROR_TYPE.match(error_type):
+        return "runtime-exit"
     if INIT_ERROR_TYPE.match(error_type):
         return "init"
     if TIMED_OUT.search(str(payload.get("errorMessage", ""))):
@@ -347,6 +392,10 @@ def ok(function, path, *, expect=200, **kwargs):
         require(False, "Serving HTTP assertion failed")
     return body
 
+
+# The one phase in which the standing alias is serving this run's candidate version rather than the
+# version it stood on: named so `invoke_target` and `serve` cannot drift apart on the spelling.
+CANDIDATE_PHASE = "candidate"
 
 _phase = "deployed"
 
@@ -569,6 +618,7 @@ def alias_state(function, alias, expected=None):
 
 def certify(directory, ephemeral, digest):
     function, alias = inputs()
+    remember_cloned_environment(directory)
     proof = {"result": "noProof", "candidateDigest": digest.split("@")[-1],
              "deniedKey": {"source": "override" if override_denied_key() else "minted",
                            "permissions": list(DENIED_KEY_PERMISSIONS), "name": None, "created": False,
@@ -634,7 +684,7 @@ def serve(directory, function, alias, ephemeral, digest, proof):
         rollback_needed = True  # Set BEFORE the call: an SDK timeout may follow a successful shift.
         backend("shift", function, alias, previous, candidate)
         proof["alias"]["afterVersion"] = alias_state(function, alias, candidate)
-        set_phase("candidate")
+        set_phase(CANDIDATE_PHASE)
         proof["candidate"] = smoke(target, candidate)
     finally:
         if changed and candidate is None:
@@ -701,10 +751,12 @@ if __name__ == "__main__":
         if sys.argv[1] == "invoke-failure":
             # The shell stage invokes the candidate directly for its cold-start evidence. Report its
             # failures through the same classifier and the same redaction rather than a second,
-            # drifting copy of both in bash.
+            # drifting copy of both in bash. It runs as its own process, so it is handed the scratch
+            # directory and loads the deployed environment's values into that redaction itself.
             set_phase("cold-start-evidence")
-            report_invoke_failure(sys.argv[2], sys.argv[3], json.loads(Path(sys.argv[4]).read_text() or "{}"),
-                                  sys.argv[5])
+            remember_cloned_environment(sys.argv[4])
+            report_invoke_failure(sys.argv[2], sys.argv[3], json.loads(Path(sys.argv[5]).read_text() or "{}"),
+                                  sys.argv[6])
         elif sys.argv[1] == "prepare":
             prepare(Path(sys.argv[2]))
         elif sys.argv[1] == "certify":

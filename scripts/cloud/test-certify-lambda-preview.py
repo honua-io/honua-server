@@ -14,6 +14,12 @@ SCRIPT_PATH = ROOT / "scripts/cloud/certify-lambda-preview.sh"
 SCRIPT = SCRIPT_PATH.read_text()
 WORKFLOW = (ROOT / ".github/workflows/lambda-preview-certification.yml").read_text()
 
+# A cloned setting that is a credential in its own right. Not every standing environment resolves
+# its store through Secrets Manager: an endpoint and its password can be inline, and the lane clones
+# the environment verbatim either way, so this is a secret the run holds without ever being handed
+# one. Nothing the lane prints may contain it.
+CLONED_CREDENTIAL = "offline-redis.cert.internal:6379,password=offline-cloned-canary"
+
 # One executable, symlinked as aws/crane/docker/dotnet/sleep. Unknown calls fail rather than succeed.
 STUB = r'''#!/usr/bin/env python3
 import base64, fcntl, json, os, sys
@@ -28,6 +34,7 @@ lock = open(str(path) + ".lock", "w")
 fcntl.flock(lock, fcntl.LOCK_EX)
 s = json.loads(path.read_text())
 fail = os.environ.get("STUB_FAIL", "")
+CLONED_CREDENTIAL = os.environ["STUB_CLONED_CREDENTIAL"]
 def arg(key, default=None):
     return args[args.index(key)+1] if key in args else default
 def emit(value):
@@ -183,7 +190,7 @@ if op == "get-function":
     if query == "Code.ResolvedImageUri": emit(image)
     if query == "Configuration.FunctionArn": emit("arn:offline:ephemeral")
     variables = {"ConnectionStrings__DefaultConnection": "aws:secretsmanager:offline-db",
-                 "ConnectionStrings__redis": "aws:secretsmanager:offline-redis",
+                 "ConnectionStrings__redis": CLONED_CREDENTIAL,
                  "HONUA_ADMIN_PASSWORD": "aws:secretsmanager:offline-admin", "HONUA_SKIP_MIGRATIONS": "false"}
     if fail == "missing-redis" or fail == "alias-missing-redis" and arg("--qualifier") == "live":
         variables.pop("ConnectionStrings__redis")
@@ -380,7 +387,11 @@ if headers: response["headers"] = headers
 # carries the platform's account of the initialization that produced it. "standing-invoke" fails
 # only the alias, which is live run 25 exactly: the candidate served and minted, and the first
 # invoke of the standing alias came back as a Lambda function error.
-function_error = fail == "invoke" or (fail == "standing-invoke" and ":" in function)
+# "candidate-invoke" fails only once the alias has been shifted onto this run's candidate version:
+# the qualified invoke is running the candidate's own code by then, however it was addressed.
+function_error = (fail in ("invoke", "runtime-exit", "cloned-secret")
+                  or (fail in ("standing-invoke", "standing-cloned-secret") and ":" in function)
+                  or (fail == "candidate-invoke" and phase == "candidate"))
 if function_error:
     log = ("INIT_REPORT Init Duration: 7412.55 ms\tPhase: init\tStatus: error\tError Type: Runtime.ExitError\n"
            "START RequestId: offline-id Version: " + version)
@@ -388,6 +399,19 @@ if function_error:
     # A server-authored diagnostic can quote a credential; the lane must never echo one. Only the
     # candidate's variant carries one, so the other still proves the message itself is reported.
     if fail == "invoke": message += " while reading " + os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
+    if fail in ("runtime-exit", "cloned-secret", "standing-cloned-secret"):
+        # The same error type, with the platform reporting this environment's initialization a
+        # success: a handler that kills its own runtime process while serving looks exactly like
+        # this, and nothing in the tail establishes the phase either way.
+        log = ("INIT_REPORT Init Duration: 7412.55 ms\tPhase: init\tStatus: ok\n"
+               "START RequestId: offline-id Version: " + version)
+    if fail in ("cloned-secret", "standing-cloned-secret"):
+        # An application log line quoting a cloned setting back, which is what a connection the
+        # function could not open does. That value is not a key the lane was handed; it is one the
+        # lane cloned out of the standing function and deployed, and it reaches the log tail
+        # through the function's own stdout rather than through any field the lane parses.
+        log += "\nfail: Honua.Redis: no connection is available to " + CLONED_CREDENTIAL
+        message = "RedisConnectionException: failed to connect to " + CLONED_CREDENTIAL
     response = {"errorType": "Runtime.ExitError", "errorMessage": message}
 response_path.write_text(json.dumps(response))
 meta = {"StatusCode":200,"ExecutedVersion":"99" if fail == "executed-version" else version,"LogResult":base64.b64encode(log.encode()).decode()}
@@ -442,7 +466,8 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                                              "stream_scoped": False, "stream_queries": [], "cold_streams": [],
                                              "deleted_tags": [], "keys": [], "revoked": []}))
             env = {**os.environ, "PATH": str(directory) + ":" + os.environ["PATH"], "STUB_STATE": str(state_path),
-                   "STUB_FAIL": failure, "STUB_INDEX": "", "HONUA_LAMBDA_SOURCE_IMAGE": "ghcr.io/honua-io/honua-server:nightly-lambda-aot-test-amd64",
+                   "STUB_FAIL": failure, "STUB_INDEX": "", "STUB_CLONED_CREDENTIAL": CLONED_CREDENTIAL,
+                   "HONUA_LAMBDA_SOURCE_IMAGE": "ghcr.io/honua-io/honua-server:nightly-lambda-aot-test-amd64",
                    "HONUA_LAMBDA_SOURCE_DIGEST": "sha256:" + "a" * 64, "HONUA_LAMBDA_SERVER_REVISION": "a" * 40,
                    "HONUA_LAMBDA_CERT_DENIED_KEY": "offline-scoped-key", "HONUA_LAMBDA_CERT_USE_DENIED_KEY_OVERRIDE": "false",
                    "HONUA_LAMBDA_ARCHITECTURE": "x86_64", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1",
@@ -459,6 +484,11 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
             receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
             self.assertNotIn("offline-sensitive-canary", result.stdout + result.stderr + json.dumps(receipt))
             self.assertNotIn("offline-scoped-key", result.stdout + result.stderr + json.dumps(receipt))
+            # A cloned setting is a credential this run holds too: the lane deployed the standing
+            # function's environment verbatim, so a diagnostic that quotes one back leaks it exactly
+            # as echoing a key would. This holds for every failure mode, not only the ones that
+            # arrange for it, because any of them can be answered with a message quoting the store.
+            self.assertNotIn("offline-cloned-canary", result.stdout + result.stderr + json.dumps(receipt))
             state = json.loads(state_path.read_text())
             # The key the lane mints for itself is a credential too: it never reaches the log or the receipt.
             for key in state["keys"]:
@@ -593,7 +623,7 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                         "query", "fixture-names", "create", "readback", "delete", "delete-remains",
                         "denial-status", "denial-body", "denial-records", "denial-nested", "scoped-unauthenticated", "scoped-allowed", "scoped-records", "executed-version", "weighted",
                         "denied-key-missing", "denied-key-leaks", "mint-refused", "mint-response-lost", "revoke-refused",
-                        "standing-invoke",
+                        "standing-invoke", "candidate-invoke", "runtime-exit", "cloned-secret", "standing-cloned-secret",
                         "function-delete", "log-delete", "version-delete", "ownership", "get-function-transient"):
             with self.subTest(failure=failure):
                 result, receipt, state, _ = self.run_lane(failure)
@@ -806,6 +836,72 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
         # canary is absent everywhere; this pins which field absorbed it.
         self.assertIn("error-message=[redacted]", diagnosis[0])
         self.assertFalse(state["function"] or state["logs"] or state["row"])
+
+    def test_a_shifted_alias_failure_is_attributed_to_the_candidate(self):
+        """By the candidate phase the standing alias serves this run's candidate version, so a
+        function error there is the candidate's, however it was addressed. Reading the alias
+        qualifier alone would label it standing-alias, which the operator table routes to the people
+        who maintain the cert stack - away from the artifact that actually failed."""
+        result, receipt, state, _ = self.run_lane("candidate-invoke")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        diagnosis = [line for line in result.stderr.splitlines() if line.startswith("serving-invoke:")]
+        self.assertEqual(1, len(diagnosis), result.stderr)
+        # The alias was invoked, and the candidate is what was running behind it.
+        self.assertIn("phase=candidate", diagnosis[0])
+        self.assertIn("target=candidate", diagnosis[0])
+        self.assertNotIn("target=standing-alias", diagnosis[0])
+        self.assertIn("executed-version=8", diagnosis[0])
+        self.assertFalse(state["function"] or state["logs"] or state["row"])
+        # The operator table says so, because that table is what routes the finding to an owner.
+        documentation = (ROOT / "scripts/cloud/lambda-certification.md").read_text()
+        self.assertIn("what was serving, not how it was addressed", documentation)
+
+    def test_a_runtime_exit_is_not_reported_as_an_initialization_failure(self):
+        """Runtime.ExitError is not init-specific: a handler that kills its own runtime process
+        while serving is answered with that type and no failed INIT_REPORT. Calling it init would
+        tell the operator the function never reached the handler."""
+        result, receipt, state, _ = self.run_lane("runtime-exit")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("noProof", receipt["serving"]["result"])
+        diagnosis = [line for line in result.stderr.splitlines() if line.startswith("serving-invoke:")]
+        self.assertEqual(1, len(diagnosis), result.stderr)
+        self.assertIn("error-type=Runtime.ExitError", diagnosis[0])
+        # The platform called this environment's initialization a success, so the phase is unclaimed.
+        self.assertIn("kind=runtime-exit", diagnosis[0])
+        self.assertNotIn("kind=init", diagnosis[0])
+        tail = [line for line in result.stderr.splitlines() if line.startswith("serving-invoke-log:")]
+        self.assertTrue(any("Status: ok" in line for line in tail), tail)
+        self.assertFalse(state["function"] or state["logs"] or state["row"])
+        documentation = (ROOT / "scripts/cloud/lambda-certification.md").read_text()
+        self.assertIn("`runtime-exit` when the runtime process died", documentation)
+
+    def test_a_cloned_setting_quoted_back_is_redacted_from_the_log_tail(self):
+        """The tail is the function's own stdout, not a field the lane parses, and the function runs
+        on the standing environment cloned verbatim: a connection it cannot open names the
+        connection string it tried. Both stages report through the same redaction, and that
+        redaction refuses every cloned value rather than only the two keys the lane was handed."""
+        # "cloned-secret" fails the shell stage's own cold-start invoke, which reports out of its own
+        # process; "standing-cloned-secret" fails the driver's, in-process.
+        for failure in ("cloned-secret", "standing-cloned-secret"):
+            with self.subTest(failure=failure):
+                result, receipt, state, _ = self.run_lane(failure)
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual("noProof", receipt["serving"]["result"])
+                diagnosis = [line for line in result.stderr.splitlines() if line.startswith("serving-invoke:")]
+                self.assertEqual(1, len(diagnosis), result.stderr)
+                tail = [line for line in result.stderr.splitlines() if line.startswith("serving-invoke-log:")]
+                # The failure is still diagnosable: the platform's own lines survive whole.
+                self.assertTrue(any("INIT_REPORT" in line for line in tail), tail)
+                # The line that quoted the store is dropped whole rather than filtered down to a
+                # fragment of it, and so is the error message that named it.
+                self.assertTrue(any("[redacted]" in line for line in tail), tail)
+                self.assertIn("error-message=[redacted]", diagnosis[0])
+                # run_lane asserts the canary is absent from every stream; this pins the fields.
+                self.assertNotIn("offline-cloned-canary", "\n".join(tail + diagnosis))
+                self.assertFalse(state["function"] or state["logs"] or state["row"])
+        documentation = (ROOT / "scripts/cloud/lambda-certification.md").read_text()
+        self.assertIn("Every\nvalue in the environment paramfile the lane deployed is refused", documentation)
 
     def test_diagnostic_redaction_compares_before_it_filters_or_truncates(self):
         """A key is matched against the original text, not the normalized-and-capped one, and a long

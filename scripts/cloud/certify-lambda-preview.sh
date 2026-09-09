@@ -515,7 +515,7 @@ for cold_start_attempt in $(seq 1 "$cold_start_attempts"); do
     echo "Lambda invocation failed" >&2
     printf '%s' "$invoke_meta" > "$scratch/invoke-meta.json"
     python3 "$script_dir/lambda-certification.py" invoke-failure candidate /healthz/live \
-      "$scratch/invoke-meta.json" "$scratch/response.json" || true
+      "$scratch" "$scratch/invoke-meta.json" "$scratch/response.json" || true
     exit 6
   fi
   if [[ "$(jq -r '.statusCode' "$scratch/response.json")" != "200" ]]; then
