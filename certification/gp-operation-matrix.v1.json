@@ -38,8 +38,8 @@
   "summary": {
     "total": 98,
     "byStatus": {
-      "proven": 91,
-      "partially-proven": 6,
+      "proven": 94,
+      "partially-proven": 3,
       "unproven": 1
     },
     "byEntryPoint": {
@@ -633,19 +633,28 @@
     },
     {
       "processId": "raster.statistics",
-      "status": "partially-proven",
+      "status": "proven",
       "entryPoint": "job",
       "evidence": [
         {
-          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterExecutorTests.cs",
-          "test": "RasterStatistics_PublishesScalarFromGdalinfoStdout",
-          "assertion": "Parses synthetic CLI stdout; no real raster computation."
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Statistics_TwoBandsWithDifferentNoData_MatchesHandDerivedPopulationMoments",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real gdalinfo: original band identities, exact valid counts, nodata metadata, min/max/mean and population standard deviation from hand-derived per-band moments."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Statistics_MultipleReadWindows_CountsExactlyWhenValidPercentRoundsTo100",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL: exact count 263168 over a 513x513 plane of ones with one nodata sample, across nine read windows; rounded valid percentage cannot serve as a count oracle."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Statistics_ExplicitValidityMask_ExcludesMaskedCellsAndBandNoData",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/statistics-masked.tif",
+          "assertion": "Real gdalinfo metadata and the shared one-pass GDAL statistics reader agree with independently derived masked populations {1,2,3,4} and {5,15,25}, including exact valid counts, extrema, mean and population standard deviations."
         }
-      ],
-      "gap": {
-        "issue": "https://github.com/honua-io/honua-server/issues/3934",
-        "missing": "Real per-band statistics over known cells/nodata."
-      }
+      ]
     },
     {
       "processId": "raster.histogram",
@@ -757,19 +766,22 @@
     },
     {
       "processId": "raster.map-algebra",
-      "status": "partially-proven",
+      "status": "proven",
       "entryPoint": "job",
       "evidence": [
         {
-          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterMapAlgebraExecutorTests.cs",
-          "test": "MapAlgebra_TwoSources_ProjectsBandVariables_AndPublishesGeoTiff",
-          "assertion": "Fake-runner expression arguments/artifact shape only."
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "MapAlgebra_AlignedSources_MatchesArithmeticAndInvalidCellMask",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL: independently computed A+2*B and A/B cells, union of source nodata masks, undefined division, Float64 type and grid identity."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "MapAlgebra_FirstSourceWithoutNoData_UndefinedDivisionUsesTypeDefault",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL: Float64 and Int16 native nodata defaults preserve valid zeros, invalidate undefined division and mask a later source independently."
         }
-      ],
-      "gap": {
-        "issue": "https://github.com/honua-io/honua-server/issues/3933",
-        "missing": "Real computed cells/type/nodata oracle."
-      }
+      ]
     },
     {
       "processId": "raster.spectral-index",
@@ -786,19 +798,16 @@
     },
     {
       "processId": "raster.reclassify",
-      "status": "partially-proven",
+      "status": "proven",
       "entryPoint": "job",
       "evidence": [
         {
-          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterReclassifyExecutorTests.cs",
-          "test": "Reclassify_RangeTable_BuildsNestedWhere_AndPublishesGeoTiff",
-          "assertion": "Fake-runner expression/artifact shape only."
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Reclassify_SingleValuesRangesGapsAndNoData_MatchesEveryClass",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL: exact Int16 classes across single values, half-open ranges, first-match overlap, gaps, default/preserve behavior, nodata overrides and full grid/mask metadata."
         }
-      ],
-      "gap": {
-        "issue": "https://github.com/honua-io/honua-server/issues/3931",
-        "missing": "Real exact class/default/nodata cell oracle."
-      }
+      ]
     },
     {
       "processId": "imagery.classify",
