@@ -12495,6 +12495,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.Datastreams_NextLink_RetainsObservationExpansion",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.Datastreams_ZeroTop_ReturnsTotalCountWithoutContinuation",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.EntitySets_ExactLastPage_HasNoContinuation",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Datastreams_ReturnsCollectionWithNavigationLinks"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
@@ -12524,6 +12527,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.DatastreamObservations_ZeroTop_ReturnsTotalCountWithoutContinuation",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.DatastreamObservations_OrderByDescending_ReturnsObservations"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
@@ -12539,6 +12543,12 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsFeatureGateTests.StaObservations_WhenFeatureDisabled_Returns404",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.EntitySets_ExactLastPage_HasNoContinuation",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.Observations_EmptyFilteredResult_HasZeroCountAndNoContinuation",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.Observations_FilteredCount_IgnoresSkipAndTop",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.Observations_NextLink_PreservesQueryAndReturnsTheNextFilteredPage",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.Observations_ZeroTopWithoutCount_HasNeitherCountNorContinuation",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.Observations_ZeroTop_ReturnsTotalCountWithoutContinuation",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Observations_InvalidFilter_Returns400",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Observations_ReturnsCollection",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Observations_WithResultFilter_FiltersByResult"
@@ -12589,6 +12599,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.EntitySets_ExactLastPage_HasNoContinuation",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.ObservedProperties_ZeroTop_ReturnsTotalCountWithoutContinuation",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.ObservedProperties_ReturnsCollection"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
@@ -12617,6 +12629,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.EntitySets_ExactLastPage_HasNoContinuation",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.Sensors_ZeroTop_ReturnsTotalCountWithoutContinuation",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Sensors_ReturnsCollection"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
@@ -12646,6 +12660,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsFeatureGateTests.StaThings_WhenFeatureDisabled_Returns404",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.EntitySets_ExactLastPage_HasNoContinuation",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsPagingEndpointsTests.Things_ZeroTop_ReturnsTotalCountWithoutContinuation",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Things_ReturnsConformanceShapedCollection"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
