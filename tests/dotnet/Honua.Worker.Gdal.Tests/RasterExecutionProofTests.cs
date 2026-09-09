@@ -542,18 +542,22 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         Directory.CreateDirectory(_scratch);
         File.Copy(Fixture("reclassify.tif"), Path.Join(_scratch, "reclassify.tif"), overwrite: true);
         await Run("gdal_translate", ["-a_nodata", "none", "reclassify.tif", "declared.tif"]);
+        // The caller still requests the proof's sentinel, so the output declares the
+        // same nodata value and the same Int16 type as the proof's own result. Only
+        // the validity mask and the sentinel cell's class differ, which is what makes
+        // the mask assertion - not a metadata mismatch - the thing that rejects this.
         var output = await ExecuteRaster("raster.reclassify",
             ("source", Convert.ToBase64String(await File.ReadAllBytesAsync(Path.Join(_scratch, "declared.tif")))),
             ("remap", "-2:7;0..2:10;2:20;2..5:30;6..10:40;-9999:99"),
-            ("dataType", "Int16"));
+            ("dataType", "Int16"), ("noData", "-9999"));
         AssertGrid(output, 4, 3, 4326, [10, 0.25, 0, 20, 0, -0.5], 1);
-        // The dropped sentinel now matches its own -9999:99 entry and publishes a
-        // fully valid band: class 99 where the proof requires propagated nodata.
-        // With no source sentinel to carry over, the output declares GDAL's Int16
-        // default, which no cell takes, so every cell stays valid.
-        AssertBand(output, 0, [7, 10, 10, 20, 30, 30, 5, 40, 40, 10, 99, 11], "Int16", short.MinValue);
+        // The dropped declaration lets the sentinel match its own -9999:99 entry, so
+        // cell 10 publishes class 99 and every cell is valid. No cell takes -9999.
+        AssertBand(output, 0, [7, 10, 10, 20, 30, 30, 5, 40, 40, 10, 99, 11], "Int16", NoData,
+            mask: [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]);
         // The hand-derived oracle, which requires the sentinel to survive as nodata
-        // even though the remap lists it, rejects the substitution.
+        // even though the remap lists it, rejects the substitution on the validity
+        // mask: it expects cell 10 masked, and the wrong result marks it valid.
         Action assert = () => AssertBand(output, 0,
             [7, 10, 10, 20, 30, 30, 5, 40, 40, 10, NoData, 11], "Int16", NoData);
         assert.Should().Throw<XunitException>();
@@ -566,16 +570,42 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         // the same cells, but each source's masked sample is measured instead of
         // propagated. Real execution produces it from the committed unmasked
         // fixtures, so the grid, Float64 type and declared sentinel stay valid.
+        // The caller still requests the proof's sentinel, so the output declares the
+        // same nodata value, type and grid as the proof's own result. Only the
+        // validity mask and the two recovered cells differ, which is what makes the
+        // mask assertion - not a metadata mismatch - the thing that rejects this.
         var output = await ExecuteRaster("raster.map-algebra",
             ("sources", Input("algebra-a-unmasked.tif") + "|" + Input("algebra-b-unmasked.tif")),
-            ("expression", "A + 2*B"), ("dataType", "Float64"));
+            ("expression", "A + 2*B"), ("dataType", "Float64"), ("noData", "-9999"));
         AssertGrid(output, 4, 2, 4326, [10, 0.25, 0, 20, 0, -0.5], 1);
         // A={2,4,0,10,6,-2,8,0} and B={1,0,0,2,3,-4,2,5} carry no mask, so every cell
         // is valid and the two formerly masked positions publish 10+2*2 and 6+2*3.
-        // With no first-source sentinel the output takes GDAL's Float64 default.
-        AssertBand(output, 0, [4, 4, 0, 14, 12, -10, 12, 10], "Float64", double.MaxValue);
-        // The hand-derived oracle, which requires the union of the input nodata
-        // masks, rejects the substitution.
+        AssertBand(output, 0, [4, 4, 0, 14, 12, -10, 12, 10], "Float64", NoData,
+            mask: [255, 255, 255, 255, 255, 255, 255, 255]);
+        // The hand-derived oracle, which requires the union of the input nodata masks,
+        // rejects the substitution on the validity mask: it expects cells 3 and 4
+        // masked, and the wrong result marks them valid.
+        Action assert = () => AssertBand(output, 0,
+            [4, 4, 0, NoData, NoData, -10, 12, 10], "Float64", NoData);
+        assert.Should().Throw<XunitException>();
+    }
+
+    [Fact]
+    public async Task MapAlgebraOracle_MisassociatedExpression_IsRejected()
+    {
+        // A plausible wrong-but-well-formed algebra result: the caller expression is
+        // grouped as (A+2)*B instead of A+2*B, the canonical precedence defect for an
+        // expression evaluator. Real execution over the masked sources keeps the grid,
+        // Float64 type, declared sentinel AND the union-of-masks validity identical to
+        // the proof's result, so nothing but the computed cells can reject it.
+        var output = await ExecuteRaster("raster.map-algebra",
+            ("sources", Input("algebra-a.tif") + "|" + Input("algebra-b.tif")),
+            ("expression", "(A+2)*B"), ("dataType", "Float64"));
+        AssertGrid(output, 4, 2, 4326, [10, 0.25, 0, 20, 0, -0.5], 1);
+        // A={2,4,0,nodata,6,-2,8,0}, B={1,0,0,2,nodata,-4,2,5}: (A+2)*B differs from
+        // A+2*B at cells 1, 5 and 6 while every masked position stays masked.
+        AssertBand(output, 0, [4, 0, 0, NoData, NoData, 0, 20, 10], "Float64", NoData);
+        // The hand-derived arithmetic oracle rejects it on the decoded cell values.
         Action assert = () => AssertBand(output, 0,
             [4, 4, 0, NoData, NoData, -10, 12, 10], "Float64", NoData);
         assert.Should().Throw<XunitException>();
@@ -599,24 +629,63 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         // Both counts reach the 6-cell area and both moments are dragged to the sentinel.
         AssertCountedPopulation(bands[0], 1, [0, 1, 2, 3, 4, NoData]);
         AssertCountedPopulation(bands[1], 2, [-5, NoData, 5, NoData, 15, 25]);
-        // The hand-derived valid-population oracles reject both bands.
+        // The hand-derived valid-population oracles reject both bands on validCount,
+        // which is the exact-count assertion #4407 added. The moment assertions are
+        // demonstrated separately, by a wrong result whose counts already agree, in
+        // StatisticsOracle_QuantizedSourceMatchesCountsButNotMoments_IsRejected.
         Action first = () => AssertStatistics(bands[0], 1, 5, 0, 4, 2, Math.Sqrt(2));
         first.Should().Throw<XunitException>();
         Action second = () => AssertStatistics(bands[1], 2, 4, -5, 25, 10, Math.Sqrt(125));
         second.Should().Throw<XunitException>();
     }
 
+    [Fact]
+    public async Task StatisticsOracle_QuantizedSourceMatchesCountsButNotMoments_IsRejected()
+    {
+        // A plausible wrong-but-well-formed statistics document: the moments are
+        // measured over a quantized derivative of the band - the shape a scalar
+        // summary takes when it is computed from a classified or rendered product
+        // instead of the measurement band - rather than over the source samples.
+        // Real execution keeps band identity, Float32 type, the declared sentinel,
+        // the exact valid count AND both extrema equal to the proof's result, so
+        // only the mean and standard deviation can reject it.
+        Directory.CreateDirectory(_scratch);
+        File.Copy(Fixture("statistics.tif"), Path.Join(_scratch, "statistics.tif"), overwrite: true);
+        await Run("gdal_calc.py", ["--calc", "where(A<2,0,4)", "-A", "statistics.tif", "--A_band", "1",
+            "--type", "Float32", "--NoDataValue=-9999", "--overwrite", "--quiet", "--outfile", "quantized.tif"]);
+        using var json = JsonDocument.Parse(await Execute("raster.statistics",
+            ("source", Convert.ToBase64String(await File.ReadAllBytesAsync(Path.Join(_scratch, "quantized.tif"))))));
+        var bands = json.RootElement.GetProperty("bands");
+        bands.GetArrayLength().Should().Be(1);
+        // Band 1 {0,1,2,3,4} collapses to {0,0,4,4,4}: nodata still masked, so the
+        // count stays 5 and the extrema stay 0 and 4, but the distribution moves.
+        // n=5, sum=12, sum of squared deviations=19.2.
+        AssertCountedPopulation(bands[0], 1, [0, 0, 4, 4, 4], NoData);
+        // The hand-derived moment oracle rejects it: count, nodata, min and max all
+        // agree, so the mean assertion (2 against 2.4) is what fails.
+        Action assert = () => AssertStatistics(bands[0], 1, 5, 0, 4, 2, Math.Sqrt(2));
+        assert.Should().Throw<XunitException>();
+    }
+
     /// <summary>
     /// Independently derives count, extrema, mean and population standard deviation
-    /// from the cells a nodata-counting implementation would measure.
+    /// in C# from the cells a wrong implementation would measure, so a demonstrated
+    /// negative states its own result rather than snapshotting whatever GDAL printed.
     /// </summary>
-    private static void AssertCountedPopulation(JsonElement band, int index, double[] population)
+    private static void AssertCountedPopulation(JsonElement band, int index, double[] population, double? noData = null)
     {
         band.GetProperty("band").GetInt32().Should().Be(index);
         band.GetProperty("type").GetString().Should().Be("Float32");
         band.GetProperty("validCount").GetInt64().Should().Be(population.Length);
-        band.GetProperty("noDataValue").ValueKind.Should().Be(JsonValueKind.Null,
-            "the dropped declaration is what makes the sentinel a measurement");
+        if (noData is null)
+        {
+            band.GetProperty("noDataValue").ValueKind.Should().Be(JsonValueKind.Null,
+                "the dropped declaration is what makes the sentinel a measurement");
+        }
+        else
+        {
+            band.GetProperty("noDataValue").GetDouble().Should().Be(noData.Value);
+        }
         var mean = population.Average();
         var variance = population.Select(v => (v - mean) * (v - mean)).Sum() / population.Length;
         band.GetProperty("min").GetDouble().Should().Be(population.Min());
