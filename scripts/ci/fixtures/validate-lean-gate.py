@@ -165,6 +165,18 @@ if seeded != executed:
 # ---------------------------------------------------------------------------
 
 PR_GATE_TEXT = PR_GATE.read_text(encoding="utf-8")
+# Build-output caching belongs to the setup action that runs before lean-gate.
+# Bound this match to that invocation so another job cannot satisfy it.
+require(
+    r"^  pr-gate:\n(?:(?!^  \S)[\s\S])*?"
+    r"uses: \./\.github/actions/setup-dotnet-ci\n"
+    r"        with:\n(?:          [^\n]*\n)*?"
+    r"          enable-build-cache: \$\{\{ vars\.PR_GATE_BUILD_CACHE == 'true' "
+    r"&& 'true' \|\| 'false' \}\}$",
+    "opt PR Gate into build caching only through vars.PR_GATE_BUILD_CACHE, "
+    "defaulting off",
+    text=PR_GATE_TEXT,
+)
 require(
     r"uses: \./\.github/actions/lean-gate\n(?:.*\n)*?\s+build-scope: affected",
     "have pr-gate.yml pass build-scope: affected",

@@ -207,8 +207,8 @@ jobs:
           # promotion is a variable flip and rollback is instant — no PR, no
           # merge train, no wait on the very gate being changed.
           #
-          # HONUA_PR_GATE_BUILD_CACHE STARTS UNSET, i.e. OFF. Merging this
-          # changes nothing observable; it only installs the switch.
+          # PR_GATE_BUILD_CACHE defaults OFF when unset. Set it to 'true' to
+          # trial the cache; unset it or set 'false' for immediate rollback.
           #
           # PROMOTION CRITERION IS `PR Gate` p90 STRICTLY BETTER OVER ONE WEEK OF
           # RUNS — never cache-hit rate. That is the #2708 lesson: the 150 MiB
@@ -221,7 +221,7 @@ jobs:
           # any source change invalidates the entry and falls to `restore-keys`.
           # If p90 is not strictly better, the variable stays unset. That is a
           # successful measurement, not a failed change.
-          enable-build-cache: ${{ vars.HONUA_PR_GATE_BUILD_CACHE == 'true' && 'true' || 'false' }}
+          enable-build-cache: ${{ vars.PR_GATE_BUILD_CACHE == 'true' && 'true' || 'false' }}
 
       # The server boot smoke below uses the same PostGIS image as the
       # Testcontainers-backed Governance/Drift coverage. Pull it while the
