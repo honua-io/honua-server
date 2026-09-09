@@ -12,6 +12,11 @@ and equivalent protocol-formatted errors use the same policy, including Esri
 reusing an earlier response after credentials change. Public anonymous responses
 retain their normal endpoint cache policy.
 
+Portal `generateToken` and OAuth endpoints also return `Cache-Control: no-store`
+and `Pragma: no-cache`, including token exchange errors. Their credentials can be
+validated inside the endpoint without attaching an authenticated user to the
+request, so these routes explicitly prohibit response storage.
+
 An upgrade cannot invalidate responses that a client already cached or data it
 downloaded for offline use. Clear a pre-upgrade HTTP cache before verifying the
 new behavior, then test login, revocation and anonymous access without clearing
