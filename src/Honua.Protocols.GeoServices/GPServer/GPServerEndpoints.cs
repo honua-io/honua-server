@@ -1513,19 +1513,20 @@ internal static class GPServerEndpoints
 
     /// <summary>
     /// Builds the published task-name list for the service-info response: every
-    /// process's internal ID, plus its Esri-conventional alias when one exists. Both
+    /// process's Python-safe encoded ID, plus its Esri-conventional alias when one exists. Both
     /// forms resolve to the same process via <see cref="ResolveTaskDefinition"/>.
     /// <para>
     /// Collision policy (deterministic): a real catalog process ID always wins over an
     /// alias. When any catalog process ID matches an alias (compared case-insensitively,
     /// mirroring the alias lookup), the alias is suppressed and only the real process ID
-    /// is published, so the task list never contains the same name with two meanings and
+    /// is published under its encoded name, so the task list never contains the same name with two meanings and
     /// never publishes duplicates.
     /// </para>
     /// </summary>
     internal static IEnumerable<string> BuildPublishedTaskNames(IProcessCatalog processCatalog)
     {
         var processes = processCatalog.ListProcesses();
+        var encodingPrefix = GPServerTaskNames.GetEncodingPrefix(processes);
         var processIds = new HashSet<string>(processes.Count, StringComparer.OrdinalIgnoreCase);
         foreach (var process in processes)
         {
@@ -1544,7 +1545,7 @@ internal static class GPServerEndpoints
                 continue;
             }
 
-            yield return process.ProcessId;
+            yield return GPServerTaskNames.Encode(process.ProcessId, encodingPrefix);
 
             var alias = GPServerEsriTaskAliases.GetAlias(process.ProcessId);
             if (alias != null && !processIds.Contains(alias))
@@ -1557,7 +1558,7 @@ internal static class GPServerEndpoints
     /// <summary>
     /// Resolves a task name to its <see cref="ProcessDefinition"/>. Tries the internal
     /// process ID first (the existing, ESTABLISHED contract — e.g. <c>geometry.buffer</c>),
-    /// then falls back to the Esri-conventional alias overlay (e.g. <c>Buffer</c>) so
+    /// then tries the published encoded name and the Esri-conventional alias overlay (e.g. <c>Buffer</c>) so
     /// unmodified ArcGIS clients addressing tasks by their familiar Esri name resolve to
     /// the same canonical process. See <see cref="GPServerEsriTaskAliases"/>.
     /// <para>
@@ -1582,6 +1583,14 @@ internal static class GPServerEndpoints
         if (byProcessId != null)
         {
             return byProcessId;
+        }
+
+        var processes = processCatalog.ListProcesses();
+        var encodingPrefix = GPServerTaskNames.GetEncodingPrefix(processes);
+        if (taskName.StartsWith(encodingPrefix, StringComparison.Ordinal))
+        {
+            return processes.FirstOrDefault(process => GPServerExecutionPolicy.IsJobCallable(process) &&
+                string.Equals(GPServerTaskNames.Encode(process.ProcessId, encodingPrefix), taskName, StringComparison.Ordinal));
         }
 
         if (!GPServerEsriTaskAliases.TryResolveProcessId(taskName, out var processId))

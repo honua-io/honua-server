@@ -69,7 +69,7 @@ public sealed class GPServerSoapEndpointsTests
         tasks.Select(task => task.Element("Name")!.Value).Should().Contain("Buffer").And.NotContain("source.geojson");
         using var restResponse = await client.GetAsync("/rest/services/alpha/GPServer?f=json");
         using var rest = JsonDocument.Parse(await restResponse.Content.ReadAsStringAsync());
-        tasks.Should().HaveCount(rest.RootElement.GetProperty("tasks").GetArrayLength(), "SOAP must retain the complete published catalog");
+        tasks.Select(task => task.Element("Name")!.Value).Should().Equal(rest.RootElement.GetProperty("tasks").EnumerateArray().Select(task => task.GetString()), "SOAP and REST must publish the same callable names");
         var buffer = tasks.Single(task => task.Element("Name")!.Value == "Buffer");
         buffer.Elements().Select(element => element.Name.LocalName).Should().Equal("Name", "DisplayName", "Category", "Help", "ParameterInfo");
         using var parameterResponse = await client.GetAsync("/rest/services/alpha/GPServer/Buffer?f=json");
