@@ -1,6 +1,7 @@
 // Copyright 2025 Honua Authors
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using FluentAssertions;
@@ -142,17 +143,8 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
     [Trait("Category", "Architecture")]
     public void Denominator_UnattestedTopologyOutsideDocker_IsCaught()
     {
-        var attested = new GeoprocessingOutputStagingOptions
-        {
-            Enabled = true,
-            StoreReference = "elsewhere",
-            PersistenceClass = "shared-persistent",
-            BackupIdentity = "elsewhere-backup",
-            BackupStoreReferences = ["elsewhere"],
-            MaxInlineArtifactBytes = 1024,
-        };
         var root = CreateTree(
-            ("docker/gp-reliability/compose.yml", ComposeTopology(attested)),
+            ("docker/gp-reliability/compose.yml", ComposeTopology(TestContract())),
             ("deploy/helm/templates/worker.yaml", BareContainerPathTopology()));
 
         DiscoverStagingManifests(root).Should().Equal(
@@ -172,16 +164,7 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
     [Trait("Category", "Architecture")]
     public void Denominator_AttestedTopologyOutsideDocker_ResolvesEveryHost()
     {
-        var options = new GeoprocessingOutputStagingOptions
-        {
-            Enabled = true,
-            StoreReference = "elsewhere",
-            PersistenceClass = "shared-persistent",
-            BackupIdentity = "elsewhere-backup",
-            BackupStoreReferences = ["elsewhere"],
-            MaxInlineArtifactBytes = 1024,
-        };
-        var root = CreateTree(("deploy/compose.gp.yaml", ComposeTopology(options)));
+        var root = CreateTree(("deploy/compose.gp.yaml", ComposeTopology(TestContract())));
 
         var topologies = LoadTopologies(root);
 
@@ -259,6 +242,76 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
         DiscoverStagingManifests(root).Should().BeEmpty();
     }
 
+    /// <summary>
+    /// A manifest the repository does not ship — a developer's own ignored env file —
+    /// must not decide this gate. Otherwise the suite passes or fails on workstation
+    /// state, and the one shape that is both commonly local and unparsable here
+    /// (<c>.env.local</c>) would fail it for everyone who has one.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void Denominator_GitIgnoredManifest_IsNotScanned()
+    {
+        var root = CreateTree(
+            (".gitignore", "*.local\n"),
+            ("deploy/gp.env.local", "Geoprocessing__OutputStaging__Enabled=true\n"),
+            ("deploy/compose.yml", ComposeTopology(TestContract())));
+        Git(root, "init --quiet");
+
+        DiscoverStagingManifests(root).Should().Equal("deploy/compose.yml");
+        AssertAttestedStores(LoadTopologies(root));
+    }
+
+    /// <summary>
+    /// Configuration keys are case-insensitive, so a topology spelling them in lower case
+    /// stages output exactly like the canonical one. It must be discovered and held to the
+    /// same contract, not quietly dropped from the denominator.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void Denominator_LowercaseConfigurationKeys_AreHeldToTheSameContract()
+    {
+        var lowercase = ComposeTopology(TestContract())
+            .Replace(Prefix, Prefix.ToLowerInvariant(), StringComparison.Ordinal);
+        var root = CreateTree(("deploy/compose.yml", lowercase));
+
+        var topologies = LoadTopologies(root);
+
+        topologies.Select(topology => topology.Service).Should().Equal("server", "worker");
+        AssertAttestedStores(topologies);
+        foreach (var topology in topologies)
+        {
+            GeoprocessingOutputStoreAttestation.Create(ToOptions(topology.Settings)).ConfigurationDigest
+                .Should().Be(topology.Settings["ConfigurationDigest"]);
+        }
+    }
+
+    /// <summary>Runs a Git command in the constructed tree, failing the test if it errors.</summary>
+    private static void Git(string root, string arguments)
+    {
+        using var git = Process.Start(new ProcessStartInfo("git")
+        {
+            Arguments = arguments,
+            WorkingDirectory = root,
+            RedirectStandardError = true,
+        })!;
+        var error = git.StandardError.ReadToEnd();
+        git.WaitForExit();
+        git.ExitCode.Should().Be(0, error);
+    }
+
+    /// <summary>An attested contract for the discovery fixtures.</summary>
+    private static GeoprocessingOutputStagingOptions TestContract()
+        => new()
+        {
+            Enabled = true,
+            StoreReference = "elsewhere",
+            PersistenceClass = "shared-persistent",
+            BackupIdentity = "elsewhere-backup",
+            BackupStoreReferences = ["elsewhere"],
+            MaxInlineArtifactBytes = 1024,
+        };
+
     /// <summary>Writes the given files under a fresh temporary repository root.</summary>
     private string CreateTree(params (string Path, string Content)[] files)
     {
@@ -314,7 +367,7 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
     /// </summary>
     private static string[] BackupStoreReferences(IReadOnlyDictionary<string, string> settings)
         => settings
-            .Where(setting => setting.Key.StartsWith("BackupStoreReferences__", StringComparison.Ordinal))
+            .Where(setting => setting.Key.StartsWith("BackupStoreReferences__", StringComparison.OrdinalIgnoreCase))
             .OrderBy(setting => int.Parse(setting.Key["BackupStoreReferences__".Length..], CultureInfo.InvariantCulture))
             .Select(setting => setting.Value)
             .ToArray();
@@ -422,8 +475,60 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
             }
         }
 
+        results.RemoveAll(GitIgnoredPaths(root, results).Contains);
         results.Sort(StringComparer.Ordinal);
         return results;
+    }
+
+    /// <summary>
+    /// Returns the subset of <paramref name="candidates"/> that Git ignores under
+    /// <paramref name="root"/>.
+    /// </summary>
+    /// <remarks>
+    /// The gate must judge what the repository ships, not what a workstation happens to
+    /// hold. A developer's own <c>.env.local</c> is exactly the kind of file that both
+    /// mentions the staging section and cannot be parsed as a topology, so without this
+    /// the suite's verdict would depend on the machine running it. Git decides, so the
+    /// answer matches <c>.gitignore</c> exactly rather than a second guess at it. A root
+    /// that is not a Git work tree — the constructed fixtures — ignores nothing.
+    /// </remarks>
+    private static HashSet<string> GitIgnoredPaths(string root, IReadOnlyList<string> candidates)
+    {
+        var ignored = new HashSet<string>(StringComparer.Ordinal);
+        // A linked worktree records .git as a file rather than a directory.
+        if (candidates.Count == 0
+            || (!Directory.Exists(Path.Join(root, ".git")) && !File.Exists(Path.Join(root, ".git"))))
+        {
+            return ignored;
+        }
+
+        using var git = Process.Start(new ProcessStartInfo("git")
+        {
+            // Without --no-index, check-ignore never reports a tracked path, so a file
+            // the repository actually ships stays in the denominator whatever the ignore
+            // rules say; only untracked, ignored files are dropped.
+            Arguments = "check-ignore --stdin",
+            WorkingDirectory = root,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+        })!;
+
+        foreach (var candidate in candidates)
+        {
+            git.StandardInput.WriteLine(candidate);
+        }
+
+        git.StandardInput.Close();
+        while (git.StandardOutput.ReadLine() is { } line)
+        {
+            ignored.Add(line.Replace('\\', '/').Trim());
+        }
+
+        git.WaitForExit();
+        // 0 = some ignored, 1 = none ignored. Anything else means git could not answer,
+        // and silently dropping nothing is the safe direction: the manifest stays in the
+        // denominator and the gate still has to understand it.
+        return git.ExitCode is 0 or 1 ? ignored : [];
     }
 
     /// <summary>File kinds that can carry deployment configuration for a host.</summary>
@@ -440,13 +545,17 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
     /// <summary>
     /// True when the text binds the staging section under any spelling the configuration
     /// binder resolves: the double-underscore environment form, the colon form used by
-    /// command-line and in-memory sources, or a nested JSON section.
+    /// command-line and in-memory sources, or a nested JSON section. Matching is
+    /// case-insensitive because configuration keys are: a host reading
+    /// <c>geoprocessing__outputstaging__enabled=true</c> stages output exactly as one
+    /// reading the canonical casing, so an ordinal match here would let that topology
+    /// out of the denominator entirely.
     /// </summary>
     private static bool ConfiguresStaging(string text)
-        => text.Contains(Prefix, StringComparison.Ordinal)
-            || text.Contains(GeoprocessingOutputStagingOptions.SectionName, StringComparison.Ordinal)
-            || (text.Contains("\"Geoprocessing\"", StringComparison.Ordinal)
-                && text.Contains("\"OutputStaging\"", StringComparison.Ordinal));
+        => text.Contains(Prefix, StringComparison.OrdinalIgnoreCase)
+            || text.Contains(GeoprocessingOutputStagingOptions.SectionName, StringComparison.OrdinalIgnoreCase)
+            || (text.Contains("\"Geoprocessing\"", StringComparison.OrdinalIgnoreCase)
+                && text.Contains("\"OutputStaging\"", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Extracts the staging settings each Compose service resolves, following the
@@ -458,6 +567,7 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
     {
         var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         var anchors = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+        // YAML anchor names are case-sensitive; the staging setting keys under them are not.
         var services = new List<(string, IReadOnlyDictionary<string, string>)>();
         var aliases = new List<(string Service, string Anchor)>();
         var service = string.Empty;
@@ -483,7 +593,10 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
                     continue;
                 }
 
-                current = [];
+                // Configuration keys are case-insensitive, so the resolved settings are
+                // looked up that way too; otherwise a lowercase manifest would parse into
+                // a dictionary none of the contract assertions could read.
+                current = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 services.Add((service, current));
                 if (environmentMatch.Groups[1].Value == "&")
                 {
@@ -504,7 +617,10 @@ public sealed class GeoprocessingOutputStoreTopologyTests : IDisposable
                 continue;
             }
 
-            var settingMatch = Regex.Match(line, "^      " + Prefix + "([A-Za-z0-9_]+):\\s*\"?([^\"]*?)\"?\\s*$");
+            var settingMatch = Regex.Match(
+                line,
+                "^      " + Prefix + "([A-Za-z0-9_]+):\\s*\"?([^\"]*?)\"?\\s*$",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             if (settingMatch.Success)
             {
                 current[settingMatch.Groups[1].Value] = settingMatch.Groups[2].Value;
