@@ -10,6 +10,24 @@ These tests protect the 2026.1 whole-catalog GP GA promise recorded in the relea
 
 The CRS regressions additionally distinguish advertised EPSG:3857 from physical EPSG:4326. They exercise both resource StorageCrs fallback and binding storageSrid precedence against the same literal points and analytical oracle. A retained executor regression verifies that source.postgis bbox SRID is not emitted as geometry SRID, since that connector has not projected its stored geometry.
 
+## Required-CI receipts
+
+`dotnet test` exits 0 when a `--filter` matches nothing and when every matched case skips, so running
+`Category=LayerExecutionProof` on the required gate did not by itself prove these cases executed: a renamed
+trait, a deleted class or a cleanly-skipping Docker PostGIS fixture would have left the gate green with no
+layer receipts at all while the operation matrix still called the rows proven. The PR Gate step *Prove the
+layer execution cases ran, not skipped* now reads `layer-execution-proof.trx` back and fails on any skipped
+case, on zero passes, and on a missing receipt for any test the matrix still cites as proven evidence for
+`source.honua-layer`, `source.esri-featureserver` or `sink.honua-layer`.
+
+Counting outcomes alone would not have been enough. The Esri cases are in-process HTTP fixtures that need no
+database, so they would have held the passed count above zero even if both PostGIS-backed classes had
+disappeared — and those two classes are the entire real-persistence argument for `source.honua-layer` and
+`sink.honua-layer`. The step therefore reads the required test names out of
+`certification/gp-operation-matrix.v1.json` rather than repeating them, so the manifest claim and the gate
+cannot drift apart. `GeoprocessingOperationEvidenceMatrixTests` proves those names still exist in those
+files; this step proves they ran.
+
 ## Candidate evidence sequencing
 
 The immutable 2026.1 candidate required by #3848 and the linked post-cut certification runs does not exist for these pre-cut implementation PRs. Local and required CI receipts prove the repository executors against real fixtures. Exact-candidate reruns remain released from these PRs until that candidate exists; this does not claim those later certification criteria have passed.

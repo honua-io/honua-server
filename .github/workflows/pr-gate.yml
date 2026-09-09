@@ -332,6 +332,106 @@ jobs:
             exit 1
           fi
 
+      - name: Prove the layer execution cases ran, not skipped
+        # honua-server#3944, #3945, #3946. The proof step above also runs
+        # Category=LayerExecutionProof, but only the raster receipts were
+        # asserted on. `dotnet test` exits 0 when a --filter matches nothing and
+        # when every matched case skips, and the Honua source/sink proofs need a
+        # real Docker PostGIS — so a renamed trait or a cleanly-skipping database
+        # fixture would leave this required gate green with zero layer receipts
+        # while certification/gp-operation-matrix.v1.json still calls those rows
+        # proven. Assert on the TRX outcomes, not the exit code.
+        #
+        # Counts alone are too weak here: the Esri cases are in-process HTTP
+        # fixtures that would hold `passed` above zero on their own even if both
+        # PostGIS-backed classes vanished. Require a passing receipt for every
+        # test the matrix cites as proven evidence for these rows.
+        #
+        # GeoprocessingOperationEvidenceMatrixTests already proves those test
+        # names still exist in those files; this step proves they actually ran
+        # here. The names are read back out of the matrix rather than repeated,
+        # so the manifest claim and the gate cannot drift apart.
+        if: ${{ !cancelled() && steps.raster-execution-proof.conclusion != 'skipped' }}
+        run: |
+          set -euo pipefail
+          trx=tests/TestResults/layer-execution-proof.trx
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for the Category=LayerExecutionProof subset — the required layer receipts did not run"
+            exit 1
+          fi
+          # Split on '<' so each result element is one line: a testName can then
+          # be paired with the outcome of that same element rather than matching
+          # the two attributes anywhere in the file. `|| true` is load-bearing
+          # under `set -euo pipefail` — grep exits 1 when it matches nothing, and
+          # on the healthy path Failed and NotExecuted are both zero.
+          results=$(tr '<' '\n' < "${trx}")
+          count_outcome() {
+            { grep -c "^UnitTestResult .*outcome=\"$1\"" <<< "${results}" || true; }
+          }
+          passed=$(count_outcome Passed)
+          failed=$(count_outcome Failed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Layer catalog execution proof'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Failed: ${failed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} layer execution proof case(s) were skipped — a skipped required cell is non-passing evidence"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no layer execution proof case passed — the LayerExecutionProof trait or the cases themselves are gone"
+            exit 1
+          fi
+          # Every still-proven evidence receipt these three rows cite in the
+          # Category=LayerExecutionProof files. A row honestly downgraded away
+          # from `proven` drops out here and takes a gap issue instead, which
+          # GeoprocessingOperationEvidenceMatrixTests requires.
+          mapfile -t required < <(jq -r '
+            .operations[]
+            | select(.processId == "source.honua-layer"
+                or .processId == "source.esri-featureserver"
+                or .processId == "sink.honua-layer")
+            | select(.status == "proven")
+            | .evidence[]
+            | select(.path | test("/Execution/(LayerSource|EsriSource|LayerSink)ExecutionProofTests[.]cs$"))
+            | .test' certification/gp-operation-matrix.v1.json | sort -u)
+          echo "matrix cites ${#required[@]} layer execution receipt(s)"
+          # A broken selection must not pass vacuously: process substitution hides
+          # a jq failure from mapfile, and an empty list would skip the loop
+          # entirely. An empty list is only legitimate when no row claims proven.
+          if [[ "${#required[@]}" -eq 0 ]]; then
+            proven=$(jq '[.operations[]
+              | select(.processId == "source.honua-layer"
+                  or .processId == "source.esri-featureserver"
+                  or .processId == "sink.honua-layer")
+              | select(.status == "proven")] | length' certification/gp-operation-matrix.v1.json)
+            if [[ "${proven}" -ne 0 ]]; then
+              echo "::error::the matrix still calls ${proven} layer row(s) proven but no LayerExecutionProof evidence test was read out of it — the receipt selection is broken"
+              exit 1
+            fi
+          fi
+          missing=0
+          for name in "${required[@]}"; do
+            # This project renders xUnit display names with underscores replaced
+            # by spaces and no class prefix, so the matrix's method name
+            # `HonuaLayerSink_FailingRow_...` appears in the TRX as
+            # `HonuaLayerSink FailingRow ...`. Accept either separator rather
+            # than depending on that display setting.
+            pattern="${name//_/[ _]}"
+            receipts=$({ grep -c "^UnitTestResult .*testName=\"[^\"]*${pattern}[^\"]*\".*outcome=\"Passed\"" <<< "${results}" || true; })
+            if [[ "${receipts}" -lt 1 ]]; then
+              echo "::error::no passing receipt for ${name} — the operation matrix cites it as proven execution evidence"
+              missing=1
+            fi
+          done
+          if [[ "${missing}" -ne 0 ]]; then
+            exit 1
+          fi
+
       - name: Prove the real-GDAL CLI cases run on the required gate
         # honua-server#4401: the five [GdalCliFact] cases emit Tier=Integration,
         # which the lean gate's Tier=Fast filter can never match, and ci.yml has no
