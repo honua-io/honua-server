@@ -86,10 +86,27 @@ function has to supply them:
   The snapshot's `allowAnonymous` policy is what makes the *denial* probes meaningful; it is not
   what admits the fixture reads or the scratch-layer writes.
 - **`test_service/10` writes need a licensed function.** FeatureServer edits are gated on the
-  Pro entitlement `editing.featureserver-edits`. An unlicensed (Community) function answers
-  `addFeatures` with HTTP 402 `Payment Required` and the lane records `serving.result: noProof` —
-  a licensing gap, not fixture drift. Certify against a function whose license carries that
-  entitlement.
+  Pro entitlement `editing.featureserver-edits` (`FeatureServerEditsHandler`). An unlicensed
+  (Community) function refuses `addFeatures` and the lane records `serving.result: noProof` — a
+  licensing gap, not fixture drift. Certify against a function whose license carries that
+  entitlement: on AWS that is honua-iac's `enable_pro_license`, which injects
+  `Licensing__LicenseContentSecretRef` and `Licensing__TrustedKeys__<keyId>`.
+
+  The refusal does **not** arrive as an HTTP 402. GeoServices reports every operation failure as
+  HTTP 200 with the whole error in the body, so the entitlement gate reaches the lane as
+  `{"error":{"code":402,...}}` and the assertion line reads `status=200 expected=200`. Run 28
+  (34320738962) failed exactly this way, with `error=402` and nothing else, which is why the lane
+  now echoes the server's `message` and `details` on every in-body GeoServices failure and answers
+  a 402 with a `serving-402:` line naming the entitlement, the license variable (by name), and the
+  server's own edition and validation state:
+
+  ```text
+  serving-assertion: phase=deployed path=/rest/services/test_service/FeatureServer/10/addFeatures status=200 expected=200 body-kind=json error=402 message=Payment Required details=FeatureServer Editing requires an active Pro entitlement. ... :: entitlement: editing.featureserver-edits
+  serving-402: phase=deployed entitlement=editing.featureserver-edits variable=Licensing__LicenseContentSecretRef presence=absent source=none trusted-keys=0 edition=Community validation=NoLicenseConfigured entitled=false
+  ```
+
+  `presence=absent` is a stack that was never given a license; `presence=present` with a
+  `validation` other than `Valid` is an envelope the server refused. They have different owners.
 
 ### The command the substrate uses to apply it
 
@@ -391,6 +408,52 @@ shows through. That comparison runs against the unfiltered text as well as the f
 treats any run of twelve consecutive key characters as the key: filtering and truncation are exactly
 what would otherwise leave a key behind as a normalized or truncated fragment that no longer matches
 it.
+
+## A GeoServices refusal has to say what the server refused, and why
+
+The Esri GeoServices contract answers **every** operation failure with HTTP 200 and the failure
+only in the body: `{"error":{"code":N,"message":...,"details":[...]}}`. A serving assertion that
+reads the status alone therefore reads a refused edit as a pass, and one that reads the status and
+the code alone cannot separate an invalid geometry from an unknown layer, a read-only layer, a
+missing required field, a schema that drifted under a migration, or a surface this deployment is
+not licensed for. They are all `error=<code>` on the same `status=200 expected=200` line.
+
+Run 28 (34320738962) is what that costs. Everything before the run-owned write passed — cold-start
+evidence, admin authentication, the client-compat-v1 fixture assertion, the per-run scoped key
+minted through the candidate and visible to the standing alias, the empty-403 denial — and the run
+stopped here:
+
+```
+serving-assertion: phase=deployed path=/rest/services/test_service/FeatureServer/10/addFeatures status=200 expected=200 body-kind=json error=402
+```
+
+The `serving-assertion:` line now carries the server's own `message` and its `details` array on any
+in-body GeoServices error, joined and bounded under the same redaction as every other echoed
+diagnostic. A `402` — the entitlement gate, from either the body code or the HTTP status — also
+gets a second line, because that one code has two opposite owners:
+
+```
+serving-assertion: phase=deployed path=/rest/services/test_service/FeatureServer/10/addFeatures status=200 expected=200 body-kind=json error=402 message=Payment Required details=FeatureServer Editing requires an active Pro entitlement. Current edition is Community install a license that includes editing.featureserver-edits. :: entitlement: editing.featureserver-edits
+serving-402: phase=deployed entitlement=editing.featureserver-edits variable=Licensing__LicenseContentSecretRef presence=absent source=none trusted-keys=0 edition=Community validation=NoLicenseConfigured entitled=false
+```
+
+| Field | What it says |
+| --- | --- |
+| `entitlement` | The entitlement the write surface is gated on: `editing.featureserver-edits`, enforced once for the whole GeoServices write surface in `FeatureServerEditsHandler`. |
+| `variable` / `presence` / `source` | The license envelope variable **by name** on the function actually invoked, whether it is there at all, and whether it is a Secrets Manager reference the server resolves at startup or an inline value. Never the envelope. |
+| `trusted-keys` | How many `Licensing__TrustedKeys__*` variables the function carries. A licensed function with no trusted key cannot verify the signature it was given. |
+| `edition` / `validation` / `entitled` | The server's **own** verdict, read from `/api/v1/admin/license/status` on the same deployment that just refused the write. `LicenseOperationMiddleware` lets the license routes through even when the deployment license itself is blocked, so this answers whatever the license state is. |
+
+| `presence` | `validation` | Cause | Action |
+| --- | --- | --- | --- |
+| `absent` | `NoLicenseConfigured` | The cert stack was never given a license, so the function is Community and FeatureServer editing is gated. | Enable honua-iac `enable_pro_license` on the cert stack (`pro_license_content` + `pro_license_trusted_public_key`, or `pro_license_secret_arn`) and re-apply. Nothing about the fixture or the lane is wrong. |
+| `present` | anything but `Valid` | The function was handed an envelope the server refused: an unresolvable secret reference, a missing or wrong trusted key, an expired license. | Fix the envelope or the trusted key in the cert stack; the fixture and the lane are still not the cause. |
+| `present` | `Valid`, `entitled=false` | The license is valid and does not carry this entitlement. | Re-issue a license whose entitlements include `editing.featureserver-edits`. |
+
+`ClientCompatSeedMigratedDatabaseTests` pins both halves of this locally: over one migrated PostGIS
+container and this exact seed, the lane's exact `addFeatures` payload is refused with HTTP 200 and
+body code 402 by an unlicensed host and accepted by a licensed one. The seed's layer 10, the
+migrated schema and the lane's payload are therefore not what a 402 is reporting.
 
 ## Live proof
 

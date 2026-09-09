@@ -21,6 +21,17 @@ FIXTURE = ROOT / "tests/seed/client-compat-v1.sql"
 ADMIN_CREDENTIAL_VARIABLE = "HONUA_ADMIN_PASSWORD"
 SECRET_REFERENCE_PREFIX = "aws:secretsmanager:"
 ADMIN_API_KEYS = "/api/v1/admin/api-keys"
+# The scratch-layer write is a Pro surface: GeoServices FeatureServer editing is gated on the
+# `editing.featureserver-edits` entitlement (FeatureServerEditsHandler), so an unlicensed function
+# refuses addFeatures. The envelope reaches the function through these variables (honua-iac
+# aws-serverless), and the server's own verdict on what it made of them is at LICENSE_STATUS.
+LICENSE_CONTENT_VARIABLE = "Licensing__LicenseContentSecretRef"
+LICENSE_TRUSTED_KEY_PREFIX = "Licensing__TrustedKeys__"
+LICENSE_STATUS = "/api/v1/admin/license/status"
+FEATURESERVER_EDITS_ENTITLEMENT = "editing.featureserver-edits"
+# The entitlement refusal is HTTP 402, and the GeoServices formatter carries that status
+# through as the body code (StandardErrorResponseFormatter). Either is the same denial.
+PAYMENT_REQUIRED = 402
 # The authorization assertion needs a principal that authenticates and holds no admin rights. An
 # API key lives in Redis (or process-local memory), so losing its store turns a bootstrap key's 403 into a 401,
 # and a 401 certifies a missing credential rather than authorization. The lane therefore mints its
@@ -197,6 +208,15 @@ def redacted(value, limit):
     return text
 
 
+def join_details(details):
+    # The GeoServices envelope writes `details` as an array. Join it into one bounded field with a
+    # separator the redaction filter keeps (it strips commas and semicolons), so the server's own
+    # explanation - the upgrade message, the offending field, the entitlement key - stays readable.
+    if isinstance(details, list):
+        return " :: ".join(str(item) for item in details)
+    return "" if details is None else str(details)
+
+
 # Payload format 2.0 folds repeated response headers into one comma-joined value, so the two
 # challenges the server appends arrive as `ApiKey realm="...", header="...", Basic realm="..."`.
 # Match scheme tokens rather than splitting on commas: `header=` and `charset=` are parameters of
@@ -231,6 +251,61 @@ def admin_credential_state(function):
         return "absent", "none"
     return "present", ("secretsmanager-reference"
                        if value.lower().startswith(SECRET_REFERENCE_PREFIX) else "inline")
+
+
+def license_configuration_state(function):
+    # Names and counts only, exactly as admin_credential_state: a signed license envelope is a
+    # credential and never leaves the function. Whether the variable is there at all, whether it is
+    # a Secrets Manager reference the server resolves at startup, and whether any trusted key was
+    # supplied to verify the signature are what separate "this deployment is Community because it
+    # was never given a license" from "it was given one the server would not accept".
+    try:
+        variables = config(function)["Configuration"]["Environment"]["Variables"]
+    except (RuntimeError, KeyError, ValueError, OSError):
+        return "unreadable", "unknown", "unknown"
+    keys = str(sum(1 for name in variables if name.startswith(LICENSE_TRUSTED_KEY_PREFIX)))
+    value = variables.get(LICENSE_CONTENT_VARIABLE, "")
+    if not value.strip():
+        return "absent", "none", keys
+    return "present", ("secretsmanager-reference"
+                       if value.lower().startswith(SECRET_REFERENCE_PREFIX) else "inline"), keys
+
+
+def license_status(function):
+    # The server's own account of the envelope it was handed. LicenseOperationMiddleware lets
+    # /api/v1/admin/license through even when the deployment license itself is blocked, so this
+    # answers on exactly the deployment that just refused the write. Names and fixed enum values
+    # only: never the licensee, the license id, or the envelope.
+    try:
+        status, body, _, _ = invoke(function, LICENSE_STATUS)
+        if status != 200 or not isinstance(body, dict):
+            return "unreadable", "unknown", "unknown"
+        data = body.get("data") if isinstance(body.get("data"), dict) else {}
+        entitled = "unknown"
+        if isinstance(data.get("entitlements"), list):
+            entitled = str(any(
+                isinstance(item, dict) and item.get("isActive") is True
+                and str(item.get("key", "")).lower() == FEATURESERVER_EDITS_ENTITLEMENT
+                for item in data["entitlements"])).lower()
+        return (redacted(data.get("edition", ""), 20) or "unknown",
+                redacted(data.get("validationState", ""), 40) or "unknown",
+                entitled)
+    except Exception:  # noqa: BLE001 - a diagnostic must never replace the assertion it explains
+        return "unreadable", "unknown", "unknown"
+
+
+def report_payment_required(function):
+    # Run 28 (34320738962) reached the run-owned write with everything before it green and stopped
+    # on `error=402` alone. A GeoServices refusal is HTTP 200 with the failure only in the body, so
+    # the status said nothing, and the two deployments that produce this code - one carrying no
+    # license at all, one carrying an envelope the server rejected - are opposite owners. Say which,
+    # from the function's own configuration and the server's own verdict, in the run that failed.
+    presence, source, trusted = license_configuration_state(function)
+    edition, validation, entitled = license_status(function)
+    print(f"serving-402: phase={_phase} entitlement={FEATURESERVER_EDITS_ENTITLEMENT} "
+          f"variable={LICENSE_CONTENT_VARIABLE} presence={presence} source={source} "
+          f"trusted-keys={trusted} edition={edition} validation={validation} "
+          f"entitled={entitled}", file=sys.stderr)
 
 
 # Lambda answers an initialization failure, a handler exception and a timeout the same way at the
@@ -380,14 +455,25 @@ def ok(function, path, *, expect=200, **kwargs):
         # from the body is echoed (never the body, headers, or a key). Live run
         # 34117861856 failed here with nothing but the message, and the cause
         # (400 "Invalid Host header") took a manual probe to find.
-        code = ""
+        code, message, details, body_code = "", "", "", None
         if isinstance(body, dict):
             err = body.get("error")
             if isinstance(err, dict):
-                code = redacted(err.get("code", ""), 40)
+                body_code = err.get("code")
+                code = redacted(body_code if body_code is not None else "", 40)
+                # A GeoServices operation reports a refusal as HTTP 200 with the whole reason in the
+                # envelope, so neither the status nor the code separates an invalid geometry from an
+                # unknown layer, a read-only layer, a missing required field or a gated surface. Run
+                # 28 (34320738962) failed the run-owned write on `error=402` and nothing else, and
+                # naming the cause took the server sources. The message and the server's own details
+                # are where it is written; both are echoed under the same redaction as every other
+                # diagnostic, and bounded.
+                message = redacted(err.get("message", ""), 200)
+                details = redacted(join_details(err.get("details")), 200)
             code = code or redacted(body.get("title", body.get("type", "")), 60)
         print(f"serving-assertion: phase={_phase} path={path} status={status} expected={expect} "
-              f"body-kind={body_kind(body)} error={code or 'none'}", file=sys.stderr)
+              f"body-kind={body_kind(body)} error={code or 'none'} message={message or 'none'} "
+              f"details={details or 'none'}", file=sys.stderr)
         if status == 401:
             # Every administrative assertion authenticates as the bootstrap administrator, and the
             # title of that refusal is "Unauthorized" whatever the cause. Run 21 (34222614774)
@@ -401,6 +487,8 @@ def ok(function, path, *, expect=200, **kwargs):
             print(f"serving-401: variable={ADMIN_CREDENTIAL_VARIABLE} presence={presence} "
                   f"source={source} challenge={challenge_schemes(headers)} "
                   f"detail={detail or 'none'}", file=sys.stderr)
+        if status == PAYMENT_REQUIRED or body_code == PAYMENT_REQUIRED:
+            report_payment_required(function)
         require(False, "Serving HTTP assertion failed")
     return body
 
