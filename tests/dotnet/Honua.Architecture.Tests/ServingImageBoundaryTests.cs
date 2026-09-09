@@ -464,6 +464,9 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("--worker-redis 127.0.0.1:6379");
         workflow.Should().Contain("uses: ./.github/actions/setup-dotnet-ci");
         workflow.Should().Contain("--filter FullyQualifiedName~ProductionWorkerContainerHandoffTests");
+        workflow.Should().Contain("--filter 'Category=NativePublicApi'");
+        workflow.Should().Contain("ET.parse('tests/TestResults/native-public-api.trx')");
+        workflow.Should().Contain("if passed < 1 or nonpassing:");
         workflow.Should().Contain("redis:");
         workflow.Should().Contain("aquasecurity/trivy-action");
         workflow.Should().Contain("severity: CRITICAL,HIGH", Exactly.Twice());
@@ -486,6 +489,8 @@ public sealed class ServingImageBoundaryTests
             "scripts/docker/restore-dotnet-with-github-packages.sh",
             "scripts/ci/verify-serving-image-boundary.py",
             "tests/dotnet/Honua.Worker.Gdal.Tests/ProductionWorkerContainerHandoffTests.cs",
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/NativeWorkerPublicApiTests.cs",
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
             "tests/dotnet/Honua.Worker.Gdal.Tests/PdalPointCloudRealCliTests.cs",
             "tests/dotnet/Honua.Worker.Gdal.Tests/GdalCli.cs",
             "tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj",
