@@ -109,42 +109,28 @@ internal static class StudioAiProxyEndpoints
             return Results.Forbid();
         }
 
-        var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(
-            httpRequest,
-            allowCallerOverrides,
-            acceptedRequestJson);
-        if (mappingError is not null || domainRequest is null)
-        {
-            return BadRequest(context, mappingError ?? "Invalid request.");
-        }
-
-        if (domainRequest.Certification is not null)
+        // The tenant is a server-resolved binding, never a wire value, and it is handed to the
+        // mapper rather than stitched into a rebuilt request: rebuilding drops the accepted request
+        // bytes the transcript signature binds, silently downgrading provenance to a re-serialization.
+        string? certificationTenantId = null;
+        if (httpRequest.Certification is not null)
         {
             if (!tenantContext.RequireTenantId(out var tenantId, out _))
             {
                 return BadRequest(context, "A resolved tenant is required for a certification request.");
             }
 
-            domainRequest = new StudioAiChatRequest
-            {
-                Certification = new StudioAiTranscriptCertification
-                {
-                    CandidateId = domainRequest.Certification.CandidateId,
-                    TenantId = tenantId,
-                    ReleaseId = domainRequest.Certification.ReleaseId,
-                    EndpointIdentity = domainRequest.Certification.EndpointIdentity,
-                    ActionId = domainRequest.Certification.ActionId,
-                    RunNonce = domainRequest.Certification.RunNonce,
-                },
-                Provider = domainRequest.Provider,
-                Model = domainRequest.Model,
-                System = domainRequest.System,
-                Messages = domainRequest.Messages,
-                Tools = domainRequest.Tools,
-                ToolChoice = domainRequest.ToolChoice,
-                MaxTokens = domainRequest.MaxTokens,
-                Temperature = domainRequest.Temperature,
-            };
+            certificationTenantId = tenantId;
+        }
+
+        var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(
+            httpRequest,
+            allowCallerOverrides,
+            acceptedRequestJson,
+            certificationTenantId);
+        if (mappingError is not null || domainRequest is null)
+        {
+            return BadRequest(context, mappingError ?? "Invalid request.");
         }
 
         var validationError = service.ValidateRequest(domainRequest);

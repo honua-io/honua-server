@@ -137,9 +137,15 @@ internal sealed class ProposalEvidenceVerifier(
             requestBytes,
             StudioAiProxyJsonContext.Default.StudioAiChatRequest)
             ?? throw Invalid("The signed request is missing.");
+        // The tenant is resolved by the chat endpoint from the authenticated request, never taken
+        // from the wire, so the envelope's signed `tenantId` -- already matched against this MCP
+        // caller's tenant above -- is the authority. The signed request is the caller's own bytes
+        // and normally carries no tenant at all; one that does carry a tenant must still agree,
+        // because a replayable request naming a different tenant than its transcript is a mismatch.
         if (request.Certification is null
             || !string.Equals(request.Certification.CandidateId, candidateId, StringComparison.Ordinal)
-            || !string.Equals(request.Certification.TenantId, transcriptTenant, StringComparison.Ordinal)
+            || (request.Certification.TenantId.Length > 0
+                && !string.Equals(request.Certification.TenantId, transcriptTenant, StringComparison.Ordinal))
             || request.ToolChoice?.Mode != StudioAiToolChoiceMode.Specific
             || !string.Equals(request.ToolChoice.ToolName, tool.Name, StringComparison.Ordinal))
         {

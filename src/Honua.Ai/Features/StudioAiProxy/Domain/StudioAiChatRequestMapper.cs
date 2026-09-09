@@ -20,11 +20,17 @@ public static class StudioAiChatRequestMapper
     /// Converts <paramref name="http"/> to a domain request, or returns a rejection reason.
     /// When <paramref name="allowCallerOverrides"/> is false, caller-supplied model and output
     /// token overrides are deliberately omitted so the proxy resolves operator-configured limits.
+    /// When <paramref name="certificationTenantId"/> is supplied it replaces the certification's
+    /// tenant binding: the tenant is resolved by the host from the authenticated request, never
+    /// taken from the wire. It is bound here, at the single place a <see cref="StudioAiChatRequest"/>
+    /// is constructed, so that <c>AcceptedRequestJson</c> — the exact bytes the transcript signature
+    /// binds — cannot be dropped by rebuilding the request downstream.
     /// </summary>
     public static (StudioAiChatRequest? Request, string? Error) ToDomain(
         StudioAiChatHttpRequest http,
         bool allowCallerOverrides = true,
-        byte[]? acceptedRequestJson = null)
+        byte[]? acceptedRequestJson = null,
+        string? certificationTenantId = null)
     {
         ArgumentNullException.ThrowIfNull(http);
 
@@ -166,10 +172,24 @@ public static class StudioAiChatRequestMapper
             toolChoice = new StudioAiToolChoice { Mode = mode, ToolName = http.ToolChoice.ToolName };
         }
 
+        var certification = http.Certification;
+        if (certification is not null && certificationTenantId is not null)
+        {
+            certification = new StudioAiTranscriptCertification
+            {
+                CandidateId = certification.CandidateId,
+                TenantId = certificationTenantId,
+                ReleaseId = certification.ReleaseId,
+                EndpointIdentity = certification.EndpointIdentity,
+                ActionId = certification.ActionId,
+                RunNonce = certification.RunNonce
+            };
+        }
+
         var request = new StudioAiChatRequest
         {
             AcceptedRequestJson = acceptedRequestJson,
-            Certification = http.Certification,
+            Certification = certification,
             Provider = http.Provider,
             Model = allowCallerOverrides ? http.Model : null,
             System = http.System,
