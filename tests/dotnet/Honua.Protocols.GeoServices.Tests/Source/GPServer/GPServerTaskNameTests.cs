@@ -19,6 +19,32 @@ public sealed class GPServerTaskNameTests
 {
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public void PublishedParameters_UnsafeNamesAndEncodedLookingNames_RoundTripWithoutCollisions()
+    {
+        string[] names = ["from", "class", "gis", "future", "estimate", "a.b", "a-b", "9input", "HonuaParameter_66726F6D", "wkb", "layerId"];
+        var template = new BuiltInProcessCatalog().GetProcess("geometry.buffer")!;
+        var definition = template with
+        {
+            Parameters = names.Select(name => template.Parameters[0] with { Name = name }).ToArray()
+        };
+        var prefix = GPServerParameterNames.GetEncodingPrefix(definition);
+        var published = names.Select(name => GPServerParameterNames.Publish(name, prefix)).ToArray();
+        published.Select(name => name.ToLowerInvariant()).Should().OnlyHaveUniqueItems();
+        published.Should().Contain("wkb").And.Contain("layerId").And.Contain("HonuaParameter_66726F6D");
+        foreach (var name in published)
+        {
+            name.Should().MatchRegex("^[A-Za-z_][A-Za-z0-9_]*$");
+        }
+        published.Select(name => GPServerParameterNames.Resolve(name.ToLowerInvariant(), definition, prefix)).Should().Equal(names);
+        names.Select(name => GPServerParameterNames.Resolve(name, definition, prefix)).Should().Equal(names);
+        GPServerParameterNames.Resolve("unknown", definition, prefix).Should().Be("unknown");
+        GPServerParameterNames.GetEncodingPrefix(definition with { Parameters = definition.Parameters.Reverse().ToArray() })
+            .Should().Be(prefix);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public void PublishedNames_PunctuationKeywordsCaseAndEncodedLookingIds_RemainDistinct()
     {

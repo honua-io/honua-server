@@ -83,6 +83,16 @@ public sealed class GPServerSoapEndpointsTests
             parameters[index].Element("DataType")!.Value.Should().Be(expected[index].GetProperty("dataType").GetString());
             parameters[index].Element("Direction")!.Value.Should().Be(expected[index].GetProperty("direction").GetString());
             parameters[index].Element("ParamType")!.Value.Should().Be(expected[index].GetProperty("parameterType").GetString());
+            var defaultValue = expected[index].GetProperty("defaultValue");
+            if (defaultValue.ValueKind == JsonValueKind.Null)
+            {
+                parameters[index].Element("Value").Should().BeNull();
+            }
+            else
+            {
+                parameters[index].Element("Value")!.Element("Value")!.Value.Should().Be(
+                    defaultValue.ValueKind == JsonValueKind.String ? defaultValue.GetString() : defaultValue.GetRawText());
+            }
         }
     }
 
