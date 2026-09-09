@@ -253,6 +253,14 @@ if op == "publish-version":
     emit({"Version":"8"})
 if op == "list-aliases": emit({"Aliases":[{"FunctionVersion":s["alias"]}]})
 if op == "list-versions-by-function": emit({"Versions":[{"Version":v,"Description":"honua-cert-run=123-1" if v == "8" else "standing"} for v in s["versions"]]})
+# The create answers that are HTTP 200, well-formed, and carry no top-level `error`: the whole
+# class run 31 (34381748849) failed inside with nothing in the job log but
+# "Create assertion failed". The test that drives them names each one with its expectation.
+CREATE_SILENT_FAILURES = ("create-rolled-back", "create-writer-error", "create-object-id-string",
+                          "create-object-id-missing", "create-no-results", "create-envelope-false",
+                          "create-results-null", "create-slot-null")
+
+
 def geoservices_entitlement_refusal(fail):
     # GeoServices answers a refused operation with HTTP 200 and the whole failure in the envelope.
     # This is run 28's answer verbatim: FeatureServer editing is gated on the Pro entitlement
@@ -394,9 +402,55 @@ elif route.endswith("/10/query"):
 elif route.endswith("/addFeatures"):
     if fail in ("unlicensed-edits", "license-rejected"):
         body = geoservices_entitlement_refusal(fail)
+    elif fail in CREATE_SILENT_FAILURES:
+        # The answers run 31 (34381748849) could not tell apart. Every one of these is HTTP 200
+        # with a well-formed JSON document carrying no top-level `error`, so ok() passes it through
+        # and the create assertion is the first and only thing that notices.
+        # A rolled-back slot: standalone addFeatures defaults to rollbackOnFailure=true, so a
+        # per-feature validation failure comes back as a rolled-back result and nothing is written.
+        if fail == "create-rolled-back":
+            body = {"addResults":[{"success":False,
+                                   "error":{"code":1008,
+                                            "description":"Operation rolled back due to validation failure"}}]}
+        # A slot the writer itself refused, with the stable per-feature classification.
+        elif fail == "create-writer-error":
+            body = {"addResults":[{"success":False,
+                                   "error":{"code":1006, "description":"Invalid attributes."}}]}
+        # A slot that succeeded and carried no usable identity: `objectId` of the wrong JSON type,
+        # which fails the assertion exactly as a refusal does and reads identically without the
+        # diagnostic. The row did land, so the lane's cleanup still has one to remove.
+        elif fail == "create-object-id-string":
+            s["row"] = True
+            body = {"addResults":[{"success":True, "objectId":"1234"}]}
+        elif fail == "create-object-id-missing":
+            s["row"] = True
+            body = {"addResults":[{"success":True}]}
+        # The envelope refuses what the slot claims. BuildFinalResponse computes the envelope's
+        # verdict from the whole batch - rolled back, or a validation error the array does not
+        # repeat - so a slot that reads as landed beside `success:false` is an inconsistent
+        # response, and certifying it would certify a row nothing vouches for.
+        elif fail == "create-envelope-false":
+            s["row"] = True
+            body = {"addResults":[{"success":True, "objectId":1234}]}
+        # Malformed answers that would kill the lane on an index or an attribute before it could
+        # say what it got. The summarizer reports both by kind.
+        elif fail == "create-results-null":
+            body = {"addResults":None}
+        elif fail == "create-slot-null":
+            body = {"addResults":[None]}
+        # An empty envelope: the shape a request whose features never reached the handler produces.
+        else:
+            body = {"addResults":[]}
+        # The envelope carries its own verdict on the whole batch, exactly as ApplyEditsResponse
+        # does; a stub that omitted it could not exercise the assertion that reads it.
+        slots = body["addResults"]
+        body["success"] = fail != "create-envelope-false" and (
+            not isinstance(slots, list)
+            or all(isinstance(slot, dict) and slot.get("success") is True for slot in slots))
     else:
         s["row"] = True
-        body = {"addResults":[{"success": fail != "create", "objectId":1234}]}
+        body = {"addResults":[{"success": fail != "create", "objectId":1234}],
+                "success": fail != "create"}
 elif route.endswith("/deleteFeatures"):
     if fail in ("unlicensed-edits", "license-rejected"):
         # FeatureServerEditsHandler enforces the entitlement once for the whole GeoServices write
@@ -656,7 +710,10 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                         "admin-401", "admin-unconfigured", "admin-unresolvable",
                         "resolved-image", "health-status", "health-body", "invoke",
                         "report", "cold-start", "cold-zero", "init-error", "cloudwatch", "migrations", "migration-pending", "migration-plan",
-                        "query", "fixture-names", "create", "readback", "delete", "delete-remains",
+                        "query", "fixture-names", "create", "create-rolled-back", "create-writer-error",
+                        "create-object-id-string", "create-object-id-missing", "create-no-results",
+                        "create-envelope-false", "create-results-null", "create-slot-null",
+                        "readback", "delete", "delete-remains",
                         "denial-status", "denial-body", "denial-records", "denial-nested", "scoped-unauthenticated", "scoped-allowed", "scoped-records", "executed-version", "weighted",
                         "denied-key-missing", "denied-key-leaks", "mint-refused", "mint-response-lost", "revoke-refused",
                         "standing-invoke", "candidate-phase-invoke",
@@ -879,6 +936,77 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
                     self.assertNotIn("offline-trusted-public-key", line)
                 # A refused write commits nothing, so there was no row for the teardown to lose.
                 self.assertFalse(state["row"])
+
+    def test_a_silent_create_failure_names_what_the_server_actually_answered(self):
+        """Run 31 (34381748849) got the licensed write past the in-body 402 of run 28 and stopped on
+        `Create assertion failed` with NOTHING else in the job log. `ok()` only speaks when the
+        status or the body kind is wrong, and a GeoServices edit reports a per-feature refusal
+        inside `addResults` with HTTP 200 and no top-level `error` — so a rolled-back slot, a slot
+        the writer refused, an objectId of the wrong JSON type, an omitted objectId and an empty
+        array were one indistinguishable answer. Each must now name itself, in the run that
+        failed and in the receipt that outlives it."""
+        cases = (
+            # failure, envelope verdict, the substrings the addResults record has to carry
+            ("create-rolled-back", "false",
+             ['"success":false', '"objectIdType":"NoneType"', '"errorCode":"1008"',
+              "Operation rolled back due to validation failure"]),
+            ("create-writer-error", "false",
+             ['"success":false', '"errorCode":"1006"', "Invalid attributes."]),
+            # Success with an identity the assertion cannot use: the type is the whole finding.
+            ("create-object-id-string", "true",
+             ['"success":true', '"objectId":"1234"', '"objectIdType":"str"']),
+            ("create-object-id-missing", "true",
+             ['"success":true', '"objectId":"none"', '"objectIdType":"NoneType"']),
+            # Nothing to report per slot, so the count is the finding.
+            ("create-no-results", "true", ['"count":0', '"results":[]']),
+            # The envelope refuses what the slot claims: only the envelope verdict says so.
+            ("create-envelope-false", "false",
+             ['"count":1', '"success":true', '"objectId":"1234"', '"objectIdType":"int"']),
+            # Shapes that would kill the lane on an index or an attribute if it did not guard first.
+            ("create-results-null", "true", ['"kind":"text"', '"count":null', '"results":[]']),
+            ("create-slot-null", "false", ['"count":1', '"kind":"text"']),
+        )
+        for failure, envelope, expected in cases:
+            with self.subTest(failure=failure):
+                result, receipt, state, _ = self.run_lane(failure)
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual("noProof", receipt["serving"]["result"])
+                # The assertion this diagnostic explains is still the one that stopped the run.
+                self.assertIn("Create assertion failed", result.stdout + result.stderr)
+                # `ok()` saw a well-formed 200 and said nothing: that is exactly the blind spot.
+                self.assertEqual(
+                    [], [line for line in result.stderr.splitlines()
+                         if line.startswith("serving-assertion:")
+                         and "/addFeatures" in line], result.stderr)
+                diagnosis = [line for line in result.stderr.splitlines()
+                             if line.startswith("serving-create:")]
+                self.assertEqual(1, len(diagnosis), result.stderr)
+                self.assertIn("phase=deployed", diagnosis[0])
+                self.assertIn("path=/rest/services/test_service/FeatureServer/10/addFeatures",
+                              diagnosis[0])
+                self.assertIn("status=200", diagnosis[0])
+                self.assertIn("envelope-success=" + envelope, diagnosis[0])
+                for fragment in expected:
+                    self.assertIn(fragment, diagnosis[0])
+                # The job log is thrown away; the receipt is the evidence that survives it, and it
+                # names the phase the line carries as well as the answer.
+                self.assertEqual(json.loads(diagnosis[0].split("addResults=", 1)[1]),
+                                 receipt["serving"]["create"]["addResults"])
+                self.assertEqual("deployed", receipt["serving"]["create"]["phase"])
+                self.assertEqual(json.loads(envelope), receipt["serving"]["create"]["envelopeSuccess"])
+                # A refused create wrote nothing, and one that landed is still cleaned up.
+                self.assertFalse(state["row"], failure)
+
+    def test_the_create_diagnostic_is_bounded_and_redacted_like_every_other(self):
+        """A diagnostic that echoes a server document is only safe while it stays bounded and passes
+        through the same redaction as the rest. The description is server-authored free text, so it
+        is the one field a leaked credential could ride out on."""
+        result, _, _, _ = self.run_lane("create-writer-error")
+        diagnosis = [line for line in result.stderr.splitlines() if line.startswith("serving-create:")]
+        self.assertEqual(1, len(diagnosis), result.stderr)
+        # run_lane already refuses either runtime key anywhere in stdout, stderr or the receipt;
+        # this pins the bound the redaction cap gives the echoed document.
+        self.assertLess(len(diagnosis[0]), 1024, diagnosis[0])
 
     def test_a_deployment_wide_license_block_is_never_read_as_an_edit_entitlement(self):
         """402 has two owners on this lane. `LicenseOperationMiddleware` refuses every data route of

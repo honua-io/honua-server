@@ -463,6 +463,64 @@ container and this exact seed, the lane's exact `addFeatures` payload is refused
 body code 402 by an unlicensed host and accepted by a licensed one. The seed's layer 10, the
 migrated schema and the lane's payload are therefore not what a 402 is reporting.
 
+## A per-feature edit failure has to say what the server put in `addResults`
+
+The envelope is not the only place a GeoServices edit reports a refusal. `applyEdits` and the
+standalone `addFeatures`/`updateFeatures`/`deleteFeatures` endpoints answer a **per-feature**
+failure inside the results array instead: HTTP 200, a well-formed document, **no top-level
+`error`**, and `addResults[i].success = false` with the reason in `addResults[i].error`. The
+standalone endpoints default to `rollbackOnFailure=true` (ArcGIS spec), so a single rejected
+feature comes back as a rolled-back result and nothing is written.
+
+That shape passes every check `ok()` makes — the status is the expected one, the body is a JSON
+object, and there is no `error` key to echo — so before this change it reached the create assertion
+and stopped the run with nothing but its message.
+
+Run 31 (34381748849) is what that costs. It is the first run to get past the in-body 402 of run 28:
+the cert stack now carries a Pro licence, the standing alias reports `edition=Pro`,
+`validationState=Valid`, 69 entitlements, and every assertion before the run-owned write passed. The
+job log then said, in full:
+
+```
+Create assertion failed; serving noProof
+```
+
+Several different answers produce exactly that line, with different owners:
+
+| What the response held | What it means |
+| --- | --- |
+| `addResults:[{"success":false,"error":{"code":1008,...}}]` | The batch was rolled back because a slot failed validation — `OperationRolledBack`. The `error.description` of the rejected slot names the field, the geometry or the rule. Server or seed. |
+| `addResults:[{"success":false,"error":{"code":1006/1007/1000,...}}]` | The slot itself was refused: `ValidationFailed`, `NotPermitted` (owner-based edit policy), or an unclassified writer failure. |
+| `addResults:[{"success":true,"objectId":"1234"}]` | The write landed and the server returned the object id as a **string**. The assertion requires an integer, so a green write fails it. Server. |
+| `addResults:[{"success":true}]` | The write landed and the response carried no object id at all, so the lane has nothing to read back or delete. Server. |
+| `addResults:[]`, `addResults:null`, `addResults:[null]` | No slot was processed, or the array is not the documented shape. |
+| a slot that reads as landed beside envelope `success:false` | The **envelope's** verdict refuses what the slot claims. `BuildFinalResponse` computes it over the whole batch, so a rolled-back write, or a validation error the results array does not repeat, is reported here and nowhere else. The lane requires both. |
+
+The lane now says which, in the run that failed, on a `serving-create:` line and in the receipt:
+
+```
+serving-create: phase=deployed path=/rest/services/test_service/FeatureServer/10/addFeatures status=200 envelope-success=false addResults={"kind":"json","count":1,"results":[{"success":false,"successType":"bool","objectId":"none","objectIdType":"NoneType","errorCode":"1008","errorDescription":"Operation rolled back due to validation failure"}]}
+```
+
+| Field | What it says |
+| --- | --- |
+| `envelope-success` | `ApplyEditsResponse.success` — the server's verdict on the whole batch, which no per-slot record carries. `none` when the response omitted it. |
+| `count` / `kind` | How many slots the server answered with, and the JSON kind when `addResults` was not an array at all (`null` and a non-array both report `count:null`). The assertion requires exactly one. |
+| `success` / `successType` | The slot's own verdict and the JSON type it arrived in. `type(True) is int` is false in Python, so a boolean in the `objectId` position fails the assertion the same way a string does; the type is reported rather than inferred. |
+| `objectId` / `objectIdType` | The identity the lane has to read back and delete. `none` and `NoneType` mean the server returned a successful create it cannot address. An object id is a server-assigned row id, not a credential, so it is reported by value as well as by type. |
+| `errorCode` / `errorDescription` | The stable per-feature code (`GeoServicesEditErrorCodes`, the Esri-conventional `1000+` range) and the server's own description, bounded and passed through the same redaction as every other echoed diagnostic. |
+
+At most eight slots are echoed and every field is bounded, so a large batch cannot turn a
+diagnostic into a log dump. The request body is never printed: it travels with the
+administrator's own credential in its headers.
+
+The same record is written to the receipt at `serving.create.addResults`, beside
+`serving.create.envelopeSuccess` and `serving.create.phase`, because the job log is discarded and
+the receipt is the evidence that outlives the run. `serve()` runs the rollback smoke inside its own
+recovery path, so a candidate-phase create failure can be followed by a rollback-phase one: the
+phase that failed FIRST — the one that stopped the run — is `serving.create`, and any that followed
+it are kept beside it under `serving.create.subsequentPhases` rather than in its place.
+
 ## Live proof
 
 1. Mirror and verify the digest, clone the standing cert environment/VPC, and boot
@@ -527,6 +585,15 @@ alias, so requests do not depend on public ingress or redirect behavior.
   this run's name were still active when the lane finished, which a passing receipt requires to be
   zero. `sharedStoreVerified` records the standing alias's visibility of the minted key before
   serving begins. An `override` run creates and revokes nothing.
+- `serving.create`: present only on a run whose run-owned create failed. `phase` is the smoke
+  phase that failed first, `envelopeSuccess` is the server's verdict on the whole batch, and
+  `addResults` is the server's own array, bounded to eight slots and reduced to what the assertion
+  reads — per slot the `success` verdict and its JSON type, the `objectId` and its JSON type,
+  and the per-feature `errorCode`/`errorDescription` when the server sent one. A GeoServices
+  edit reports a per-feature refusal inside that array with HTTP 200 and no top-level
+  `error`, so without it a `noProof` receipt cannot say which side owns the failure.
+  `subsequentPhases` carries any later phase that failed the same way, so a rollback-phase
+  failure never displaces the candidate answer that started the recovery.
 - `serving.alias.beforeVersion`, `.afterVersion`, `.rollbackVersion`.
 - `serving.teardown.candidateVersionDeleted`, `.standingLatestRestored`.
 
