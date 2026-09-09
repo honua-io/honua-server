@@ -10,8 +10,9 @@ using StackExchange.Redis;
 namespace Honua.Server.Tests.Features.Admin;
 
 /// <summary>Checks real Redis eviction for internal approval credentials.</summary>
+/// <remarks>These store-level integration tests issue no HTTP requests and claim no endpoint coverage.</remarks>
 [Collection("Redis")]
-[Protocol(TestProtocols.Admin)]
+[Protocol(TestProtocols.TestQuality)]
 [Operation(Operations.ApiKeyManagement)]
 public sealed class RedisAdminApiKeyExpiryTests(RedisFixture redis)
 {
