@@ -6,6 +6,7 @@ extern alias NativeWorker;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using DotNet.Testcontainers.Builders;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -20,13 +21,14 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using Testcontainers.Redis;
+using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
 /// <summary>Public HTTP execution over the durable runtime and production native executor (#4401).</summary>
-[Collection("Redis")]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class NativeWorkerPublicApiTests(RedisFixture redis)
+public sealed class NativeWorkerPublicApiTests(ITestOutputHelper output)
 {
     [RequiredEnvironmentFact("HONUA_WORKER_IMAGE")]
     [Trait("Category", "NativePublicApi")]
@@ -37,24 +39,40 @@ public sealed class NativeWorkerPublicApiTests(RedisFixture redis)
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task VectorConvert_SubmitPollDecode_PreservesPropertiesAndThreeDimensionalCoordinates()
     {
+        await using var network = new NetworkBuilder().Build();
+        await network.CreateAsync();
+        await using var redis = new RedisBuilder("redis:7.2-alpine")
+            .WithNetwork(network)
+            .WithNetworkAliases("native-api-redis")
+            .WithCommand("redis-server", "--appendonly", "yes", "--appendfsync", "always", "--save", "", "--maxmemory-policy", "noeviction")
+            .Build();
+        await redis.StartAsync();
+        var redisConnection = redis.GetConnectionString();
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["ConnectionStrings:redis"] = redis.ConnectionString,
-            ["GdalContainer:Image"] = Environment.GetEnvironmentVariable("HONUA_WORKER_IMAGE"),
-            ["GdalWorker:ScratchRoot"] = Path.Join(Path.GetTempPath(), "honua-native-api", Guid.NewGuid().ToString("N"))
+            ["ConnectionStrings:redis"] = redisConnection
         }).Build();
-        // A separate worker composition avoids mixing managed and native process catalogs.
-        // Both GDAL and PDAL executors are buildable here through the public registration seam.
+        // The assembly alias makes both native families accessible to this web test project.
+        // Execution below goes through the image's entrypoint and native dispatcher, not these leaves.
         var workerServices = new ServiceCollection();
         workerServices.AddLogging();
-        workerServices.AddGdalProcessExecutors(configuration, GdalProcessExecutorMode.Container);
-        await using var worker = workerServices.BuildServiceProvider();
-        var executor = worker.GetServices<IProcessExecutor>().Single(e => e.ProcessIds.Contains("gdal.ogr2ogr"));
-        worker.GetServices<IProcessExecutor>().Should().Contain(e => e.ProcessIds.Contains("pcloud.translate"));
+        workerServices.AddGdalProcessExecutors(configuration);
+        await using var registration = workerServices.BuildServiceProvider();
+        registration.GetServices<IProcessExecutor>().Should().Contain(e => e.ProcessIds.Contains("gdal.ogr2ogr"));
+        registration.GetServices<IProcessExecutor>().Should().Contain(e => e.ProcessIds.Contains("pcloud.translate"));
+
+        var image = Environment.GetEnvironmentVariable("HONUA_WORKER_IMAGE")!;
+        await using var nativeWorker = new ContainerBuilder()
+            .WithImage(image)
+            .WithNetwork(network)
+            .WithEnvironment("ConnectionStrings__redis", "native-api-redis:6379")
+            .Build();
+        await nativeWorker.StartAsync();
+        output.WriteLine($"Production worker image: {image}");
 
         var fixture = new WebAppFixture()
             .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) => config.AddConfiguration(configuration)))
-            .ConfigureServices(services => WireDurableRuntime(services, executor));
+            .ConfigureServices(services => WireDurableRuntime(services, redisConnection));
         await fixture.InitializeAsync();
         try
         {
@@ -88,6 +106,9 @@ public sealed class NativeWorkerPublicApiTests(RedisFixture redis)
         }
         finally
         {
+            var logs = await nativeWorker.GetLogsAsync();
+            output.WriteLine(logs.Stdout);
+            output.WriteLine(logs.Stderr);
             await fixture.DisposeAsync();
         }
     }
@@ -101,10 +122,10 @@ public sealed class NativeWorkerPublicApiTests(RedisFixture redis)
         geometry.GetProperty("coordinates").EnumerateArray().Select(c => c.GetDouble()).Should().Equal(coordinates);
     }
 
-    private void WireDurableRuntime(IServiceCollection services, IJobExecutor nativeExecutor)
+    private static void WireDurableRuntime(IServiceCollection services, string redisConnection)
     {
         services.RemoveAll<IConnectionMultiplexer>();
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis.ConnectionString));
+        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection));
 
         services.RemoveAll<IExecutionJobStore>();
         services.AddSingleton<IExecutionJobStore>(sp =>
@@ -136,7 +157,6 @@ public sealed class NativeWorkerPublicApiTests(RedisFixture redis)
                 sp.GetRequiredService<IConnectionMultiplexer>(),
                 sp.GetRequiredService<ILogger<RedisExecutionLogStore>>()));
 
-        services.AddSingleton<IJobExecutor>(nativeExecutor);
         services.AddJobWorker();
     }
 
