@@ -62,13 +62,22 @@ statistics substituted for zone selection.
 
 Each output shape carries a case that executes real GDAL to produce a valid,
 plausible, but wrong result and then asserts the same oracle rejects it, so the
-suite proves discrimination rather than asserting it.
+suite proves discrimination rather than asserting it. `AssertBand` and
+`AssertStatistics` check properties in a fixed order, so each case below is built
+so that the assertion it names is the first one that can fail: metadata the case
+is not challenging is held equal to the proof's own result.
 
 | Output shape | Case | Wrong-but-well-formed result |
 | --- | --- | --- |
 | Raster bands (#3923, #3925-#3929) | `WarpOracle_ChangedPixelInValidGeoTiff_IsRejected` | One pixel is changed through GDAL; grid, CRS, nodata and TIFF structure stay valid. `AssertBand` is the shared oracle for every raster-output operation. |
 | Zonal scalars (#3924) | `ZonalOracle_GlobalStatisticsSubstitutedForZoneSelection_IsRejected` | A full-extent zone yields whole-raster aggregates (15 cells, sum 1300) under the requested zone id; `AssertZone` rejects the left zone's hand-derived {10,20,50}. |
 | Histogram scalars (#3930) | `HistogramOracle_NoDataCountedAsData_IsRejected` | Dropping the source nodata declaration counts sentinel 255, giving a valid 256-bucket histogram totalling 12; the frozen distribution oracle rejects it. |
+| Reclassify classes (#3931) | `ReclassifyOracle_InclusiveUpperBoundClasses_IsRejected` | Range keys read as closed `[lo, hi]` instead of half-open `[lo, hi)`. The source samples are integers, so executing the proof's own table with each upper bound raised short of the next integer publishes exactly what an inclusive implementation emits: boundary samples 2, 5 and 10 become 10, 30 and 40 in a valid Int16 raster on the same grid. |
+| Reclassify nodata (#3931) | `ReclassifyOracle_SourceNoDataRemappedAsData_IsRejected` | Dropping the source nodata declaration lets the sentinel match its own `-9999:99` entry and publish class 99 in a fully valid band. The caller requests the same sentinel, so type, grid and nodata metadata all match the proof and the **validity mask** is what rejects it. |
+| Map algebra masks (#3933) | `MapAlgebraOracle_SourceNoDataTreatedAsData_IsRejected` | `A + 2*B` over the unmasked sources recovers the two masked cells as 14 and 12. The caller requests the same sentinel, so the metadata matches the proof and the **union-of-masks** assertion is what rejects it. |
+| Map algebra cells (#3933) | `MapAlgebraOracle_MisassociatedExpression_IsRejected` | The misassociated `(A+2)*B` keeps grid, Float64 type, declared sentinel and mask identical to the proof's result, so only the **decoded cell values** can reject it: 4,0,0,n,n,0,20,10 against 4,4,0,n,n,-10,12,10. |
+| Statistics counts (#3934) | `StatisticsOracle_NoDataCountedAsData_IsRejected` | Dropping the source nodata declaration measures the sentinel in both bands, so both counts reach the 6-cell area; the **exact `validCount`** assertion rejects it. |
+| Statistics moments (#3934) | `StatisticsOracle_QuantizedSourceMatchesCountsButNotMoments_IsRejected` | Band 1 quantized to {0,0,4,4,4} preserves band identity, Float32 type, the sentinel, the count 5 and both extrema, so the **mean** assertion (2 against 2.4) is what rejects it — the moment oracle discriminates independently of the count. |
 
 IDW's unbounded default uses GDAL's documented reduced-precision SSE/AVX path,
 even with Float64 output. The interior tolerance is eight Float32 rounding units
