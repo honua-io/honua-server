@@ -46,6 +46,8 @@ on:
       - 'scripts/docker/restore-dotnet-with-github-packages.sh'
       - 'scripts/ci/verify-serving-image-boundary.py'
       - 'tests/dotnet/Honua.Worker.Gdal.Tests/ProductionWorkerContainerHandoffTests.cs'
+      - 'tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/NativeWorkerPublicApiTests.cs'
+      - 'tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj'
       - 'tests/dotnet/Honua.Worker.Gdal.Tests/PdalPointCloudRealCliTests.cs'
       - 'tests/dotnet/Honua.Worker.Gdal.Tests/GdalCli.cs'
       - 'tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj'
@@ -233,6 +235,26 @@ jobs:
             echo "::error::no PDAL case passed — pcloud.translate has no executed receipt"
             exit 1
           fi
+
+      - name: Prove native public API submit poll and decoded output
+        env:
+          HONUA_WORKER_IMAGE: honua-worker-gdal:boundary
+        run: |
+          dotnet test tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj \
+            --configuration Release -maxcpucount:4 \
+            --filter 'Category=NativePublicApi' \
+            --logger 'trx;LogFileName=native-public-api.trx' \
+            --results-directory tests/TestResults
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('tests/TestResults/native-public-api.trx').getroot()
+          cases = root.findall('.//{*}UnitTestResult')
+          passed = sum(case.get('outcome') == 'Passed' for case in cases)
+          nonpassing = len(cases) - passed
+          print(f'Native public API: {passed} passed, {nonpassing} non-passing')
+          if passed < 1 or nonpassing:
+              raise SystemExit('Native public API receipt missing, failed, or skipped')
+          PY
 
       - name: Upload worker certification results
         if: always()
