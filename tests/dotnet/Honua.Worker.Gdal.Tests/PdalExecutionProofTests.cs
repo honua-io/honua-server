@@ -44,16 +44,25 @@ public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDis
         var output = GdalCli.DecodeDataUri(context.Artifacts[0]);
         Encoding.ASCII.GetString(output, 0, 4).Should().Be("LASF");
         (output[104] & 0x80).Should().Be(0, "the artifact must be uncompressed LAS");
-        output[104].Should().Be(3, "retain RGB and GPS time from point format 3");
-        output[25].Should().Be(4, "retain the LAS 1.4 header and WKT CRS");
-        BitConverter.ToUInt16(output, 4).Should().Be(7, "retain file source metadata");
+        // #4460 forwards only scale/offset, not source header metadata or point format.
+        // Pinned PDAL writes LAS 1.4 / format 7, retaining RGB/GPS in its modern layout.
+        output[104].Should().Be(7, "the pinned writer normalizes point format 3 to format 7");
+        output[24].Should().Be(1);
+        output[25].Should().Be(4, "the writer emits LAS 1.4 with WKT CRS");
+        BitConverter.ToUInt16(output, 4).Should().Be(0, "file source ID is not forwarded by the #4460 policy");
         var offset = checked((int)BitConverter.ToUInt32(output, 96));
         var recordLength = BitConverter.ToUInt16(output, 105);
+        recordLength.Should().Be(36, "format 7 contains standard attributes, GPS time and RGB");
         var count = BitConverter.ToUInt64(output, 247);
         count.Should().Be(3);
         output.Length.Should().BeGreaterThanOrEqualTo(offset + 3 * recordLength);
         var scales = Enumerable.Range(0, 3).Select(i => BitConverter.ToDouble(output, 131 + 8 * i)).ToArray();
         var offsets = Enumerable.Range(0, 3).Select(i => BitConverter.ToDouble(output, 155 + 8 * i)).ToArray();
+        if (!reproject)
+        {
+            offsets.Should().Equal(Enumerable.Range(0, 3).Select(i => BitConverter.ToDouble(input, 155 + 8 * i)),
+                "pass-through forwards source offsets as well as scale");
+        }
         var expectedScale = reproject || fixture == "geographic.las" ? 1e-7 : .001;
         scales.Should().Equal(expectedScale, expectedScale, .001);
         double[][] expected = fixture == "geographic.las"
@@ -79,15 +88,20 @@ public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDis
                         .Should().BeApproximately(expected[i][axis], scales[axis] / 2 + 1e-9, $"point {i}, ordinate {axis}");
                 }
                 BitConverter.ToUInt16(candidate, point + 12).Should().Be(new ushort[] { 10, 60000, 123 }[i]);
-                candidate[point + 14].Should().Be(new byte[] { 9, 26, 17 }[i]);
-                candidate[point + 15].Should().Be(new byte[] { 2, 6, 9 }[i]);
-                unchecked((sbyte)candidate[point + 16]).Should().Be(new sbyte[] { -3, 0, 7 }[i]);
+                // Format 7 expands each return field from three bits to four, separates
+                // classification flags, and represents scan angle in 0.006-degree units.
+                (candidate[point + 14] & 0x0f).Should().Be(new[] { 1, 2, 1 }[i]);
+                (candidate[point + 14] >> 4).Should().Be(new[] { 1, 3, 2 }[i]);
+                candidate[point + 15].Should().Be(0, "source flags and scanner channel are zero");
+                candidate[point + 16].Should().Be(new byte[] { 2, 6, 9 }[i]);
                 candidate[point + 17].Should().Be((byte)(i + 1));
-                BitConverter.ToUInt16(candidate, point + 18).Should().Be((ushort)(40 + i));
-                BitConverter.ToDouble(candidate, point + 20).Should().Be(123456.25 + i * .5);
-                BitConverter.ToUInt16(candidate, point + 28).Should().Be(new ushort[] { 65535, 1234, 0 }[i]);
-                BitConverter.ToUInt16(candidate, point + 30).Should().Be(new ushort[] { 0, 5678, 65535 }[i]);
-                BitConverter.ToUInt16(candidate, point + 32).Should().Be(new ushort[] { 123, 9012, 456 }[i]);
+                (BitConverter.ToInt16(candidate, point + 18) * .006).Should()
+                    .BeApproximately(new[] { -3d, 0d, 7d }[i], .003, "scan angle survives within half its output scale");
+                BitConverter.ToUInt16(candidate, point + 20).Should().Be((ushort)(40 + i));
+                BitConverter.ToDouble(candidate, point + 22).Should().Be(123456.25 + i * .5);
+                BitConverter.ToUInt16(candidate, point + 30).Should().Be(new ushort[] { 65535, 1234, 0 }[i]);
+                BitConverter.ToUInt16(candidate, point + 32).Should().Be(new ushort[] { 0, 5678, 65535 }[i]);
+                BitConverter.ToUInt16(candidate, point + 34).Should().Be(new ushort[] { 123, 9012, 456 }[i]);
             }
             for (var axis = 0; axis < 3; axis++)
             {

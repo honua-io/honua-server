@@ -16,7 +16,7 @@ build the production stage and retain the execution TRX.
 
 The test decodes LAS headers, VLRs and every point record directly with C# binary
 reads, independently of Honua's managed LAS reader and PDAL's JSON output. It
-asserts uncompressed layout, point count/format, source metadata, scale, bounds,
+asserts uncompressed layout, point count/format, writer header metadata, scale, bounds,
 all XYZ and attributes. OSR interprets the published WKT VLR solely to assert its
 EPSG identity. Cases cover an explicit geographic source, omitted source CRS
 (projected pass-through), and projected-source reprojection to EPSG:4979. The
@@ -24,12 +24,18 @@ last computes inverse spherical Mercator with R=6378137 from the declared source
 coordinates; tolerance is half the output scale plus floating-point roundoff.
 
 [PDAL's documented forwarding contract](https://pdal.io/en/stable/tutorial/las.html)
-explains why preserving source scale/header and selecting geographic output scale
+explains why preserving source scale/offset and selecting geographic output scale
 are necessary. Dropping RGB, rounding coordinates to the default 0.01 scale,
 copying projected coordinates under a geographic CRS, or changing an elevation
 cannot satisfy these assertions. The same point oracle is also applied to a valid
 LAS with one changed intensity and must reject it. Reprojected XY uses 1e-7-degree
-scale and zero offsets, which fit the full longitude/latitude range in Int32.
+scale, Z scale 0.001, and automatic XYZ offsets under trunk's #4460 writer policy.
+Pass-through forwards source scale and offsets only. Pinned PDAL normalizes the
+format-3 inputs to LAS 1.4 / point format 7 and uses its default file source ID 0;
+source header metadata is not part of that forwarding policy. The independent
+oracle decodes format 7's expanded return fields and relocated classification,
+GPS time and RGB. Scan angle is checked in degrees within half the format-7
+0.006-degree scale; all other attribute values remain exact.
 
 These are pre-cut whole-catalog GA operation proofs for #3951. Candidate-bound
 lifecycle qualification consumes #3848; shared staged-output/database recovery
@@ -48,4 +54,4 @@ artifact, so an unsupported waveform format cannot be handed to the managed
 reader as a successful translation. Successful fixtures are additionally read
 through `LasPointCloudReader`, while the independent binary oracle retains all
 coordinate, attribute, scale, bounds and CRS assertions above. The reader-supported
-point formats are preserved; this does not normalize away source dimensions.
+point format 7 preserves the fixtures' standard source dimensions in its own layout.
