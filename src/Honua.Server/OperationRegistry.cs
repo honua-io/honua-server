@@ -40,6 +40,7 @@ public static class OperationRegistry
     private const string SensorThings11 = "SensorThings-1.1";
     private const string GeoservicesCatalog = "GeoservicesCatalog";
     private const string ImageServer = "ImageServer";
+    private const string GPServer = "GPServer";
 
     /// <summary>
     /// All public-interface operations that require integration test coverage.
@@ -173,6 +174,15 @@ public static class OperationRegistry
         new(GeoservicesCatalog, "GetMessageFormats"),
         new(GeoservicesCatalog, "GetTokenServiceURL"),
         new(GeoservicesCatalog, "RequiresTokens"),
+
+        // ArcGIS SOAP GPServer discovery operations.
+        new(GPServer, "GetToolInfos"),
+        new(GPServer, "GetTaskInfos"),
+        new(GPServer, "GetToolNames"),
+        new(GPServer, "GetTaskNames"),
+        new(GPServer, "GetToolInfo"),
+        new(GPServer, "GetExecutionType"),
+        new(GPServer, "GetResultMapServerName"),
 
         // ArcGIS SOAP ImageServer operations dispatched through POST /services/{serviceId}/ImageServer.
         new(ImageServer, "GetVersion"),
