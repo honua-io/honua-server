@@ -38,8 +38,8 @@
   "summary": {
     "total": 98,
     "byStatus": {
-      "proven": 95,
-      "partially-proven": 2,
+      "proven": 96,
+      "partially-proven": 1,
       "unproven": 1
     },
     "byEntryPoint": {
