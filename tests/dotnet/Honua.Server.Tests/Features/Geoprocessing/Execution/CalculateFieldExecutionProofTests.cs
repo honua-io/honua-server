@@ -149,12 +149,17 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
     [Fact]
     public async Task Calculate_UnsupportedExpression_IsRejectedAndChangesNothing()
     {
+        // md5() is a real PostgreSQL function that the calculate expression allow-list
+        // (UPPER/LOWER/TRIM/LENGTH/COALESCE/NVL/CONCAT and arithmetic) does not admit, and
+        // it is not injection-shaped. A subquery would be rejected too, but by the shared
+        // InputValidationMiddleware SQL-injection guard before the request ever reaches
+        // calculate — so it would prove the middleware, not the allow-list this case pins.
         var response = await PostCalculateAsync(
             where: "1=1",
-            calcExpression: """[{"field":"score","sqlExpression":"(SELECT score FROM calcproof)"}]""");
+            calcExpression: """[{"field":"score","sqlExpression":"md5(label)"}]""");
 
         AssertRejected(response, "Unsupported expression for field 'score'",
-            "a subquery is outside the calculate expression allow-list");
+            "md5 is outside the calculate expression allow-list");
 
         // The rejection must be total: no row may carry a partial write.
         await AssertRowsAsync(SeedRows);
