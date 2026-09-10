@@ -36,6 +36,12 @@ internal static partial class FeatureServerEndpoints
         HttpContext context,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken);
         if (authorizationError != null)
@@ -71,6 +77,12 @@ internal static partial class FeatureServerEndpoints
         HttpContext context,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         // addFeatures authorizes as Insert (BH3-001/BH3-014).
         var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken, AuthorizationOperation.Insert);
@@ -122,6 +134,12 @@ internal static partial class FeatureServerEndpoints
         HttpContext context,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         // updateFeatures authorizes as Update (BH3-001/BH3-014).
         var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken, AuthorizationOperation.Update);
@@ -173,6 +191,12 @@ internal static partial class FeatureServerEndpoints
         HttpContext context,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.DeleteFeatures, out var parameterError))
         {
@@ -479,14 +503,9 @@ internal static partial class FeatureServerEndpoints
         // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path; a named version is
         // Pro-gated and Postgres-only.
 
-        var (editsHandler, entitlementGate) = TryResolveEditsHandler(context);
-        if (entitlementGate is not null)
-        {
-            return entitlementGate;
-        }
-
+        var editsHandler = ResolveEditsHandler(context);
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        return await editsHandler!.HandleApplyEditsAsync(
+        return await editsHandler.HandleApplyEditsAsync(
             serviceId,
             layerId,
             request,
@@ -495,32 +514,36 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Resolves the shared edits handler only after the FeatureServer editing entitlement
-    /// (#4640) is confirmed active. <see cref="FeatureServerEditsHandler"/>'s constructor pulls
-    /// in <c>IResourceValidator</c> (and therefore <c>IMetadataV2GraphProvider</c>) plus a dozen
-    /// other services that a license-denied request never touches; resolving it unconditionally
-    /// via minimal-API <c>[FromServices]</c> binding widened the surface a transient DI hiccup
-    /// in any one of those dependencies could turn into a raw 500 instead of the graceful 402
-    /// GeoServices refusal. Deferring the resolve until after the gate passes means a denied
-    /// request never constructs that graph at all.
+    /// Checks the FeatureServer editing entitlement (#4640) using only <paramref name="context"/> —
+    /// no dependency on <see cref="FeatureServerEditsHandler"/> or any of the services its
+    /// constructor pulls in (<c>IResourceValidator</c>, and therefore
+    /// <c>IMetadataV2GraphProvider</c>, plus a dozen others). Every write entrypoint calls this
+    /// FIRST, before any resource validation/authorization or the handler resolve below, so a
+    /// license-denied request never constructs that dependency graph — and a transient DI hiccup
+    /// inside it can never leak a raw 500 through the graceful 402 GeoServices refusal.
     /// </summary>
-    private static (FeatureServerEditsHandler? Handler, IResult? EntitlementGate) TryResolveEditsHandler(HttpContext context)
-    {
-        var entitlementGate = LicenseGate.RequireEntitlement(
-            context, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing");
-        if (entitlementGate is not null)
-        {
-            return (null, entitlementGate);
-        }
+    private static IResult? RequireFeatureServerEditsEntitlement(HttpContext context)
+        => LicenseGate.RequireEntitlement(context, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing");
 
-        return (context.RequestServices.GetRequiredService<FeatureServerEditsHandler>(), null);
-    }
+    /// <summary>
+    /// Resolves the shared edits handler. Callers must confirm
+    /// <see cref="RequireFeatureServerEditsEntitlement"/> first (#4640) — every entrypoint in this
+    /// file does, at its top, before any other work.
+    /// </summary>
+    private static FeatureServerEditsHandler ResolveEditsHandler(HttpContext context)
+        => context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
 
     private static async Task<IResult> HandleServiceApplyEdits(
         string serviceId,
         HttpContext context,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
 
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
@@ -708,11 +731,7 @@ internal static partial class FeatureServerEndpoints
                  "Set rollbackOnFailure=false to allow partial commits, or submit each layer separately."]);
         }
 
-        var (editsHandler, entitlementGate) = TryResolveEditsHandler(context);
-        if (entitlementGate is not null)
-        {
-            return entitlementGate;
-        }
+        var editsHandler = ResolveEditsHandler(context);
 
         var results = new ServiceLayerEditResult[orderedLayerIds.Count];
 
@@ -739,7 +758,7 @@ internal static partial class FeatureServerEndpoints
                 GdbVersion = sharedOptions.GdbVersion
             };
 
-            var layerResult = await editsHandler!.HandleApplyEditsAsync(
+            var layerResult = await editsHandler.HandleApplyEditsAsync(
                 serviceId,
                 entry.Id,
                 request,
@@ -1120,14 +1139,9 @@ internal static partial class FeatureServerEndpoints
                 "attachments edits are not supported");
         }
 
-        var (editsHandler, entitlementGate) = TryResolveEditsHandler(context);
-        if (entitlementGate is not null)
-        {
-            return entitlementGate;
-        }
-
+        var editsHandler = ResolveEditsHandler(context);
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        return await editsHandler!.HandleApplyEditsAsync(
+        return await editsHandler.HandleApplyEditsAsync(
             serviceId,
             layerId,
             request,
