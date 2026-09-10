@@ -75,4 +75,14 @@ internal sealed class GeoprocessingExecutorOptions
     /// </summary>
     [Range(typeof(TimeSpan), "00:01:00", "30.00:00:00", ErrorMessage = "ResultRetention must be between 1 minute and 30 days")]
     public TimeSpan ResultRetention { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// Maximum feature count that the <c>sink.honua-layer</c> executor will materialize into
+    /// a single transactional catalog load. A spilled <c>honua-feature-stream</c> input is
+    /// read incrementally, but is still loaded through one transactional batch (server#4628),
+    /// so this is the explicit enforced bound that keeps that buffering finite regardless of
+    /// upstream dataset size.
+    /// </summary>
+    [Range(1, int.MaxValue, ErrorMessage = "MaxSinkFeatureCount must be a positive integer")]
+    public int MaxSinkFeatureCount { get; set; } = 2_000_000;
 }

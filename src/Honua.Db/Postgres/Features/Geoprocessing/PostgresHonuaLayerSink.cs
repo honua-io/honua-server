@@ -26,10 +26,26 @@ namespace Honua.Db.Postgres.Features.Geoprocessing;
 /// batch id. Identifiers are re-validated here as defense in depth even though the executor
 /// already validates them, because they are interpolated into DDL/DML.
 /// </remarks>
+/// <remarks>
+/// <para>
+/// <b>Repeat-safety (server#4626):</b> a commit receipt keyed on
+/// (<c>table_name</c>, <c>batch_id</c>) is written in the <em>same</em> transaction as the
+/// data rows, in a reserved <c>__honua_layer_sink_receipts</c> table living alongside the
+/// destination table. Because the receipt and the data mutation share one atomic commit,
+/// there is no window in which the data can be durably committed while the receipt is not
+/// (or vice versa) — the two states can never observably diverge. A crash between this
+/// method returning and the job being marked terminal (including a hard process kill, which
+/// no cancellation token observes) therefore leaves a durable, checkable fact behind: a
+/// retry that replays the same request re-opens a transaction, finds the existing receipt
+/// before touching any row, and returns the receipt's reconstructed outcome without
+/// repeating the append/replace/upsert effect or performing a second data write.
+/// </para>
+/// </remarks>
 internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource) : IHonuaLayerSink
 {
     private const char KeyFieldSeparator = '\u001F';
     private const int InsertChunkSize = 5000;
+    private const string ReceiptsTableName = "__honua_layer_sink_receipts";
 
     private readonly NpgsqlDataSource _dataSource = dataSource
         ?? throw new ArgumentNullException(nameof(dataSource));
@@ -51,6 +67,11 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
             _ = Identifier(key, "keyField");
         }
 
+        if (string.IsNullOrWhiteSpace(request.BatchId))
+        {
+            throw new ArgumentException("BatchId is required for a repeat-safe commit receipt.", nameof(request));
+        }
+
         var srid = request.TargetSrid.ToString(CultureInfo.InvariantCulture);
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -58,6 +79,20 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
 
         await EnsureTableAsync(connection, transaction, schema, table, geometryColumn, srid, cancellationToken)
             .ConfigureAwait(false);
+        await EnsureReceiptsTableAsync(connection, transaction, schema, cancellationToken).ConfigureAwait(false);
+
+        // Resolve ambiguous commit outcomes using the durable receipt rather than blindly
+        // repeating an operation whose prior commit status is unknown: a replay of the same
+        // (table, batchId) short-circuits here without touching any destination row.
+        var existingReceipt = await TryReadReceiptAsync(
+            connection, transaction, schema, table, request.BatchId, cancellationToken).ConfigureAwait(false);
+        if (existingReceipt is { } replay)
+        {
+            // Nothing to write on this attempt; commit (not roll back) so the read-only
+            // transaction closes cleanly instead of lingering open on the connection.
+            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+            return replay;
+        }
 
         switch (request.LoadMode)
         {
@@ -84,9 +119,87 @@ internal sealed partial class PostgresHonuaLayerSink(NpgsqlDataSource dataSource
                 .ConfigureAwait(false);
         }
 
+        // Inserted — and committed — in the same transaction as the data rows above, so the
+        // two effects are atomic: a durable receipt for this batchId exists if and only if
+        // the corresponding rows were durably committed.
+        await InsertReceiptAsync(
+            connection, transaction, schema, table, request.BatchId, request.LoadMode, written, cancellationToken)
+            .ConfigureAwait(false);
+
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         return new HonuaLayerSinkOutcome(written, schema, table, request.BatchId);
+    }
+
+    private static async Task EnsureReceiptsTableAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string schema,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            CREATE TABLE IF NOT EXISTS "{schema}"."{ReceiptsTableName}" (
+                table_name        text NOT NULL,
+                batch_id          text NOT NULL,
+                load_mode         text NOT NULL,
+                features_written  bigint NOT NULL,
+                committed_at      timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY (table_name, batch_id)
+            );
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<HonuaLayerSinkOutcome?> TryReadReceiptAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string schema,
+        string table,
+        string batchId,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT features_written FROM "{schema}"."{ReceiptsTableName}"
+            WHERE table_name = @table AND batch_id = @batchId
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("table", table);
+        command.Parameters.AddWithValue("batchId", batchId);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (result is null or DBNull)
+        {
+            return null;
+        }
+
+        return new HonuaLayerSinkOutcome((long)result, schema, table, batchId);
+    }
+
+    private static async Task InsertReceiptAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string schema,
+        string table,
+        string batchId,
+        HonuaLayerLoadMode loadMode,
+        long written,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            INSERT INTO "{schema}"."{ReceiptsTableName}" (table_name, batch_id, load_mode, features_written)
+            VALUES (@table, @batchId, @loadMode, @written)
+            ON CONFLICT (table_name, batch_id) DO NOTHING
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("table", table);
+        command.Parameters.AddWithValue("batchId", batchId);
+        command.Parameters.AddWithValue("loadMode", loadMode.ToString());
+        command.Parameters.AddWithValue("written", written);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task EnsureTableAsync(

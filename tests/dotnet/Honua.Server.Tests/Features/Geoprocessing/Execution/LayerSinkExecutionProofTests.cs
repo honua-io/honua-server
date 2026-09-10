@@ -21,6 +21,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Npgsql;
 using NSubstitute;
@@ -137,6 +138,84 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
         AssertRow(rows, "A", 5, -5, 6, null);
     }
 
+    [IntegrationTest]
+    public async Task HonuaLayerSink_ReplayOfSameBatchIdAfterCommit_ReturnsSameReceiptWithoutDuplicatingRows()
+    {
+        // server#4626: a retry that replays an already-committed batchId (the crash/retry
+        // scenario — process death after commit, before the job reaches a terminal state)
+        // must reconstruct the original receipt rather than re-appending the rows a second
+        // time. The oracle here is independently computed: exactly one row for key "R" is
+        // possible after N replays only if the second (and any further) attempt is a no-op.
+        var first = await Run("append", "replay-batch", """
+            {"type":"FeatureCollection","features":[
+            {"type":"Feature","geometry":{"type":"Point","coordinates":[15,25]},"properties":{"key":"R","value":7}}]}
+            """);
+        AssertReceipt(first, 1, 0, "Append", "replay-batch");
+
+        var replay = await Run("append", "replay-batch", """
+            {"type":"FeatureCollection","features":[
+            {"type":"Feature","geometry":{"type":"Point","coordinates":[15,25]},"properties":{"key":"R","value":7}}]}
+            """);
+        // Same receipt reconstructed from the durable commit record, not a second write.
+        AssertReceipt(replay, 1, 0, "Append", "replay-batch");
+
+        var rows = await Read();
+        rows.Should().ContainSingle(f => Attributes(f).GetProperty("key").GetString() == "R");
+    }
+
+    [IntegrationTest]
+    public async Task HonuaLayerSink_SpilledStreamInput_LoadsIdenticalContentToInlineEquivalent()
+    {
+        // server#4628: FeatureStreamPublisher spills a transform's output to a
+        // honua-feature-stream reference once it crosses the inline threshold; the sink must
+        // accept that reference (not only the inline data-URI shape) and load the same
+        // content. The oracle is independently computed from the source features written to
+        // the spill file, not a snapshot of executor output.
+        var options = new GeoprocessingExecutorOptions();
+        var features = new NetTopologySuite.Features.IFeature[]
+        {
+            new NetTopologySuite.Features.Feature(Point(90, -10), Attrs(("key", "S1"), ("value", 100))),
+            new NetTopologySuite.Features.Feature(Point(91, -11), Attrs(("key", "S2"), ("value", 200))),
+            new NetTopologySuite.Features.Feature(null!, Attrs(("key", "rejected"), ("value", -1))),
+        };
+        var spillPath = FeatureStreamArtifact.AllocateSpillPath(
+            options.OutputRootDirectory, "spill-op", "sink.honua-layer");
+        var streamReference = await FeatureStreamArtifact.WriteStreamAsync(
+            spillPath, ToAsync(features), CancellationToken.None);
+        FeatureStreamArtifact.IsStreamReference(streamReference).Should().BeTrue();
+
+        var result = await RunWithInputUri("append", "spill-batch", streamReference, options);
+
+        AssertReceipt(result, 2, 1, "Append", "spill-batch");
+        var rows = await Read();
+        AssertRow(rows, "S1", 100, 90, -10, "spill-batch");
+        AssertRow(rows, "S2", 200, 91, -11, "spill-batch");
+    }
+
+    private static Point Point(double x, double y)
+        => NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(4326).CreatePoint(new Coordinate(x, y));
+
+    private static NetTopologySuite.Features.AttributesTable Attrs(params (string Name, object Value)[] values)
+    {
+        var table = new NetTopologySuite.Features.AttributesTable();
+        foreach (var (name, value) in values)
+        {
+            table.Add(name, value);
+        }
+
+        return table;
+    }
+
+    private static async IAsyncEnumerable<NetTopologySuite.Features.IFeature> ToAsync(
+        IEnumerable<NetTopologySuite.Features.IFeature> features)
+    {
+        foreach (var feature in features)
+        {
+            yield return feature;
+            await Task.CompletedTask;
+        }
+    }
+
     private static void AssertUpsertedRows(Feature[] rows)
     {
         // Report the scalar count: formatting an entire Feature on failure walks
@@ -147,10 +226,15 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
         AssertRow(rows, "C", 36, 50, 60, "upsert-batch");
     }
 
-    private async Task<(JobExecutionResult Result, List<string> Artifacts)> Run(string mode, string batch, string input)
+    private Task<(JobExecutionResult Result, List<string> Artifacts)> Run(string mode, string batch, string input)
+        => RunWithInputUri(
+            mode, batch, "data:application/geo+json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(input)));
+
+    private async Task<(JobExecutionResult Result, List<string> Artifacts)> RunWithInputUri(
+        string mode, string batch, string inputUri, GeoprocessingExecutorOptions? executorOptions = null)
     {
         var options = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
-        options.CurrentValue.Returns(new GeoprocessingExecutorOptions());
+        options.CurrentValue.Returns(executorOptions ?? new GeoprocessingExecutorOptions());
         var executor = new HonuaLayerSinkExecutor(options, NullLogger<HonuaLayerSinkExecutor>.Instance,
             new PostgresHonuaLayerSink(_fixture.Postgres.DataSource));
         var parameters = new Dictionary<string, string>
@@ -160,7 +244,7 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
         };
         foreach (var (key, value) in new[] { ("schema", _schema), ("layer", "sinkproof"), ("targetSrid", "4326"),
             ("loadMode", mode), ("batchId", batch), ("keyFields", "key"),
-            ("input", "data:application/geo+json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(input))) })
+            ("input", inputUri) })
         {
             parameters[ExecutionJobParameterKeys.GeoprocessingStepInputPrefix + "0." + key] = value;
         }
