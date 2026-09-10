@@ -11,13 +11,11 @@ import signal
 import subprocess
 import sys
 import tempfile
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import unquote, urlencode, urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests/seed/client-compat-v1.sql"
-# The administrator the lane authenticates as is the bootstrap credential the server compares
-# x-api-key against (ApiKeyAuthenticationHandler), so HONUA_LAMBDA_CERT_ADMIN_KEY only opens
-# the door while it equals what this variable resolves to on the function under test.
+# Resolve the same reference used by ApiKeyAuthenticationHandler at runtime.
 ADMIN_CREDENTIAL_VARIABLE = "HONUA_ADMIN_PASSWORD"
 SECRET_REFERENCE_PREFIX = "aws:secretsmanager:"
 ADMIN_API_KEYS = "/api/v1/admin/api-keys"
@@ -49,6 +47,11 @@ DENIED_KEY_PERMISSIONS = ["read:layers"]
 # An abandoned credential is a standing one: this bound retires the minted key anyway if the run
 # dies between the mint and the revoke. It is far longer than a certification run.
 DENIED_KEY_LIFETIME_HOURS = 2
+_admin_key = None
+
+
+class SecretReadDenied(RuntimeError):
+    pass
 
 
 def require(condition, message):
@@ -63,6 +66,9 @@ def fingerprint(value):
 def aws(*args):
     result = subprocess.run(["aws", *args, "--output", "json"], capture_output=True, text=True)
     # Never echo CLI diagnostics: configuration responses can contain credentials.
+    if (result.returncode and args[:2] == ("secretsmanager", "get-secret-value")
+            and re.search(r"\(AccessDenied(?:Exception)?\)", result.stderr)):
+        raise SecretReadDenied("Secrets Manager read denied")
     require(result.returncode == 0, f"AWS {args[0]} {args[1]} failed")
     return json.loads(result.stdout or "{}")
 
@@ -82,8 +88,6 @@ def inputs():
     override = override_denied_key()
     require(not use_denied_key_override() or override,
             "Denied-key override was requested but HONUA_LAMBDA_CERT_DENIED_KEY is missing")
-    require(not override or override != os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"],
-            "Denied principal must differ from the administrator")
     function = os.environ["REALAWS_CERT_LAMBDA_FUNCTION"]
     alias = os.environ["REALAWS_CERT_LAMBDA_ALIAS"]
     require(re.fullmatch(r"honua-cert-cert-[A-Za-z0-9_-]+", function), "Standing function outside cert namespace")
@@ -124,6 +128,7 @@ def prepare(directory):
     require(variables.get(ADMIN_CREDENTIAL_VARIABLE, "").strip(),
             f"Standing function carries no {ADMIN_CREDENTIAL_VARIABLE}: the cert admin key cannot be accepted")
     require(cfg["VpcConfig"].get("SubnetIds") and cfg["VpcConfig"].get("SecurityGroupIds"), "Cert PostGIS VPC is missing")
+    admin_key(current)
     # The standing function already reaches the cert stack's private PostGIS and resolves its secrets.
     # Clone its configuration, including authentication; never substitute a loopback connection.
     write_json(directory / "environment.json", {"Variables": variables})
@@ -131,9 +136,73 @@ def prepare(directory):
     write_json(directory / "standing.json", current)
 
 
-def admin_key():
-    # Runtime-only secret; not written to a receipt, stdout, or a repository path.
-    return os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"]
+def secret_reference(reference):
+    # Match AwsSecretsManagerResolver's prefix and URI-escaped version options.
+    require(isinstance(reference, str) and reference.lower().startswith(SECRET_REFERENCE_PREFIX),
+            "HONUA_ADMIN_PASSWORD must name an aws:secretsmanager: reference when no override is set")
+    secret_id, _, query = reference[len(SECRET_REFERENCE_PREFIX):].partition("?")
+    arn = re.fullmatch(r"arn:(aws(?:-[a-z-]+)?):secretsmanager:([a-z0-9-]+):(\d{12}):secret:([A-Za-z0-9/_+=.@-]+)", secret_id)
+    require(arn or re.fullmatch(r"[A-Za-z0-9/_+=.@-]+", secret_id),
+            "Invalid Secrets Manager identifier in HONUA_ADMIN_PASSWORD")
+    options = {}
+    for part in query.split("&"):
+        key, separator, value = part.strip().partition("=")
+        if not separator:
+            continue
+        require(not re.search(r"%(?![0-9a-fA-F]{2})", value), "Malformed secret version option encoding")
+        value = unquote(value, errors="strict")
+        if key.lower() in ("versionstage", "versionid"):
+            options["--version-stage" if key.lower() == "versionstage" else "--version-id"] = value
+    args = ["--secret-id", secret_id]
+    if arn:
+        args += ["--region", arn[2]]
+    for key, value in options.items():
+        if value.strip():
+            args += [key, value]
+    return secret_id, args
+
+
+def secret_arn_pattern(secret_id, current):
+    if secret_id.startswith("arn:"):
+        return secret_id if re.search(r"-[A-Za-z0-9]{6}$", secret_id) else secret_id + "-??????"
+    # Names need the ARN's six-character Secrets Manager suffix, never a stack-wide wildcard.
+    function_arn = current["Configuration"]["FunctionArn"]
+    match = re.fullmatch(r"arn:(aws(?:-[a-z-]+)?):lambda:([a-z0-9-]+):(\d{12}):function:[A-Za-z0-9_-]+", function_arn)
+    require(match, "Cannot derive the secret ARN pattern from the standing function ARN")
+    return f"arn:{match[1]}:secretsmanager:{os.environ['AWS_REGION']}:{match[3]}:secret:{secret_id}-??????"
+
+
+def mask_secret(value):
+    # Workflow command escaping prevents newlines or percent sequences from injecting log commands.
+    # Outside Actions there is no masking consumer, so never emit the credential at all.
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        escaped = value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::add-mask::{escaped}", flush=True)
+
+
+def admin_key(current=None):
+    global _admin_key
+    if _admin_key is not None:
+        return _admin_key
+    value = os.environ.get("HONUA_LAMBDA_CERT_ADMIN_KEY", "")
+    if not value:
+        current = current or config(os.environ["REALAWS_CERT_LAMBDA_FUNCTION"])
+        reference = current["Configuration"]["Environment"]["Variables"].get(ADMIN_CREDENTIAL_VARIABLE)
+        secret_id, args = secret_reference(reference)
+        try:
+            response = aws("secretsmanager", "get-secret-value", *args)
+        except SecretReadDenied:
+            raise RuntimeError("STOP: OIDC role needs secretsmanager:GetSecretValue on "
+                               + secret_arn_pattern(secret_id, current)
+                               + "; update the honua-iac CertificationStackSecretsRead grant") from None
+        value = response.get("SecretString")
+        if not isinstance(value, str) and isinstance(response.get("SecretBinary"), str):
+            value = base64.b64decode(response["SecretBinary"], validate=True).decode("utf-8")
+    require(isinstance(value, str) and value.strip(), "Cert admin credential resolved empty or missing")
+    mask_secret(value)
+    require(value != override_denied_key(), "Denied principal must differ from the administrator")
+    _admin_key = value
+    return value
 
 
 def use_denied_key_override():
@@ -190,7 +259,7 @@ def load_cloned_secrets(directory):
 def runtime_secrets():
     # Every credential this run holds: the ones it was given, the one it minted for itself, and
     # every cloned environment value that could be one.
-    return tuple(value for value in (os.environ["HONUA_LAMBDA_CERT_ADMIN_KEY"],
+    return tuple(value for value in (_admin_key, os.environ.get("HONUA_LAMBDA_CERT_ADMIN_KEY", ""),
                                      os.environ.get(DENIED_KEY_VARIABLE, ""), _denied["value"],
                                      *_cloned) if value)
 
@@ -811,6 +880,8 @@ def alias_state(function, alias, expected=None):
 def certify(directory, ephemeral, digest):
     load_cloned_secrets(directory)
     function, alias = inputs()
+    # Separate CLI process: resolve again from the exact configuration cloned during preparation.
+    admin_key(json.loads((directory / "standing.json").read_text()))
     proof = {"result": "noProof", "candidateDigest": digest.split("@")[-1],
              "deniedKey": {"source": "override" if override_denied_key() else "minted",
                            "permissions": list(DENIED_KEY_PERMISSIONS), "name": None, "created": False,
@@ -960,6 +1031,15 @@ if __name__ == "__main__":
             # drifting copy of both in bash.
             set_phase("cold-start-evidence")
             load_cloned_secrets(sys.argv[2])
+            # This stage is its own process, and the administrator is no longer handed to it in the
+            # environment: without resolving it here the redaction set below is missing the one
+            # credential a server-authored error document is most likely to quote. Resolve it from
+            # the configuration prepare already cloned, and never let that resolution be the reason
+            # a diagnostic goes unreported - a set short one secret still redacts the rest.
+            try:
+                admin_key(json.loads((Path(sys.argv[2]) / "standing.json").read_text()))
+            except Exception:  # noqa: BLE001
+                pass
             report_invoke_failure(sys.argv[3], sys.argv[4], json.loads(Path(sys.argv[5]).read_text() or "{}"),
                                   sys.argv[6])
         elif sys.argv[1] == "prepare":

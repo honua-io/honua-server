@@ -77,7 +77,8 @@ jobs:
           ROLE_ARN: ${{ vars.REALAWS_CERT_ROLE_ARN }}
         run: |
           set -euo pipefail
-          required=(ROLE_ARN HONUA_LAMBDA_PREVIEW_REPOSITORY HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN REALAWS_CERT_LAMBDA_FUNCTION REALAWS_CERT_LAMBDA_ALIAS HONUA_LAMBDA_WRITE_BASE_URL HONUA_DEMO_BASE_URL HONUA_LAMBDA_CERT_ADMIN_KEY)
+          # The optional admin-key override is resolved from Secrets Manager after OIDC when unset.
+          required=(ROLE_ARN HONUA_LAMBDA_PREVIEW_REPOSITORY HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN REALAWS_CERT_LAMBDA_FUNCTION REALAWS_CERT_LAMBDA_ALIAS HONUA_LAMBDA_WRITE_BASE_URL HONUA_DEMO_BASE_URL)
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing cert bootstrap variable: ${name}"
