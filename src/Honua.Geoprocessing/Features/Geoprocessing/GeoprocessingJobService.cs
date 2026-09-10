@@ -717,6 +717,27 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var jobId = CreateJobId(resolvedKey);
         var requestFingerprint = CreateRequestFingerprint(plan);
 
+        // Resolve authorized existing submissions before charging admission/quota or
+        // minting new side effects (server#4627): a caller-supplied idempotency key whose
+        // job already exists short-circuits here, before raster-source resolution,
+        // custom-code token minting, and the admission/quota gate below run again for a
+        // request that was already accepted. Without this early check, an otherwise valid
+        // replay (the client never saw the first response, or is proactively deduplicating)
+        // could be denied at quota even though the original submission already succeeded.
+        // Without an idempotency key, CreateJobId minted a fresh random id above, so this
+        // lookup would never find a match — skip the round trip on that (default) path.
+        if (resolvedKey is not null)
+        {
+            var existingByKey = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (existingByKey != null)
+            {
+                EnsureMatchingIdempotentRequest(existingByKey, requestFingerprint, principal);
+                EnsureSubmissionDidNotRollback(existingByKey);
+                GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
+                return existingByKey;
+            }
+        }
+
         // Resolve any native raster/surface step that references a registered catalog
         // raster by layerId/rasterId to an immutable metadata-only descriptor (#2264/#3090).
         // The fingerprint above is computed on the caller's original (reference-carrying)
