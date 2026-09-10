@@ -1435,13 +1435,6 @@ app.UseGlobalExceptionHandling();
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
 
-// Authentication decisions and authenticated data must not survive credential changes
-// in client caches, including clients using non-standard credential headers. Registered
-// before every middleware below that can terminate a credential route (license expiry,
-// a disabled deployment capability, invalid input) so a short-circuited denial still
-// registers the OnStarting callback that applies the final cache policy (#4609 review).
-app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
-
 // Paid deployments stop every data surface at expiry, including cached reads and exports.
 app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();
 

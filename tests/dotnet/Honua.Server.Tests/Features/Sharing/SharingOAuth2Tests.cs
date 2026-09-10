@@ -83,10 +83,6 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         payload.TokenType.Should().Be("Bearer");
         payload.Username.Should().Be("named.user@example.com");
         payload.Ssl.Should().BeTrue();
-
-        response.Headers.CacheControl.Should().NotBeNull();
-        response.Headers.CacheControl!.NoStore.Should().BeTrue();
-        response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
     }
 
     [IntegrationTest]
@@ -183,10 +179,6 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         var refreshedPayload = await ReadTokenAsync(refreshed);
         refreshedPayload.AccessToken.Should().NotBeNullOrWhiteSpace();
         refreshedPayload.ExpiresIn.Should().BeGreaterThan(0);
-
-        refreshed.Headers.CacheControl.Should().NotBeNull();
-        refreshed.Headers.CacheControl!.NoStore.Should().BeTrue();
-        refreshed.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
     }
 
     [IntegrationTest]
@@ -316,10 +308,6 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var error = await ReadErrorAsync(response);
         error.Error.Should().Be("unsupported_grant_type");
-
-        response.Headers.CacheControl.Should().NotBeNull();
-        response.Headers.CacheControl!.NoStore.Should().BeTrue();
-        response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
     }
 
     [IntegrationTest]

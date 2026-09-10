@@ -97,10 +97,6 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         payload.Token.Should().NotBeNullOrWhiteSpace();
         payload.Expires.Should().BeGreaterThan(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         payload.Ssl.Should().BeTrue();
-
-        response.Headers.CacheControl.Should().NotBeNull();
-        response.Headers.CacheControl!.NoStore.Should().BeTrue();
-        response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
     }
 
     [IntegrationTest]
@@ -119,10 +115,6 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         payload.Token.Should().NotBeNullOrWhiteSpace();
         payload.Expires.Should().BeGreaterThan(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         payload.Ssl.Should().BeTrue();
-
-        response.Headers.CacheControl.Should().NotBeNull();
-        response.Headers.CacheControl!.NoStore.Should().BeTrue();
-        response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
     }
 
     [IntegrationTest]
@@ -137,10 +129,6 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
 
         await response.AssertGeoServicesErrorAsync(400);
         (await response.Content.ReadAsStringAsync()).Should().Contain("Unable to generate token.");
-
-        response.Headers.CacheControl.Should().NotBeNull();
-        response.Headers.CacheControl!.NoStore.Should().BeTrue();
-        response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
     }
 
     [IntegrationTest]

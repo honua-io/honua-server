@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Authentication;
-using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -36,7 +35,7 @@ internal static class SharingOAuth2Endpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var oauthGroup = endpoints.MapGroup(string.Empty)
-            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance, CredentialResponseCacheMetadata.Instance);
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
         oauthGroup.MapGet(PortalOAuthRoutes.AuthorizePath, HandleAuthorizeAsync)
             .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))

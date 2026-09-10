@@ -4,24 +4,6 @@ Set up the three ways callers prove who they are: API keys for automation and th
 
 **Prerequisites:** A running Honua server and the ability to set its environment variables. For what authenticated callers are then *allowed* to do, see [Control access](access-control.md); for client-certificate (mTLS) authentication, see [TLS and mTLS](tls-and-mtls.md).
 
-## Client response caching
-
-Authenticated HTTP responses use `Cache-Control: no-store`. HTTP 401/403 responses
-and equivalent protocol-formatted errors use the same policy, including Esri
-498/499 errors carried as HTTP 200. This prevents compliant HTTP caches from
-reusing an earlier response after credentials change. Public anonymous responses
-retain their normal endpoint cache policy.
-
-Portal `generateToken` and OAuth endpoints also return `Cache-Control: no-store`
-and `Pragma: no-cache`, including token exchange errors. Their credentials can be
-validated inside the endpoint without attaching an authenticated user to the
-request, so these routes explicitly prohibit response storage.
-
-An upgrade cannot invalidate responses that a client already cached or data it
-downloaded for offline use. Clear a pre-upgrade HTTP cache before verifying the
-new behavior, then test login, revocation and anonymous access without clearing
-the cache between credential changes.
-
 ## Steps
 
 ### SensorThings observation streams (Preview)
