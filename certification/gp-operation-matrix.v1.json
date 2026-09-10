@@ -575,6 +575,12 @@
           "test": "Rugosity_PeakAndDepression_MatchesIndependentNeighborhoodStatistics",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
           "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
+          "test": "TpiOracle_SiblingNeighborhoodStatisticSubstituted_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
+          "assertion": "#3913 discrimination receipt. Three plausible wrong-but-well-formed TPI grids, each produced by real execution rather than synthesis, satisfy every structural check the proof makes -- dimensions, CRS, six affine ordinates, band count, Float32 type, the -9999 sentinel and the validity mask -- and each is rejected by the signed per-cell oracle: a sibling gdaldem neighbourhood statistic over the same DEM, an unsigned magnitude index that preserves the peak and destroys only the depression's sign, and a source hole consumed as an elevation. Companion cases TpiOracle_UnsignedMagnitudeSubstitutedForSignedIndex_IsRejected and TpiOracle_SourceHoleConsumedAsElevation_IsRejected."
         }
       ]
     },
