@@ -112,10 +112,15 @@ public sealed class GeoEtlCatalogReconciliationTests
         workflowOnly.SupportsProcessEndpoint.Should().BeFalse();
         workflowOnly.Executable.Should().BeTrue();
 
+        var conversionGeometry = nodes["conversion.geometry-format"].CapabilityFlags;
+        conversionGeometry.SupportsJob.Should().BeTrue();
+        conversionGeometry.SupportsSchedule.Should().BeTrue();
+        conversionGeometry.SupportsProcessEndpoint.Should().BeTrue();
+        conversionGeometry.Executable.Should().BeTrue();
+
         // Protocol-only operations do not declare the workflow entry point, so they are
         // not offered to a graph author at all — a node with no dispatcher executor behind
         // it is an advertisement that leads nowhere (#4409).
-        nodes.Should().NotContainKey("conversion.geometry-format");
         nodes.Should().NotContainKey("analytics.cluster");
     }
 

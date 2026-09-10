@@ -48,6 +48,7 @@ internal static class ProcessExecutionCapabilityCatalog
         "overlay.split",
         "data-management.append",
         "data-management.copy-features",
+        "conversion.geometry-format",
         "proximity.near",
         "proximity.near-table",
         "statistics.summarize",
@@ -101,8 +102,7 @@ internal static class ProcessExecutionCapabilityCatalog
         "analytics.cluster",
         "analytics.density",
         "data-management.delete-features",
-        "data-management.calculate-field",
-        "conversion.geometry-format");
+        "data-management.calculate-field");
 
     private static readonly FrozenSet<string> WorkflowOnlyProcessIds = IdSet(
         "source.geojson",
@@ -122,6 +122,7 @@ internal static class ProcessExecutionCapabilityCatalog
         "geometry.buffer",
         "geometry.simplify",
         "geometry.project",
+        "conversion.geometry-format",
         "geometry.make-valid",
         "geometry.union",
         "geometry.intersect",

@@ -346,6 +346,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<GeometrySnapJobExecutor>(services);
         Register<GeometryMakeValidJobExecutor>(services);
         Register<GeometryDifferenceJobExecutor>(services);
+        Register<GeometryFormatConvertJobExecutor>(services);
         Register<ManagedSpatialJoinExecutor>(services);
         Register<ManagedClusterExecutor>(services);
         Register<ManagedBufferAggregateExecutor>(services);
