@@ -38,8 +38,8 @@
   "summary": {
     "total": 98,
     "byStatus": {
-      "proven": 95,
-      "partially-proven": 2,
+      "proven": 96,
+      "partially-proven": 1,
       "unproven": 1
     },
     "byEntryPoint": {
@@ -1441,19 +1441,16 @@
     },
     {
       "processId": "pcloud.translate",
-      "status": "partially-proven",
+      "status": "proven",
       "entryPoint": "job",
       "evidence": [
         {
-          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/PdalPointCloudConvertExecutorTests.cs",
-          "test": "Translate_ProjectedSourceCrs_AppliesReprojectionTo4979",
-          "assertion": "Actual executor validates fake PDAL pipeline/output bytes; no real point-cloud content."
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/PdalExecutionProofTests.cs",
+          "test": "Translate_RealLas_PreservesPointsAttributesPrecisionAndCrs",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/PointCloudProof",
+          "assertion": "Required production-pinned PDAL and real LAS: independent binary decode asserts uncompressed LAS, count, all XYZ/attributes, scale, bounds, writer header metadata, CRS pass-through and analytical reprojection to EPSG:4979; oracle rejects changed intensity in valid LAS."
         }
-      ],
-      "gap": {
-        "issue": "https://github.com/honua-io/honua-server/issues/3951",
-        "missing": "Real LAS/LAZ through PDAL with parsed point count/coordinates/CRS oracle."
-      }
+      ]
     }
   ],
   "entryPointDefinitions": {
