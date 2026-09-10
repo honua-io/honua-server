@@ -69,6 +69,15 @@ internal readonly record struct Variogram(VariogramModel Model, double Nugget, d
 /// the estimator is EXACT at sample locations (γ(0)=0), and it reproduces a CONSTANT
 /// field exactly (for equal sample values <c>b = 0</c>, <c>m = c</c>).
 /// </para>
+///
+/// <para>
+/// The kriging (estimation) VARIANCE at a target has no dual shortcut: unlike the
+/// prediction, it needs the PRIMAL weights <c>(w, μ)</c> for that specific target,
+/// <c>σ²(x₀) = wᵀγ₀ + μ</c>, solving <c>K[w; μ] = [γ₀; 1]</c>. The factorization from
+/// <see cref="TrySolve"/> is kept (not just its one dual solution) so each cell reuses
+/// it via forward/back substitution — O(n²) per cell, the standard cost of a pointwise
+/// kriging variance map, still far cheaper than re-factoring per cell.
+/// </para>
 /// </summary>
 internal sealed class OrdinaryKriging
 {
@@ -76,13 +85,26 @@ internal sealed class OrdinaryKriging
     private readonly double[] _weights;
     private readonly double _lagrange;
     private readonly Variogram _variogram;
+    private readonly double[] _factored;
+    private readonly int[] _pivot;
+    private readonly int _size;
 
-    private OrdinaryKriging(KrigingSample[] samples, double[] weights, double lagrange, Variogram variogram)
+    private OrdinaryKriging(
+        KrigingSample[] samples,
+        double[] weights,
+        double lagrange,
+        Variogram variogram,
+        double[] factored,
+        int[] pivot,
+        int size)
     {
         _samples = samples;
         _weights = weights;
         _lagrange = lagrange;
         _variogram = variogram;
+        _factored = factored;
+        _pivot = pivot;
+        _size = size;
     }
 
     /// <summary>The fitted (or caller-supplied) semivariogram the solve used.</summary>
@@ -135,16 +157,23 @@ internal sealed class OrdinaryKriging
             rhs[i] = points[i].Z;
         }
 
-        if (!TrySolveInPlace(matrix, rhs, size, out var solution))
+        if (!TryFactor(matrix, size, out var pivot))
         {
             // Gamma(0) stays zero for every nugget, so duplicates retain identical rows.
             failure = "the kriging system is singular; consolidate sample points that share a location";
             return false;
         }
 
+        var solution = SolveFactored(matrix, pivot, size, rhs);
+        if (!AllFinite(solution))
+        {
+            failure = "the kriging system is singular; consolidate sample points that share a location";
+            return false;
+        }
+
         var weights = new double[n];
         Array.Copy(solution, weights, n);
-        kriging = new OrdinaryKriging(points, weights, solution[n], variogram);
+        kriging = new OrdinaryKriging(points, weights, solution[n], variogram, matrix, pivot, size);
         return true;
     }
 
@@ -174,18 +203,44 @@ internal sealed class OrdinaryKriging
     }
 
     /// <summary>Predicts the surface value at (<paramref name="x"/>, <paramref name="y"/>).</summary>
-    public double Predict(double x, double y)
+    public double Predict(double x, double y) => PredictWithVariance(x, y).Prediction;
+
+    /// <summary>
+    /// Predicts the surface value AND the ordinary-kriging estimation variance at
+    /// (<paramref name="x"/>, <paramref name="y"/>). The prediction reuses the cached
+    /// dual weights (O(n)); the variance solves the PRIMAL system for this one target
+    /// against the cached factorization (O(n²)) — see the type's remarks. Round-off can
+    /// drive an exactly-zero variance a hair below zero at a sample location; the
+    /// estimator's variance is non-negative by definition, so it is clamped.
+    /// </summary>
+    public (double Prediction, double Variance) PredictWithVariance(double x, double y)
     {
+        var n = _samples.Length;
+        var gamma0 = new double[_size];
         var estimate = _lagrange;
-        for (var i = 0; i < _samples.Length; i++)
+        for (var i = 0; i < n; i++)
         {
             var sample = _samples[i];
             var dx = x - sample.X;
             var dy = y - sample.Y;
-            estimate += _weights[i] * (_variogram.Evaluate(Math.Sqrt((dx * dx) + (dy * dy))) / _variogram.Sill);
+            var gamma = _variogram.Evaluate(Math.Sqrt((dx * dx) + (dy * dy))) / _variogram.Sill;
+            gamma0[i] = gamma;
+            estimate += _weights[i] * gamma;
         }
 
-        return estimate;
+        gamma0[n] = 1d;
+
+        var primal = SolveFactored(_factored, _pivot, _size, gamma0);
+        var normalizedVariance = primal[n];
+        for (var i = 0; i < n; i++)
+        {
+            normalizedVariance += primal[i] * gamma0[i];
+        }
+
+        // Γ (and so γ₀) was normalized by the sill to solve the system; the variance
+        // scales linearly with the semivariogram, so it is restored the same way.
+        var variance = Math.Max(normalizedVariance, 0d) * _variogram.Sill;
+        return (estimate, variance);
     }
 
     private static double DefaultSill(IReadOnlyList<KrigingSample> samples, double nugget)
@@ -236,14 +291,27 @@ internal sealed class OrdinaryKriging
     }
 
     /// <summary>
-    /// Gaussian elimination with partial pivoting on the row-major
+    /// In-place LU decomposition with partial pivoting on the row-major
     /// <paramref name="size"/>×<paramref name="size"/> system. The bordered kriging
     /// matrix is symmetric but indefinite, so a Cholesky factorization does not apply;
     /// partial pivoting is the standard stable choice.
+    ///
+    /// <para>
+    /// Unlike a one-shot Gaussian elimination on an augmented <c>[A|b]</c> system, the
+    /// multiplier below each pivot is STORED (not eliminated to zero) so the
+    /// factorization can be reused for more than one right-hand side via
+    /// <see cref="SolveFactored"/> — once for the dual prediction weights in
+    /// <see cref="TrySolve"/>, and again per grid cell for the primal variance weights
+    /// in <see cref="PredictWithVariance"/>.
+    /// </para>
     /// </summary>
-    private static bool TrySolveInPlace(double[] matrix, double[] rhs, int size, out double[] solution)
+    private static bool TryFactor(double[] matrix, int size, out int[] pivot)
     {
-        solution = rhs;
+        pivot = new int[size];
+        for (var i = 0; i < size; i++)
+        {
+            pivot[i] = i;
+        }
 
         // Scale the singularity threshold by the magnitude of the system so the test is
         // invariant to the units of the input values (metres vs. degrees vs. counts).
@@ -276,44 +344,82 @@ internal sealed class OrdinaryKriging
 
             if (pivotRow != column)
             {
-                for (var k = column; k < size; k++)
+                for (var k = 0; k < size; k++)
                 {
                     (matrix[(column * size) + k], matrix[(pivotRow * size) + k]) =
                         (matrix[(pivotRow * size) + k], matrix[(column * size) + k]);
                 }
 
-                (rhs[column], rhs[pivotRow]) = (rhs[pivotRow], rhs[column]);
+                (pivot[column], pivot[pivotRow]) = (pivot[pivotRow], pivot[column]);
             }
 
-            var pivot = matrix[(column * size) + column];
+            var diagonal = matrix[(column * size) + column];
             for (var row = column + 1; row < size; row++)
             {
-                var factor = matrix[(row * size) + column] / pivot;
+                var factor = matrix[(row * size) + column] / diagonal;
+                matrix[(row * size) + column] = factor;
                 // Skip only exact zero: all nonzero factors, however small, must be applied.
                 if (factor == 0d)
                 {
                     continue;
                 }
 
-                for (var k = column; k < size; k++)
+                for (var k = column + 1; k < size; k++)
                 {
                     matrix[(row * size) + k] -= factor * matrix[(column * size) + k];
                 }
-
-                rhs[row] -= factor * rhs[column];
             }
         }
 
-        for (var row = size - 1; row >= 0; row--)
+        return true;
+    }
+
+    /// <summary>
+    /// Solves <c>K x = rhs</c> against the LU factorization <paramref name="factored"/>
+    /// (from <see cref="TryFactor"/>) via forward, then back, substitution. Does not
+    /// mutate <paramref name="factored"/> or <paramref name="rhs"/>.
+    /// </summary>
+    private static double[] SolveFactored(double[] factored, int[] pivot, int size, double[] rhs)
+    {
+        var x = new double[size];
+        for (var i = 0; i < size; i++)
         {
-            var accumulator = rhs[row];
-            for (var k = row + 1; k < size; k++)
+            x[i] = rhs[pivot[i]];
+        }
+
+        // Forward substitution: L has an implicit unit diagonal; its multipliers are
+        // stored below the diagonal of `factored`.
+        for (var i = 0; i < size; i++)
+        {
+            var sum = x[i];
+            for (var j = 0; j < i; j++)
             {
-                accumulator -= matrix[(row * size) + k] * rhs[k];
+                sum -= factored[(i * size) + j] * x[j];
             }
 
-            rhs[row] = accumulator / matrix[(row * size) + row];
-            if (!double.IsFinite(rhs[row]))
+            x[i] = sum;
+        }
+
+        // Back substitution against U (the diagonal and above).
+        for (var i = size - 1; i >= 0; i--)
+        {
+            var sum = x[i];
+            for (var j = i + 1; j < size; j++)
+            {
+                sum -= factored[(i * size) + j] * x[j];
+            }
+
+            x[i] = sum / factored[(i * size) + i];
+        }
+
+        return x;
+    }
+
+    private static bool AllFinite(double[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!double.IsFinite(value))
             {
                 return false;
             }

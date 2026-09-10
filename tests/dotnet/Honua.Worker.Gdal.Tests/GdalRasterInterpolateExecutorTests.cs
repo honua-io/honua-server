@@ -167,9 +167,9 @@ public sealed class GdalRasterInterpolateExecutorTests
     }
 
     [UnitTest]
-    public async Task Kriging_ValidPoints_SolvesTheSurfaceAndEncodesItWithGdalTranslate()
+    public async Task Kriging_ValidPoints_SolvesTheSurfaceAndEncodesTwoBandsWithGdalTranslateAndMerge()
     {
-        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("kriging-tif"));
+        var runner = SucceedingKrigingRunner(Encoding.UTF8.GetBytes("kriging-tif"));
         var executor = NewExecutor(runner, out var scratch);
         try
         {
@@ -187,12 +187,19 @@ public sealed class GdalRasterInterpolateExecutorTests
             context.Artifacts.Should().ContainSingle();
             context.Artifacts[0].Should().StartWith("data:image/tiff");
 
-            // The predictions are the worker's own; GDAL is still what materializes the
-            // raster, so the executor must reach the pinned toolchain exactly once.
-            var invocation = runner.Invocations.Single();
-            invocation.Tool.Should().Be("gdal_translate");
-            invocation.Arguments.Should().ContainInOrder("-of", "GTiff");
-            invocation.Arguments.Should().ContainInOrder("-a_srs", "EPSG:4326");
+            // The predictions AND the kriging standard errors are the worker's own;
+            // GDAL still materializes each band and combines them, so the executor
+            // reaches the pinned toolchain exactly three times: one gdal_translate per
+            // band, then gdal_merge.py -separate to stack them.
+            runner.Invocations.Should().HaveCount(3);
+            runner.Invocations.Count(i => i.Tool == "gdal_translate").Should().Be(2);
+            var merge = runner.Invocations.Single(i => i.Tool == "gdal_merge.py");
+            merge.Arguments.Should().Contain("-separate");
+            foreach (var translate in runner.Invocations.Where(i => i.Tool == "gdal_translate"))
+            {
+                translate.Arguments.Should().ContainInOrder("-of", "GTiff");
+                translate.Arguments.Should().ContainInOrder("-a_srs", "EPSG:4326");
+            }
         }
         finally
         {
@@ -201,9 +208,9 @@ public sealed class GdalRasterInterpolateExecutorTests
     }
 
     [UnitTest]
-    public async Task Kriging_ExplicitSrid_IsPassedThroughToTheEncoder()
+    public async Task Kriging_ExplicitSrid_IsPassedThroughToBothBandEncoders()
     {
-        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("ok"));
+        var runner = SucceedingKrigingRunner(Encoding.UTF8.GetBytes("ok"));
         var executor = NewExecutor(runner, out var scratch);
         try
         {
@@ -216,7 +223,10 @@ public sealed class GdalRasterInterpolateExecutorTests
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
-            runner.Invocations.Single().Arguments.Should().ContainInOrder("-a_srs", "EPSG:3857");
+            foreach (var translate in runner.Invocations.Where(i => i.Tool == "gdal_translate"))
+            {
+                translate.Arguments.Should().ContainInOrder("-a_srs", "EPSG:3857");
+            }
         }
         finally
         {
@@ -251,22 +261,25 @@ public sealed class GdalRasterInterpolateExecutorTests
 
     /// <summary>
     /// The sample cap and the cell cap can BOTH be satisfied by a request whose prediction
-    /// cost is their product. That work runs in managed code before the GDAL child process
-    /// exists, so ToolTimeout does not bound it; the combined budget must refuse it up front.
+    /// cost is their product SQUARED (the per-cell standard error solves the primal system
+    /// against the cached factorization, O(samples²) per cell). That work runs in managed
+    /// code before the GDAL child process exists, so ToolTimeout does not bound it; the
+    /// combined budget must refuse it up front.
     /// </summary>
     [Theory]
     [InlineData(1_000, ExecutionJobStatus.Failed)]
-    [InlineData(40_000, ExecutionJobStatus.Succeeded)]
+    [InlineData(200_000, ExecutionJobStatus.Succeeded)]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
     public async Task Kriging_CombinedBudget_EnforcesTheBoundary(long budget, ExecutionJobStatus expected)
     {
-        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("ok"));
+        var runner = SucceedingKrigingRunner(Encoding.UTF8.GetBytes("ok"));
         var scratch = GdalCli.NewScratch(ScratchSuite);
         var executor = new GdalRasterInterpolateJobExecutor(
             runner,
-            // 4 samples and a 100x100 grid are each well inside their own cap; the product
-            // (40,000 evaluations) is not inside a budget of 1,000.
+            // 4 samples and a 100x100 grid are each well inside their own cap; the
+            // squared product (4² x 10,000 = 160,000 evaluations) is not inside a
+            // budget of 1,000, but is inside a budget of 200,000.
             GdalJobFactory.Options(scratch, maxKrigingSamples: 16, maxKrigingCells: 1_000_000, maxKrigingPredictionWork: budget),
             NullLogger<GdalRasterInterpolateJobExecutor>.Instance);
         try
@@ -288,7 +301,7 @@ public sealed class GdalRasterInterpolateExecutorTests
             }
             else
             {
-                runner.Invocations.Should().ContainSingle();
+                runner.Invocations.Should().HaveCount(3);
             }
         }
         finally
@@ -457,6 +470,23 @@ public sealed class GdalRasterInterpolateExecutorTests
         return new GdalRasterInterpolateJobExecutor(
             runner, GdalJobFactory.Options(scratch), NullLogger<GdalRasterInterpolateJobExecutor>.Instance);
     }
+
+    /// <summary>
+    /// A fake runner for the kriging two-band pipeline: <c>gdal_translate</c>'s output
+    /// path is its last CLI argument, but <c>gdal_merge.py -separate -o &lt;path&gt; ...</c>
+    /// names its output earlier, after <c>-o</c>. <see cref="FakeGdalCommandRunner.Succeeding"/>
+    /// only knows the fixed-offset-from-the-end convention, so this locates each tool's
+    /// output path the way it actually names it.
+    /// </summary>
+    private static FakeGdalCommandRunner SucceedingKrigingRunner(byte[] outputBytes)
+        => new((tool, args, _) =>
+        {
+            var outputPath = tool == "gdal_merge.py"
+                ? args[Array.IndexOf(args.ToArray(), "-o") + 1]
+                : args[^1];
+            File.WriteAllBytes(outputPath, outputBytes);
+            return new GdalCommandResult { ExitCode = 0 };
+        });
 
     private static void CleanupScratch(string scratch) => GdalCli.CleanupScratch(scratch);
 }

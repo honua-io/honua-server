@@ -248,7 +248,9 @@ public sealed partial class RasterExecutionProofTests : IDisposable
     /// from a smoother. The fixture's centre sample sits on a cell centre for an odd grid
     /// size, so the oracle needs no reference implementation — the decoded cell must equal
     /// the observation. The grid metadata is asserted against the same geotransform the
-    /// IDW proof pins, so both interpolators demonstrably land on one grid.
+    /// IDW proof pins, so both interpolators demonstrably land on one grid. Band 2 is the
+    /// kriging standard error: it vanishes at the same sample location (the estimator's
+    /// exactness applies to its uncertainty too) and is strictly positive everywhere else.
     /// </summary>
     [Fact]
     public async Task InterpolateKriging_SamplePoints_ReproducesSampleValuesExactly()
@@ -257,7 +259,7 @@ public sealed partial class RasterExecutionProofTests : IDisposable
             "raster.interpolate-kriging",
             ("points", Input("points.geojson")), ("zField", "value"), ("width", "5"), ("height", "5"));
 
-        AssertGrid(output, 5, 5, 4326, [0, 0.8, 0, 4, 0, -0.8], 1);
+        AssertGrid(output, 5, 5, 4326, [0, 0.8, 0, 4, 0, -0.8], 2);
         var band = output.GetProperty("bands")[0];
         band.GetProperty("type").GetString().Should().Be("Float32");
         // Every cell is predicted from the global sample set, so the surface declares no
@@ -269,6 +271,23 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         var values = band.GetProperty("values").EnumerateArray().ToArray();
         values.Should().HaveCount(25);
         values[12].GetDouble().Should().BeApproximately(100, 1e-4, "kriging is exact at a sample location");
+
+        var stdError = output.GetProperty("bands")[1];
+        stdError.GetProperty("type").GetString().Should().Be("Float32");
+        stdError.GetProperty("nodata").ValueKind.Should().Be(JsonValueKind.Null);
+        stdError.GetProperty("mask").EnumerateArray().Select(v => v.GetInt32()).Should().OnlyContain(v => v == 255);
+        var errors = stdError.GetProperty("values").EnumerateArray().Select(v => v.GetDouble()).ToArray();
+        errors.Should().HaveCount(25);
+        errors[12].Should().BeApproximately(0, 1e-3, "the kriging variance vanishes at a sample location");
+        for (var i = 0; i < errors.Length; i++)
+        {
+            if (i == 12)
+            {
+                continue;
+            }
+
+            errors[i].Should().BeGreaterThan(0, $"cell {i} is not a sample location, so its prediction is uncertain");
+        }
     }
 
     /// <summary>
@@ -276,7 +295,10 @@ public sealed partial class RasterExecutionProofTests : IDisposable
     /// <c>w₂ - w₁ = (γ₀₁ - γ₀₂) / γ₁₂</c> under <c>w₁ + w₂ = 1</c>. The expectations below
     /// are computed from that closed form and the spherical semivariogram, independently of
     /// the executor's general dual solve, and the pinned variogram removes every fitted
-    /// default from the oracle.
+    /// default from the oracle. The kriging variance at a two-sample target has the closed
+    /// form <c>σ² = w₁γ₀₁ + w₂γ₀₂ + μ</c> with Lagrange multiplier
+    /// <c>μ = γ₀₁ - γ₁₂w₂</c>, derived from the same eliminated system — independently of
+    /// the executor's cached-factorization primal solve.
     /// </summary>
     [Fact]
     public async Task InterpolateKriging_TwoSymmetricSamples_MatchesHandDerivedMidpointAndGridMetadata()
@@ -289,7 +311,7 @@ public sealed partial class RasterExecutionProofTests : IDisposable
 
         // The samples are collinear, so the Y extent is degenerate and is widened by a
         // unit box: rows span [-0.5, 0.5] with the origin at the north-west corner.
-        AssertGrid(output, 3, 1, 4326, [0, 4d / 3d, 0, 0.5, 0, -1], 1);
+        AssertGrid(output, 3, 1, 4326, [0, 4d / 3d, 0, 0.5, 0, -1], 2);
 
         static double Spherical(double h)
             => h >= 4 ? 1 : (1.5 * (h / 4)) - (0.5 * Math.Pow(h / 4, 3));
@@ -301,7 +323,20 @@ public sealed partial class RasterExecutionProofTests : IDisposable
             return (first * 10) + ((1 - first) * 30);
         }
 
+        static double StandardError(double x)
+        {
+            var gamma12 = Spherical(4);
+            var gamma01 = Spherical(Math.Abs(x));
+            var gamma02 = Spherical(Math.Abs(4 - x));
+            var w2 = (1 + ((gamma01 - gamma02) / gamma12)) / 2;
+            var w1 = 1 - w2;
+            var lagrange = gamma01 - (gamma12 * w2);
+            var variance = (w1 * gamma01) + (w2 * gamma02) + lagrange;
+            return Math.Sqrt(Math.Max(variance, 0));
+        }
+
         double[] expected = [Predict(2d / 3d), Predict(2), Predict(10d / 3d)];
+        double[] expectedError = [StandardError(2d / 3d), StandardError(2), StandardError(10d / 3d)];
         // The midpoint of a symmetric two-sample configuration is the plain mean.
         expected[1].Should().Be(20);
 
@@ -311,6 +346,14 @@ public sealed partial class RasterExecutionProofTests : IDisposable
         for (var i = 0; i < 3; i++)
         {
             values[i].Should().BeApproximately(expected[i], 1e-4, $"cell {i}");
+        }
+
+        var errors = output.GetProperty("bands")[1].GetProperty("values")
+            .EnumerateArray().Select(v => v.GetDouble()).ToArray();
+        errors.Should().HaveCount(3);
+        for (var i = 0; i < 3; i++)
+        {
+            errors[i].Should().BeApproximately(expectedError[i], 1e-4, $"standard error, cell {i}");
         }
     }
 

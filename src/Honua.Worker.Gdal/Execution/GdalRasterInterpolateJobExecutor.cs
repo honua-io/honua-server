@@ -311,12 +311,15 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
             return JobExecutionResult.Failed($"Invalid kriging inputs: {samplesError}");
         }
 
-        // Managed prediction runs before the GDAL timeout and costs samples × cells.
-        var predictionWork = (long)samples.Count * width * height;
+        // Managed prediction runs before the GDAL timeout. The dual-formulation
+        // prediction costs O(samples) per cell, but the per-cell kriging-variance band
+        // (PredictWithVariance) solves the primal system against the cached
+        // factorization, which costs O(samples²) per cell and dominates the budget.
+        var predictionWork = (long)samples.Count * samples.Count * width * height;
         if (predictionWork > opts.MaxKrigingPredictionWork)
         {
             var workError = $"the request needs {predictionWork.ToString(CultureInfo.InvariantCulture)} "
-                + $"sample-cell evaluations ({samples.Count.ToString(CultureInfo.InvariantCulture)} samples "
+                + $"sample²-cell evaluations ({samples.Count.ToString(CultureInfo.InvariantCulture)} samples "
                 + $"x {width.ToString(CultureInfo.InvariantCulture)}x{height.ToString(CultureInfo.InvariantCulture)} "
                 + $"cells), which exceeds the configured MaxKrigingPredictionWork="
                 + $"{opts.MaxKrigingPredictionWork.ToString(CultureInfo.InvariantCulture)}; "
@@ -348,87 +351,117 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
 
         var grid = KrigingGridInputs.BuildGrid(samples, width, height);
         var values = new double[width * height];
+        var stdErrors = new double[width * height];
         for (var row = 0; row < height; row++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var y = grid.CentreY(row);
             for (var column = 0; column < width; column++)
             {
-                var prediction = kriging.Predict(grid.CentreX(column), y);
-                if (!double.IsFinite(prediction))
+                var (prediction, varianceEstimate) = kriging.PredictWithVariance(grid.CentreX(column), y);
+                if (!double.IsFinite(prediction) || !double.IsFinite(varianceEstimate))
                 {
-                    // A non-finite prediction means the solve degenerated numerically.
-                    // Fail the job rather than writing a hole that reads as real data.
+                    // A non-finite prediction or variance means the solve degenerated
+                    // numerically. Fail the job rather than writing a hole that reads as
+                    // real data.
                     Log.KrigingPredictionDiverged(logger, job.OperationId, column, row);
                     return JobExecutionResult.Failed(
                         "Kriging failed: the fitted variogram produced a non-finite prediction; "
                         + "supply an explicit 'range'/'sill' or raise 'nugget'.");
                 }
 
-                // Kriging can overshoot its samples; bound the serialized predictions too.
-                if (Math.Abs(prediction) > KrigingGridInputs.MaxAbsValue)
+                var stdError = Math.Sqrt(varianceEstimate);
+
+                // Kriging can overshoot its samples; bound the serialized bands too.
+                if (Math.Abs(prediction) > KrigingGridInputs.MaxAbsValue || stdError > KrigingGridInputs.MaxAbsValue)
                 {
                     return JobExecutionResult.Failed(
                         "Kriging failed: prediction exceeds the supported Float32 magnitude; rescale the values.");
                 }
 
-                values[(row * width) + column] = prediction;
+                var index = (row * width) + column;
+                values[index] = prediction;
+                stdErrors[index] = stdError;
             }
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
-            // Both second segments are fixed relative literal filenames, so they can
-            // never be rooted and silently discard workspace.
-            var gridPath = Path.Join(workspace, "kriging.asc");
+            // Every segment below is a fixed relative literal filename, so none can be
+            // rooted and silently discard workspace.
+            var predictionGridPath = Path.Join(workspace, "prediction.asc");
+            var stdErrorGridPath = Path.Join(workspace, "stderror.asc");
+            var predictionPath = Path.Join(workspace, "prediction.tif");
+            var stdErrorPath = Path.Join(workspace, "stderror.tif");
             var outputPath = Path.Join(workspace, "output.tif");
-            await KrigingGridInputs.WriteGridAsync(gridPath, grid, values, cancellationToken).ConfigureAwait(false);
+            await KrigingGridInputs.WriteGridAsync(predictionGridPath, grid, values, cancellationToken)
+                .ConfigureAwait(false);
+            await KrigingGridInputs.WriteGridAsync(stdErrorGridPath, grid, stdErrors, cancellationToken)
+                .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
-            await context.ReportProgressAsync(75, "Encoding the interpolated raster", cancellationToken)
+            await context.ReportProgressAsync(70, "Encoding the interpolated raster bands", cancellationToken)
                 .ConfigureAwait(false);
 
             // -a_ullr restores the grid's true extent over AAIGrid's single square
             // cellsize; see KrigingGridInputs.WriteGridAsync for why the hand-off format
-            // has to be a single file.
-            var args = new List<string> { "-of", "GTiff", "-a_srs", srid };
-            args.AddRange(KrigingGridInputs.ExtentArguments(grid));
-            args.Add(gridPath);
-            args.Add(outputPath);
-            await GdalCommandLog.LogCommandAsync(context, "gdal_translate", args, workspace, cancellationToken)
+            // has to be a single file. Each band is translated to its own single-band
+            // GeoTIFF before gdal_merge combines them, so no step in the pipeline needs
+            // a driver that discovers georeferencing through a sidecar file.
+            var predictionTranslateArgs = new List<string> { "-of", "GTiff", "-a_srs", srid };
+            predictionTranslateArgs.AddRange(KrigingGridInputs.ExtentArguments(grid));
+            predictionTranslateArgs.Add(predictionGridPath);
+            predictionTranslateArgs.Add(predictionPath);
+            var predictionFailure = await RunGdalToolAsync(
+                "gdal_translate", predictionTranslateArgs, workspace, context, opts, job, cancellationToken)
+                .ConfigureAwait(false);
+            if (predictionFailure is not null)
+            {
+                return predictionFailure;
+            }
+
+            var stdErrorTranslateArgs = new List<string> { "-of", "GTiff", "-a_srs", srid };
+            stdErrorTranslateArgs.AddRange(KrigingGridInputs.ExtentArguments(grid));
+            stdErrorTranslateArgs.Add(stdErrorGridPath);
+            stdErrorTranslateArgs.Add(stdErrorPath);
+            var stdErrorFailure = await RunGdalToolAsync(
+                "gdal_translate", stdErrorTranslateArgs, workspace, context, opts, job, cancellationToken)
+                .ConfigureAwait(false);
+            if (stdErrorFailure is not null)
+            {
+                return stdErrorFailure;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await context.ReportProgressAsync(85, "Combining the prediction and standard-error bands", cancellationToken)
                 .ConfigureAwait(false);
 
-            using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-            GdalCommandResult result;
-            try
+            // gdal_merge.py -separate stacks two co-registered single-band rasters into
+            // one multi-band raster; band order follows input order (band 1 = prediction,
+            // band 2 = kriging standard error), so a caller can qualify a prediction
+            // instead of trusting it.
+            var mergeArgs = new List<string>
             {
-                result = await runner.RunAsync("gdal_translate", args, workspace, linked.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                "-separate", "-o", outputPath, "-of", "GTiff", predictionPath, stdErrorPath,
+            };
+            var mergeFailure = await RunGdalToolAsync(
+                "gdal_merge.py", mergeArgs, workspace, context, opts, job, cancellationToken)
+                .ConfigureAwait(false);
+            if (mergeFailure is not null)
             {
-                Log.ToolTimedOut(logger, job.OperationId, opts.ToolTimeout);
-                return JobExecutionResult.Failed($"gdal_translate timed out after {opts.ToolTimeout}.");
-            }
-
-            if (!result.Succeeded)
-            {
-                Log.KrigingToolFailed(logger, job.OperationId, result.ExitCode, GdalErrorSanitizer.TruncateForLog(result.StandardError));
-                return JobExecutionResult.Failed(
-                    $"gdal_translate exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
+                return mergeFailure;
             }
 
             if (!File.Exists(outputPath))
             {
-                return JobExecutionResult.Failed("gdal_translate reported success but produced no output raster.");
+                return JobExecutionResult.Failed("gdal_merge.py reported success but produced no output raster.");
             }
 
             var outputLength = new FileInfo(outputPath).Length;
             if (outputLength == 0)
             {
-                return JobExecutionResult.Failed("gdal_translate produced an empty output raster.");
+                return JobExecutionResult.Failed("gdal_merge.py produced an empty output raster.");
             }
 
             var publishError = await GdalArtifactPublisher.PublishFileAsync(
@@ -448,6 +481,48 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         {
             GdalScratch.TryCleanup(workspace, logger);
         }
+    }
+
+    /// <summary>
+    /// Runs one GDAL/OGR CLI <paramref name="tool"/> invocation with the shared
+    /// per-command timeout, logging and error-sanitization the kriging pipeline applies
+    /// to every step (two <c>gdal_translate</c> band conversions and one
+    /// <c>gdal_merge.py</c> combine). Returns <see langword="null"/> on success, or the
+    /// caller-facing <see cref="JobExecutionResult"/> to return on failure.
+    /// </summary>
+    private async Task<JobExecutionResult?> RunGdalToolAsync(
+        string tool,
+        IReadOnlyList<string> args,
+        string workspace,
+        IJobExecutionContext context,
+        GdalWorkerOptions opts,
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
+    {
+        await GdalCommandLog.LogCommandAsync(context, tool, args, workspace, cancellationToken).ConfigureAwait(false);
+
+        using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+        GdalCommandResult result;
+        try
+        {
+            result = await runner.RunAsync(tool, args, workspace, linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            Log.ToolTimedOut(logger, job.OperationId, opts.ToolTimeout);
+            return JobExecutionResult.Failed($"{tool} timed out after {opts.ToolTimeout}.");
+        }
+
+        if (!result.Succeeded)
+        {
+            Log.KrigingToolFailed(logger, job.OperationId, tool, result.ExitCode, GdalErrorSanitizer.TruncateForLog(result.StandardError));
+            return JobExecutionResult.Failed(
+                $"{tool} exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -659,7 +734,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
         public static partial void KrigingPredictionDiverged(ILogger logger, string operationId, int column, int row);
 
         [LoggerMessage(9327, LogLevel.Error,
-            "GDAL raster interpolate executor failed job {OperationId}: gdal_translate exit {ExitCode}: {Error}")]
-        public static partial void KrigingToolFailed(ILogger logger, string operationId, int exitCode, string error);
+            "GDAL raster interpolate executor failed job {OperationId}: {Tool} exit {ExitCode}: {Error}")]
+        public static partial void KrigingToolFailed(ILogger logger, string operationId, string tool, int exitCode, string error);
     }
 }
