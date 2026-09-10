@@ -11,6 +11,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Formats;
 using Xunit;
 
 namespace Honua.Core.Tests.Raster.ZarrParser;

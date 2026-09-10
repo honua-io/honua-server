@@ -4980,7 +4980,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_LayerWithoutServableCoverage_Returns404",
-        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_WithoutAuthentication_Returns401BeforeStoreLookup"
+        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_RegisteredCoverage_RendersEveryCubeCellAtZoomZero",
+        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_WithoutAuthentication_Returns401BeforeStoreLookup",
+        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_ZoomOneQuadrants_EachRenderTheirOwnWindowOfTheCube"
       ],
       "proof_ledger_surface": "datacube-tiles",
       "maturity": "implemented",
@@ -8575,6 +8577,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_UnavailableZarrReader_ReturnsOperationNotSupported",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_ZarrSliceWithRangeSubset_ReturnsOperationNotSupported",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_ZarrSliceWithTiff_ReturnsOperationNotSupported",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_ZarrSlice_RendersTheSelectedElevationSlicesPixels",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrOversizeEndpointsTests.Wcs_GetCoverage_OversizeNativeGridWithoutScaling_ReturnsInvalidParameterValueWithCoverageIdLocator",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrTrimEndpointsTests.Wcs_GetCoverage_AdvertisedExtentZarrTrim_RoundTripsToPng",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrTrimEndpointsTests.Wcs_GetCoverage_OverExtentZarrTrim_ClampsToCoverageAndReturnsPng"
