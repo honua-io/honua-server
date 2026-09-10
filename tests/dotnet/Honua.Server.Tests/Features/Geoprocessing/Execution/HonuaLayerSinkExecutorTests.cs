@@ -133,6 +133,47 @@ public sealed class HonuaLayerSinkExecutorTests
     }
 
     [UnitTest]
+    public async Task HonuaLayerSink_SpilledStreamReferenceInput_IsAcceptedLikeInlineInput()
+    {
+        // server#4628: HonuaLayerSinkExecutor previously accepted only the inline
+        // data:application/geo+json;base64 URI, so a workflow's transform-to-sink success
+        // depended on whether the transform's output happened to cross
+        // FeatureStreamPublisher's inline threshold. A honua-feature-stream:v1 reference
+        // (the spilled shape) must load through identically.
+        var sink = new CapturingLayerSink();
+        var executorOptions = Options();
+        var executor = new HonuaLayerSinkExecutor(executorOptions, NullLogger<HonuaLayerSinkExecutor>.Instance, sink);
+
+        var spillPath = FeatureStreamArtifact.AllocateSpillPath(
+            executorOptions.CurrentValue.OutputRootDirectory, "unit-op", HonuaLayerSinkExecutor.HandledProcessId);
+        var streamReference = await FeatureStreamArtifact.WriteStreamAsync(
+            spillPath,
+            ToAsync(Feature(Point(5, 6), ("name", "spilled"))),
+            CancellationToken.None);
+
+        var (status, uri, _) = await RunAsync(
+            executor,
+            ("input", streamReference),
+            ("layer", "parcels"),
+            ("targetSrid", "4326"),
+            ("batchId", "spill-batch"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        sink.Rows.Should().HaveCount(1);
+        sink.Rows![0].AttributesJson.Should().Contain("\"name\":\"spilled\"");
+        DecodeDescriptor(uri!).GetProperty("featuresWritten").GetInt64().Should().Be(1);
+    }
+
+    private static async IAsyncEnumerable<IFeature> ToAsync(params IFeature[] features)
+    {
+        foreach (var feature in features)
+        {
+            yield return feature;
+            await Task.CompletedTask;
+        }
+    }
+
+    [UnitTest]
     public async Task HonuaLayerSink_UpsertWithKeyFields_PassesKeysToCapability()
     {
         var sink = new CapturingLayerSink();
