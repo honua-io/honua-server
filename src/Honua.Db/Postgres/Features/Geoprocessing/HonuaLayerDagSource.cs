@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -70,13 +71,11 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
         if (_metadata is not null)
         {
             var snapshot = await _metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+            if (!snapshot.Index.ResourcesByStorageLayerId.ContainsKey(layerId))
             {
                 throw new InvalidOperationException("Source layer does not exist.");
             }
-            var binding = snapshot.Graph.StorageBindings.Single(b =>
-                b.StorageLayerId == layerId && b.ResourceId == resource.Metadata.Id);
-            query = query with { SpatialReferenceSrid = FeatureStorageMapping.FromMetadata(resource, binding).StorageSrid };
+            query = query with { SpatialReferenceSrid = snapshot.ResolveStorageSrid(layerId) };
         }
 
         // Per-feature WKB -> GeoJSON conversion via the shared managed NTS reader/writer.

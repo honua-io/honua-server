@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.FeatureStore.Domain;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
 /// <summary>
@@ -233,6 +235,34 @@ public static class MetadataV2GraphSnapshotExtensions
             return pub;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Resolves the actual storage CRS (SRID) bound to a catalog layer identified by its
+    /// integer storage-layer handle. This is the SAME lookup <c>source.honua-layer</c> uses
+    /// to constrain the query pipeline's spatial reference (resource → storage binding →
+    /// <see cref="FeatureStorageMapping.FromMetadata"/>), centralized here so every
+    /// layer-sourced geoprocessing consumer that needs the real SRID (not just the query
+    /// pipeline) resolves it identically rather than re-deriving it (#4623). Returns
+    /// <see langword="null"/> when the storage-layer id is unknown to the graph, has no
+    /// resolvable storage binding, or the binding is not relational feature storage.
+    /// </summary>
+    public static int? ResolveStorageSrid(this MetadataV2GraphSnapshot snapshot, int storageLayerId)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource))
+        {
+            return null;
+        }
+
+        var binding = snapshot.Graph.StorageBindings.SingleOrDefault(b =>
+            b.StorageLayerId == storageLayerId && b.ResourceId == resource.Metadata.Id);
+        if (binding is null || binding.StorageType != MetadataV2StorageType.RelationalTable)
+        {
+            return null;
+        }
+
+        return FeatureStorageMapping.FromMetadata(resource, binding).StorageSrid;
     }
 
     /// <summary>
