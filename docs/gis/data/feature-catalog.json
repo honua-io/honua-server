@@ -33,7 +33,9 @@
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_AuditReturnsNoIdentity_RollBackRealPostgresWrites",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Requests_AnonymousAndTenantScopedAdmin_DenyWithoutDisclosureOrMutation"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Requests_AnonymousAndTenantScopedAdmin_DenyWithoutDisclosureOrMutation",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -50,7 +52,9 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.DeleteZone_NonexistentZoneId_Returns404",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -1071,7 +1075,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.ListChannelStates_AfterPause_ReportsPausedChannel"
+        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.ListChannelStates_AfterPause_ReportsPausedChannel",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -1087,7 +1093,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetAlertRules_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListRules_WithServiceAndLayerFilter_ReturnsSuccessEnvelope",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lists_MissingScopeRejects_ExplicitScopeExcludesAnotherService"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lists_MissingScopeRejects_ExplicitScopeExcludesAnotherService",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -1102,7 +1110,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Requests_AnonymousAndTenantScopedAdmin_DenyWithoutDisclosureOrMutation"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Requests_AnonymousAndTenantScopedAdmin_DenyWithoutDisclosureOrMutation",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -1118,7 +1128,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListRuleEvents_NonexistentRuleId_Returns404",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListRuleEvents_WithStatusAndLimit_ReturnsPagedTriggersAndPassesFilter",
-        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListRuleEvents_WithUnknownStatus_Returns400"
+        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListRuleEvents_WithUnknownStatus_Returns400",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -1133,7 +1145,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.GetRuleHealth_WithRateLimitedDelivery_ReturnsChannelState",
-        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.GetRuleHealth_WithUnavailableDeliveryChannel_ReturnsPolicyState"
+        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.GetRuleHealth_WithUnavailableDeliveryChannel_ReturnsPolicyState",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -1150,6 +1164,8 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetAlertZones_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListZones_WithServiceFilter_ReturnsSuccessEnvelope",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lists_MissingScopeRejects_ExplicitScopeExcludesAnotherService",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.AlertsEndpoint_WhenPreviewDisabled_IsNotMapped"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -1164,7 +1180,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
+        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -2992,7 +3010,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.ListAlerts_RejectsNumericSeverityFilter",
-        "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.ListAlerts_ReturnsItemsAndResourceRef"
+        "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.ListAlerts_ReturnsItemsAndResourceRef",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3006,7 +3026,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.GetSingleAlert_Returns200_WhenFound"
+        "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.GetSingleAlert_Returns200_WhenFound",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -13824,7 +13846,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.PauseChannel_StopsDispatchClaims_ResumeRestoresThem",
-        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.PauseChannel_UnknownChannel_Returns400"
+        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.PauseChannel_UnknownChannel_Returns400",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -13838,7 +13862,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.PauseChannel_StopsDispatchClaims_ResumeRestoresThem"
+        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.PauseChannel_StopsDispatchClaims_ResumeRestoresThem",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -13853,7 +13879,9 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.RedriveDeadLetters_IsIdempotent_SecondCallRedrivesNothingNew",
-        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.RedriveDeadLetters_WithSeededDeadLetterBacklog_DrainsBacklogToPending"
+        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.RedriveDeadLetters_WithSeededDeadLetterBacklog_DrainsBacklogToPending",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -13879,7 +13907,9 @@
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.CommunityEdition_WithEnterpriseCap_DoesNotGrantFeatures",
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.EnterpriseEdition_AllowsEnterpriseFeatures",
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.EnterpriseEdition_WithProCap_BlocksEnterpriseFeaturesOnly",
-        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures"
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -13899,7 +13929,9 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.TestRule_WithZoneIdOnThresholdRule_ReturnsValidationError",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Review_RuleTestPathVariants_DoNotRequireAuditOrPersistRules",
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.CommunityEdition_ProAlertFeatures_AreBlockedWithEntitlementDetail",
-        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures"
+        "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -13917,7 +13949,9 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.CreateZone_InvalidWkt_Returns400",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -15791,7 +15825,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.AcknowledgeAlert_RecordsAuditEvidence"
+        "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.AcknowledgeAlert_RecordsAuditEvidence",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -15805,7 +15841,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.ResolveAlert_ReturnsNotFound_WhenLifecycleMissing"
+        "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.ResolveAlert_ReturnsNotFound_WhenLifecycleMissing",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -15819,7 +15857,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.SuppressAlert_RequiresFutureSuppressUntil"
+        "Honua.Server.Tests.Features.Admin.ObservabilityAlertEndpointsTests.SuppressAlert_RequiresFutureSuppressUntil",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -21528,7 +21568,9 @@
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_AuditReturnsNoIdentity_RollBackRealPostgresWrites",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Review_ConnectionVariants_CommitAndRollbackWithDurableAudit"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Review_ConnectionVariants_CommitAndRollbackWithDurableAudit",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -21544,7 +21586,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
@@ -21561,7 +21605,9 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.UpdateZone_NonexistentZoneId_Returns404",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle",
         "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Lifecycle_AllEightActions_PersistIdentityAndMutationTogether",
-        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged"
+        "Honua.Server.Tests.Features.Admin.AlertPreviewFloorTests.Mutations_PostgresRejectsAuditInsert_LeaveDataAndAuditUnchanged",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.EveryDeployedAlertRoute_RefusesTenantScopedAdmin_AndServesInstanceAdmin",
+        "Honua.Server.Tests.Features.Alerts.AlertTenantIsolationRouteCoverageProofTests.TenantScopedAttempts_OnEveryDeployedAlertRoute_MutateNothingAndAuditNothing"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "preview",
