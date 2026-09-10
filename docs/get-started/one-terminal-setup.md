@@ -57,7 +57,7 @@ EKS and Azure are outside this bounded placement path.
 
 These install/handoff commands are the required replay entry points, not a
 claim that this docs lane installed the as-yet uncut candidate. For a separate
-source-development setup, use [Zero to a browser map](quickstart.md);
+source-development setup, use [source-development quickstart](../internal/developer/source-quickstart.md);
 its source build does not qualify this packaged terminal journey.
 
 ## 2. Establish least privilege and server discovery

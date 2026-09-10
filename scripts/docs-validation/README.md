@@ -1,8 +1,8 @@
 # Executable documentation validation
 
-`validate-quickstart.sh` proves the primary install quickstart against a clean,
+`validate-quickstart.sh` proves the source-development quickstart against a clean,
 isolated Docker Compose project. It extracts commands directly from
-`docs/get-started/quickstart.md`; there is no second command sequence in the
+`docs/internal/developer/source-quickstart.md`; there is no second command sequence in the
 harness.
 
 Each `bash` or `sh` fence in the quickstart must have an immediately preceding,
