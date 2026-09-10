@@ -164,7 +164,11 @@ public sealed class LicenseBlockedCredentialResponseCacheTests : IAsyncLifetime
 
         using var response = await client.GetAsync("/sharing/rest/generateToken");
 
-        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+        // GeoServices formats the license denial as a logical error on an HTTP 200
+        // envelope rather than a literal 402; the no-store guarantee must hold either way.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("\"code\":402");
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
