@@ -1188,6 +1188,8 @@
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.LegacyRedisRecord_PreservesCompareAndSetAndExpiry",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication",
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RetainedMetadata_AfterExpiryOrRevoke_LeavesTheAuthenticationCandidateSet",
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Rotate_AfterExpiry_IsRejectedWithoutIssuingDeadCredential",
         "Honua.Server.Tests.Features.Admin.ScopedAdminKeyOidcEnforcementTests.ApprovedOperationKey_WithOidcEnabled_AllowsOnlyExactOperation",
         "Honua.Server.Tests.Features.Admin.ScopedAdminKeyOidcEnforcementTests.ScopedApproveKey_WithOidcEnabled_IsDeniedGeneralAdminMutation",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
@@ -1206,8 +1208,10 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ExpiredApiKey_CannotAuthenticateAndReportsExpiredPermissions",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.InternalReplayCredential_CannotBeDiscoveredOrReissuedThroughKeyManagement",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces",
-        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata"
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Rotate_AfterExpiry_IsRejectedWithoutIssuingDeadCredential"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -13931,8 +13935,11 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.CreateApiKey_WithReservedApprovedOperationGrant_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.FullAdminScopedKey_RetainsFullAdminAuthority",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CannotPerformMutatingAdminOperations",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
-        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication"
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication",
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RetainedMetadata_AfterExpiryOrRevoke_LeavesTheAuthenticationCandidateSet",
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Rotate_AfterExpiry_IsRejectedWithoutIssuingDeadCredential"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -13949,7 +13956,8 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CannotPerformMutatingAdminOperations",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RevokeApiKey_PreventsFurtherAuthentication",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
-        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication"
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication",
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.RetainedMetadata_AfterExpiryOrRevoke_LeavesTheAuthenticationCandidateSet"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -13964,9 +13972,11 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.InternalReplayCredential_CannotBeDiscoveredOrReissuedThroughKeyManagement",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_ReturnsNewPlaintextAndInvalidatesOldKey",
         "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Expiry_WithRedisRegistry_DeniesCredentialAndRetainsMetadata",
-        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication"
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Lifecycle_WithRedisRegistry_RotatesAndRevokesAuthentication",
+        "Honua.Server.Tests.Features.Admin.RedisAdminApiKeyEndpointsTests.Rotate_AfterExpiry_IsRejectedWithoutIssuingDeadCredential"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",

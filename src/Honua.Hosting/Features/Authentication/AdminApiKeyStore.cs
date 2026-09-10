@@ -110,13 +110,16 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var now = _timeProvider.GetUtcNow();
+        // Rotation keeps the record's ExpiresAt, so rotating an expired key would hand back
+        // material ValidateAsync immediately rejects. Report it as gone instead.
         if (!_keys.TryGetValue(id, out var existing) || existing.RevokedAt is not null ||
-            existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+            existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant) ||
+            (existing.ExpiresAt.HasValue && existing.ExpiresAt.Value <= now))
         {
             return Task.FromResult<AdminApiKeyCreateResult?>(null);
         }
 
-        var now = _timeProvider.GetUtcNow();
         var generated = GenerateKeyMaterial();
         var updated = existing with
         {
@@ -230,6 +233,18 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
 {
     private const string Prefix = "honua:auth:admin-api-key:";
     private const string IdsKey = Prefix + "ids";
+
+    // IdsKey is the metadata registry and deliberately retains expired records for
+    // administrative reads. ActiveIdsKey is the far smaller authentication candidate set
+    // so per-request validation does not MGET and deserialize years of expired metadata.
+    private const string ActiveIdsKey = Prefix + "active-ids";
+
+    // Every id ActiveIdsKey has ever classified, active or not. IdsKey minus this set is
+    // exactly the ids no instance has indexed yet -- a rolling deploy where an old instance
+    // (pre-dating this index) still writes IdsKey directly, a restored backup, or a record
+    // written out-of-band. Diffing against it lets validation catch up on just those ids
+    // instead of re-scanning the whole retained registry on every miss.
+    private const string SeenIdsKey = Prefix + "seen-ids";
     private readonly IDatabase _database = redis.GetDatabase();
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
@@ -249,6 +264,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         var record = new AdminApiKeyRecord(Guid.NewGuid(), name, key[..Math.Min(12, key.Length)], SHA256.HashData(Encoding.UTF8.GetBytes(key)), permissions.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).DefaultIfEmpty("admin:*").ToArray(), now, now, expiresAt, null, null, null, createdBy);
         await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(record, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(record), When.NotExists).ConfigureAwait(false);
         await _database.SetAddAsync(IdsKey, record.Id.ToString("D")).ConfigureAwait(false);
+        await MarkActiveAndSeenAsync(record.Id).ConfigureAwait(false);
         return new(record, key);
     }
 
@@ -257,11 +273,15 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
     public async Task<AdminApiKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken)
     {
         var existing = await ReadAsync(id, cancellationToken).ConfigureAwait(false);
-        if (existing is null || existing.RevokedAt is not null || existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant)) return null;
         var now = _timeProvider.GetUtcNow();
+        // Retention keeps expired records readable here. Rotation preserves ExpiresAt, so
+        // rotating one would return 200 with material ValidateAsync rejects outright.
+        if (existing is null || !CanAuthenticate(existing, now) || existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant)) return null;
         var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
         var updated = existing with { KeyPrefix = key[..Math.Min(12, key.Length)], KeyHash = SHA256.HashData(Encoding.UTF8.GetBytes(key)), UpdatedAt = now, RotatedAt = now, LastUsedAt = null };
         await _database.StringSetAsync(BuildKey(id), JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated)).ConfigureAwait(false);
+        // Repairs the index for a record indexed before it existed, or pruned by a racing scan.
+        await MarkActiveAndSeenAsync(id).ConfigureAwait(false);
         return new(updated, key);
     }
 
@@ -271,6 +291,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         if (existing is null) return null;
         var updated = existing with { UpdatedAt = _timeProvider.GetUtcNow(), RevokedAt = existing.RevokedAt ?? _timeProvider.GetUtcNow() };
         await _database.StringSetAsync(BuildKey(id), JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated)).ConfigureAwait(false);
+        await _database.SetRemoveAsync(ActiveIdsKey, id.ToString("D")).ConfigureAwait(false);
         return updated;
     }
 
@@ -279,7 +300,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         cancellationToken.ThrowIfCancellationRequested();
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
 
-        foreach (var record in await ListAsync(cancellationToken).ConfigureAwait(false))
+        foreach (var record in await ListActiveAsync(cancellationToken).ConfigureAwait(false))
         {
             AdminApiKeyRecord? current = record;
             for (var attempt = 0; attempt < 3 && current is not null; attempt++)
@@ -313,6 +334,94 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         }
         return null;
     }
+
+    /// <summary>
+    /// Returns the records that can still authenticate and prunes the rest from the active
+    /// index. Expired metadata stays in <see cref="IdsKey"/> for administrative reads, so
+    /// authentication cost tracks live keys rather than the retention window.
+    /// </summary>
+    private async Task<IReadOnlyList<AdminApiKeyRecord>> ListActiveAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await ReconcileUnseenIdsAsync(cancellationToken).ConfigureAwait(false);
+
+        var members = await _database.SetMembersAsync(ActiveIdsKey).ConfigureAwait(false);
+        var ids = members.Where(static member => Guid.TryParse((string?)member, out _)).ToArray();
+        if (ids.Length == 0) return [];
+
+        var values = await _database.StringGetAsync(ids.Select(id => (RedisKey)$"{Prefix}{id}").ToArray()).ConfigureAwait(false);
+        var now = _timeProvider.GetUtcNow();
+        var active = new List<AdminApiKeyRecord>(values.Length);
+        var stale = new List<RedisValue>();
+        for (var index = 0; index < values.Length; index++)
+        {
+            var record = Read(values[index]);
+            if (record is not null && CanAuthenticate(record, now))
+            {
+                active.Add(record);
+            }
+            else
+            {
+                // Evicted, revoked or expired: it can never authenticate again, because
+                // RotateAsync refuses to revive it.
+                stale.Add(ids[index]);
+            }
+        }
+
+        if (stale.Count > 0)
+        {
+            await _database.SetRemoveAsync(ActiveIdsKey, [.. stale]).ConfigureAwait(false);
+        }
+
+        active.Sort(static (left, right) => left.CreatedAt.CompareTo(right.CreatedAt));
+        return active;
+    }
+
+    /// <summary>
+    /// Catches the active index up on any id in <see cref="IdsKey"/> it has never classified:
+    /// a record from before this index existed, one written by an old instance mid-rollout, or
+    /// one restored or written directly. The diff is cheap (server-side set arithmetic) and
+    /// empty in the steady state, so this does not reintroduce a per-request full scan.
+    /// </summary>
+    private async Task ReconcileUnseenIdsAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var unseen = await _database.SetCombineAsync(SetOperation.Difference, [IdsKey, SeenIdsKey]).ConfigureAwait(false);
+        var ids = unseen.Where(static member => Guid.TryParse((string?)member, out _)).ToArray();
+        if (ids.Length == 0) return;
+
+        var keys = ids.Select(id => (RedisKey)$"{Prefix}{id}").ToArray();
+        var values = await _database.StringGetAsync(keys).ConfigureAwait(false);
+        var now = _timeProvider.GetUtcNow();
+        var active = new List<RedisValue>(ids.Length);
+        for (var index = 0; index < values.Length; index++)
+        {
+            var record = Read(values[index]);
+            if (record is not null && CanAuthenticate(record, now))
+            {
+                active.Add(ids[index]);
+            }
+        }
+
+        var batch = _database.CreateBatch();
+        var seenTask = batch.SetAddAsync(SeenIdsKey, ids);
+        var activeTask = active.Count > 0 ? batch.SetAddAsync(ActiveIdsKey, [.. active]) : Task.CompletedTask;
+        batch.Execute();
+        await Task.WhenAll(seenTask, activeTask).ConfigureAwait(false);
+    }
+
+    private async Task MarkActiveAndSeenAsync(Guid id)
+    {
+        var member = (RedisValue)id.ToString("D");
+        var batch = _database.CreateBatch();
+        var activeTask = batch.SetAddAsync(ActiveIdsKey, member);
+        var seenTask = batch.SetAddAsync(SeenIdsKey, member);
+        batch.Execute();
+        await Task.WhenAll(activeTask, seenTask).ConfigureAwait(false);
+    }
+
+    private static bool CanAuthenticate(AdminApiKeyRecord record, DateTimeOffset now) =>
+        record.RevokedAt is null && (!record.ExpiresAt.HasValue || record.ExpiresAt.Value > now);
 
     private async Task<AdminApiKeyRecord?> ReadAsync(Guid id, CancellationToken cancellationToken)
     {
