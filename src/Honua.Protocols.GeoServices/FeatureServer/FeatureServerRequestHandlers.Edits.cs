@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -16,6 +17,7 @@ using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
@@ -32,7 +34,6 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -59,7 +60,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request,
             "applyEdits");
@@ -69,7 +69,6 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -112,7 +111,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request,
             "addFeatures");
@@ -122,7 +120,6 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -165,7 +162,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request,
             "updateFeatures");
@@ -175,7 +171,6 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
@@ -271,7 +266,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request);
     }
@@ -456,7 +450,6 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerEditsHandler editsHandler,
         Honua.Core.Configuration.EditLimits editLimits,
         ApplyEditsRequest request)
     {
@@ -486,8 +479,14 @@ internal static partial class FeatureServerEndpoints
         // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path; a named version is
         // Pro-gated and Postgres-only.
 
+        var (editsHandler, entitlementGate) = TryResolveEditsHandler(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        return await editsHandler.HandleApplyEditsAsync(
+        return await editsHandler!.HandleApplyEditsAsync(
             serviceId,
             layerId,
             request,
@@ -495,10 +494,31 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
     }
 
+    /// <summary>
+    /// Resolves the shared edits handler only after the FeatureServer editing entitlement
+    /// (#4640) is confirmed active. <see cref="FeatureServerEditsHandler"/>'s constructor pulls
+    /// in <c>IResourceValidator</c> (and therefore <c>IMetadataV2GraphProvider</c>) plus a dozen
+    /// other services that a license-denied request never touches; resolving it unconditionally
+    /// via minimal-API <c>[FromServices]</c> binding widened the surface a transient DI hiccup
+    /// in any one of those dependencies could turn into a raw 500 instead of the graceful 402
+    /// GeoServices refusal. Deferring the resolve until after the gate passes means a denied
+    /// request never constructs that graph at all.
+    /// </summary>
+    private static (FeatureServerEditsHandler? Handler, IResult? EntitlementGate) TryResolveEditsHandler(HttpContext context)
+    {
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing");
+        if (entitlementGate is not null)
+        {
+            return (null, entitlementGate);
+        }
+
+        return (context.RequestServices.GetRequiredService<FeatureServerEditsHandler>(), null);
+    }
+
     private static async Task<IResult> HandleServiceApplyEdits(
         string serviceId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -688,6 +708,12 @@ internal static partial class FeatureServerEndpoints
                  "Set rollbackOnFailure=false to allow partial commits, or submit each layer separately."]);
         }
 
+        var (editsHandler, entitlementGate) = TryResolveEditsHandler(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var results = new ServiceLayerEditResult[orderedLayerIds.Count];
 
         // BH2-013: Track whether any non-first layer returned an error response so the
@@ -713,7 +739,7 @@ internal static partial class FeatureServerEndpoints
                 GdbVersion = sharedOptions.GdbVersion
             };
 
-            var layerResult = await editsHandler.HandleApplyEditsAsync(
+            var layerResult = await editsHandler!.HandleApplyEditsAsync(
                 serviceId,
                 entry.Id,
                 request,
@@ -1044,7 +1070,6 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerEditsHandler editsHandler,
         Honua.Core.Configuration.EditLimits editLimits,
         ApplyEditsRequest request,
         string operationName)
@@ -1095,8 +1120,14 @@ internal static partial class FeatureServerEndpoints
                 "attachments edits are not supported");
         }
 
+        var (editsHandler, entitlementGate) = TryResolveEditsHandler(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        return await editsHandler.HandleApplyEditsAsync(
+        return await editsHandler!.HandleApplyEditsAsync(
             serviceId,
             layerId,
             request,
