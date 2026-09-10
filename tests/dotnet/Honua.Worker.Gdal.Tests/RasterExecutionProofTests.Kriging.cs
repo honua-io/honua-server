@@ -110,8 +110,10 @@ public sealed partial class RasterExecutionProofTests
         var expected = new double[12];
         for (var index = 0; index < 12; index++)
         {
-            var x = ((index % 4) + 0.5) * 1.0;
-            var y = 3 - (((index / 4) + 0.5) * 1.0);
+            var col = index % 4;
+            var row = index / 4;
+            var x = (col + 0.5) * 1.0;
+            var y = 3 - ((row + 0.5) * 1.0);
             (expected[index], _) = ClosedFormPair(samples, x, y, pairVariogram);
         }
 
@@ -168,7 +170,7 @@ public sealed partial class RasterExecutionProofTests
     /// </summary>
     private static double Gamma(KrigingVariogram variogram, double h)
     {
-        if (h == 0)
+        if (h <= 0)
         {
             return 0;
         }
