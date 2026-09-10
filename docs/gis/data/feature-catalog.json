@@ -12274,6 +12274,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Identity.IdentityEntitlementGateTests.ScimUsers_WithProEntitlement_StillReturns402",
         "Honua.Server.Tests.Features.Identity.IdentityEntitlementGateTests.ScimUsers_WithoutEntitlement_Returns402EvenWithValidBearer",
+        "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ListUsers_ValidBearer_DoesNotPermitStorage",
         "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.ListUsers_WithUserNameFilter_ReturnsMatch",
         "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.Request_WithWrongBearerToken_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Identity.ScimProvisioningEndpointsTests.Request_WithoutBearerToken_ReturnsUnauthorized"
@@ -12383,7 +12384,8 @@
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_CredentialsInQueryStringOverPlainHttp_Returns403WithHelpfulMessage",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_CredentialsInQueryStringWithInsecureMode_Succeeds",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithClientIp_ReturnsToken",
-        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithQueryStringCredentials_ReturnsToken"
+        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithQueryStringCredentials_ReturnsToken",
+        "Honua.Server.Tests.Infrastructure.Authentication.LicenseBlockedCredentialResponseCacheTests.GenerateToken_LicenseBlocked_DoesNotPermitStorage"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
       "maturity": "implemented",

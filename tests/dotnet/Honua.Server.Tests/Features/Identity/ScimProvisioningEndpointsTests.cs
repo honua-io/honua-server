@@ -166,6 +166,20 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /scim/v2/Users")]
+    public async Task ListUsers_ValidBearer_DoesNotPermitStorage()
+    {
+        // #4609 review: SCIM validates its static bearer entirely inside Authenticate()
+        // without attaching a principal to HttpContext.User, so a successful response must
+        // not read as anonymous to the shared authentication cache policy.
+        var response = await _client.GetAsync("/scim/v2/Users");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(response.Headers.CacheControl);
+        Assert.True(response.Headers.CacheControl!.NoStore);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /scim/v2/Users")]
     public async Task ListUsers_WithUserNameFilter_ReturnsMatch()
     {
         await CreateUserAsync("filter-me@example.com");

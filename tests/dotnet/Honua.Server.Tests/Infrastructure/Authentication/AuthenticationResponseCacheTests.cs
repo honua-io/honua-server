@@ -4,7 +4,9 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Infrastructure.Models;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
@@ -133,5 +135,48 @@ public sealed class AuthenticationResponseCacheTests
 
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
+    }
+}
+
+/// <summary>
+/// Blocked-license denial for a credential-response endpoint must still carry
+/// <c>Cache-Control: no-store</c> (#4609 review): the deny path short-circuits before the
+/// endpoint runs, so the cache middleware's OnStarting registration must happen ahead of
+/// the license middleware in the real pipeline, not just when a test wires it that way.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.FeatureServer)]
+public sealed class LicenseBlockedCredentialResponseCacheTests : IAsyncLifetime
+{
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .ReplaceService<ILicenseOperationPolicy>(new AlwaysBlockedLicenseOperationPolicy());
+
+    public Task InitializeAsync() => _fixture.InitializeAsync();
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/generateToken")]
+    public async Task GenerateToken_LicenseBlocked_DoesNotPermitStorage()
+    {
+        using var client = _fixture.CreateClient();
+
+        using var response = await client.GetAsync("/sharing/rest/generateToken");
+
+        // GeoServices formats the license denial as a logical error on an HTTP 200
+        // envelope rather than a literal 402; the no-store guarantee must hold either way.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("\"code\":402");
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+    }
+
+    private sealed class AlwaysBlockedLicenseOperationPolicy : ILicenseOperationPolicy
+    {
+        public bool IsBlocked => true;
+
+        public CancellationToken OperationCancellation => CancellationToken.None;
     }
 }
