@@ -306,11 +306,27 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
     private DagSourceRequest BuildSourceRequest(StepInputReader inputs)
     {
+        // #4624: the catalog advertises objectIds / geometry+geometryType+inSR+spatialRel /
+        // time+timeRelation on every op that includes SharedAnalyticsFilterParameters
+        // (analytics.buffer-aggregate, analytics.spatial-join, generalization.dissolve,
+        // generalization.simplify-layer), but this base previously only propagated
+        // where/bbox — every other advertised selector was silently accepted and ignored.
+        // A selector this base cannot yet honor is now REJECTED (not silently dropped) so a
+        // caller who thinks they narrowed the input never gets the full layer back unfiltered.
+        if (inputs.TryGet("time", out var time) && !string.IsNullOrWhiteSpace(time)
+            || inputs.TryGet("timeRelation", out var timeRelation) && !string.IsNullOrWhiteSpace(timeRelation))
+        {
+            throw new TransformInputException(
+                "'time'/'timeRelation' selection is not yet supported by layer-sourced geoprocessing " +
+                "execution; filter by a temporal column through 'where' instead.");
+        }
+
         var request = new DagSourceRequest
         {
             LayerId = RequireLayerId(inputs, "layerId"),
             Where = inputs.TryGet("where", out var where) ? where : null,
-            Bbox = inputs.TryGet("bbox", out var bbox) ? bbox : null,
+            Bbox = ResolveBbox(inputs),
+            ObjectIds = ResolveObjectIds(inputs),
             OutFields = inputs.TryGet("outFields", out var outFields) ? outFields : null,
             OutputSrid = TryGetPositiveInt(inputs, "outSrid"),
             Since = inputs.TryGet("since", out var since) ? since : null,
@@ -318,6 +334,118 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         };
 
         return CustomizeRequest(request, inputs);
+    }
+
+    /// <summary>
+    /// Resolves the spatial selection filter (#4624): either the pre-existing plain
+    /// <c>bbox</c> input, or the catalog-advertised GeoServices <c>geometry</c> +
+    /// <c>geometryType</c> + <c>inSR</c> + <c>spatialRel</c> family translated to the
+    /// same <c>minX,minY,maxX,maxY</c> form. Only an envelope geometry, an intersects
+    /// relationship, and a WGS 84 (or absent) input SR are supported today; anything
+    /// else fails closed with an actionable diagnostic rather than silently narrowing
+    /// (or failing to narrow) the input set incorrectly.
+    /// </summary>
+    private static string? ResolveBbox(StepInputReader inputs)
+    {
+        var hasBbox = inputs.TryGet("bbox", out var bbox) && !string.IsNullOrWhiteSpace(bbox);
+        var hasGeometry = inputs.TryGet("geometry", out var geometryRaw) && !string.IsNullOrWhiteSpace(geometryRaw);
+        if (hasBbox && hasGeometry)
+        {
+            throw new TransformInputException("supply either 'bbox' or 'geometry', not both.");
+        }
+
+        if (hasBbox)
+        {
+            return bbox;
+        }
+
+        if (!hasGeometry)
+        {
+            return null;
+        }
+
+        var geometryType = inputs.TryGet("geometryType", out var rawType) ? rawType : null;
+        if (!string.Equals(geometryType, "esriGeometryEnvelope", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new TransformInputException(
+                $"'geometryType' '{geometryType ?? "<none>"}' is not supported for the 'geometry' selection " +
+                "filter on layer-sourced geoprocessing execution (supported: esriGeometryEnvelope); use 'bbox' " +
+                "for an envelope filter or omit 'geometry'.");
+        }
+
+        var spatialRel = inputs.TryGet("spatialRel", out var rawRel) ? rawRel : null;
+        if (!string.IsNullOrWhiteSpace(spatialRel)
+            && !string.Equals(spatialRel, "esriSpatialRelIntersects", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new TransformInputException(
+                $"'spatialRel' '{spatialRel}' is not supported for layer-sourced geoprocessing execution " +
+                "(supported: esriSpatialRelIntersects).");
+        }
+
+        if (inputs.TryGet("inSR", out var inSr) && !string.IsNullOrWhiteSpace(inSr) && !IsWgs84SridToken(inSr!))
+        {
+            throw new TransformInputException(
+                $"'inSR' '{inSr}' is not supported for the 'geometry' selection filter on layer-sourced " +
+                "geoprocessing execution; supply the envelope in WGS 84 (EPSG:4326 / CRS84) or omit 'inSR'.");
+        }
+
+        return ParseEnvelopeToBbox(geometryRaw!);
+    }
+
+    private static bool IsWgs84SridToken(string value)
+    {
+        var trimmed = value.Trim();
+        if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid))
+        {
+            return srid == 4326;
+        }
+
+        return trimmed.Equals("CRS84", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("EPSG:4326", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("4326", StringComparison.Ordinal)
+            || trimmed.Contains("CRS84", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ParseEnvelopeToBbox(string geometryJson)
+    {
+        double xmin, ymin, xmax, ymax;
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(geometryJson);
+            var root = document.RootElement;
+            xmin = root.GetProperty("xmin").GetDouble();
+            ymin = root.GetProperty("ymin").GetDouble();
+            xmax = root.GetProperty("xmax").GetDouble();
+            ymax = root.GetProperty("ymax").GetDouble();
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or KeyNotFoundException
+            or InvalidOperationException or FormatException)
+        {
+            throw new TransformInputException(
+                "'geometry' must be an esriGeometryEnvelope JSON object with numeric xmin/ymin/xmax/ymax.");
+        }
+
+        return FormattableString.Invariant($"{xmin},{ymin},{xmax},{ymax}");
+    }
+
+    private static string? ResolveObjectIds(StepInputReader inputs)
+    {
+        if (!inputs.TryGet("objectIds", out var raw) || string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        foreach (var token in raw!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            {
+                throw new TransformInputException(
+                    $"'objectIds' must be a comma-separated list of integer feature identifiers; " +
+                    $"'{token}' is not valid.");
+            }
+        }
+
+        return raw;
     }
 
     private static IDagFeatureSource? ResolveHonuaLayerSource(IServiceProvider services) =>

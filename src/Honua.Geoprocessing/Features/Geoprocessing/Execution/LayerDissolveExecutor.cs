@@ -135,24 +135,7 @@ internal sealed class LayerDissolveExecutor : LayerSourcedFeatureExecutor
                 _geometries.Add(feature);
             }
 
-            foreach (var spec in _stats)
-            {
-                if (spec.Kind == StatisticsSupport.StatKind.Count)
-                {
-                    continue;
-                }
-
-                if (!_accumulators.TryGetValue(spec.Field, out var accumulator))
-                {
-                    accumulator = new StatisticsSupport.FieldAccumulator();
-                    _accumulators[spec.Field] = accumulator;
-                }
-
-                if (StatisticsSupport.TryReadNumeric(feature, spec.Field, out var value))
-                {
-                    accumulator.Add(value);
-                }
-            }
+            StatisticsSupport.Accumulate(feature, _stats, _accumulators);
         }
 
         public Feature Build()

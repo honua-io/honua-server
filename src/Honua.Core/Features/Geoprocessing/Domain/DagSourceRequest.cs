@@ -53,6 +53,13 @@ public sealed record DagSourceRequest
     public string? Bbox { get; init; }
 
     /// <summary>
+    /// Optional comma-separated list of feature identifiers to restrict the read to
+    /// (GeoServices-style <c>objectIds</c>). <see langword="null"/> selects every row
+    /// the other filters admit.
+    /// </summary>
+    public string? ObjectIds { get; init; }
+
+    /// <summary>
     /// Optional comma-separated output field allow-list. <see langword="null"/> selects all.
     /// </summary>
     public string? OutFields { get; init; }

@@ -258,6 +258,48 @@ public sealed class DagSourceReaderTests
     }
 
     [UnitTest]
+    public async Task HonuaLayer_ObjectIdsRequest_BuildsExactObjectIdSet()
+    {
+        // #4624: analytics.buffer-aggregate (and its layer-sourced siblings) advertise
+        // 'objectIds' but source.honua-layer previously never propagated it into the
+        // FeatureQuery the streaming store filters by, so it was silently accepted and
+        // ignored. Assert the built FeatureQuery.ObjectIds is EXACTLY the requested set
+        // (order preserved, no extras, no drops) — an independent value check, not a
+        // snapshot of whatever the reader happened to produce before this fix.
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsync());
+
+        FeatureQuery? capturedQuery = null;
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Do<FeatureQuery>(q => capturedQuery = q), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsync());
+
+        var reader = new HonuaLayerDagSource(store);
+        var request = new DagSourceRequest { LayerId = 42, ObjectIds = "5, 10, 15" };
+
+        await CollectAsync(reader.ReadAsync(request));
+
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.ObjectIds.Should().NotBeNull();
+        capturedQuery.Value.ObjectIds!.Value.Should().Equal(5L, 10L, 15L);
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_NoObjectIdsRequest_LeavesObjectIdsUnset()
+    {
+        var store = Substitute.For<IStreamingFeatureStore>();
+        FeatureQuery? capturedQuery = null;
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Do<FeatureQuery>(q => capturedQuery = q), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsync());
+
+        var reader = new HonuaLayerDagSource(store);
+        await CollectAsync(reader.ReadAsync(new DagSourceRequest { LayerId = 42 }));
+
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.ObjectIds.Should().BeNull("no objectIds filter was requested");
+    }
+
+    [UnitTest]
     public async Task HonuaLayer_InsideJobScopeWithNoSubmitterSnapshot_RefusesTheRead()
     {
         // honua-server#3068 fail-closed contract. An active job scope carrying NO submitter

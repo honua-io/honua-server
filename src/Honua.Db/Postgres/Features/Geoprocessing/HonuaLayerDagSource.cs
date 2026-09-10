@@ -120,11 +120,33 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
         {
             Where = where,
             OutFields = outFields,
+            ObjectIds = BuildObjectIds(request),
             OutputSrid = request.OutputSrid,
             SpatialFilter = BuildSpatialFilter(request),
             IncludeZ = true,
             IncludeM = false
         };
+    }
+
+    private static ImmutableArray<long>? BuildObjectIds(DagSourceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ObjectIds))
+        {
+            return null;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<long>();
+        foreach (var token in request.ObjectIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            // The executor already validated every token is a parseable long; a token
+            // that still fails here is skipped rather than throwing mid-stream.
+            if (long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+            {
+                builder.Add(id);
+            }
+        }
+
+        return builder.ToImmutable();
     }
 
     private static string? BuildWhereClause(DagSourceRequest request)

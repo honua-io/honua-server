@@ -191,6 +191,150 @@ public sealed class LayerSourcedExecutorTests
     }
 
     [UnitTest]
+    public async Task BufferAggregate_ObjectIdsAndWhereAndEnvelope_AllPropagateToSourceRequest()
+    {
+        // #4624: 'where' already propagated; 'objectIds' and the GeoServices
+        // geometry/geometryType/inSR/spatialRel envelope family did not — the catalog
+        // advertised them but LayerSourcedFeatureExecutor silently dropped them. Assert
+        // the built DagSourceRequest carries the EXACT, independently-computed values
+        // for every selector together, not a subset.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, request) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("where", "pop > 100"),
+            ("objectIds", "3, 8, 21"),
+            ("geometry", """{"xmin":-10,"ymin":-20,"xmax":30,"ymax":40}"""),
+            ("geometryType", "esriGeometryEnvelope"),
+            ("inSR", "4326"),
+            ("spatialRel", "esriSpatialRelIntersects"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        request.Should().NotBeNull();
+        request!.Where.Should().Be("pop > 100");
+        request.ObjectIds.Should().Be("3, 8, 21");
+        request.Bbox.Should().Be("-10,-20,30,40",
+            "the envelope's xmin/ymin/xmax/ymax must translate to the same minX,minY,maxX,maxY bbox form");
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_TimeFilter_IsRejectedNotSilentlyIgnored()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("time", "1700000000000"));
+
+        status.Should().Be(ExecutionJobStatus.Failed,
+            "an advertised filter this base cannot yet honor must fail closed, not silently return the unfiltered layer");
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_UnsupportedGeometryType_IsRejected()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("geometry", """{"rings":[[[0,0],[0,1],[1,1],[0,0]]]}"""),
+            ("geometryType", "esriGeometryPolygon"));
+
+        status.Should().Be(ExecutionJobStatus.Failed,
+            "a broadened, unsupported geometry filter must be rejected rather than silently widening the selection");
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_UnsupportedSpatialRel_IsRejected()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("geometry", """{"xmin":0,"ymin":0,"xmax":1,"ymax":1}"""),
+            ("geometryType", "esriGeometryEnvelope"),
+            ("spatialRel", "esriSpatialRelContains"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_InvalidObjectIds_IsRejected()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("objectIds", "3,not-a-number"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_OutStatistics_ComputesGroupAggregatesOnDissolve()
+    {
+        // Independent oracle: zone "a" has pop values 5 and 7 -> SUM=12, MEAN=6, MAX=7.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId,
+        [
+            NamedPointWithNumericField(0, 0, "zone", "a", "pop", 5),
+            NamedPointWithNumericField(1, 1, "zone", "a", "pop", 7),
+            NamedPointWithNumericField(50, 50, "zone", "b", "pop", 100),
+        ]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "1"),
+            ("unit", "meters"),
+            ("dissolve", "true"),
+            ("groupByFields", "zone"),
+            ("outStatistics", "pop:sum;pop:mean;pop:max"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        var zoneA = features.Single(f => Equals(f.Attributes.GetOptionalValue("zone"), "a"));
+        Convert.ToDouble(zoneA.Attributes.GetOptionalValue("SUM_pop"), CultureInfo.InvariantCulture).Should().Be(12);
+        Convert.ToDouble(zoneA.Attributes.GetOptionalValue("MEAN_pop"), CultureInfo.InvariantCulture).Should().Be(6);
+        Convert.ToDouble(zoneA.Attributes.GetOptionalValue("MAX_pop"), CultureInfo.InvariantCulture).Should().Be(7);
+
+        var zoneB = features.Single(f => Equals(f.Attributes.GetOptionalValue("zone"), "b"));
+        Convert.ToDouble(zoneB.Attributes.GetOptionalValue("SUM_pop"), CultureInfo.InvariantCulture).Should().Be(100);
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_OutStatisticsWithoutDissolve_IsRejected()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("dissolve", "false"),
+            ("outStatistics", "pop:sum"));
+
+        status.Should().Be(ExecutionJobStatus.Failed,
+            "per-feature output cannot carry aggregate columns, matching generalization.dissolve's identical guard");
+    }
+
+    [UnitTest]
     public async Task FeatureProject_RequestsServerSideReprojection_ReachesSucceeded()
     {
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(1, 2)]);
@@ -248,6 +392,35 @@ public sealed class LayerSourcedExecutorTests
         var zoneA = features.Single(f => Equals(f.Attributes.GetOptionalValue("zone"), "a"));
         Convert.ToInt64(zoneA.Attributes.GetOptionalValue(LayerDissolveExecutor.CountAttribute), CultureInfo.InvariantCulture).Should().Be(2);
         Convert.ToDouble(zoneA.Attributes.GetOptionalValue("SUM_pop"), CultureInfo.InvariantCulture).Should().Be(12);
+    }
+
+    [UnitTest]
+    public async Task Dissolve_MultipleStatisticsOnSameField_DoNotDoubleCountSamples()
+    {
+        // #4624 regression: requesting more than one aggregate on the SAME field
+        // (e.g. "pop:sum;pop:mean") previously shared one FieldAccumulator keyed by field
+        // name but added the sample once per co-requested stat, silently multiplying
+        // SUM/MEAN by the stat count. Independent oracle: zone "a" has pop values 5 and
+        // 7 -> SUM=12, MEAN=6 regardless of how many stats target "pop".
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId,
+        [
+            BoxFeature(0, 0, 10, 10, ("zone", "a"), ("pop", 5)),
+            BoxFeature(10, 0, 20, 10, ("zone", "a"), ("pop", 7)),
+        ]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerDissolveExecutor(ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("groupByFields", "zone"),
+            ("outStatistics", "pop:sum;pop:mean;pop:max"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().ContainSingle();
+        Convert.ToDouble(features[0].Attributes.GetOptionalValue("SUM_pop"), CultureInfo.InvariantCulture).Should().Be(12);
+        Convert.ToDouble(features[0].Attributes.GetOptionalValue("MEAN_pop"), CultureInfo.InvariantCulture).Should().Be(6);
+        Convert.ToDouble(features[0].Attributes.GetOptionalValue("MAX_pop"), CultureInfo.InvariantCulture).Should().Be(7);
     }
 
     [UnitTest]
@@ -447,6 +620,14 @@ public sealed class LayerSourcedExecutorTests
         {
             GeometryGeoJson = $$"""{"type":"Point","coordinates":[{{x.ToString(System.Globalization.CultureInfo.InvariantCulture)}},{{y.ToString(System.Globalization.CultureInfo.InvariantCulture)}}]}""",
             Attributes = new Dictionary<string, object?> { ["name"] = name },
+        };
+
+    private static DagSourceFeature NamedPointWithNumericField(
+        double x, double y, string groupField, string groupValue, string numericField, double numericValue)
+        => new()
+        {
+            GeometryGeoJson = $$"""{"type":"Point","coordinates":[{{x.ToString(System.Globalization.CultureInfo.InvariantCulture)}},{{y.ToString(System.Globalization.CultureInfo.InvariantCulture)}}]}""",
+            Attributes = new Dictionary<string, object?> { [groupField] = groupValue, [numericField] = numericValue },
         };
 
     private static IOptionsMonitor<GeoprocessingExecutorOptions> Options()

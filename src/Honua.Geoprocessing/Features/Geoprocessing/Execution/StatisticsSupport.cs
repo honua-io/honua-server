@@ -140,6 +140,38 @@ internal static class StatisticsSupport
         return value is null ? "\0NULL" : Convert.ToString(value, CultureInfo.InvariantCulture) ?? "\0NULL";
     }
 
+    /// <summary>
+    /// Accumulates one feature's numeric field values into <paramref name="accumulators"/>,
+    /// touching each DISTINCT field referenced by <paramref name="stats"/> exactly once even
+    /// when multiple stats target the same field (e.g. <c>"pop:sum;pop:mean"</c>) — adding
+    /// per-spec instead of per-field would add the sample once per stat sharing that field,
+    /// silently multiplying SUM/COUNT-derived aggregates by the number of co-requested stats
+    /// (#4624 — caught while adding <c>outStatistics</c> to <c>analytics.buffer-aggregate</c>,
+    /// which shares this accumulation shape with <c>generalization.dissolve</c>).
+    /// </summary>
+    public static void Accumulate(
+        IFeature feature,
+        IReadOnlyList<StatSpec> stats,
+        Dictionary<string, FieldAccumulator> accumulators)
+    {
+        foreach (var field in stats
+            .Where(spec => spec.Kind != StatKind.Count)
+            .Select(spec => spec.Field)
+            .Distinct(StringComparer.Ordinal))
+        {
+            if (!accumulators.TryGetValue(field, out var accumulator))
+            {
+                accumulator = new FieldAccumulator();
+                accumulators[field] = accumulator;
+            }
+
+            if (TryReadNumeric(feature, field, out var value))
+            {
+                accumulator.Add(value);
+            }
+        }
+    }
+
     /// <summary>Reads a numeric field value, returning false for null/non-numeric.</summary>
     public static bool TryReadNumeric(IFeature feature, string field, out double value)
     {
