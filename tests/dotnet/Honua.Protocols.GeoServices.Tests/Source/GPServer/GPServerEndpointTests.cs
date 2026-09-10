@@ -128,7 +128,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("tasks").EnumerateArray()
             .Select(item => item.GetString())
-            .Should().Contain("geometry.buffer");
+            .Should().Contain("Honua_67656F6D657472792E627566666572")
+            .And.NotContain("geometry.buffer");
     }
 
     [IntegrationTest]
