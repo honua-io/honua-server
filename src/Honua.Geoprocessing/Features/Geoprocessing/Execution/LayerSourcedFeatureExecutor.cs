@@ -141,7 +141,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         List<IFeature> output;
         try
         {
-            output = await ApplyCoreAsync(new LayerOpContext(features, source), inputs, cancellationToken)
+            output = await ApplyCoreAsync(new LayerOpContext(features, source, scope.ServiceProvider), inputs, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
@@ -213,17 +213,21 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
     /// <summary>
     /// The resolved inputs a concrete layer-aware op computes over: the streamed
-    /// target-layer <see cref="Features"/> and the resolved <see cref="LayerSource"/>
-    /// connector, so a two-layer op can read a second catalog layer through the same
-    /// connector within the executor's service scope.
+    /// target-layer <see cref="Features"/>, the resolved <see cref="LayerSource"/>
+    /// connector (so a two-layer op can read a second catalog layer through the same
+    /// connector), and the executor's request-scoped <see cref="Services"/> provider (so
+    /// an op can resolve additional shared services — for example the CRS-aware
+    /// <c>IGeometryOperationService</c> or catalog metadata provider — within the same
+    /// scope <see cref="LayerSource"/> was resolved from).
     /// </summary>
     private protected readonly struct LayerOpContext
     {
-        /// <summary>Creates a context over the streamed target features and connector.</summary>
-        public LayerOpContext(List<IFeature> features, IDagFeatureSource layerSource)
+        /// <summary>Creates a context over the streamed target features, connector, and scope.</summary>
+        public LayerOpContext(List<IFeature> features, IDagFeatureSource layerSource, IServiceProvider services)
         {
             Features = features;
             LayerSource = layerSource;
+            Services = services;
         }
 
         /// <summary>The streamed features of the primary (target) layer.</summary>
@@ -231,6 +235,9 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
         /// <summary>The resolved <c>source.honua-layer</c> connector for further layer reads.</summary>
         public IDagFeatureSource LayerSource { get; }
+
+        /// <summary>The executor's request-scoped service provider.</summary>
+        public IServiceProvider Services { get; }
     }
 
     /// <summary>
