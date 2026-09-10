@@ -17,6 +17,18 @@ internal static class AuthenticationResponseCachePolicy
         context.Response.Headers.CacheControl = "no-store";
     }
 
+    /// <summary>
+    /// Signals that this request was authenticated entirely inside an endpoint handler
+    /// (a static bearer/API-key check, for example) without attaching an
+    /// <c>IsAuthenticated</c> identity to <see cref="HttpContext.User"/>. Endpoint-local
+    /// authentication paths must call this so <see cref="Apply"/> still applies no-store
+    /// to the success response.
+    /// </summary>
+    internal static void MarkAuthenticated(HttpContext context)
+    {
+        context.Items[AuthenticationDecisionKey] = true;
+    }
+
     internal static void Apply(HttpContext context)
     {
         // Token exchanges authenticate credentials inside the endpoint and may

@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Licensing;
 using Honua.Server.Features.Identity.Scim.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -547,7 +548,16 @@ internal static partial class ScimEndpoints
         }
 
         var presented = raw[BearerPrefix.Length..].Trim();
-        return FixedTimeEquals(presented, configured);
+        if (!FixedTimeEquals(presented, configured))
+        {
+            return false;
+        }
+
+        // The static bearer is validated entirely here without attaching a principal to
+        // HttpContext.User, so the shared cache policy must be told explicitly or a
+        // successful response reads as anonymous and stays cacheable after revocation.
+        AuthenticationResponseCachePolicy.MarkAuthenticated(context);
+        return true;
     }
 
     private static bool FixedTimeEquals(string a, string b)
