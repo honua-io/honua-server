@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -14,6 +16,68 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
+
+[Protocol(TestProtocols.TestQuality)]
+public sealed class AuthenticationResponseCachePolicyTests
+{
+    private static DefaultHttpContext CreateAuthenticatedContext()
+    {
+        var context = new DefaultHttpContext();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(authenticationType: "Test"));
+        return context;
+    }
+
+    [UnitTest]
+    public void Apply_AuthenticatedResponse_WithExplicitPrivateCacheControl_PreservesEndpointPolicy()
+    {
+        var context = CreateAuthenticatedContext();
+        context.Response.Headers.CacheControl = "private, max-age=3600";
+        context.Response.Headers.Vary = "Authorization";
+
+        AuthenticationResponseCachePolicy.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be("private, max-age=3600");
+    }
+
+    [UnitTest]
+    public void Apply_AuthenticatedResponse_WithPublicCacheControl_ForcesNoStore()
+    {
+        var context = CreateAuthenticatedContext();
+        context.Response.Headers.CacheControl = "public, max-age=3600";
+
+        AuthenticationResponseCachePolicy.Apply(context);
+
+        var cacheControl = context.Response.GetTypedHeaders().CacheControl;
+        cacheControl.Should().NotBeNull();
+        cacheControl!.NoStore.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Apply_AuthenticatedResponse_WithNoCacheControl_ForcesNoStore()
+    {
+        var context = CreateAuthenticatedContext();
+
+        AuthenticationResponseCachePolicy.Apply(context);
+
+        var cacheControl = context.Response.GetTypedHeaders().CacheControl;
+        cacheControl.Should().NotBeNull();
+        cacheControl!.NoStore.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void Apply_UnauthorizedStatus_ForcesNoStore_EvenWithExplicitPrivateCacheControl()
+    {
+        var context = new DefaultHttpContext();
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        context.Response.Headers.CacheControl = "private, max-age=3600";
+
+        AuthenticationResponseCachePolicy.Apply(context);
+
+        var cacheControl = context.Response.GetTypedHeaders().CacheControl;
+        cacheControl.Should().NotBeNull();
+        cacheControl!.NoStore.Should().BeTrue();
+    }
+}
 
 [Protocol(TestProtocols.TestQuality)]
 public sealed class AuthenticationErrorCacheTests
