@@ -182,9 +182,12 @@ internal sealed class GdalWorkerOptions
     public long MaxKrigingCells { get; set; } = 4_000_000L;
 
     /// <summary>
-    /// Maximum sample-cell evaluations for managed kriging prediction, which runs before
-    /// the GDAL tool timeout. Default 250 million; combined with MaxKrigingSamples, this
-    /// bounds the prediction pass and the factorization independently.
+    /// Maximum sample²-cell evaluations for the managed kriging pass (prediction AND its
+    /// standard-error band), which runs before the GDAL tool timeout. The per-cell
+    /// standard error solves the primal system against the cached factorization — O(n²)
+    /// per cell — and dominates the O(n) prediction cost, so the budget is sample count
+    /// squared, not sample count. Default 250 million; combined with MaxKrigingSamples,
+    /// this bounds the prediction pass and the factorization independently.
     /// </summary>
     [Range(1L, long.MaxValue, ErrorMessage = "MaxKrigingPredictionWork must be a positive evaluation count")]
     public long MaxKrigingPredictionWork { get; set; } = 250_000_000L;

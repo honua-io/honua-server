@@ -206,6 +206,11 @@ RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo && comm
  # surface.contour / surface.viewshed / conversion.rasterize.
  && command -v gdal_calc.py \
  && command -v gdal_proximity.py \
+ # gdal_merge.py -separate stacks the prediction and kriging-standard-error bands
+ # produced by raster.interpolate-kriging's bundled OrdinaryKriging solver (#3932)
+ # into one multi-band GeoTIFF; ships in the same GDAL Python utilities as
+ # gdal_calc.py / gdal_proximity.py above.
+ && command -v gdal_merge.py \
  # The Euclidean allocation custom step (proximity.euclidean-allocation, #2255)
  # imports the GDAL Python bindings + NumPy + SciPy at runtime; fail the build
  # early if any are missing from the image.
