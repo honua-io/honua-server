@@ -19373,6 +19373,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.FeatureServerEndpointTests.AddFeatures_WithFeaturePayload_ReturnsAddResults",
+        "Honua.Server.Tests.Features.Licensing.FeatureEditsDeniedPathSkipsResourceValidatorTests.AddFeatures_UnlicensedHostWithBrokenResourceValidator_Returns402NotA500",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState",
         "Honua.Server.Tests.Seed.ClientCompatSeedMigratedDatabaseTests.ClientCompatSeed_OnServerMigratedDatabase_ServesTheTenFixtureNamesAndAcceptsScratchLayerWrites"
@@ -19436,6 +19437,7 @@
         "Honua.Server.Tests.Features.Caching.FeatureServerEditCacheInvalidationTests.ApplyEdits_FailedEdit_LeavesTheCacheAlone",
         "Honua.Server.Tests.Features.Caching.FeatureServerEditCacheInvalidationTests.ApplyEdits_Update_InvalidatesTheLayersCachedQueryResponsesOnAWarmReplica",
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.Licensing.FeatureEditsDeniedPathSkipsResourceValidatorTests.ApplyEdits_UnlicensedHostWithBrokenResourceValidator_Returns402NotA500",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsAmbiguousWriteTests.ApplyEdits_RetryAfterAmbiguousZeroCountResult_ReportsConflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsAmbiguousWriteTests.ApplyEdits_RetryAfterGenericNotSupportedWriteWithUnknownOutcome_ReportsConflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsAmbiguousWriteTests.ApplyEdits_RetryAfterWriteFailedWithUnknownOutcome_ReportsConflictRatherThanReapplying",
