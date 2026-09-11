@@ -494,6 +494,7 @@ YAML
     $'gh api \\\n      --method PUT \\\n      repos/o/r/pulls/${pr}/merge'
     $'gh pr \\\n      merge 1 --merge'
     'git push origin HEAD:trunk'
+    'git push origin HEAD:refs/heads/trunk'
     'git -C /tmp/repo push origin HEAD:trunk'
     '/usr/bin/GIT.EXE push origin HEAD:trunk'
     'C:\\tools\\Gh.ExE pr merge 1 --merge'

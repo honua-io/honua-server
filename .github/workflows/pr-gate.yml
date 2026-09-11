@@ -1052,22 +1052,60 @@ jobs:
           note '  trailing matrix and fix them before landing.'
           exit 0
 
+  ci-router-validation:
+    # ci.yml's `CI Router Validation` job (scripts/ci/validate-ci-router.sh,
+    # scripts/ci/validate-single-merge-authority.sh) is trunk-only: ci.yml has
+    # no `pull_request` trigger (see pr-gate.yml's header). A PR that touches
+    # `.github/` or `scripts/ci/` therefore lands green and only turns trunk
+    # red on the NEXT landing's trailing matrix (#4540/#4653: a workflow that
+    # pushed generated files straight to trunk passed PR Gate, then tripped the
+    # merge-authority guard on trunk one merge later). Run the same two guard
+    # scripts here, gated on the diff so every other PR pays nothing.
+    name: PR Gate / CI Router Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Await exact-head review
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
+        run: |
+          echo "Admission passed; exact-head review has not released CI router validation yet."
+          exit 1
+
+      # fetch-depth 2: refs/pull/N/merge's first parent is the target-branch
+      # tip, exactly what scripts/ci/pr-touches-ci-surface.sh diffs against.
+      - uses: actions/checkout@v7
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.run_attempt > 1
+        with:
+          fetch-depth: 2
+
+      - name: Classify CI-surface diff
+        id: ci-surface
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.run_attempt > 1
+        run: scripts/ci/pr-touches-ci-surface.sh --github-output
+
+      - name: Validate CI router and single merge authority
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.run_attempt > 1) && steps.ci-surface.outputs.ci_surface == 'true'
+        run: |
+          scripts/ci/validate-ci-router.sh
+          bash scripts/ci/validate-single-merge-authority.sh
+
   required:
     # Keep the exact branch-protection context stable while both independent
     # verification paths fail closed into it.
     name: PR Gate
     if: always()
-    needs: [pr-gate, format]
+    needs: [pr-gate, format, ci-router-validation]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Require build, tests, and format
+      - name: Require build, tests, format, and CI router validation
         env:
           BUILD_AND_TEST_RESULT: ${{ needs.pr-gate.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
+          CI_ROUTER_RESULT: ${{ needs.ci-router-validation.result }}
         run: |
-          if [[ "${BUILD_AND_TEST_RESULT}" != "success" || "${FORMAT_RESULT}" != "success" ]]; then
-            echo "::error::PR Gate failed: build/tests=${BUILD_AND_TEST_RESULT}, format=${FORMAT_RESULT}"
+          if [[ "${BUILD_AND_TEST_RESULT}" != "success" || "${FORMAT_RESULT}" != "success" || "${CI_ROUTER_RESULT}" != "success" ]]; then
+            echo "::error::PR Gate failed: build/tests=${BUILD_AND_TEST_RESULT}, format=${FORMAT_RESULT}, ci-router-validation=${CI_ROUTER_RESULT}"
             exit 1
           fi
 
