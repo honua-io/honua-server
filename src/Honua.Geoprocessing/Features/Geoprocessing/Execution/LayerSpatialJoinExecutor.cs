@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Microsoft.Extensions.DependencyInjection;
@@ -57,8 +58,9 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
     public LayerSpatialJoinExecutor(
         IServiceScopeFactory serviceScopeFactory,
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
-        ILogger<LayerSpatialJoinExecutor> logger)
-        : base(serviceScopeFactory, options, logger)
+        ILogger<LayerSpatialJoinExecutor> logger,
+        IOptions<LimitsOptions>? limitsOptions = null)
+        : base(serviceScopeFactory, options, logger, limitsOptions)
     {
     }
 

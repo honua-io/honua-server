@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -27,8 +28,9 @@ internal sealed class LayerDissolveExecutor : LayerSourcedFeatureExecutor
     public LayerDissolveExecutor(
         IServiceScopeFactory serviceScopeFactory,
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
-        ILogger<LayerDissolveExecutor> logger)
-        : base(serviceScopeFactory, options, logger)
+        ILogger<LayerDissolveExecutor> logger,
+        IOptions<LimitsOptions>? limitsOptions = null)
+        : base(serviceScopeFactory, options, logger, limitsOptions)
     {
     }
 
