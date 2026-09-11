@@ -32,7 +32,8 @@ GroundingRequest (goal, optional hint, explicit inputs, assumption policy)
 ┌──────────────────────────────────────────────────────────────────────┐
 │ GroundingService                                                     │
 │  1. Tokenize goal                                                    │
-│  2. Engine classification + candidate scoring                        │
+│  2. Engine classification + candidate scoring (job-callable          │
+│     processes only — see "Deterministic engine" below)               │
 │  3. IGroundingAuthorizationFilter — drop candidates the principal    │
 │     cannot see (shares the IOperatorAuthorizationEvaluator graph)    │
 │  4. Apply confidence bands + MaxCandidatesPerKind cap                │
@@ -181,7 +182,14 @@ is the engine the conformance harness pins against.
   evidence entry; falls back to `Analyze` with low confidence when nothing
   matches.
 - **Process ranker**: weighted bag-of-lemma over `{ title: 0.55,
-  category: 0.20, description: 0.15, parameter: 0.10 }`.
+  category: 0.20, description: 0.15, parameter: 0.10 }`. `GroundingService`
+  restricts the pool handed to the ranker to processes
+  `ProcessExecutionEligibility.IsJobCallable` accepts — a `process.selection`
+  candidate is what a caller places into an `AnalysisPlan` step and submits
+  to the job runtime, so a protocol-only or workflow-only operation (declared
+  via `ProcessDefinition.SupportedEntryPoints`) is never ranked, regardless of
+  text overlap. This filter runs independently of which `IGroundingEngine` is
+  wired (honua-server#4454).
 - **Layer / service rankers**: name + description overlap.
 
 Every candidate carries an `Evidence` list whose entries report hit counts
