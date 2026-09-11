@@ -990,3 +990,49 @@ baseline carried forward for the shards it does not.
 | Core Mutation Concurrency | 3.7m | 20m | 18% | 3.7m | 20m | 18% |
 | OData Client Certification | 4.0m | 25m | 16% | 4.0m | 25m | 16% |
 | GP Devkit CLI | 0.1m | 10m | 1% | 0.1m | 10m | 1% |
+
+## GPServer and NAServer capacity split (2026-09-11)
+
+Trunk went red at `cec6b0b` on run
+[34616571873](https://github.com/honua-io/honua-server/actions/runs/34616571873):
+both attempts of `GeoServices GPServer and NAServer` hit
+`HONUA_SHARD_CAPACITY_EXHAUSTED` at the 22m budget (1321s and 1322s, 3-4s
+idle), with no failing test in either log.
+
+### Evidence: growth, then a slow runner
+
+`cec6b0b` touched only an OGC Processes test, so the shard's code was identical
+to its parent `873fe9b`, which passed. The test step grew from 801s at `bbcb3f9`
+(109 cases) to 991s at `873fe9b` (153 cases, 74% of cap) after #4615 added
+`GPServerSoapEndpointsTests` and ten more alias endpoint cases. Both red
+attempts then ran nearly every test about 1.4x slower than `873fe9b` and were
+killed six cases short. The shard was already above the 70% target, so one
+slow runner was enough to exhaust it.
+
+`summed/whole` is 1.41 at `873fe9b`, so the shard runs classes in parallel and
+the union is the honest measure. `GPServerEndpointTests` is a 10.7m union of
+the 16.3m whole. Moving the SOAP and alias classes out instead would have left
+the parent at a 13.1m union (59%, about 83% at 1.4x), because the endpoint
+class runs alongside them.
+
+### The split
+
+`GPServerEndpointTests` moves to a new `GeoServices GPServer Endpoints` shard.
+`GeoServices GPServer and NAServer` keeps every other GPServer and NAServer
+class, plus the Routing paths. Both keep the unchanged 22m test and 32m job
+caps. The `GPServer and NAServer capacity partition` contract preserves the
+original class surface with exactly one owner per class.
+
+The slow timing is now the norm: the next trunk run, at `ac0d5d0`
+([34623708857](https://github.com/honua-io/honua-server/actions/runs/34623708857)),
+passed all 153 cases at 1321s, 100.1% of the cap. That TRX gives the current
+sizing:
+
+| Shard | Union at `873fe9b` | Union at `ac0d5d0` | Cap | Util at `ac0d5d0` |
+|---|---:|---:|---:|---:|
+| GeoServices GPServer Endpoints **(new)** | 10.7m | 14.3m | 22m | 65% |
+| GeoServices GPServer and NAServer | 5.6m | 7.5m | 22m | 34% |
+
+The GeoServices test project's exact-head cache writer is still
+`GeoServices ImageServer` (rank 26.9), so this split does not move the #4453
+static-asset hazard.
