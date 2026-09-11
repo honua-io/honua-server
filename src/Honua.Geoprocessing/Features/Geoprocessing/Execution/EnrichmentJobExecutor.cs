@@ -124,6 +124,8 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly ILogger<EnrichmentJobExecutor> _logger;
     private readonly int _maxVerticesPerGeometry;
+    private readonly long _maxGeometryBytes;
+    private readonly long _maxInputBytes;
     private IReadOnlySet<string>? _processIds;
 
     /// <summary>Initializes a new instance of the <see cref="EnrichmentJobExecutor"/> class.</summary>
@@ -138,7 +140,11 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         _logger = logger;
         // Same per-geometry vertex ceiling the layer-sourced executors charge (#4629): a
         // feature-count cap alone does not bound a single deliberately oversized geometry.
-        _maxVerticesPerGeometry = (limitsOptions?.Value ?? new LimitsOptions()).Geometry.MaxVerticesPerGeometry;
+        var limits = limitsOptions?.Value ?? new LimitsOptions();
+        _maxVerticesPerGeometry = limits.Geometry.MaxVerticesPerGeometry;
+        // ... and the same serialized-size budgets, per geometry and per layer read.
+        _maxGeometryBytes = limits.Geometry.MaxGeometrySize;
+        _maxInputBytes = limits.Analytics.MaxInputBytes;
     }
 
     /// <inheritdoc />
@@ -260,7 +266,8 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         {
             targets = hasInline
                 ? ParseInlineSource(inlineUri!, plan.MaxInputFeatures)
-                : await ReadSourceLayerAsync(source, inputs, plan, _maxVerticesPerGeometry, cancellationToken)
+                : await ReadSourceLayerAsync(
+                        source, inputs, plan, _maxVerticesPerGeometry, _maxGeometryBytes, _maxInputBytes, cancellationToken)
                     .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -275,7 +282,9 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
                     cancellationToken,
                     plan.MaxInputFeatures,
                     $"enrichment dataset layer {dataset.LayerId}",
-                    _maxVerticesPerGeometry)
+                    _maxVerticesPerGeometry,
+                    _maxGeometryBytes,
+                    _maxInputBytes)
                 .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
@@ -449,6 +458,8 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         StepInputReader inputs,
         EnrichmentPlan plan,
         int maxVerticesPerGeometry,
+        long maxGeometryBytes,
+        long maxInputBytes,
         CancellationToken cancellationToken)
     {
         if (!inputs.TryGet("layerId", out var raw)
@@ -470,7 +481,8 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         };
 
         return LayerSourcedFeatureExecutor.ReadLayerAsync(
-            source, request, cancellationToken, plan.MaxInputFeatures, $"source layer {layerId}", maxVerticesPerGeometry);
+            source, request, cancellationToken, plan.MaxInputFeatures, $"source layer {layerId}", maxVerticesPerGeometry,
+            maxGeometryBytes, maxInputBytes);
     }
 
     // Resolves the effective join behavior from the enrichment vocabulary: the

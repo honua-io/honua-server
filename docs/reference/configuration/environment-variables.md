@@ -146,6 +146,7 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `TileOptions__CacheMaxAge` | see `.env.example` | `Cache-Control: max-age` for tile responses (seconds). |
 | `TileOptions__TileExtent` / `TileOptions__TileBuffer` | `4096` / `256` | MVT tile extent and buffer. |
 | `Limits__Analytics__MaxInputFeatures` | `100000` | Max input features for spatial analytics queries. |
+| `Limits__Analytics__MaxInputBytes` | `536870912` | Max cumulative serialized geometry and attribute bytes a layer-sourced geoprocessing job streams from one layer before computing; exceeding it fails the job with a resource-limit message. |
 | `Limits__Elevation__MaxSampleCount` | `500` | Max samples per elevation profile request. |
 
 The effective import limits are also served at `GET /api/v1/admin/import/limits`.
