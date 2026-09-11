@@ -150,9 +150,13 @@ public sealed class HonuaLayerSinkExecutorTests
         // depended on whether the transform's output happened to cross
         // FeatureStreamPublisher's inline threshold. A honua-feature-stream:v1 reference
         // (the spilled shape) must load through identically.
+        // The destination is brand new (no catalog layer matches), so server#4651's
+        // write-destination gate requires an admin submitter before any load runs.
+        using var securityScope = BeginAdminSubmitterScope();
         var sink = new CapturingLayerSink();
         var executorOptions = Options();
-        var executor = new HonuaLayerSinkExecutor(executorOptions, NullLogger<HonuaLayerSinkExecutor>.Instance, sink);
+        var executor = new HonuaLayerSinkExecutor(
+            executorOptions, NullLogger<HonuaLayerSinkExecutor>.Instance, sink, EmptyCatalogScopeFactory());
 
         var spillPath = FeatureStreamArtifact.AllocateSpillPath(
             executorOptions.CurrentValue.OutputRootDirectory, "unit-op", HonuaLayerSinkExecutor.HandledProcessId);
