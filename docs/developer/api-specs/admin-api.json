@@ -34303,6 +34303,14 @@
             "nullable": true,
             "description": "Optional ETL/data-populate workload id dispatched after the schema change."
           },
+          "dataPopulateFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Fields the data-populate workload writes. Required with dataPopulateWorkloadId; the release is rejected before mutation unless every field is the new nullable field."
+          },
           "scriptId": {
             "type": "string",
             "nullable": true,
@@ -34590,6 +34598,14 @@
             "type": "string",
             "nullable": true,
             "description": "Optional ETL/data-populate workload identifier dispatched after the schema change."
+          },
+          "dataPopulateFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Fields the data-populate workload writes. Required with dataPopulateWorkloadId; the release is rejected before mutation unless every field is the new nullable field."
           },
           "scriptId": {
             "type": "string",

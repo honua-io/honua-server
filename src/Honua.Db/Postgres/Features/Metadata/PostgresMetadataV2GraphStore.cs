@@ -21,7 +21,7 @@ namespace Honua.Db.Postgres.Features.Metadata;
 /// refreshed in the same transaction. <c>metadata_v2_current</c> tracks the active
 /// revision per environment.
 /// </summary>
-internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphWriteBaseReader
+internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMetadataV2GraphRevisionStager, IMetadataV2GraphWriteBaseReader
 {
     // Shared with schema-coupled metadata publishers such as the demo STAC seed.
     // The environment hash is the second key so unrelated environments can publish concurrently.
@@ -262,8 +262,10 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
 
             if (!string.Equals(actualEtag, expectedEtag, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException(
-                    $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedEtag} but found {actualEtag ?? "<none>"}.");
+                throw new MetadataV2GraphConcurrencyException(
+                    $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedEtag} but found {actualEtag ?? "<none>"}.",
+                    expectedEtag,
+                    actualEtag);
             }
         }
 
@@ -358,8 +360,10 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         if (expectedCurrentEtag is not null &&
             !string.Equals(current?.Etag, expectedCurrentEtag, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(
-                $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedCurrentEtag} but found {current?.Etag ?? "<none>"}.");
+            throw new MetadataV2GraphConcurrencyException(
+                $"Metadata v2 etag mismatch for environment '{_environment}': expected {expectedCurrentEtag} but found {current?.Etag ?? "<none>"}.",
+                expectedCurrentEtag,
+                current?.Etag);
         }
 
         var target = await ReadSnapshotAsync(connection, transaction, revision, cancellationToken).ConfigureAwait(false)
@@ -382,6 +386,84 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         _cachedCurrent = target;
         _cacheInvalidator?.Invalidate(_environment);
         return target;
+    }
+
+    /// <inheritdoc />
+    public async Task<MetadataV2GraphSnapshot> StageAsync(
+        MetadataV2Graph graph,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+
+        var validation = MetadataV2GraphValidator.Validate(graph);
+        if (!validation.IsValid)
+        {
+            throw new InvalidDataException(
+                $"Metadata v2 graph failed validation: {string.Join("; ", validation.Errors)}");
+        }
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await VerifySchemaFloorAsync(connection, cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Same lock and store-owned revision allocation as SaveAsync, so a staged candidate can
+        // never collide with a concurrent publish. Neither the current pointer nor the derived
+        // sidecar indexes are touched: canonical readers stay on the active revision, and
+        // ActivateRevisionAsync rebuilds the target's sidecars when it repoints current.
+        await AcquireEnvironmentWriteLockAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        var revision = await ReadNextRevisionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        graph = graph with { Revision = revision };
+        var json = JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph);
+        var etag = ComputeEtag(json);
+
+        await UpsertSnapshotAsync(connection, transaction, graph, json, etag, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+
+        return new MetadataV2GraphSnapshot(graph, etag, DateTimeOffset.UtcNow);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DiscardStagedAsync(
+        long revision,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(revision);
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await VerifySchemaFloorAsync(connection, cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        await AcquireEnvironmentWriteLockAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        var current = await ReadCurrentStateAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+        if (current?.Revision == revision)
+        {
+            throw new InvalidOperationException(
+                $"Metadata v2 revision {revision} is current for environment '{_environment}' and cannot be discarded.");
+        }
+
+        // A staged revision has no sidecar rows unless it was once activated; clear them either way
+        // so a discarded candidate leaves no derived lookup rows behind.
+        var deleteSql = new[]
+        {
+            $"DELETE FROM {_resourcesIdxTable} WHERE environment = @environment AND revision = @revision",
+            $"DELETE FROM {_servicesIdxTable} WHERE environment = @environment AND revision = @revision",
+            $"DELETE FROM {_publicationsIdxTable} WHERE environment = @environment AND revision = @revision",
+            $"DELETE FROM {_storageBindingsIdxTable} WHERE environment = @environment AND revision = @revision",
+            $"DELETE FROM {_connectionsIdxTable} WHERE environment = @environment AND revision = @revision",
+            $"DELETE FROM {_snapshotsTable} WHERE environment = @environment AND revision = @revision",
+        };
+
+        var deleted = 0;
+        foreach (var sql in deleteSql)
+        {
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.Parameters.AddWithValue("@environment", _environment);
+            command.Parameters.AddWithValue("@revision", revision);
+            deleted = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        return deleted > 0;
     }
 
     private async Task AcquireEnvironmentWriteLockAsync(

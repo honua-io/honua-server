@@ -255,6 +255,80 @@ Release evidence:
   stale-index miss returning null, and a late update to an older retry leaving
   the latest operation's package-ID index entry in place.
 
+## Staged Activation and Verified Recovery (#4619)
+
+Derived from [#4619](https://github.com/honua-io/honua-server/issues/4619). The
+additive metadata-release reconciler (`MetadataReleaseReconciler`) never edits
+the active graph in place. Its stages are:
+
+1. **Preflight** — `MetadataReleaseChangePolicy` rejects, before any write,
+   destructive forward operations (`metadata-release-destructive-change`),
+   non-nullable adds (`metadata-release-non-nullable-add`), inverses that drop
+   anything the release does not add (`metadata-release-inverse-not-owned`), and
+   a data-populate workload whose declared `dataPopulateFields` are empty or
+   include anything other than the new nullable fields
+   (`metadata-release-etl-unproven-compensation`). The compatibility gate and the
+   snapshot-required refusal then run as before.
+2. **Backup** — captures the active revision and its ETag
+   (`priorRevision`, `priorEtag`). Only a retained Metadata v2 revision can be a
+   base; a synthesized compatibility or empty graph is refused
+   (`metadata-release-prior-not-retained`).
+3. **ScriptMigration** — prepares the candidate from the immutable prior revision,
+   validates it, and stages it with `IMetadataV2GraphRevisionStager.StageAsync`: a
+   retained revision that does not move `metadata_v2_current` and has no sidecar
+   rows, so canonical readers stay on the prior revision. The operation records
+   `candidateRevision`, `candidateEtag`, and `ownedOperations` (only the fields
+   this release actually added).
+4. **ServicePublication** — the qualified additive ETL runs, still before activation.
+5. **Smoke** — `MetadataReleaseSmokeChecker` exercises the candidate revision
+   explicitly: schema expectation, publication and storage binding, rendering
+   references that resolve in the prior revision (display and editor-tracking
+   fields, styles), identical `IAccessPolicyEvaluator` decisions for anonymous,
+   authenticated and every referenced role (read and write), and a canonical query
+   through `FeatureProviderQueryRouter` bound to the candidate snapshot.
+6. **MetadataApply** — `ActivateRevisionAsync(candidate, priorEtag)` moves the
+   pointer and publishes the candidate's sidecars in one transaction. A newer
+   revision is reported as `MetadataV2GraphConcurrencyException` and never
+   overwritten: the change is rebased onto it, re-staged and re-smoked (up to
+   three times, recorded in `rebaseCount` and `warnings`), or rejected
+   (`metadata-release-activation-conflict`, or the preparation blocker when the
+   concurrent update conflicts with the owned field).
+7. **SloWatch** — a post-activation smoke on the live revision (`smoke` evidence);
+   a failure requests rollback.
+
+A failure before activation (preparation, ETL, candidate smoke) discards the
+staged candidate and fails the operation with the live catalog unchanged.
+
+Rollback restores only the operation-owned change. While the candidate is still
+current it reactivates the prior revision; otherwise it removes only
+`ownedOperations` on top of the live revision with an ETag-conditional save, so
+later updates to other services survive (`metadata-release-owned-field-modified`
+if someone changed an owned field since). It never touches physical data or
+committed feature edits. The recovered live revision is smoke-checked
+(`smoke-recovered` evidence) before the operation reports `RolledBack`; a failed
+verification ends in `ManualInterventionRequired`
+(`metadata-release-recovery-unverified`).
+
+Every stage is idempotent against the persisted record. A crash after the pointer
+move resumes as an already-active activation; a crash after staging leaves an
+inert retained revision that never becomes current; a crash mid-rollback resumes
+to the same verified result. Activation also checks the recorded candidate ETag,
+so a reused revision number can never activate another writer's snapshot.
+
+Release evidence:
+
+- `PostgresMetadataV2GraphStoreFreshDbTests.StageAsync_KeepsReadersOnCurrent_AndActivationNeverOverwritesANewerRevision`
+  proves the staging, typed-conflict, discard and rebased-activation semantics on
+  PostgreSQL.
+- `MetadataReleaseReconcilerTests` drives the real reconciler, activator, script
+  executor, preflight gate and smoke checker through preparation failure, ETL and
+  candidate-smoke failure, post-activation regression, rollback after an unrelated
+  update and committed edits, concurrent updates to a different service, ETag
+  conflicts (compatible, incompatible and persistent), crash/resume at staging,
+  activation and rollback, and physical data preservation.
+- The installed fault/recovery proof against a release candidate belongs to the
+  release gate, not the per-PR gate.
+
 ## Review Output
 
 For a Metadata v2 release candidate, capture:
