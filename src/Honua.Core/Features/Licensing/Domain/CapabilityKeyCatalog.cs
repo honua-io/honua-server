@@ -67,6 +67,11 @@ public static class CapabilityKeyCatalog
     [
         new("admin.multi-tenancy", "Multi-Tenant Operation", Categories.ControlPlane,
             HonuaEdition.Enterprise, "Preview/trial-only tenant lifecycle, schema routing, and usage surfaces for non-production evaluation. Honua 2026.1 GA deployments are single-tenant; do not use customer production data. There is no GA, availability, performance, durability, SLO, or scale commitment, and Preview status never lowers the security severity of cross-tenant disclosure.", Status: PreviewStatus),
+
+        // Operator ruling (2026-09-03, honua-release#266 / #264) supersedes the earlier
+        // sync.offline GA promotion for release 2026.1: offline sync is Preview in 2026.1.
+        new(FeatureCatalog.FieldOpsOfflineSyncKey, "Offline/Field Sync", FeatureCatalog.Categories.FieldOps,
+            HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica/GeoPackage delta sync, and FieldCollection cursor/change exchange.", Status: PreviewStatus),
     ];
 
     /// <summary>
