@@ -15,7 +15,17 @@ Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/
 
 1. Set variables and allow anonymous reads on the service so the browser can fetch tiles without credentials.
 
-The service access-policy operation does not yet have a high-level client method. In the local [API explorer](http://localhost:8080/docs), run `PUT /api/v1/admin/services/default/access-policy` with `{"allowAnonymous": true}`. Use the [admin OpenAPI document](../developer/api-specs/admin-api.json) to generate a client when the explorer is unavailable.
+The service access-policy operation does not yet have a high-level client method, so call it directly:
+
+```bash
+curl -u :quickstart-admin-password \
+  -X PUT \
+  -H 'Content-Type: application/json' \
+  -d '{"allowAnonymous": true}' \
+  http://localhost:8080/api/v1/admin/services/default/access-policy
+```
+
+The interactive API explorer at `/docs` is served only when `HONUA_SERVE_API_DOCS=true` — it defaults on in `Development` and off in `Production`, which is what the packaged Compose profiles run, so on a default install that URL is a 404. The [admin OpenAPI document](../developer/api-specs/admin-api.json) is the client-generation contract.
 
 2. Fetch the TileJSON. It carries the tile URL template, zoom range, data bounds, the vector layer schema, and a link to the auto-generated style.
 
