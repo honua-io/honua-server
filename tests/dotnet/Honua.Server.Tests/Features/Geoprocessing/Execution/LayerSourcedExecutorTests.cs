@@ -177,6 +177,195 @@ public sealed class LayerSourcedExecutorTests
     }
 
     [UnitTest]
+    public async Task Dissolve_SingleGeometryAtByteLimit_Succeeds()
+    {
+        // #4629 threshold boundary for the per-geometry serialized-size cap
+        // (Limits:Geometry:MaxGeometrySize): a geometry of exactly the cap is admitted.
+        var feature = LineFeature(vertexCount: 10);
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [feature]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxGeometryBytes: feature.GeometryGeoJson!.Length)),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded, _lastErrorForAssertions);
+    }
+
+    [UnitTest]
+    public async Task Dissolve_SingleGeometryExceedsByteLimit_FailsBeforeComputation()
+    {
+        // One byte over the cap fails while streaming, before the geometry is parsed.
+        var feature = LineFeature(vertexCount: 10);
+        var bytes = feature.GeometryGeoJson!.Length;
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [feature]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxGeometryBytes: bytes - 1)),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull("no partial result may be published");
+        _lastErrorForAssertions.Should().Contain($"{bytes} serialized bytes")
+            .And.Contain($"limit of {bytes - 1} bytes").And.Contain("MaxGeometrySize");
+    }
+
+    [UnitTest]
+    public async Task Dissolve_CumulativeInputAtByteBudget_Succeeds()
+    {
+        // #4629: the cumulative input budget (Limits:Analytics:MaxInputBytes). Attribute-free
+        // features make the charge exactly the sum of the serialized geometries.
+        DagSourceFeature[] features = [LineFeature(10), LineFeature(10), LineFeature(10)];
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, features);
+
+        var (status, _, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxInputBytes: features.Sum(f => (long)f.GeometryGeoJson!.Length))),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded, _lastErrorForAssertions);
+    }
+
+    [UnitTest]
+    public async Task Dissolve_CumulativeInputExceedsByteBudget_FailsWhileStreaming()
+    {
+        // Three features of the same size, one byte of budget short: the third feature trips it.
+        DagSourceFeature[] features = [LineFeature(10), LineFeature(10), LineFeature(10)];
+        var budget = features.Sum(f => (long)f.GeometryGeoJson!.Length) - 1;
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, features);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxInputBytes: budget)),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+        _lastErrorForAssertions.Should().Contain($"input budget of {budget} bytes")
+            .And.Contain("at feature 3").And.Contain("MaxInputBytes");
+    }
+
+    [UnitTest]
+    public async Task SpatialJoin_JoinLayerExceedsByteBudget_FailsBeforeComputation()
+    {
+        // The join side is charged against the same byte budget as the target side.
+        DagSourceFeature[] joinFeatures = [LineFeature(10), LineFeature(10), LineFeature(10)];
+        var budget = 2L * joinFeatures[0].GeometryGeoJson!.Length;
+        var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+        {
+            [1] = [PointFeature(0, 0)],
+            [2] = joinFeatures,
+        });
+
+        var (status, _, _) = await RunAsync(
+            new LayerSpatialJoinExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerSpatialJoinExecutor>.Instance,
+                LimitsOptions(maxInputBytes: budget)),
+            LayerSpatialJoinExecutor.HandledProcessId,
+            ("layerId", "1"),
+            ("joinLayerId", "2"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        _lastErrorForAssertions.Should().Contain("join layer 2").And.Contain($"input budget of {budget} bytes");
+    }
+
+    [UnitTest]
+    public async Task Dissolve_OutputBeyondArtifactLowerBound_FailsBeforeSerialization()
+    {
+        // #4629: a 100-vertex output needs at least 100 x 5 = 500 bytes of GeoJSON ("[x,y]" per
+        // vertex), so a 499-byte artifact budget is refused before serialization allocates it.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [LineFeature(vertexCount: 100)]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerDissolveExecutor(ScopeFactory(source), Options(maxArtifactBytes: 499), NullLogger<LayerDissolveExecutor>.Instance),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+        _lastErrorForAssertions.Should().Contain("100 vertices").And.Contain("at least 500 bytes")
+            .And.Contain("stopped before serialization");
+    }
+
+    [UnitTest]
+    public async Task Dissolve_OutputAtArtifactLowerBound_ReachesTheSerializedSizeCheck()
+    {
+        // At exactly the lower bound the pre-check must not reject (the output might still fit);
+        // the real serialized size is then checked, and this payload is larger than 500 bytes.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [LineFeature(vertexCount: 100)]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerDissolveExecutor(ScopeFactory(source), Options(maxArtifactBytes: 500), NullLogger<LayerDissolveExecutor>.Instance),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+        _lastErrorForAssertions.Should().Contain("artifact size").And.Contain("MaxArtifactBytes=500")
+            .And.NotContain("stopped before serialization");
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_UndissolvedExpansionBeyondArtifactBudget_FailsDuringBuffering()
+    {
+        // Without dissolve every buffer is emitted, so the running vertex count is charged as
+        // each feature is buffered: a 5-byte artifact budget holds one vertex, and the first
+        // buffered polygon alone has more.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0), PointFeature(10, 0), PointFeature(20, 0)]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(
+                BufferScopeFactory(source, layerId: 7, storageSrid: 3857, isGeographic: false),
+                Options(maxArtifactBytes: 5),
+                NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "1"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+        _lastErrorForAssertions.Should().Contain("after 1 of 3 features").And.Contain("stopped during buffering");
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_DissolvedExpansionBeyondArtifactBudget_FailsBeforeSerialization()
+    {
+        // With dissolve the union may shrink the output, so buffering is not charged; the
+        // dissolved result is bounded before serialization instead.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0), PointFeature(10, 0), PointFeature(20, 0)]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(
+                BufferScopeFactory(source, layerId: 7, storageSrid: 3857, isGeographic: false),
+                Options(maxArtifactBytes: 5),
+                NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "1"),
+            ("dissolve", "true"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+        _lastErrorForAssertions.Should().Contain("stopped before serialization");
+    }
+
+    [UnitTest]
     public async Task BufferAggregate_MissingLayerId_FailsWithClassifiedError()
     {
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
@@ -734,11 +923,11 @@ public sealed class LayerSourcedExecutorTests
             Attributes = new Dictionary<string, object?> { [groupField] = groupValue, [numericField] = numericValue },
         };
 
-    private static IOptionsMonitor<GeoprocessingExecutorOptions> Options()
+    private static IOptionsMonitor<GeoprocessingExecutorOptions> Options(long? maxArtifactBytes = null)
     {
         var options = new GeoprocessingExecutorOptions
         {
-            MaxArtifactBytes = 50L * 1024L * 1024L,
+            MaxArtifactBytes = maxArtifactBytes ?? 50L * 1024L * 1024L,
             ResultRetention = TimeSpan.FromDays(7),
         };
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
@@ -758,9 +947,23 @@ public sealed class LayerSourcedExecutorTests
     /// and/or <see cref="GeometryLimits.MaxVerticesPerGeometry"/> (#4629), so admission tests can
     /// force the bound without depending on the production defaults (100,000 / 50,000).
     /// </summary>
-    private static IOptions<LimitsOptions> LimitsOptions(int? maxInputFeatures = null, int? maxVerticesPerGeometry = null)
+    private static IOptions<LimitsOptions> LimitsOptions(
+        int? maxInputFeatures = null,
+        int? maxVerticesPerGeometry = null,
+        long? maxGeometryBytes = null,
+        long? maxInputBytes = null)
     {
         var limits = new LimitsOptions();
+        if (maxGeometryBytes is { } geometryBytes)
+        {
+            limits.Geometry.MaxGeometrySize = geometryBytes;
+        }
+
+        if (maxInputBytes is { } inputBytes)
+        {
+            limits.Analytics.MaxInputBytes = inputBytes;
+        }
+
         if (maxInputFeatures is { } features)
         {
             limits.Analytics.MaxInputFeatures = features;

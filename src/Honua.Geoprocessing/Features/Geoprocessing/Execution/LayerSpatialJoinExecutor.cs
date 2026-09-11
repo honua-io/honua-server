@@ -90,7 +90,9 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
                 cancellationToken,
                 Limits.Analytics.MaxInputFeatures,
                 $"join layer {joinLayerId}",
-                Limits.Geometry.MaxVerticesPerGeometry)
+                Limits.Geometry.MaxVerticesPerGeometry,
+                Limits.Geometry.MaxGeometrySize,
+                Limits.Analytics.MaxInputBytes)
             .ConfigureAwait(false);
 
         var index = SpatialJoinSupport.BuildIndex(joinFeatures, cancellationToken);
