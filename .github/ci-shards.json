@@ -1112,7 +1112,7 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "Capacity split 2026-09-11 from GeoServices GPServer and NAServer (trunk red at cec6b0b, run 34616571873). GPServerEndpointTests is a 10.7m union of the 16.3m parent at 873fe9b and runs in parallel with the other GPServer/NAServer classes, so it is the parent's floor; alone it keeps the parent's unchanged 22m/32m caps. Ranked just above the parent so the long pole dispatches first.",
+      "_comment": "Capacity split 2026-09-11 from GeoServices GPServer and NAServer (trunk red at cec6b0b, run 34616571873). GPServerEndpointTests is a 14.3m union of the 21.7m parent at ac0d5d0 (10.7m of 16.3m at 873fe9b) and runs in parallel with the other GPServer/NAServer classes, so it is the parent's floor; alone it keeps the parent's unchanged 22m/32m caps. Ranked just above the parent so the long pole dispatches first.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests",
       "paths": [
         "src/Honua.Protocols.GeoServices/GPServer/",

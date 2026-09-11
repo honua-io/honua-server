@@ -1023,10 +1023,15 @@ class, plus the Routing paths. Both keep the unchanged 22m test and 32m job
 caps. The `GPServer and NAServer capacity partition` contract preserves the
 original class surface with exactly one owner per class.
 
-| Shard | Union at `873fe9b` | Cap | Util | At 1.4x |
+The slow timing is now the norm: the next trunk run, at `ac0d5d0`
+([34623708857](https://github.com/honua-io/honua-server/actions/runs/34623708857)),
+passed all 153 cases at 1321s, 100.1% of the cap. That TRX gives the current
+sizing:
+
+| Shard | Union at `873fe9b` | Union at `ac0d5d0` | Cap | Util at `ac0d5d0` |
 |---|---:|---:|---:|---:|
-| GeoServices GPServer Endpoints **(new)** | 10.7m | 22m | 49% | ~68% |
-| GeoServices GPServer and NAServer | 5.6m | 22m | 26% | ~36% |
+| GeoServices GPServer Endpoints **(new)** | 10.7m | 14.3m | 22m | 65% |
+| GeoServices GPServer and NAServer | 5.6m | 7.5m | 22m | 34% |
 
 The GeoServices test project's exact-head cache writer is still
 `GeoServices ImageServer` (rank 26.9), so this split does not move the #4453
