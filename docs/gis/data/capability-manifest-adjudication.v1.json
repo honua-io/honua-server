@@ -5,7 +5,8 @@
   "dispositions": {
     "mapped": "The manifest id is the wire name for an existing licensed capability. `capability` names it.",
     "register": "A real capability the licensing registry does not model yet. `capability` names the key to add; until it exists the crosswalk reports the id as unresolved and the gate fails, which is the point.",
-    "not-licensable": "The manifest advertises something that is not a separately licensable capability — a baseline every protocol already includes, an umbrella over a family that is licensed per-operation, a schema-version advertisement, or a client-interop fact tracked by another crosswalk."
+    "not-licensable": "The manifest advertises something that is not a separately licensable capability — a baseline every protocol already includes, an umbrella over a family that is licensed per-operation, a schema-version advertisement, or a client-interop fact tracked by another crosswalk.",
+    "declared-gap": "The registry declares this id a Planned implementation gap, so the manifest publishes supported:false for it. It is not a licensable capability and must not be mapped onto a served one: mapping a gap onto a working key tells a client the key is unavailable. The note records what is missing and which surface, if any, already provides the behaviour."
   },
   "adjudications": [
     {
@@ -52,9 +53,9 @@
     },
     {
       "manifestId": "analysis.spatial",
-      "disposition": "not-licensable",
-      "capability": null,
-      "note": "An umbrella the manifest advertises so a client can ask whether spatial analysis exists at all. Licensing is per operation — analytics.viewshed, analytics.h3, analytics.spatial-join and the rest are individually keyed and individually Pro. A single umbrella key would let one entitlement stand in for eleven."
+      "disposition": "mapped",
+      "capability": "analytics.clustering",
+      "note": "Composite entitlement, mapped to its first member. CapabilityManifestService gates this id with SpatialAnalyticsEntitlementKeys - analytics.clustering, analytics.spatial-join, analytics.buffer-aggregate and analytics.density - so it is licensable, contrary to an earlier adjudication that called it not-licensable and put the count at eleven. The crosswalk is one-key-per-id, so this maps to the first member; the manifest remains the authority on the full composite. If composite entitlements become common, the crosswalk should carry a key list rather than a key."
     },
     {
       "manifestId": "package.metadata-v2",
@@ -106,21 +107,19 @@
     },
     {
       "manifestId": "collaboration.feature-locks.cross-node",
-      "disposition": "mapped",
-      "capability": "collaboration.map-sessions",
-      "note": "Cross-node lock coordination is a deployment property of the same capability — it is what the locks require once the server runs multi-node — not a capability a customer licenses separately."
+      "disposition": "declared-gap",
+      "note": "Declared gap, not a licensable capability. The only lease store that ships is in-process, so leases do not span nodes; the registry marks the entry Planned and the manifest publishes supported:false, lifecycle:planned, reasonCode:unsupported. Previously mapped to collaboration.map-sessions - an Implemented Community key - which framed an absent behaviour as a property of a working one."
     },
     {
       "manifestId": "edit.geoservices-version-tokens",
-      "disposition": "mapped",
-      "capability": "editing.branch-versioning",
-      "note": "Version tokens are the GeoServices wire form of branch versioning; the same entitlement gates both."
+      "disposition": "declared-gap",
+      "note": "Declared gap, not a licensable capability. The GeoServices applyEdits surface honours no client-supplied version token; the row is named for that surface deliberately, because OGC API Features does enforce If-Match/412 on PUT, merge-PATCH and DELETE and a generically-named row would tell clients to disable optimistic concurrency where it works. Previously mapped to editing.branch-versioning, which is a different feature (gdb branch versioning) and a Pro key - so the mapping published a gap against a working paid entitlement."
     },
     {
       "manifestId": "operate.status",
       "disposition": "mapped",
-      "capability": "ops.health",
-      "note": "The authenticated operate-status surface reports the same health the ops.health capability covers."
+      "capability": "admin.control-plane",
+      "note": "The feature catalog attributes GET /api/v1/operate/status to admin.control-plane, so the crosswalk follows it rather than naming a second key for the same route. Previously mapped to ops.health, which left two published artifacts disagreeing about one surface."
     }
   ]
 }

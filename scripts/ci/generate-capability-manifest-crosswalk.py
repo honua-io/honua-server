@@ -145,6 +145,15 @@ def build() -> tuple[dict, list[str]]:
                     f"{manifest_id!r} is adjudicated 'mapped' to {target!r}, "
                     "which is not a capability key"
                 )
+            if disposition == "declared-gap" and target is not None:
+                # A declared gap has no key by definition. Naming one would
+                # publish an absent behaviour against a served capability,
+                # which is the error this bucket exists to prevent.
+                problems.append(
+                    f"{manifest_id!r} is adjudicated 'declared-gap' but names capability "
+                    f"{target!r}; a declared gap must name no key"
+                )
+
             if disposition == "register":
                 # `register` is a decision that a key should exist, so it stays
                 # red only until someone adds it. Once the key is in the
@@ -174,8 +183,8 @@ def build() -> tuple[dict, list[str]]:
         "trackingIssue": "https://github.com/honua-io/honua-server/issues/3607",
         "description": (
             "Joins honua.capability_manifest.v1 ids to licensing capability keys. `direct` and "
-            "`entitlement` are derived from CapabilityRegistry.cs; `mapped`, `register` and "
-            "`not-licensable` come from capability-manifest-adjudication.v1.json. Every manifest id "
+            "`entitlement` are derived from CapabilityRegistry.cs; `mapped`, `register`, "
+            "`declared-gap` and `not-licensable` come from capability-manifest-adjudication.v1.json. Every manifest id "
             "appears exactly once."
         ),
         "sources": {

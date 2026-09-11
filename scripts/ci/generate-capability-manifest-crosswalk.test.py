@@ -11,6 +11,8 @@ program singled out — `jobs.runner` and the gRPC transports — actually resol
 """
 from __future__ import annotations
 
+import pathlib
+import tempfile
 import importlib.util
 import json
 import sys
@@ -97,7 +99,7 @@ def test_a_stale_adjudication_fails():
 
 def test_mapping_to_a_nonexistent_key_fails():
     real = MODULE.known_keys
-    MODULE.known_keys = lambda: real() - {"ops.health"}
+    MODULE.known_keys = lambda: real() - {"admin.control-plane"}
     try:
         _, problems = build_quiet()
         assert_that(
@@ -106,6 +108,33 @@ def test_mapping_to_a_nonexistent_key_fails():
         )
     finally:
         MODULE.known_keys = real
+
+
+def test_a_declared_gap_may_not_name_a_capability_key():
+    """The bucket exists because mapping a gap onto a served key lies twice.
+
+    `edit.geoservices-version-tokens` and `collaboration.feature-locks.cross-node`
+    are Planned registry entries the manifest publishes as supported:false. Both
+    were previously mapped onto working keys, which told clients those keys were
+    unavailable and hid the gap. Naming a key here must fail.
+    """
+    real = MODULE.ADJUDICATION
+    payload = json.loads(real.read_text(encoding="utf-8"))
+    for row in payload["adjudications"]:
+        if row["manifestId"] == "edit.geoservices-version-tokens":
+            row["capability"] = "editing.branch-versioning"
+    with tempfile.TemporaryDirectory() as scratch:
+        poisoned = pathlib.Path(scratch) / "adjudication.json"
+        poisoned.write_text(json.dumps(payload), encoding="utf-8")
+        MODULE.ADJUDICATION = poisoned
+        try:
+            _, problems = build_quiet()
+            assert_that(
+                any("declared-gap" in m and "must name no key" in m for m in problems),
+                f"a declared gap naming a key passed: {problems}",
+            )
+        finally:
+            MODULE.ADJUDICATION = real
 
 
 def test_register_stays_red_until_the_key_exists():

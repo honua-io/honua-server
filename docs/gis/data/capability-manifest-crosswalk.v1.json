@@ -2,7 +2,7 @@
   "schemaVersion": "1.0.0",
   "generator": "scripts/ci/generate-capability-manifest-crosswalk.py",
   "trackingIssue": "https://github.com/honua-io/honua-server/issues/3607",
-  "description": "Joins honua.capability_manifest.v1 ids to licensing capability keys. `direct` and `entitlement` are derived from CapabilityRegistry.cs; `mapped`, `register` and `not-licensable` come from capability-manifest-adjudication.v1.json. Every manifest id appears exactly once.",
+  "description": "Joins honua.capability_manifest.v1 ids to licensing capability keys. `direct` and `entitlement` are derived from CapabilityRegistry.cs; `mapped`, `register`, `declared-gap` and `not-licensable` come from capability-manifest-adjudication.v1.json. Every manifest id appears exactly once.",
   "sources": {
     "manifestIds": "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs",
     "capabilityKeys": "docs/gis/data/capability-keys.v1.json",
@@ -10,12 +10,13 @@
   },
   "summary": {
     "manifestIdCount": 48,
-    "resolvedCount": 40,
+    "resolvedCount": 39,
     "byResolution": {
+      "declared-gap": 2,
       "direct": 21,
       "entitlement": 8,
-      "mapped": 7,
-      "not-licensable": 8,
+      "mapped": 6,
+      "not-licensable": 7,
       "registered": 4
     }
   },
@@ -52,9 +53,9 @@
       "manifestId": "analysis.spatial",
       "category": "analysis",
       "kind": "Feature",
-      "capability": null,
-      "resolution": "not-licensable",
-      "note": "An umbrella the manifest advertises so a client can ask whether spatial analysis exists at all. Licensing is per operation — analytics.viewshed, analytics.h3, analytics.spatial-join and the rest are individually keyed and individually Pro. A single umbrella key would let one entitlement stand in for eleven."
+      "capability": "analytics.clustering",
+      "resolution": "mapped",
+      "note": "Composite entitlement, mapped to its first member. CapabilityManifestService gates this id with SpatialAnalyticsEntitlementKeys - analytics.clustering, analytics.spatial-join, analytics.buffer-aggregate and analytics.density - so it is licensable, contrary to an earlier adjudication that called it not-licensable and put the count at eleven. The crosswalk is one-key-per-id, so this maps to the first member; the manifest remains the authority on the full composite. If composite entitlements become common, the crosswalk should carry a key list rather than a key."
     },
     {
       "manifestId": "collaboration.feature-locks",
@@ -68,9 +69,9 @@
       "manifestId": "collaboration.feature-locks.cross-node",
       "category": "collaboration",
       "kind": "Feature",
-      "capability": "collaboration.map-sessions",
-      "resolution": "mapped",
-      "note": "Cross-node lock coordination is a deployment property of the same capability — it is what the locks require once the server runs multi-node — not a capability a customer licenses separately."
+      "capability": null,
+      "resolution": "declared-gap",
+      "note": "Declared gap, not a licensable capability. The only lease store that ships is in-process, so leases do not span nodes; the registry marks the entry Planned and the manifest publishes supported:false, lifecycle:planned, reasonCode:unsupported. Previously mapped to collaboration.map-sessions - an Implemented Community key - which framed an absent behaviour as a property of a working one."
     },
     {
       "manifestId": "edit.features",
@@ -83,9 +84,9 @@
       "manifestId": "edit.geoservices-version-tokens",
       "category": "edit",
       "kind": "Feature",
-      "capability": "editing.branch-versioning",
-      "resolution": "mapped",
-      "note": "Version tokens are the GeoServices wire form of branch versioning; the same entitlement gates both."
+      "capability": null,
+      "resolution": "declared-gap",
+      "note": "Declared gap, not a licensable capability. The GeoServices applyEdits surface honours no client-supplied version token; the row is named for that surface deliberately, because OGC API Features does enforce If-Match/412 on PUT, merge-PATCH and DELETE and a generically-named row would tell clients to disable optimistic concurrency where it works. Previously mapped to editing.branch-versioning, which is a different feature (gdb branch versioning) and a Pro key - so the mapping published a gap against a working paid entitlement."
     },
     {
       "manifestId": "gitops.release-manifest",
@@ -107,9 +108,9 @@
       "manifestId": "operate.status",
       "category": "operate",
       "kind": "Feature",
-      "capability": "ops.health",
+      "capability": "admin.control-plane",
       "resolution": "mapped",
-      "note": "The authenticated operate-status surface reports the same health the ops.health capability covers."
+      "note": "The feature catalog attributes GET /api/v1/operate/status to admin.control-plane, so the crosswalk follows it rather than naming a second key for the same route. Previously mapped to ops.health, which left two published artifacts disagreeing about one surface."
     },
     {
       "manifestId": "package.app",
