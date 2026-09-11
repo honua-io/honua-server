@@ -1,7 +1,7 @@
 # GDAL/OGR client interop lane. Uses the upstream osgeo image so the OGR
 # WFS, OAPIF, and CSV drivers match what production clients ship.
 
-FROM ghcr.io/osgeo/gdal:ubuntu-small-latest
+FROM ghcr.io/osgeo/gdal:ubuntu-small-latest@sha256:871c211b12f559514c6643f6ab339823551663f598f69a042bfe2628a6acab86
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \

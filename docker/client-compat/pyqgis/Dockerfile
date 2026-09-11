@@ -1,7 +1,7 @@
 # PyQGIS client interop lane. Uses the upstream qgis image so the rendering
 # stack matches the desktop client. Headless via QT_QPA_PLATFORM=offscreen.
 
-FROM qgis/qgis:ltr
+FROM qgis/qgis:ltr@sha256:681853565ad03722a0cbcba23985fd211ca927bec2b3d389cb07e0e0412e4184
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
