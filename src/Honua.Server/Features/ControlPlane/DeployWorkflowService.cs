@@ -132,16 +132,13 @@ internal sealed partial class DeployWorkflowService
         // Validate the telemetry and promotion gates before any mutation (#4617): an invalid,
         // silently-ignored or unresolvable gate configuration blocks submission here instead of
         // being discovered by the reconciler after the candidate is already receiving traffic.
-        foreach (var gateBlock in new[] { DescribeTelemetryGateBlock(spec), DeployPromotionPolicy.Validate(spec) })
+        foreach (var gateBlock in new[] { DescribeTelemetryGateBlock(spec), DeployPromotionPolicy.Validate(spec) }.OfType<string>())
         {
-            if (gateBlock != null)
+            plan = plan with
             {
-                plan = plan with
-                {
-                    IsReadyToSubmit = false,
-                    BlockingReasons = [.. plan.BlockingReasons, gateBlock]
-                };
-            }
+                IsReadyToSubmit = false,
+                BlockingReasons = [.. plan.BlockingReasons, gateBlock]
+            };
         }
 
         return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);

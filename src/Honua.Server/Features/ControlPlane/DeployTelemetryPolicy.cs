@@ -384,13 +384,13 @@ internal sealed record DeployTelemetryPolicy
             var hasLatencyThreshold = Get(parameters, "telemetry.latency_p95.threshold_ms") != null;
             var hasSampleMinimum = Get(parameters, "telemetry.sample_count.minimum") != null;
             errorThreshold = hasErrorThreshold
-                ? ParseNumber(parameters, "telemetry.error_rate.threshold", double.MaxValue, errors, allowZero: true)
+                ? ParseNumber(parameters, "telemetry.error_rate.threshold", maximum: null, errors, allowZero: true)
                 : preset?.ErrorRateThreshold;
             latencyThreshold = hasLatencyThreshold
-                ? ParseNumber(parameters, "telemetry.latency_p95.threshold_ms", double.MaxValue, errors)
+                ? ParseNumber(parameters, "telemetry.latency_p95.threshold_ms", maximum: null, errors)
                 : preset?.LatencyP95ThresholdMs;
             sampleMinimum = hasSampleMinimum
-                ? ParseNumber(parameters, "telemetry.sample_count.minimum", double.MaxValue, errors)
+                ? ParseNumber(parameters, "telemetry.sample_count.minimum", maximum: null, errors)
                 : preset?.MinimumSampleCount;
             maxStalenessSeconds = ParseNumber(parameters, "telemetry.max_staleness_seconds", MaximumStalenessSeconds, errors);
 
@@ -690,13 +690,14 @@ internal sealed record DeployTelemetryPolicy
 
     /// <summary>
     /// Reads an optional finite number in <c>(0, maximum]</c> (or <c>[0, maximum]</c> when
-    /// <paramref name="allowZero"/>). A present-but-unusable value is recorded in
-    /// <paramref name="errors"/> and returns <see langword="null"/>; it is never replaced by a default.
+    /// <paramref name="allowZero"/>; no upper bound when <paramref name="maximum"/> is null). A
+    /// present-but-unusable value is recorded in <paramref name="errors"/> and returns
+    /// <see langword="null"/>; it is never replaced by a default.
     /// </summary>
     private static double? ParseNumber(
         IReadOnlyDictionary<string, string> parameters,
         string key,
-        double maximum,
+        double? maximum,
         List<string> errors,
         bool allowZero = false)
     {
@@ -708,16 +709,16 @@ internal sealed record DeployTelemetryPolicy
         if (double.TryParse(raw, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed) &&
             double.IsFinite(parsed) &&
             (allowZero ? parsed >= 0 : parsed > 0) &&
-            parsed <= maximum)
+            (maximum is null || parsed <= maximum.Value))
         {
             return parsed;
         }
 
-        var range = maximum == double.MaxValue
+        var range = maximum is not { } bound
             ? allowZero ? "a finite number >= 0" : "a finite number > 0"
             : allowZero
-                ? $"a finite number in [0, {maximum.ToString(CultureInfo.InvariantCulture)}]"
-                : $"a finite number in (0, {maximum.ToString(CultureInfo.InvariantCulture)}]";
+                ? $"a finite number in [0, {bound.ToString(CultureInfo.InvariantCulture)}]"
+                : $"a finite number in (0, {bound.ToString(CultureInfo.InvariantCulture)}]";
         errors.Add($"{key} must be {range} (got '{raw.Trim()}').");
         return null;
     }
