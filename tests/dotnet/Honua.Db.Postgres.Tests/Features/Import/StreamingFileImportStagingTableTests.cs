@@ -83,6 +83,23 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         END;
         $$;
 
+        -- Mirrors src/Honua.Server/Migrations/115_AddDropImportStagingTable.sql: a replace
+        -- that must not promote an incomplete staging sibling (#4006) drops it instead.
+        CREATE OR REPLACE FUNCTION honua.drop_import_staging_table(schema_name text, table_name text)
+        RETURNS void
+        LANGUAGE plpgsql
+        AS $$
+        DECLARE
+            staging_name text;
+        BEGIN
+            staging_name := table_name || '__staging';
+            IF length(staging_name) > 63 THEN
+                staging_name := 'stg_' || md5(table_name);
+            END IF;
+            EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
+        END;
+        $$;
+
         CREATE OR REPLACE FUNCTION honua.import_index_name(table_name text, index_kind text)
         RETURNS text LANGUAGE plpgsql IMMUTABLE AS $$
         DECLARE index_name text;
@@ -376,16 +393,46 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             });
 
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT COUNT(*)::int, COUNT(*) FILTER (WHERE properties->>'name' IN ('a', 'b'))::int FROM \"{schema}\".imported_partial_replace_guard";
-            await using var reader = await command.ExecuteReaderAsync();
-            (await reader.ReadAsync()).Should().BeTrue();
+            int liveRowCount;
+            int seededRowCount;
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"SELECT COUNT(*)::int, COUNT(*) FILTER (WHERE properties->>'name' IN ('a', 'b'))::int FROM \"{schema}\".imported_partial_replace_guard";
+                await using var reader = await command.ExecuteReaderAsync();
+                (await reader.ReadAsync()).Should().BeTrue();
+                liveRowCount = reader.GetInt32(0);
+                seededRowCount = reader.GetInt32(1);
+            }
+
+            // The never-promoted staging sibling must be gone: honua.drop_import_staging_table
+            // cleans it up so a blocked replace does not leave a full second copy of the dataset
+            // behind. A missing helper would surface here rather than as a silent leak.
+            bool stagingSurvived;
+            await using (var stagingCommand = connection.CreateCommand())
+            {
+                stagingCommand.CommandText = """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM pg_catalog.pg_class AS relation
+                        INNER JOIN pg_catalog.pg_namespace AS namespace
+                            ON namespace.oid = relation.relnamespace
+                        WHERE namespace.nspname = @schema_name
+                          AND relation.relname = 'imported_partial_replace_guard__staging')
+                    """;
+                var schemaParameter = stagingCommand.CreateParameter();
+                schemaParameter.ParameterName = "schema_name";
+                schemaParameter.Value = schema;
+                stagingCommand.Parameters.Add(schemaParameter);
+                stagingSurvived = (bool)(await stagingCommand.ExecuteScalarAsync())!;
+            }
+
             using (new AssertionScope())
             {
                 result.Success.Should().BeFalse("a replace with skipped input rows must not claim a complete successful replacement");
                 result.Warnings.Should().Contain(w => w.Contains("skipped", StringComparison.OrdinalIgnoreCase));
-                reader.GetInt32(0).Should().Be(2, "a partial replacement must leave the prior complete target in place");
-                reader.GetInt32(1).Should().Be(2, "the prior rows must survive the skipped hostile feature");
+                liveRowCount.Should().Be(2, "a partial replacement must leave the prior complete target in place");
+                seededRowCount.Should().Be(2, "the prior rows must survive the skipped hostile feature");
+                stagingSurvived.Should().BeFalse("the never-promoted staging sibling must be dropped, not left behind as a second copy");
             }
         }
         finally
