@@ -9,7 +9,7 @@
     "cross-cutting-default": "Applies automatically as a default behavior, not a distinct route.",
     "ops-background-job": "An operational background job or scheduled task, not an HTTP route.",
     "sdk-only": "Exposed to SDKs/MCP tooling without a distinct catalogued HTTP route in this slice.",
-    "infra-owned": "Owned by the deployment's infrastructure/managed-database layer by design (stateless server); no server-side route or background job performs this function."
+    "infra-owned": "No server-side route or background job performs this function today; it is owned by the deployment's infrastructure or managed-database layer. This describes the current split, not a permanent one — disaster recovery is scoped as an opt-in managed capability (honua-server#4677), so these keys are deliberately retained rather than removed as unimplemented."
   },
   "noSurfaceCapabilities": [
     {
