@@ -21,10 +21,10 @@ namespace Honua.Geoprocessing;
 internal sealed partial class HonuaProcessService : Proto.ProcessService.ProcessServiceBase
 {
     /// <summary>
-    /// Bounded budget for a single cancellation request, matching the OGC API Processes and
-    /// GPServer adapters (<see cref="Honua.Protocols.OgcApi.Processes"/>,
-    /// <see cref="Honua.Protocols.GeoServices.GPServer"/>) so all three protocol surfaces make the
-    /// same confirm-or-report-nonterminal tradeoff.
+    /// Bounded budget for a single cancellation request, matching the OGC API Processes
+    /// (<c>Honua.Protocols.OgcApi.Processes</c>) and GPServer
+    /// (<c>Honua.Protocols.GeoServices.GPServer</c>) adapters so all three protocol surfaces make
+    /// the same confirm-or-report-nonterminal tradeoff.
     /// </summary>
     private static readonly TimeSpan CancelTimeout = TimeSpan.FromSeconds(30);
 
