@@ -97,7 +97,15 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {inputError}");
         }
 
-        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError, _options.CurrentValue.MaxArtifactBytes))
+        // Accept both the inline back-compat data URI and a spilled honua-feature-stream
+        // reference (server#4628): FeatureCollectionArtifact.TryParseDataUri alone rejected
+        // any transform output that crossed FeatureStreamPublisher's inline threshold, so a
+        // workflow's success depended on its dataset size relative to that threshold rather
+        // than on its content. OutputRootDirectory rejects a stream reference whose backing
+        // path was injected outside the geoprocessing sandbox.
+        if (!FeatureStreamArtifact.TryOpenRead(
+                inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
+                _options.CurrentValue.OutputRootDirectory))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
@@ -161,7 +169,8 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         var wkbWriter = new WKBWriter();
         var rows = new List<HonuaLayerSinkRow>();
         long rejected = 0;
-        foreach (var feature in source)
+        var maxFeatures = _options.CurrentValue.MaxSinkFeatureCount;
+        await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (feature.Geometry is null)
@@ -170,12 +179,28 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
                 continue;
             }
 
+            if (rows.Count >= maxFeatures)
+            {
+                // A spilled stream is deliberately unbounded end-to-end, but this sink still
+                // loads through a single transactional batch (server#4628 non-goal: not a
+                // distributed data engine). Fail closed with a clear, actionable message
+                // instead of growing the in-memory row buffer without limit.
+                return JobExecutionResult.Failed(
+                    $"Invalid {HandledProcessId} inputs: 'input' exceeds the configured limit of " +
+                    $"{maxFeatures} features for a single honua-layer sink load.");
+            }
+
             rows.Add(new HonuaLayerSinkRow(
                 wkbWriter.Write(feature.Geometry),
                 SinkFeatureEncoder.BuildAttributesJson(feature, batchId)));
         }
 
         await context.ReportProgressAsync(70, "Loading into catalog layer", cancellationToken).ConfigureAwait(false);
+
+        // Fence stale attempts at the write boundary (server#4626): a queue lease or
+        // artifact-publication fence alone cannot undo a row already committed to the
+        // catalog, so re-check ownership immediately before the transactional write.
+        await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
 
         HonuaLayerSinkOutcome outcome;
         try
@@ -199,7 +224,13 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
             return JobExecutionResult.Failed($"{HandledProcessId} load failed: {ex.GetType().Name}.");
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        // The sink's transaction (including its commit receipt) has already committed by the
+        // time LoadAsync returns successfully — the effect is real and durable regardless of
+        // what the cancellation token does next. Publish/report with CancellationToken.None
+        // from here so a cancellation racing in during this narrow window cannot make the job
+        // falsely report Cancelled (implying no effect / safe to discard) over data that was
+        // actually written (server#4626: "cancellation does not claim rollback of committed
+        // data").
         await context.PublishArtifactAsync(
             SinkResultArtifact.Build(
                 HandledProcessId,
@@ -209,8 +240,8 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
                 ("batchId", outcome.BatchId),
                 ("featuresWritten", outcome.FeaturesWritten),
                 ("featuresRejected", rejected)),
-            cancellationToken).ConfigureAwait(false);
-        await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
+            CancellationToken.None).ConfigureAwait(false);
+        await context.ReportProgressAsync(100, $"{HandledProcessId} completed", CancellationToken.None).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
     }
