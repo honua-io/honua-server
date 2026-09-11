@@ -89,13 +89,12 @@ public static class MetadataReleaseChangePolicy
             .Select(static operation => (operation.ResourceSemanticId, Field: operation.FieldName.ToUpperInvariant()))
             .ToHashSet();
 
-        foreach (var inverse in plan.Script.InverseOperations)
+        var unownedInverses = plan.Script.InverseOperations.Where(inverse =>
+            inverse.Kind != MetadataReleaseScriptOperationKind.DropColumn ||
+            !added.Contains((inverse.ResourceSemanticId, inverse.FieldName.ToUpperInvariant())));
+        foreach (var inverse in unownedInverses)
         {
-            if (inverse.Kind != MetadataReleaseScriptOperationKind.DropColumn ||
-                !added.Contains((inverse.ResourceSemanticId, inverse.FieldName.ToUpperInvariant())))
-            {
-                Block(InverseNotOwned, $"Inverse operation {inverse.Kind} on '{inverse.ResourceSemanticId}.{inverse.FieldName}' reverts something the release does not add.");
-            }
+            Block(InverseNotOwned, $"Inverse operation {inverse.Kind} on '{inverse.ResourceSemanticId}.{inverse.FieldName}' reverts something the release does not add.");
         }
 
         if (!string.IsNullOrWhiteSpace(plan.DataPopulateWorkloadId))
@@ -105,12 +104,11 @@ public static class MetadataReleaseChangePolicy
                 Block(EtlUnprovenCompensation, $"Data-populate workload '{plan.DataPopulateWorkloadId}' does not declare the fields it writes, so rollback cannot be proven to need no data compensation.");
             }
 
-            foreach (var field in plan.DataPopulateFields)
+            var unqualifiedFields = plan.DataPopulateFields.Where(field =>
+                !added.Contains((plan.ResourceSemanticId, field.ToUpperInvariant())));
+            foreach (var field in unqualifiedFields)
             {
-                if (!added.Contains((plan.ResourceSemanticId, field.ToUpperInvariant())))
-                {
-                    Block(EtlUnprovenCompensation, $"Data-populate workload '{plan.DataPopulateWorkloadId}' writes '{plan.ResourceSemanticId}.{field}', which this release does not add as a nullable field.");
-                }
+                Block(EtlUnprovenCompensation, $"Data-populate workload '{plan.DataPopulateWorkloadId}' writes '{plan.ResourceSemanticId}.{field}', which this release does not add as a nullable field.");
             }
         }
 
