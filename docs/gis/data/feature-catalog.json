@@ -11892,7 +11892,10 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_EmptyTile_ReturnsNoContent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_InRange_ReturnsMvtBytesWithCacheHeader",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_OutOfRangeZoom_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_UnknownService_ReturnsNotFound"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_UnknownService_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerPrimaryPublicationTests.VectorTileServer_AnonymousCallerWithoutAccessToVectorTileLayer_StyleAndTileUseSameAccessiblePublication",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerPrimaryPublicationTests.VectorTileServer_AuthenticatedCallerWithAccessToVectorTileLayer_StyleAndTileUseVectorTileLayer",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerPrimaryPublicationTests.VectorTileServer_PrimaryFeatureLayerAndVectorTileLayer_StyleAndTileUseVectorTileLayer"
       ],
       "proof_ledger_surface": "vector-tile-server",
       "maturity": "implemented",
