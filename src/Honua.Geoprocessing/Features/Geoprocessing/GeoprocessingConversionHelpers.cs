@@ -372,7 +372,13 @@ internal static class GeoprocessingConversionHelpers
         _ => Proto.ArtifactClass.Unspecified
     };
 
-    private static Proto.JobState ToProtoJobState(ExecutionJobStatus status) => status switch
+    /// <summary>
+    /// Maps a canonical durable job status to its proto job state. Internal (not private) so
+    /// adapters projecting a canonical <see cref="ExecutionJobRecord"/> outcome directly — for
+    /// example a cancellation response — reuse this mapping rather than fabricating their own
+    /// adapter-local state (#4630).
+    /// </summary>
+    internal static Proto.JobState ToProtoJobState(ExecutionJobStatus status) => status switch
     {
         ExecutionJobStatus.Queued => Proto.JobState.Validated,
         ExecutionJobStatus.Provisioning => Proto.JobState.Running,

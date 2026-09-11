@@ -3683,8 +3683,14 @@ public sealed class ProcessCatalogTests
             Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobService>.Instance,
             new StaticOptionsMonitor<GeoprocessingExecutorOptions>(new GeoprocessingExecutorOptions()));
 
+        var terminalService = new GeoprocessingJobTerminalService(
+            jobService,
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobTerminalService>.Instance);
+
         return new HonuaProcessService(
             jobService,
+            terminalService,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance);
     }
 
