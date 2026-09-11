@@ -251,14 +251,10 @@ public sealed class ControlPlaneDeployTriggerTests
 
     private static MetadataReleaseReconciler BuildMetadataReconciler(IWorkflowOperationStore store)
     {
-        var scriptExecutor = Substitute.For<IMetadataReleaseScriptExecutor>();
-        scriptExecutor.ApplyForwardAsync(Arg.Any<MetadataReleaseExecutionPlan>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
-
         return new MetadataReleaseReconciler(
             store,
             Substitute.For<IMetadataReleasePreflightGate>(),
-            scriptExecutor,
+            Substitute.For<IMetadataReleaseScriptExecutor>(),
             Substitute.For<IMetadataReleaseDataJobDispatcher>(),
             Substitute.For<IMetadataReleaseActivator>(),
             Substitute.For<IMetadataReleaseSmokeChecker>(),

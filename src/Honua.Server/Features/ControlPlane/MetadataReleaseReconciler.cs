@@ -3,17 +3,29 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Hosting;
 
 namespace Honua.ControlPlane;
 
 /// <summary>
-/// Reconciles durable metadata-release workflow operations through the additive layer-evolution
-/// lifecycle. Walks the stages for the additive case — Preflight (compatibility/sync-check gate) →
-/// Backup (no-op for additive) → ScriptMigration (additive schema change) → data/ETL populate →
-/// MetadataApply (activate the new revision) → Smoke → Complete — and executes the reversible
-/// inverse on rollback. Snapshot-required rollback is deferred and refused with a clear message.
+/// Reconciles durable metadata-release workflow operations through the staged-activation lifecycle
+/// for protected additive changes:
+/// Preflight (change policy + compatibility gate, before any mutation) →
+/// Backup (capture the immutable prior revision and its ETag) →
+/// ScriptMigration (prepare and stage an immutable candidate; the active pointer does not move) →
+/// ServicePublication (qualified additive ETL, still before activation) →
+/// Smoke (exercise the candidate explicitly while canonical readers stay on the prior revision) →
+/// MetadataApply (atomic, ETag-conditional activation; a newer update is rebased and revalidated or
+/// rejected, never overwritten) →
+/// SloWatch (post-activation regression check on the live revision) → Complete.
+///
+/// Rollback restores only what the operation owns — it reactivates the prior revision while the
+/// candidate is still current, and otherwise reverts the owned fields on top of later updates — never
+/// touches physical data, and verifies the recovered service before reporting RolledBack. Failures
+/// before activation discard the candidate and leave the live catalog untouched. Snapshot-required
+/// rollback is deferred and refused with a clear message.
 ///
 /// Mirrors <see cref="DeployWorkflowReconciler"/>: leased, idempotent, single advance per cycle so
 /// the background loop re-enters and resumes from the persisted stage.
@@ -27,6 +39,8 @@ internal sealed partial class MetadataReleaseReconciler(
     IMetadataReleaseSmokeChecker smokeChecker,
     ILogger<MetadataReleaseReconciler> logger) : IMetadataReleaseOperationReconciler
 {
+    internal const int MaxRebaseAttempts = 3;
+    private const int MaxRevertAttempts = 5;
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
@@ -98,9 +112,10 @@ internal sealed partial class MetadataReleaseReconciler(
     }
 
     /// <summary>
-    /// Advances the additive forward lifecycle by exactly one stage so the leased loop re-enters and
-    /// resumes deterministically. Each stage transition is idempotent: re-running a stage on the same
-    /// record produces the same next state.
+    /// Advances the forward lifecycle by exactly one stage so the leased loop re-enters and resumes
+    /// deterministically. Every stage is idempotent against the persisted record: a crash between a
+    /// side effect and the record write re-runs the stage and observes the side effect instead of
+    /// repeating it.
     /// </summary>
     private async Task<WorkflowOperationRecord> AdvanceForwardAsync(
         WorkflowOperationRecord operation,
@@ -117,6 +132,14 @@ internal sealed partial class MetadataReleaseReconciler(
         {
             case MetadataReleaseStage.Preflight:
                 {
+                    // Destructive changes and ETL whose compensation is unproven are rejected before
+                    // the first write, independent of the package analyzer's classification.
+                    var policy = MetadataReleaseChangePolicy.Evaluate(plan);
+                    if (!policy.IsAllowed)
+                    {
+                        return Block(operation, $"Change policy rejected the release before any mutation: {string.Join(" ", policy.Reasons)}", policy.Blockers);
+                    }
+
                     var preflight = await preflightGate.EvaluateAsync(plan, cancellationToken).ConfigureAwait(false);
                     if (!preflight.CanProceed)
                     {
@@ -134,62 +157,100 @@ internal sealed partial class MetadataReleaseReconciler(
                             ["metadata-release-snapshot-not-implemented"]);
                     }
 
-                    var rollbackPlan = BuildRollbackPlan(preflight.RollbackClassification, plan);
-                    return Advance(operation, MetadataReleaseStage.Backup, "Preflight passed; rollback classified as "
-                        + $"{preflight.RollbackClassification}.", rollbackPlan: rollbackPlan);
+                    return Advance(
+                        operation,
+                        MetadataReleaseStage.Backup,
+                        $"Preflight passed; rollback classified as {preflight.RollbackClassification}.",
+                        release with { RollbackPlan = BuildRollbackPlan(preflight.RollbackClassification) });
                 }
 
             case MetadataReleaseStage.Backup:
-                // Additive evolution needs no data backup — only the snapshot-required class does, and
-                // that class is refused at Preflight. Record the no-op and advance.
-                return Advance(operation, MetadataReleaseStage.ScriptMigration, "Backup is a no-op for additive layer evolution.");
+                return await CapturePriorAsync(operation, cancellationToken).ConfigureAwait(false);
 
             case MetadataReleaseStage.ScriptMigration:
-                await scriptExecutor.ApplyForwardAsync(plan, cancellationToken).ConfigureAwait(false);
-                return Advance(operation, MetadataReleaseStage.ServicePublication, $"Applied additive schema script '{plan.Script.ScriptId}'.");
+                return await PrepareCandidateAsync(operation, plan, cancellationToken).ConfigureAwait(false);
 
             case MetadataReleaseStage.ServicePublication:
                 {
-                    // Dispatch the optional ETL/data-populate workload as a control-plane job before the
-                    // new revision is activated so queries observe populated data at Smoke.
-                    var dispatched = await dataJobDispatcher.DispatchAndAwaitAsync(plan, operation.OperationId, cancellationToken).ConfigureAwait(false);
-                    var message = dispatched
-                        ? $"Data-populate job '{plan.DataPopulateWorkloadId}' completed."
-                        : "No data-populate workload declared; skipping ETL populate.";
-                    return Advance(operation, MetadataReleaseStage.MetadataApply, message);
-                }
+                    // Qualified additive ETL runs before activation: it only writes the new nullable
+                    // fields (enforced at Preflight), which the active revision does not expose.
+                    bool dispatched;
+                    try
+                    {
+                        dispatched = await dataJobDispatcher.DispatchAndAwaitAsync(plan, operation.OperationId, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        return await AbandonCandidateAsync(
+                            operation,
+                            $"Data-populate job failed before activation ({ex.GetType().Name}).",
+                            "metadata-release-etl-failed",
+                            cancellationToken).ConfigureAwait(false);
+                    }
 
-            case MetadataReleaseStage.MetadataApply:
-                {
-                    // Capture the prior revision before activation so a reversible rollback can reactivate
-                    // it, then activate the new revision through the canonical graph store.
-                    var priorRevision = await activator.GetCurrentRevisionAsync(plan, cancellationToken).ConfigureAwait(false);
-                    await activator.ActivateNewRevisionAsync(plan, cancellationToken).ConfigureAwait(false);
                     return Advance(
                         operation,
                         MetadataReleaseStage.Smoke,
-                        "Activated the new Metadata v2 revision.",
-                        priorRevision: priorRevision);
+                        dispatched
+                            ? $"Data-populate job '{plan.DataPopulateWorkloadId}' completed before activation."
+                            : "No data-populate workload declared; skipping ETL populate.");
                 }
 
             case MetadataReleaseStage.Smoke:
                 {
-                    var smoke = await smokeChecker.RunAsync(plan, cancellationToken).ConfigureAwait(false);
-                    var evidence = new MetadataEvidenceRef
+                    var smoke = await smokeChecker.RunAsync(
+                            plan,
+                            new MetadataReleaseSmokeRequest
+                            {
+                                Phase = MetadataReleaseSmokePhase.Candidate,
+                                Revision = release.CandidateRevision!.Value,
+                                BaselineRevision = release.PriorRevision,
+                                ExpectNewField = true
+                            },
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    var withEvidence = WithEvidence(operation, "smoke-candidate");
+                    if (!smoke.Passed)
                     {
-                        Kind = "smoke",
-                        RefId = $"smoke:{operation.OperationId}",
-                        At = DateTimeOffset.UtcNow
-                    };
-
-                    if (smoke.Passed)
-                    {
-                        return Complete(operation, $"Smoke check passed: {smoke.Message}", evidence);
+                        return await AbandonCandidateAsync(
+                            withEvidence,
+                            $"Candidate smoke check failed: {smoke.Message}",
+                            "metadata-release-candidate-smoke-failed",
+                            cancellationToken).ConfigureAwait(false);
                     }
 
-                    // Smoke failure triggers rollback: hand off to the rollback path on the next cycle.
+                    return Advance(
+                        withEvidence,
+                        MetadataReleaseStage.MetadataApply,
+                        $"Candidate revision {release.CandidateRevision} passed smoke before activation: {smoke.Message}");
+                }
+
+            case MetadataReleaseStage.MetadataApply:
+                return await ActivateCandidateAsync(operation, cancellationToken).ConfigureAwait(false);
+
+            case MetadataReleaseStage.SloWatch:
+                {
+                    var live = await activator.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+                    var smoke = await smokeChecker.RunAsync(
+                            plan,
+                            new MetadataReleaseSmokeRequest
+                            {
+                                Phase = MetadataReleaseSmokePhase.Activated,
+                                Revision = live.Revision,
+                                BaselineRevision = release.PriorRevision,
+                                ExpectNewField = true
+                            },
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    var withEvidence = WithEvidence(operation, "smoke");
+                    if (smoke.Passed)
+                    {
+                        return Complete(withEvidence, $"Smoke check passed on live revision {live.Revision}: {smoke.Message}");
+                    }
+
+                    // Post-activation regression: hand off to the verified rollback on the next cycle.
                     Log.MetadataReleaseSmokeFailed(logger, operation.OperationId, smoke.Message);
-                    return RequestRollback(operation, $"Smoke check failed: {smoke.Message}", evidence);
+                    return RequestRollback(withEvidence, $"Smoke check failed after activation of revision {live.Revision}: {smoke.Message}");
                 }
 
             default:
@@ -198,9 +259,173 @@ internal sealed partial class MetadataReleaseReconciler(
     }
 
     /// <summary>
-    /// Executes the requested rollback. Reversible classes (script-reversible / metadata-only)
-    /// reactivate the prior revision and run the reversible inverse script. Snapshot-required is
-    /// refused — that path is deferred.
+    /// Captures the active revision and its ETag before any mutation. Only a retained revision can
+    /// serve as the immutable base: a synthesized compatibility or empty graph is refused.
+    /// </summary>
+    private async Task<WorkflowOperationRecord> CapturePriorAsync(
+        WorkflowOperationRecord operation,
+        CancellationToken cancellationToken)
+    {
+        var release = operation.MetadataRelease!;
+        if (release.PriorRevision.HasValue && release.PriorEtag is not null)
+        {
+            return Advance(operation, MetadataReleaseStage.ScriptMigration, $"Prior revision {release.PriorRevision} already captured; resuming.");
+        }
+
+        var current = await activator.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var retained = await activator.GetRevisionAsync(current.Revision, cancellationToken).ConfigureAwait(false);
+        if (retained is null || !string.Equals(retained.Etag, current.Etag, StringComparison.Ordinal))
+        {
+            return Block(
+                operation,
+                $"The active metadata graph (revision {current.Revision}) is not a retained Metadata v2 revision, so its state cannot be captured immutably. " +
+                "Publish a Metadata v2 revision before running a protected release.",
+                ["metadata-release-prior-not-retained"]);
+        }
+
+        return Advance(
+            operation,
+            MetadataReleaseStage.ScriptMigration,
+            $"Captured prior revision {current.Revision} and its ETag before any mutation.",
+            release with { PriorRevision = current.Revision, PriorEtag = current.Etag });
+    }
+
+    /// <summary>
+    /// Prepares the candidate from the immutable prior revision, validates it and stages it as a
+    /// retained revision. The active pointer does not move, so canonical readers keep the prior revision.
+    /// </summary>
+    private async Task<WorkflowOperationRecord> PrepareCandidateAsync(
+        WorkflowOperationRecord operation,
+        MetadataReleaseExecutionPlan plan,
+        CancellationToken cancellationToken)
+    {
+        var release = operation.MetadataRelease!;
+        if (release.CandidateRevision is long staged &&
+            await activator.GetRevisionAsync(staged, cancellationToken).ConfigureAwait(false) is not null)
+        {
+            return Advance(operation, MetadataReleaseStage.ServicePublication, $"Candidate revision {staged} already staged; resuming.");
+        }
+
+        var prior = release.PriorRevision is long priorRevision
+            ? await activator.GetRevisionAsync(priorRevision, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (prior is null)
+        {
+            return Block(
+                operation,
+                $"Prior revision {release.PriorRevision} is no longer retained; the candidate cannot be prepared from immutable state.",
+                ["metadata-release-prior-not-retained"]);
+        }
+
+        MetadataReleaseScriptResult prepared;
+        MetadataV2GraphSnapshot candidate;
+        try
+        {
+            prepared = scriptExecutor.PrepareForward(plan, prior.Graph);
+            var validation = MetadataV2GraphValidator.Validate(prepared.Graph);
+            if (!validation.IsValid)
+            {
+                throw new MetadataReleasePreparationException(
+                    "metadata-release-candidate-invalid",
+                    $"The candidate graph failed validation: {string.Join("; ", validation.Errors)}");
+            }
+
+            candidate = await activator.StageAsync(prepared.Graph, cancellationToken).ConfigureAwait(false);
+        }
+        catch (MetadataReleasePreparationException ex)
+        {
+            return Block(
+                operation,
+                $"Candidate preparation failed; the live catalog is unchanged at revision {prior.Revision}: {ex.Message}",
+                [ex.Code]);
+        }
+
+        return Advance(
+            operation,
+            MetadataReleaseStage.ServicePublication,
+            $"Staged candidate revision {candidate.Revision} from prior revision {prior.Revision}; canonical readers remain on revision {prior.Revision}.",
+            release with
+            {
+                CandidateRevision = candidate.Revision,
+                CandidateEtag = candidate.Etag,
+                OwnedOperations = prepared.AppliedOperations
+            });
+    }
+
+    /// <summary>
+    /// Moves the current pointer to the candidate only if the prior revision is still current. A
+    /// newer update is never overwritten: the change is rebased onto it and revalidated, or rejected
+    /// after <see cref="MaxRebaseAttempts"/> rebases.
+    /// </summary>
+    private async Task<WorkflowOperationRecord> ActivateCandidateAsync(
+        WorkflowOperationRecord operation,
+        CancellationToken cancellationToken)
+    {
+        var release = operation.MetadataRelease!;
+        var candidateRevision = release.CandidateRevision!.Value;
+        var result = await activator.ActivateAsync(candidateRevision, release.PriorEtag!, cancellationToken).ConfigureAwait(false);
+        if (result.Outcome != MetadataReleaseActivationOutcome.Conflict)
+        {
+            return Advance(
+                operation,
+                MetadataReleaseStage.SloWatch,
+                $"Activated candidate revision {candidateRevision} atomically over prior revision {release.PriorRevision}.",
+                release with { ActivatedAt = release.ActivatedAt ?? DateTimeOffset.UtcNow });
+        }
+
+        Log.MetadataReleaseActivationConflict(logger, operation.OperationId, release.PriorRevision ?? 0, result.CurrentRevision);
+        if (release.RebaseCount >= MaxRebaseAttempts)
+        {
+            return await AbandonCandidateAsync(
+                operation,
+                $"Activation rejected: revision {result.CurrentRevision} became current and the change was already rebased {release.RebaseCount} time(s); nothing was overwritten.",
+                "metadata-release-activation-conflict",
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        await activator.DiscardAsync(candidateRevision, cancellationToken).ConfigureAwait(false);
+        return Advance(
+            operation,
+            MetadataReleaseStage.ScriptMigration,
+            $"Revision {result.CurrentRevision} became current before activation; rebasing the change onto it and revalidating. Nothing was overwritten.",
+            release with
+            {
+                PriorRevision = result.CurrentRevision,
+                PriorEtag = result.CurrentEtag,
+                CandidateRevision = null,
+                CandidateEtag = null,
+                OwnedOperations = Array.Empty<MetadataReleaseScriptOperation>(),
+                RebaseCount = release.RebaseCount + 1,
+                Warnings = [.. release.Warnings, $"Rebased from revision {release.PriorRevision} onto concurrent revision {result.CurrentRevision} before activation."]
+            });
+    }
+
+    /// <summary>
+    /// Ends a release that failed before activation: discards the staged candidate (canonical readers
+    /// never left the prior revision) and fails the operation with a stable blocker.
+    /// </summary>
+    private async Task<WorkflowOperationRecord> AbandonCandidateAsync(
+        WorkflowOperationRecord operation,
+        string reason,
+        string blocker,
+        CancellationToken cancellationToken)
+    {
+        var release = operation.MetadataRelease!;
+        if (release.CandidateRevision is long candidateRevision)
+        {
+            await activator.DiscardAsync(candidateRevision, cancellationToken).ConfigureAwait(false);
+        }
+
+        return Block(
+            operation,
+            $"{reason} The candidate was discarded; the live catalog is unchanged at revision {release.PriorRevision}.",
+            [blocker]);
+    }
+
+    /// <summary>
+    /// Executes the requested rollback: restores only the operation-owned change, never touches
+    /// physical data or unrelated updates, and verifies the recovered service before reporting
+    /// RolledBack. Snapshot-required is refused — that path is deferred.
     /// </summary>
     private async Task<WorkflowOperationRecord> ExecuteRollbackAsync(
         WorkflowOperationRecord operation,
@@ -229,25 +454,146 @@ internal sealed partial class MetadataReleaseReconciler(
                 manualIntervention: true);
         }
 
-        // Reactivate the prior revision first so readers fall back to the known-good schema, then
-        // execute the reversible inverse (drop the added column). Both steps are idempotent.
-        if (release.PriorRevision.HasValue)
+        var restored = await RestorePriorRevisionAsync(release, cancellationToken).ConfigureAwait(false);
+        var outcome = restored ?? await RevertOwnedChangesAsync(release, cancellationToken).ConfigureAwait(false);
+        if (outcome.Blocker is not null)
         {
-            await activator.ReactivateRevisionAsync(plan, release.PriorRevision.Value, cancellationToken).ConfigureAwait(false);
+            return Block(operation, outcome.Message, [outcome.Blocker], manualIntervention: true);
         }
 
-        await scriptExecutor.ApplyInverseAsync(plan, cancellationToken).ConfigureAwait(false);
+        var live = await activator.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (release.ActivatedAt is null && release.CandidateRevision is long candidateRevision && live.Revision != candidateRevision)
+        {
+            // Never activated: the staged candidate was only ever visible to the smoke check.
+            await activator.DiscardAsync(candidateRevision, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Verify recovered functional behavior before reporting RolledBack: the owned field is gone
+        // (or, when the release owned nothing, the prior schema is intact), bindings and authorization
+        // match the prior revision, and the canonical query still returns the preserved rows.
+        var verification = await smokeChecker.RunAsync(
+                plan,
+                new MetadataReleaseSmokeRequest
+                {
+                    Phase = MetadataReleaseSmokePhase.Recovered,
+                    Revision = live.Revision,
+                    BaselineRevision = release.PriorRevision,
+                    ExpectNewField = await ExpectNewFieldAfterRecoveryAsync(release, plan, live, cancellationToken).ConfigureAwait(false)
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+        var withEvidence = WithEvidence(operation, "smoke-recovered");
+        if (!verification.Passed)
+        {
+            return Block(
+                withEvidence,
+                $"Rollback restored the metadata ({outcome.Message}) but the recovered service failed verification: {verification.Message}",
+                ["metadata-release-recovery-unverified"],
+                manualIntervention: true);
+        }
 
         var now = DateTimeOffset.UtcNow;
-        return operation with
+        return withEvidence with
         {
             Status = WorkflowOperationStatus.RolledBack,
             UpdatedAt = now,
             CompletedAt = now,
-            CurrentPhase = $"Reversible rollback complete ({rollbackClass}): reactivated prior revision and executed the inverse script.",
+            CurrentPhase = $"Reversible rollback complete ({rollbackClass}): {outcome.Message} Recovered revision {live.Revision} verified: {verification.Message}",
             ErrorMessage = null,
-            MetadataRelease = release with { CurrentStage = MetadataReleaseStage.RollbackRequested }
+            MetadataRelease = withEvidence.MetadataRelease! with { CurrentStage = MetadataReleaseStage.RollbackRequested }
         };
+    }
+
+    /// <summary>
+    /// While the candidate is still current, the prior revision plus the owned change is exactly the
+    /// live state, so reactivating the prior revision restores precisely the operation-owned change.
+    /// Returns null when that exact restore does not apply.
+    /// </summary>
+    private async Task<RecoveryOutcome?> RestorePriorRevisionAsync(
+        MetadataReleaseContext release,
+        CancellationToken cancellationToken)
+    {
+        if (release.PriorRevision is not long priorRevision || release.CandidateRevision is not long candidateRevision)
+        {
+            return null;
+        }
+
+        var live = await activator.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (live.Revision != candidateRevision ||
+            await activator.GetRevisionAsync(priorRevision, cancellationToken).ConfigureAwait(false) is null)
+        {
+            return null;
+        }
+
+        var result = await activator.ActivateAsync(priorRevision, live.Etag, cancellationToken).ConfigureAwait(false);
+        return result.Outcome == MetadataReleaseActivationOutcome.Conflict
+            ? null
+            : new RecoveryOutcome($"Reactivated prior revision {priorRevision} while candidate revision {candidateRevision} was still current.");
+    }
+
+    /// <summary>
+    /// Reverts only the owned field changes on top of whatever is live now, preserving every later
+    /// update, with an ETag-conditional commit retried against concurrent writers.
+    /// </summary>
+    private async Task<RecoveryOutcome> RevertOwnedChangesAsync(
+        MetadataReleaseContext release,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < MaxRevertAttempts; attempt++)
+        {
+            var live = await activator.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            MetadataReleaseScriptResult inverse;
+            try
+            {
+                inverse = scriptExecutor.PrepareInverse(release.OwnedOperations, live.Graph);
+            }
+            catch (MetadataReleasePreparationException ex)
+            {
+                return new RecoveryOutcome($"Rollback cannot revert only this release's change: {ex.Message}", ex.Code);
+            }
+
+            if (inverse.AppliedOperations.Count == 0)
+            {
+                return new RecoveryOutcome($"No change owned by this release is live at revision {live.Revision}; nothing to revert.");
+            }
+
+            try
+            {
+                var reverted = await activator.CommitRevertAsync(inverse.Graph, live.Etag, cancellationToken).ConfigureAwait(false);
+                return new RecoveryOutcome(
+                    $"Reverted {inverse.AppliedOperations.Count} owned field change(s) on top of revision {live.Revision} as revision {reverted.Revision}, preserving later updates.");
+            }
+            catch (MetadataV2GraphConcurrencyException)
+            {
+                // Another writer advanced the live revision; re-read and revert on top of it.
+            }
+        }
+
+        return new RecoveryOutcome(
+            $"Concurrent updates superseded the revert {MaxRevertAttempts} times; operator-managed recovery is required.",
+            "metadata-release-rollback-conflict");
+    }
+
+    private async Task<bool> ExpectNewFieldAfterRecoveryAsync(
+        MetadataReleaseContext release,
+        MetadataReleaseExecutionPlan plan,
+        MetadataV2GraphSnapshot live,
+        CancellationToken cancellationToken)
+    {
+        var owned = release.OwnedOperations.Any(operation =>
+            string.Equals(operation.ResourceSemanticId, plan.ResourceSemanticId, StringComparison.Ordinal) &&
+            string.Equals(operation.FieldName, plan.NewFieldName, StringComparison.OrdinalIgnoreCase));
+        if (owned)
+        {
+            return false;
+        }
+
+        // The release did not add the field: recovery must preserve whatever the prior revision had.
+        var reference = release.PriorRevision is long priorRevision
+            ? await activator.GetRevisionAsync(priorRevision, cancellationToken).ConfigureAwait(false) ?? live
+            : live;
+        return reference.Index.ResourcesById.TryGetValue(plan.ResourceSemanticId, out var resource) &&
+            resource.SchemaFields.Any(field => string.Equals(field.Name, plan.NewFieldName, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task RenewLeaseUntilCancelledAsync(string operationId, CancellationTokenSource reconciliationCancellation)
@@ -291,9 +637,7 @@ internal sealed partial class MetadataReleaseReconciler(
         }
     }
 
-    private static MetadataRollbackPlan BuildRollbackPlan(
-        MetadataRollbackReadinessClassification classification,
-        MetadataReleaseExecutionPlan plan)
+    private static MetadataRollbackPlan BuildRollbackPlan(MetadataRollbackReadinessClassification classification)
     {
         var rollbackClass = classification switch
         {
@@ -307,47 +651,46 @@ internal sealed partial class MetadataReleaseReconciler(
         return new MetadataRollbackPlan
         {
             Class = rollbackClass,
-            Steps = [$"Reactivate the prior revision and execute the reversible inverse of script '{plan.Script.ScriptId}'."]
+            Steps =
+            [
+                "Reactivate the prior revision while the candidate is still current; otherwise revert only this release's owned fields on top of later updates.",
+                "Leave physical data and committed feature edits untouched.",
+                "Verify the recovered revision (schema, bindings, authorization, canonical query) before reporting RolledBack."
+            ]
         };
     }
+
+    private static WorkflowOperationRecord WithEvidence(WorkflowOperationRecord operation, string kind)
+        => operation with
+        {
+            MetadataRelease = operation.MetadataRelease! with
+            {
+                EvidenceRefs =
+                [
+                    .. operation.MetadataRelease!.EvidenceRefs,
+                    new MetadataEvidenceRef { Kind = kind, RefId = $"{kind}:{operation.OperationId}", At = DateTimeOffset.UtcNow }
+                ]
+            }
+        };
 
     private static WorkflowOperationRecord Advance(
         WorkflowOperationRecord operation,
         MetadataReleaseStage nextStage,
         string phase,
-        MetadataRollbackPlan? rollbackPlan = null,
-        long? priorRevision = null)
-    {
-        var release = operation.MetadataRelease! with
-        {
-            CurrentStage = nextStage,
-            RollbackPlan = rollbackPlan ?? operation.MetadataRelease!.RollbackPlan,
-            PriorRevision = priorRevision ?? operation.MetadataRelease!.PriorRevision
-        };
-
-        return operation with
+        MetadataReleaseContext? release = null)
+        => operation with
         {
             Status = WorkflowOperationStatus.Reconciling,
             UpdatedAt = DateTimeOffset.UtcNow,
             CompletedAt = null,
             CurrentPhase = phase,
             ErrorMessage = null,
-            MetadataRelease = release
+            MetadataRelease = (release ?? operation.MetadataRelease!) with { CurrentStage = nextStage }
         };
-    }
 
-    private static WorkflowOperationRecord Complete(
-        WorkflowOperationRecord operation,
-        string phase,
-        MetadataEvidenceRef evidence)
+    private static WorkflowOperationRecord Complete(WorkflowOperationRecord operation, string phase)
     {
         var now = DateTimeOffset.UtcNow;
-        var release = operation.MetadataRelease! with
-        {
-            CurrentStage = MetadataReleaseStage.Complete,
-            EvidenceRefs = [.. operation.MetadataRelease!.EvidenceRefs, evidence]
-        };
-
         return operation with
         {
             Status = WorkflowOperationStatus.Succeeded,
@@ -355,31 +698,20 @@ internal sealed partial class MetadataReleaseReconciler(
             CompletedAt = now,
             CurrentPhase = phase,
             ErrorMessage = null,
-            MetadataRelease = release
+            MetadataRelease = operation.MetadataRelease! with { CurrentStage = MetadataReleaseStage.Complete }
         };
     }
 
-    private static WorkflowOperationRecord RequestRollback(
-        WorkflowOperationRecord operation,
-        string phase,
-        MetadataEvidenceRef evidence)
-    {
-        var release = operation.MetadataRelease! with
-        {
-            CurrentStage = MetadataReleaseStage.RollbackRequested,
-            EvidenceRefs = [.. operation.MetadataRelease!.EvidenceRefs, evidence]
-        };
-
-        return operation with
+    private static WorkflowOperationRecord RequestRollback(WorkflowOperationRecord operation, string phase)
+        => operation with
         {
             Status = WorkflowOperationStatus.RollbackRequested,
             UpdatedAt = DateTimeOffset.UtcNow,
             CompletedAt = null,
             CurrentPhase = phase,
             ErrorMessage = phase,
-            MetadataRelease = release
+            MetadataRelease = operation.MetadataRelease! with { CurrentStage = MetadataReleaseStage.RollbackRequested }
         };
-    }
 
     private static WorkflowOperationRecord Fail(WorkflowOperationRecord operation, string message)
     {
@@ -424,6 +756,8 @@ internal sealed partial class MetadataReleaseReconciler(
             or WorkflowOperationStatus.RolledBack
             or WorkflowOperationStatus.ManualInterventionRequired;
 
+    private sealed record RecoveryOutcome(string Message, string? Blocker = null);
+
     internal static partial class Log
     {
         [LoggerMessage(9120, LogLevel.Debug, "Reconciled metadata release operation {OperationId} at stage {Stage} to status {Status}")]
@@ -440,6 +774,9 @@ internal sealed partial class MetadataReleaseReconciler(
 
         [LoggerMessage(9124, LogLevel.Warning, "Metadata release smoke check failed for operation {OperationId}: {Message}")]
         public static partial void MetadataReleaseSmokeFailed(ILogger logger, string operationId, string message);
+
+        [LoggerMessage(9126, LogLevel.Warning, "Metadata release {OperationId} lost activation to a concurrent update: expected prior revision {PriorRevision}, found revision {CurrentRevision}")]
+        public static partial void MetadataReleaseActivationConflict(ILogger logger, string operationId, long priorRevision, long currentRevision);
     }
 
     internal static partial class BackgroundLog
