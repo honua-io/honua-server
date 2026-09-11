@@ -3,6 +3,7 @@
 
 using Npgsql;
 using Testcontainers.PostgreSql;
+using DotNet.Testcontainers.Containers;
 using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
@@ -27,6 +28,13 @@ public sealed class LocalSubstratePostgresFixture : IAsyncLifetime
 
     /// <summary>Admin connection string to the container's default database.</summary>
     public string ConnectionString { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// The running container's id, so a caller can shell out to <c>docker exec</c> against it (e.g. to
+    /// run the real <c>pg_dump</c>/<c>pg_restore</c> client tools bundled in the image) from a
+    /// <c>MigrationSafetyOptions.BackupCommand</c> executed on the host.
+    /// </summary>
+    public string ContainerId => _container?.Id ?? throw new InvalidOperationException("The PostgreSQL container is not available.");
 
     /// <inheritdoc />
     public async Task InitializeAsync()
@@ -102,4 +110,19 @@ public sealed class LocalSubstratePostgresFixture : IAsyncLifetime
 
         return connectionString;
     }
+
+    /// <summary>
+    /// Runs a command inside the running PostgreSQL container (e.g. the real <c>pg_dump</c>/
+    /// <c>pg_restore</c> client tools bundled in the <c>postgis/postgis</c> image), so a migration
+    /// safety test can prove a backup hook produces a genuinely restorable dump without requiring
+    /// PostgreSQL client tools on the test-runner host itself.
+    /// </summary>
+    public async Task<ExecResult> ExecInContainerAsync(IList<string> command)
+    {
+        var container = _container ?? throw new InvalidOperationException("The PostgreSQL container is not available.");
+        var result = await container.ExecAsync(command);
+        return new ExecResult(result.ExitCode ?? -1, result.Stdout, result.Stderr);
+    }
+
+    public readonly record struct ExecResult(long ExitCode, string Stdout, string Stderr);
 }
