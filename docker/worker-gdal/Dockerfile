@@ -141,7 +141,11 @@ FROM ${GDAL_BASE_IMAGE} AS native-tools
 ARG GDAL_VERSION
 ARG DOTNET_RUNTIME_VERSION
 ARG PDAL_VERSION
-ARG HONUA_GIT_SHA=
+# HONUA_GIT_SHA is deliberately NOT declared here: a declared ARG is part of
+# the cache key of every later RUN in the stage, so a per-commit SHA would
+# rebuild these apt layers on every build and defeat the shared registry cache
+# (the PDAL proof steps in ci.yml and pr-gate.yml read it). It is declared in
+# the runtime stage, after every expensive layer, as in ./Dockerfile.
 
 # Install the .NET runtime onto the GDAL (Ubuntu) base via the dotnet-install
 # script. The GDAL base already provides gdalwarp / ogr2ogr on PATH.
@@ -245,6 +249,7 @@ FROM native-tools AS runtime
 ARG GDAL_VERSION
 ARG DOTNET_RUNTIME_VERSION
 ARG PDAL_VERSION
+ARG HONUA_GIT_SHA=
 
 # Non-root runtime user.
 RUN groupadd --gid 1001 --system honua \

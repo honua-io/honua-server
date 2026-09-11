@@ -109,9 +109,10 @@ def main() -> None:
     )
     # Trunk's fourteen expensive steps (the real remote-source, raster and GDAL CLI
     # proofs, PostGIS pre-pull and server boot smoke in build/test, plus four in
-    # parallel format) and this change's two production PDAL proof steps. All
-    # sixteen must remain attempt-2-only in review-first enforcement.
-    if pr_gate.count(full_condition) != 16:
+    # parallel format), the two production PDAL proof steps, and the Buildx setup
+    # that feeds the PDAL build its registry cache. All seventeen must remain
+    # attempt-2-only in review-first enforcement.
+    if pr_gate.count(full_condition) != 17:
         raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
     raster_step = build_test_job.split("- name: Prove raster catalog execution with production GDAL", 1)[1].split("- name:", 1)[0]
     require(raster_step, full_condition, "real raster execution must remain behind exact-head review")
@@ -119,7 +120,7 @@ def main() -> None:
     require(remote_step, full_condition, "real remote-source execution must remain behind exact-head review")
     gdal_cli_step = build_test_job.split("- name: Prove the real-GDAL CLI cases run on the required gate", 1)[1].split("- name:", 1)[0]
     require(gdal_cli_step, full_condition, "real GDAL CLI execution must remain behind exact-head review")
-    for name in ['Build production PDAL native tools', 'Prove point-cloud execution with production PDAL']:
+    for name in ['Set up Docker Buildx for production PDAL', 'Build production PDAL native tools', 'Prove point-cloud execution with production PDAL']:
         proof_step = build_test_job.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
         require(proof_step, full_condition, f"{name} must remain behind exact-head review")
 

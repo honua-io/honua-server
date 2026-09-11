@@ -1451,10 +1451,29 @@ jobs:
             --no-restore \
             --configuration Release
 
+      # The native-tools stage apt-installs from archive.ubuntu.com and compiles
+      # PDAL from source. Built cold, a mirror slowdown alone blew the 30-minute
+      # cap (trunk runs 34575122292 / 34582125299: 97 MB at 75 kB/s), so read
+      # the layers worker-gdal-image.yml publishes (mode=max) for this
+      # Dockerfile. Read-only: a native-tools-only export would evict that
+      # workflow's managed publish layers. A cache miss builds cold as before.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      - name: Log in to GHCR for build cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build production PDAL native tools for execution proofs
         timeout-minutes: 30
         run: |
-          docker build --target native-tools -f docker/worker-gdal/Dockerfile -t honua-pdal-proof .
+          docker buildx build --load --target native-tools -f docker/worker-gdal/Dockerfile \
+            --cache-from type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-worker-gdal-amd64 \
+            -t honua-pdal-proof .
           echo "HONUA_PDAL_PROOF_IMAGE=$(docker image inspect --format '{{.Id}}' honua-pdal-proof)" >> "$GITHUB_ENV"
           echo "HONUA_GDAL_PROOF_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
 
