@@ -85,25 +85,78 @@ def is_real_calendar_date(value: str) -> bool:
     return 1 <= day <= calendar.monthrange(year, month)[1]
 
 
-MERMAID_RE = re.compile(r"```mermaid\r?\n(.*?)```", re.DOTALL)
-MERMAID_NODE_RE = re.compile(r"^\s*(\w+)[\[\(\{]", re.MULTILINE)
-MERMAID_SUBGRAPH_ID_RE = re.compile(r"^\s*subgraph\s+(\w+)[\[\(]", re.MULTILINE)
-MERMAID_EDGE_RE = re.compile(r"^\s*(\w+)\s*-[.-]*->(?:\|[^|]*\|)?\s*(\w+)", re.MULTILINE)
+MERMAID_RE = re.compile("```mermaid" + chr(13) + "?" + chr(10) + "(.*?)```", re.DOTALL)
+# A node is declared wherever an id carries a label, at any position on the line —
+# `A[Alpha] --> B[Beta]` declares both. An earlier version only looked at line
+# starts, so it missed the right-hand declaration, flagged the valid node as
+# dangling, and missed the genuinely dangling one beside it.
+MERMAID_DECL_RE = re.compile(r"(\w+)\s*[\[\(\{]")
+MERMAID_SUBGRAPH_RE = re.compile(r"^\s*subgraph\s+(\w+)", re.MULTILINE)
+MERMAID_EDGE_LABEL_RE = re.compile(r"\|[^|]*\|")
+# `A -- note --> B` carries the label inside the arrow itself. Strip it back to a
+# plain arrow first, or the label word gets read as a node id.
+MERMAID_ARROW_TEXT_RES = (
+    (re.compile("--[^->" + chr(10) + "]*?--?>"), " --> "),
+    (re.compile("==[^=>" + chr(10) + "]*?==?>"), " ==> "),
+    (re.compile("-[.][^.>" + chr(10) + "]*?[.]->"), " -.-> "),
+)
+MERMAID_KEYWORD_RE = re.compile(
+    "^(subgraph|end|click|style|classDef|linkStyle|direction)" + chr(92) + "b"
+)
+# Every flowchart edge operator mermaid accepts, longest first so `-.->` is not
+# split by `-`.
+MERMAID_ARROW_RE = re.compile(r"<-->|<--|-\.->|-\.-|==>|===|-->|---|--x|--o|--")
+
+
+def mermaid_diagram_kind(block: str) -> str:
+    for line in block.splitlines():
+        line = line.strip()
+        if line and not line.startswith("%%"):
+            return line.split()[0].lower()
+    return ""
+
+
+def mermaid_edge_endpoints(block: str) -> set[str]:
+    """Ids named on either side of an edge operator.
+
+    Tokenising beats a single regex here: mermaid allows labels on both ends,
+    chained edges (`A --> B --> C`), text-bearing arrows (`A -- note --> B`) and
+    eight arrow spellings. A pattern that only understood a bare id on the left
+    silently ignored most of them.
+    """
+    endpoints: set[str] = set()
+    for raw in block.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("%%") or MERMAID_KEYWORD_RE.match(line):
+            continue
+        line = MERMAID_EDGE_LABEL_RE.sub(" ", line)
+        for pattern, replacement in MERMAID_ARROW_TEXT_RES:
+            line = pattern.sub(replacement, line)
+        segments = MERMAID_ARROW_RE.split(line)
+        if len(segments) < 2:
+            continue
+        for segment in segments:
+            token = segment.strip()
+            if not token:
+                continue
+            match = re.match(r"(\w+)", token)
+            if match:
+                endpoints.add(match.group(1))
+    return endpoints
 
 
 def check_mermaid_diagrams(root: pathlib.Path, excluded) -> list[str]:
-    """A diagram that does not render is worse than no diagram.
+    """Catch the two edits that break a rendered diagram.
 
-    ASCII box-drawing always renders and is unreadable to anything that is not a
-    human eye; mermaid is parseable by both but fails silently when it is
-    malformed — GitBook shows an error card and the markdown reader sees source.
-    These are the two breakages that actually happen when a diagram is edited:
-    an unbalanced `subgraph`/`end`, and an edge naming a node that no longer
-    exists after a rename.
+    Scope, stated honestly: an unbalanced `subgraph`/`end` in a flowchart, and an
+    edge naming an id that a rename removed. This is not a mermaid parser and
+    does not claim to catch every way a diagram can fail to render — an unclosed
+    bracket or a misspelled diagram type still gets through. It exists because
+    those two are what actually happen when someone edits a diagram.
 
-    This is the foundation the WS8 `diagram` concept type needs. Checking that a
-    diagram's referenced capability ids resolve comes with that type; checking
-    that the diagram renders at all comes first.
+    `end` is only paired with `subgraph` in flowcharts. In a sequenceDiagram it
+    closes `alt`/`loop`/`opt`/`par`/`rect`/`critical`/`break`, so balance is not
+    checked there rather than failing a valid diagram.
     """
     problems: list[str] = []
     for path in sorted(root.rglob("*.md")):
@@ -112,20 +165,23 @@ def check_mermaid_diagrams(root: pathlib.Path, excluded) -> list[str]:
         text = path.read_text(encoding="utf-8")
         for index, block in enumerate(MERMAID_RE.findall(text), start=1):
             rel = path.relative_to(REPO_ROOT).as_posix()
+            kind = mermaid_diagram_kind(block)
+            if kind not in ("graph", "flowchart"):
+                # Both checks below are flowchart grammar. A sequenceDiagram
+                # closes alt/loop/opt with `end` and auto-creates any
+                # participant it names, so neither property applies.
+                continue
             opens = len(re.findall(r"^\s*subgraph\b", block, re.MULTILINE))
             closes = len(re.findall(r"^\s*end\s*$", block, re.MULTILINE))
             if opens != closes:
                 problems.append(
-                    f"{rel}: mermaid block {index} has {opens} `subgraph` and {closes} `end`; "
-                    "it will render as an error card"
+                    f"{rel}: mermaid block {index} has {opens} `subgraph` and {closes} `end` "
+                    "- it will render as an error card"
                 )
                 continue
-            declared = set(MERMAID_NODE_RE.findall(block)) | set(MERMAID_SUBGRAPH_ID_RE.findall(block))
+            declared = set(MERMAID_DECL_RE.findall(block)) | set(MERMAID_SUBGRAPH_RE.findall(block))
             declared.discard("subgraph")
-            endpoints = set()
-            for left, right in MERMAID_EDGE_RE.findall(block):
-                endpoints.update((left, right))
-            dangling = sorted(endpoints - declared)
+            dangling = sorted(mermaid_edge_endpoints(block) - declared)
             if dangling:
                 problems.append(
                     f"{rel}: mermaid block {index} draws edges to undeclared node(s): "

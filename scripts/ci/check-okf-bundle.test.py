@@ -200,6 +200,71 @@ def test_accepts_a_well_formed_mermaid_diagram():
         assert_that(code == 0, f"a valid diagram was rejected: {output}")
 
 
+def test_a_node_declared_inline_on_the_right_is_not_dangling():
+    """The reviewer's case: `A[Alpha] --> Ghost` beside `A --> B[Beta]`.
+
+    An earlier version only recognised declarations at the start of a line, so it
+    reported `B` (validly declared inline, on the right of an arrow) and stayed
+    silent about `Ghost` (the reference that is actually dangling) - a false
+    positive and a false negative in the same two lines.
+    """
+    block = (
+        VALID
+        + "\n```mermaid\nflowchart LR\n  a[\"Alpha\"] --> ghost\n"
+        "  a --> b[\"Beta\"]\n```\n"
+    )
+    with synthetic({"a.md": block}) as (code, output):
+        assert_that(code == 1, f"a dangling reference passed: {output}")
+        assert_that("undeclared node(s): ghost" in output, output)
+        assert_that(" b" not in output.split("undeclared node(s):")[1], output)
+
+
+def test_every_arrow_spelling_mermaid_accepts_is_understood():
+    """Chains, labelled arrows and the eight operators all name real endpoints.
+
+    Each line below declares both of its endpoints, so a gate that parses the
+    line correctly reports nothing. A gate that does not understand the operator
+    sees no edge at all and also reports nothing - so each case is paired with
+    the same line pointing at an undeclared id, which only fails if the edge was
+    actually parsed.
+    """
+    edges = [
+        'a["A"] --> b["B"] --> c["C"]',
+        'a["A"] -- note --> b["B"]',
+        'a["A"] == yes ==> b["B"]',
+        'a["A"] -. maybe .-> b["B"]',
+        'a["A"] -->|yes| b["B"]',
+        'a["A"] --o b["B"]',
+        'a["A"] --x b["B"]',
+        'a["A"] <--> b["B"]',
+        'a["A"] === b["B"]',
+    ]
+    for edge in edges:
+        good = VALID + "\n```mermaid\nflowchart LR\n  " + edge + "\n```\n"
+        with synthetic({"a.md": good}) as (code, output):
+            assert_that(code == 0, f"valid edge rejected ({edge}): {output}")
+
+        broken = good.replace('b["B"]', "ghost")
+        with synthetic({"a.md": broken}) as (code, output):
+            assert_that(code == 1, f"edge not parsed at all ({edge}): {output}")
+            assert_that("ghost" in output, f"{edge}: {output}")
+
+
+def test_sequence_diagram_blocks_are_not_checked_for_subgraph_balance():
+    """`end` closes `alt`/`loop`/`opt` in a sequenceDiagram, not `subgraph`.
+
+    Counting them as unbalanced subgraphs failed valid diagrams, so balance is
+    only checked where `end` really does pair with `subgraph`.
+    """
+    seq = (
+        VALID
+        + "\n```mermaid\nsequenceDiagram\n  participant A\n  participant B\n"
+        "  A->>B: ask\n  alt ready\n    B-->>A: yes\n  else busy\n"
+        "    B-->>A: later\n  end\n```\n"
+    )
+    with synthetic({"a.md": seq}) as (code, output):
+        assert_that(code == 0, f"a valid sequenceDiagram was rejected: {output}")
+
 def test_the_live_repository_is_green():
     out, err = StringIO(), StringIO()
     with redirect_stdout(out), redirect_stderr(err):
