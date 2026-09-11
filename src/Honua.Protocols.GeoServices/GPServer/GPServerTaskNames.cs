@@ -14,14 +14,14 @@ internal static class GPServerTaskNames
 {
     internal static string GetEncodingPrefix(IReadOnlyList<ProcessDefinition> processes)
     {
-        var prefix = "Honua_";
+        var prefix = new StringBuilder("Honua_");
         // Keep generated routes outside every existing process-ID namespace.
         // This also preserves direct addressing of custom IDs that look encoded.
-        while (processes.Any(process => process.ProcessId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+        while (processes.Any(process => process.ProcessId.StartsWith(prefix.ToString(), StringComparison.OrdinalIgnoreCase)))
         {
-            prefix += "_";
+            prefix.Append('_');
         }
-        return prefix;
+        return prefix.ToString();
     }
 
     internal static string Encode(string processId, string prefix)

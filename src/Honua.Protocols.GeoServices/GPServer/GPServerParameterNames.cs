@@ -23,12 +23,12 @@ internal static class GPServerParameterNames
 
     internal static string GetEncodingPrefix(ProcessDefinition definition)
     {
-        var prefix = "HonuaParameter_";
-        while (definition.Parameters.Any(parameter => parameter.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+        var prefix = new StringBuilder("HonuaParameter_");
+        while (definition.Parameters.Any(parameter => parameter.Name.StartsWith(prefix.ToString(), StringComparison.OrdinalIgnoreCase)))
         {
-            prefix += "_";
+            prefix.Append('_');
         }
-        return prefix;
+        return prefix.ToString();
     }
 
     internal static string Publish(string name, string prefix)
