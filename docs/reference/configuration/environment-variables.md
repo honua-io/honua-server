@@ -227,13 +227,6 @@ Geoprocessing job admission and executor guardrails:
 | `Geoprocessing__ImageryInference__DefaultModel` | *(unset)* | Fallback model reference when a job omits the `model` input. |
 | `Geoprocessing__ImageryInference__TimeoutSeconds` | `300` | Per-request delegation timeout (clamped to 1–3600). |
 
-## Related pages
-
-- [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
-- [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
-- [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
-
-
 ## Vector tile output budget
 
 `Limits__Tiles__MaxTileSize` defaults to `512000` bytes and accepts positive byte counts.
@@ -251,3 +244,10 @@ Previously this option had no effect and its model default was 512 with pixel
 units. Explicitly configured values now mean bytes; review any existing value
 that was chosen as a pixel dimension. The database still encodes the tile under
 its existing feature and statement limits before the output length is known.
+
+## Related pages
+
+- [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
+- [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
+- [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
+
