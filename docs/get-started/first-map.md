@@ -15,17 +15,27 @@ Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/
 
 1. Set variables and allow anonymous reads on the service so the browser can fetch tiles without credentials.
 
-The service access-policy operation does not yet have a high-level client method, so call it directly:
+The service access-policy operation does not yet have a high-level client method, so call it with
+`httpx` (already installed as a `honua-admin` dependency):
 
 ```bash
-curl -H "X-API-Key: $HONUA_API_KEY" \
-  -X PUT \
-  -H 'Content-Type: application/json' \
-  -d '{"allowAnonymous": true}' \
-  "$HONUA_BASE_URL/api/v1/admin/services/default/access-policy"
+python3 - <<'PY'
+import os
+
+import httpx
+
+with httpx.Client() as client:
+    response = client.put(
+        f"{os.environ['HONUA_BASE_URL']}/api/v1/admin/services/default/access-policy",
+        headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
+        json={"allowAnonymous": True},
+    )
+response.raise_for_status()
+print(response.json())
+PY
 ```
 
-The admin API authenticates with the `X-API-Key` header; HTTP Basic (`curl -u`) is refused.
+The admin API authenticates with the `X-API-Key` header; HTTP Basic auth is refused.
 `$HONUA_BASE_URL` and `$HONUA_API_KEY` come from your quickstart install's `.env` — see
 [Publish your first dataset](first-dataset.md) for the two lines that read them.
 

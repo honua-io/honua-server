@@ -35,16 +35,31 @@ EOF
 
 ## 2. Import the file
 
-The file-upload operation does not yet have a high-level SDK wrapper, so call the endpoint directly:
+The file-upload operation does not yet have a high-level SDK wrapper, so call the endpoint with
+`httpx` (already installed as a `honua-admin` dependency):
 
 ```bash
-curl -H "X-API-Key: $HONUA_API_KEY" \
-  -F file=@cities.geojson \
-  -F TableName=hawaii_cities \
-  "$HONUA_BASE_URL/api/v1/admin/import/upload" | tee import.json
+python3 - <<'PY'
+import json
+import os
+
+import httpx
+
+with httpx.Client() as client, open("cities.geojson", "rb") as fh:
+    response = client.post(
+        f"{os.environ['HONUA_BASE_URL']}/api/v1/admin/import/upload",
+        headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
+        files={"file": fh},
+        data={"TableName": "hawaii_cities"},
+    )
+response.raise_for_status()
+result = response.json()
+json.dump(result, open("import.json", "w"))
+print(result)
+PY
 ```
 
-The admin API authenticates with the `X-API-Key` header. HTTP Basic (`curl -u`) is refused:
+The admin API authenticates with the `X-API-Key` header. HTTP Basic auth is refused:
 `API key required. Provide a valid API key in the X-API-Key header.`
 
 A successful import responds with:
@@ -159,7 +174,7 @@ npx --yes -p @honua/sdk-js honua query default/0 --limit 1 --format geojson
 ## Troubleshoot
 
 - **401 from an admin operation** — set `HONUA_ADMIN_PASSWORD` on the server; the repository Compose profile uses the development value shown above.
-- **`Table name is required`** — pass `-F TableName=...` alongside `-F file=@...` on the import call.
+- **`Table name is required`** — pass `TableName` in the `data` field alongside `file` on the import call.
 - **`Table 'honua_data.hawaii_cities' was not found`** on publish — publish the physical `imported_hawaii_cities` name, not the logical one you imported under.
 - **`could not determine executable to run`** from `npx` — use `-p @honua/sdk-js honua <command>`.
 - **`Master key not configured`** — set `Security__ConnectionEncryption__MasterKey` to a 32-or-more-character value before saving connection credentials.
