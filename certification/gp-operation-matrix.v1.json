@@ -39,13 +39,13 @@
   "summary": {
     "total": 98,
     "byStatus": {
-      "proven": 96,
-      "partially-proven": 1,
-      "unproven": 1
+      "proven": 98,
+      "partially-proven": 0,
+      "unproven": 0
     },
     "byEntryPoint": {
-      "job": 81,
-      "protocol": 5,
+      "job": 82,
+      "protocol": 4,
       "workflow": 12
     }
   },
@@ -778,7 +778,7 @@
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
           "test": "InterpolateKriging_SamplePoints_ReproducesSampleValuesExactly",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
-          "assertion": "Required PR Gate executes the production kriging executor with pinned real GDAL; the decoded cell centred on the interior sample reproduces its observed value, and the surface declares no nodata \u2014 the exactness property that distinguishes kriging from a smoother."
+          "assertion": "Required PR Gate executes the production kriging executor with pinned real GDAL; the decoded cell centred on the interior sample reproduces its observed value, and the surface declares no nodata — the exactness property that distinguishes kriging from a smoother."
         },
         {
           "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
@@ -891,13 +891,20 @@
     },
     {
       "processId": "conversion.geometry-format",
-      "status": "unproven",
-      "entryPoint": "protocol",
-      "evidence": [],
-      "gap": {
-        "issue": "https://github.com/honua-io/honua-server/issues/3936",
-        "missing": "Successful WKT/GeoJSON/WKB/EWKT execution with parsed topology/SRID assertions."
-      }
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryFormatConversionExecutionProofTests.cs",
+          "test": "ConvertsPolygonWithHole_ToEveryAdvertisedEncoding_PreservingTopologyRingsAndSrid",
+          "assertion": "Registered production executor converts a committed polygon-with-hole EWKB fixture to every advertised target. Each output is parsed back with an independent reader and asserted against literal ring ordinates, hole preservation, exterior-minus-hole area, EWKT/WKB SRID behaviour including a SRID-less input, and scalar content type; unadvertised targets are rejected at submit and at execution."
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryFormatConversionExecutionProofTests.cs",
+          "test": "Oracle_DroppedHoleOrShiftedOrdinates_AreRejectedEvenThoughTheOutputParses",
+          "assertion": "Demonstrated negatives: real conversions of a hole-dropped polygon and a translated copy produce valid, parseable outputs in the requested encodings - the translated one keeps ring count, winding and area, exactly as a silent reprojection would - and the frozen ring/hole/ordinate oracle rejects both."
+        }
+      ]
     },
     {
       "processId": "conversion.feature-project",
@@ -1069,19 +1076,20 @@
     },
     {
       "processId": "data-management.calculate-field",
-      "status": "partially-proven",
+      "status": "proven",
       "entryPoint": "protocol",
       "evidence": [
         {
-          "path": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerMaintenanceTests.cs",
-          "test": "Calculate_ValidRequest_ReturnsSuccess",
-          "assertion": "Asserts success/count field only; no changed-value read-back."
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/CalculateFieldExecutionProofTests.cs",
+          "test": "Calculate_FilteredRows_WritesExactValuesAndLeavesExcludedRowsUntouched",
+          "assertion": "Owning FeatureServer calculate route runs against the editable PostGIS-backed FeatureServer layer; literal rows are added through the shared edit pipeline and every calculate is scoped to their object ids. Canonical protocol read-back asserts exact computed values for selected rows, seed-identical values for excluded rows, integer/string field-type fidelity, and that a rejected expression or unknown field changes nothing."
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/CalculateFieldExecutionProofTests.cs",
+          "test": "Oracle_CalculateThatIgnoresTheFilter_IsRejected",
+          "assertion": "Demonstrated negative: a real calculate over every proof row (the population filter dropped) returns a valid 200 with a plausible updated count and well-formed rows; the frozen post-state oracle rejects it because the excluded row changed."
         }
-      ],
-      "gap": {
-        "issue": "https://github.com/honua-io/honua-server/issues/3937",
-        "missing": "Query-back assertions for exact changed and unchanged field values."
-      }
+      ]
     },
     {
       "processId": "import.dataset",

@@ -115,11 +115,28 @@ public sealed class ProcessConditionalInputProbeTests
     [UnitTest]
     public void FindAdmissibilityViolations_ProtocolOnlyProcess_IsNotJobExecutable()
     {
-        // conversion.geometry-format is reachable only through its owning synchronous
-        // protocol endpoint, so a translated toolbox tool targeting it can never run.
-        var violations = Probe().FindAdmissibilityViolations("conversion.geometry-format", ["geometry", "targetFormat"]);
+        // data-management.delete-features is reachable only through its owning synchronous
+        // protocol endpoint, so a translated toolbox tool targeting it can never run. The
+        // mapping below is complete (layerId plus one of where/objectIds), so the verdict
+        // is about the entry point rather than an unsatisfiable input.
+        var violations = Probe().FindAdmissibilityViolations(
+            "data-management.delete-features",
+            ["layerId", "where"]);
 
         violations.Should().Contain(violation =>
+            violation.Kind == ProcessAdmissibilityViolationKind.NotJobExecutable);
+    }
+
+    [UnitTest]
+    public void FindAdmissibilityViolations_GeometryFormatIsNowJobExecutable()
+    {
+        // conversion.geometry-format was protocol-only until its managed executor landed
+        // (#3936). It now declares the job entry point, so a toolbox tool may target it.
+        var violations = Probe().FindAdmissibilityViolations(
+            "conversion.geometry-format",
+            ["geometry", "target"]);
+
+        violations.Should().NotContain(violation =>
             violation.Kind == ProcessAdmissibilityViolationKind.NotJobExecutable);
     }
 

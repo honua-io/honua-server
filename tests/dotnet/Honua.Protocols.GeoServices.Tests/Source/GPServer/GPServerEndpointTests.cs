@@ -527,17 +527,19 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_ProtocolOnlyTask_Returns400WithCapabilityMessage()
     {
-        // conversion.geometry-format is protocol-only and cannot use either GPServer
+        // analytics.cluster is protocol-only and cannot use either GPServer
         // execution route, so the response must not prescribe submitJob as a remedy.
+        // (conversion.geometry-format was this exemplar until #3936 gave it a real
+        // managed executor; the assertion below is unchanged.)
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
-            ["geometry"] = PointWkbBase64,
-            ["target"] = "wkt"
+            ["layerId"] = "0",
+            ["algorithm"] = "dbscan"
         });
 
         var response = await _client.PostAsync(
-            $"/rest/services/{ServiceId}/GPServer/conversion.geometry-format/execute", content);
+            $"/rest/services/{ServiceId}/GPServer/analytics.cluster/execute", content);
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);

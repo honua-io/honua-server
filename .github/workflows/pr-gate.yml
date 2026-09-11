@@ -299,6 +299,15 @@ jobs:
             --logger 'trx;LogFileName=imagery-classify-execution-proof.trx' \
             --results-directory tests/TestResults
 
+          # Protocol-tier proofs from #3936/#3937. Keep these in the same
+          # evidence-bearing raster block so both geometry-format and
+          # calculate-field command surfaces are validated on the gate lane.
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release -maxcpucount:4 \
+            --filter 'Category=GeometryFormatExecutionProof|Category=CalculateFieldExecutionProof' \
+            --logger 'trx;LogFileName=protocol-tier-execution-proof.trx' \
+            --results-directory tests/TestResults
+
       - name: Prove the raster execution cases ran, not skipped
         # honua-server#4401. The step above is on the REQUIRED gate, but
         # `dotnet test` exits 0 when a --filter matches nothing and when every
@@ -568,6 +577,14 @@ jobs:
         with:
           name: layer-execution-proof
           path: tests/TestResults/layer-execution-proof.trx
+          if-no-files-found: warn
+
+      - name: Upload protocol-tier execution proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: protocol-tier-execution-proof
+          path: tests/TestResults/protocol-tier-execution-proof.trx
           if-no-files-found: warn
 
       - name: Await Testcontainers PostGIS pre-pull
