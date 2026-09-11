@@ -445,6 +445,98 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
             name.EndsWith("002_drop_legacy_annotated.sql", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// honua-server#4415 - <c>RunMigrations_BackupHook_RunsBeforeContractApplyAndSucceeds</c> proves
+    /// only that the backup hook ran (a sentinel file exists); nothing anywhere verified that the
+    /// backup it produces is restorable, or even non-empty. This test's backup command is a real
+    /// <c>pg_dump</c> (run via <c>docker exec</c> against the same container the migration runs
+    /// against, so no PostgreSQL client tools are required on the test-runner host) of a table
+    /// seeded with independently-known rows, taken immediately before the contract script destroys
+    /// the very column being backed up. The assertion is that <c>pg_restore</c>-ing the dump into a
+    /// brand-new database reproduces those exact rows - the shape honua-release's
+    /// <c>e2e/dr-drill/run.sh</c> already uses for its own backup/restore proof.
+    /// </summary>
+    [SkippableFact]
+    public async Task RunMigrations_BackupHook_RealPgDumpRestoresIdenticalPreContractSnapshot()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var assemblyName = $"honua_synthetic_backuprestore_{Guid.NewGuid():N}";
+        await ApplyExpandBaselineAsync(connectionString, assemblyName);
+
+        // Independently-known ground truth, seeded by hand - not captured from a run of the backup.
+        var seededRows = new[] { (Id: 1, LegacyName: "alpha"), (Id: 2, LegacyName: "beta"), (Id: 3, LegacyName: "gamma") };
+        await using (var seedConnection = new NpgsqlConnection(connectionString))
+        {
+            await seedConnection.OpenAsync();
+            foreach (var row in seededRows)
+            {
+                await using var insert = seedConnection.CreateCommand();
+                insert.CommandText = "INSERT INTO honua_ci_demo (id, legacy_name) VALUES (@id, @name)";
+                insert.Parameters.AddWithValue("id", row.Id);
+                insert.Parameters.AddWithValue("name", row.LegacyName);
+                await insert.ExecuteNonQueryAsync();
+            }
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        var dumpPath = $"/tmp/honua-ci-backup-{Guid.NewGuid():N}.dump";
+        // docker exec (not psql/pg_dump on the test-runner host) runs the real client tools already
+        // bundled in the postgis/postgis image, over the container's internal loopback so the exact
+        // same credentials Npgsql used to seed the rows authenticate the dump.
+        var backupCommand =
+            $"docker exec -e PGPASSWORD={builder.Password} {_postgres.ContainerId} " +
+            $"pg_dump -U {builder.Username} -h 127.0.0.1 -d {builder.Database} -Fc -f {dumpPath}";
+
+        var runner = CreateRunner(new MigrationSafetyOptions
+        {
+            Enforce = true,
+            ContractApplyPolicy = ContractApplyPolicy.Auto,
+            BackupCommand = backupCommand,
+        });
+        var upgrade = SyntheticMigrationsCompiler.Compile(
+            assemblyName,
+            ("001_expand.sql", ExpandScript),
+            ("002_drop_legacy_annotated.sql", AnnotatedContractScript));
+
+        var result = await runner.RunMigrationsAsync(connectionString, upgrade);
+
+        result.Successful.Should().BeTrue($"the backup hook succeeded so the contract migration applies. Error: {result.ErrorMessage}");
+        (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name"))
+            .Should().BeFalse("the contract script dropped legacy_name on the live database after the backup ran");
+
+        var dumpExists = await _postgres.ExecInContainerAsync(["test", "-s", dumpPath]);
+        dumpExists.ExitCode.Should().Be(0, "the backup command must have produced a non-empty dump file");
+
+        // Restore into a brand-new, otherwise-empty database and prove the dump is a genuine,
+        // independently-readable point-in-time snapshot rather than an empty or corrupt artifact.
+        var restoreConnectionString = await _postgres.CreateFreshDatabaseAsync();
+        var restoreBuilder = new NpgsqlConnectionStringBuilder(restoreConnectionString);
+        var restore = await _postgres.ExecInContainerAsync([
+            "sh", "-c",
+            $"PGPASSWORD={builder.Password} pg_restore -U {builder.Username} -h 127.0.0.1 " +
+            $"-d {restoreBuilder.Database} --no-owner --exit-on-error {dumpPath}"
+        ]);
+        restore.ExitCode.Should().Be(0, $"pg_restore must succeed against the dump the backup hook produced. stderr: {restore.Stderr}");
+
+        await using var verifyConnection = new NpgsqlConnection(restoreConnectionString);
+        await verifyConnection.OpenAsync();
+        await using var query = verifyConnection.CreateCommand();
+        query.CommandText = "SELECT id, legacy_name FROM honua_ci_demo ORDER BY id";
+        await using var reader = await query.ExecuteReaderAsync();
+        var restoredRows = new List<(int Id, string LegacyName)>();
+        while (await reader.ReadAsync())
+        {
+            restoredRows.Add((reader.GetInt32(0), reader.GetString(1)));
+        }
+
+        restoredRows.Should().Equal(
+            seededRows,
+            "the restored table must contain exactly the rows seeded before the backup, including the legacy_name "
+                + "column the live database no longer has after the contract script applied");
+    }
+
     [SkippableFact]
     public async Task RunMigrations_BackupHook_SkippedWhenNoPendingContractScripts()
     {
