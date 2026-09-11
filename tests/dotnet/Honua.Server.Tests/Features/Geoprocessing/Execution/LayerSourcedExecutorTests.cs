@@ -201,7 +201,10 @@ public sealed class LayerSourcedExecutorTests
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
 
         var (status, _, request) = await RunAsync(
-            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            new LayerBufferAggregateExecutor(
+                BufferScopeFactory(source, layerId: 7, storageSrid: 3857, isGeographic: false),
+                Options(),
+                NullLogger<LayerBufferAggregateExecutor>.Instance),
             LayerBufferAggregateExecutor.HandledProcessId,
             ("layerId", "7"),
             ("distance", "10"),
@@ -297,7 +300,10 @@ public sealed class LayerSourcedExecutorTests
         ]);
 
         var (status, uri, _) = await RunAsync(
-            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            new LayerBufferAggregateExecutor(
+                BufferScopeFactory(source, layerId: 7, storageSrid: 3857, isGeographic: false),
+                Options(),
+                NullLogger<LayerBufferAggregateExecutor>.Instance),
             LayerBufferAggregateExecutor.HandledProcessId,
             ("layerId", "7"),
             ("distance", "1"),
