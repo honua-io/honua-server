@@ -33,10 +33,15 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 // These contracts exercise shared executors and storage directly, without an HTTP adapter.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.ContractTesting)]
-public sealed class LayerSourceExecutionProofTests : IAsyncLifetime
+public sealed partial class LayerSourceExecutionProofTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureServices(_ => { });
+    private readonly WebAppFixture _fixture;
     private long _selectedId;
+
+    public LayerSourceExecutionProofTests()
+    {
+        _fixture = new WebAppFixture().ConfigureServices(ConfigureSelectionAuthorization);
+    }
 
     public async Task InitializeAsync()
     {

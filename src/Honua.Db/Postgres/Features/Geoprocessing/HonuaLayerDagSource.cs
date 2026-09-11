@@ -31,11 +31,16 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
 {
     private readonly IStreamingFeatureStore _streamingStore;
     private readonly IMetadataV2GraphProvider? _metadata;
+    private readonly ILayerSelectionFilterTranslator? _selectionTranslator;
 
-    public HonuaLayerDagSource(IStreamingFeatureStore streamingStore, IMetadataV2GraphProvider? metadata = null)
+    public HonuaLayerDagSource(
+        IStreamingFeatureStore streamingStore,
+        IMetadataV2GraphProvider? metadata = null,
+        ILayerSelectionFilterTranslator? selectionTranslator = null)
     {
         _streamingStore = streamingStore;
         _metadata = metadata;
+        _selectionTranslator = selectionTranslator;
     }
 
     public string SourceId => "source.honua-layer";
@@ -68,14 +73,20 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
         }
 
         var query = BuildQuery(request);
+        MetadataV2Resource? resource = null;
         if (_metadata is not null)
         {
             var snapshot = await _metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (!snapshot.Index.ResourcesByStorageLayerId.ContainsKey(layerId))
+            if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out resource))
             {
                 throw new InvalidOperationException("Source layer does not exist.");
             }
             query = query with { SpatialReferenceSrid = snapshot.ResolveStorageSrid(layerId) };
+        }
+
+        if (request.HasCanonicalSelectors)
+        {
+            query = await ApplyCanonicalSelectionAsync(request, resource, query, cancellationToken).ConfigureAwait(false);
         }
 
         // Per-feature WKB -> GeoJSON conversion via the shared managed NTS reader/writer.
@@ -104,6 +115,65 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
                 Attributes = feature.Attributes
             };
         }
+    }
+
+    /// <summary>
+    /// Applies the geometry/time selectors through the canonical
+    /// <see cref="ILayerSelectionFilterTranslator"/> — the same translation the synchronous
+    /// analytics endpoints use (#4624) — instead of a connector-local reinterpretation. The
+    /// translated where/time predicate replaces the plain where clause (SqlFilter takes
+    /// precedence over Where in the store), and the geometry filter replaces any bbox. The
+    /// store still ANDs the layer's permanent filter and row-level security ahead of this
+    /// selection and masks restricted fields, so the caller's selectors only ever narrow what
+    /// the submitter may read.
+    /// </summary>
+    private async Task<FeatureQuery> ApplyCanonicalSelectionAsync(
+        DagSourceRequest request,
+        MetadataV2Resource? resource,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        if (_selectionTranslator is null || resource is null)
+        {
+            // Never drop a selector the caller supplied: reading without it would return a
+            // broader feature set than requested.
+            throw new DagSourceSelectionException(
+                "'geometry' and 'time' selection filters need the canonical layer selection translator and catalog " +
+                "metadata, which are not configured in this deployment; narrow the input with 'where' or 'objectIds' instead.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Bbox) && !string.IsNullOrWhiteSpace(request.Geometry))
+        {
+            throw new DagSourceSelectionException("supply either 'bbox' or 'geometry', not both.");
+        }
+
+        var translation = await _selectionTranslator.TranslateAsync(
+            new LayerSelectionFilter
+            {
+                Where = BuildWhereClause(request),
+                ObjectIds = request.ObjectIds,
+                Geometry = request.Geometry,
+                GeometryType = request.GeometryType,
+                InSr = request.InSr,
+                SpatialRel = request.SpatialRel,
+                Time = request.Time,
+                TimeRelation = request.TimeRelation,
+            },
+            resource,
+            cancellationToken).ConfigureAwait(false);
+
+        if (translation.Query is not { } selected)
+        {
+            throw new DagSourceSelectionException($"{translation.ErrorTitle}: {translation.ErrorDetail}");
+        }
+
+        return query with
+        {
+            Where = selected.Where,
+            SqlFilter = selected.SqlFilter,
+            ObjectIds = selected.ObjectIds,
+            SpatialFilter = selected.SpatialFilter ?? query.SpatialFilter,
+        };
     }
 
     private static FeatureQuery BuildQuery(DagSourceRequest request)

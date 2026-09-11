@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
@@ -58,6 +59,12 @@ namespace Honua.Infrastructure.Analytics;
 ///     hide caller errors.</item>
 /// </list>
 /// </para>
+/// <para>
+/// <see cref="TranslateAsync"/> is the single interpretation of that bundle: the HTTP
+/// endpoints call it through <see cref="TryBuildAsync"/>, and layer-sourced geoprocessing
+/// jobs call it through <see cref="AnalyticsLayerSelectionFilterTranslator"/> (#4624), so
+/// a selector cannot mean one thing synchronously and another inside a job.
+/// </para>
 /// </remarks>
 internal static class AnalyticsFeatureQueryFactory
 {
@@ -75,35 +82,62 @@ internal static class AnalyticsFeatureQueryFactory
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        return await TryBuildCoreAsync(
-            context,
-            values,
+        var selection = new LayerSelectionFilter
+        {
+            Where = GetValueString(values, SpatialAnalyticsParameters.Where),
+            ObjectIds = GetValueString(values, SpatialAnalyticsParameters.ObjectIds),
+            Geometry = GetValueString(values, SpatialAnalyticsParameters.Geometry),
+            GeometryType = GetValueString(values, SpatialAnalyticsParameters.GeometryType),
+            InSr = GetValueString(values, SpatialAnalyticsParameters.InSr),
+            SpatialRel = GetValueString(values, SpatialAnalyticsParameters.SpatialRel),
+            Time = GetValueString(values, SpatialAnalyticsParameters.Time),
+            TimeRelation = GetValueString(values, SpatialAnalyticsParameters.TimeRelation),
+        };
+
+        var translation = await TranslateAsync(
+            selection,
             resource,
             resource.ReadSrid() ?? SpatialReference.WGS84.ToSrid(),
+            context.RequestServices,
             cancellationToken).ConfigureAwait(false);
+
+        return translation.Query is { } query
+            ? (query, null)
+            : (null, StandardErrorHelpers.CreateBadRequest(
+                context,
+                translation.ErrorTitle ?? ErrorMessages.Validation.InvalidParameter,
+                [translation.ErrorDetail ?? "Invalid filter syntax."]));
     }
 
-    private static async Task<(FeatureQuery? Query, IResult? Error)> TryBuildCoreAsync(
-        HttpContext context,
-        IReadOnlyDictionary<string, StringValues> values,
+    /// <summary>
+    /// Translates the shared analytics selection bundle against <paramref name="resource"/>.
+    /// <paramref name="services"/> supplies the scoped <see cref="IFilterExpressionService"/>
+    /// and (only when a geometry filter is present) the <see cref="SpatialReferenceResolver"/>.
+    /// </summary>
+    internal static async Task<LayerSelectionTranslation> TranslateAsync(
+        LayerSelectionFilter selection,
         MetadataV2Resource resource,
         int spatialReferenceSrid,
+        IServiceProvider services,
         CancellationToken cancellationToken)
     {
-        var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+        ArgumentNullException.ThrowIfNull(selection);
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(services);
+
+        var filterService = services.GetRequiredService<IFilterExpressionService>();
 
         // ----- where (ArcGIS SQL) -----
-        var where = GetValueString(values, SpatialAnalyticsParameters.Where);
+        var where = selection.Where;
         FilterExpression? whereExpression = null;
         if (!string.IsNullOrWhiteSpace(where))
         {
             var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
             if (!parseResult.IsSuccess)
             {
-                return (null, StandardErrorHelpers.CreateBadRequest(
-                    context,
+                return LayerSelectionTranslation.Failure(
                     ErrorMessages.Validation.InvalidParameter,
-                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]));
+                    parseResult.ErrorMessage ?? "Invalid filter syntax.");
             }
 
             whereExpression = parseResult.Expression;
@@ -113,21 +147,17 @@ internal static class AnalyticsFeatureQueryFactory
         // Built as a FilterExpression and ANDed with the where clause so a single
         // SqlFragment carries both predicates. Mirrors the main FeatureServer
         // query handler so the analytics surface honours the same temporal logic.
-        var time = GetValueString(values, SpatialAnalyticsParameters.Time);
         FilterExpression? temporalExpression = null;
-        if (!string.IsNullOrWhiteSpace(time))
+        if (!string.IsNullOrWhiteSpace(selection.Time))
         {
-            var timeRelation = GetValueString(values, SpatialAnalyticsParameters.TimeRelation);
             try
             {
-                temporalExpression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(time, timeRelation, resource);
+                temporalExpression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
+                    selection.Time, selection.TimeRelation, resource);
             }
             catch (ArgumentException ex)
             {
-                return (null, StandardErrorHelpers.CreateBadRequest(
-                    context,
-                    ErrorMessages.Validation.InvalidParameter,
-                    [ex.Message]));
+                return LayerSelectionTranslation.Failure(ErrorMessages.Validation.InvalidParameter, ex.Message);
             }
         }
 
@@ -147,10 +177,9 @@ internal static class AnalyticsFeatureQueryFactory
             var translationResult = filterService.Translate(combinedExpression, resource);
             if (!translationResult.IsSuccess)
             {
-                return (null, StandardErrorHelpers.CreateBadRequest(
-                    context,
+                return LayerSelectionTranslation.Failure(
                     ErrorMessages.Validation.InvalidParameter,
-                    [translationResult.ErrorMessage ?? "Invalid filter syntax."]));
+                    translationResult.ErrorMessage ?? "Invalid filter syntax.");
             }
 
             sqlFilter = translationResult.SqlFilter;
@@ -158,15 +187,13 @@ internal static class AnalyticsFeatureQueryFactory
 
         // ----- objectIds -----
         ImmutableArray<long>? objectIds = null;
-        var objectIdsRaw = GetValueString(values, SpatialAnalyticsParameters.ObjectIds);
-        if (!string.IsNullOrWhiteSpace(objectIdsRaw))
+        if (!string.IsNullOrWhiteSpace(selection.ObjectIds))
         {
-            if (!TryParseObjectIds(objectIdsRaw, out var parsedObjectIds))
+            if (!TryParseObjectIds(selection.ObjectIds, out var parsedObjectIds))
             {
-                return (null, StandardErrorHelpers.CreateBadRequest(
-                    context,
+                return LayerSelectionTranslation.Failure(
                     "Invalid objectIds parameter",
-                    ["objectIds must be a comma-separated list of integer feature identifiers."]));
+                    "objectIds must be a comma-separated list of integer feature identifiers.");
             }
 
             objectIds = parsedObjectIds;
@@ -174,37 +201,30 @@ internal static class AnalyticsFeatureQueryFactory
 
         // ----- geometry / geometryType / inSR / spatialRel -----
         SpatialFilter? spatialFilter = null;
-        var geometryRaw = GetValueString(values, SpatialAnalyticsParameters.Geometry);
-        if (!string.IsNullOrWhiteSpace(geometryRaw))
+        if (!string.IsNullOrWhiteSpace(selection.Geometry))
         {
-            var geometryType = GetValueString(values, SpatialAnalyticsParameters.GeometryType);
             if (!GeoServicesGeometryParser.TryParseGeoServicesGeometry(
-                    geometryRaw, geometryType, out var parsedGeometry, out var geometryError) ||
+                    selection.Geometry, selection.GeometryType, out var parsedGeometry, out var geometryError) ||
                 parsedGeometry == null)
             {
-                return (null, StandardErrorHelpers.CreateBadRequest(
-                    context,
+                return LayerSelectionTranslation.Failure(
                     "Invalid geometry parameter",
-                    [geometryError ?? "geometry could not be parsed."]));
+                    geometryError ?? "geometry could not be parsed.");
             }
 
-            var spatialReferenceResolver = context.RequestServices.GetRequiredService<SpatialReferenceResolver>();
-            var inSr = GetValueString(values, SpatialAnalyticsParameters.InSr);
+            var spatialReferenceResolver = services.GetRequiredService<SpatialReferenceResolver>();
             int? inputSrid;
             try
             {
                 inputSrid = await spatialReferenceResolver.ResolveSridAsync(
-                    inSr, parsedGeometry.SpatialReference, cancellationToken);
+                    selection.InSr, parsedGeometry.SpatialReference, cancellationToken).ConfigureAwait(false);
             }
             catch (ArgumentException ex)
             {
-                return (null, StandardErrorHelpers.CreateBadRequest(
-                    context,
-                    "Invalid inSR parameter",
-                    [ex.Message]));
+                return LayerSelectionTranslation.Failure("Invalid inSR parameter", ex.Message);
             }
 
-            var spatialRel = GetValueString(values, SpatialAnalyticsParameters.SpatialRel);
+            var spatialRel = selection.SpatialRel;
             if (IsDistanceBasedSpatialRelationship(spatialRel))
             {
                 // The analytics endpoints already overload `distance` for
@@ -214,10 +234,9 @@ internal static class AnalyticsFeatureQueryFactory
                 // would silently mask whichever meaning the caller intended.
                 // Reject explicitly so the caller gets a clear error instead
                 // of a confusing parameter collision.
-                return (null, StandardErrorHelpers.CreateBadRequest(
-                    context,
+                return LayerSelectionTranslation.Failure(
                     "Unsupported spatialRel",
-                    ["Distance-based spatial relationships (esriSpatialRelWithinDistance / esriSpatialRelBeyondDistance) are not supported on the spatial analytics endpoints; use the operation-specific 'distance' parameter or apply the predicate via the 'where' clause instead."]));
+                    "Distance-based spatial relationships (esriSpatialRelWithinDistance / esriSpatialRelBeyondDistance) are not supported on the spatial analytics endpoints; use the operation-specific 'distance' parameter or apply the predicate via the 'where' clause instead.");
             }
 
             try
@@ -228,23 +247,18 @@ internal static class AnalyticsFeatureQueryFactory
             }
             catch (ArgumentException ex)
             {
-                return (null, StandardErrorHelpers.CreateBadRequest(
-                    context,
-                    "Invalid spatialRel",
-                    [ex.Message]));
+                return LayerSelectionTranslation.Failure("Invalid spatialRel", ex.Message);
             }
         }
 
-        var featureQuery = new FeatureQuery
+        return LayerSelectionTranslation.Success(new FeatureQuery
         {
             Where = where,
             SqlFilter = sqlFilter,
             ObjectIds = objectIds,
             SpatialFilter = spatialFilter,
             SpatialReferenceSrid = spatialReferenceSrid
-        };
-
-        return (featureQuery, null);
+        });
     }
 
     /// <summary>
