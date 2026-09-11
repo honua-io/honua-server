@@ -1082,12 +1082,12 @@
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/CalculateFieldExecutionProofTests.cs",
           "test": "Calculate_FilteredRows_WritesExactValuesAndLeavesExcludedRowsUntouched",
-          "assertion": "Owning FeatureServer calculate route runs against a real published PostGIS layer with literal seeded rows. Canonical protocol read-back asserts exact computed values for selected rows, seed-identical values for excluded rows, integer/string field-type fidelity, and that a rejected expression or unknown field changes nothing."
+          "assertion": "Owning FeatureServer calculate route runs against the editable PostGIS-backed FeatureServer layer; literal rows are added through the shared edit pipeline and every calculate is scoped to their object ids. Canonical protocol read-back asserts exact computed values for selected rows, seed-identical values for excluded rows, integer/string field-type fidelity, and that a rejected expression or unknown field changes nothing."
         },
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/CalculateFieldExecutionProofTests.cs",
           "test": "Oracle_CalculateThatIgnoresTheFilter_IsRejected",
-          "assertion": "Demonstrated negative: a real calculate over where=1=1 returns a valid 200 with a plausible updated count and well-formed rows; the frozen post-state oracle rejects it because the excluded row changed."
+          "assertion": "Demonstrated negative: a real calculate over every proof row (the population filter dropped) returns a valid 200 with a plausible updated count and well-formed rows; the frozen post-state oracle rejects it because the excluded row changed."
         }
       ]
     },

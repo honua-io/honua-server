@@ -3,14 +3,13 @@
 
 using System.Globalization;
 using System.Net;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
-using Honua.Core.Features.Admin.Abstractions;
-using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Helpers;
-using Npgsql;
 using Xunit;
 using Xunit.Sdk;
 
@@ -22,80 +21,53 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// The prior evidence asserted only <c>success</c> and the presence of an updated
 /// count; it never read the changed values back, so an implementation that
 /// reported a count and wrote nothing (or wrote the wrong rows) passed. These
-/// cases execute the owning FeatureServer <c>calculate</c> path against a real
-/// published PostGIS layer with literal seeded rows, then read every row back
+/// cases add literal rows to the editable PostGIS-backed FeatureServer layer
+/// through the shared edit pipeline, execute the owning FeatureServer
+/// <c>calculate</c> path over them, then read every one of those rows back
 /// through the canonical protocol query route and assert exact post-state.
 /// The oracle is the committed fixture plus arithmetic done here, never a
 /// snapshot of what calculate produced.
+///
+/// The target is an editable Honua feature layer rather than a table published
+/// with <c>PublishLayerAsync</c>: a published table is a read-only snapshot (it
+/// advertises Query/Extract, and a refresh re-materializes it from its source),
+/// so forcing Update onto one proves nothing about calculate. Every calculate
+/// here is scoped to the object ids this proof created, so rows the shared seed
+/// owns can neither satisfy nor disturb an assertion.
 /// </summary>
 [Collection("Database")]
 [Trait("Category", "CalculateFieldExecutionProof")]
 public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
 {
+    private const string ServiceId = WebAppFixture.TestServiceId;
+    private const int LayerId = WebAppFixture.TestLayerId;
+
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
-    private string _serviceName = null!;
-    private int _routeLayerId;
+
+    // Object ids the edit pipeline assigned to SeedRows, in SeedRows order.
+    private long[] _objectIds = [];
 
     // The committed fixture. Every expectation below is derived from these
     // literals, not from a prior run's output.
-    private static readonly (long Id, string Label, int Score, string? Note)[] SeedRows =
+    private static readonly (string Name, int Population, string? Notes)[] SeedRows =
     [
-        (1, "alpha", 10, "keep"),
-        (2, "beta", 20, "keep"),
-        (3, "gamma", 30, null),
-        (4, "delta", 40, "keep"),
+        ("alpha", 10, "keep"),
+        ("beta", 20, "keep"),
+        ("gamma", 30, null),
+        ("delta", 40, "keep"),
     ];
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        var schema = _fixture.CurrentSchema!;
-        _serviceName = "calcproof_" + Guid.NewGuid().ToString("N");
-
-        await using (var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync())
-        {
-            await using var command = new NpgsqlCommand($"""
-                CREATE TABLE "{schema}".calcproof (
-                    id bigint PRIMARY KEY,
-                    label varchar(32) NOT NULL,
-                    score integer NOT NULL,
-                    note text,
-                    geom geometry(Point,4326) NOT NULL);
-                INSERT INTO "{schema}".calcproof VALUES
-                    (1, 'alpha', 10, 'keep',  ST_SetSRID(ST_MakePoint(1, 1), 4326)),
-                    (2, 'beta',  20, 'keep',  ST_SetSRID(ST_MakePoint(2, 2), 4326)),
-                    (3, 'gamma', 30, NULL,    ST_SetSRID(ST_MakePoint(3, 3), 4326)),
-                    (4, 'delta', 40, 'keep',  ST_SetSRID(ST_MakePoint(4, 4), 4326));
-                """, connection);
-            await command.ExecuteNonQueryAsync();
-        }
-
-        await _fixture.GetService<ILayerPublishingService>().PublishLayerAsync(
-            new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
-            {
-                SearchPath = schema + ",public"
-            }.ConnectionString,
-            new LayerPublishRequest
-            {
-                Schema = schema,
-                Table = "calcproof",
-                LayerName = "Calculate proof layer",
-                GeometryColumn = "geom",
-                PrimaryKey = "id",
-                Srid = 4326,
-                Fields = ["id", "label", "score", "note"],
-                ServiceName = _serviceName,
-                Enabled = true
-            });
 
         // calculate is a bulk field UPDATE, and the shared FeatureServer edit pipeline
-        // rejects an edit kind the publication never advertised (#4073). PublishLayerAsync
-        // advertises the read-only default (Query/Extract), so without this the proof would
-        // only ever exercise the capability guard and never calculate itself. Declare exactly
-        // the operation calculate needs on top of the published defaults — not Create/Delete.
-        _fixture.EnableV2ServiceEditingCapabilities(_serviceName, ["Query", "Extract", "Update"]);
+        // rejects an edit kind the publication never advertised (#4073). Declare Create so
+        // the fixture rows go in through that same pipeline, and Update for calculate
+        // itself — not Delete.
+        _fixture.EnableV2ServiceEditingCapabilities(ServiceId, ["Create", "Update"]);
 
-        _routeLayerId = await ResolveRouteLayerIdAsync();
+        _objectIds = await AddSeedRowsAsync();
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -103,26 +75,26 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
     [Fact]
     public async Task Calculate_FilteredRows_WritesExactValuesAndLeavesExcludedRowsUntouched()
     {
-        // score * 2 + 1 and UPPER(label) || '-C' over the rows with score >= 20.
+        // population * 2 + 1 and UPPER(name) || '-C' over the rows with population >= 20.
         var response = await PostCalculateAsync(
-            where: "score >= 20",
+            where: OwnedRows("population >= 20"),
             calcExpression: """
-                [{"field":"score","sqlExpression":"score * 2 + 1"},
-                 {"field":"label","sqlExpression":"UPPER(label) || '-C'"}]
+                [{"field":"population","sqlExpression":"population * 2 + 1"},
+                 {"field":"name","sqlExpression":"UPPER(name) || '-C'"}]
                 """);
 
         using var document = ParseSuccessfulCalculate(response);
         document.RootElement.GetProperty("updatedFeatureCount").GetInt32().Should().Be(
-            3, "exactly the three rows with score >= 20 match the filter");
+            3, "exactly the three rows with population >= 20 match the filter");
 
         // Independent expectation from the committed fixture: the selected rows
-        // carry the computed values, the excluded row is byte-identical to seed.
+        // carry the computed values, the excluded row is identical to seed.
         await AssertRowsAsync(
         [
-            (1, "alpha", 10, "keep"),
-            (2, "BETA-C", 41, "keep"),
-            (3, "GAMMA-C", 61, null),
-            (4, "DELTA-C", 81, "keep"),
+            ("alpha", 10, "keep"),
+            ("BETA-C", 41, "keep"),
+            ("GAMMA-C", 61, null),
+            ("DELTA-C", 81, "keep"),
         ]);
     }
 
@@ -130,8 +102,8 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
     public async Task Calculate_ObjectIdSelection_UpdatesOnlyTheNamedFeature()
     {
         var response = await PostCalculateAsync(
-            where: "id = 3",
-            calcExpression: """[{"field":"note","value":"recalculated"}]""");
+            where: "objectid = " + _objectIds[2].ToString(CultureInfo.InvariantCulture),
+            calcExpression: """[{"field":"notes","value":"recalculated"}]""");
 
         using var document = ParseSuccessfulCalculate(response);
         document.RootElement.GetProperty("updatedFeatureCount").GetInt32().Should().Be(
@@ -139,10 +111,10 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
 
         await AssertRowsAsync(
         [
-            (1, "alpha", 10, "keep"),
-            (2, "beta", 20, "keep"),
-            (3, "gamma", 30, "recalculated"),
-            (4, "delta", 40, "keep"),
+            ("alpha", 10, "keep"),
+            ("beta", 20, "keep"),
+            ("gamma", 30, "recalculated"),
+            ("delta", 40, "keep"),
         ]);
     }
 
@@ -155,10 +127,10 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         // InputValidationMiddleware SQL-injection guard before the request ever reaches
         // calculate — so it would prove the middleware, not the allow-list this case pins.
         var response = await PostCalculateAsync(
-            where: "1=1",
-            calcExpression: """[{"field":"score","sqlExpression":"md5(label)"}]""");
+            where: OwnedRows(),
+            calcExpression: """[{"field":"population","sqlExpression":"md5(name)"}]""");
 
-        AssertRejected(response, "Unsupported expression for field 'score'",
+        AssertRejected(response, "Unsupported expression for field 'population'",
             "md5 is outside the calculate expression allow-list");
 
         // The rejection must be total: no row may carry a partial write.
@@ -169,7 +141,7 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
     public async Task Calculate_UnknownField_IsRejectedAndChangesNothing()
     {
         var response = await PostCalculateAsync(
-            where: "1=1",
+            where: OwnedRows(),
             calcExpression: """[{"field":"not_a_field","value":"x"}]""");
 
         AssertRejected(response, "Field 'not_a_field' does not exist in layer",
@@ -182,26 +154,27 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
     {
         // A plausible wrong-but-well-formed calculate: the real route, the real
         // expressions and a real 200 with a plausible updated count — but applied to
-        // every row because the filter was ignored. Produced here by asking for
-        // where=1=1, so the response and the resulting rows are genuinely valid.
+        // every proof row because the population filter was dropped. Produced here by
+        // asking for exactly that, so the response and the resulting rows are genuinely
+        // valid.
         var response = await PostCalculateAsync(
-            where: "1=1",
+            where: OwnedRows(),
             calcExpression: """
-                [{"field":"score","sqlExpression":"score * 2 + 1"},
-                 {"field":"label","sqlExpression":"UPPER(label) || '-C'"}]
+                [{"field":"population","sqlExpression":"population * 2 + 1"},
+                 {"field":"name","sqlExpression":"UPPER(name) || '-C'"}]
                 """);
 
         using var document = ParseSuccessfulCalculate(response);
         document.RootElement.GetProperty("updatedFeatureCount").GetInt32().Should().Be(4);
 
-        // The frozen post-state of the score >= 20 proof rejects it: row 1 was
+        // The frozen post-state of the population >= 20 proof rejects it: row 1 was
         // supposed to be untouched.
         Func<Task> assert = () => AssertRowsAsync(
         [
-            (1, "alpha", 10, "keep"),
-            (2, "BETA-C", 41, "keep"),
-            (3, "GAMMA-C", 61, null),
-            (4, "DELTA-C", 81, "keep"),
+            ("alpha", 10, "keep"),
+            ("BETA-C", 41, "keep"),
+            ("GAMMA-C", 61, null),
+            ("DELTA-C", 81, "keep"),
         ]);
 
         (await assert.Should().ThrowAsync<XunitException>(
@@ -210,20 +183,77 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
     }
 
     // -------------------------------------------------------------------------
+    // Fixture rows
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Adds <see cref="SeedRows"/> through the FeatureServer <c>addFeatures</c> route and
+    /// returns the object ids the edit pipeline assigned, in <see cref="SeedRows"/> order.
+    /// </summary>
+    private async Task<long[]> AddSeedRowsAsync()
+    {
+        var features = new JsonArray();
+        foreach (var (name, population, notes) in SeedRows)
+        {
+            features.Add(new JsonObject
+            {
+                ["attributes"] = new JsonObject
+                {
+                    ["name"] = name,
+                    ["population"] = population,
+                    ["notes"] = notes,
+                },
+            });
+        }
+
+        using var content = new StringContent(
+            new JsonObject { ["features"] = features }.ToJsonString(), Encoding.UTF8, "application/json");
+        using var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/FeatureServer/{LayerId}/addFeatures", content);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        using var document = JsonDocument.Parse(body);
+        if (!document.RootElement.TryGetProperty("addResults", out var addResults)
+            || addResults.GetArrayLength() != SeedRows.Length
+            || addResults.EnumerateArray().Any(result => !result.GetProperty("success").GetBoolean()))
+        {
+            throw new XunitException(
+                "the fixture rows must be added through the edit pipeline. Body was: " + body);
+        }
+
+        return addResults.EnumerateArray().Select(result => result.GetProperty("objectId").GetInt64()).ToArray();
+    }
+
+    /// <summary>
+    /// A where clause that confines a calculate to the rows this proof created, optionally
+    /// narrowed further by <paramref name="predicate"/>.
+    /// </summary>
+    private string OwnedRows(string? predicate = null)
+    {
+        var owned = $"objectid IN ({ObjectIdList()})";
+        return predicate is null ? owned : $"{owned} AND {predicate}";
+    }
+
+    private string ObjectIdList()
+        => string.Join(",", _objectIds.Select(objectId => objectId.ToString(CultureInfo.InvariantCulture)));
+
+    // -------------------------------------------------------------------------
     // Read-back oracle
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Reads every feature back through the canonical FeatureServer query route and
+    /// Reads every proof row back through the canonical FeatureServer query route and
     /// asserts exact attribute values and field-type fidelity. A wrong-but-well-formed
     /// implementation — one that updated every row, stringified the integer field, or
-    /// truncated the widened label — fails here.
+    /// wrote nothing — fails here. Rows are named by their 1-based position in
+    /// <see cref="SeedRows"/>.
     /// </summary>
-    private async Task AssertRowsAsync((long Id, string Label, int Score, string? Note)[] expected)
+    private async Task AssertRowsAsync((string Name, int Population, string? Notes)[] expected)
     {
         using var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_routeLayerId}/query"
-            + "?where=1%3D1&outFields=*&returnGeometry=false&orderByFields=id&f=json");
+            $"/rest/services/{ServiceId}/FeatureServer/{LayerId}/query"
+            + $"?objectIds={ObjectIdList()}&outFields=*&returnGeometry=false&f=json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -232,31 +262,38 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         // Field-type fidelity: calculate must not rewrite the schema it edits.
         var fields = root.GetProperty("fields").EnumerateArray()
             .ToDictionary(f => f.GetProperty("name").GetString()!, f => f.GetProperty("type").GetString()!, StringComparer.OrdinalIgnoreCase);
-        fields["score"].Should().Be("esriFieldTypeInteger");
-        fields["label"].Should().Be("esriFieldTypeString");
+        fields["population"].Should().Be("esriFieldTypeInteger");
+        fields["name"].Should().Be("esriFieldTypeString");
 
-        var features = root.GetProperty("features").EnumerateArray().ToArray();
-        features.Should().HaveCount(expected.Length);
+        var objectIdField = root.GetProperty("objectIdFieldName").GetString()!;
+        var rows = root.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("attributes"))
+            .ToDictionary(attributes => attributes.GetProperty(objectIdField).GetInt64());
+        rows.Should().HaveCount(expected.Length);
 
         for (var i = 0; i < expected.Length; i++)
         {
-            var attributes = features[i].GetProperty("attributes");
-            var actualId = Convert.ToInt64(attributes.GetProperty("id").GetInt64(), CultureInfo.InvariantCulture);
-            actualId.Should().Be(expected[i].Id);
-            attributes.GetProperty("label").GetString().Should().Be(expected[i].Label, $"row {expected[i].Id} label");
+            var row = $"row {i + 1}";
+            rows.Should().ContainKey(_objectIds[i], $"{row} must still be readable");
+            var attributes = rows[_objectIds[i]];
 
-            var score = attributes.GetProperty("score");
-            score.ValueKind.Should().Be(JsonValueKind.Number, $"row {expected[i].Id} score must stay numeric");
-            score.GetInt32().Should().Be(expected[i].Score, $"row {expected[i].Id} score");
+            attributes.GetProperty("name").GetString().Should().Be(expected[i].Name, $"{row} name");
 
-            var note = attributes.GetProperty("note");
-            if (expected[i].Note is null)
+            var population = attributes.GetProperty("population");
+            population.ValueKind.Should().Be(JsonValueKind.Number, $"{row} population must stay numeric");
+            population.GetInt32().Should().Be(expected[i].Population, $"{row} population");
+
+            // Esri JSON may carry an empty attribute as null or omit it.
+            var notes = attributes.TryGetProperty("notes", out var notesElement) ? notesElement : default;
+            if (expected[i].Notes is null)
             {
-                note.ValueKind.Should().Be(JsonValueKind.Null, $"row {expected[i].Id} note stays null");
+                notes.ValueKind.Should().BeOneOf(
+                    [JsonValueKind.Undefined, JsonValueKind.Null], $"{row} notes stays null");
             }
             else
             {
-                note.GetString().Should().Be(expected[i].Note, $"row {expected[i].Id} note");
+                notes.ValueKind.Should().Be(JsonValueKind.String, $"{row} notes");
+                notes.GetString().Should().Be(expected[i].Notes, $"{row} notes");
             }
         }
     }
@@ -279,7 +316,7 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
         });
 
         using var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_routeLayerId}/calculate", content);
+            $"/rest/services/{ServiceId}/FeatureServer/{LayerId}/calculate", content);
         return new CalculateOutcome(response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 
@@ -335,22 +372,5 @@ public sealed class CalculateFieldExecutionProofTests : IAsyncLifetime
                 ? string.Join(" | ", detailsElement.EnumerateArray().Select(detail => detail.GetString()))
                 : string.Empty;
         details.Should().Contain(expectedReason, because);
-    }
-
-    /// <summary>
-    /// Resolves the FeatureServer route id of the published layer from the service
-    /// document rather than assuming an ordinal, so the proof cannot silently edit
-    /// a different layer.
-    /// </summary>
-    private async Task<int> ResolveRouteLayerIdAsync()
-    {
-        using var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer?f=json");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var layer = document.RootElement.GetProperty("layers").EnumerateArray()
-            .Single(l => l.GetProperty("name").GetString() == "Calculate proof layer");
-        return layer.GetProperty("id").GetInt32();
     }
 }
