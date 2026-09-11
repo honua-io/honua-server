@@ -253,6 +253,28 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
         string.IsNullOrEmpty(client.Config.ServiceURL).Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(-1.0)]
+    public async Task EvaluateAsync_InvalidLatencyReading_IsTreatedAsAbsentNotHealthy(double invalidReading)
+    {
+        // #4617: metric math over an undefined ratio can return NaN/±Inf; the gate treats it as absent.
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleExpression] = 50,
+            [ErrorRateExpression] = 0.01,
+            [LatencyExpression] = invalidReading
+        });
+
+        var decision = await Evaluate(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("an invalid reading must never satisfy the latency threshold");
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("latency");
+    }
+
     private static async Task<DeployTelemetryDecision?> Evaluate(
         FakeCloudWatchMetricClient client,
         string? region = null,

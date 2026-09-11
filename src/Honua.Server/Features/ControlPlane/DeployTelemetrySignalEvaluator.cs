@@ -95,9 +95,38 @@ internal sealed class DeployTelemetrySignalEvaluator(
             };
         }
 
-        if (DateTimeOffset.UtcNow - operation.CreatedAt < policy.WarmupDuration)
+        // Before the candidate receives traffic there is no evidence to evaluate (#4617). Hold only until
+        // the exposure deadline, then fail the rollout without ever activating the candidate: a deploy
+        // that never reaches exposure must neither wait forever nor promote.
+        if (operation.Status == WorkflowOperationStatus.Submitted && operation.Deploy.TrafficExposedAt == null)
         {
-            var remaining = policy.WarmupDuration - (DateTimeOffset.UtcNow - operation.CreatedAt);
+            var sinceCreated = DateTimeOffset.UtcNow - operation.CreatedAt;
+            if (sinceCreated < policy.ExposureDeadline)
+            {
+                var remainingExposure = policy.ExposureDeadline - sinceCreated;
+                return new DeployTelemetryDecision
+                {
+                    WaitForMoreTelemetry = true,
+                    Message = $"Waiting for the candidate revision to receive traffic before evaluating telemetry ({Math.Ceiling(Math.Max(remainingExposure.TotalSeconds, 0))}s remaining before the exposure deadline)."
+                };
+            }
+
+            return new DeployTelemetryDecision
+            {
+                RollbackRecommended = true,
+                Message = $"Automatic rollback requested because the candidate revision was never observed receiving traffic within the {policy.ExposureDeadline.TotalSeconds:0}-second exposure deadline; the rollout is failed without activating the candidate."
+            };
+        }
+
+        // Warmup/bake anchors on when the candidate actually started receiving traffic, not when the
+        // operation record was created (#4617): backend provisioning time between the two can be
+        // unbounded, during which no telemetry evidence is meaningful yet. Falls back to CreatedAt for
+        // operations persisted before TrafficExposedAt was tracked, preserving prior behavior for them.
+        var exposureAnchor = operation.Deploy.TrafficExposedAt ?? operation.CreatedAt;
+
+        if (DateTimeOffset.UtcNow - exposureAnchor < policy.WarmupDuration)
+        {
+            var remaining = policy.WarmupDuration - (DateTimeOffset.UtcNow - exposureAnchor);
             return new DeployTelemetryDecision
             {
                 WaitForMoreTelemetry = true,
@@ -111,7 +140,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
         // promote on its own — it falls through to the metrics gate, which must also pass.
         if (policy.HasHealthProbe)
         {
-            var healthDecision = await EvaluateHealthProbeAsync(operation, policy, cancellationToken).ConfigureAwait(false);
+            var healthDecision = await EvaluateHealthProbeAsync(operation, policy, exposureAnchor, cancellationToken).ConfigureAwait(false);
             if (healthDecision != null)
             {
                 return healthDecision;
@@ -125,11 +154,22 @@ internal sealed class DeployTelemetrySignalEvaluator(
         // debounce); a passing one falls through to the metrics gate, which must also pass.
         if (policy.HasGoldenQuery)
         {
-            var goldenDecision = await EvaluateGoldenQueryAsync(operation, policy, cancellationToken).ConfigureAwait(false);
+            var goldenDecision = await EvaluateGoldenQueryAsync(operation, policy, exposureAnchor, cancellationToken).ConfigureAwait(false);
             if (goldenDecision != null)
             {
                 return goldenDecision;
             }
+        }
+
+        // Explicit probe-only profile (#4617): the readiness and golden-query probes above are the whole
+        // gate, so no metrics connection is consulted. Metric-required profiles never take this path —
+        // Parse rejects a probe-only gate that was not declared health-only.
+        if (policy.IsHealthOnly)
+        {
+            return ApplyBreachDebounce(operation, new DeployTelemetryDecision
+            {
+                Message = "Telemetry gate passed: health-only profile probes are healthy."
+            });
         }
 
         var connection = optionsMonitor.CurrentValue.TelemetryConnections
@@ -137,11 +177,10 @@ internal sealed class DeployTelemetrySignalEvaluator(
 
         if (connection == null)
         {
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = $"Waiting for telemetry confirmation because connection '{policy.ConnectionId}' is not configured."
-            };
+            return BoundEvidenceWait(
+                exposureAnchor,
+                policy,
+                $"Waiting for telemetry confirmation because connection '{policy.ConnectionId}' is not configured.");
         }
 
         var providerKey = connection.Provider?.Trim() ?? string.Empty;
@@ -157,11 +196,10 @@ internal sealed class DeployTelemetrySignalEvaluator(
                 string.IsNullOrWhiteSpace(providerKey) ? "(empty)" : providerKey,
                 string.Join(", ", _providers.Keys.OrderBy(static key => key, StringComparer.Ordinal)));
 
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = $"Waiting for telemetry confirmation because provider '{connection.Provider}' on connection '{connection.ConnectionId}' is not supported for deploy rollback signals."
-            };
+            return BoundEvidenceWait(
+                exposureAnchor,
+                policy,
+                $"Waiting for telemetry confirmation because provider '{connection.Provider}' on connection '{connection.ConnectionId}' is not supported for deploy rollback signals.");
         }
 
         try
@@ -170,7 +208,14 @@ internal sealed class DeployTelemetrySignalEvaluator(
                 .ReadAsync(policy.ToDescriptor(), ToDescriptor(connection), cancellationToken)
                 .ConfigureAwait(false);
             var instantaneous = Evaluate(policy, readings);
-            return ApplyBreachDebounce(operation, instantaneous);
+
+            // Missing/insufficient evidence (absent metric, ambiguous/stale sample rejected by the
+            // provider, sample floor not yet met) is bounded by the evidence grace window rather than
+            // the anti-flap debounce, which exists for noisy instantaneous breaches, not sustained
+            // absence (#4617). Genuine breaches and the healthy path are unaffected.
+            return instantaneous.WaitForMoreTelemetry
+                ? BoundEvidenceWait(exposureAnchor, policy, instantaneous.Message)
+                : ApplyBreachDebounce(operation, instantaneous);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -179,12 +224,43 @@ internal sealed class DeployTelemetrySignalEvaluator(
             // below so a transient backend outage never silently promotes past an unverified
             // rollback gate.
             DeployTelemetrySignalEvaluatorLog.EvaluationFailed(logger, operation.OperationId, ex);
+            return BoundEvidenceWait(
+                exposureAnchor,
+                policy,
+                "Waiting for telemetry confirmation because the telemetry query backend is unavailable.");
+        }
+    }
+
+    /// <summary>
+    /// Bounds a "missing/invalid evidence" wait decision to <see cref="DeployTelemetryPolicy.EvidenceGraceDuration"/>
+    /// past the end of warmup (honua-server#4617): once warmup has elapsed, evidence that never
+    /// arrives (provider outage, unconfigured connection, unsupported provider, a probe with no
+    /// backing service) must not park a deploy in Reconciling forever. Before the deadline this
+    /// returns the same wait decision (message annotated with the remaining grace); at/after the
+    /// deadline it escalates to a rollback recommendation. There is no missing-data success path.
+    /// </summary>
+    private static DeployTelemetryDecision BoundEvidenceWait(
+        DateTimeOffset exposureAnchor,
+        DeployTelemetryPolicy policy,
+        string waitMessage)
+    {
+        var deadline = exposureAnchor + policy.WarmupDuration + policy.EvidenceGraceDuration;
+        var now = DateTimeOffset.UtcNow;
+        if (now < deadline)
+        {
+            var remaining = deadline - now;
             return new DeployTelemetryDecision
             {
                 WaitForMoreTelemetry = true,
-                Message = "Waiting for telemetry confirmation because the telemetry query backend is unavailable."
+                Message = $"{waitMessage} Holding for up to {Math.Ceiling(Math.Max(remaining.TotalSeconds, 0))}s before escalating missing telemetry evidence to a rollback recommendation."
             };
         }
+
+        return new DeployTelemetryDecision
+        {
+            RollbackRecommended = true,
+            Message = $"Automatic rollback requested because telemetry evidence remained unavailable beyond the configured evidence grace window: {waitMessage}"
+        };
     }
 
     /// <summary>
@@ -197,15 +273,15 @@ internal sealed class DeployTelemetrySignalEvaluator(
     private async Task<DeployTelemetryDecision?> EvaluateHealthProbeAsync(
         WorkflowOperationRecord operation,
         DeployTelemetryPolicy policy,
+        DateTimeOffset exposureAnchor,
         CancellationToken cancellationToken)
     {
         if (healthProbe == null)
         {
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = "Waiting for telemetry confirmation because a synthetic health probe is configured but no health-probe service is available."
-            };
+            return BoundEvidenceWait(
+                exposureAnchor,
+                policy,
+                "Waiting for telemetry confirmation because a synthetic health probe is configured but no health-probe service is available.");
         }
 
         DeployHealthProbeResult result;
@@ -226,20 +302,18 @@ internal sealed class DeployTelemetrySignalEvaluator(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             DeployTelemetrySignalEvaluatorLog.EvaluationFailed(logger, operation.OperationId, ex);
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = "Waiting for telemetry confirmation because the synthetic health probe could not be executed."
-            };
+            return BoundEvidenceWait(
+                exposureAnchor,
+                policy,
+                "Waiting for telemetry confirmation because the synthetic health probe could not be executed.");
         }
 
         if (!result.Validated)
         {
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = $"Waiting for telemetry confirmation because the synthetic health probe is misconfigured: {result.Detail}"
-            };
+            return BoundEvidenceWait(
+                exposureAnchor,
+                policy,
+                $"Waiting for telemetry confirmation because the synthetic health probe is misconfigured: {result.Detail}");
         }
 
         if (result.Failures >= policy.HealthProbeFailureThreshold)
@@ -247,7 +321,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
             var breach = new DeployTelemetryDecision
             {
                 RollbackRecommended = true,
-                Message = $"Automatic rollback requested because the synthetic health probe is unhealthy: {result.Failures} of {result.Attempts} checks did not return {policy.HealthProbeExpectedStatusCode} (failure threshold {policy.HealthProbeFailureThreshold})."
+                Message = $"Automatic rollback requested because the synthetic health probe is unhealthy: {result.Failures} of {result.Attempts} checks did not return a healthy {policy.HealthProbeExpectedStatusCode} response (failure threshold {policy.HealthProbeFailureThreshold})."
             };
 
             return ApplyBreachDebounce(operation, breach);
@@ -269,15 +343,15 @@ internal sealed class DeployTelemetrySignalEvaluator(
     private async Task<DeployTelemetryDecision?> EvaluateGoldenQueryAsync(
         WorkflowOperationRecord operation,
         DeployTelemetryPolicy policy,
+        DateTimeOffset exposureAnchor,
         CancellationToken cancellationToken)
     {
         if (healthProbe == null)
         {
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = "Waiting for telemetry confirmation because a golden-query correctness gate is configured but no probe service is available."
-            };
+            return BoundEvidenceWait(
+                exposureAnchor,
+                policy,
+                "Waiting for telemetry confirmation because a golden-query correctness gate is configured but no probe service is available.");
         }
 
         DeployGoldenQueryResult result;
@@ -290,6 +364,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
                         Url = policy.GoldenQueryUrl!,
                         ExpectedSha256 = policy.GoldenQueryExpectedSha256,
                         ExpectedBodyContains = policy.GoldenQueryExpectedContains,
+                        ForbiddenBodyContains = policy.GoldenQueryForbiddenContains,
                         ExpectedStatusCode = policy.GoldenQueryExpectedStatusCode,
                         TimeoutSeconds = policy.GoldenQueryTimeoutSeconds
                     },
@@ -299,20 +374,18 @@ internal sealed class DeployTelemetrySignalEvaluator(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             DeployTelemetrySignalEvaluatorLog.EvaluationFailed(logger, operation.OperationId, ex);
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = "Waiting for telemetry confirmation because the golden-query correctness probe could not be executed."
-            };
+            return BoundEvidenceWait(
+                exposureAnchor,
+                policy,
+                "Waiting for telemetry confirmation because the golden-query correctness probe could not be executed.");
         }
 
         if (!result.Validated)
         {
-            return new DeployTelemetryDecision
-            {
-                WaitForMoreTelemetry = true,
-                Message = $"Waiting for telemetry confirmation because the golden-query correctness gate is misconfigured: {result.Detail}"
-            };
+            return BoundEvidenceWait(
+                exposureAnchor,
+                policy,
+                $"Waiting for telemetry confirmation because the golden-query correctness gate is misconfigured: {result.Detail}");
         }
 
         if (!result.Matched)
@@ -336,6 +409,8 @@ internal sealed class DeployTelemetrySignalEvaluator(
     /// </summary>
     internal static DeployTelemetryDecision Evaluate(DeployTelemetryPolicy policy, DeployTelemetryReadings readings)
     {
+        readings = WithoutInvalidReadings(readings);
+
         if (policy.MinimumSampleCount.HasValue &&
             (!readings.SampleCount.HasValue || readings.SampleCount.Value < policy.MinimumSampleCount.Value))
         {
@@ -350,10 +425,19 @@ internal sealed class DeployTelemetrySignalEvaluator(
 
         var breachMessages = new List<string>();
         var healthySignals = new List<string>();
+        var missingSignals = new List<string>();
 
+        // A configured signal with no usable reading (absent, or rejected by the provider as
+        // non-finite/ambiguous/stale) must never fall through to "healthy" (#4617) — that is exactly
+        // how a real degradation goes undetected when the sample floor is unconfigured. It is treated
+        // as still-waiting evidence instead, which the caller bounds via the evidence grace window.
         if (!string.IsNullOrWhiteSpace(policy.ErrorRateQuery) && policy.ErrorRateThreshold.HasValue)
         {
-            if (readings.ErrorRate.HasValue && readings.ErrorRate.Value > policy.ErrorRateThreshold.Value)
+            if (!readings.ErrorRate.HasValue)
+            {
+                missingSignals.Add("no error-rate signal is available yet");
+            }
+            else if (readings.ErrorRate.Value > policy.ErrorRateThreshold.Value)
             {
                 breachMessages.Add(
                     $"error rate {Format(readings.ErrorRate.Value)} exceeded threshold {Format(policy.ErrorRateThreshold.Value)}");
@@ -366,7 +450,11 @@ internal sealed class DeployTelemetrySignalEvaluator(
 
         if (!string.IsNullOrWhiteSpace(policy.LatencyP95Query) && policy.LatencyP95ThresholdMs.HasValue)
         {
-            if (readings.LatencyP95.HasValue && readings.LatencyP95.Value > policy.LatencyP95ThresholdMs.Value)
+            if (!readings.LatencyP95.HasValue)
+            {
+                missingSignals.Add("no latency signal is available yet");
+            }
+            else if (readings.LatencyP95.Value > policy.LatencyP95ThresholdMs.Value)
             {
                 breachMessages.Add(
                     $"p95 latency {Format(readings.LatencyP95.Value)}ms exceeded threshold {Format(policy.LatencyP95ThresholdMs.Value)}ms");
@@ -386,6 +474,15 @@ internal sealed class DeployTelemetrySignalEvaluator(
             };
         }
 
+        if (missingSignals.Count > 0)
+        {
+            return new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = $"Waiting for telemetry confirmation: {string.Join("; ", missingSignals)}."
+            };
+        }
+
         return new DeployTelemetryDecision
         {
             Message = healthySignals.Count > 0
@@ -393,6 +490,24 @@ internal sealed class DeployTelemetrySignalEvaluator(
                 : "Telemetry gate passed."
         };
     }
+
+    /// <summary>
+    /// Provider-neutral evidence validity guard (#4617): a non-finite (NaN/±Infinity) or negative
+    /// sample count, error rate or latency is not a measurement — metric math over an undefined ratio
+    /// or a counter reset produces them — so it is treated as absent. Absent evidence never satisfies
+    /// a configured requirement and is bounded by the evidence grace window, whichever provider
+    /// produced it.
+    /// </summary>
+    private static DeployTelemetryReadings WithoutInvalidReadings(DeployTelemetryReadings readings)
+        => readings with
+        {
+            SampleCount = UsableReading(readings.SampleCount),
+            ErrorRate = UsableReading(readings.ErrorRate),
+            LatencyP95 = UsableReading(readings.LatencyP95)
+        };
+
+    private static double? UsableReading(double? value)
+        => value is { } reading && double.IsFinite(reading) && reading >= 0 ? reading : null;
 
     /// <summary>
     /// Reserved deploy-spec parameter key that an operator sets to require N consecutive breaching
@@ -577,7 +692,7 @@ internal sealed class PrometheusDeployTelemetryProviderEvaluator(
 
         var sampleCount = string.IsNullOrWhiteSpace(policy.MinimumSampleQuery)
             ? (double?)null
-            : await ExecutePrometheusQueryAsync(validatedConnection, policy.MinimumSampleQuery, cancellationToken).ConfigureAwait(false);
+            : await ExecutePrometheusQueryAsync(validatedConnection, policy.MinimumSampleQuery, policy.MaximumEvidenceStaleness, cancellationToken).ConfigureAwait(false);
 
         // Short-circuit when the sample-count gate already fails; mirrors the original
         // evaluator that did not query error-rate/latency until the minimum sample was met.
@@ -589,13 +704,13 @@ internal sealed class PrometheusDeployTelemetryProviderEvaluator(
         double? errorRate = null;
         if (!string.IsNullOrWhiteSpace(policy.ErrorRateQuery) && policy.ErrorRateThreshold.HasValue)
         {
-            errorRate = await ExecutePrometheusQueryAsync(validatedConnection, policy.ErrorRateQuery, cancellationToken).ConfigureAwait(false);
+            errorRate = await ExecutePrometheusQueryAsync(validatedConnection, policy.ErrorRateQuery, policy.MaximumEvidenceStaleness, cancellationToken).ConfigureAwait(false);
         }
 
         double? latencyP95 = null;
         if (!string.IsNullOrWhiteSpace(policy.LatencyP95Query) && policy.LatencyP95ThresholdMs.HasValue)
         {
-            latencyP95 = await ExecutePrometheusQueryAsync(validatedConnection, policy.LatencyP95Query, cancellationToken).ConfigureAwait(false);
+            latencyP95 = await ExecutePrometheusQueryAsync(validatedConnection, policy.LatencyP95Query, policy.MaximumEvidenceStaleness, cancellationToken).ConfigureAwait(false);
         }
 
         return new DeployTelemetryReadings
@@ -651,6 +766,7 @@ internal sealed class PrometheusDeployTelemetryProviderEvaluator(
     private async Task<double?> ExecutePrometheusQueryAsync(
         ValidatedTelemetryConnection connection,
         string query,
+        TimeSpan? maximumStaleness,
         CancellationToken cancellationToken)
     {
         var requestUri = new Uri(connection.BaseUri, $"{connection.QueryPath}?query={Uri.EscapeDataString(query)}");
@@ -684,17 +800,28 @@ internal sealed class PrometheusDeployTelemetryProviderEvaluator(
 
         return resultType switch
         {
-            "scalar" => ParsePrometheusValue(data.GetProperty("result")),
-            "vector" => ParsePrometheusVector(data.GetProperty("result")),
+            "scalar" => ParsePrometheusValue(data.GetProperty("result"), maximumStaleness),
+            "vector" => ParsePrometheusVector(data.GetProperty("result"), maximumStaleness),
             _ => throw new InvalidOperationException($"Unsupported Prometheus result type '{resultType}'.")
         };
     }
 
-    private static double? ParsePrometheusVector(JsonElement result)
+    private static double? ParsePrometheusVector(JsonElement result, TimeSpan? maximumStaleness)
     {
         if (result.ValueKind != JsonValueKind.Array || result.GetArrayLength() == 0)
         {
             return null;
+        }
+
+        // A well-formed query (sum(), avg(), a single selector match, …) resolves to exactly one
+        // series. More than one is an ambiguous-cardinality configuration error (#4617): silently
+        // taking result[0] can promote or hold a deploy on an arbitrary, unintended series. Surface
+        // it as a failure so the caller's bounded-grace handling applies instead of a silent guess.
+        if (result.GetArrayLength() > 1)
+        {
+            throw new InvalidOperationException(
+                $"Telemetry query resolved to {result.GetArrayLength()} series; expected exactly one. " +
+                "Aggregate the query (for example with sum()/avg()) or narrow the selector.");
         }
 
         var sample = result[0];
@@ -703,20 +830,65 @@ internal sealed class PrometheusDeployTelemetryProviderEvaluator(
             return null;
         }
 
-        return ParsePrometheusValue(value);
+        return ParsePrometheusValue(value, maximumStaleness);
     }
 
-    private static double? ParsePrometheusValue(JsonElement value)
+    private static double? ParsePrometheusValue(JsonElement value, TimeSpan? maximumStaleness)
     {
         if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() < 2)
         {
             return null;
         }
 
+        if (maximumStaleness.HasValue)
+        {
+            var sampleUnixSeconds = value[0].ValueKind switch
+            {
+                JsonValueKind.Number => value[0].GetDouble(),
+                JsonValueKind.String when double.TryParse(
+                    value[0].GetString(),
+                    NumberStyles.Float | NumberStyles.AllowThousands,
+                    CultureInfo.InvariantCulture,
+                    out var parsedTimestamp) => parsedTimestamp,
+                _ => (double?)null
+            };
+
+            // An unparseable or missing observation timestamp is exactly the "ignores the
+            // observation timestamp" gap this bound closes (#4617): treat it as absent rather than
+            // assume freshness.
+            if (!sampleUnixSeconds.HasValue)
+            {
+                return null;
+            }
+
+            // Skew in either direction beyond the bound (an old cached answer, or a timestamp from the
+            // future) means the sample cannot be trusted to describe the candidate now.
+            var sampleUnixMilliseconds = sampleUnixSeconds.Value * 1000;
+            if (!double.IsFinite(sampleUnixMilliseconds) ||
+                sampleUnixMilliseconds < DateTimeOffset.MinValue.ToUnixTimeMilliseconds() ||
+                sampleUnixMilliseconds > DateTimeOffset.MaxValue.ToUnixTimeMilliseconds())
+            {
+                return null;
+            }
+
+            var observedAt = DateTimeOffset.FromUnixTimeMilliseconds((long)sampleUnixMilliseconds);
+            if ((DateTimeOffset.UtcNow - observedAt).Duration() > maximumStaleness.Value)
+            {
+                return null;
+            }
+        }
+
         var raw = value[1].GetString();
-        return double.TryParse(raw, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : null;
+        if (!double.TryParse(raw, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return null;
+        }
+
+        // Prometheus legitimately returns "NaN"/"+Inf"/"-Inf" for undefined expressions (for
+        // example a 0/0 rate). Treating a non-finite value as a real reading can silently pass an
+        // ill-defined signal through the threshold comparison (#4617); absent is the correct and
+        // already-handled semantics.
+        return double.IsFinite(parsed) ? parsed : null;
     }
 
     private sealed record ValidatedTelemetryConnection(

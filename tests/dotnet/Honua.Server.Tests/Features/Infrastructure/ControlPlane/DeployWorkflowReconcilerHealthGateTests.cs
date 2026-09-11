@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Net;
+using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -124,6 +126,210 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
         updated!.Status.Should().NotBe(WorkflowOperationStatus.RollbackRequested);
     }
 
+    // ---- traffic exposure, bounded evidence and controller restart (#4617) ----
+
+    private static readonly IReadOnlyDictionary<string, string> HealthOnlyParameters =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["telemetry.policy"] = "health-only",
+            ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+        };
+
+    [Fact]
+    public async Task Reconcile_CandidateNotYetExposed_HoldsWithoutStampingExposureOrActivating()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(observeStatus: WorkflowOperationStatus.Submitted, promotionRecommended: true);
+        var operation = CreateOperationWith(HealthOnlyParameters, DateTimeOffset.UtcNow.AddMinutes(-10), WorkflowOperationStatus.Submitted);
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(
+            store,
+            backend,
+            CreateRealEvaluator(new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 })));
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var updated = await store.GetAsync(operation.OperationId);
+
+        updated!.Deploy!.TrafficExposedAt.Should().BeNull("the backend has not reported the candidate serving traffic");
+        updated.CurrentPhase.Should().Contain("receive traffic");
+        backend.PromoteCalls.Should().Be(0);
+        backend.RollbackCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reconcile_DelayedExposure_AnchorsWarmupOnPersistedExposure_AcrossControllerRestart()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(observeStatus: WorkflowOperationStatus.Submitted, promotionRecommended: true);
+        // Created 20 minutes ago — inside the 30-minute exposure deadline, but long enough that a
+        // CreatedAt-anchored 2-minute warmup would already have elapsed.
+        var operation = CreateOperationWith(HealthOnlyParameters, DateTimeOffset.UtcNow.AddMinutes(-20), WorkflowOperationStatus.Submitted);
+        await store.TryCreateAsync(operation);
+        var healthy = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
+
+        var firstController = CreateReconciler(store, backend, CreateRealEvaluator(healthy));
+        await firstController.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var held = await store.GetAsync(operation.OperationId);
+        held!.Deploy!.TrafficExposedAt.Should().BeNull();
+        held.Status.Should().Be(WorkflowOperationStatus.Submitted, "a pre-exposure hold must not look like a serving candidate");
+
+        // The backend now reports the candidate serving traffic.
+        backend.ObserveStatus = WorkflowOperationStatus.Reconciling;
+        var beforeExposure = DateTimeOffset.UtcNow;
+        await firstController.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var exposed = await store.GetAsync(operation.OperationId);
+        var exposedAt = exposed!.Deploy!.TrafficExposedAt;
+        exposedAt.Should().NotBeNull();
+        exposedAt!.Value.Should().BeOnOrAfter(beforeExposure);
+        exposed.CurrentPhase.Should().Contain("warmup", "warmup starts at exposure, not at the hour-old creation time");
+        backend.PromoteCalls.Should().Be(0);
+
+        // Controller restart: a fresh reconciler and evaluator resume from the persisted record.
+        var restartedController = CreateReconciler(store, backend, CreateRealEvaluator(healthy));
+        await restartedController.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var resumed = await store.GetAsync(operation.OperationId);
+        resumed!.Deploy!.TrafficExposedAt.Should().Be(exposedAt, "the exposure stamp is persisted and never re-stamped");
+        resumed.CurrentPhase.Should().Contain("warmup");
+        backend.PromoteCalls.Should().Be(0);
+
+        // Once the persisted exposure is older than warmup, the restarted controller promotes on it —
+        // through the explicit health-only profile, with no metrics connection configured at all.
+        await store.SetAsync(resumed with { Deploy = resumed.Deploy with { TrafficExposedAt = DateTimeOffset.UtcNow.AddMinutes(-3) } });
+        await restartedController.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.PromoteCalls.Should().Be(1);
+        backend.RollbackCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reconcile_NeverExposedPastDeadline_FailsWithoutActivation()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(observeStatus: WorkflowOperationStatus.Submitted, promotionRecommended: true);
+        var operation = CreateOperationWith(HealthOnlyParameters, DateTimeOffset.UtcNow.AddHours(-2), WorkflowOperationStatus.Submitted);
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(
+            store,
+            backend,
+            CreateRealEvaluator(new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 })));
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var updated = await store.GetAsync(operation.OperationId);
+
+        backend.PromoteCalls.Should().Be(0, "a candidate that never received traffic must never be activated");
+        backend.RollbackCalls.Should().Be(1, "the stalled rollout is aborted through the backend rather than left waiting");
+        updated!.Status.Should().BeOneOf(WorkflowOperationStatus.RollbackRequested, WorkflowOperationStatus.RolledBack);
+        updated.CurrentPhase.Should().Contain("never observed receiving traffic");
+        updated.Deploy!.TrafficExposedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Reconcile_MetricsProviderOutage_HoldsWithinGrace_ThenRollsBackWithoutEverPromoting()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(observeStatus: WorkflowOperationStatus.Reconciling, promotionRecommended: true);
+        var operation = CreateOperationWith(
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.evidence_grace_seconds"] = "120"
+            },
+            DateTimeOffset.UtcNow.AddHours(-1),
+            WorkflowOperationStatus.Reconciling,
+            trafficExposedAt: DateTimeOffset.UtcNow.AddMinutes(-3));
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, CreateMetricsEvaluator(HttpStatusCode.ServiceUnavailable));
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var holding = await store.GetAsync(operation.OperationId);
+
+        holding!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        holding.CurrentPhase.Should().Contain("unavailable");
+        backend.PromoteCalls.Should().Be(0, "the backend's promotion recommendation cannot pass an unverifiable metric gate");
+        backend.RollbackCalls.Should().Be(0, "inside the grace window an outage only holds");
+
+        // The outage outlasts warmup + grace.
+        await store.SetAsync(holding with { Deploy = holding.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow.AddMinutes(-5) } });
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var escalated = await store.GetAsync(operation.OperationId);
+
+        backend.PromoteCalls.Should().Be(0);
+        backend.RollbackCalls.Should().Be(1);
+        escalated!.Status.Should().BeOneOf(WorkflowOperationStatus.RollbackRequested, WorkflowOperationStatus.RolledBack);
+        escalated.CurrentPhase.Should().Contain("evidence remained unavailable");
+    }
+
+    [Fact]
+    public async Task Reconcile_HealthPromotionGateWithMetricsPolicy_DoesNotDegradeToHealthOnly()
+    {
+        // The operator chose the health promotion gate AND a metrics policy whose connection is not
+        // configured. The backend's own health recommendation must not promote past the unverifiable
+        // metric gate; the missing evidence holds, then escalates.
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(observeStatus: WorkflowOperationStatus.Reconciling, promotionRecommended: true);
+        var operation = CreateOperationWith(
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [DeployPromotionPolicy.PromotionGateParameterKey] = "health",
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+                ["telemetry.evidence_grace_seconds"] = "60"
+            },
+            DateTimeOffset.UtcNow.AddHours(-1),
+            WorkflowOperationStatus.Reconciling,
+            trafficExposedAt: DateTimeOffset.UtcNow.AddMinutes(-2.5));
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(
+            store,
+            backend,
+            CreateRealEvaluator(new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 })));
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var holding = await store.GetAsync(operation.OperationId);
+
+        backend.PromoteCalls.Should().Be(0);
+        holding!.CurrentPhase.Should().Contain("not configured");
+
+        await store.SetAsync(holding with { Deploy = holding.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow.AddMinutes(-10) } });
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+
+        backend.PromoteCalls.Should().Be(0);
+        backend.RollbackCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Reconcile_GoldenQueryReturnsHttp200ErrorEnvelope_BlocksPromotionAndRollsBack()
+    {
+        // Real HTTP probe: readiness answers 200 "Healthy", but the GIS golden query answers 200 with a
+        // GeoServices error envelope. Status-only checks would promote this release.
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(observeStatus: WorkflowOperationStatus.Reconciling, promotionRecommended: true);
+        var parameters = new Dictionary<string, string>(HealthOnlyParameters, StringComparer.Ordinal)
+        {
+            ["telemetry.golden_query.url"] = "https://example.com/rest/services/parcels/FeatureServer/0/query",
+            ["telemetry.golden_query.expected_contains"] = "\"features\""
+        };
+        var operation = CreateOperationWith(
+            parameters,
+            DateTimeOffset.UtcNow.AddHours(-1),
+            WorkflowOperationStatus.Reconciling,
+            trafficExposedAt: DateTimeOffset.UtcNow.AddMinutes(-5));
+        await store.TryCreateAsync(operation);
+        var handler = new RoutingHandler(request => request.RequestUri!.AbsolutePath.StartsWith("/healthz", StringComparison.Ordinal)
+            ? Respond(HttpStatusCode.OK, "Healthy")
+            : Respond(HttpStatusCode.OK, "{\"error\":{\"code\":400,\"message\":\"Unable to complete operation.\",\"details\":[\"\\\"features\\\" query failed\"]}}"));
+        var probe = new HttpDeployHealthProbe(new StubHttpClientFactory(new Honua.TestKit.CallerOwnedHttpClient(handler)));
+        var reconciler = CreateReconciler(store, backend, CreateRealEvaluator(probe));
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var updated = await store.GetAsync(operation.OperationId);
+
+        backend.PromoteCalls.Should().Be(0, "an HTTP-200 error envelope is a wrong result, not a healthy release");
+        backend.RollbackCalls.Should().Be(1);
+        updated!.CurrentPhase.Should().Contain("error envelope");
+    }
+
     // ---- helpers ---------------------------------------------------------
 
     private static DeployWorkflowReconciler CreateReconciler(
@@ -143,6 +349,56 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
             [],
             NullLogger<DeployTelemetrySignalEvaluator>.Instance,
             probe);
+
+    private static DeployTelemetrySignalEvaluator CreateMetricsEvaluator(HttpStatusCode prometheusStatus)
+    {
+        var handler = new RoutingHandler(_ => Respond(prometheusStatus, "{\"status\":\"error\",\"error\":\"upstream unavailable\"}"));
+        var provider = new PrometheusDeployTelemetryProviderEvaluator(
+            new StubHttpClientFactory(new Honua.TestKit.CallerOwnedHttpClient(handler)));
+
+        return new DeployTelemetrySignalEvaluator(
+            new OptionsMonitorStub(new ControlPlaneOptions
+            {
+                TelemetryConnections =
+                [
+                    new DeployTelemetryConnectionOptions
+                    {
+                        ConnectionId = "prod-prom",
+                        Provider = "prometheus",
+                        BaseUrl = "https://example.com",
+                        TimeoutSeconds = 2
+                    }
+                ]
+            }),
+            [provider],
+            NullLogger<DeployTelemetrySignalEvaluator>.Instance);
+    }
+
+    private static HttpResponseMessage Respond(HttpStatusCode status, string body)
+        => new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+
+    /// <summary>
+    /// Builds an operation carrying exactly <paramref name="parameters"/> (no default telemetry keys).
+    /// </summary>
+    private static WorkflowOperationRecord CreateOperationWith(
+        IReadOnlyDictionary<string, string> parameters,
+        DateTimeOffset createdAt,
+        WorkflowOperationStatus status,
+        DateTimeOffset? trafficExposedAt = null)
+    {
+        var template = CreateOperation();
+        return template with
+        {
+            Status = status,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
+            Deploy = template.Deploy! with
+            {
+                Parameters = new Dictionary<string, string>(parameters, StringComparer.Ordinal),
+                TrafficExposedAt = trafficExposedAt
+            }
+        };
+    }
 
     private static WorkflowOperationRecord CreateOperation(
         IReadOnlyDictionary<string, string>? extraParameters = null)
@@ -219,10 +475,25 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
         public IDisposable? OnChange(Action<ControlPlaneOptions, string?> listener) => null;
     }
 
+    private sealed class StubHttpClientFactory(HttpClient client) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => client;
+    }
+
+    private sealed class RoutingHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(handler(request));
+    }
+
     private sealed class RecordingDeployBackend(
         WorkflowOperationStatus observeStatus,
         bool promotionRecommended = false) : IDeployBackend
     {
+        public WorkflowOperationStatus ObserveStatus { get; set; } = observeStatus;
+
+        public bool PromotionRecommended { get; set; } = promotionRecommended;
+
         public int RollbackCalls { get; private set; }
 
         public int PromoteCalls { get; private set; }
@@ -253,11 +524,11 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
         public Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
             => Task.FromResult(new DeployObservation
             {
-                Status = observeStatus,
+                Status = ObserveStatus,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = operation.Deploy?.DesiredRevision,
                 Message = "Observed",
-                PromotionRecommended = promotionRecommended
+                PromotionRecommended = PromotionRecommended
             });
 
         public Task<DeployObservation> PromoteAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)

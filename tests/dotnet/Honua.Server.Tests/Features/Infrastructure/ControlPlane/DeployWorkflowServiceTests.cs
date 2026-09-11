@@ -6,6 +6,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -576,14 +577,14 @@ public sealed class DeployWorkflowServiceTests
             });
         await store.TryCreateAsync(operation);
 
-        var evaluator = CreateTelemetryEvaluator("""
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"25"]}]}}
+        var evaluator = CreateTelemetryEvaluator($$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"25"]}]}}
             """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"0.01"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"0.01"]}]}}
             """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"150"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"150"]}]}}
             """);
         var reconciler = CreateReconciler(store, backend, evaluator);
 
@@ -616,14 +617,14 @@ public sealed class DeployWorkflowServiceTests
             });
         await store.TryCreateAsync(operation);
 
-        var evaluator = CreateTelemetryEvaluator("""
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"25"]}]}}
+        var evaluator = CreateTelemetryEvaluator($$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"25"]}]}}
             """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"0.25"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"0.25"]}]}}
             """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"150"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"150"]}]}}
             """);
         var reconciler = CreateReconciler(store, backend, evaluator);
 
@@ -653,12 +654,17 @@ public sealed class DeployWorkflowServiceTests
             });
         await store.TryCreateAsync(operation);
 
+        // The Kubernetes preset also contributes a latency signal; #4617 requires every configured
+        // signal to carry evidence, so the fixture answers all three queries (sample, error, latency).
         var evaluator = CreateTelemetryEvaluator(
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"25"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"25"]}]}}
             """,
-            """
-            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"0.01"]}]}}
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"0.01"]}]}}
+            """,
+            $$$"""
+            {"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[{{{NowUnixSeconds}}},"150"]}]}}
             """);
         var reconciler = CreateReconciler(store, backend, evaluator);
 
@@ -833,6 +839,142 @@ public sealed class DeployWorkflowServiceTests
     }
 
     [Fact]
+    public async Task PlanAsync_WithInvalidTelemetryPolicy_BlocksSubmissionAndNamesEveryProblem()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new ImmediateDeployBackend();
+        var service = CreateService(store, backend);
+
+        var plan = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.error_rate.threshold"] = "NaN",
+                ["telemetry.max_stalenes_seconds"] = "60"
+            });
+
+        plan.Should().NotBeNull();
+        plan!.Plan.IsReadyToSubmit.Should().BeFalse();
+        plan.Plan.BlockingReasons.Should().ContainSingle(reason => reason.StartsWith("Telemetry gate configuration rejected", StringComparison.Ordinal))
+            .Which.Should().Contain("telemetry.error_rate.threshold must be")
+            .And.Contain("'telemetry.max_stalenes_seconds' is not a recognized deploy telemetry parameter");
+        backend.StartCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CreateAsync_SubmitImmediately_WithInvalidTelemetryPolicy_NeverMutatesBackend()
+    {
+        // Validation happens before mutation (#4617): the operation is recorded as Planned with the
+        // blocking reason, the backend is never started, and a later submit is refused.
+        var store = new TestWorkflowOperationStore();
+        var backend = new ImmediateDeployBackend();
+        var service = CreateService(store, backend);
+
+        var operation = await service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Ship it",
+            "gate-typo",
+            "corr-gate",
+            OperationPriority.Normal,
+            submitImmediately: true,
+            parameterOverrides: new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only"
+            });
+
+        operation.Should().NotBeNull();
+        operation!.Status.Should().Be(WorkflowOperationStatus.Planned);
+        operation.BlockingReasons.Should().Contain(reason => reason.Contains("requires telemetry.healthz.url or telemetry.golden_query.url", StringComparison.Ordinal));
+        backend.StartCount.Should().Be(0, "an invalid telemetry gate must block submission before the backend is mutated");
+
+        var submit = () => service.SubmitAsync(operation.OperationId, "alice", "retry");
+        await submit.Should().ThrowAsync<ResourceConflictException>();
+        backend.StartCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PlanAsync_WithUnconfiguredTelemetryConnection_BlocksWhenConnectionsAreKnown()
+    {
+        var backend = new ImmediateDeployBackend();
+        var service = new DeployWorkflowService(
+            new TestDeployTargetRegistry(),
+            [new TestWorkflowOperationStore()],
+            [backend],
+            new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance,
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                TelemetryConnections =
+                [
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "prometheus", BaseUrl = "https://example.com" }
+                ]
+            }));
+
+        var unknown = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string> { ["telemetry.connection"] = "staging-prom" });
+        var known = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string> { ["telemetry.connection"] = "prod-prom" });
+
+        unknown!.Plan.IsReadyToSubmit.Should().BeFalse();
+        unknown.Plan.BlockingReasons.Should().Contain(reason => reason.Contains("connection 'staging-prom' is not configured", StringComparison.Ordinal));
+        known!.Plan.IsReadyToSubmit.Should().BeTrue();
+        known.Plan.BlockingReasons.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PlanAsync_WithHealthOnlyProfile_IsReadyWithoutAnyMetricsConnection()
+    {
+        var backend = new ImmediateDeployBackend();
+        var service = new DeployWorkflowService(
+            new TestDeployTargetRegistry(),
+            [new TestWorkflowOperationStore()],
+            [backend],
+            new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance,
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions()));
+
+        var plan = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+            });
+
+        plan!.Plan.IsReadyToSubmit.Should().BeTrue("the explicit health-only profile needs no metrics connection");
+        plan.Plan.BlockingReasons.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PlanAsync_WithUnrecognizedPromotionGate_BlocksInsteadOfFallingBack()
+    {
+        var service = CreateService(new TestWorkflowOperationStore(), new ImmediateDeployBackend());
+
+        var plan = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string> { [DeployPromotionPolicy.PromotionGateParameterKey] = "heath" });
+
+        plan!.Plan.IsReadyToSubmit.Should().BeFalse();
+        plan.Plan.BlockingReasons.Should().Contain(reason => reason.Contains("'heath' is not recognized", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Reconciler_WithLongRunningObservation_RenewsLeaseUntilObservationCompletes()
     {
         var store = new TestWorkflowOperationStore();
@@ -981,6 +1123,10 @@ public sealed class DeployWorkflowServiceTests
             }
         };
     }
+
+    // Prometheus samples are stamped "now" so the gate's default 5-minute freshness bound (#4617)
+    // accepts them as current evidence.
+    private static string NowUnixSeconds => DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private static StubDeployTelemetrySignalEvaluator AlwaysHealthyTelemetry()
         => new(new DeployTelemetryDecision { Message = "Telemetry gate passed: error-rate signal is within threshold." });

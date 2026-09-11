@@ -79,6 +79,13 @@ public sealed record DeployTelemetryPolicyDescriptor
     /// preset). Cloud providers without a preset query dialect require this.
     /// </summary>
     public bool HasExplicitQueryOverride { get; init; }
+
+    /// <summary>
+    /// Optional maximum age for a queried sample (honua-server#4617). Providers that expose a
+    /// per-sample observation timestamp (for example Prometheus) should treat a sample older than
+    /// this bound as absent rather than a usable reading. <see langword="null"/> disables the check.
+    /// </summary>
+    public TimeSpan? MaximumEvidenceStaleness { get; init; }
 }
 
 /// <summary>

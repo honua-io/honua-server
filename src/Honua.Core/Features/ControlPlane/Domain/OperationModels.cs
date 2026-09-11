@@ -531,6 +531,17 @@ public sealed record DeployOperationSpec
     /// deploy uses the default single-step bake-then-promote behavior.
     /// </summary>
     public CanaryRampSpec? CanaryRamp { get; init; }
+
+    /// <summary>
+    /// Timestamp the candidate revision first began receiving live traffic, stamped once by the
+    /// reconciler the first time the backend reports <see cref="WorkflowOperationStatus.Reconciling"/>
+    /// (honua-server#4617). Telemetry warmup/bake windows anchor on this rather than
+    /// <see cref="WorkflowOperationRecord.CreatedAt"/>, which can precede actual traffic exposure by an
+    /// unbounded amount of backend provisioning time. Null while the operation is still provisioning
+    /// (including for operations persisted before this field existed), in which case evaluators fall
+    /// back to <c>CreatedAt</c> so existing in-flight deploys keep their prior behavior.
+    /// </summary>
+    public DateTimeOffset? TrafficExposedAt { get; init; }
 }
 
 /// <summary>

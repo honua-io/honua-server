@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.ControlPlane;
@@ -66,6 +67,9 @@ internal sealed record DeployGoldenQueryRequest
     /// <summary>A substring the response body must contain, when substring matching is configured.</summary>
     public string? ExpectedBodyContains { get; init; }
 
+    /// <summary>A wrong-result marker the response body must not contain (honua-server#4617).</summary>
+    public string? ForbiddenBodyContains { get; init; }
+
     /// <summary>HTTP status code that indicates a servable response (the body is only checked on this status).</summary>
     public int ExpectedStatusCode { get; init; } = 200;
 
@@ -117,6 +121,7 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
 {
     private const int MinimumSamples = 1;
     private const int MaximumSamples = 20;
+    private const int ReadinessBodyInspectionLimit = 65_536;
 
     public async Task<DeployHealthProbeResult> ProbeAsync(
         DeployHealthProbeRequest request,
@@ -157,6 +162,19 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
                 if ((int)response.StatusCode != request.ExpectedStatusCode)
                 {
                     failures++;
+                    continue;
+                }
+
+                // A readiness endpoint that answers the expected 2xx with an error envelope or an
+                // "Unhealthy" report is not healthy (#4617). An oversized body cannot be inspected
+                // and is treated as a failed check rather than assumed healthy.
+                if (DeployProbeBodyInspector.IsSuccessStatus(request.ExpectedStatusCode))
+                {
+                    var body = await ReadBoundedBodyAsync(response, ReadinessBodyInspectionLimit, timeoutCts.Token).ConfigureAwait(false);
+                    if (body is null || DeployProbeBodyInspector.DescribeErrorEnvelope(body) != null)
+                    {
+                        failures++;
+                    }
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -176,7 +194,7 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
         {
             Attempts = samples,
             Failures = failures,
-            Detail = $"{failures} of {samples} synthetic health checks did not return {request.ExpectedStatusCode}."
+            Detail = $"{failures} of {samples} synthetic health checks did not return a healthy {request.ExpectedStatusCode} response."
         };
     }
 
@@ -230,6 +248,18 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
                 };
             }
 
+            // A 2xx that carries an error envelope (GeoServices {"error":...}, OGC exception report,
+            // problem details) is a failed query, not a result, whatever else it contains (#4617).
+            if (DeployProbeBodyInspector.IsSuccessStatus(request.ExpectedStatusCode) &&
+                DeployProbeBodyInspector.DescribeErrorEnvelope(body) is { } envelope)
+            {
+                return new DeployGoldenQueryResult
+                {
+                    Matched = false,
+                    Detail = $"Golden-query correctness gate failed: the endpoint returned HTTP {(int)response.StatusCode} with {envelope} instead of a result."
+                };
+            }
+
             var mismatches = new List<string>();
 
             if (!string.IsNullOrWhiteSpace(request.ExpectedSha256))
@@ -241,13 +271,17 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(request.ExpectedBodyContains))
+            var text = Encoding.UTF8.GetString(body);
+            if (!string.IsNullOrWhiteSpace(request.ExpectedBodyContains) &&
+                !text.Contains(request.ExpectedBodyContains, StringComparison.Ordinal))
             {
-                var text = Encoding.UTF8.GetString(body);
-                if (!text.Contains(request.ExpectedBodyContains, StringComparison.Ordinal))
-                {
-                    mismatches.Add("response body did not contain the required golden token");
-                }
+                mismatches.Add("response body did not contain the required golden token");
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.ForbiddenBodyContains) &&
+                text.Contains(request.ForbiddenBodyContains, StringComparison.Ordinal))
+            {
+                mismatches.Add("response body contained the configured wrong-result marker");
             }
 
             return mismatches.Count == 0
@@ -304,5 +338,81 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
         }
 
         return buffer.ToArray();
+    }
+}
+
+/// <summary>
+/// Recognises HTTP-success response bodies that are really failures (honua-server#4617): services
+/// commonly answer 200 with an error envelope, so a status-only check would score them healthy.
+/// </summary>
+internal static class DeployProbeBodyInspector
+{
+    public static bool IsSuccessStatus(int statusCode) => statusCode is >= 200 and <= 299;
+
+    /// <summary>
+    /// Returns a description of the error envelope carried by <paramref name="body"/>, or
+    /// <see langword="null"/> when the body is not a recognised error shape.
+    /// </summary>
+    public static string? DescribeErrorEnvelope(byte[] body)
+    {
+        var text = Encoding.UTF8.GetString(body).TrimStart('\uFEFF').Trim();
+        if (text.Length == 0)
+        {
+            return null;
+        }
+
+        if (text[0] == '{')
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(text);
+                var root = document.RootElement;
+                if (root.TryGetProperty("error", out var error) &&
+                    (error.ValueKind == JsonValueKind.Object ||
+                     (error.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(error.GetString()))))
+                {
+                    return "a JSON error envelope (top-level \"error\")";
+                }
+
+                if (root.TryGetProperty("status", out var status))
+                {
+                    if (status.ValueKind == JsonValueKind.String &&
+                        string.Equals(status.GetString(), "Unhealthy", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return "an Unhealthy health report";
+                    }
+
+                    if (status.ValueKind == JsonValueKind.Number &&
+                        status.TryGetInt32(out var problemStatus) &&
+                        problemStatus >= 400 &&
+                        root.TryGetProperty("title", out _))
+                    {
+                        return "a problem-details error envelope";
+                    }
+                }
+
+                if (root.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String &&
+                    root.TryGetProperty("description", out var description) && description.ValueKind == JsonValueKind.String)
+                {
+                    return "an OGC API exception";
+                }
+            }
+            catch (JsonException)
+            {
+                // Not JSON after all: leave the verdict to the operator-declared expectations.
+                return null;
+            }
+
+            return null;
+        }
+
+        if (text.Contains("ExceptionReport", StringComparison.Ordinal))
+        {
+            return "an OGC exception report";
+        }
+
+        return string.Equals(text, "Unhealthy", StringComparison.OrdinalIgnoreCase)
+            ? "an Unhealthy health report"
+            : null;
     }
 }

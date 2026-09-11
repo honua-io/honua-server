@@ -879,6 +879,197 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         capturedQueries.Should().BeEmpty();
     }
 
+    // ---- missing/invalid evidence never satisfies a health requirement (#4617) --------------------
+
+    [Fact]
+    public void Evaluate_AbsentErrorRate_WithNoSampleFloorConfigured_WaitsRatherThanPassing()
+    {
+        // The named defect: with no sample-count floor configured, an absent error-rate reading must
+        // not fall through to "healthy". Only latency is populated; error-rate is unavailable.
+        var policy = new DeployTelemetryPolicy
+        {
+            ConnectionId = "prod-prom",
+            ErrorRateQuery = "errors / requests",
+            ErrorRateThreshold = 0.05,
+            LatencyP95Query = "p95",
+            LatencyP95ThresholdMs = 2000
+        };
+        var readings = new DeployTelemetryReadings { LatencyP95 = 120 };
+
+        var decision = DeployTelemetrySignalEvaluator.Evaluate(policy, readings);
+
+        decision.WaitForMoreTelemetry.Should().BeTrue("absent evidence must never silently satisfy a configured health requirement");
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("error-rate");
+    }
+
+    [Fact]
+    public void Evaluate_AbsentLatency_WithNoSampleFloorConfigured_WaitsRatherThanPassing()
+    {
+        var policy = new DeployTelemetryPolicy
+        {
+            ConnectionId = "prod-prom",
+            ErrorRateQuery = "errors / requests",
+            ErrorRateThreshold = 0.05,
+            LatencyP95Query = "p95",
+            LatencyP95ThresholdMs = 2000
+        };
+        var readings = new DeployTelemetryReadings { ErrorRate = 0.01 };
+
+        var decision = DeployTelemetrySignalEvaluator.Evaluate(policy, readings);
+
+        decision.WaitForMoreTelemetry.Should().BeTrue("absent evidence must never silently satisfy a configured health requirement");
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("latency");
+    }
+
+    [Fact]
+    public void Evaluate_ErrorRateBreach_WinsOverAMissingLatencySignal()
+    {
+        // A confirmed breach must not be masked by a different signal simply being unavailable.
+        var policy = CreateThresholdPolicy(errorThreshold: 0.05, latencyThreshold: 2000);
+        var readings = new DeployTelemetryReadings { SampleCount = 100, ErrorRate = 0.5 };
+
+        var decision = DeployTelemetrySignalEvaluator.Evaluate(policy, readings);
+
+        decision.RollbackRecommended.Should().BeTrue();
+        decision.Message.Should().Contain("error rate");
+    }
+
+    // ---- bounded evidence-missing grace (#4617) ---------------------------
+
+    [Fact]
+    public async Task EvaluateAsync_MissingConnection_WithinEvidenceGrace_Waits()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "no-such-connection",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("not configured");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_MissingConnection_PastEvidenceGrace_EscalatesToRollback()
+    {
+        // Provider outages/misconfiguration must not park a deploy in Reconciling forever (#4617):
+        // past warmup + the configured evidence grace window this escalates to rollback.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "no-such-connection",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.evidence_grace_seconds"] = "60"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-10)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeTrue("missing telemetry evidence must not park a deploy forever");
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("not configured");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_AbsentMetricEvidence_PastEvidenceGrace_EscalatesToRollback()
+    {
+        // Sustained missing metric evidence (not a config error, an empty provider response) also
+        // escalates rather than parking forever once warmup + grace elapse.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses: ["""{"status":"success","data":{"resultType":"vector","result":[]}}"""]);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.evidence_grace_seconds"] = "60"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-10)));
+
+        decision.Should().NotBeNull();
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+    }
+
+    // ---- traffic-exposure anchored warmup (#4617) -------------------------
+
+    [Fact]
+    public async Task EvaluateAsync_WarmupAnchorsOnTrafficExposedAt_NotOperationCreation()
+    {
+        // The operation record is old (provisioning took a while), but the candidate only just
+        // started receiving traffic: warmup must still be held, proving the anchor is exposure, not
+        // creation.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses: CreateSuccessfulResponses("25", "0.01", "150"));
+
+        var operation = CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddHours(-1));
+        operation = operation with
+        {
+            Deploy = operation.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow }
+        };
+
+        var decision = await evaluator.EvaluateAsync(operation);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("warmup must anchor on traffic exposure, not the older operation creation time");
+        decision.RollbackRecommended.Should().BeFalse();
+        capturedQueries.Should().BeEmpty("the metrics gate must not be queried before warmup (anchored on exposure) elapses");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_WithoutTrafficExposedAt_FallsBackToCreatedAt()
+    {
+        // Operations persisted before TrafficExposedAt was tracked (or backends that never report
+        // Reconciling from ObserveAsync) must keep the prior CreatedAt-anchored behavior.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses: CreateSuccessfulResponses("25", "0.01", "150"));
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeFalse();
+        decision.RollbackRecommended.Should().BeFalse();
+        capturedQueries.Should().HaveCount(3);
+    }
+
     private static DeployTelemetryPolicy CreateThresholdPolicy(double errorThreshold, double latencyThreshold)
         => new()
         {
@@ -913,6 +1104,7 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         ConcurrentQueue<string> capturedQueries,
         DeployTelemetryConnectionOptions? connection = null,
         IDeployHealthProbe? healthProbe = null,
+        HttpStatusCode statusCode = HttpStatusCode.OK,
         params string[] responses)
     {
         var responseQueue = new ConcurrentQueue<string>(responses);
@@ -924,7 +1116,7 @@ public sealed class DeployTelemetrySignalEvaluatorTests
             capturedQueries.Enqueue(query);
 
             responseQueue.TryDequeue(out var responseJson);
-            return new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(statusCode)
             {
                 Content = new StringContent(
                     responseJson ?? """{"status":"success","data":{"resultType":"vector","result":[]}}""",
@@ -959,6 +1151,436 @@ public sealed class DeployTelemetrySignalEvaluatorTests
             healthProbe);
     }
 
+    // ---- Prometheus data-validity negatives (#4617) ------------------------
+
+    [Fact]
+    public async Task EvaluateAsync_PrometheusReturnsNaN_TreatsSignalAsAbsent_NotHealthy()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses: CreateSuccessfulResponses("25", "NaN", "150"));
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.evidence_grace_seconds"] = "3600"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("a NaN reading must never silently satisfy the error-rate threshold as healthy");
+        decision.RollbackRecommended.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("+Inf")]
+    [InlineData("-Inf")]
+    public async Task EvaluateAsync_PrometheusReturnsInfinite_TreatsSignalAsAbsent_NotHealthy(string infiniteValue)
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses: CreateSuccessfulResponses("25", infiniteValue, "150"));
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.evidence_grace_seconds"] = "3600"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("a non-finite reading must never silently satisfy a threshold as healthy");
+        decision.RollbackRecommended.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_PrometheusReturnsAmbiguousMultiSeries_WaitsRatherThanGuessing()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        const string ambiguousResponse =
+            """{"status":"success","data":{"resultType":"vector","result":[{"metric":{"pod":"a"},"value":[1710000000,"25"]},{"metric":{"pod":"b"},"value":[1710000000,"30"]}]}}""";
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses: [ambiguousResponse]);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.evidence_grace_seconds"] = "3600"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("an ambiguous multi-series result must not be silently resolved by guessing result[0]");
+        decision.RollbackRecommended.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_PrometheusReturnsStaleSample_WhenStalenessBoundConfigured_TreatsAsAbsent()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        // A fixed, ancient observation timestamp — far outside any reasonable staleness bound.
+        const string staleResponse =
+            """{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[1710000000,"0.5"]}]}}""";
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses: [staleResponse]);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.max_staleness_seconds"] = "300",
+                ["telemetry.evidence_grace_seconds"] = "3600"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("a sample older than the configured staleness bound must never satisfy the threshold as healthy");
+        decision.RollbackRecommended.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_PrometheusReturnsStaleSample_WithoutStalenessParameter_DefaultBoundTreatsAsAbsent()
+    {
+        // Freshness is enforced by default (#4617): the provider's observation timestamp (2024-03-09)
+        // is far outside the 5-minute default bound, so the healthy-looking values are not evidence.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses:
+            [
+                CreateSuccessResponse("25", observedAtUnixSeconds: 1710000000),
+                CreateSuccessResponse("0.01", observedAtUnixSeconds: 1710000000),
+                CreateSuccessResponse("150", observedAtUnixSeconds: 1710000000)
+            ]);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("a stale sample must never satisfy the gate, even without an explicit bound");
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("sample-count", "the stale sample floor reads as absent evidence");
+        capturedQueries.Should().HaveCount(1, "the gate stops at the absent sample floor");
+    }
+
+    [Theory]
+    [InlineData("\"not-a-timestamp\"")]
+    [InlineData("null")]
+    public async Task EvaluateAsync_PrometheusSampleWithoutUsableTimestamp_TreatsAsAbsent(string timestampJson)
+    {
+        // Missing freshness information is not assumed fresh (#4617).
+        var capturedQueries = new ConcurrentQueue<string>();
+        var response = $@"{{""status"":""success"",""data"":{{""resultType"":""vector"",""result"":[{{""metric"":{{}},""value"":[{timestampJson},""25""]}}]}}}}";
+        var evaluator = CreateEvaluator(capturedQueries, responses: [response]);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_PrometheusSampleFromTheFuture_TreatsAsAbsent()
+    {
+        // Clock skew beyond the bound in the other direction is equally untrustworthy.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var future = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds();
+        var evaluator = CreateEvaluator(
+            capturedQueries,
+            responses:
+            [
+                CreateSuccessResponse("25", observedAtUnixSeconds: future),
+                CreateSuccessResponse("0.01", observedAtUnixSeconds: future),
+                CreateSuccessResponse("150", observedAtUnixSeconds: future)
+            ]);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_PrometheusReturnsEmptyResult_PastGrace_RollsBackWithoutEverPassing()
+    {
+        // Null/empty vectors for every signal: within grace this holds, and once the declared grace
+        // after exposure elapses it escalates — there is no missing-data success path.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries);
+
+        var operation = CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.evidence_grace_seconds"] = "60"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddHours(-1));
+        var withinGrace = operation with { Deploy = operation.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow.AddMinutes(-2.5) } };
+        var pastGrace = operation with { Deploy = operation.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow.AddMinutes(-10) } };
+
+        var holding = await evaluator.EvaluateAsync(withinGrace);
+        var escalated = await evaluator.EvaluateAsync(pastGrace);
+
+        holding!.WaitForMoreTelemetry.Should().BeTrue();
+        holding.RollbackRecommended.Should().BeFalse();
+        escalated!.RollbackRecommended.Should().BeTrue();
+        escalated.WaitForMoreTelemetry.Should().BeFalse();
+        escalated.Message.Should().Contain("sample-count");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_InsufficientSamples_PastGrace_RollsBack()
+    {
+        // 3 requests against a floor of 20: the error rate is never read, and sustained insufficient
+        // traffic after exposure escalates instead of eventually counting as healthy.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries, responses: CreateSuccessfulResponses("3", "0", "10"));
+
+        var operation = CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.evidence_grace_seconds"] = "60"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddHours(-1));
+        operation = operation with { Deploy = operation.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow.AddMinutes(-10) } };
+
+        var decision = await evaluator.EvaluateAsync(operation);
+
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.Message.Should().Contain("sample count 3 is below the required minimum 20");
+        capturedQueries.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_NegativeErrorRate_IsNotEvidenceOfHealth()
+    {
+        // A negative ratio (counter reset / bad metric math) would pass "rate <= threshold"; it is
+        // invalid evidence and must hold instead.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries, responses: CreateSuccessfulResponses("25", "-0.2", "150"));
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("error-rate");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task EvaluateAsync_PrometheusOutage_HoldsWithinGrace_ThenRollsBack(HttpStatusCode outageStatus)
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries, statusCode: outageStatus);
+        var operation = CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.evidence_grace_seconds"] = "120"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddHours(-1));
+
+        var holding = await evaluator.EvaluateAsync(
+            operation with { Deploy = operation.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow.AddMinutes(-3) } });
+        var escalated = await evaluator.EvaluateAsync(
+            operation with { Deploy = operation.Deploy! with { TrafficExposedAt = DateTimeOffset.UtcNow.AddMinutes(-5) } });
+
+        holding!.WaitForMoreTelemetry.Should().BeTrue("an outage inside the grace window holds the rollout");
+        holding.RollbackRecommended.Should().BeFalse();
+        holding.Message.Should().Contain("unavailable");
+        escalated!.RollbackRecommended.Should().BeTrue("an outage that outlasts warmup + grace must not park the deploy forever");
+        escalated.Message.Should().Contain("unavailable");
+    }
+
+    // ---- pre-exposure deadline (#4617) -----------------------------------
+
+    [Fact]
+    public async Task EvaluateAsync_SubmittedAndNotYetExposed_HoldsWithoutQuerying()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries, responses: CreateSuccessfulResponses("25", "0.01", "150"));
+        var operation = CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-10));
+        operation = operation with { Status = WorkflowOperationStatus.Submitted };
+
+        var decision = await evaluator.EvaluateAsync(operation);
+
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("receive traffic");
+        capturedQueries.Should().BeEmpty("no telemetry is meaningful before the candidate is exposed");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_NeverExposedPastDeadline_FailsWithoutActivation()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries, responses: CreateSuccessfulResponses("25", "0.01", "150"));
+        var operation = CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.prometheus.job"] = "honua-prod",
+                ["telemetry.exposure_deadline_seconds"] = "600"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-11));
+        operation = operation with { Status = WorkflowOperationStatus.Submitted };
+
+        var decision = await evaluator.EvaluateAsync(operation);
+
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("never observed receiving traffic within the 600-second exposure deadline");
+        capturedQueries.Should().BeEmpty();
+    }
+
+    // ---- explicit health-only profile (#4617) ------------------------------
+
+    [Fact]
+    public async Task EvaluateAsync_HealthOnlyProfile_PassesOnHealthyProbesWithoutAnyMetricsConnection()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision!.WaitForMoreTelemetry.Should().BeFalse();
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("health-only");
+        probe.Invocations.Should().Be(1);
+        capturedQueries.Should().BeEmpty("a health-only profile never consults a metrics provider");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_HealthOnlyProfile_UnhealthyProbe_RollsBack()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 2 });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        decision!.RollbackRecommended.Should().BeTrue();
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_HealthOnlyProfile_WithoutProbeService_IsBoundedNotPassed()
+    {
+        // No probe service means no evidence: hold, then escalate — never pass by default.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+                ["telemetry.evidence_grace_seconds"] = "60"
+            },
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-10)));
+
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.Message.Should().Contain("no health-probe service");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_ProbeOnlyGateWithoutHealthOnlyProfile_IsRejectedNotDegraded()
+    {
+        // A metric-required profile whose metrics are unusable must not quietly fall back to the probe:
+        // an unknown preset with only a readiness probe is an invalid policy, not a health-only gate.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
+
+        var decision = await evaluator.EvaluateAsync(CreateOperation(
+            DeployTargetKind.Kubernetes,
+            new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = "prod-prom",
+                ["telemetry.policy"] = "no-such-preset",
+                ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+            },
+            createdAt: DateTimeOffset.UtcNow));
+
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.Message.Should().Contain("not supported");
+        probe.Invocations.Should().Be(0, "an invalid policy is never evaluated as if it were health-only");
+    }
+
     private static string[] CreateSuccessfulResponses(string sampleCount, string errorRate, string latencyP95)
         =>
         [
@@ -967,8 +1589,10 @@ public sealed class DeployTelemetrySignalEvaluatorTests
             CreateSuccessResponse(latencyP95)
         ];
 
-    private static string CreateSuccessResponse(string value)
-        => $@"{{""status"":""success"",""data"":{{""resultType"":""vector"",""result"":[{{""metric"":{{}},""value"":[1710000000,""{value}""]}}]}}}}";
+    // Samples are stamped "now" by default so the 5-minute freshness bound (#4617) accepts them; pass an
+    // explicit observation time to exercise stale/future samples.
+    private static string CreateSuccessResponse(string value, long? observedAtUnixSeconds = null)
+        => $@"{{""status"":""success"",""data"":{{""resultType"":""vector"",""result"":[{{""metric"":{{}},""value"":[{(observedAtUnixSeconds ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds()).ToString(System.Globalization.CultureInfo.InvariantCulture)},""{value}""]}}]}}}}";
 
     private static WorkflowOperationRecord CreateOperation(
         DeployTargetKind targetKind,

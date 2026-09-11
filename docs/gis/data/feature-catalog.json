@@ -1647,6 +1647,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.CreateDeployOperation_WithInvalidTelemetryGate_IsNeverSubmittedToBackend",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.CreateDeployOperation_WithUnsafeIdempotencyKey_ReturnsSafeRoundTrippableOperationId",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.DeployOperation_LifecycleEndpoints_RoundTrip",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.GetDeployOperation_NonexistentOperationId_ReturnsErrorStatus",
@@ -14388,6 +14389,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PostDeployOperations_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.CreateDeployOperation_WhenApprovalRequired_ReturnsAwaitingApprovalStatus",
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.CreateDeployOperation_WithInvalidTelemetryGate_IsNeverSubmittedToBackend",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.CreateDeployOperation_WithSubmitImmediately_ReturnsSubmittedStatus",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.CreateDeployOperation_WithUnsafeIdempotencyKey_ReturnsSafeRoundTrippableOperationId",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.DeployOperation_LifecycleEndpoints_RoundTrip"
@@ -14442,6 +14444,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.CreateDeployOperation_WithInvalidTelemetryGate_IsNeverSubmittedToBackend",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.DeployOperation_LifecycleEndpoints_RoundTrip",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.SubmitDeployOperation_AlreadySubmitted_ReturnsIdempotent"
       ],
@@ -14460,7 +14463,10 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PostDeployPlan_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.PlanDeployOperation_WhenApprovalRequired_ReturnsRequiresApproval",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.PlanDeployOperation_WhenTargetDoesNotExist_ReturnsErrorStatus",
-        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.PlanDeployOperation_WhenTargetExists_ReturnsResolvedPlan"
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.PlanDeployOperation_WhenTargetExists_ReturnsResolvedPlan",
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.PlanDeployOperation_WithHealthOnlyTelemetryProfile_IsReadyWithoutMetricsConnection",
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.PlanDeployOperation_WithInvalidTelemetryGate_ReturnsBlockedPlan",
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.PlanDeployOperation_WithUnconfiguredTelemetryConnection_ReturnsBlockedPlan"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
