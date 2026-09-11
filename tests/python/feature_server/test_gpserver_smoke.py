@@ -9,6 +9,10 @@ import httpx
 import pytest
 
 POINT_WKB_BASE64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA"
+# Discovery publishes Python-safe task names (#4616): "Honua_" + the hex of the
+# UTF-8 process ID. The dotted canonical ID stays addressable but is no longer
+# advertised in the service root.
+BUFFER_TASK_NAME = "Honua_" + "geometry.buffer".encode("utf-8").hex().upper()
 
 
 class TestGPServerSmoke:
@@ -30,7 +34,9 @@ class TestGPServerSmoke:
         assert data["executionType"] == "esriExecutionTypeAsynchronous"
         assert data["capabilities"] == ""
         assert data["resultMapServerName"] == ""
-        assert "geometry.buffer" in data["tasks"]
+        assert BUFFER_TASK_NAME in data["tasks"]
+        assert "Buffer" in data["tasks"]
+        assert "geometry.buffer" not in data["tasks"]
         assert test_service_id in data["serviceDescription"]
 
     @pytest.mark.integration

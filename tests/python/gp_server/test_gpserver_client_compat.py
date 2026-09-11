@@ -14,6 +14,10 @@ import pytest
 from shared.geoservices import assert_geoservices_error
 
 POINT_WKB_BASE64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA"
+# Discovery publishes Python-safe task names (#4616): "Honua_" + the hex of the
+# UTF-8 process ID. The dotted canonical ID stays addressable but is no longer
+# advertised in the service root.
+BUFFER_TASK_NAME = "Honua_" + "geometry.buffer".encode("utf-8").hex().upper()
 
 
 @dataclass(frozen=True)
@@ -80,7 +84,9 @@ def test_gpserver_python_client_metadata_workflow(
     task = client.task_info("geometry.buffer")
 
     assert service["executionType"] == "esriExecutionTypeAsynchronous"
-    assert "geometry.buffer" in service["tasks"]
+    assert BUFFER_TASK_NAME in service["tasks"]
+    assert "geometry.buffer" not in service["tasks"]
+    # The canonical ID still resolves, and its metadata keeps the canonical name.
     assert task["name"] == "geometry.buffer"
     assert task["executionType"] == "esriExecutionTypeAsynchronous"
     assert any(param["name"] == "wkb" for param in task["parameters"])
