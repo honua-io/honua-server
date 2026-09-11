@@ -138,7 +138,7 @@ Operations: `findAddressCandidates`, `reverseGeocode`, `suggest`, `geocodeAddres
 
 ## NAServer (network analysis)
 
-GET and POST solves are available for Route, ServiceArea, ClosestFacility, ODCostMatrix, and LocationAllocation under `/rest/services/{serviceId}/NAServer`; see the parity matrix for per-solver limitations.
+Route solves are available over GET and POST; ServiceArea, ClosestFacility, ODCostMatrix, and LocationAllocation solves are POST-only. All five live under `/rest/services/{serviceId}/NAServer` and read query-string or form parameters; see the parity matrix for per-solver limitations.
 
 ## SceneServer (I3S)
 
