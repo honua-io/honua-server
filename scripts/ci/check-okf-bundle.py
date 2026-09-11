@@ -268,7 +268,11 @@ def main(argv: list[str]) -> int:
 
     census: dict[str, int] = {}
     checked = 0
-    for path in sorted(root.rglob("*.md")):
+    # Re-included files may sit outside `root` — the repository README is the
+    # front door for anyone arriving without a docs URL, so it is a concept even
+    # though it does not live under docs/.
+    scanned = sorted(set(root.rglob("*.md")) | {p for p in included_files})
+    for path in scanned:
         if excluded(path):
             continue
         rel = path.relative_to(REPO_ROOT).as_posix()

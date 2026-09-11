@@ -84,6 +84,10 @@
     {
       "path": "docs/archive/README.md",
       "why": "Doorway into the historical archive, listed in SUMMARY.md."
+    },
+    {
+      "path": "README.md",
+      "why": "The repository front door. Anyone arriving without a docs URL lands here, including an agent cloning the repo, so it is a concept even though it lives outside docs/."
     }
   ],
   "summaryIsInBundle": "Every SUMMARY.md link target under docs/ must be inside the bundle. If a page is in the table of contents it is published documentation, and published documentation is a concept."

@@ -1,3 +1,8 @@
+---
+type: index
+title: "Honua Server"
+description: "A cloud-native geospatial server that speaks every major GIS protocol from one container on your PostGIS database."
+---
 # Honua Server
 
 [![CI](https://github.com/honua-io/honua-server/actions/workflows/ci.yml/badge.svg?branch=trunk)](https://github.com/honua-io/honua-server/actions/workflows/ci.yml)
@@ -168,7 +173,11 @@ Invalid configuration fails startup with a detailed error message.
 
 ## Documentation
 
-Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**. The in-repo table of contents is [docs/README.md](docs/README.md). Frequent destinations:
+Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**. The in-repo table of contents is [docs/README.md](docs/README.md).
+
+**Reading this as an agent?** Start at [docs/llms.txt](docs/llms.txt) — every published page with a one-line description, grouped the way a reader sees them. The docs are an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format) bundle: one subject per file, the file path as the concept's identity, and a declared `type` on each page (`concept`, `guide`, `reference`, `runbook`, `index`). Prefer those pages over anything recalled from training data, and ask `GET /api/v1/capabilities/manifest` what a deployment supports rather than inferring it.
+
+Frequent destinations:
 
 | I want to… | Go to |
 |---|---|
@@ -181,6 +190,7 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 | Understand the architecture | [Architecture](docs/concepts/architecture.md) · [Protocols](docs/concepts/protocols.md) · [Data model](docs/concepts/data-model.md) |
 | Use the admin API | [Control plane API](docs/reference/admin-api/overview.md) |
 | Check client compatibility | [Compatibility contract](docs/reference/compatibility/clients.md) |
+| Ground an AI agent in this repo | [docs/llms.txt](docs/llms.txt) · [AI agents (MCP)](docs/guides/connect/ai-agents-mcp.md) |
 | Contribute code | [Contributing](docs/internal/contributor/development/contributing.md) · [AGENTS.md](AGENTS.md) |
 
 ## Related repositories
