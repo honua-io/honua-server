@@ -181,12 +181,17 @@ jobs:
         run: |
           # Warm the docker cache for the disposable images the lane builds/runs so provisioning does
           # not pull mid-test:
-          #   busybox          -> the two-tag HTTP replica images the serving lane builds and runs.
-          #   postgres:alpine  -> the migration-gate Testcontainers database.
+          #   busybox              -> the two-tag HTTP replica images the serving lane builds and runs.
+          #   postgis/postgis:18-3.6 -> the migration-gate Testcontainers database
+          #     (LocalSubstratePostgresFixture.Image). This was postgres:17-alpine until #3965 moved
+          #     the fixture onto the PostGIS image for the real numbered-migration lane (#3899); the
+          #     pre-pull was never updated, so it warmed a cache entry the lane never uses and left the
+          #     actual image to pull cold, mid-test.
           docker pull busybox:1.36 || echo "::warning::could not pre-pull busybox"
-          docker pull postgres:17-alpine || echo "::warning::could not pre-pull postgres"
+          docker pull postgis/postgis:18-3.6 || echo "::warning::could not pre-pull postgis/postgis"
 
       - name: Run local-substrate tests
+        id: run-tests
         env:
           TESTCONTAINERS_RYUK_DISABLED: false
           HONUA_TEST_REDIS_URL: localhost:6379
@@ -200,6 +205,49 @@ jobs:
             --logger "trx;LogFileName=local-substrate.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
+
+      # honua-server#4415/#4414: LocalSubstrateDockerFixture and LocalSubstratePostgresFixture both
+      # silently set Available=false on ANY InitializeAsync exception (image-pull failure, full disk,
+      # container-start timeout — not just "Docker isn't installed"), and every [SkippableFact] in this
+      # lane treats Available=false as a skip. `dotnet test` exits 0 whether every one of the lane's ~40
+      # cases ran or every one of them skipped, so a fixture regression on this runner turns the entire
+      # migration-gate/rolling-deploy/GP-process-pool lane green without executing anything. Same
+      # counts-not-exit-code idiom as ci.yml's Worker GDAL tripwire: parse the TRX, fail on any
+      # NotExecuted and on fewer than one Passed.
+      - name: Prove the local-substrate lane actually executed
+        if: ${{ !cancelled() && steps.run-tests.conclusion != 'skipped' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          trx=./tests/TestResults/local-substrate.trx
+          if [[ ! -f "${trx}" ]]; then
+            echo "::error::no TRX produced for the Category=LocalSubstrate lane"
+            exit 1
+          fi
+          # `|| true` on each grep is load-bearing under `set -euo pipefail`: grep exits 1 when it
+          # matches nothing, and on the healthy path the Failed and NotExecuted counts are zero.
+          count_outcome() {
+            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
+          }
+          passed=$(count_outcome Passed)
+          failed=$(count_outcome Failed)
+          skipped=$(count_outcome NotExecuted)
+          {
+            echo '### Local-substrate lane coverage'
+            echo
+            echo "- Passed: ${passed}"
+            echo "- Failed: ${failed}"
+            echo "- Skipped: ${skipped}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${skipped}" -gt 0 ]]; then
+            echo "::error::${skipped} [SkippableFact] case(s) were skipped — Docker/Postgres was unavailable on this runner (or a fixture regressed), and the entire local-substrate lane silently reported nothing"
+            exit 1
+          fi
+          if [[ "${passed}" -lt 1 ]]; then
+            echo "::error::no [SkippableFact] case passed — the Category=LocalSubstrate trait or the cases themselves are gone"
+            exit 1
+          fi
+          echo "OK: ${passed} local-substrate case(s) executed, 0 skipped."
 
       - name: Upload results
         if: ${{ always() }}
