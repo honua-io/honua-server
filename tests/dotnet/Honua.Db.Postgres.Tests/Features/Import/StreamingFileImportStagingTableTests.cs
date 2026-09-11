@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using System.Text;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.FileImport;
@@ -306,6 +307,86 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             rows.Select(row => (row.Name, row.Code, row.Wkt)).Should().Equal(
                 OverwriteGuardFixtureRows[0],
                 OverwriteGuardFixtureRows[1]);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    /// <summary>
+    /// honua-server#4006 — a replace whose load skipped an invalid feature under
+    /// <c>ContinueOnError</c>/<c>SkipInvalidGeometry</c> still promoted the staging sibling over
+    /// the live target, reporting <c>Success = true</c> even though the promoted dataset was
+    /// missing the skipped row. A replace must be complete-for-complete or a no-op: it must
+    /// never swap in a dataset that dropped input rows, and it must report the loss rather than
+    /// claiming success.
+    /// </summary>
+    [IntegrationTest]
+    public async Task ImportFileAsync_ReplaceWithSkippedHostileFeature_DoesNotPromotePartialDataset()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests) + "_partial_replace");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var strictSkipLimits = ImportLimits.Default with
+            {
+                GeometryValidityMode = Honua.Core.Configuration.ValidationMode.Strict,
+                SkipInvalidGeometry = true,
+                ContinueOnError = true,
+            };
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance,
+                strictSkipLimits);
+
+            await using (var seed = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson)))
+            {
+                var seedResult = await service.ImportFileAsync(new ImportRequest
+                {
+                    FileStream = seed,
+                    FileName = "seed.geojson",
+                    TableName = "partial_replace_guard",
+                    TargetSchema = schema,
+                    SourceSrid = 4326,
+                    TargetSrid = 4326,
+                    OverwriteExisting = true,
+                });
+                seedResult.Success.Should().BeTrue(seedResult.ErrorMessage);
+            }
+
+            // All segments are fixed literals and can never be rooted, so Path.Join cannot drop
+            // earlier segments here (cs/path-combine false positive).
+            var fixturePath = Path.Join(
+                AppContext.BaseDirectory, "Features", "Import", "Fixtures", "LoadMode", "mixed-validity-replace.geojson");
+            await using var hostile = File.OpenRead(fixturePath);
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = hostile,
+                FileName = "mixed-validity-replace.geojson",
+                TableName = "partial_replace_guard",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                OverwriteExisting = true,
+            });
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*)::int, COUNT(*) FILTER (WHERE properties->>'name' IN ('a', 'b'))::int FROM \"{schema}\".imported_partial_replace_guard";
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            using (new AssertionScope())
+            {
+                result.Success.Should().BeFalse("a replace with skipped input rows must not claim a complete successful replacement");
+                result.Warnings.Should().Contain(w => w.Contains("skipped", StringComparison.OrdinalIgnoreCase));
+                reader.GetInt32(0).Should().Be(2, "a partial replacement must leave the prior complete target in place");
+                reader.GetInt32(1).Should().Be(2, "the prior rows must survive the skipped hostile feature");
+            }
         }
         finally
         {

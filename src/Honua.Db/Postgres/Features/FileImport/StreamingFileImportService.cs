@@ -543,7 +543,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             IReadOnlyList<ImportValidationIssue> rowIssues;
             int repairedCount;
             string physicalTableName;
-            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName) = await ImportStreamingAsync(
+            bool replacementBlocked;
+            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
@@ -558,6 +559,23 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             if (importedCount == 0 && failedCount == 0)
             {
                 errorMessage = "No features found in file";
+                result = ImportResult.CreateFailure(
+                    request.TableName,
+                    format.Value,
+                    errorMessage,
+                    stopwatch.Elapsed,
+                    warnings);
+                return result;
+            }
+
+            // A replace whose load dropped rows against an already-populated target never
+            // promoted its staging sibling (see ImportStreamingAsync) — the live target is
+            // unchanged. Report that truthfully rather than a complete success: the caller asked
+            // to replace the whole dataset and got nothing applied instead (#4006).
+            if (replacementBlocked)
+            {
+                errorMessage = $"Import failed: {failedCount} feature(s) could not be imported; " +
+                    "the replace was not applied and the prior target is unchanged.";
                 result = ImportResult.CreateFailure(
                     request.TableName,
                     format.Value,

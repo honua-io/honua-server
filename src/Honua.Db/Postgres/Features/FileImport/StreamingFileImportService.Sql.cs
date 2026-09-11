@@ -89,6 +89,24 @@ internal sealed partial class StreamingFileImportService
         return GetAllowedTableName(tableName);
     }
 
+    /// <summary>
+    /// Reports whether the live physical target already exists. A replace whose load drops
+    /// rows must only refuse to promote when this is <see langword="true"/> — a first-ever
+    /// replace into a brand-new target has no prior complete dataset to lose, so a partial
+    /// result is a normal partial import (#4006), not data loss.
+    /// </summary>
+    private static async Task<bool> ImportTableExistsAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(ImportTableExistsSql, connection);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("table_name", tableName);
+        return (bool?)await command.ExecuteScalarAsync(cancellationToken) == true;
+    }
+
     private static async Task CreateTableAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -206,6 +224,25 @@ internal sealed partial class StreamingFileImportService
             await transaction.RollbackAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Drops a never-promoted <c>&lt;table&gt;__staging</c> sibling. Used when a replace's
+    /// load left features out (skip/continue) and the live target must not be swapped for an
+    /// incomplete dataset (#4006); the staging table is otherwise harmless dead weight until
+    /// the next replace's <see cref="CreateStagingTableAsync"/> drops it anyway.
+    /// </summary>
+    private static async Task DropStagingTableAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        var quotedSchemaName = SchemaSearchPath.ValidateAndQuote(schemaName);
+        var quotedTableName = SchemaSearchPath.ValidateAndQuote(tableName);
+        await using var command = new NpgsqlCommand(
+            $"DROP TABLE IF EXISTS {quotedSchemaName}.{quotedTableName}", connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>
