@@ -301,7 +301,8 @@ internal sealed partial class MetadataReleaseReconciler(
     {
         var release = operation.MetadataRelease!;
         if (release.CandidateRevision is long staged &&
-            await activator.GetRevisionAsync(staged, cancellationToken).ConfigureAwait(false) is not null)
+            await activator.GetRevisionAsync(staged, cancellationToken).ConfigureAwait(false) is { } retainedCandidate &&
+            string.Equals(retainedCandidate.Etag, release.CandidateEtag, StringComparison.Ordinal))
         {
             return Advance(operation, MetadataReleaseStage.ServicePublication, $"Candidate revision {staged} already staged; resuming.");
         }
@@ -363,6 +364,19 @@ internal sealed partial class MetadataReleaseReconciler(
     {
         var release = operation.MetadataRelease!;
         var candidateRevision = release.CandidateRevision!.Value;
+
+        // Revision numbers are store-allocated; after a crash the recorded number could name some
+        // other writer's revision. Only activate the exact candidate this operation staged.
+        var staged = await activator.GetRevisionAsync(candidateRevision, cancellationToken).ConfigureAwait(false);
+        if (staged is null || !string.Equals(staged.Etag, release.CandidateEtag, StringComparison.Ordinal))
+        {
+            return Advance(
+                operation,
+                MetadataReleaseStage.ScriptMigration,
+                $"Candidate revision {candidateRevision} is no longer the staged candidate; re-preparing it before activation.",
+                release with { CandidateRevision = null, CandidateEtag = null, OwnedOperations = Array.Empty<MetadataReleaseScriptOperation>() });
+        }
+
         var result = await activator.ActivateAsync(candidateRevision, release.PriorEtag!, cancellationToken).ConfigureAwait(false);
         if (result.Outcome != MetadataReleaseActivationOutcome.Conflict)
         {
@@ -519,8 +533,11 @@ internal sealed partial class MetadataReleaseReconciler(
         }
 
         var live = await activator.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var prior = await activator.GetRevisionAsync(priorRevision, cancellationToken).ConfigureAwait(false);
         if (live.Revision != candidateRevision ||
-            await activator.GetRevisionAsync(priorRevision, cancellationToken).ConfigureAwait(false) is null)
+            !string.Equals(live.Etag, release.CandidateEtag, StringComparison.Ordinal) ||
+            prior is null ||
+            !string.Equals(prior.Etag, release.PriorEtag, StringComparison.Ordinal))
         {
             return null;
         }
