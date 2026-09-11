@@ -11,6 +11,18 @@ Upload a GeoJSON file, publish it as a layer, and query it through the supported
 
 > **Shell.** Every block on this page is `bash` — heredocs, `export`, and `python3`. On Windows run > them in WSL or Git Bash, not PowerShell, and note that a bare `python3` there resolves to the > Microsoft Store stub; use `python` or a venv interpreter. The [quickstart](quickstart.md) is the > PowerShell-native path.
 
+> **Base URL and admin key.** Steps 1–4 of the [quickstart](quickstart.md) write a generated
+> password into `.env` and publish the server on `18080`. Take both from there rather than
+> retyping the literals below:
+>
+> ```bash
+> cd <your quickstart install directory>
+> export HONUA_BASE_URL="http://localhost:$(grep '^HONUA_HTTP_PORT=' .env | cut -d= -f2)"
+> export HONUA_API_KEY="$(grep '^HONUA_ADMIN_PASSWORD=' .env | cut -d= -f2)"
+> ```
+>
+> Every command below uses `$HONUA_BASE_URL` and `$HONUA_API_KEY`.
+
 ## 1. Create a small dataset
 
 ```bash
@@ -26,18 +38,28 @@ EOF
 The file-upload operation does not yet have a high-level SDK wrapper, so call the endpoint directly:
 
 ```bash
-curl -u :quickstart-admin-password \
+curl -H "X-API-Key: $HONUA_API_KEY" \
   -F file=@cities.geojson \
   -F TableName=hawaii_cities \
-  http://localhost:8080/api/v1/admin/import/upload
+  "$HONUA_BASE_URL/api/v1/admin/import/upload" | tee import.json
 ```
 
-A successful import responds with `{"success":true,"featureCount":2,...}`.
+The admin API authenticates with the `X-API-Key` header. HTTP Basic (`curl -u`) is refused:
+`API key required. Provide a valid API key in the X-API-Key header.`
 
-> **The table you publish is not the name you just typed.** The importer stages files under a
+A successful import responds with:
+
+```json
+{"success":true,"featureCount":2,"tableName":"hawaii_cities",
+ "physicalTableName":"imported_hawaii_cities","schema":"honua_data",
+ "sourceKind":"file","format":"GeoJson","detectedSrid":4326}
+```
+
+> **The table you publish is not the name you typed.** The importer stages files under a
 > physical `imported_<table>` name, so `TableName=hawaii_cities` creates
-> `honua_data.imported_hawaii_cities`. Step 4 publishes that physical name. The import result
-> carries it explicitly — prefer reading it from the response over reconstructing the prefix.
+> `honua_data.imported_hawaii_cities`. Read `physicalTableName` and `schema` from this
+> response and pass them to Step 4 — they are returned precisely so callers do not have to
+> reconstruct the naming convention.
 
 Imports create the table in the `honua_data` schema and default `TargetSrid` to 4326.
 
@@ -58,9 +80,11 @@ python3 -m pip install \
 python3 - <<'PY'
 import subprocess
 
+import os
+
 from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
 
-with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-password") as admin:
+with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_API_KEY"]) as admin:
     connection = admin.create_connection(CreateSecureConnectionRequest(
         name="local",
         host="postgres",
@@ -82,13 +106,19 @@ PY
 
 ```bash
 python3 - <<'PY'
+import json
+import os
+
 from honua_admin import HonuaAdminClient, PublishLayerRequest
 
-with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-password") as admin:
+# Step 2 saved the import response; it names the physical table and its schema.
+result = json.load(open("import.json"))
+
+with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_API_KEY"]) as admin:
     layer = admin.publish_layer("local", PublishLayerRequest(
-        schema="honua_data",
+        schema=result["schema"],
         # The physical staging table, not the logical name passed to the import.
-        table="imported_hawaii_cities",
+        table=result["physicalTableName"],
         layer_name="hawaii-cities",
         srid=4326,
         # Without this the layer publishes as GeometryCollection and FeatureServer
@@ -105,9 +135,6 @@ Record the returned `layerId` and `serviceName`. The layer is now available acro
 ## 5. Query the published layer
 
 ```bash
-export HONUA_BASE_URL=http://localhost:8080
-export HONUA_API_KEY=quickstart-admin-password
-
 npx --yes -p @honua/sdk-js honua services
 npx --yes -p @honua/sdk-js honua layers default
 npx --yes -p @honua/sdk-js honua query default/0 --limit 5

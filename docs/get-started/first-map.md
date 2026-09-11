@@ -18,12 +18,16 @@ Every published layer is automatically served as Mapbox Vector Tiles at `/tiles/
 The service access-policy operation does not yet have a high-level client method, so call it directly:
 
 ```bash
-curl -u :quickstart-admin-password \
+curl -H "X-API-Key: $HONUA_API_KEY" \
   -X PUT \
   -H 'Content-Type: application/json' \
   -d '{"allowAnonymous": true}' \
-  http://localhost:8080/api/v1/admin/services/default/access-policy
+  "$HONUA_BASE_URL/api/v1/admin/services/default/access-policy"
 ```
+
+The admin API authenticates with the `X-API-Key` header; HTTP Basic (`curl -u`) is refused.
+`$HONUA_BASE_URL` and `$HONUA_API_KEY` come from your quickstart install's `.env` — see
+[Publish your first dataset](first-dataset.md) for the two lines that read them.
 
 The interactive API explorer at `/docs` is served only when `HONUA_SERVE_API_DOCS=true` — it defaults on in `Development` and off in `Production`, which is what the packaged Compose profiles run, so on a default install that URL is a 404. The [admin OpenAPI document](../developer/api-specs/admin-api.json) is the client-generation contract.
 
