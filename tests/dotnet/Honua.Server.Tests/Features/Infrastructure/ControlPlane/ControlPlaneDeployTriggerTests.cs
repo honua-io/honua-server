@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -183,13 +184,23 @@ public sealed class ControlPlaneDeployTriggerTests
         // sweep walks it forward again — proving the backstop covers staged ops and is the safety net
         // when a self-continue signal is dropped.
         var stale = DateTimeOffset.UtcNow.AddMinutes(-10);
+        // ScriptMigration stages an immutable candidate from the prior revision captured at Backup, so
+        // the operation carries that identity and the activator serves the prior and staged snapshots.
         var release = CreateMetadata("op-staged", WorkflowOperationStatus.Reconciling, updatedAt: stale)
             with
         {
-            MetadataRelease = MetadataContextAt(MetadataReleaseStage.ScriptMigration)
+            MetadataRelease = MetadataContextAt(MetadataReleaseStage.ScriptMigration) with { PriorRevision = 1, PriorEtag = "\"prior\"" }
         };
         var store = new FakeWorkflowStore(release);
-        var reconciler = BuildMetadataReconciler(store);
+        var prior = new MetadataV2GraphSnapshot(new MetadataV2Graph { Environment = "prod", Revision = 1 }, "\"prior\"", DateTimeOffset.UtcNow);
+        var activator = Substitute.For<IMetadataReleaseActivator>();
+        activator.GetRevisionAsync(1, Arg.Any<CancellationToken>()).Returns(Task.FromResult<MetadataV2GraphSnapshot?>(prior));
+        activator.StageAsync(Arg.Any<MetadataV2Graph>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new MetadataV2GraphSnapshot(prior.Graph with { Revision = 2 }, "\"candidate\"", DateTimeOffset.UtcNow)));
+        var scriptExecutor = Substitute.For<IMetadataReleaseScriptExecutor>();
+        scriptExecutor.PrepareForward(Arg.Any<MetadataReleaseExecutionPlan>(), Arg.Any<MetadataV2Graph>())
+            .Returns(new MetadataReleaseScriptResult { Graph = prior.Graph });
+        var reconciler = BuildMetadataReconciler(store, activator, scriptExecutor);
         var dispatcher = new OperationReconcileDispatcher(
             Substitute.For<IWorkflowOperationReconciler>(),
             Substitute.For<IExecutionJobReconciler>(),
@@ -249,14 +260,17 @@ public sealed class ControlPlaneDeployTriggerTests
             Substitute.For<ICoordinatedReleaseReconciler>());
     }
 
-    private static MetadataReleaseReconciler BuildMetadataReconciler(IWorkflowOperationStore store)
+    private static MetadataReleaseReconciler BuildMetadataReconciler(
+        IWorkflowOperationStore store,
+        IMetadataReleaseActivator activator,
+        IMetadataReleaseScriptExecutor scriptExecutor)
     {
         return new MetadataReleaseReconciler(
             store,
             Substitute.For<IMetadataReleasePreflightGate>(),
-            Substitute.For<IMetadataReleaseScriptExecutor>(),
+            scriptExecutor,
             Substitute.For<IMetadataReleaseDataJobDispatcher>(),
-            Substitute.For<IMetadataReleaseActivator>(),
+            activator,
             Substitute.For<IMetadataReleaseSmokeChecker>(),
             NullLogger<MetadataReleaseReconciler>.Instance);
     }
