@@ -17,7 +17,7 @@ POINT_WKB_BASE64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA"
 # Discovery publishes Python-safe task names (#4616): "Honua_" + the hex of the
 # UTF-8 process ID. The dotted canonical ID stays addressable but is no longer
 # advertised in the service root.
-BUFFER_TASK_NAME = "Honua_" + "geometry.buffer".encode("utf-8").hex().upper()
+BUFFER_TASK_NAME = "Honua_" + b"geometry.buffer".hex().upper()
 
 
 @dataclass(frozen=True)
