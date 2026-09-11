@@ -90,10 +90,12 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         var tasks = root.GetProperty("tasks").EnumerateArray()
             .Select(item => item.GetString())
             .ToArray();
-        tasks.Should().Contain("geometry.buffer");
+        tasks.Should().Contain("Honua_67656F6D657472792E627566666572");
         tasks.Should().NotContain("source.geojson");
+        tasks.Should().NotContain("Honua_736F757263652E67656F6A736F6E");
         tasks.Should().NotContain("analytics.cluster");
-        tasks.Should().Contain("raster.interpolate-kriging");
+        tasks.Should().NotContain("Honua_616E616C79746963732E636C7573746572");
+        tasks.Should().Contain("Honua_7261737465722E696E746572706F6C6174652D6B726967696E67");
     }
 
     [IntegrationTest]
@@ -126,7 +128,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("tasks").EnumerateArray()
             .Select(item => item.GetString())
-            .Should().Contain("geometry.buffer");
+            .Should().Contain("Honua_67656F6D657472792E627566666572")
+            .And.NotContain("geometry.buffer");
     }
 
     [IntegrationTest]
@@ -261,6 +264,23 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                     "every GP parameter must carry a defaultValue key (parameter '{0}')",
                     parameter.GetProperty("name").GetString());
         }
+    }
+
+    [IntegrationTheory]
+    [InlineData("geometry.buffer", "geodesic", JsonValueKind.False)]
+    [InlineData("geometry.simplify", "preserveTopology", JsonValueKind.True)]
+    [InlineData("geometry.buffer", "wkb", JsonValueKind.Null)]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_ScalarDefault_HasItsDeclaredJsonType(string taskName, string parameterName, JsonValueKind expectedKind)
+    {
+        using var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{taskName}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var parameter = document.RootElement.GetProperty("parameters").EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == parameterName);
+        parameter.GetProperty("defaultValue").ValueKind.Should().Be(expectedKind,
+            "Esri's SDK generates Python defaults from the JSON value type");
     }
 
     [IntegrationTest]

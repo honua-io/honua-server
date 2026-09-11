@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -277,6 +278,40 @@ internal static class GPServerParameterTranslation
                 ? $"Parameter '{spec.Name}': '{value}' matches more than one allowed value ignoring case; " +
                   $"supply the exact spelling from [{string.Join(", ", allowed)}]."
                 : $"Parameter '{spec.Name}': '{value}' is not in the allowed values [{string.Join(", ", allowed)}].");
+    }
+
+    /// <summary>
+    /// Converts canonical text defaults to the declared Esri scalar JSON type.
+    /// </summary>
+    public static JsonElement? TranslateDefaultValue(ProcessParameterSpec parameter)
+    {
+        if (parameter.DefaultValue is null)
+        {
+            return null;
+        }
+
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            switch (parameter.ValueType)
+            {
+                case ProcessParameterValueType.Flag:
+                    writer.WriteBooleanValue(bool.Parse(parameter.DefaultValue));
+                    break;
+                case ProcessParameterValueType.WholeNumber:
+                case ProcessParameterValueType.Srid:
+                    writer.WriteNumberValue(long.Parse(parameter.DefaultValue, NumberStyles.Integer, CultureInfo.InvariantCulture));
+                    break;
+                case ProcessParameterValueType.FloatingPoint:
+                    writer.WriteNumberValue(double.Parse(parameter.DefaultValue, NumberStyles.Float, CultureInfo.InvariantCulture));
+                    break;
+                default:
+                    writer.WriteStringValue(parameter.DefaultValue);
+                    break;
+            }
+        }
+        using var document = JsonDocument.Parse(buffer.WrittenMemory);
+        return document.RootElement.Clone();
     }
 
     /// <summary>

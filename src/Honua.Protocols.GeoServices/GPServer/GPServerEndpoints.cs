@@ -39,6 +39,8 @@ internal static class GPServerEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapGPServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGPServerSoapEndpoints();
+
         // Service info
         endpoints.MapGet(RouteBase,
                 static (HttpContext context, CancellationToken ct) => HandleServiceInfo(context, ct))
@@ -1236,7 +1238,7 @@ internal static class GPServerEndpoints
     // Shared helpers
     // -----------------------------------------------------------------------
 
-    private static Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
+    internal static Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
         HttpContext context,
         string serviceId,
         ILogger logger,
@@ -1511,19 +1513,20 @@ internal static class GPServerEndpoints
 
     /// <summary>
     /// Builds the published task-name list for the service-info response: every
-    /// process's internal ID, plus its Esri-conventional alias when one exists. Both
+    /// process's Python-safe encoded ID, plus its Esri-conventional alias when one exists. Both
     /// forms resolve to the same process via <see cref="ResolveTaskDefinition"/>.
     /// <para>
     /// Collision policy (deterministic): a real catalog process ID always wins over an
     /// alias. When any catalog process ID matches an alias (compared case-insensitively,
     /// mirroring the alias lookup), the alias is suppressed and only the real process ID
-    /// is published, so the task list never contains the same name with two meanings and
+    /// is published under its encoded name, so the task list never contains the same name with two meanings and
     /// never publishes duplicates.
     /// </para>
     /// </summary>
     internal static IEnumerable<string> BuildPublishedTaskNames(IProcessCatalog processCatalog)
     {
         var processes = processCatalog.ListProcesses();
+        var encodingPrefix = GPServerTaskNames.GetEncodingPrefix(processes);
         var processIds = new HashSet<string>(processes.Count, StringComparer.OrdinalIgnoreCase);
         foreach (var process in processes)
         {
@@ -1542,7 +1545,7 @@ internal static class GPServerEndpoints
                 continue;
             }
 
-            yield return process.ProcessId;
+            yield return GPServerTaskNames.Encode(process.ProcessId, encodingPrefix);
 
             var alias = GPServerEsriTaskAliases.GetAlias(process.ProcessId);
             if (alias != null && !processIds.Contains(alias))
@@ -1555,7 +1558,7 @@ internal static class GPServerEndpoints
     /// <summary>
     /// Resolves a task name to its <see cref="ProcessDefinition"/>. Tries the internal
     /// process ID first (the existing, ESTABLISHED contract — e.g. <c>geometry.buffer</c>),
-    /// then falls back to the Esri-conventional alias overlay (e.g. <c>Buffer</c>) so
+    /// then tries the published encoded name and the Esri-conventional alias overlay (e.g. <c>Buffer</c>) so
     /// unmodified ArcGIS clients addressing tasks by their familiar Esri name resolve to
     /// the same canonical process. See <see cref="GPServerEsriTaskAliases"/>.
     /// <para>
@@ -1569,7 +1572,7 @@ internal static class GPServerEndpoints
     /// table. See <see cref="BuildPublishedTaskNames"/> for the matching publication rule.
     /// </para>
     /// </summary>
-    private static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
+    internal static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
     {
         if (string.IsNullOrWhiteSpace(taskName))
         {
@@ -1580,6 +1583,14 @@ internal static class GPServerEndpoints
         if (byProcessId != null)
         {
             return byProcessId;
+        }
+
+        var processes = processCatalog.ListProcesses();
+        var encodingPrefix = GPServerTaskNames.GetEncodingPrefix(processes);
+        if (taskName.StartsWith(encodingPrefix, StringComparison.Ordinal))
+        {
+            return processes.FirstOrDefault(process => GPServerExecutionPolicy.IsJobCallable(process) &&
+                string.Equals(GPServerTaskNames.Encode(process.ProcessId, encodingPrefix), taskName, StringComparison.Ordinal));
         }
 
         if (!GPServerEsriTaskAliases.TryResolveProcessId(taskName, out var processId))
@@ -1605,21 +1616,22 @@ internal static class GPServerEndpoints
             .Any(process => string.Equals(process.ProcessId, taskName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
+    internal static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
     {
         var parameters = new List<GPParameterInfo>(definition.Parameters.Count + definition.OutputArtifactKinds.Count);
+        var parameterPrefix = GPServerParameterNames.GetEncodingPrefix(definition);
         foreach (var parameter in definition.Parameters)
         {
             parameters.Add(new GPParameterInfo
             {
-                Name = parameter.Name,
+                Name = GPServerParameterNames.Publish(parameter.Name, parameterPrefix),
                 DisplayName = parameter.DisplayName,
                 Description = parameter.Description,
                 DataType = parameter.AcceptsGeoJsonDataUri
                     ? "GPFeatureRecordSetLayer"
                     : GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
                 Direction = "esriGPParameterDirectionInput",
-                DefaultValue = parameter.DefaultValue,
+                DefaultValue = GPServerParameterTranslation.TranslateDefaultValue(parameter),
                 ParameterType = parameter.Required
                     ? "esriGPParameterTypeRequired"
                     : "esriGPParameterTypeOptional",
@@ -1690,6 +1702,7 @@ internal static class GPServerEndpoints
         IReadOnlyDictionary<string, string> rawParameters)
     {
         var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var parameterPrefix = GPServerParameterNames.GetEncodingPrefix(definition);
         foreach (var (key, value) in rawParameters)
         {
             if (IsProtocolControlParameter(key))
@@ -1697,7 +1710,12 @@ internal static class GPServerEndpoints
                 continue;
             }
 
-            inputs[key] = value;
+            var canonicalName = GPServerParameterNames.Resolve(key, definition, parameterPrefix);
+            if (inputs.TryGetValue(canonicalName, out var previous) && !string.Equals(previous, value, StringComparison.Ordinal))
+            {
+                return new SubmissionPlanResult(null, "Conflicting values were supplied for a GPServer input parameter.", null);
+            }
+            inputs[canonicalName] = value;
         }
 
         // Additive ArcGIS-compatible input translation: rewrite esriGeometry JSON
@@ -1730,7 +1748,7 @@ internal static class GPServerEndpoints
             }
             try
             {
-                var schema = GPServerEsriOutputTranslation.DescribeInput(canonical, rawParameters.GetValueOrDefault(key));
+                var schema = GPServerEsriOutputTranslation.DescribeInput(canonical, inputs.GetValueOrDefault(key));
                 var geometryType = schema.TryGetProperty("geometryType", out var shape) ? shape.GetString() : null;
                 if (definition.ProcessId == "overlay.merge" && mergeGeometryType is not null &&
                     geometryType is not null && mergeGeometryType != geometryType)
