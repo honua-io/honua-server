@@ -67,6 +67,10 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
     /// <inheritdoc />
     protected override string ProcessId => HandledProcessId;
 
+    /// <summary>outStatistics aggregate the matched JOIN-layer rows, so validate against that schema.</summary>
+    private protected override int? ResolveStatisticsLayerId(StepInputReader inputs, DagSourceRequest request)
+        => RequireLayerId(inputs, "joinLayerId");
+
     /// <inheritdoc />
     private protected override async Task<List<IFeature>> ApplyCoreAsync(
         LayerOpContext context,
@@ -75,7 +79,8 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
     {
         var (predicate, distance) = ReadPredicate(inputs);
         var carryFields = StatisticsSupport.ParseFieldList(inputs.GetOrDefault("carryFields", string.Empty));
-        var stats = StatisticsSupport.ParseStatistics(inputs.GetOrDefault("outStatistics", string.Empty));
+        var stats = StatisticsSupport.ParseOutStatistics(inputs.GetOrDefault("outStatistics", string.Empty));
+        StatisticsSupport.EnsureNoOutputCollisions(stats, [.. carryFields, JoinCountAttribute]);
 
         // Resolve the second (join) layer through the same source.honua-layer connector
         // that streamed the target layer. Only the join layer id windows this read; the

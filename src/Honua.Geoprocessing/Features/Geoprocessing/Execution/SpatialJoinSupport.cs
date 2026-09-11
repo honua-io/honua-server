@@ -128,15 +128,7 @@ internal static class SpatialJoinSupport
                     carried[field].Add(ReadValue(candidate, field));
                 }
 
-                foreach (var accumulator in accumulators)
-                {
-                    switch (StatisticsSupport.TryReadNumeric(candidate, accumulator.Key, out var value))
-                    {
-                        case true:
-                            accumulator.Value.Add(value);
-                            break;
-                    }
-                }
+                StatisticsSupport.Accumulate(candidate, stats, accumulators);
             }
         }
 

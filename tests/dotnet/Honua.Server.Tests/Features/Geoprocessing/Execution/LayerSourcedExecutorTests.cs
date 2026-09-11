@@ -483,8 +483,10 @@ public sealed class LayerSourcedExecutorTests
         // #4624: 'where' already propagated; 'objectIds' and the GeoServices
         // geometry/geometryType/inSR/spatialRel envelope family did not — the catalog
         // advertised them but LayerSourcedFeatureExecutor silently dropped them. Assert
-        // the built DagSourceRequest carries the EXACT, independently-computed values
-        // for every selector together, not a subset.
+        // the built DagSourceRequest carries the EXACT values for every selector together,
+        // not a subset. The geometry family reaches source.honua-layer verbatim so the
+        // canonical selection translator (the synchronous analytics interpretation) owns it;
+        // LayerSourceExecutionProofTests proves the real rows it selects.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
 
         var (status, _, request) = await RunAsync(
@@ -506,24 +508,35 @@ public sealed class LayerSourcedExecutorTests
         request.Should().NotBeNull();
         request!.Where.Should().Be("pop > 100");
         request.ObjectIds.Should().Be("3, 8, 21");
-        request.Bbox.Should().Be("-10,-20,30,40",
-            "the envelope's xmin/ymin/xmax/ymax must translate to the same minX,minY,maxX,maxY bbox form");
+        request.Geometry.Should().Be("""{"xmin":-10,"ymin":-20,"xmax":30,"ymax":40}""");
+        request.GeometryType.Should().Be("esriGeometryEnvelope");
+        request.InSr.Should().Be("4326");
+        request.SpatialRel.Should().Be("esriSpatialRelIntersects");
+        request.Bbox.Should().BeNull("the geometry filter is interpreted canonically by the source, not approximated as a bbox");
     }
 
     [UnitTest]
-    public async Task BufferAggregate_TimeFilter_IsRejectedNotSilentlyIgnored()
+    public async Task BufferAggregate_TimeFilter_PropagatesToCanonicalSource()
     {
+        // #4624: time/timeRelation used to be rejected outright; they now reach
+        // source.honua-layer verbatim, which evaluates them against the layer's
+        // configured temporal fields through the canonical translator.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
 
-        var (status, _, _) = await RunAsync(
-            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+        var (status, _, request) = await RunAsync(
+            new LayerBufferAggregateExecutor(
+                BufferScopeFactory(source, layerId: 7, storageSrid: 3857, isGeographic: false),
+                Options(),
+                NullLogger<LayerBufferAggregateExecutor>.Instance),
             LayerBufferAggregateExecutor.HandledProcessId,
             ("layerId", "7"),
             ("distance", "10"),
-            ("time", "1700000000000"));
+            ("time", "1700000000000,1700086400000"),
+            ("timeRelation", "esriTimeRelationOverlaps"));
 
-        status.Should().Be(ExecutionJobStatus.Failed,
-            "an advertised filter this base cannot yet honor must fail closed, not silently return the unfiltered layer");
+        status.Should().Be(ExecutionJobStatus.Succeeded, _lastErrorForAssertions);
+        request!.Time.Should().Be("1700000000000,1700086400000");
+        request.TimeRelation.Should().Be("esriTimeRelationOverlaps");
     }
 
     [UnitTest]
@@ -537,10 +550,11 @@ public sealed class LayerSourcedExecutorTests
             ("layerId", "7"),
             ("distance", "10"),
             ("geometry", """{"rings":[[[0,0],[0,1],[1,1],[0,0]]]}"""),
-            ("geometryType", "esriGeometryPolygon"));
+            ("geometryType", "esriGeometryBogus"));
 
         status.Should().Be(ExecutionJobStatus.Failed,
             "a broadened, unsupported geometry filter must be rejected rather than silently widening the selection");
+        _allRequestsForAssertions.Should().BeEmpty("the selector is rejected before any layer read");
     }
 
     [UnitTest]
@@ -555,9 +569,11 @@ public sealed class LayerSourcedExecutorTests
             ("distance", "10"),
             ("geometry", """{"xmin":0,"ymin":0,"xmax":1,"ymax":1}"""),
             ("geometryType", "esriGeometryEnvelope"),
-            ("spatialRel", "esriSpatialRelContains"));
+            ("spatialRel", "esriSpatialRelWithinDistance"));
 
-        status.Should().Be(ExecutionJobStatus.Failed);
+        status.Should().Be(ExecutionJobStatus.Failed,
+            "distance-based relationships collide with the operation's own 'distance' and are rejected, as on the synchronous surface");
+        _allRequestsForAssertions.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -892,6 +908,265 @@ public sealed class LayerSourcedExecutorTests
     }
 
     // -------------------------------------------------------------------------
+    // #4624 catalog-to-execution parameter fidelity inventory
+    // -------------------------------------------------------------------------
+
+    private static readonly string[] SharedSelectors =
+        ["where", "objectIds", "geometry", "geometryType", "inSR", "spatialRel", "time", "timeRelation"];
+
+    /// <summary>
+    /// Every parameter the catalog advertises for a layer-sourced executor, each backed by an
+    /// execution proof: the shared selectors by
+    /// <see cref="LayerSourced_EveryAdvertisedSelector_ReachesTheCanonicalSource"/> (propagation)
+    /// plus LayerSourceExecutionProofTests (the PostGIS rows the canonical translation selects);
+    /// <c>outStatistics</c> by the GeoServices statistics oracles below; the op-specific inputs by
+    /// the per-operation tests above.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string[]> ProvenLayerParameters =
+        new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            ["analytics.buffer-aggregate"] = ["layerId", "distance", "unit", "dissolve", "groupByFields", "outStatistics", .. SharedSelectors],
+            ["analytics.spatial-join"] = ["layerId", "joinLayerId", "predicate", "distance", "carryFields", "outStatistics", .. SharedSelectors],
+            ["generalization.dissolve"] = ["layerId", "groupByFields", "dissolve", "outStatistics", .. SharedSelectors],
+            ["generalization.simplify-layer"] = ["layerId", "tolerance", "preserveTopology", .. SharedSelectors],
+        };
+
+    // Advertise the shared selectors but execute through the synchronous analytics handlers,
+    // which build their query with the same canonical translation.
+    private static readonly string[] ProtocolOnlySelectorProcesses = ["analytics.cluster", "analytics.density"];
+
+    private const string AllAggregatesPayload = """
+        [{"statisticType":"sum","onStatisticField":"pop","outStatisticFieldName":"total_pop"},
+         {"statisticType":"avg","onStatisticField":"pop","outStatisticFieldName":"mean_pop"},
+         {"statisticType":"min","onStatisticField":"pop","outStatisticFieldName":"min_pop"},
+         {"statisticType":"max","onStatisticField":"pop","outStatisticFieldName":"max_pop"},
+         {"statisticType":"count","onStatisticField":"pop","outStatisticFieldName":"n_pop"},
+         {"statisticType":"stddev","onStatisticField":"pop","outStatisticFieldName":"sd_pop"},
+         {"statisticType":"var","onStatisticField":"pop","outStatisticFieldName":"var_pop"}]
+        """;
+
+    [UnitTest]
+    public void CatalogToExecution_LayerSourcedParameterInventory_MatchesTheCatalogExactly()
+    {
+        var catalog = new BuiltInProcessCatalog();
+        foreach (var (processId, proven) in ProvenLayerParameters)
+        {
+            catalog.GetProcess(processId)!.Parameters.Select(p => p.Name).Should().BeEquivalentTo(proven,
+                $"every parameter {processId} advertises needs an execution proof, and every proven parameter must still be advertised");
+        }
+
+        // A new operation that advertises the shared selector family must join this inventory
+        // (with proofs) or be served by the synchronous canonical handlers.
+        catalog.ListProcesses()
+            .Where(p => p.Parameters.Any(parameter => parameter.Name == "timeRelation"))
+            .Select(p => p.ProcessId)
+            .Should().BeSubsetOf(ProvenLayerParameters.Keys.Concat(ProtocolOnlySelectorProcesses));
+    }
+
+    [UnitTest]
+    public async Task LayerSourced_EveryAdvertisedSelector_ReachesTheCanonicalSource()
+    {
+        // Mutation guard: an executor that drops (or rewrites) any advertised selector fails here
+        // with the offending process and selector named.
+        const string polygon = """{"rings":[[[0,0],[0,5],[5,5],[5,0],[0,0]]]}""";
+        (string Name, string Value)[] selectors =
+        [
+            ("where", "pop > 1"),
+            ("objectIds", "3,8"),
+            ("geometry", polygon),
+            ("geometryType", "esriGeometryPolygon"),
+            ("inSR", "3857"),
+            ("spatialRel", "esriSpatialRelContains"),
+            ("time", "1700000000000,1700086400000"),
+            ("timeRelation", "esriTimeRelationOverlaps"),
+        ];
+        selectors.Select(s => s.Name).Should().BeEquivalentTo(SharedSelectors);
+
+        foreach (var processId in ProvenLayerParameters.Keys)
+        {
+            var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+            {
+                [7] = [BoxFeature(0, 0, 1, 1)],
+                [8] = [BoxFeature(0, 0, 1, 1)],
+            });
+            var (executor, operationInputs) = CreateLayerExecutor(processId, source);
+
+            var (status, _, _) = await RunAsync(executor, processId, [("layerId", "7"), .. operationInputs, .. selectors]);
+
+            status.Should().Be(ExecutionJobStatus.Succeeded, $"{processId}: {_lastErrorForAssertions}");
+            var target = _allRequestsForAssertions.Single(r => r.LayerId == 7);
+            target.Where.Should().Be("pop > 1", processId);
+            target.ObjectIds.Should().Be("3,8", processId);
+            target.Geometry.Should().Be(polygon, processId);
+            target.GeometryType.Should().Be("esriGeometryPolygon", processId);
+            target.InSr.Should().Be("3857", processId);
+            target.SpatialRel.Should().Be("esriSpatialRelContains", processId);
+            target.Time.Should().Be("1700000000000,1700086400000", processId);
+            target.TimeRelation.Should().Be("esriTimeRelationOverlaps", processId);
+
+            // The shared selectors narrow the TARGET layer only, exactly as the synchronous
+            // spatial join applies them; the join layer is read in full.
+            foreach (var other in _allRequestsForAssertions.Where(r => r.LayerId != 7))
+            {
+                other.Where.Should().BeNull(processId);
+                other.ObjectIds.Should().BeNull(processId);
+                other.HasCanonicalSelectors.Should().BeFalse(processId);
+            }
+        }
+    }
+
+    [UnitTest]
+    public async Task LayerStatistics_GeoServicesPayload_HonorsEveryAggregateAndOutputName()
+    {
+        // #4624: ProcessPlanValidator admits outStatistics ONLY as this GeoServices payload, yet the
+        // layer executors parsed only 'field:stat', so every statistics request submitted through
+        // the canonical job API failed. Independent oracle — zone "a" pop {5, 7, null}: SUM 12,
+        // AVG 6, MIN 5, MAX 7, COUNT(pop) 2 (the null row joins the group but not COUNT(pop)),
+        // sample VAR ((5-6)^2 + (7-6)^2) / (2-1) = 2, STDDEV sqrt(2). Zone "b" pop {100}: sample
+        // VAR/STDDEV are undefined for n = 1 and must be null, not 0.
+        foreach (var processId in new[] { "analytics.buffer-aggregate", "generalization.dissolve" })
+        {
+            var source = new FakeDagFeatureSource(HonuaLayerSourceId,
+            [
+                NamedPointWithNumericField(0, 0, "zone", "a", "pop", 5),
+                NamedPointWithNumericField(1, 1, "zone", "a", "pop", 7),
+                new DagSourceFeature
+                {
+                    GeometryGeoJson = """{"type":"Point","coordinates":[2,2]}""",
+                    Attributes = new Dictionary<string, object?> { ["zone"] = "a", ["pop"] = null },
+                },
+                NamedPointWithNumericField(50, 50, "zone", "b", "pop", 100),
+            ]);
+            var (executor, operationInputs) = CreateLayerExecutor(processId, source);
+
+            var (status, uri, _) = await RunAsync(executor, processId,
+                [("layerId", "7"), .. operationInputs, ("groupByFields", "zone"), ("outStatistics", AllAggregatesPayload)]);
+
+            status.Should().Be(ExecutionJobStatus.Succeeded, $"{processId}: {_lastErrorForAssertions}");
+            var features = ReadFeatures(uri!);
+            var zoneA = features.Single(f => Equals(f.Attributes.GetOptionalValue("zone"), "a"));
+            Number(zoneA, "COUNT").Should().Be(3, processId);
+            Number(zoneA, "total_pop").Should().Be(12, processId);
+            Number(zoneA, "mean_pop").Should().Be(6, processId);
+            Number(zoneA, "min_pop").Should().Be(5, processId);
+            Number(zoneA, "max_pop").Should().Be(7, processId);
+            Number(zoneA, "n_pop").Should().Be(2, processId);
+            Number(zoneA, "var_pop").Should().BeApproximately(2, 1e-12, processId);
+            Number(zoneA, "sd_pop").Should().BeApproximately(Math.Sqrt(2), 1e-12, processId);
+            zoneA.Attributes.GetNames().Should().NotContain(name => name.StartsWith("SUM_", StringComparison.Ordinal),
+                "the requested outStatisticFieldName replaces the legacy default column name");
+
+            var zoneB = features.Single(f => Equals(f.Attributes.GetOptionalValue("zone"), "b"));
+            Number(zoneB, "total_pop").Should().Be(100, processId);
+            Number(zoneB, "n_pop").Should().Be(1, processId);
+            zoneB.Attributes.GetOptionalValue("var_pop").Should().BeNull(processId);
+            zoneB.Attributes.GetOptionalValue("sd_pop").Should().BeNull(processId);
+        }
+    }
+
+    [UnitTest]
+    public async Task SpatialJoin_GeoServicesOutStatistics_AggregatesMatchedJoinRowsUnderRequestedNames()
+    {
+        // The target box [0,10]^2 intersects the join points with pop 5 and 7; the join point at
+        // (50,50) with pop 100 matches nothing. Oracle: SUM 12, COUNT(pop) 2, JOIN_COUNT 2.
+        var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+        {
+            [7] = [BoxFeature(0, 0, 10, 10, ("name", "target"))],
+            [8] =
+            [
+                NamedPointWithNumericField(2, 2, "zone", "a", "pop", 5),
+                NamedPointWithNumericField(3, 3, "zone", "a", "pop", 7),
+                NamedPointWithNumericField(50, 50, "zone", "b", "pop", 100),
+            ],
+        });
+
+        var (status, uri, _) = await RunAsync(
+            new LayerSpatialJoinExecutor(ScopeFactory(source), Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
+            LayerSpatialJoinExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("joinLayerId", "8"),
+            ("outStatistics", """
+                [{"statisticType":"sum","onStatisticField":"pop","outStatisticFieldName":"joined_pop"},
+                 {"statisticType":"count","onStatisticField":"pop","outStatisticFieldName":"joined_n"}]
+                """));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded, _lastErrorForAssertions);
+        var feature = ReadFeatures(uri!).Should().ContainSingle().Which;
+        Number(feature, "joined_pop").Should().Be(12);
+        Number(feature, "joined_n").Should().Be(2);
+        Number(feature, LayerSpatialJoinExecutor.JoinCountAttribute).Should().Be(2);
+    }
+
+    [UnitTest]
+    public async Task LayerStatistics_InvalidCombinations_AreRejectedBeforeComputation()
+    {
+        var schema = new[]
+        {
+            new MetadataV2Field { Name = "zone", Type = MetadataV2FieldType.Integer },
+            new MetadataV2Field { Name = "pop", Type = MetadataV2FieldType.Integer },
+        };
+        (string Payload, string Error, bool RejectedBeforeRead)[] cases =
+        [
+            ("""[{"statisticType":"sum","onStatisticField":"pop","outStatisticFieldName":"x"},{"statisticType":"max","onStatisticField":"pop","outStatisticFieldName":"X"}]""",
+                "more than once", true),
+            ("""[{"statisticType":"median","onStatisticField":"pop","outStatisticFieldName":"m"}]""", "not supported", true),
+            ("""[{"statisticType":"sum","onStatisticField":"pop"}]""", "outStatisticFieldName", true),
+            ("""[{"statisticType":"sum","onStatisticField":"popl","outStatisticFieldName":"t"}]""", "not a field of layer 7", true),
+            ("""[{"statisticType":"sum","onStatisticField":"POP","outStatisticFieldName":"t"}]""", "did you mean 'pop'", true),
+            ("""[{"statisticType":"sum","onStatisticField":"pop","outStatisticFieldName":"zone"}]""", "collides", false),
+            ("""[{"statisticType":"sum","onStatisticField":"pop","outStatisticFieldName":"COUNT"}]""", "collides", false),
+        ];
+
+        foreach (var (payload, error, rejectedBeforeRead) in cases)
+        {
+            var source = new FakeDagFeatureSource(HonuaLayerSourceId, [NamedPointWithNumericField(0, 0, "zone", "a", "pop", 5)]);
+            var (status, _, _) = await RunAsync(
+                new LayerBufferAggregateExecutor(
+                    BufferScopeFactory(source, layerId: 7, storageSrid: 3857, isGeographic: false, schemaFields: schema),
+                    Options(),
+                    NullLogger<LayerBufferAggregateExecutor>.Instance),
+                LayerBufferAggregateExecutor.HandledProcessId,
+                ("layerId", "7"),
+                ("distance", "1"),
+                ("groupByFields", "zone"),
+                ("outStatistics", payload));
+
+            status.Should().Be(ExecutionJobStatus.Failed, payload);
+            _lastErrorForAssertions.Should().Contain(error, payload);
+            if (rejectedBeforeRead)
+            {
+                _allRequestsForAssertions.Should().BeEmpty($"'{payload}' is rejected before the layer is read");
+            }
+        }
+    }
+
+    private static (LayerSourcedFeatureExecutor Executor, (string Name, string Value)[] Inputs) CreateLayerExecutor(
+        string processId,
+        IDagFeatureSource source)
+        => processId switch
+        {
+            "analytics.buffer-aggregate" => (
+                new LayerBufferAggregateExecutor(
+                    BufferScopeFactory(source, layerId: 7, storageSrid: 3857, isGeographic: false),
+                    Options(),
+                    NullLogger<LayerBufferAggregateExecutor>.Instance),
+                [("distance", "1")]),
+            "analytics.spatial-join" => (
+                new LayerSpatialJoinExecutor(ScopeFactory(source), Options(), NullLogger<LayerSpatialJoinExecutor>.Instance),
+                [("joinLayerId", "8")]),
+            "generalization.dissolve" => (
+                new LayerDissolveExecutor(ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance),
+                []),
+            "generalization.simplify-layer" => (
+                new LayerSimplifyExecutor(ScopeFactory(source), Options(), NullLogger<LayerSimplifyExecutor>.Instance),
+                [("tolerance", "0.1")]),
+            _ => throw new ArgumentOutOfRangeException(nameof(processId), processId, null),
+        };
+
+    private static double Number(IFeature feature, string attribute)
+        => Convert.ToDouble(feature.Attributes.GetOptionalValue(attribute), CultureInfo.InvariantCulture);
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
@@ -1001,7 +1276,8 @@ public sealed class LayerSourcedExecutorTests
         int layerId,
         int storageSrid,
         bool isGeographic,
-        double metersPerUnit = 1.0)
+        double metersPerUnit = 1.0,
+        IReadOnlyList<MetadataV2Field>? schemaFields = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(source);
@@ -1010,7 +1286,7 @@ public sealed class LayerSourcedExecutorTests
             {
                 [storageSrid] = (isGeographic, metersPerUnit),
             }));
-        services.AddSingleton<IMetadataV2GraphProvider>(new FakeMetadataV2GraphProvider(layerId, storageSrid));
+        services.AddSingleton<IMetadataV2GraphProvider>(new FakeMetadataV2GraphProvider(layerId, storageSrid, schemaFields));
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
@@ -1084,12 +1360,15 @@ public sealed class LayerSourcedExecutorTests
             },
         };
 
+        _lastRequestForAssertions = null;
+        _allRequestsForAssertions.Clear();
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
         _lastErrorForAssertions = result.ErrorMessage;
         return (result.Status, publishedUri, _lastRequestForAssertions);
     }
 
     private static DagSourceRequest? _lastRequestForAssertions;
+    private static readonly List<DagSourceRequest> _allRequestsForAssertions = [];
     private static string? _lastErrorForAssertions;
 
     private static List<IFeature> ReadFeatures(string dataUri)
@@ -1116,6 +1395,7 @@ public sealed class LayerSourcedExecutorTests
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             _lastRequestForAssertions = request;
+            _allRequestsForAssertions.Add(request);
             foreach (var feature in _features)
             {
                 yield return feature;
@@ -1150,6 +1430,7 @@ public sealed class LayerSourcedExecutorTests
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             _lastRequestForAssertions = request;
+            _allRequestsForAssertions.Add(request);
             if (request.LayerId is int layerId && _byLayer.TryGetValue(layerId, out var features))
             {
                 foreach (var feature in features)
@@ -1172,10 +1453,11 @@ public sealed class LayerSourcedExecutorTests
     {
         private readonly MetadataV2GraphSnapshot _snapshot;
 
-        public FakeMetadataV2GraphProvider(int layerId, int storageSrid)
+        public FakeMetadataV2GraphProvider(int layerId, int storageSrid, IReadOnlyList<MetadataV2Field>? schemaFields = null)
         {
             var resource = new MetadataV2Resource
             {
+                SchemaFields = schemaFields ?? [],
                 Metadata = new MetadataV2ObjectMetadata { Id = $"res-{layerId}", Name = $"layer-{layerId}" },
                 Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                 Spatial = new MetadataV2ResourceSpatial

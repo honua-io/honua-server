@@ -7,6 +7,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -138,6 +140,15 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                 $"through the {HonuaLayerSourceId} connector, which is not configured here.");
         }
 
+        try
+        {
+            await ValidateStatisticsAsync(scope.ServiceProvider, inputs, request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TransformInputException ex)
+        {
+            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(20, $"Streaming layer features for {ProcessId}", cancellationToken).ConfigureAwait(false);
 
@@ -166,6 +177,12 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
             // where/bbox, raise the configured limit), so the message must reach the caller
             // verbatim rather than collapsing to a bare exception type name.
             return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
+        }
+        catch (DagSourceSelectionException ex)
+        {
+            // A geometry/time selector the canonical translator rejected (or could not
+            // evaluate in this deployment): caller-facing, so surface it verbatim (#4624).
+            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.Message}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -436,29 +453,68 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     protected virtual DagSourceRequest CustomizeRequest(DagSourceRequest request, StepInputReader inputs)
         => request;
 
+    // The esriGeometryType vocabulary the canonical GeoServices geometry parser accepts, and
+    // the distance-based relationships the analytics surface rejects (ProcessPlanValidator and
+    // AnalyticsFeatureQueryFactory apply the same rules). Checked here only so a malformed
+    // selector fails before any layer read; the canonical translator stays authoritative.
+    private static readonly HashSet<string> KnownGeometryTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "esriGeometryPoint", "esriGeometryMultipoint", "esriGeometryPolyline", "esriGeometryPolygon", "esriGeometryEnvelope",
+    };
+
+    private static readonly HashSet<string> DistanceSpatialRelationships = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "esriSpatialRelWithinDistance", "esriSpatialRelBeyondDistance",
+    };
+
     private DagSourceRequest BuildSourceRequest(StepInputReader inputs)
     {
         // #4624: the catalog advertises objectIds / geometry+geometryType+inSR+spatialRel /
         // time+timeRelation on every op that includes SharedAnalyticsFilterParameters
         // (analytics.buffer-aggregate, analytics.spatial-join, generalization.dissolve,
-        // generalization.simplify-layer), but this base previously only propagated
-        // where/bbox — every other advertised selector was silently accepted and ignored.
-        // A selector this base cannot yet honor is now REJECTED (not silently dropped) so a
-        // caller who thinks they narrowed the input never gets the full layer back unfiltered.
-        if (inputs.TryGet("time", out var time) && !string.IsNullOrWhiteSpace(time)
-            || inputs.TryGet("timeRelation", out var timeRelation) && !string.IsNullOrWhiteSpace(timeRelation))
+        // generalization.simplify-layer). Every selector is propagated verbatim to
+        // source.honua-layer, which interprets geometry/time through the SAME canonical
+        // translation the synchronous analytics endpoints use (ILayerSelectionFilterTranslator)
+        // and fails closed when it cannot — never a connector-local approximation.
+        var bbox = ReadNonBlank(inputs, "bbox");
+        var geometry = ReadNonBlank(inputs, "geometry");
+        if (bbox is not null && geometry is not null)
         {
-            throw new TransformInputException(
-                "'time'/'timeRelation' selection is not yet supported by layer-sourced geoprocessing " +
-                "execution; filter by a temporal column through 'where' instead.");
+            throw new TransformInputException("supply either 'bbox' or 'geometry', not both.");
         }
 
+        var geometryType = ReadNonBlank(inputs, "geometryType");
+        var spatialRel = ReadNonBlank(inputs, "spatialRel");
+        if (geometry is not null)
+        {
+            if (geometryType is not null && !KnownGeometryTypes.Contains(geometryType.Trim()))
+            {
+                throw new TransformInputException(
+                    $"'geometryType' '{geometryType}' is not supported (supported: esriGeometryPoint, " +
+                    "esriGeometryMultipoint, esriGeometryPolyline, esriGeometryPolygon, esriGeometryEnvelope).");
+            }
+
+            if (spatialRel is not null && DistanceSpatialRelationships.Contains(spatialRel.Trim()))
+            {
+                throw new TransformInputException(
+                    $"'spatialRel' '{spatialRel}' is distance-based, which the analytics operations do not support; " +
+                    "use the operation-specific 'distance' parameter or apply the predicate through 'where' instead.");
+            }
+        }
+
+        var time = ReadNonBlank(inputs, "time");
         var request = new DagSourceRequest
         {
             LayerId = RequireLayerId(inputs, "layerId"),
             Where = inputs.TryGet("where", out var where) ? where : null,
-            Bbox = ResolveBbox(inputs),
+            Bbox = bbox,
             ObjectIds = ResolveObjectIds(inputs),
+            Geometry = geometry,
+            GeometryType = geometry is null ? null : geometryType,
+            InSr = geometry is null ? null : ReadNonBlank(inputs, "inSR"),
+            SpatialRel = geometry is null ? null : spatialRel,
+            Time = time,
+            TimeRelation = time is null ? null : ReadNonBlank(inputs, "timeRelation"),
             OutFields = inputs.TryGet("outFields", out var outFields) ? outFields : null,
             OutputSrid = TryGetPositiveInt(inputs, "outSrid"),
             Since = inputs.TryGet("since", out var since) ? since : null,
@@ -468,96 +524,64 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         return CustomizeRequest(request, inputs);
     }
 
+    private static string? ReadNonBlank(StepInputReader inputs, string key)
+        => inputs.TryGet(key, out var raw) && !string.IsNullOrWhiteSpace(raw) ? raw : null;
+
     /// <summary>
-    /// Resolves the spatial selection filter (#4624): either the pre-existing plain
-    /// <c>bbox</c> input, or the catalog-advertised GeoServices <c>geometry</c> +
-    /// <c>geometryType</c> + <c>inSR</c> + <c>spatialRel</c> family translated to the
-    /// same <c>minX,minY,maxX,maxY</c> form. Only an envelope geometry, an intersects
-    /// relationship, and a WGS 84 (or absent) input SR are supported today; anything
-    /// else fails closed with an actionable diagnostic rather than silently narrowing
-    /// (or failing to narrow) the input set incorrectly.
+    /// The catalog layer whose schema an <c>outStatistics</c> request aggregates over. The
+    /// target layer by default; a two-layer op that aggregates matched rows of a second layer
+    /// (<c>analytics.spatial-join</c>) overrides this.
     /// </summary>
-    private static string? ResolveBbox(StepInputReader inputs)
+    private protected virtual int? ResolveStatisticsLayerId(StepInputReader inputs, DagSourceRequest request)
+        => request.LayerId;
+
+    /// <summary>
+    /// Rejects, BEFORE any layer read, an <c>outStatistics</c> request that is malformed or that
+    /// names a field the aggregated layer does not have (#4624). Without this a misspelled field
+    /// produced a well-formed artifact with a null aggregate column — an ignored statistic
+    /// indistinguishable from "no values". Skipped when catalog metadata (or the layer's schema)
+    /// is unavailable; the parse itself always runs.
+    /// </summary>
+    private async Task ValidateStatisticsAsync(
+        IServiceProvider services,
+        StepInputReader inputs,
+        DagSourceRequest request,
+        CancellationToken cancellationToken)
     {
-        var hasBbox = inputs.TryGet("bbox", out var bbox) && !string.IsNullOrWhiteSpace(bbox);
-        var hasGeometry = inputs.TryGet("geometry", out var geometryRaw) && !string.IsNullOrWhiteSpace(geometryRaw);
-        if (hasBbox && hasGeometry)
+        if (!inputs.TryGet("outStatistics", out var raw) || string.IsNullOrWhiteSpace(raw))
         {
-            throw new TransformInputException("supply either 'bbox' or 'geometry', not both.");
+            return;
         }
 
-        if (hasBbox)
+        var stats = StatisticsSupport.ParseOutStatistics(raw);
+        var metadata = services.GetService<IMetadataV2GraphProvider>();
+        if (metadata is null || ResolveStatisticsLayerId(inputs, request) is not { } layerId)
         {
-            return bbox;
+            return;
         }
 
-        if (!hasGeometry)
+        var snapshot = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource)
+            || resource.SchemaFields.Count == 0)
         {
-            return null;
+            return;
         }
 
-        var geometryType = inputs.TryGet("geometryType", out var rawType) ? rawType : null;
-        if (!string.Equals(geometryType, "esriGeometryEnvelope", StringComparison.OrdinalIgnoreCase))
+        var primaryId = resource.FindPrimaryIdField()?.Name;
+        foreach (var field in stats.Select(spec => spec.Field).Where(field => field.Length > 0).Distinct(StringComparer.Ordinal))
         {
+            if (string.Equals(field, primaryId, StringComparison.Ordinal)
+                || resource.SchemaFields.Any(schemaField => string.Equals(schemaField.Name, field, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            var caseMatch = resource.SchemaFields
+                .FirstOrDefault(schemaField => string.Equals(schemaField.Name, field, StringComparison.OrdinalIgnoreCase));
             throw new TransformInputException(
-                $"'geometryType' '{geometryType ?? "<none>"}' is not supported for the 'geometry' selection " +
-                "filter on layer-sourced geoprocessing execution (supported: esriGeometryEnvelope); use 'bbox' " +
-                "for an envelope filter or omit 'geometry'.");
+                $"'outStatistics' references field '{field}', which is not a field of layer {layerId}"
+                + (caseMatch is null ? "." : $"; did you mean '{caseMatch.Name}'?"));
         }
-
-        var spatialRel = inputs.TryGet("spatialRel", out var rawRel) ? rawRel : null;
-        if (!string.IsNullOrWhiteSpace(spatialRel)
-            && !string.Equals(spatialRel, "esriSpatialRelIntersects", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new TransformInputException(
-                $"'spatialRel' '{spatialRel}' is not supported for layer-sourced geoprocessing execution " +
-                "(supported: esriSpatialRelIntersects).");
-        }
-
-        if (inputs.TryGet("inSR", out var inSr) && !string.IsNullOrWhiteSpace(inSr) && !IsWgs84SridToken(inSr!))
-        {
-            throw new TransformInputException(
-                $"'inSR' '{inSr}' is not supported for the 'geometry' selection filter on layer-sourced " +
-                "geoprocessing execution; supply the envelope in WGS 84 (EPSG:4326 / CRS84) or omit 'inSR'.");
-        }
-
-        return ParseEnvelopeToBbox(geometryRaw!);
-    }
-
-    private static bool IsWgs84SridToken(string value)
-    {
-        var trimmed = value.Trim();
-        if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid))
-        {
-            return srid == 4326;
-        }
-
-        return trimmed.Equals("CRS84", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Equals("EPSG:4326", StringComparison.OrdinalIgnoreCase)
-            || trimmed.Contains("4326", StringComparison.Ordinal)
-            || trimmed.Contains("CRS84", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string ParseEnvelopeToBbox(string geometryJson)
-    {
-        double xmin, ymin, xmax, ymax;
-        try
-        {
-            using var document = System.Text.Json.JsonDocument.Parse(geometryJson);
-            var root = document.RootElement;
-            xmin = root.GetProperty("xmin").GetDouble();
-            ymin = root.GetProperty("ymin").GetDouble();
-            xmax = root.GetProperty("xmax").GetDouble();
-            ymax = root.GetProperty("ymax").GetDouble();
-        }
-        catch (Exception ex) when (ex is System.Text.Json.JsonException or KeyNotFoundException
-            or InvalidOperationException or FormatException)
-        {
-            throw new TransformInputException(
-                "'geometry' must be an esriGeometryEnvelope JSON object with numeric xmin/ymin/xmax/ymax.");
-        }
-
-        return FormattableString.Invariant($"{xmin},{ymin},{xmax},{ymax}");
     }
 
     private static string? ResolveObjectIds(StepInputReader inputs)

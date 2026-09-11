@@ -52,7 +52,8 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
         var distanceMeters = distance * ReadUnitFactor(inputs);
         var dissolve = ReadBool(inputs, "dissolve", defaultValue: true);
         var groupByFields = ReadGroupByFields(inputs);
-        var stats = StatisticsSupport.ParseStatistics(inputs.GetOrDefault("outStatistics", string.Empty));
+        var stats = StatisticsSupport.ParseOutStatistics(inputs.GetOrDefault("outStatistics", string.Empty));
+        StatisticsSupport.EnsureNoOutputCollisions(stats, [.. groupByFields, CountAttribute]);
         if (stats.Count > 0 && !dissolve)
         {
             // Matches the catalog's documented constraint (and generalization.dissolve's
