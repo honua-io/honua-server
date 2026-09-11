@@ -5,7 +5,7 @@
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-09-02.
+> Last updated: 2026-09-11.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -43,10 +43,64 @@ analysis.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context (#2865). Admission tier first: a ~3-second sweep asserting every tracked **text** blob decodes as UTF-8 (`validate-tracked-file-encoding.py`, #3321) -- binary fixtures are excluded by git's own text/binary classification rather than an extension denylist, except that auto-detected binaries are still screened for a UTF-16/UTF-32 byte-order mark, since NUL-dense Unicode text would otherwise pass as binary. A `.gitattributes` declaration remains the escape hatch. Then one service-free, Testcontainers-free ubuntu-latest runner: affected-scope warnings-as-errors build, affected-document `dotnet format --verify-no-changes`, `Tier=Fast` smoke, architecture enforcement, and service-free MCP registry/taxonomy drift checks. Deliberately un-path-filtered. In review-first enforce mode, attempt 1 stops before the expensive steps and the trusted reviewer releases attempt 2 exactly once. Shares its steps with `ci.yml`'s `Merge Queue Gate` via `.github/actions/lean-gate`. The Testcontainers-backed Server governance/drift assertions run intact in `ci.yml`'s trunk-only trailing job instead. |
+| `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context (#2865). Admission tier first: a ~3-second sweep asserting every tracked **text** blob decodes as UTF-8 (`validate-tracked-file-encoding.py`, #3321) -- binary fixtures are excluded by git's own text/binary classification rather than an extension denylist, except that auto-detected binaries are still screened for a UTF-16/UTF-32 byte-order mark, since NUL-dense Unicode text would otherwise pass as binary. A `.gitattributes` declaration remains the escape hatch. Then one service-free, Testcontainers-free ubuntu-latest runner: affected-scope warnings-as-errors build, affected-document `dotnet format --verify-no-changes`, `Tier=Fast` smoke, architecture enforcement, and service-free MCP registry/taxonomy drift checks. Deliberately un-path-filtered. In review-first enforce mode, attempt 1 stops before the expensive steps and the trusted reviewer releases attempt 2 exactly once. Shares its steps with `ci.yml`'s `Merge Queue Gate` via `.github/actions/lean-gate`. The Testcontainers-backed Server governance/drift assertions run intact in `ci.yml`'s trunk-only trailing job instead. A documentation-only diff exits inside the jobs rather than through a filter; see [Docs-only exit](#docs-only-exit-pr-gate). |
 | `review-gate.yml` | Review Gate Attestation | `pull_request_target`, `issue_comment`, trusted `repository_dispatch`, `workflow_run` [PR Gate, Review Event Bridge] | Required admission context. Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. Serializes every event by resolved PR number, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt; merge-train selection and pre-land independently re-attest source evidence. |
 | `claude-review.yml` | Claude Review | completed `PR Gate` `workflow_run`, `issue_comment` containing `@claude review` | Second attesting reviewer for the required `Review Gate` context (#3213, #3314; rebuilt on a trusted trigger by #3341), so a PR can still land while Codex is rate-limited. Trusted default-branch lane: **never** triggered by `pull_request`, read-only `GITHUB_TOKEN`, and it posts comments and inline threads only — never a review verdict. `scripts/ci/review-gate-evidence.js` accepts `claude` evidence alongside Codex. Inert until an auth secret exists. See [gate-model.md → Attesting reviewers](gate-model.md#attesting-reviewers). |
 | `review-event-bridge.yml` | Review Event Bridge | `pull_request_review`, `pull_request_review_comment` | Best-effort latency hint only. GitHub runs these event workflows from the PR merge branch, so the bridge is credential-free/no-checkout and is never trusted for invalidation or landing. |
+
+### Docs-only exit (`PR Gate`)
+
+Operator ruling A (2026-09-11, #3213): a documentation-only pull request does
+not pay for the lean-gate build and unit smoke. The exit lives **inside** the
+required jobs. `PR Gate / Build and tests`, `PR Gate / Format` and
+`PR Gate / Affected shards (select)` still run and conclude success themselves,
+and so do the `PR Gate` and `PR Gate / Affected shards` aggregates. There is no
+`paths` filter, because a skipped required check blocks merge. The observe-only
+`docs-only` class of `scripts/ci/classify-pr-gate-impact.py` is a separate,
+narrower measurement and is unchanged.
+
+**What counts as docs-only** is defined once, in `scripts/ci/docs-only-diff.sh`
+(its header is the full contract). To see why a documentation change ran the
+full gate, run `DOCS_ONLY_EXPLAIN=1 scripts/ci/docs-only-diff.sh --paths` with
+the changed paths on stdin.
+
+- Every changed path must be a top-level Markdown file or a prose/image file
+  under `docs/` (`.md .png .jpg .jpeg .gif .svg .webp`) outside
+  `docs/gis/data/`. A rename counts as both its old and its new path. Deleting
+  a top-level Markdown file, or turning a file into a symlink, is never
+  docs-only.
+- No changed path may be referenced by a gate input. At gate time the
+  classifier scans everything the skipped steps compile, execute or read:
+  - all of `src/` and `tests/dotnet/`, and the root build files;
+  - this workflow, its composite actions, and the scripts its skipped steps run;
+  - `docker/worker-gdal/`, `certification/`, and every non-prose file under
+    `docs/`.
+
+  It looks for path literals, `CombinePath(root, "docs", ...)` segment paths,
+  quoted top-level Markdown names and MSBuild item paths. A document that an
+  architecture or Server test reads, such as `docs/cite-status.md`, therefore
+  always runs the full gate. A test that starts reading a document governs it
+  from that commit on, with no list to update. On 2026-09-11, 368 of the 425
+  prose documents qualified.
+- Any doubt means "not docs-only": a non-`pull_request` event, a checkout that
+  is not the two-parent `refs/pull/N/merge` commit, an empty diff, more than
+  400 changed paths, or any classifier failure. A failure costs a full gate
+  run, never a skipped one.
+
+**What a docs-only diff still runs:**
+
+| Job | Still runs | Skipped |
+|---|---|---|
+| `PR Gate / Build and tests` | The UTF-8 tracked-file guard (#3320); the terminal-error receipt, client-certification roster, review-first admission and base-image inventory checks; the admission receipt; the classifier's own fixtures; and the Markdown command policy (`check-markdown-command-policy.ps1`, which rejects raw HTTP shell examples). | Disk cleanup, .NET setup, the lean gate (build plus Fast, architecture, MCP and governance smoke), the execution proofs, the PDAL build, the boot smoke, the serving-image fixtures, and the proof uploads. |
+| `PR Gate / Format` | Checkout and classification. | .NET setup, restore, `dotnet format`. |
+| `PR Gate / Affected shards (select)` | Classification. The job publishes `skip=true` with `reason=docs_only`, so the aggregate reports `skipped`. | Selector validation and shard selection. |
+
+Outside `PR Gate`, `docs-link-gate.yml` keeps firing on `docs/**` and
+`README.md` exactly as before: links, anchors, and the gate that rejects
+added raw HTTP shell examples. Review-first enforcement is unchanged, because an enforced attempt 1
+fails at `Await exact-head review` before the classifier runs. Each docs-only
+job records `docs_only=true` as a step output and the summary line
+`PR Gate: docs-only diff, build and tests skipped (<reason>)`.
 
 ## Merge and landing
 
