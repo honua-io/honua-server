@@ -1,3 +1,8 @@
+---
+type: index
+title: "Interactive API Documentation"
+description: "Honua Server provides OpenAPI specifications for OGC APIs and a curated, versioned Admin API contract snapshot."
+---
 # Interactive API Documentation
 
 Honua Server provides OpenAPI specifications for OGC APIs and a curated, versioned Admin API contract snapshot. These interactive docs allow you to explore and test the APIs directly.

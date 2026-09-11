@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Geoprocessing operations"
+description: "Catalog of the built-in geoprocessing processes (process catalog honua.processcatalog.builtin.v1)."
+---
 # Geoprocessing operations
 
 Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). Protocol adapters consume the catalog's execution-capability metadata instead of maintaining their own callable-process lists: OGC API Processes (`/ogc/processes/processes`) projects job processes and honors their advertised synchronous/asynchronous modes, the ArcGIS-compatible GPServer adapter (`/rest/services/{serviceId}/GPServer`) derives synchronous execution from the declared modes, and MCP exposes the complete classification. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); to write your own process, see [author a geoprocessing process](../guides/query-analyze/gp-devkit-authoring.md).

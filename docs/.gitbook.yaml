@@ -152,3 +152,5 @@ redirects:
   reference/protocols/specifications/ogc-api-records-coverage: reference/protocols/ogc-apis.md
   reference/protocols/specifications/wcs-2.0.1-coverage: reference/protocols/wms-wfs-wcs-wmts.md
   reference/protocols/specifications/odata-v4-coverage: reference/protocols/odata.md
+  guides/run-studio-ai-proxy: studio/byom.md
+  guides/run-studio-ai-on-bedrock: studio/byom.md

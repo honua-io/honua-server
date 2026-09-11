@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Import SLD styles"
+description: "Convert a GeoServer SLD/SE document into a layer's stored MapLibre style server-side, instead of rewriting style files by hand."
+---
 # Import SLD styles
 
 Convert a GeoServer SLD/SE document into a layer's stored MapLibre style server-side, instead of rewriting style files by hand.

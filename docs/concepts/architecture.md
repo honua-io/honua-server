@@ -1,3 +1,8 @@
+---
+type: concept
+title: "Architecture"
+description: "Honua is a geospatial server that publishes, queries, edits, and renders spatial data through standard protocols."
+---
 # Architecture
 
 Honua is a geospatial server that publishes, queries, edits, and renders spatial data through standard protocols. It ships as a single container running one ASP.NET Core (.NET 10) process. There is no site model, no separate tile server, and no required sidecar: one process serves every protocol, the admin API, and the web endpoints.

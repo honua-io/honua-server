@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Make your first map"
+description: "You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes."
+---
 # Make your first map
 
 You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes.

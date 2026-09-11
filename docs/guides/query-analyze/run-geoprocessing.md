@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Run geoprocessing"
+description: "Discover a server-side process, execute it synchronously or submit it as an asynchronous job, and fetch results — over OGC API Processes, with the same catalog reachable through the ArcGIS-compatible GPServer adapter."
+---
 # Run geoprocessing
 
 Discover a server-side process, execute it synchronously or submit it as an asynchronous job, and fetch results — over OGC API Processes, with the same catalog reachable through the ArcGIS-compatible GPServer adapter.

@@ -1,3 +1,8 @@
+---
+type: reference
+title: "GeocodeServer provider parity matrix"
+description: "This page is the receipt for GeocodeServer parity across Honua's geocoding providers and against Esri GeocodeServer behavior."
+---
 # GeocodeServer provider parity matrix
 
 This page is the receipt for GeocodeServer parity across Honua's geocoding providers and against

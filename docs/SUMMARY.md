@@ -54,6 +54,9 @@
   - [Geoprocessing with AI](guides/query-analyze/geoprocessing-with-ai.md)
   - [Run geoprocessing](guides/query-analyze/run-geoprocessing.md)
   - [Author a geoprocessing process](guides/query-analyze/gp-devkit-authoring.md)
+  - [Local geoprocessing dev quickstart](guides/query-analyze/gp-local-dev-quickstart.md)
+  - [Raster/vector GP in custom-code tools](customcode/raster-gp-pattern.md)
+  - [Data enrichment API](operator/data-enrichment.md)
   - [Automate workflows](guides/query-analyze/automate-workflows.md)
   - [Work with time](guides/query-analyze/work-with-time.md)
 - Connect clients
@@ -75,6 +78,8 @@
   - [Edit features](guides/edit/edit-features.md)
   - [Attachments & related records](guides/edit/attachments-and-related-records.md)
   - [React to changes](guides/edit/react-to-changes.md)
+  - [WFS 2.0 transaction receipts](guides/wfs-transaction-receipts.md)
+  - [Referenced GP output persistence](user/gp-output-store-attestation.md)
 - Secure
   - [Authentication](guides/secure/authentication.md)
   - [Access control](guides/secure/access-control.md)
@@ -97,6 +102,9 @@
   - [Scaling & performance](guides/deploy/scaling-and-performance.md)
   - [Upgrade & rollback](guides/deploy/upgrade-and-rollback.md)
   - [Troubleshooting](guides/deploy/troubleshooting.md)
+  - [Tenancy support](guides/deploy/tenancy.md)
+  - [Capability deployment profiles](guides/deploy/capability-deployment-profiles.md)
+  - [Route geoprocessing to AWS Batch](operator/geoprocessing-aws-batch.md)
 - Migrate
   - [From ArcGIS Server](guides/migrate/from-arcgis-server.md)
   - [From GeoServer](guides/migrate/from-geoserver.md)
@@ -134,6 +142,9 @@
     - [Amazon Redshift](reference/configuration/data-sources/redshift.md)
     - [Snowflake](reference/configuration/data-sources/snowflake.md)
     - [Databricks](reference/configuration/data-sources/databricks.md)
+- Geocoding
+  - [Local PostGIS-backed geocoder](reference/geocoding/local-postgis-geocoder.md)
+  - [GeocodeServer provider parity](reference/geocoding/geocode-server-parity.md)
 - [Data formats](reference/data-formats.md)
 - [CQL2 & filtering](reference/cql2-and-filtering.md)
 - [Geoprocessing operations](reference/geoprocessing-operations.md)
@@ -149,6 +160,8 @@
   - [CITE status](cite-status.md)
   - [Clients & known limitations](reference/compatibility/clients.md)
   - [GeoServices REST parity](reference/compatibility/geoservices-parity.md)
+  - [SCIM / SAML IdP conformance](reference/compatibility/idp-conformance-matrix.md)
+  - [ImageServer admin mapping](reference/compatibility/imageserver-admin-mapping.md)
   - [Client template runbook](gis/CLIENT_TEMPLATE_RUNBOOK.md)
   - [Client template version matrix](gis/CLIENT_TEMPLATE_VERSION_MATRIX.md)
 

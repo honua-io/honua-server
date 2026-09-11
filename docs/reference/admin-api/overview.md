@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Admin API overview"
+description: "The admin API is Honua's control-plane REST surface at /api/v1/admin/."
+---
 # Admin API overview
 
 The admin API is Honua's control-plane REST surface at `/api/v1/admin/*`. It powers the Admin UI and Honua Console and supports headless automation: connections, layer publishing, imports, styles, access control, and licensing. It is separate from the geospatial data-access APIs (OGC, GeoServices, OData).

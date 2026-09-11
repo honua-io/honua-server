@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Embed Studio"
+description: "Embedding is a preview browser surface in 2026.1."
+---
 # Embed Studio
 
 Embedding is a **preview** browser surface in 2026.1. The source package

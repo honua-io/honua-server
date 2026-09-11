@@ -1,3 +1,7 @@
+---
+type: reference
+title: "Spec engine"
+---
 # Spec engine
 
 The spec engine executes canonical spec documents with Terraform-style plan/apply semantics: `plan` compiles a spec into a DAG with per-node cost estimates and warnings; `apply` streams per-node progress events and serves cache hits without re-invoking compute. Specs are written in the spec grammar — see the [spec grammar v1.0 reference](../developer/spec-grammar/v1.0/README.md) (EBNF + JSON schema).

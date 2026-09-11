@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Honua from one terminal"
+description: "Use one terminal workspace to install Honua, configure a service, apply a canonical style, run GP, author a map/dashboard and request governed publication."
+---
 # Honua from one terminal
 
 Use one terminal workspace to install Honua, configure a service, apply a

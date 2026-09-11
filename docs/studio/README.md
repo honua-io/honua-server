@@ -1,3 +1,7 @@
+---
+type: index
+title: "Honua Studio"
+---
 # Honua Studio
 
 {% hint style="warning" %}

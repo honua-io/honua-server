@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Bring your own model"
+description: "The 2026.1 preview path keeps provider credentials in honua-server."
+---
 # Bring your own model
 
 The 2026.1 **preview** path keeps provider credentials in honua-server. Studio

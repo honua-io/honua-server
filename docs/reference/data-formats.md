@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Data formats"
+description: "Import and export format matrix: which formats Honua ingests, and which output formats each query surface serves."
+---
 # Data formats
 
 Import and export format matrix: which formats Honua ingests, and which output formats each query surface serves. All lists below are verified against the running format registries; the live lists are also served at `GET /api/v1/admin/import/formats`, `GET /api/v1/admin/import/raster/formats`, and `GET /api/v1/admin/import/limits`.

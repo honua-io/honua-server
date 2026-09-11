@@ -1,3 +1,8 @@
+---
+type: index
+title: "Honua Server"
+description: "Honua is a cloud-native geospatial server that speaks every major GIS protocol — ArcGIS-compatible REST, OGC APIs, WMS/WFS/WMTS, OData, vector tiles, STAC — from one container on your PostGIS database."
+---
 # Honua Server
 
 Honua is a cloud-native geospatial server that speaks every major GIS protocol — ArcGIS-compatible REST, OGC APIs, WMS/WFS/WMTS, OData, vector tiles, STAC — from one container on your PostGIS database. No GDAL toolchain to install, no ETL pipelines, no Esri complexity.

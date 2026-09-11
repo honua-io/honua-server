@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Quickstart: install, publish, and query"
+description: "Run these blocks in order in Windows PowerShell 5.1 or PowerShell 7 with Docker Desktop using Linux containers, Docker Compose 2.23.1+, and Python 3.11 or later."
+---
 # Quickstart: install, publish, and query
 
 Run these blocks in order in **Windows PowerShell 5.1 or PowerShell 7** with

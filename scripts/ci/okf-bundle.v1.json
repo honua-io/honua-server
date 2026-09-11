@@ -1,0 +1,90 @@
+{
+  "version": "honua.okf-bundle/v1",
+  "description": "Which honua-server markdown is part of the Open Knowledge Format bundle, and which is deliberately not. Consumed by scripts/ci/check-okf-bundle.py.",
+  "spec": {
+    "name": "Open Knowledge Format",
+    "version": "0.2",
+    "url": "https://github.com/GoogleCloudPlatform/open-knowledge-format",
+    "note": "One markdown file is one concept; the file path is the concept's identity; relative markdown links are the graph edges. `type` is the only required frontmatter field."
+  },
+  "program": "https://github.com/honua-io/agent-delivery-spec/tree/trunk/.specifica/okf-knowledge-graph-agent-effective-docs",
+  "root": "docs",
+  "conceptTypes": {
+    "index": "A section entry point. Enumerates what the directory holds so a reader or agent can choose before opening.",
+    "concept": "What a thing is and how it fits. No procedure.",
+    "guide": "A task someone performs, start to finish.",
+    "reference": "Lookup material: surfaces, options, contracts, matrices.",
+    "runbook": "A remediation procedure an alert or an error payload points at."
+  },
+  "excludedDirs": [
+    {
+      "path": "docs/internal",
+      "why": "Contributor notes, ADRs, spikes and evidence, flattened together. Reachable from its own README, not from SUMMARY.md. Needs its own curation pass before path-as-identity means anything here."
+    },
+    {
+      "path": "docs/archive",
+      "why": "Superseded pages kept for history. Publishing them as concepts would put retired claims back into the graph."
+    },
+    {
+      "path": "docs/gis",
+      "why": "Capability data and client-certification evidence. The JSON under docs/gis/data is the generated spine other gates read; the markdown beside it is evidence, not prose documentation."
+    },
+    {
+      "path": "docs/ci",
+      "why": "CI mechanics for contributors."
+    },
+    {
+      "path": "docs/contributor",
+      "why": "Contributor-facing smoke procedures."
+    }
+  ],
+  "excludedFiles": [
+    {
+      "path": "docs/SUMMARY.md",
+      "why": "GitBook's table of contents. It is navigation over the bundle, not a concept in it."
+    },
+    {
+      "path": "docs/cng-status.md",
+      "why": "Dated status report, superseded by each successor rather than maintained."
+    },
+    {
+      "path": "docs/studio/dashboard-composition-evidence.md",
+      "why": "Dated execution evidence for one fixture run, not product documentation. Belongs with the other evidence under docs/internal; excluded here until it is moved."
+    }
+  ],
+  "rejectedFields": {
+    "timestamp": "Not an OKF field in any version. The trust family spells the build stamp `generated`; honua-site emitted `timestamp` until 2026-09-10 and the mistake must not spread here."
+  },
+  "dateFields": [
+    "generated",
+    "verified",
+    "stale_after"
+  ],
+  "includedFiles": [
+    {
+      "path": "docs/cite-status.md",
+      "why": "Linked from SUMMARY.md as Compatibility -> CITE status, so it is published documentation despite being dated."
+    },
+    {
+      "path": "docs/gis/CLIENT_TEMPLATE_RUNBOOK.md",
+      "why": "Linked from SUMMARY.md. Re-included over the docs/gis exclusion because it is a published procedure, not evidence."
+    },
+    {
+      "path": "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
+      "why": "Linked from SUMMARY.md. Re-included over the docs/gis exclusion because it is a published matrix, not evidence."
+    },
+    {
+      "path": "docs/internal/README.md",
+      "why": "The doorway into docs/internal. The tree stays out of the bundle; its entry point is listed in SUMMARY.md and so must be a concept — OKF's `index` is exactly this role."
+    },
+    {
+      "path": "docs/internal/demo/README.md",
+      "why": "Doorway into the demo runbooks, listed in SUMMARY.md."
+    },
+    {
+      "path": "docs/archive/README.md",
+      "why": "Doorway into the historical archive, listed in SUMMARY.md."
+    }
+  ],
+  "summaryIsInBundle": "Every SUMMARY.md link target under docs/ must be inside the bundle. If a page is in the table of contents it is published documentation, and published documentation is a concept."
+}

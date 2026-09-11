@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Migrate from ArcGIS Server"
+description: "Use honua-migrate to discover an ArcGIS FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job."
+---
 # Migrate from ArcGIS Server
 
 Use `honua-migrate` to discover an ArcGIS FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job. The service workflow is deliberately staged so discovery and planning cannot mutate either system.

@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Back up and restore"
+description: "Inventory the deployment's durable state, take a PostGIS backup, and plan a restore that accounts for Redis and referenced file/object bytes as well."
+---
 # Back up and restore
 
 Inventory the deployment's durable state, take a PostGIS backup, and plan a

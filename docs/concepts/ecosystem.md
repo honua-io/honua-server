@@ -1,3 +1,8 @@
+---
+type: concept
+title: "Ecosystem"
+description: "Honua is developed as a family of repositories around this server."
+---
 # Ecosystem
 
 Honua is developed as a family of repositories around this server. This page maps what lives where and how the pieces version against each other.

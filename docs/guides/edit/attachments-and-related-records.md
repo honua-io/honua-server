@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Add attachments and query related records"
+description: "Attach files to individual features, query and download them, and traverse layer relationships — all through the GeoServices FeatureServer surface."
+---
 # Add attachments and query related records
 
 Attach files to individual features, query and download them, and traverse layer relationships — all through the GeoServices FeatureServer surface.

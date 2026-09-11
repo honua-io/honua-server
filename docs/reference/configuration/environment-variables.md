@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Environment variables"
+description: "Honua is configured entirely through environment variables (or the equivalent appsettings.json keys)."
+---
 # Environment variables
 
 Honua is configured entirely through environment variables (or the equivalent `appsettings.json` keys). Nested configuration sections use the double-underscore convention: `Cache__Enabled` binds to `Cache:Enabled`. Defaults below are the compiled/shipped defaults; `.env.example`, `.env.docker.example`, and `.env.production.example` in the repository root are ready-to-copy templates. Runtime configuration metadata is also served at `GET /api/v1/admin/config`.

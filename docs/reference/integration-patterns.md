@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Integration patterns"
+description: "Cross-cutting patterns for building integrations against Honua: choosing a surface, discovering capabilities at runtime, paginating correctly, reacting to changes (polling vs webhooks), authenticating, and keeping batch loads idempotent."
+---
 # Integration patterns
 
 Cross-cutting patterns for building integrations against Honua: choosing a surface, discovering capabilities at runtime, paginating correctly, reacting to changes (polling vs webhooks), authenticating, and keeping batch loads idempotent. Protocol-specific request/response details live in the [protocol references](protocols/ogc-apis.md).

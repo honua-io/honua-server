@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Studio MCP tools"
+description: "The server publishes 17 typed Studio tools through /mcp."
+---
 # Studio MCP tools
 
 The server publishes 17 typed Studio tools through `/mcp`.

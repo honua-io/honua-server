@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Local geoprocessing dev quickstart"
+description: "Stand up a local Honua server that runs geoprocessing (GP) jobs in-process, submit a real GP job, fetch results, and iterate on your own GP processes — with"
+---
 # Local geoprocessing dev quickstart
 
 Stand up a local Honua server that runs geoprocessing (GP) jobs **in-process**,

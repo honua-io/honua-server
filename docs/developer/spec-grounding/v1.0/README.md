@@ -1,3 +1,8 @@
+---
+type: index
+title: "Spec Grounding v1.0"
+description: "/v1/grounding/spec/ turns natural-language edit requests into validated canonical-spec mutations and deterministic per-section summaries for the Honua spec grammar v1.0."
+---
 # Spec Grounding v1.0
 
 `/v1/grounding/spec/*` turns natural-language edit requests into validated canonical-spec mutations and deterministic per-section summaries for the [Honua spec grammar v1.0](../../spec-grammar/v1.0/README.md). The surface is the spec-workspace counterpart to the workflow-focused [`GROUNDING.md`](../../../internal/developer/GROUNDING.md) pipeline — it operates on the structured `SpecDocument` model rather than on ranked catalog candidates, and it never returns a spec that would fail `ISpecValidator`.

@@ -1,3 +1,8 @@
+---
+type: index
+title: "SDKs"
+description: "The Honua SDKs are typed clients for the same server you run from the quickstart."
+---
 # SDKs
 
 The Honua SDKs are typed clients for the same server you run from the [quickstart](../get-started/quickstart.md). They wrap the protocols Honua already speaks — GeoServices REST (FeatureServer), OGC API Features, STAC, OData, vector tiles, and the admin control plane — so you call methods instead of hand-building URLs. Everything an SDK does, the [HTTP API](../reference/README.md) can do too; the SDKs add types, paging, retries, and authentication handling.

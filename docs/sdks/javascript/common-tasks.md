@@ -1,3 +1,8 @@
+---
+type: reference
+title: "JavaScript SDK: common tasks"
+description: "Two of the most common reads with the Honua JavaScript SDK: querying a FeatureServer layer and searching a STAC catalog."
+---
 # JavaScript SDK: common tasks
 
 Two of the most common reads with the Honua JavaScript SDK: querying a FeatureServer layer and searching a STAC catalog. Both assume a constructed client — see [Get started with the JavaScript SDK](getting-started.md).

@@ -1,3 +1,8 @@
+---
+type: index
+title: "Honua Spec Grammar v1.0"
+description: "The Honua declarative geospatial spec language is the shared surface between the admin workspace (Spec IDE), the CLIs (honua spec …), the grounding pipeline, and downstream plan/apply."
+---
 # Honua Spec Grammar v1.0
 
 The Honua declarative geospatial spec language is the shared surface between

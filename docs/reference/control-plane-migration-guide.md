@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Control Plane API Migration Guide"
+description: "This guide covers migration for the Honua control-plane/admin API only."
+---
 # Control Plane API Migration Guide
 
 This guide covers migration for the Honua control-plane/admin API only.

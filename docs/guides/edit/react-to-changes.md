@@ -1,3 +1,8 @@
+---
+type: guide
+title: "React to feature changes"
+description: "Receive an event for every feature insert, update, and delete — pushed to your endpoint as a signed webhook or streamed live over WebSocket/SSE."
+---
 # React to feature changes
 
 Receive an event for every feature insert, update, and delete — pushed to your endpoint as a signed webhook or streamed live over WebSocket/SSE.

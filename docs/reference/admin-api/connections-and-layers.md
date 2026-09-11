@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Connections and layers"
+description: "Reference for the connection registry, table discovery, layer publishing, and service/layer settings endpoints."
+---
 # Connections and layers
 
 Reference for the connection registry, table discovery, layer publishing, and service/layer settings endpoints. A connection stores encrypted database credentials; layers are published from tables on a connection and served through every enabled protocol.

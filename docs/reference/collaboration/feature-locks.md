@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Feature locks (collaborative editing)"
+description: "A feature lock is a short lease one editor takes on one feature so a second editor cannot overwrite it mid-edit."
+---
 # Feature locks (collaborative editing)
 
 A feature lock is a short lease one editor takes on one feature so a second editor cannot

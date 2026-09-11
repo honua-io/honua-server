@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Publish terrain and elevation"
+description: "You'll have a DEM served as Terrain-RGB tiles for MapLibre 3D terrain, plus numeric elevation queries, in about 10 minutes."
+---
 # Publish terrain and elevation
 
 You'll have a DEM served as Terrain-RGB tiles for MapLibre 3D terrain, plus numeric elevation queries, in about 10 minutes.

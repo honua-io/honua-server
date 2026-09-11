@@ -1,3 +1,7 @@
+---
+type: reference
+title: "Oracle provider"
+---
 # Oracle provider
 
 ## Protocol routing

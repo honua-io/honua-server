@@ -1,3 +1,7 @@
+---
+type: guide
+title: "Deploy on Kubernetes"
+---
 # Deploy on Kubernetes
 
 > Honua 2026.1 is GA for single-tenant deployments. Multi-tenant operation is

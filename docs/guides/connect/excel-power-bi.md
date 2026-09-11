@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Connect Excel and Power BI to Honua"
+description: "Load and refresh a published layer through its OData v4 feed."
+---
 # Connect Excel and Power BI to Honua
 
 Load and refresh a published layer through its OData v4 feed.

@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Referenced GP output persistence"
+description: "Enabling Geoprocessing:OutputStaging requires a deployment-owned persistent volume contract."
+---
 # Referenced GP output persistence
 
 Enabling `Geoprocessing:OutputStaging` requires a deployment-owned persistent

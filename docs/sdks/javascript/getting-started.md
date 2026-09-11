@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Get started with the JavaScript SDK"
+description: "Install the Honua JavaScript/TypeScript SDK, construct a client, authenticate with an API key, and make your first feature query."
+---
 # Get started with the JavaScript SDK
 
 Install the Honua JavaScript/TypeScript SDK, construct a client, authenticate with an API key, and make your first feature query.

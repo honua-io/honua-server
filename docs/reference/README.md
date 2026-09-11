@@ -1,3 +1,8 @@
+---
+type: index
+title: "Reference"
+description: "Lookup material for Honua's public surfaces: protocols, the admin API, configuration, compatibility status, and cross-cutting contracts."
+---
 # Reference
 
 Lookup material for Honua's public surfaces: protocols, the admin API, configuration, compatibility status, and cross-cutting contracts. Task-oriented walkthroughs live in [guides](../guides/README.md).

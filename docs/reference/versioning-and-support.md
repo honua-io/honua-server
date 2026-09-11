@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Versioning and support"
+description: "How each public surface of Honua is versioned, what counts as a breaking change, and how deprecations are rolled out."
+---
 # Versioning and support
 
 How each public surface of Honua is versioned, what counts as a breaking change, and how deprecations are rolled out. Standards-based protocols are versioned by their specifications; only the admin/control-plane API and the gRPC contract carry Honua-owned version numbers.

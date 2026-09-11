@@ -1,3 +1,8 @@
+---
+type: reference
+title: "DuckDB provider"
+description: "Honua supports DuckDB as a read-only embedded feature provider."
+---
 # DuckDB provider
 
 Honua supports DuckDB as a read-only embedded feature provider. This is designed for analytical and

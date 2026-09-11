@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Author a geoprocessing process"
+description: "Write, run, golden-test, plan, and debug a new geoprocessing process on your laptop in about five minutes — no server, no Redis, no control plane, no cloud round-trip."
+---
 # Author a geoprocessing process
 
 Write, run, golden-test, plan, and debug a new geoprocessing process on your laptop in about five minutes — no server, no Redis, no control plane, no cloud round-trip. The GP Devkit is the **inner loop** for authoring processes; deploying one across environments is a separate, governed step covered at the end.

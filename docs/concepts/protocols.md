@@ -1,3 +1,8 @@
+---
+type: concept
+title: "Protocols"
+description: "Honua serves every published layer through multiple protocols at once — the same PostGIS table can be queried from ArcGIS Pro, QGIS, Excel, a MapLibre web map, and an AI agent without ETL or duplication."
+---
 # Protocols
 
 Honua serves every published layer through multiple protocols at once — the same PostGIS table can be queried from ArcGIS Pro, QGIS, Excel, a MapLibre web map, and an AI agent without ETL or duplication. This page is the canonical protocol matrix. For per-operation support detail use the [client compatibility contract](../reference/compatibility/clients.md), [GeoServices parity](../reference/compatibility/geoservices-parity.md), and [OGC conformance evidence](../reference/compatibility/ogc-conformance.md).

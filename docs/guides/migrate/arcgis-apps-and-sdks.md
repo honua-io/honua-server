@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Repoint ArcGIS apps and SDKs at Honua"
+description: "You'll move existing ArcGIS client applications — web apps, ArcGIS Pro, and the ArcGIS Maps SDKs — onto Honua-served endpoints without rewriting them."
+---
 # Repoint ArcGIS apps and SDKs at Honua
 
 You'll move existing ArcGIS client applications — web apps, ArcGIS Pro, and the ArcGIS Maps SDKs — onto Honua-served endpoints without rewriting them.

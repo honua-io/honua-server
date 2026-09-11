@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Operate metric and evidence inventory"
+description: "This inventory separates the signals required by the bounded 2026.1 Operate loop from the deeper performance work tracked by #3300."
+---
 # Operate metric and evidence inventory
 
 This inventory separates the signals required by the bounded 2026.1 Operate
