@@ -123,14 +123,16 @@ service. Cross-tenant disclosure remains a full-severity security defect. See
 - **Cloud-native operations** — container-first and stateless; multi-layer caching with in-memory fallback (output cache and Redis caching are **(Pro)**); OpenTelemetry traces and metrics; API-key auth, OIDC SSO **(Pro)** — multi-provider OIDC, SAML 2.0, and SCIM 2.0 are **(Enterprise)** — and experimental mTLS client-certificate auth (off by default, not on the GA path); a server-computed operate loop for humans, Console, and agents ([Operating Honua](docs/guides/operate/README.md)).
 
 - **Spatial analytics** — viewshed, line-of-sight, and sun/shadow analysis; H3 aggregation; density, clustering, spatial join, buffer-aggregate, and slice, all **(Pro)**; analysis content and reporting stay Community. These run on the same job runtime as everything else — see [geoprocessing operations](docs/reference/geoprocessing-operations.md) for the catalog.
-- **Geocoding** — forward and reverse geocoding against a [local PostGIS-backed geocoder](docs/reference/geocoding/local-postgis-geocoder.md) (Community), batch geocoding **(Enterprise)**, served to Esri clients through GeocodeServer ([provider parity](docs/reference/geocoding/geocode-server-parity.md)).
+- **Geocoding** — forward and reverse geocoding against a [local PostGIS-backed geocoder](docs/reference/geocoding/local-postgis-geocoder.md) (Community), batch geocoding **(Enterprise)**, and provider failover **(Pro)**, served to Esri clients through GeocodeServer ([provider parity](docs/reference/geocoding/geocode-server-parity.md)).
 - **Routing and network analysis** — routes, service areas, closest facility, and origin-destination cost matrices through NAServer **(Pro)**.
-- **Time** — temporal extent discovery and time filtering (Community) and temporal histograms **(Pro)**, so time-aware layers answer "when" as well as "where". See [Work with time](docs/guides/query-analyze/work-with-time.md).
-- **Real-time and geofencing** — feature subscriptions for change streams **(Pro)** and alert-rule evaluation **(Pro, Preview)**. See [React to changes](docs/guides/edit/react-to-changes.md).
+- **Time** — temporal extent discovery and time filtering (Community), temporal histograms, time-series tiles, and an SDK-side animation API **(Pro)**, so time-aware layers answer "when" as well as "where". See [Work with time](docs/guides/query-analyze/work-with-time.md).
+- **Real-time, geofencing and alerting** — feature subscriptions for change streams **(Pro)**; an alert-rule evaluation engine **(Pro, Preview)** whose trigger types are enter/exit geofences **(Pro, Preview)** and dwell and threshold triggers **(Enterprise, Preview)**; delivery to a webhook **(Pro, Preview)** or to Slack, Teams, email, AWS SNS, Azure EventGrid, or a digest **(Enterprise, Preview)**. See [React to changes](docs/guides/edit/react-to-changes.md).
 - **Field operations** — [form packages](docs/reference/admin-api/forms.md) for data collection (Community) and offline sync for disconnected field work **(Pro, Preview)**; the mobile SDK and collection app live in [honua-mobile](https://github.com/honua-io/honua-mobile) and [honua-collect](https://github.com/honua-io/honua-collect).
 - **Collaboration** — multi-user saved-map sessions with an [operation log](docs/reference/saved-map-collaboration-op-log.md) and [feature locks](docs/reference/collaboration/feature-locks.md) for concurrent editing (Community).
 - **Data enrichment** — enrich your features with attributes from a registered reference dataset by spatial join ([data enrichment](docs/operator/data-enrichment.md), Community).
-- **Print and export** — server-rendered PDF output for layouts **(Pro)**.
+- **Static maps** — server-rendered map images with high-DPI output, large dimensions and rich overlays **(Pro)**, for reports, tiles-free embeds and notifications.
+- **Raster configuration** — cloud-storage registration and temporal mosaics **(Pro)** on top of the in-place COG registration above.
+- **Print and export** — server-rendered PDF output **(Pro)** from configurable layout templates **(Pro)**.
 - **3D** — a scene catalog plus hosted and generated OGC 3D Tiles served to CesiumJS; BIM and point-cloud ingest are **(Enterprise)** and **experimental**. See [Publish 3D scenes](docs/guides/publish/publish-3d-scenes.md).
 
 The admin API (`/api/v1/admin`) manages connections, services, layers, styles, and import jobs; the web admin UI lives in [honua-console](https://github.com/honua-io/honua-console). The admin API is also the substrate for self-managed control-plane workflows: change management and instance lifecycle automation build on it rather than on a third-party GitOps controller.
@@ -146,9 +148,9 @@ PostGIS is the primary read/write backend. Additional providers serve data in pl
 | [SQL Server](docs/reference/configuration/data-sources/sql-server.md) | Read/query-only (`geometry`/`geography` tables) |
 | [Oracle](docs/reference/configuration/data-sources/oracle.md) | Read/query-only (standard `SDO_GEOMETRY`) |
 | [MySQL / MariaDB](docs/reference/configuration/data-sources/mysql-mariadb.md) | Read/query-only (MySQL 8.0.11+, MariaDB 10.6+) |
-| [Amazon Redshift](docs/reference/configuration/data-sources/redshift.md) | Read/query-only (native Redshift spatial) |
-| [Snowflake](docs/reference/configuration/data-sources/snowflake.md) | Read/query-only (`GEOGRAPHY`/`GEOMETRY`) |
-| [Databricks](docs/reference/configuration/data-sources/databricks.md) | Read/query-only (SQL Warehouse, best-effort) |
+| [Amazon Redshift](docs/reference/configuration/data-sources/redshift.md) | Read/query-only — **Enterprise, experimental**, off by default (native Redshift spatial) |
+| [Snowflake](docs/reference/configuration/data-sources/snowflake.md) | Read/query-only — **Enterprise, experimental**, off by default (`GEOGRAPHY`/`GEOMETRY`) |
+| [Databricks](docs/reference/configuration/data-sources/databricks.md) | Read/query-only — **Enterprise, experimental**, off by default (SQL Warehouse, best-effort) |
 
 Per-provider capabilities, selection variables, and limitations are in the [data sources reference](docs/reference/configuration/data-sources/README.md).
 
