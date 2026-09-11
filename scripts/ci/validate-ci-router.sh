@@ -691,6 +691,19 @@ assert_descriptor \
   "targeted" \
   "false" \
   "GeoServices GPServer and NAServer"
+# 2026-09-11 capacity split: a GPServer diff selects both GPServer shards.
+assert_descriptor \
+  "gpserver-source-targets-gpserver-endpoints" \
+  "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices GPServer Endpoints"
+assert_descriptor \
+  "gpserver-source-targets-gpserver-naserver" \
+  "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "GeoServices GPServer and NAServer"
 assert_descriptor \
   "routing-feature-includes-server-tests-owner" \
   "src/Honua.Routing/Features/Routing/Providers/PgRoutingProvider.cs" \
@@ -1571,6 +1584,14 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices MapServer Identify" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices GPServer Endpoints" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests" \
+    "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
+    "GeoServices GPServer and NAServer" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \

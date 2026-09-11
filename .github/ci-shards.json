@@ -299,6 +299,14 @@
         "GeoServices MapServer Export",
         "GeoServices MapServer Identify"
       ]
+    },
+    {
+      "name": "GPServer and NAServer capacity partition",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer",
+      "children": [
+        "GeoServices GPServer and NAServer",
+        "GeoServices GPServer Endpoints"
+      ]
     }
   ],
   "shards": [
@@ -1080,8 +1088,8 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "ADR-0037 finer-sharding: carved from GeoServices ImageServer. Selects the GPServer and NAServer namespaces (GPServerEndpointTests is the heaviest single class in the original ImageServer shard).",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer",
+      "_comment": "ADR-0037 finer-sharding: carved from GeoServices ImageServer. Selects the GPServer and NAServer namespaces except GPServerEndpointTests, which runs in GeoServices GPServer Endpoints. Capacity split 2026-09-11 (trunk red at cec6b0b, run 34616571873): #4615 grew this shard to 16.3m of 22m (74%) and both attempts at cec6b0b then exhausted the cap. Budgets are unchanged; see docs/internal/ci/shard-timeout-budgets.md.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests",
       "_paths_comment": "#2693: the canonical Routing feature belongs to the GPServer/NAServer operator slice. Its Honua.Server.Tests routing coverage is additionally owned by Core, while this shard runs the protocol-level NAServer tests. Unrelated future Honua.Routing areas remain under the unmapped-source fail-safe.",
       "paths": [
         "src/Honua.Protocols.GeoServices/GPServer/",
@@ -1089,6 +1097,26 @@
         "src/Honua.Routing/Features/Routing/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/",
+        "src/Honua.Core/Features/Validation/"
+      ],
+      "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
+    },
+    {
+      "name": "GeoServices GPServer Endpoints",
+      "shard_name": "GeoServices GPServer Endpoints",
+      "dispatch_rank": 12.9,
+      "artifact_suffix": "geoservices-gpserver-endpoints",
+      "log_name": "server-tests-geoservices-gpserver-endpoints",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Capacity split 2026-09-11 from GeoServices GPServer and NAServer (trunk red at cec6b0b, run 34616571873). GPServerEndpointTests is a 14.3m union of the 21.7m parent at ac0d5d0 (10.7m of 16.3m at 873fe9b) and runs in parallel with the other GPServer/NAServer classes, so it is the parent's floor; alone it keeps the parent's unchanged 22m/32m caps. Ranked just above the parent so the long pole dispatches first.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests",
+      "paths": [
+        "src/Honua.Protocols.GeoServices/GPServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
         "src/Honua.Core/Features/Validation/"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
