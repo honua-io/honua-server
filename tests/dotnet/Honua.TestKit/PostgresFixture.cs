@@ -54,7 +54,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                 try
                 {
                     var externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
-                    if (string.IsNullOrWhiteSpace(externalConnectionString))
+                    if (ShouldStartContainer(externalConnectionString))
                     {
                         SharedState.SharedContainer = new PostgreSqlBuilder()
                             .WithImage("postgis/postgis:18-3.6")
@@ -605,6 +605,15 @@ public sealed class PostgresFixture : IAsyncLifetime
             .ToArray());
         return $"test_{prefix}_{Guid.NewGuid():N}".ToLowerInvariant();
     }
+
+    /// <summary>
+    /// Decides whether <see cref="InitializeAsync"/> must start a Testcontainer-managed
+    /// PostgreSQL instance. It must not when a CI-provided sidecar connection string
+    /// (<see cref="ExternalConnectionStringEnv"/>) is already available, so tests reuse
+    /// that sidecar instead of paying redundant container-image/startup cost.
+    /// </summary>
+    internal static bool ShouldStartContainer([System.Diagnostics.CodeAnalysis.NotNullWhen(false)] string? externalConnectionString)
+        => string.IsNullOrWhiteSpace(externalConnectionString);
 
     private static bool IsTransientDropSchemaFailure(Exception ex)
     {
