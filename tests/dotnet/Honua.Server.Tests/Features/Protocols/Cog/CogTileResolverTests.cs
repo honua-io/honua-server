@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.Cog;
@@ -13,6 +14,7 @@ using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.Cog;
 
@@ -26,12 +28,13 @@ public class CogTileResolverTests
     [Operation(Operations.GetTile)]
     public async Task GetTileAsync_JpegTileRequestedAsJpeg_ReturnsTile()
     {
-        var tileData = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        // A standalone TIFF-JPEG tile (JPEGTABLESMODE=0) carries its own tables and passes through unchanged.
+        var tileData = EncodeStandaloneJpeg();
         var rangeReader = CreateRangeReader(tileData);
         var metadataReader = Substitute.For<ICogMetadataReader>();
         metadataReader.ReadMetadataAsync(
                 Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
-            .Returns(CreateMetadata("JPEG", tileData.Length));
+            .Returns(CreateJpegMetadata(tileData.Length));
         var cogStore = Substitute.For<ICogStore>();
         using var cache = new MemoryCache(new MemoryCacheOptions());
         var resolver = new CogTileResolver(
@@ -42,7 +45,7 @@ public class CogTileResolverTests
             NullLogger<CogTileResolver>.Instance);
 
         var result = await resolver.GetTileAsync(
-            CreateRegistration(CreateMetadata("JPEG", tileData.Length)),
+            CreateRegistration(CreateJpegMetadata(tileData.Length)),
             level: 0,
             row: 0,
             col: 0,
@@ -61,12 +64,12 @@ public class CogTileResolverTests
     [Operation(Operations.GetTile)]
     public async Task GetTileAsync_JpegTileRequestedAsPng_ReturnsNull()
     {
-        var tileData = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var tileData = EncodeStandaloneJpeg();
         var rangeReader = CreateRangeReader(tileData);
         var metadataReader = Substitute.For<ICogMetadataReader>();
         metadataReader.ReadMetadataAsync(
                 Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
-            .Returns(CreateMetadata("JPEG", tileData.Length));
+            .Returns(CreateJpegMetadata(tileData.Length));
         var cogStore = Substitute.For<ICogStore>();
         using var cache = new MemoryCache(new MemoryCacheOptions());
         var resolver = new CogTileResolver(
@@ -77,7 +80,7 @@ public class CogTileResolverTests
             NullLogger<CogTileResolver>.Instance);
 
         var result = await resolver.GetTileAsync(
-            CreateRegistration(CreateMetadata("JPEG", tileData.Length)),
+            CreateRegistration(CreateJpegMetadata(tileData.Length)),
             level: 0,
             row: 0,
             col: 0,
@@ -86,6 +89,73 @@ public class CogTileResolverTests
         result.Should().BeNull();
         await metadataReader.Received(1).ReadMetadataAsync(
             Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.GetTile)]
+    [InlineData("jpeg_ycbcr_rgb_uint8", 3)]
+    [InlineData("jpeg_gray_uint8", 1)]
+    [InlineData("jpeg_rgb_uint8", 3)]
+    public async Task GetTileAsync_GdalJpegWithSharedTables_ServesStreamDecodingToGdalPixels(string fixture, int bands)
+    {
+        var source = await File.ReadAllBytesAsync(Path.Join(GdalJpegOracle.FixtureDirectory, fixture + ".tif"));
+        var expected = await File.ReadAllBytesAsync(Path.Join(GdalJpegOracle.FixtureDirectory, fixture + ".bin"));
+        var rangeReader = CreateObjectRangeReader(source);
+        var metadataReader = new CogMetadataExtractor();
+        var level = (await metadataReader.ReadMetadataAsync(rangeReader, "bucket", "cog.tif")).OverviewLevels[0];
+        var rawTile = source.AsSpan((int)level.TileOffsets[0], level.TileByteCounts[0]).ToArray();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver(
+            [rangeReader],
+            metadataReader,
+            Substitute.For<ICogStore>(),
+            cache,
+            NullLogger<CogTileResolver>.Instance);
+
+        var result = await resolver.GetTileAsync(
+            CreateRegistration(CreateMetadata("JPEG", rawTile.Length)),
+            level: 8,
+            row: 0,
+            col: 0,
+            RasterFormat.JPEG);
+
+        // What #4205 served: GDAL's abbreviated tile has no quantization tables and cannot decode.
+        SKBitmap.Decode(rawTile).Should().BeNull();
+        result.Should().NotBeNull();
+        result!.Value.ContentType.Should().Be("image/jpeg");
+        GdalJpegOracle.AssertMatchesGdalDecode(result!.Value.Data, expected, bands);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetTileAsync_AbbreviatedJpegTileWithoutTables_ReturnsNull()
+    {
+        var source = await File.ReadAllBytesAsync(Path.Join(GdalJpegOracle.FixtureDirectory, "jpeg_gray_uint8.tif"));
+        var rangeReader = CreateObjectRangeReader(source);
+        var parsed = await new CogMetadataExtractor().ReadMetadataAsync(rangeReader, "bucket", "cog.tif");
+        // The same GDAL tile with its IFD's JPEGTables withheld must not leave as image/jpeg.
+        var withoutTables = parsed with
+        {
+            OverviewLevels = [parsed.OverviewLevels[0] with { JpegTables = null }]
+        };
+        var metadataReader = Substitute.For<ICogMetadataReader>();
+        metadataReader.ReadMetadataAsync(
+                Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
+            .Returns(withoutTables);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver(
+            [rangeReader],
+            metadataReader,
+            Substitute.For<ICogStore>(),
+            cache,
+            NullLogger<CogTileResolver>.Instance);
+
+        var result = await resolver.GetTileAsync(
+            CreateRegistration(withoutTables), level: 8, row: 0, col: 0, RasterFormat.JPEG);
+
+        result.Should().BeNull();
     }
 
     [UnitTest]
@@ -123,8 +193,8 @@ public class CogTileResolverTests
     [Operation(Operations.GetTile)]
     public async Task GetTileAsync_WithMultipleOverviews_UsesResolutionMatchedOverview()
     {
-        var fullResolutionTile = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
-        var matchedOverviewTile = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
+        var fullResolutionTile = EncodeStandaloneJpeg(red: 10);
+        var matchedOverviewTile = EncodeStandaloneJpeg(red: 240);
         var rangeReader = Substitute.For<ICloudRangeReader>();
         rangeReader.Provider.Returns(CloudStorageProvider.AwsS3);
         rangeReader.ReadRangeAsync("bucket", "cog.tif", Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
@@ -158,7 +228,8 @@ public class CogTileResolverTests
                 new CogOverviewLevel(Level: 0, Width: 4096, Height: 4096, IfdOffset: 8, TileOffsets: [16], TileByteCounts: [fullResolutionTile.Length]),
                 new CogOverviewLevel(Level: 1, Width: 2048, Height: 2048, IfdOffset: 24, TileOffsets: [32], TileByteCounts: [matchedOverviewTile.Length])
             ],
-            Extent: CreateWorldExtent());
+            Extent: CreateWorldExtent(),
+            PhotometricInterpretation: 6);
 
         var metadataReader = Substitute.For<ICogMetadataReader>();
         metadataReader.ReadMetadataAsync(
@@ -215,16 +286,16 @@ public class CogTileResolverTests
     [Operation(Operations.GetTile)]
     public async Task GetTileAsync_ReplacedObject_RescansOffsetsAndPinsEveryRead()
     {
-        var tile = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var tile = EncodeStandaloneJpeg();
         var rangeReader = CreateRangeReader(tile);
-        var metadata = CreateMetadata("JPEG", tile.Length);
+        var metadata = CreateJpegMetadata(tile.Length);
         var replacement = metadata with
         {
             OverviewLevels = [metadata.OverviewLevels[0] with { TileOffsets = [32L] }]
         };
         rangeReader.GetObjectMetadataAsync("bucket", "cog.tif", Arg.Any<CancellationToken>())
-            .Returns(new CloudObjectMetadata { SizeBytes = 1024, ETag = "etag-1" },
-                new CloudObjectMetadata { SizeBytes = 1024, ETag = "etag-2" });
+            .Returns(new CloudObjectMetadata { SizeBytes = 1 << 20, ETag = "etag-1" },
+                new CloudObjectMetadata { SizeBytes = 1 << 20, ETag = "etag-2" });
         rangeReader.ReadRangeAsync("bucket", "cog.tif", 32, tile.Length, "etag-2", Arg.Any<CancellationToken>())
             .Returns(tile);
         var metadataReader = Substitute.For<ICogMetadataReader>();
@@ -303,8 +374,8 @@ public class CogTileResolverTests
     [Operation(Operations.GetTile)]
     public async Task GetTileAsync_UnchangedObject_ReusesPinnedMetadata()
     {
-        var tile = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
-        var metadata = CreateMetadata("JPEG", tile.Length);
+        var tile = EncodeStandaloneJpeg();
+        var metadata = CreateJpegMetadata(tile.Length);
         var rangeReader = CreateRangeReader(tile);
         var metadataReader = Substitute.For<ICogMetadataReader>();
         metadataReader.ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
@@ -334,6 +405,34 @@ public class CogTileResolverTests
             .Returns(tileData);
         return rangeReader;
     }
+
+    private static ICloudRangeReader CreateObjectRangeReader(byte[] source)
+    {
+        var rangeReader = Substitute.For<ICloudRangeReader>();
+        rangeReader.Provider.Returns(CloudStorageProvider.AwsS3);
+        rangeReader.GetObjectMetadataAsync("bucket", "cog.tif", Arg.Any<CancellationToken>())
+            .Returns(new CloudObjectMetadata { SizeBytes = source.Length, ETag = "etag-1" });
+        rangeReader.ReadRangeAsync("bucket", "cog.tif", Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call => Slice(source, call.ArgAt<long>(2), call.ArgAt<int>(3)));
+        rangeReader.ReadRangeAsync("bucket", "cog.tif", Arg.Any<long>(), Arg.Any<int>(), "etag-1", Arg.Any<CancellationToken>())
+            .Returns(call => Slice(source, call.ArgAt<long>(2), call.ArgAt<int>(3)));
+        return rangeReader;
+
+        static byte[] Slice(byte[] data, long offset, int length)
+            => data.AsSpan((int)offset, Math.Min(length, data.Length - (int)offset)).ToArray();
+    }
+
+    private static byte[] EncodeStandaloneJpeg(byte red = 40)
+    {
+        using var bitmap = new SKBitmap(256, 256);
+        bitmap.Erase(new SKColor(red, 120, 200));
+        using var data = bitmap.Encode(SKEncodedImageFormat.Jpeg, 90);
+        return data.ToArray();
+    }
+
+    // Skia writes a JFIF YCbCr stream, i.e. the photometric a standalone TIFF-JPEG tile declares.
+    private static CogMetadata CreateJpegMetadata(int tileLength)
+        => CreateMetadata("JPEG", tileLength) with { PhotometricInterpretation = 6 };
 
     private static CogRegistration CreateRegistration(CogMetadata metadata) => new()
     {

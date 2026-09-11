@@ -45,13 +45,24 @@ public sealed record CogMetadata(
 /// <summary>
 /// One IFD resolution level within a COG.
 /// </summary>
+/// <param name="Level">IFD index, base level first.</param>
+/// <param name="Width">Level width in pixels.</param>
+/// <param name="Height">Level height in pixels.</param>
+/// <param name="IfdOffset">File offset of the level's IFD.</param>
+/// <param name="TileOffsets">File offset of each tile, row-major.</param>
+/// <param name="TileByteCounts">Stored byte length of each tile, row-major.</param>
+/// <param name="JpegTables">
+/// Shared JPEGTables (TIFF tag 347) of this level, or null. TIFF-JPEG tiles referencing them
+/// are abbreviated streams that must be assembled before they can be served.
+/// </param>
 public sealed record CogOverviewLevel(
     int Level,
     int Width,
     int Height,
     long IfdOffset,
     long[] TileOffsets,
-    int[] TileByteCounts);
+    int[] TileByteCounts,
+    byte[]? JpegTables = null);
 
 /// <summary>
 /// Lightweight overview level summary for JSONB persistence (no tile offset arrays).

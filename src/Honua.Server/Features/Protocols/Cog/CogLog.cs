@@ -78,6 +78,12 @@ internal static partial class CogLog
     public static partial void UnsupportedTileFormat(ILogger logger, long registrationId, string requestedFormat, string contentType);
 
     [LoggerMessage(
+        EventId = 7912,
+        Level = LogLevel.Warning,
+        Message = "COG {RegistrationId} JPEG tile level={Level}, row={Row}, col={Col} is not a complete JPEG stream for its declared layout (missing tables, unsupported frame, or photometric/band mismatch); it is not served as image/jpeg.")]
+    public static partial void UndecodableJpegTile(ILogger logger, long registrationId, int level, int row, int col);
+
+    [LoggerMessage(
         EventId = 7911,
         Level = LogLevel.Information,
         Message = "Resolved COG {RegistrationId} for GP from a {ObjectSize}-byte object using {RangeCount} ETag-conditional header ranges ({RequestedBytes} bytes requested, {ReceivedBytes} bytes received); no pixel payload was materialized")]

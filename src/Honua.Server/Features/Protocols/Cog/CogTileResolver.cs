@@ -134,6 +134,21 @@ internal sealed class CogTileResolver : ICogTileResolver
             return null;
         }
 
+        if (metadata.Compression == "JPEG")
+        {
+            // TIFF-JPEG tiles are abbreviated streams when the IFD carries shared JPEGTables
+            // (GDAL's default). Only a complete stream that decodes as the declared layout may
+            // leave as image/jpeg.
+            var jpeg = JpegTileAssembler.Assemble(tileData, overviewLevel.JpegTables, metadata);
+            if (jpeg is null)
+            {
+                CogLog.UndecodableJpegTile(_logger, registration.Id, level, row, col);
+                return null;
+            }
+
+            tileData = jpeg;
+        }
+
         // Decompress based on compression type, reversing the tile's predictor when it declares one.
         var layout = new TilePixelLayout(
             metadata.TileWidth,

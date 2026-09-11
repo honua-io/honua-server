@@ -30,13 +30,15 @@ In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/
 The registered object is considered only by the ImageServer WebMercatorQuad tile fallback after the
 PostGIS tile path. `exportImage`, `identify`, WCS 2.0.1, and OGC API Coverages do not read registered
 cloud COGs. The tile object must be an EPSG:3857, GoogleMapsCompatible-aligned COG; other grids fail
-closed rather than being reprojected. Only standalone JPEG tiles can pass through with `format=jpg`;
-TIFF-JPEG streams requiring shared JPEGTables are not assembled. DEFLATE, LZW, ZSTD and uncompressed
+closed rather than being reprojected. JPEG tiles serve with `format=jpg`: when the COG stores shared
+JPEGTables (TIFF tag 347, GDAL's default `JPEGTABLESMODE=1`), the tables are spliced into each tile so every
+response is a complete JPEG stream. 8-bit chunky grayscale, RGB and YCbCr (GDAL's default for three-band
+JPEG COGs) tiles are supported; other JPEG layouts are not served. DEFLATE, LZW, ZSTD and uncompressed
 chunky unsigned 8/16-bit grayscale or RGB samples serve as lossless PNG (`format=png`, the default), preserving sample depth and nodata transparency. For scientific data, `format=tiff` or `format=cog` preserves unsigned, signed and floating-point samples in a single-tile GeoTIFF with nodata and EPSG:3857 georeferencing. Palettes, separate planes and JPEG conversion from decoded samples are unsupported. The default
 `format=png` does not transcode JPEG. Unsupported grids and output formats return GeoServices error code 404 from the tile fallback (an HTTP 200 error envelope); a successful metadata refresh does not guarantee tile delivery. Workflow detail: [Publish rasters](../../guides/publish/publish-rasters.md).
 
 TIFF floating-point predictor 3 is unsupported: prepare floating-point sources with predictor 1.
-Complex or undefined TIFF SampleFormat values and sources declaring shared JPEGTables are rejected
+Complex or undefined TIFF SampleFormat values and malformed JPEGTables are rejected
 during metadata extraction, before any tile payload can be returned as an image.
 
 Imported rasters can be deleted (`DELETE /api/v1/admin/import/raster/{rasterId}`) and have their descriptive metadata updated (`PATCH /api/v1/admin/import/raster/{rasterId}` — `name`/`description`/`acquisitionDate`); cloud-registered COGs use `DELETE /api/v1/admin/cloud-rasters/{id}`. These admin operations are the canonical equivalents of Esri ImageServer's `deleteRasters`/`updateRaster` — see the [ImageServer admin-op mapping](../compatibility/imageserver-admin-mapping.md).

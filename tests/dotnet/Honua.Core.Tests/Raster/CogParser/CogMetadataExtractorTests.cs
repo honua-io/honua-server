@@ -30,7 +30,31 @@ public class CogMetadataExtractorTests
     }
 
     [Fact]
-    public async Task ReadMetadataAsync_SharedJpegTables_RejectsAbbreviatedTileSource()
+    public async Task ReadMetadataAsync_SharedJpegTables_CarriesTablesOnTheirLevel()
+    {
+        var tiff = WithInlineJpegTables(0xD9FFD8FF, type: 7);
+
+        var metadata = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiff), "fixtures", "shared-tables.tif");
+
+        metadata.Compression.Should().Be("JPEG");
+        metadata.OverviewLevels[0].JpegTables.Should().Equal(0xFF, 0xD8, 0xFF, 0xD9);
+    }
+
+    [Theory]
+    [InlineData(0xC0FFD8FFu, (ushort)7)] // SOI then a truncated frame header: not tables-only.
+    [InlineData(0xD9FFD9FFu, (ushort)7)] // No SOI.
+    [InlineData(0xD9FFD8FFu, (ushort)3)] // SHORT values are not a byte stream.
+    public async Task ReadMetadataAsync_MalformedJpegTables_Rejects(uint inlineValue, ushort type)
+    {
+        var tiff = WithInlineJpegTables(inlineValue, type);
+        var read = () => new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiff), "fixtures", "shared-tables.tif");
+
+        await read.Should().ThrowAsync<InvalidDataException>().WithMessage("*JPEGTables*");
+    }
+
+    private static byte[] WithInlineJpegTables(uint inlineValue, ushort type)
     {
         var tiff = BuildSyntheticCogBytesWithSampleFormat(16, 16, 8, 1);
         var entries = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(tiff.AsSpan(8));
@@ -44,15 +68,12 @@ public class CogMetadataExtractorTests
             {
                 // Replace the optional default SampleFormat with inline JPEGTables.
                 System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(entry, 347);
-                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(entry[2..], 7);
-                System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(entry[4..], 4);
-                System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(entry[8..], 0xD9FFD8FF);
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(entry[2..], type);
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(entry[4..], type == 3 ? 2u : 4u);
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(entry[8..], inlineValue);
             }
         }
-        var read = () => new CogMetadataExtractor().ReadMetadataAsync(
-            new InMemoryRangeReader(tiff), "fixtures", "shared-tables.tif");
-
-        await read.Should().ThrowAsync<InvalidDataException>().WithMessage("*JPEGTables*");
+        return tiff;
     }
 
     [Fact]
