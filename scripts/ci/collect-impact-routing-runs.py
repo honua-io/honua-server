@@ -336,8 +336,11 @@ def download_receipts(repository: str, index_path: Path, archives: Path,
                                     {}).get("expired")
                 except BudgetExhausted:
                     raise
-                except RuntimeError:
-                    pass
+                except RuntimeError as error:
+                    # A failed lookup cannot prove expiry, so the receipt stays
+                    # a hard download failure below rather than owed loss.
+                    print(f"::warning::expiry lookup for receipt artifact {artifact_id} "
+                          f"failed: {error}", file=sys.stderr)
             if expired is True:
                 expire(artifact_id)
                 stats["expired"] += 1

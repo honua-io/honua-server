@@ -441,6 +441,21 @@ with tempfile.TemporaryDirectory() as temporary:
                                      expire=expired.append, pause=lambda _: None)
     other['expired'] = False
     assert expired == [other['id']] and stats['expired'] == 1
+    # A failed expiry lookup proves nothing, so the receipt stays a hard failure.
+    def unavailable(endpoint):
+        raise RuntimeError('gh: HTTP 500')
+
+    def lookup_fails(endpoint, parameters):
+        raise RuntimeError('gh: HTTP 500')
+    try:
+        module.download_receipts(REPO, index_path, temporary / 'lookup', digests, 10,
+                                 fetch_bytes=unavailable, fetch=lookup_fails,
+                                 expire=expired.append, pause=lambda _: None)
+    except RuntimeError as error:
+        assert 'unavailable or invalid after 4 attempts' in str(error)
+    else:
+        raise AssertionError('unproven expiry accepted')
+    assert expired == [other['id']]
     budget = module.RequestBudget.create(temporary / 'budget.json', 1000, 999, 1000)
     try:
         module.download_receipts(REPO, index_path, temporary / 'partial', digests, 10,
