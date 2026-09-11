@@ -44,12 +44,12 @@ public sealed class CogRegistrationTileTests
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/tile/{level}/{row}/{col}")]
     public async Task RegisteredCog_DistinctStorageAndPublicationIds_ServesOnlyBoundService(bool sharedJpegTables)
     {
-        var source = await File.ReadAllBytesAsync(Path.Combine(GdalJpegOracle.FixtureDirectory, "deflate_pred1_uint8.tif"));
+        var source = await File.ReadAllBytesAsync(Path.Join(GdalJpegOracle.FixtureDirectory, "deflate_pred1_uint8.tif"));
         if (sharedJpegTables)
         {
             source = AddSharedJpegTables(source);
         }
-        var expected = await File.ReadAllBytesAsync(Path.Combine(GdalJpegOracle.FixtureDirectory, "deflate_pred1_uint8.bin"));
+        var expected = await File.ReadAllBytesAsync(Path.Join(GdalJpegOracle.FixtureDirectory, "deflate_pred1_uint8.bin"));
         var fixture = await StartAsync(CreateGraph(withCollision: false).BuildProvider(), source);
         try
         {
@@ -99,8 +99,8 @@ public sealed class CogRegistrationTileTests
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/tile/{level}/{row}/{col}")]
     public async Task RegisteredGdalJpegCog_SharedJpegTables_ServesDecodableJpegMatchingGdal(string cog, int bands)
     {
-        var source = await File.ReadAllBytesAsync(Path.Combine(GdalJpegOracle.FixtureDirectory, cog + ".tif"));
-        var expected = await File.ReadAllBytesAsync(Path.Combine(GdalJpegOracle.FixtureDirectory, cog + ".bin"));
+        var source = await File.ReadAllBytesAsync(Path.Join(GdalJpegOracle.FixtureDirectory, cog + ".tif"));
+        var expected = await File.ReadAllBytesAsync(Path.Join(GdalJpegOracle.FixtureDirectory, cog + ".bin"));
         var fixture = await StartAsync(CreateGraph(withCollision: false).BuildProvider(), source);
         try
         {
@@ -130,7 +130,7 @@ public sealed class CogRegistrationTileTests
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/tile/{level}/{row}/{col}")]
     public async Task RegisteredCog_PublicationIndexLaterCollides_FailsClosedForEveryService()
     {
-        var source = await File.ReadAllBytesAsync(Path.Combine(GdalJpegOracle.FixtureDirectory, "deflate_pred1_uint8.tif"));
+        var source = await File.ReadAllBytesAsync(Path.Join(GdalJpegOracle.FixtureDirectory, "deflate_pred1_uint8.tif"));
         var graph = CreateGraph(withCollision: false).BuildProvider();
         var fixture = await StartAsync(graph, source);
         try

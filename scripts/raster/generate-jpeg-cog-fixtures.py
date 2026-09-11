@@ -68,7 +68,7 @@ def write(name, bands, driver, options):
     back = ds.ReadAsArray()
     if back.ndim == 2:
         back = back[np.newaxis, :, :]
-    ds = None
+    del ds  # close the dataset before hashing the decode
 
     blob = np.transpose(back, (1, 2, 0)).tobytes()
     with open(os.path.join(OUT, name + ".bin"), "wb") as f:

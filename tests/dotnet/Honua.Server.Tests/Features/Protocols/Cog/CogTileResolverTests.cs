@@ -125,7 +125,7 @@ public class CogTileResolverTests
         SKBitmap.Decode(rawTile).Should().BeNull();
         result.Should().NotBeNull();
         result!.Value.ContentType.Should().Be("image/jpeg");
-        GdalJpegOracle.AssertMatchesGdalDecode(result.Value.Data, expected, bands);
+        GdalJpegOracle.AssertMatchesGdalDecode(result!.Value.Data, expected, bands);
     }
 
     [UnitTest]
