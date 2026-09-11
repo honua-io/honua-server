@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -19,6 +22,7 @@ using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
@@ -149,10 +153,19 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
 
     private async Task<(JobExecutionResult Result, List<string> Artifacts)> Run(string mode, string batch, string input)
     {
+        // #4625: the sink now authorizes its destination against the job's submitter
+        // security context before any DDL/DML runs. This layer was published as a real
+        // catalog layer in InitializeAsync, so the submitter needs the administrative
+        // role (the fixture registers no data-editor grant for this synthetic principal).
+        using var securityScope = JobSecurityScope.Begin(
+            new JobSecurityContext(PrincipalId: "sink-proof-test", TenantId: null,
+                Claims: [new JobSecurityClaim(ClaimTypes.Role, "admin")]));
+
         var options = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
         options.CurrentValue.Returns(new GeoprocessingExecutorOptions());
         var executor = new HonuaLayerSinkExecutor(options, NullLogger<HonuaLayerSinkExecutor>.Instance,
-            new PostgresHonuaLayerSink(_fixture.Postgres.DataSource));
+            new PostgresHonuaLayerSink(_fixture.Postgres.DataSource),
+            _fixture.GetService<IServiceScopeFactory>());
         var parameters = new Dictionary<string, string>
         {
             ["protocolProcessId"] = "sink.honua-layer",
