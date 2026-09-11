@@ -50,6 +50,14 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
         var distanceMeters = distance * ReadUnitFactor(inputs);
         var dissolve = ReadBool(inputs, "dissolve", defaultValue: true);
         var groupByFields = ReadGroupByFields(inputs);
+        var stats = StatisticsSupport.ParseStatistics(inputs.GetOrDefault("outStatistics", string.Empty));
+        if (stats.Count > 0 && !dissolve)
+        {
+            // Matches the catalog's documented constraint (and generalization.dissolve's
+            // identical guard, #4624): per-feature output cannot carry aggregate columns.
+            throw new TransformInputException(
+                "'outStatistics' requires dissolve=true; per-feature output cannot carry aggregate columns.");
+        }
 
         var bufferedGeometries = await BufferSourceFeaturesAsync(
                 context, inputs, source, distanceMeters, cancellationToken)
@@ -82,42 +90,65 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
             return perFeature;
         }
 
-        var groups = new Dictionary<string, (IFeature First, List<NtsGeometry> Geometries)>(StringComparer.Ordinal);
+        var groups = new Dictionary<string, GroupAccumulator>(StringComparer.Ordinal);
         var order = new List<string>();
         foreach (var entry in buffered)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!groups.TryGetValue(entry.GroupKey, out var accumulator))
             {
-                accumulator = (entry.Feature, new List<NtsGeometry>());
+                accumulator = new GroupAccumulator(entry.Feature);
                 groups[entry.GroupKey] = accumulator;
                 order.Add(entry.GroupKey);
             }
 
             accumulator.Geometries.Add(entry.Geometry);
+            StatisticsSupport.Accumulate(entry.Feature, stats, accumulator.Accumulators);
         }
 
         var dissolved = new List<IFeature>(order.Count);
         foreach (var key in order)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var (first, geometries) = groups[key];
+            var accumulator = groups[key];
+            var geometries = accumulator.Geometries;
             var unioned = geometries.Count == 1 ? geometries[0] : CascadedPolygonUnion.Union(geometries);
 
             var attributes = new AttributesTable();
             foreach (var field in groupByFields)
             {
-                object? value = first.Attributes is not null && first.Attributes.Exists(field)
-                    ? first.Attributes.GetOptionalValue(field)
+                object? value = accumulator.First.Attributes is not null && accumulator.First.Attributes.Exists(field)
+                    ? accumulator.First.Attributes.GetOptionalValue(field)
                     : null;
                 OverlayExecutorSupport.Upsert(attributes, field, value);
             }
 
             OverlayExecutorSupport.Upsert(attributes, CountAttribute, (long)geometries.Count);
+            foreach (var spec in stats)
+            {
+                object? value = spec.Kind == StatisticsSupport.StatKind.Count
+                    ? (long)geometries.Count
+                    : accumulator.Accumulators.TryGetValue(spec.Field, out var fieldAccumulator)
+                        ? fieldAccumulator.Resolve(spec.Kind)
+                        : null;
+                OverlayExecutorSupport.Upsert(attributes, spec.OutputName, value);
+            }
+
             dissolved.Add(new Feature(unioned, attributes));
         }
 
         return dissolved;
+    }
+
+    private sealed class GroupAccumulator
+    {
+        public GroupAccumulator(IFeature first) => First = first;
+
+        public IFeature First { get; }
+
+        public List<NtsGeometry> Geometries { get; } = [];
+
+        public Dictionary<string, StatisticsSupport.FieldAccumulator> Accumulators { get; } = new(StringComparer.Ordinal);
     }
 
     /// <summary>

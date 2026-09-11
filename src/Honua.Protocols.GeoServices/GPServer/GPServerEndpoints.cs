@@ -351,7 +351,7 @@ internal static class GPServerEndpoints
                 serviceId, taskName, definition, parameters, envControls, workingSrid, planResult.FeatureSchema);
             var job = await jobService.SubmitJobAsync(
                 plan,
-                idempotencyKey: null,
+                ResolveIdempotencyKey(parameters),
                 context.User,
                 protocolMetadata,
                 ct);
@@ -482,7 +482,7 @@ internal static class GPServerEndpoints
                 serviceId, taskName, definition, parameters, envControls, workingSrid, planResult.FeatureSchema);
             var job = await jobService.SubmitJobAsync(
                 planResult.Plan!,
-                idempotencyKey: null,
+                ResolveIdempotencyKey(parameters),
                 context.User,
                 protocolMetadata,
                 ct);
@@ -1955,8 +1955,25 @@ internal static class GPServerEndpoints
             || string.Equals(key, "returnFeatureCollection", StringComparison.OrdinalIgnoreCase)
             || string.Equals(key, "returnColumnName", StringComparison.OrdinalIgnoreCase)
             || string.Equals(key, "returnTrueCurves", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, IdempotencyKeyParameterName, StringComparison.OrdinalIgnoreCase)
             || key.StartsWith("env:", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Optional GeoServices-style request parameter carrying a client-supplied idempotency
+    /// key (server#4627). GPServer's wire convention is form/query parameters (mirrors
+    /// <c>idempotencyKey</c> on the ImageServer/MapServer durable export routes), not the
+    /// <c>Idempotency-Key</c> header used by JSON-native adapters (MCP, admin/webhook
+    /// endpoints). Registered in <see cref="IsProtocolControlParameter"/> so it is never
+    /// bound as a task input parameter. Absent ⇒ unchanged legacy behavior (a fresh job id
+    /// every submission).
+    /// </summary>
+    private const string IdempotencyKeyParameterName = "idempotencyKey";
+
+    private static string? ResolveIdempotencyKey(IReadOnlyDictionary<string, string> parameters)
+        => parameters.TryGetValue(IdempotencyKeyParameterName, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
+            : null;
 
     private static IResult? ValidateJsonFormat(
         HttpContext context,
