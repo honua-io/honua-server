@@ -61,6 +61,22 @@ internal static partial class ExecutionAdmissionLog
     public static partial void RateBucketEvicted(ILogger logger, string rateKey);
 
     [LoggerMessage(8026, LogLevel.Warning,
-        "Distributed execution-admission rate limiting unavailable; using process-local fallback.")]
+        "Distributed execution-admission rate limiting unavailable; rejecting with backpressure instead of a per-node fallback.")]
     public static partial void RedisUnavailable(ILogger logger, Exception exception);
+
+    [LoggerMessage(8027, LogLevel.Warning,
+        "Shared execution-admission lease unavailable; rejecting the submission with backpressure.")]
+    public static partial void SharedLeaseUnavailable(ILogger logger, Exception exception);
+
+    [LoggerMessage(8028, LogLevel.Warning,
+        "Shared execution-admission lease still contended after {WaitedMilliseconds} ms; rejecting the submission with backpressure.")]
+    public static partial void SharedLeaseContended(ILogger logger, long waitedMilliseconds);
+
+    [LoggerMessage(8029, LogLevel.Warning,
+        "Shared execution-admission lease expired before the job record was created; rejecting the submission with backpressure.")]
+    public static partial void SharedLeaseLost(ILogger logger);
+
+    [LoggerMessage(8030, LogLevel.Warning,
+        "Releasing the shared execution-admission lease failed; it expires with its TTL.")]
+    public static partial void SharedLeaseReleaseFailed(ILogger logger, Exception exception);
 }

@@ -4376,12 +4376,65 @@ public sealed class GeoprocessingJobServiceTests
             _jobStore,
             admissionEvaluator: admission);
 
-        var metadata = new Dictionary<string, string> { ["workspace.id"] = "ws-42" };
-        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal(), metadata);
+        // #3853: the admission partition is the submitter's trusted tenant, pinned on the submitter
+        // security snapshot, not a metadata value the caller can choose.
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreateTenantPrincipal("tenant-42"));
 
         job.Spec.Parameters.Should().ContainKey(ExecutionAdmissionEvaluator.CostWeightParameterKey);
         job.Spec.Parameters.Should().ContainKey(ExecutionAdmissionEvaluator.PartitionKeyParameterKey)
-            .WhoseValue.Should().Be("ws-42");
+            .WhoseValue.Should().Be("tenant-42");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CallerSuppliedAdmissionMetadata_CannotChoosePartitionOrCost()
+    {
+        // Workflow-package and analysis-content runs forward caller parameters into protocol
+        // metadata. Honouring these keys let a caller pick a fresh partition per request — escaping
+        // its tenant's concurrency and cost limits — or stamp a near-zero cost weight that every
+        // node's evaluator would later read back when summing active cost (#3853).
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var observed = new List<ExecutionAdmissionRequest>();
+        var admission = Substitute.For<IExecutionAdmissionEvaluator>();
+        admission.EvaluateAsync(Arg.Do<ExecutionAdmissionRequest>(observed.Add), Arg.Any<CancellationToken>())
+            .Returns(ExecutionAdmissionDecision.Admitted(new ExecutionAdmissionSnapshot()));
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            admissionEvaluator: admission);
+
+        var callerMetadata = new Dictionary<string, string>
+        {
+            [ExecutionAdmissionEvaluator.PartitionKeyParameterKey] = "attacker-partition",
+            [ExecutionAdmissionEvaluator.CostWeightParameterKey] = "0.0001",
+            ["workspace.id"] = "attacker-workspace",
+            ["tenant.id"] = "attacker-tenant"
+        };
+
+        var tenantJob = await sut.SubmitJobAsync(
+            CreateValidPlan(), null, CreateTenantPrincipal("tenant-42"), callerMetadata);
+
+        observed.Should().ContainSingle().Which.PartitionKey.Should().Be("tenant-42");
+        tenantJob.Spec.Parameters[ExecutionAdmissionEvaluator.PartitionKeyParameterKey].Should().Be("tenant-42");
+        tenantJob.Spec.Parameters[ExecutionAdmissionEvaluator.CostWeightParameterKey].Should().Be("1");
+
+        // A tenant-less submitter lands in the shared default partition, whatever the metadata says.
+        var defaultJob = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal(), callerMetadata);
+
+        observed.Should().HaveCount(2);
+        observed[1].PartitionKey.Should().BeNull();
+        defaultJob.Spec.Parameters.Should().NotContainKey(ExecutionAdmissionEvaluator.PartitionKeyParameterKey);
+        defaultJob.Spec.Parameters[ExecutionAdmissionEvaluator.CostWeightParameterKey].Should().Be("1");
     }
 
     // -----------------------------------------------------------------------
@@ -5203,6 +5256,13 @@ public sealed class GeoprocessingJobServiceTests
     private static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, "test-user")], "Test"));
+
+    private static ClaimsPrincipal CreateTenantPrincipal(string tenantId)
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "test-user"),
+                new Claim("tenant_id", tenantId)
+            ], "Test"));
 
     private static ClaimsPrincipal CreateStablePrincipal()
         => new(new ClaimsIdentity(

@@ -164,7 +164,19 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         // Claim a slot so concurrent requests from the same principal cannot both pass.
         if (options.MaxSubmissionsPerWindow > 0 && !string.IsNullOrWhiteSpace(request.PrincipalId))
         {
-            var (claimed, postClaimCount) = await TryClaimSubmissionAsync(request, options).ConfigureAwait(false);
+            var (claimed, postClaimCount, sharedUnavailable) = await TryClaimSubmissionAsync(request, options).ConfigureAwait(false);
+            if (sharedUnavailable)
+            {
+                // A shared rate limit is never silently replaced by a per-node bucket: each node
+                // would grant the full window and a restart would reset it (#3853).
+                return Deny(
+                    ExecutionAdmissionDimension.Backpressure,
+                    $"backpressure:{request.JobKind.ToString().ToLowerInvariant()}:shared-rate-unavailable",
+                    "Shared submission rate state is unavailable; retry later.",
+                    options.DefaultRetryAfterSeconds,
+                    snapshot, request, activity, partitionTag, principalTag);
+            }
+
             if (!claimed)
             {
                 var rateSnapshot = snapshot with { SubmissionsInWindow = postClaimCount };
@@ -346,7 +358,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         return bucket.Count(_timeProvider.GetUtcNow(), TimeSpan.FromSeconds(options.RateWindowSeconds));
     }
 
-    private async Task<(bool Claimed, int Count)> TryClaimSubmissionAsync(
+    private async Task<(bool Claimed, int Count, bool SharedUnavailable)> TryClaimSubmissionAsync(
         ExecutionAdmissionRequest request, ExecutionAdmissionOptions options)
     {
         var key = BuildRateKey(request);
@@ -363,11 +375,14 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
                 var nowMs = now.ToUnixTimeMilliseconds();
                 var result = (long)await _redis.ScriptEvaluateAsync(script, [new RedisKey(redisKey)],
                     [nowMs, (long)window.TotalMilliseconds, options.MaxSubmissionsPerWindow, $"{nowMs}:{Guid.NewGuid():N}"]).ConfigureAwait(false);
-                return (result >= 0, (int)Math.Abs(result));
+                return (result >= 0, (int)Math.Abs(result), false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
+                // Fail closed (#3853): the process-local bucket below is only exact on a single
+                // node, so it must never stand in for a configured shared limit.
                 ExecutionAdmissionLog.RedisUnavailable(_logger, ex);
+                return (false, 0, true);
             }
         }
         var bucket = _rateBuckets.GetOrAdd(key, static _ => new RateBucket());
@@ -382,7 +397,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
             SweepIdleBuckets(now, window);
         }
 
-        return (claimed, count);
+        return (claimed, count, false);
     }
 
     private int _claimCount;
@@ -403,8 +418,9 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
 
     /// <summary>
     /// Sliding-window counter. Tracks timestamps of recent submissions and admits
-    /// up to <c>limit</c> claims within the window. Distributed coordination is a
-    /// follow-on; see <see cref="ExecutionAdmissionOptions"/> default rationale.
+    /// up to <c>limit</c> claims within the window. Used only when no Redis multiplexer is
+    /// composed (a single node); with Redis the shared sorted-set claim is authoritative and an
+    /// unreachable Redis fails closed rather than falling back here (#3853).
     /// </summary>
     private sealed class RateBucket
     {

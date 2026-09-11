@@ -57,4 +57,19 @@ internal sealed class ExecutionAdmissionOptions
     /// </summary>
     [Range(1, 3600, ErrorMessage = "DefaultRetryAfterSeconds must be between 1 and 3600")]
     public int DefaultRetryAfterSeconds { get; set; } = 10;
+
+    /// <summary>
+    /// Time-to-live, in seconds, of the shared admission lease that fences the check-and-create
+    /// window across nodes when Redis is composed. Bounds how long a node that dies mid-admission
+    /// can block the others.
+    /// </summary>
+    [Range(1, 300, ErrorMessage = "SharedLeaseSeconds must be between 1 and 300")]
+    public int SharedLeaseSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// Maximum time, in milliseconds, a submission waits for the shared admission lease before it
+    /// is rejected with backpressure and <see cref="DefaultRetryAfterSeconds"/>.
+    /// </summary>
+    [Range(10, 60000, ErrorMessage = "SharedLeaseAcquireTimeoutMilliseconds must be between 10 and 60000")]
+    public int SharedLeaseAcquireTimeoutMilliseconds { get; set; } = 5000;
 }

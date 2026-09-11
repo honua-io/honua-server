@@ -9,6 +9,8 @@ using Honua.Geoprocessing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
@@ -299,6 +301,45 @@ public sealed class ExecutionAdmissionEvaluatorTests
         var decision = await sut.EvaluateAsync(CreateRequest());
 
         decision.Outcome.Should().Be(ExecutionAdmissionOutcome.Admitted);
+    }
+
+    // -----------------------------------------------------------------------
+    // Shared rate state unavailable â€” fail closed, never a per-node bucket (#3853)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Evaluate_SharedRateStateUnavailable_DeniesBackpressureInsteadOfPerNodeFallback()
+    {
+        // The window has 100 free slots, so the retired process-local fallback would have
+        // admitted every attempt below. A configured shared limit must instead refuse to admit
+        // against per-node state: N nodes would each grant the full window and a restart would
+        // reset it.
+        var options = DefaultOptions();
+        options.DefaultRetryAfterSeconds = 7;
+
+        var database = Substitute.For<IDatabase>();
+        database
+            .ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
+            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "redis unreachable"));
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        multiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
+
+        var sut = new ExecutionAdmissionEvaluator(
+            new TestOptionsMonitor(options),
+            _time,
+            NullLogger<ExecutionAdmissionEvaluator>.Instance,
+            _jobStore,
+            multiplexer);
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var decision = await sut.EvaluateAsync(CreateRequest());
+
+            decision.Outcome.Should().Be(ExecutionAdmissionOutcome.Denied);
+            decision.DenyingDimension.Should().Be(ExecutionAdmissionDimension.Backpressure);
+            decision.PolicyRef.Should().Be("backpressure:geoprocessing:shared-rate-unavailable");
+            decision.RetryAfterSeconds.Should().Be(7);
+        }
     }
 
     // -----------------------------------------------------------------------
