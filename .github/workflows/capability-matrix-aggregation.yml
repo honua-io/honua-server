@@ -35,6 +35,13 @@ on:
       # OpenAPI document the drift checker declares, so both move it.
       - 'scripts/ci/generate-operation-capability.py'
       - 'scripts/ci/generate-operation-capability.test.py'
+      # WS1: the manifest crosswalk reads the registry source, the keys and the
+      # adjudication, so all three move it.
+      - 'scripts/ci/generate-capability-manifest-crosswalk.py'
+      - 'scripts/ci/generate-capability-manifest-crosswalk.test.py'
+      - 'docs/gis/data/capability-manifest-adjudication.v1.json'
+      - 'docs/gis/data/capability-manifest-crosswalk.v1.json'
+      - 'src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs'
       - 'scripts/ci/openapi-drift-check.py'
       - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/openapi.json'
@@ -60,6 +67,13 @@ on:
       # OpenAPI document the drift checker declares, so both move it.
       - 'scripts/ci/generate-operation-capability.py'
       - 'scripts/ci/generate-operation-capability.test.py'
+      # WS1: the manifest crosswalk reads the registry source, the keys and the
+      # adjudication, so all three move it.
+      - 'scripts/ci/generate-capability-manifest-crosswalk.py'
+      - 'scripts/ci/generate-capability-manifest-crosswalk.test.py'
+      - 'docs/gis/data/capability-manifest-adjudication.v1.json'
+      - 'docs/gis/data/capability-manifest-crosswalk.v1.json'
+      - 'src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs'
       - 'scripts/ci/openapi-drift-check.py'
       - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/openapi.json'
@@ -116,8 +130,16 @@ jobs:
       - name: Test the operation-capability join
         run: python3 scripts/ci/generate-operation-capability.test.py
 
+      - name: Test the capability-manifest crosswalk
+        run: python3 scripts/ci/generate-capability-manifest-crosswalk.test.py
+
       - name: Drift check operation-capability.v1.json
         run: python3 scripts/ci/generate-operation-capability.py --check
+
+      # Fails when a manifest id resolves nowhere and nobody adjudicated it,
+      # which is the drift WS1 exists to close.
+      - name: Drift check capability-manifest-crosswalk.v1.json
+        run: python3 scripts/ci/generate-capability-manifest-crosswalk.py --check
 
       - name: Validate CITE evidence-table joins against OpenAPI metadata
         run: python3 scripts/ci/validate-cite-openapi-compliance.py

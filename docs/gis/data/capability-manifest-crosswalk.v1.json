@@ -1,0 +1,316 @@
+{
+  "schemaVersion": "1.0.0",
+  "generator": "scripts/ci/generate-capability-manifest-crosswalk.py",
+  "trackingIssue": "https://github.com/honua-io/honua-server/issues/3607",
+  "description": "Joins honua.capability_manifest.v1 ids to licensing capability keys. `direct` and `entitlement` are derived from CapabilityRegistry.cs; `mapped`, `register` and `not-licensable` come from capability-manifest-adjudication.v1.json. Every manifest id appears exactly once.",
+  "sources": {
+    "manifestIds": "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs",
+    "capabilityKeys": "docs/gis/data/capability-keys.v1.json",
+    "adjudication": "docs/gis/data/capability-manifest-adjudication.v1.json"
+  },
+  "summary": {
+    "manifestIdCount": 39,
+    "resolvedCount": 31,
+    "byResolution": {
+      "direct": 16,
+      "entitlement": 4,
+      "mapped": 7,
+      "not-licensable": 8,
+      "registered": 4
+    }
+  },
+  "entries": [
+    {
+      "manifestId": "alerts.geofence",
+      "category": "alerts",
+      "kind": "Feature",
+      "capability": "alerts.enter-exit",
+      "resolution": "entitlement"
+    },
+    {
+      "manifestId": "analysis.spatial",
+      "category": "analysis",
+      "kind": "Feature",
+      "capability": null,
+      "resolution": "not-licensable",
+      "note": "An umbrella the manifest advertises so a client can ask whether spatial analysis exists at all. Licensing is per operation — analytics.viewshed, analytics.h3, analytics.spatial-join and the rest are individually keyed and individually Pro. A single umbrella key would let one entitlement stand in for eleven."
+    },
+    {
+      "manifestId": "collaboration.feature-locks",
+      "category": "collaboration",
+      "kind": "Feature",
+      "capability": "collaboration.map-sessions",
+      "resolution": "mapped",
+      "note": "Feature locks are the concurrency mechanism inside a collaboration session; they exist to make concurrent editing in a shared map safe. One licensed capability, two names."
+    },
+    {
+      "manifestId": "collaboration.feature-locks.cross-node",
+      "category": "collaboration",
+      "kind": "Feature",
+      "capability": "collaboration.map-sessions",
+      "resolution": "mapped",
+      "note": "Cross-node lock coordination is a deployment property of the same capability — it is what the locks require once the server runs multi-node — not a capability a customer licenses separately."
+    },
+    {
+      "manifestId": "edit.geoservices-version-tokens",
+      "category": "edit",
+      "kind": "Feature",
+      "capability": "editing.branch-versioning",
+      "resolution": "mapped",
+      "note": "Version tokens are the GeoServices wire form of branch versioning; the same entitlement gates both."
+    },
+    {
+      "manifestId": "gitops.release-manifest",
+      "category": "gitops",
+      "kind": "Feature",
+      "capability": "admin.control-plane",
+      "resolution": "mapped",
+      "note": "Declarative catalog apply runs through the admin control plane, which is the key covering administrative CRUD with no dedicated surface of its own."
+    },
+    {
+      "manifestId": "jobs.runner",
+      "category": "jobs",
+      "kind": "Feature",
+      "capability": "jobs.durable-runtime",
+      "resolution": "registered",
+      "note": "First, per #3607. The durable job substrate behind imports, tile operations, geoprocessing and workflows. It resolves in no published catalog while CapabilityUnavailableCodes.DurableJobsCapability names it and live typed refusals hand it to clients, so an agent receiving the refusal cannot look the id up. process.geoprocessing is the nearest existing key and is wrong: the substrate is broader than geoprocessing and is what fails when Redis is absent."
+    },
+    {
+      "manifestId": "operate.status",
+      "category": "operate",
+      "kind": "Feature",
+      "capability": "ops.health",
+      "resolution": "mapped",
+      "note": "The authenticated operate-status surface reports the same health the ops.health capability covers."
+    },
+    {
+      "manifestId": "package.app",
+      "category": "packages",
+      "kind": "Feature",
+      "capability": null,
+      "resolution": "not-licensable",
+      "note": "Schema-version advertisement, as package.map."
+    },
+    {
+      "manifestId": "package.gitops-manifest",
+      "category": "packages",
+      "kind": "Feature",
+      "capability": null,
+      "resolution": "not-licensable",
+      "note": "Schema-version advertisement, as package.metadata-v2."
+    },
+    {
+      "manifestId": "package.map",
+      "category": "packages",
+      "kind": "Feature",
+      "capability": null,
+      "resolution": "not-licensable",
+      "note": "Schema-version advertisement. Its policyCapability is studio.edit, which is an authorization policy name rather than a licensing key."
+    },
+    {
+      "manifestId": "package.metadata-v2",
+      "category": "packages",
+      "kind": "Feature",
+      "capability": null,
+      "resolution": "not-licensable",
+      "note": "A package-family schema-version advertisement. The manifest publishes which package schema versions a deployment understands so a client can negotiate; the capability being exercised is the admin control plane that accepts the package."
+    },
+    {
+      "manifestId": "package.release-package",
+      "category": "packages",
+      "kind": "Feature",
+      "capability": null,
+      "resolution": "not-licensable",
+      "note": "Schema-version advertisement, as package.metadata-v2."
+    },
+    {
+      "manifestId": "preview.file-import",
+      "category": "preview",
+      "kind": "Feature",
+      "capability": "import.file",
+      "resolution": "entitlement"
+    },
+    {
+      "manifestId": "provider.databricks",
+      "category": "provider",
+      "kind": "Feature",
+      "capability": "provider.databricks",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "provider.redshift",
+      "category": "provider",
+      "kind": "Feature",
+      "capability": "provider.redshift",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "provider.snowflake",
+      "category": "provider",
+      "kind": "Feature",
+      "capability": "provider.snowflake",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "publication.metadata-release",
+      "category": "publication",
+      "kind": "Feature",
+      "capability": "admin.control-plane",
+      "resolution": "mapped",
+      "note": "Backed by a real route (MetadataReleaseOperationEndpoints) gated on the manifest id, with catalog.publish as its authorization policy. The licensed capability is the admin control plane the route belongs to."
+    },
+    {
+      "manifestId": "query.features",
+      "category": "query",
+      "kind": "Feature",
+      "capability": null,
+      "resolution": "not-licensable",
+      "note": "Protocol-neutral feature query is the baseline every serve.* capability already includes; FeatureServer query, OGC API Features items and WFS GetFeature are the same read through different wires. Mapping it to one protocol would misattribute the others, and mapping it to all 24 would double-count."
+    },
+    {
+      "manifestId": "realtime.feature-streams",
+      "category": "realtime",
+      "kind": "Feature",
+      "capability": "streaming.feature-subscriptions",
+      "resolution": "entitlement"
+    },
+    {
+      "manifestId": "scene.catalog",
+      "category": "scene",
+      "kind": "Feature",
+      "capability": "scene.catalog",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.3d-tiles-scene",
+      "category": "scene",
+      "kind": "ProtocolOperation",
+      "capability": "serve.3d-tiles-scene",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.geoservices-imageserver",
+      "category": "raster",
+      "kind": "ProtocolOperation",
+      "capability": "serve.geoservices-imageserver",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.i3s-scene",
+      "category": "scene",
+      "kind": "ProtocolOperation",
+      "capability": "serve.i3s-scene",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.ogc-api-coverages",
+      "category": "raster",
+      "kind": "ProtocolOperation",
+      "capability": "serve.ogc-api-coverages",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.ogc-api-edr",
+      "category": "serve",
+      "kind": "ProtocolOperation",
+      "capability": "serve.ogc-api-edr",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.sensorthings",
+      "category": "realtime",
+      "kind": "ProtocolOperation",
+      "capability": "serve.sensorthings",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.wmts",
+      "category": "raster",
+      "kind": "ProtocolOperation",
+      "capability": "serve.wmts",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "temporal.animation-api",
+      "category": "temporal",
+      "kind": "Feature",
+      "capability": "temporal.animation-api",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "temporal.extent-discovery",
+      "category": "temporal",
+      "kind": "Feature",
+      "capability": "temporal.extent-discovery",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "temporal.filtering",
+      "category": "temporal",
+      "kind": "Feature",
+      "capability": "temporal.filtering",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "temporal.histogram",
+      "category": "temporal",
+      "kind": "Feature",
+      "capability": "temporal.histogram",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "temporal.time-series-tiles",
+      "category": "temporal",
+      "kind": "Feature",
+      "capability": "temporal.time-series-tiles",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "transport.grpc",
+      "category": "transports",
+      "kind": "ProtocolOperation",
+      "capability": "serve.grpc",
+      "resolution": "registered",
+      "note": "gRPC is a documented protocol in the protocol matrix, served on port 8081, with SDK and mobile clients depending on it — and it is the only served protocol with no serve.* key. The other 24 all have one. One key covers the three wire variants below; they are transports of the same surface, not separate capabilities."
+    },
+    {
+      "manifestId": "transport.grpc-web",
+      "category": "transports",
+      "kind": "ProtocolOperation",
+      "capability": "serve.grpc",
+      "resolution": "registered",
+      "note": "gRPC-Web on port 8080. Same capability as transport.grpc, different wire framing for browsers."
+    },
+    {
+      "manifestId": "transport.mcp",
+      "category": "transports",
+      "kind": "ProtocolOperation",
+      "capability": "ai.mcp-discovery",
+      "resolution": "mapped",
+      "note": "The /mcp surface is licensed through the AI family, where MCP discovery and query are Community and agent operations are Pro. The transport id is the manifest's name for the same surface."
+    },
+    {
+      "manifestId": "transport.native-grpc",
+      "category": "transports",
+      "kind": "ProtocolOperation",
+      "capability": "serve.grpc",
+      "resolution": "registered",
+      "note": "Native h2c gRPC on port 8081. Same capability as transport.grpc."
+    },
+    {
+      "manifestId": "transport.qgis",
+      "category": "transports",
+      "kind": "ProtocolOperation",
+      "capability": null,
+      "resolution": "not-licensable",
+      "note": "QGIS is a client, not a protocol Honua serves. It reaches the server over OGC API Features, WFS and WMTS, each already licensed by its own serve.* key. Client support is tracked by the interop crosswalk and the client-certification matrix, not by a licensing key."
+    },
+    {
+      "manifestId": "upload.file",
+      "category": "upload",
+      "kind": "Feature",
+      "capability": "import.file",
+      "resolution": "entitlement"
+    }
+  ]
+}
