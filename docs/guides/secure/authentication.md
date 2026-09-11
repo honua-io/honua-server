@@ -41,6 +41,21 @@ schema. Omitting `datastreamId` selects all datastreams within that boundary.
 Tenant overrides follow the shared tenant middleware's administrator rules; a
 datastream ID is never a cross-tenant identifier.
 
+Concurrent subscriptions are admitted against three nested caps under
+`SensorThings:Streaming`, so no single credential or tenant can hold every slot on
+a node:
+
+| Setting | Default | Refusal |
+|---|---:|---|
+| `MaxSessionsPerPrincipal` | 8 | `429` with `Retry-After` |
+| `MaxSessionsPerTenant` | 64 | `429` with `Retry-After` |
+| `MaxConcurrentSessions` (per node) | 256 | `503` with `Retry-After` |
+
+A per-tenant cap at or above the node cap, or a per-principal cap above the
+per-tenant cap, fails startup validation. `RetryAfterSeconds` (default 30) sets the
+hint returned with a refusal. A refused request never opens a stream: the problem
+response is returned before the SSE headers or the WebSocket upgrade.
+
 Upgrade every observation-stream node together. Scoped fan-out uses a new Redis
 channel, so old and updated nodes do not exchange observations during a rolling
 upgrade. Reconnect clients to updated nodes; streams remain best-effort, with no
