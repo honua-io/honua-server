@@ -224,15 +224,6 @@ runs:
       shell: bash
       run: mkdir -p ./tests/TestResults
 
-    # Generator failures stay hard. Existing validators consume fresh projections,
-    # so stale checked-in bytes cannot redden an otherwise valid PR.
-    - name: Regenerate projections and report advisory drift
-      shell: bash
-      run: |
-        timeout "${{ inputs.architecture-timeout-minutes }}m" \
-          bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
-        bash scripts/ci/report-generated-file-drift.sh
-
     # Fast unit smoke. The [UnitTest] tests in Server.Tests use NSubstitute /
     # NullLogger / in-memory caches and do NOT require the PostgreSQL service —
     # that is what keeps this step to a few minutes and this job to a single
@@ -251,8 +242,13 @@ runs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
-    # Keep all architecture and authored-input validators strict against the
-    # freshly generated projections, including byte equality/reproducibility.
+    # Architecture-enforcement tests: cheap (~75s) and high-value. This step is
+    # what makes the gate catch the failure that motivated #2865 —
+    # FeatureCatalogDriftTests.CommittedCatalog_EqualsFreshlyGeneratedOutput
+    # fails when docs/gis/data/feature-catalog.json is stale, which previously
+    # only surfaced on trunk AFTER an admin merge. It also catches the BLOCKING
+    # dependency-direction / controller / encapsulation / API-surface-coverage
+    # regressions.
     - name: Run .NET Tests (Architecture)
       shell: bash
       run: |

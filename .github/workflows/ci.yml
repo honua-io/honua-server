@@ -855,15 +855,6 @@ jobs:
         timeout-minutes: 25
         run: scripts/ci/run-foundation-family.sh build ${{ matrix.family }}
 
-      # Trunk validation can start before the post-merge writer finishes. Use
-      # fresh projections here too, preserving every authored-input validator.
-      - name: Regenerate foundation projections and report advisory drift
-        if: matrix.family == 'server'
-        timeout-minutes: 10
-        run: |
-          bash scripts/ci/regenerate-generated-files.sh --configuration Release --no-build --no-restore
-          bash scripts/ci/report-generated-file-drift.sh
-
       - name: Run foundation family tests
         timeout-minutes: 45
         run: scripts/ci/run-foundation-family.sh run ${{ matrix.family }}

@@ -50,10 +50,6 @@ else
   echo "⚠️  Skipping data-only normalization validation (no working Python 3)."
 fi
 
-if [[ -n "${PYTHON_BIN}" ]]; then
-  "${PYTHON_BIN}" scripts/ci/fixtures/validate-generated-files.py
-fi
-
 echo "Validating ci-shards.json structure..."
 jq -e '
   type == "object"
