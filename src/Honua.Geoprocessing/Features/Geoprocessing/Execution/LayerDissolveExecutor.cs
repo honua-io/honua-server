@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -27,8 +28,9 @@ internal sealed class LayerDissolveExecutor : LayerSourcedFeatureExecutor
     public LayerDissolveExecutor(
         IServiceScopeFactory serviceScopeFactory,
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
-        ILogger<LayerDissolveExecutor> logger)
-        : base(serviceScopeFactory, options, logger)
+        ILogger<LayerDissolveExecutor> logger,
+        IOptions<LimitsOptions>? limitsOptions = null)
+        : base(serviceScopeFactory, options, logger, limitsOptions)
     {
     }
 
@@ -135,24 +137,7 @@ internal sealed class LayerDissolveExecutor : LayerSourcedFeatureExecutor
                 _geometries.Add(feature);
             }
 
-            foreach (var spec in _stats)
-            {
-                if (spec.Kind == StatisticsSupport.StatKind.Count)
-                {
-                    continue;
-                }
-
-                if (!_accumulators.TryGetValue(spec.Field, out var accumulator))
-                {
-                    accumulator = new StatisticsSupport.FieldAccumulator();
-                    _accumulators[spec.Field] = accumulator;
-                }
-
-                if (StatisticsSupport.TryReadNumeric(feature, spec.Field, out var value))
-                {
-                    accumulator.Add(value);
-                }
-            }
+            StatisticsSupport.Accumulate(feature, _stats, _accumulators);
         }
 
         public Feature Build()

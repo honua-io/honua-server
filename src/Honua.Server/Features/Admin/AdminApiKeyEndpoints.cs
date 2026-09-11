@@ -101,7 +101,7 @@ internal static partial class AdminApiKeyEndpoints
         var result = await store.RotateAsync(id, context.RequestAborted);
         if (result is null)
         {
-            return TypedResults.NotFound(ApiResponse<object>.Failure("API key not found or revoked"));
+            return TypedResults.NotFound(ApiResponse<object>.Failure("API key not found, expired, or revoked"));
         }
 
         LogApiKeyRotated(logger, id);

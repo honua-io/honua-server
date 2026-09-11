@@ -1,7 +1,7 @@
 # CI Gate Model
 
 > Defines the five-tier quality gate model governing all CI workflows across the Honua project.
-> Last updated: 2026-08-31
+> Last updated: 2026-09-11
 
 ## Tier Definitions
 
@@ -138,6 +138,62 @@ carries two independent gate lanes per sampled operation:
   scorecard shape are covered offline by `GeoServicesPerfParityGateTests` and smoke-tested on every PR
   via pass/fail fixtures under `scripts/ci/fixtures/`; the live latency measurement runs in
   `geoservices-import-fidelity-external.yml` (on-demand).
+
+## Verification receipts and batch landing (quality-contract amendment, 2026-09)
+
+The fleet lander (honua-flow `tools/land-ready-prs.sh`, `tools/land-batch.sh`)
+is the only landing authority. Its verification rules are part of this gate
+model:
+
+1. **A verified baseline advances only with a receipt.** The last verified
+   trunk head (`trunk-lastgreen`, the `selective_base` of every later trailing
+   or batch run) moves forward only when a receipt `verified-<sha>` exists,
+   and never backwards. A receipt records the candidate tree, the
+   `selective_base`, the run id, the blob ids of `.github/workflows/ci.yml`,
+   `.github/ci-shards.json` and `scripts/ci/honua-server-targeted-tests.sh` at
+   the verified revision, the shard manifest (the `Server Tests (<shard>)`
+   matrix the run instantiated), the conclusion of every required
+   compatibility lane — Postgres Compatibility, AOT Build Verification, Docker
+   Build & Integration Test, Python Integration Tests, JavaScript Integration
+   Tests, Esri Leaflet Browser Tests, MapLibre GL JS Browser Compatibility,
+   MCP Certification, Honua.Core Package Compatibility, Quickstart Console
+   Compose Smoke; a matrix lane aggregates every variant, so one red Postgres
+   image makes the lane red — and the `CI Gate` conclusion.
+2. **Full proof** = `CI Gate` success, the manifest equals the full shard list
+   at that revision, and every required lane is success. **Selective proof** =
+   `CI Gate` success, the manifest is a subset of the full list and a superset
+   of the uncapped router's shards over exactly the diff the run selected on
+   (`selective_base..tip`), and every lane is success or was skipped by the
+   run's own diff gating. Job counts are reported and never authoritative; the
+   trunk-red brake clears only on full proof.
+3. **Batch candidates** live on `land/batch/<base7>/<id>` refs, run
+   `ci.yml` as `CI lander-batch-<id>`, and are never trunk verdicts. Members
+   that change CI plumbing (`.github/workflows/`, `.github/ci-shards.json`,
+   the router, `scripts/ci/compute-affected-*`) take the per-PR path.
+4. **A failed batch quarantines; it never falls back.** After at most one
+   rerun for an infrastructure-class failure (cancelled, timed out, runner
+   loss, no test result), every member is quarantined at its current head and
+   the batch is bisected into verified subsets (halves, member order kept,
+   down to single members). A member is released only by a verified green
+   candidate that contains it. Shard ownership orders which half runs first;
+   it never releases anyone. Non-members keep landing per-PR.
+5. **Stop at the first uncertain merge.** Every merge is preceded by a
+   merge-intent record and followed by a merge-confirmed record. A refusal,
+   moved head, closed PR or HTTP 5xx stops the batch; an unknown outcome is
+   resolved against GitHub, never assumed. Remaining members are rebuilt on
+   the new trunk tip and re-verified — never landed on the strength of the old
+   run. After landing, the last member's merge commit must carry the verified
+   tree; otherwise a trailing matrix is owed.
+6. **Durable state.** Batch state changes follow an explicit transition table
+   under one lock shared with the trunk watcher, and every lander start
+   reconciles unconfirmed intents, vanished refs/runs and the owed trailing
+   matrix against GitHub before deciding anything.
+
+Rollout: shadow first (assemble, dispatch, judge, receipt; nothing merged).
+Live two-PR batches follow only after at least three days and ten shadow
+batches meet the plan's exit criteria (assembly under 120 s, no lander
+timeouts, at least 80 % of batch runs green or uniquely attributable, every
+would-land set's later per-PR landings reproducing the recorded tree).
 
 ## Nightly Lane
 

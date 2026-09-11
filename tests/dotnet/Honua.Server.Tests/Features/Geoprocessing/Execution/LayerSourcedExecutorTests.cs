@@ -2,13 +2,18 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.ControlPlane;
@@ -17,8 +22,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
+using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NSubstitute;
+using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
@@ -48,7 +55,10 @@ public sealed class LayerSourcedExecutorTests
         ]);
 
         var (status, uri, _) = await RunAsync(
-            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            new LayerBufferAggregateExecutor(
+                BufferScopeFactory(source, layerId: 7, storageSrid: 3857, isGeographic: false),
+                Options(),
+                NullLogger<LayerBufferAggregateExecutor>.Instance),
             LayerBufferAggregateExecutor.HandledProcessId,
             ("layerId", "7"),
             ("distance", "1000"),
@@ -71,6 +81,102 @@ public sealed class LayerSourcedExecutorTests
     }
 
     [UnitTest]
+    public async Task Dissolve_AtConfiguredFeatureLimit_Succeeds()
+    {
+        // #4629 threshold boundary: exactly the configured cap must be admitted.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0), PointFeature(1, 1)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxInputFeatures: 2)),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
+    public async Task Dissolve_ExceedsConfiguredFeatureLimit_FailsBeforeComputation()
+    {
+        // #4629: one feature over the configured cap must fail closed WHILE STREAMING,
+        // with an actionable message — never silently truncate or compute over a partial read.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId,
+            [PointFeature(0, 0), PointFeature(1, 1), PointFeature(2, 2)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxInputFeatures: 2)),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        _lastErrorForAssertions.Should().Contain("exceeds the configured limit of 2 features");
+    }
+
+    [UnitTest]
+    public async Task Dissolve_SingleGeometryExceedsVertexLimit_FailsBeforeComputation()
+    {
+        // #4629: a feature-count cap alone does not bound one deliberately oversized
+        // geometry; the per-geometry vertex ceiling must charge independently.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [LineFeature(vertexCount: 100)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxVerticesPerGeometry: 50)),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        _lastErrorForAssertions.Should().Contain("100 vertices").And.Contain("exceeding the configured limit of 50");
+    }
+
+    [UnitTest]
+    public async Task Dissolve_SingleGeometryAtVertexLimit_Succeeds()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [LineFeature(vertexCount: 50)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxVerticesPerGeometry: 50)),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
+    public async Task SpatialJoin_JoinLayerExceedsConfiguredFeatureLimit_FailsBeforeComputation()
+    {
+        // #4629: the join (second) layer must be bounded by the SAME admission limits as
+        // the target layer — a two-layer op that only bounded one side would let the
+        // unbounded side alone destabilize the worker.
+        var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+        {
+            [1] = [PointFeature(0, 0)],
+            [2] = [PointFeature(0, 0), PointFeature(1, 1), PointFeature(2, 2)],
+        });
+
+        var (status, _, _) = await RunAsync(
+            new LayerSpatialJoinExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerSpatialJoinExecutor>.Instance,
+                LimitsOptions(maxInputFeatures: 2)),
+            LayerSpatialJoinExecutor.HandledProcessId,
+            ("layerId", "1"),
+            ("joinLayerId", "2"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        _lastErrorForAssertions.Should().Contain("join layer 2").And.Contain("exceeds the configured limit of 2 features");
+    }
+
+    [UnitTest]
     public async Task BufferAggregate_MissingLayerId_FailsWithClassifiedError()
     {
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
@@ -81,6 +187,255 @@ public sealed class LayerSourcedExecutorTests
             ("distance", "10"));
 
         status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_GeographicLayer_BuffersByGroundMeters_NotDegrees()
+    {
+        // #4623 regression: a geographic (EPSG:4326) layer buffered by a metric distance
+        // must NOT apply that distance as degrees (the prior bug) — the resulting buffer
+        // must be a few thousandths of a degree wide, not ~1000 degrees wide. The expected
+        // envelope is computed from an INDEPENDENT closed-form approximation (the standard
+        // ~111,320 m/degree-of-latitude constant and its cos(latitude) correction for
+        // longitude), a different code path from the executor's own Web-Mercator buffer.
+        const double lon = -122.4194;
+        const double lat = 37.7749; // San Francisco
+        const double distanceMeters = 1000;
+        const double metersPerDegreeLatitude = 111_320.0;
+
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(lon, lat)]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(
+                BufferScopeFactory(source, layerId: 7, storageSrid: 4326, isGeographic: true),
+                Options(),
+                NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", distanceMeters.ToString(CultureInfo.InvariantCulture)),
+            ("unit", "meters"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().ContainSingle();
+        var envelope = features[0].Geometry!.EnvelopeInternal;
+
+        var expectedLatHalfExtent = distanceMeters / metersPerDegreeLatitude;
+        var expectedLonHalfExtent = distanceMeters / (metersPerDegreeLatitude * Math.Cos(lat * Math.PI / 180.0));
+
+        envelope.MinY.Should().BeApproximately(lat - expectedLatHalfExtent, 0.0005,
+            "1000 m at this latitude is roughly 0.009 degrees of latitude, not 1000 degrees");
+        envelope.MaxY.Should().BeApproximately(lat + expectedLatHalfExtent, 0.0005);
+        envelope.MinX.Should().BeApproximately(lon - expectedLonHalfExtent, 0.0005);
+        envelope.MaxX.Should().BeApproximately(lon + expectedLonHalfExtent, 0.0005);
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_NonMetricProjectedLayer_ConvertsDistanceToNativeUnit()
+    {
+        // #4623 regression: a projected layer whose native linear unit is NOT meters (US
+        // survey feet here) must convert the metric input distance into that native unit
+        // before buffering — never assume every projected CRS is metric. The expected
+        // buffer radius (in native units) is computed independently via plain division,
+        // a different code path from the executor/service's own conversion.
+        const double metersPerUsSurveyFoot = 0.3048006096012192;
+        const double distanceMeters = 100;
+        const double centerX = 1000;
+        const double centerY = 2000;
+        var expectedNativeRadius = distanceMeters / metersPerUsSurveyFoot;
+
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(centerX, centerY)]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(
+                BufferScopeFactory(
+                    source, layerId: 9, storageSrid: 2229, isGeographic: false, metersPerUnit: metersPerUsSurveyFoot),
+                Options(),
+                NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("distance", distanceMeters.ToString(CultureInfo.InvariantCulture)),
+            ("unit", "meters"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().ContainSingle();
+        var envelope = features[0].Geometry!.EnvelopeInternal;
+
+        (envelope.MaxX - centerX).Should().BeApproximately(expectedNativeRadius, 0.01,
+            "100 meters over a 0.3048-m survey foot is ~328.08 native units, not 100");
+        (centerX - envelope.MinX).Should().BeApproximately(expectedNativeRadius, 0.01);
+        (envelope.MaxY - centerY).Should().BeApproximately(expectedNativeRadius, 0.01);
+        (centerY - envelope.MinY).Should().BeApproximately(expectedNativeRadius, 0.01);
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_NoGeometryOperationServiceConfigured_FailsClosed()
+    {
+        // #4623: when the CRS-aware geometry service / metadata provider are unavailable,
+        // the executor must refuse rather than silently fall back to the old CRS-blind math.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("unit", "meters"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_ObjectIdsAndWhereAndEnvelope_AllPropagateToSourceRequest()
+    {
+        // #4624: 'where' already propagated; 'objectIds' and the GeoServices
+        // geometry/geometryType/inSR/spatialRel envelope family did not — the catalog
+        // advertised them but LayerSourcedFeatureExecutor silently dropped them. Assert
+        // the built DagSourceRequest carries the EXACT, independently-computed values
+        // for every selector together, not a subset.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, request) = await RunAsync(
+            new LayerBufferAggregateExecutor(
+                BufferScopeFactory(source, layerId: 7, storageSrid: 3857, isGeographic: false),
+                Options(),
+                NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("where", "pop > 100"),
+            ("objectIds", "3, 8, 21"),
+            ("geometry", """{"xmin":-10,"ymin":-20,"xmax":30,"ymax":40}"""),
+            ("geometryType", "esriGeometryEnvelope"),
+            ("inSR", "4326"),
+            ("spatialRel", "esriSpatialRelIntersects"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        request.Should().NotBeNull();
+        request!.Where.Should().Be("pop > 100");
+        request.ObjectIds.Should().Be("3, 8, 21");
+        request.Bbox.Should().Be("-10,-20,30,40",
+            "the envelope's xmin/ymin/xmax/ymax must translate to the same minX,minY,maxX,maxY bbox form");
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_TimeFilter_IsRejectedNotSilentlyIgnored()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("time", "1700000000000"));
+
+        status.Should().Be(ExecutionJobStatus.Failed,
+            "an advertised filter this base cannot yet honor must fail closed, not silently return the unfiltered layer");
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_UnsupportedGeometryType_IsRejected()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("geometry", """{"rings":[[[0,0],[0,1],[1,1],[0,0]]]}"""),
+            ("geometryType", "esriGeometryPolygon"));
+
+        status.Should().Be(ExecutionJobStatus.Failed,
+            "a broadened, unsupported geometry filter must be rejected rather than silently widening the selection");
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_UnsupportedSpatialRel_IsRejected()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("geometry", """{"xmin":0,"ymin":0,"xmax":1,"ymax":1}"""),
+            ("geometryType", "esriGeometryEnvelope"),
+            ("spatialRel", "esriSpatialRelContains"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_InvalidObjectIds_IsRejected()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("objectIds", "3,not-a-number"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_OutStatistics_ComputesGroupAggregatesOnDissolve()
+    {
+        // Independent oracle: zone "a" has pop values 5 and 7 -> SUM=12, MEAN=6, MAX=7.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId,
+        [
+            NamedPointWithNumericField(0, 0, "zone", "a", "pop", 5),
+            NamedPointWithNumericField(1, 1, "zone", "a", "pop", 7),
+            NamedPointWithNumericField(50, 50, "zone", "b", "pop", 100),
+        ]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(
+                BufferScopeFactory(source, layerId: 7, storageSrid: 3857, isGeographic: false),
+                Options(),
+                NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "1"),
+            ("unit", "meters"),
+            ("dissolve", "true"),
+            ("groupByFields", "zone"),
+            ("outStatistics", "pop:sum;pop:mean;pop:max"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        var zoneA = features.Single(f => Equals(f.Attributes.GetOptionalValue("zone"), "a"));
+        Convert.ToDouble(zoneA.Attributes.GetOptionalValue("SUM_pop"), CultureInfo.InvariantCulture).Should().Be(12);
+        Convert.ToDouble(zoneA.Attributes.GetOptionalValue("MEAN_pop"), CultureInfo.InvariantCulture).Should().Be(6);
+        Convert.ToDouble(zoneA.Attributes.GetOptionalValue("MAX_pop"), CultureInfo.InvariantCulture).Should().Be(7);
+
+        var zoneB = features.Single(f => Equals(f.Attributes.GetOptionalValue("zone"), "b"));
+        Convert.ToDouble(zoneB.Attributes.GetOptionalValue("SUM_pop"), CultureInfo.InvariantCulture).Should().Be(100);
+    }
+
+    [UnitTest]
+    public async Task BufferAggregate_OutStatisticsWithoutDissolve_IsRejected()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId,
+            ("layerId", "7"),
+            ("distance", "10"),
+            ("dissolve", "false"),
+            ("outStatistics", "pop:sum"));
+
+        status.Should().Be(ExecutionJobStatus.Failed,
+            "per-feature output cannot carry aggregate columns, matching generalization.dissolve's identical guard");
     }
 
     [UnitTest]
@@ -141,6 +496,35 @@ public sealed class LayerSourcedExecutorTests
         var zoneA = features.Single(f => Equals(f.Attributes.GetOptionalValue("zone"), "a"));
         Convert.ToInt64(zoneA.Attributes.GetOptionalValue(LayerDissolveExecutor.CountAttribute), CultureInfo.InvariantCulture).Should().Be(2);
         Convert.ToDouble(zoneA.Attributes.GetOptionalValue("SUM_pop"), CultureInfo.InvariantCulture).Should().Be(12);
+    }
+
+    [UnitTest]
+    public async Task Dissolve_MultipleStatisticsOnSameField_DoNotDoubleCountSamples()
+    {
+        // #4624 regression: requesting more than one aggregate on the SAME field
+        // (e.g. "pop:sum;pop:mean") previously shared one FieldAccumulator keyed by field
+        // name but added the sample once per co-requested stat, silently multiplying
+        // SUM/MEAN by the stat count. Independent oracle: zone "a" has pop values 5 and
+        // 7 -> SUM=12, MEAN=6 regardless of how many stats target "pop".
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId,
+        [
+            BoxFeature(0, 0, 10, 10, ("zone", "a"), ("pop", 5)),
+            BoxFeature(10, 0, 20, 10, ("zone", "a"), ("pop", 7)),
+        ]);
+
+        var (status, uri, _) = await RunAsync(
+            new LayerDissolveExecutor(ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("groupByFields", "zone"),
+            ("outStatistics", "pop:sum;pop:mean;pop:max"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().ContainSingle();
+        Convert.ToDouble(features[0].Attributes.GetOptionalValue("SUM_pop"), CultureInfo.InvariantCulture).Should().Be(12);
+        Convert.ToDouble(features[0].Attributes.GetOptionalValue("MEAN_pop"), CultureInfo.InvariantCulture).Should().Be(6);
+        Convert.ToDouble(features[0].Attributes.GetOptionalValue("MAX_pop"), CultureInfo.InvariantCulture).Should().Be(7);
     }
 
     [UnitTest]
@@ -299,7 +683,10 @@ public sealed class LayerSourcedExecutorTests
         ]);
 
         var (status, uri, _) = await RunAsync(
-            new LayerBufferAggregateExecutor(ScopeFactory(source), Options(), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            new LayerBufferAggregateExecutor(
+                BufferScopeFactory(source, layerId: 7, storageSrid: 3857, isGeographic: false),
+                Options(),
+                NullLogger<LayerBufferAggregateExecutor>.Instance),
             LayerBufferAggregateExecutor.HandledProcessId,
             ("layerId", "7"),
             ("distance", "1"),
@@ -339,6 +726,14 @@ public sealed class LayerSourcedExecutorTests
             Attributes = new Dictionary<string, object?> { ["name"] = name },
         };
 
+    private static DagSourceFeature NamedPointWithNumericField(
+        double x, double y, string groupField, string groupValue, string numericField, double numericValue)
+        => new()
+        {
+            GeometryGeoJson = $$"""{"type":"Point","coordinates":[{{x.ToString(System.Globalization.CultureInfo.InvariantCulture)}},{{y.ToString(System.Globalization.CultureInfo.InvariantCulture)}}]}""",
+            Attributes = new Dictionary<string, object?> { [groupField] = groupValue, [numericField] = numericValue },
+        };
+
     private static IOptionsMonitor<GeoprocessingExecutorOptions> Options()
     {
         var options = new GeoprocessingExecutorOptions
@@ -355,6 +750,64 @@ public sealed class LayerSourcedExecutorTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(source);
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
+
+    /// <summary>
+    /// A <see cref="LimitsOptions"/> with a tightened <see cref="AnalyticsLimits.MaxInputFeatures"/>
+    /// and/or <see cref="GeometryLimits.MaxVerticesPerGeometry"/> (#4629), so admission tests can
+    /// force the bound without depending on the production defaults (100,000 / 50,000).
+    /// </summary>
+    private static IOptions<LimitsOptions> LimitsOptions(int? maxInputFeatures = null, int? maxVerticesPerGeometry = null)
+    {
+        var limits = new LimitsOptions();
+        if (maxInputFeatures is { } features)
+        {
+            limits.Analytics.MaxInputFeatures = features;
+        }
+
+        if (maxVerticesPerGeometry is { } vertices)
+        {
+            limits.Geometry.MaxVerticesPerGeometry = vertices;
+        }
+
+        return Microsoft.Extensions.Options.Options.Create(limits);
+    }
+
+    /// <summary>A LineString feature with exactly <paramref name="vertexCount"/> vertices.</summary>
+    private static DagSourceFeature LineFeature(int vertexCount)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var coordinates = string.Join(",", Enumerable.Range(0, vertexCount).Select(i => $"[{i.ToString(ci)},0]"));
+        return new DagSourceFeature
+        {
+            GeometryGeoJson = $$"""{"type":"LineString","coordinates":[{{coordinates}}]}""",
+            Attributes = new Dictionary<string, object?>(),
+        };
+    }
+
+    /// <summary>
+    /// Scope factory for <c>analytics.buffer-aggregate</c> tests (#4623): registers the
+    /// CRS-aware <see cref="IGeometryOperationService"/> (a self-contained, independently
+    /// coded Web-Mercator/native-unit buffer implementation — NOT a delegate to production
+    /// PostGIS code) plus an <see cref="IMetadataV2GraphProvider"/> that resolves
+    /// <paramref name="layerId"/> to <paramref name="storageSrid"/>.
+    /// </summary>
+    private static IServiceScopeFactory BufferScopeFactory(
+        IDagFeatureSource source,
+        int layerId,
+        int storageSrid,
+        bool isGeographic,
+        double metersPerUnit = 1.0)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(source);
+        services.AddSingleton<IGeometryOperationService>(
+            new FakeGeometryOperationService(new Dictionary<int, (bool IsGeographic, double MetersPerUnit)>
+            {
+                [storageSrid] = (isGeographic, metersPerUnit),
+            }));
+        services.AddSingleton<IMetadataV2GraphProvider>(new FakeMetadataV2GraphProvider(layerId, storageSrid));
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
@@ -429,10 +882,12 @@ public sealed class LayerSourcedExecutorTests
         };
 
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+        _lastErrorForAssertions = result.ErrorMessage;
         return (result.Status, publishedUri, _lastRequestForAssertions);
     }
 
     private static DagSourceRequest? _lastRequestForAssertions;
+    private static string? _lastErrorForAssertions;
 
     private static List<IFeature> ReadFeatures(string dataUri)
     {
@@ -501,6 +956,152 @@ public sealed class LayerSourcedExecutorTests
             }
 
             await Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Resolves a single catalog layer id to a relational storage binding with a fixed SRID
+    /// (#4623), matching the shape <c>MetadataV2GraphSnapshotExtensions.ResolveStorageSrid</c>
+    /// expects: a resource plus a <see cref="MetadataV2StorageBinding"/> whose
+    /// <see cref="MetadataV2StorageBinding.StorageLayerId"/> matches the layer id.
+    /// </summary>
+    private sealed class FakeMetadataV2GraphProvider : IMetadataV2GraphProvider
+    {
+        private readonly MetadataV2GraphSnapshot _snapshot;
+
+        public FakeMetadataV2GraphProvider(int layerId, int storageSrid)
+        {
+            var resource = new MetadataV2Resource
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = $"res-{layerId}", Name = $"layer-{layerId}" },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                Spatial = new MetadataV2ResourceSpatial
+                {
+                    StorageCrs = new MetadataV2SpatialReference { Srid = storageSrid },
+                },
+            };
+            var binding = new MetadataV2StorageBinding
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = $"binding-{layerId}", Name = $"binding-{layerId}" },
+                ResourceId = resource.Metadata.Id,
+                StorageType = MetadataV2StorageType.RelationalTable,
+                Locator = $"public.layer_{layerId}",
+                StorageLayerId = layerId,
+            };
+
+            var graph = new MetadataV2Graph
+            {
+                Revision = 1,
+                Resources = [resource],
+                StorageBindings = [binding],
+            };
+            _snapshot = new MetadataV2GraphSnapshot(graph, "\"buffer-tests\"", DateTimeOffset.UnixEpoch);
+        }
+
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(_snapshot);
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(revision == _snapshot.Revision ? _snapshot : null);
+    }
+
+    /// <summary>
+    /// Independently coded (not a delegate to <c>PostgresGeometryOperationService</c>)
+    /// CRS-aware buffer implementation used as the test oracle for #4623: a geographic SRID
+    /// buffers through a plain Web Mercator forward/inverse projection with a latitude-scale
+    /// correction; a projected SRID converts the metric distance into its declared native
+    /// linear unit before buffering directly.
+    /// </summary>
+    private sealed class FakeGeometryOperationService : IGeometryOperationService
+    {
+        private const double EarthRadiusMeters = 6378137.0;
+        private readonly IReadOnlyDictionary<int, (bool IsGeographic, double MetersPerUnit)> _crsMetrics;
+
+        public FakeGeometryOperationService(IReadOnlyDictionary<int, (bool IsGeographic, double MetersPerUnit)> crsMetrics)
+            => _crsMetrics = crsMetrics;
+
+        public Task<byte[]> BufferAsync(byte[] wkb, int srid, double distance, bool geodesic, CancellationToken ct = default)
+        {
+            var (isGeographic, metersPerUnit) = _crsMetrics.TryGetValue(srid, out var metrics) ? metrics : (false, 1.0);
+            var geometry = new WKBReader().Read(wkb);
+
+            NtsGeometry buffered;
+            if (isGeographic)
+            {
+                var midLatitudeRadians =
+                    (geometry.EnvelopeInternal.MinY + geometry.EnvelopeInternal.MaxY) / 2.0 * Math.PI / 180.0;
+                var mercator = geometry.Copy();
+                mercator.Apply(new WebMercatorForwardFilter());
+                var scaledDistance = distance / Math.Cos(midLatitudeRadians);
+                var bufferedMercator = mercator.Buffer(scaledDistance);
+                bufferedMercator.Apply(new WebMercatorInverseFilter());
+                buffered = bufferedMercator;
+            }
+            else
+            {
+                buffered = geometry.Buffer(distance / metersPerUnit);
+            }
+
+            return Task.FromResult(new WKBWriter().Write(buffered));
+        }
+
+        public Task<byte[]> SimplifyAsync(byte[] wkb, double tolerance, bool preserveTopology, CancellationToken ct = default)
+            => throw new NotSupportedException("Not exercised by these tests.");
+
+        public Task<byte[]> ProjectAsync(byte[] wkb, int fromSrid, int toSrid, CancellationToken ct = default)
+            => throw new NotSupportedException("Not exercised by these tests.");
+
+        public Task<byte[]> MakeValidAsync(byte[] wkb, int srid, CancellationToken ct = default)
+            => throw new NotSupportedException("Not exercised by these tests.");
+
+        public Task<byte[]> UnionAsync(byte[][] wkbs, int srid, CancellationToken ct = default)
+            => throw new NotSupportedException("Not exercised by these tests.");
+
+        public Task<byte[]> IntersectAsync(byte[] targetWkb, byte[] intersectorWkb, int srid, CancellationToken ct = default)
+            => throw new NotSupportedException("Not exercised by these tests.");
+
+        public Task<byte[]> ClipAsync(byte[] targetWkb, byte[] clipEnvelopeWkb, int srid, CancellationToken ct = default)
+            => throw new NotSupportedException("Not exercised by these tests.");
+
+        public Task<byte[]> DifferenceAsync(byte[] targetWkb, byte[] eraserWkb, int srid, CancellationToken ct = default)
+            => throw new NotSupportedException("Not exercised by these tests.");
+
+        public Task<double> AreaAsync(byte[] wkb, int srid, CancellationToken ct = default)
+            => throw new NotSupportedException("Not exercised by these tests.");
+
+        public Task<double> LengthAsync(byte[] wkb, int srid, CancellationToken ct = default)
+            => throw new NotSupportedException("Not exercised by these tests.");
+
+        private sealed class WebMercatorForwardFilter : ICoordinateSequenceFilter
+        {
+            public bool Done => false;
+
+            public bool GeometryChanged => true;
+
+            public void Filter(CoordinateSequence seq, int i)
+            {
+                var lonRadians = seq.GetX(i) * Math.PI / 180.0;
+                var latRadians = seq.GetY(i) * Math.PI / 180.0;
+                seq.SetOrdinate(i, Ordinate.X, EarthRadiusMeters * lonRadians);
+                seq.SetOrdinate(i, Ordinate.Y, EarthRadiusMeters * Math.Log(Math.Tan(Math.PI / 4 + latRadians / 2)));
+            }
+        }
+
+        private sealed class WebMercatorInverseFilter : ICoordinateSequenceFilter
+        {
+            public bool Done => false;
+
+            public bool GeometryChanged => true;
+
+            public void Filter(CoordinateSequence seq, int i)
+            {
+                var x = seq.GetX(i);
+                var y = seq.GetY(i);
+                var lonRadians = x / EarthRadiusMeters;
+                var latRadians = 2 * Math.Atan(Math.Exp(y / EarthRadiusMeters)) - Math.PI / 2;
+                seq.SetOrdinate(i, Ordinate.X, lonRadians * 180.0 / Math.PI);
+                seq.SetOrdinate(i, Ordinate.Y, latRadians * 180.0 / Math.PI);
+            }
         }
     }
 }

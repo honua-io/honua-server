@@ -348,6 +348,32 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("GET /api/v1/admin/api-keys/{id}/effective-permissions")]
+    public async Task RotateApiKey_AfterExpiry_IsRejectedRatherThanIssuingUnusableMaterial()
+    {
+        // Rotation preserves ExpiresAt, so a "successful" rotation of an expired key would
+        // hand back a credential authentication rejects on the very next request.
+        var created = await CreateApiKeyAsync("expired-rotate-key", expiresAt: DateTimeOffset.UtcNow.AddMinutes(-5));
+        Assert.Equal("expired", created.ApiKey.Status);
+
+        var rotate = await _client.PostAsync($"/api/v1/admin/api-keys/{created.ApiKey.Id}/rotate", content: null);
+
+        Assert.Equal(HttpStatusCode.NotFound, rotate.StatusCode);
+        var effective = await _client.GetFromJsonAsync<ApiResponse<AdminApiKeyEffectivePermissionsResponse>>(
+            $"/api/v1/admin/api-keys/{created.ApiKey.Id}/effective-permissions", _jsonOptions);
+        Assert.NotNull(effective);
+        Assert.NotNull(effective.Data);
+        Assert.Equal("expired", effective.Data.Status);
+        Assert.False(effective.Data.CanAuthenticate);
+
+        using var expiredClient = CreateApiKeyClient(created.Key);
+        var denied = await expiredClient.GetAsync("/api/v1/admin/api-keys");
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+    }
+
     private async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(
         string name,
         DateTimeOffset? expiresAt = null,

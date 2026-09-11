@@ -813,6 +813,90 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithIdempotencyKeyParameter_ThreadsKeyToJobService()
+    {
+        // server#4627: GPServer previously submitted every job with a null
+        // idempotencyKey, so a caller-supplied key had no effect and a lost-response
+        // retry could be denied at quota / mint a second job instead of returning the
+        // original. Verify the optional GeoServices-style "idempotencyKey" request
+        // parameter reaches IGeoprocessingJobService.SubmitJobAsync and is excluded
+        // from the task's own input parameters.
+        var recordingService = new RecordingGeoprocessingJobService();
+        var submitFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(recordingService);
+            });
+
+        await submitFixture.InitializeAsync();
+        try
+        {
+            using var client = submitFixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "25.5",
+                ["idempotencyKey"] = "client-retry-key-1"
+            });
+
+            var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            recordingService.LastIdempotencyKey.Should().Be("client-retry-key-1");
+            recordingService.LastPlan!.Steps[0].Inputs.Should().NotContainKey("idempotencyKey");
+        }
+        finally
+        {
+            await submitFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WithoutIdempotencyKeyParameter_PassesNullToJobService()
+    {
+        var recordingService = new RecordingGeoprocessingJobService();
+        var submitFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(recordingService);
+            });
+
+        await submitFixture.InitializeAsync();
+        try
+        {
+            using var client = submitFixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "25.5"
+            });
+
+            var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            recordingService.LastIdempotencyKey.Should().BeNull();
+        }
+        finally
+        {
+            await submitFixture.DisposeAsync();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Job Status
     // -----------------------------------------------------------------------
@@ -1660,6 +1744,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
 
         public IReadOnlyDictionary<string, string>? LastProtocolMetadata { get; private set; }
 
+        public string? LastIdempotencyKey { get; private set; }
+
         public Task EnsureCallerAuthorizedAsync(
             ClaimsPrincipal principal,
             OperatorResourceType resourceType,
@@ -1688,6 +1774,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         {
             LastPlan = plan;
             LastProtocolMetadata = protocolMetadata;
+            LastIdempotencyKey = idempotencyKey;
 
             return Task.FromResult(new ExecutionJobRecord
             {

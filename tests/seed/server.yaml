@@ -1036,6 +1036,28 @@ sql:
       END;
       $$;
   - |
+      -- Mirrors migration 115_AddDropImportStagingTable.sql. A Replace whose load dropped
+      -- rows against an already-populated target never promotes its staging sibling (#4006)
+      -- and drops it instead, so this migration-skipping fixture must declare the helper or
+      -- that path fails with 42883 on "honua.drop_import_staging_table".
+      CREATE OR REPLACE FUNCTION honua.drop_import_staging_table(
+          schema_name text,
+          table_name text)
+      RETURNS void
+      LANGUAGE plpgsql
+      AS $$
+      DECLARE
+          staging_name text;
+      BEGIN
+          PERFORM honua.assert_import_identifier(schema_name, 'Schema name');
+          PERFORM honua.assert_import_identifier(table_name, 'Table name');
+
+          staging_name := honua.import_staging_table_name(table_name);
+
+          EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
+      END;
+      $$;
+  - |
       CREATE OR REPLACE FUNCTION honua.ensure_import_upsert_key(
           schema_name text,
           table_name text,
@@ -2139,7 +2161,17 @@ sql:
   # The mobile seed owns and self-cleans its own IDs, so exclude that fixture's footprint here —
   # this keeps the deterministic server-catalog reset while leaving the mobile fixture intact and
   # does not touch the advisory-lock serialization that fixes the 40P01 deadlock.
-  - "DELETE FROM honua.scene_datasets WHERE id <> 'downtown-honolulu';"
+  #
+  # Same mechanism, same fix, second victim (Operator Eval Harness flaky-shard investigation):
+  # this seed runs on EVERY isolated WebAppFixture host that does not opt into a custom seed —
+  # i.e. once per test method across the whole parallel matrix, not once per run. Any other
+  # concurrently-initializing isolated host applying this seed WHILE SceneGrpcIntegrationTests
+  # (tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/SceneGrpcIntegrationTests.cs) has
+  # already registered its own 'extent-scene' / 'inactive-grpc-scene' rows but has not yet read
+  # them back deletes those rows out from under it, intermittently dropping exactly one scene
+  # from ListScenes (honua-server flaky "Server Tests (Operator Eval Harness)" shard). Exclude
+  # that fixture's own IDs too, for the same reason 'downtown-honolulu' is excluded above.
+  - "DELETE FROM honua.scene_datasets WHERE id NOT IN ('downtown-honolulu', 'extent-scene', 'inactive-grpc-scene');"
   # v1 metadata-graph tables dropped by migration 038_DropV1MetadataGraphTables.sql.
   - "DELETE FROM honua.relationships WHERE layer_id NOT IN (68910, 68920) AND related_layer_id NOT IN (68910, 68920);"
   - "DELETE FROM honua.service_layers WHERE service_name <> 'mobile_offline_demo' AND layer_id NOT IN (68910, 68920);"

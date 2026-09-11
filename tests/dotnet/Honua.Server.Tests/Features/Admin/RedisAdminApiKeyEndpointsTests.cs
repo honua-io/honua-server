@@ -61,6 +61,8 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
             {
                 await database.KeyDeleteAsync($"{RegistryPrefix}{id:D}");
                 await database.SetRemoveAsync(RegistryPrefix + "ids", id.ToString("D"));
+                await database.SetRemoveAsync(RegistryPrefix + "active-ids", id.ToString("D"));
+                await database.SetRemoveAsync(RegistryPrefix + "seen-ids", id.ToString("D"));
             }
             await _connection.DisposeAsync();
         }
@@ -199,6 +201,104 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
 
         using var finalRevoke = await _admin.PostAsync($"/api/v1/admin/api-keys/{id}/revoke", null);
         Assert.Equal(HttpStatusCode.OK, finalRevoke.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("GET /api/v1/admin/api-keys/{id}/effective-permissions")]
+    public async Task Rotate_AfterExpiry_IsRejectedWithoutIssuingDeadCredential()
+    {
+        var expiresAt = DateTimeOffset.UtcNow.AddSeconds(10);
+        var (id, _) = await CreateKeyAsync("redis-expired-rotate", expiresAt);
+
+        // Use real time: advancing only a test clock cannot reproduce Redis TTL behaviour.
+        await WaitPastAsync(expiresAt);
+
+        using var rotate = await _admin.PostAsync($"/api/v1/admin/api-keys/{id}/rotate", null);
+        Assert.Equal(HttpStatusCode.NotFound, rotate.StatusCode);
+
+        // Retention (#4603) still holds: the record stays inspectable and stays expired,
+        // rather than being reported as a successful rotation back to "active".
+        using var effective = await _admin.GetAsync($"/api/v1/admin/api-keys/{id}/effective-permissions");
+        Assert.Equal(HttpStatusCode.OK, effective.StatusCode);
+        using var metadata = JsonDocument.Parse(await effective.Content.ReadAsStringAsync());
+        Assert.Equal("expired", metadata.RootElement.GetProperty("data").GetProperty("status").GetString());
+        Assert.False(metadata.RootElement.GetProperty("data").GetProperty("canAuthenticate").GetBoolean());
+
+        using var list = await _admin.GetAsync("/api/v1/admin/api-keys");
+        using var listed = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var record = Assert.Single(listed.RootElement.GetProperty("data").EnumerateArray(), item => item.GetProperty("id").GetGuid() == id);
+        Assert.Equal("expired", record.GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, record.GetProperty("rotatedAt").ValueKind);
+        Assert.Equal(expiresAt, record.GetProperty("expiresAt").GetDateTimeOffset());
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
+    public async Task RetainedMetadata_AfterExpiryOrRevoke_LeavesTheAuthenticationCandidateSet()
+    {
+        var database = _connection.GetDatabase();
+        var expiresAt = DateTimeOffset.UtcNow.AddSeconds(10);
+        var (expiredId, _) = await CreateKeyAsync("redis-hotpath-expired", expiresAt);
+        var (revokedId, _) = await CreateKeyAsync("redis-hotpath-revoked", DateTimeOffset.UtcNow.AddHours(1));
+        var (liveId, liveKey) = await CreateKeyAsync("redis-hotpath-live", DateTimeOffset.UtcNow.AddHours(1));
+
+        using (var revoke = await _admin.PostAsync($"/api/v1/admin/api-keys/{revokedId}/revoke", null))
+        {
+            Assert.Equal(HttpStatusCode.OK, revoke.StatusCode);
+        }
+
+        await WaitPastAsync(expiresAt);
+
+        // Authenticating runs the candidate scan, which prunes what can never authenticate again.
+        using var live = CreateClient(liveKey);
+        using var authenticated = await live.GetAsync("/api/v1/admin/api-keys");
+        Assert.Equal(HttpStatusCode.OK, authenticated.StatusCode);
+
+        var activeIds = RegistryPrefix + "active-ids";
+        Assert.False(await database.SetContainsAsync(activeIds, expiredId.ToString("D")),
+            "an expired record must not stay on the per-request authentication path");
+        Assert.False(await database.SetContainsAsync(activeIds, revokedId.ToString("D")),
+            "a revoked record must not stay on the per-request authentication path");
+        Assert.True(await database.SetContainsAsync(activeIds, liveId.ToString("D")),
+            "a live record must remain an authentication candidate");
+
+        // Pruning the candidate set must not evict the retained metadata (#4603).
+        Assert.True(await database.SetContainsAsync(RegistryPrefix + "ids", expiredId.ToString("D")));
+        using var list = await _admin.GetAsync("/api/v1/admin/api-keys");
+        using var listed = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var record = Assert.Single(listed.RootElement.GetProperty("data").EnumerateArray(), item => item.GetProperty("id").GetGuid() == expiredId);
+        Assert.Equal("expired", record.GetProperty("status").GetString());
+    }
+
+    private static async Task WaitPastAsync(DateTimeOffset expiresAt)
+    {
+        var delay = expiresAt.AddMilliseconds(250) - DateTimeOffset.UtcNow;
+        if (delay > TimeSpan.Zero)
+        {
+            await Task.Delay(delay);
+        }
+    }
+
+    private async Task<(Guid Id, string Key)> CreateKeyAsync(string name, DateTimeOffset expiresAt)
+    {
+        using var body = new StringContent(JsonSerializer.Serialize(new
+        {
+            name,
+            permissions = new[] { "admin:*" },
+            expiresAt,
+        }), Encoding.UTF8, "application/json");
+        using var create = await _admin.PostAsync("/api/v1/admin/api-keys", body);
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        using var created = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+        var data = created.RootElement.GetProperty("data");
+        var id = data.GetProperty("apiKey").GetProperty("id").GetGuid();
+        _createdIds.Add(id);
+        return (id, data.GetProperty("key").GetString()!);
     }
 
     private HttpClient CreateClient(string key) =>

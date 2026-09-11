@@ -199,6 +199,67 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_WithIdempotencyKeyHeader_ThreadsKeyOntoTheDurableJobRecord()
+    {
+        // server#4627: OGC API Processes previously submitted with idempotencyKey: null
+        // unconditionally, so a supported stable client-side key had no effect. This is a
+        // documented, additive Honua extension (OGC API Processes has no native
+        // idempotency-key concept) using the same Idempotency-Key header MCP already uses.
+        _jobQueue.EnqueueAsync(
+                Arg.Any<string>(),
+                Arg.Any<OperationPriority>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var created = new List<ExecutionJobRecord>();
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                created.Add(call.Arg<ExecutionJobRecord>());
+                return true;
+            });
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/surface.slope/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Headers.Add("Idempotency-Key", "client-retry-key-42");
+        request.Content = new StringContent(
+            """{"inputs":{"source":"AAAA","units":"degrees"}}""",
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        created.Should().ContainSingle();
+        created[0].Audit.IdempotencyKey.Should().Be("client-retry-key-42");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_WithOversizedIdempotencyKeyHeader_ReturnsBadRequest()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/surface.slope/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Headers.Add("Idempotency-Key", new string('k', 513));
+        request.Content = new StringContent(
+            """{"inputs":{"source":"AAAA","units":"degrees"}}""",
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await _jobStore.DidNotReceiveWithAnyArgs().TryCreateAsync(default!, default, default);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_WhenCreateFails_DoesNotReturnCreated()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())

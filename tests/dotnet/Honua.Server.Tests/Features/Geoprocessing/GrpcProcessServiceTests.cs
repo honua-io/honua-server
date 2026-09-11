@@ -62,8 +62,14 @@ public sealed class GrpcProcessServiceTests
             _jobStore,
             resultPackageStore: _resultPackageStore);
 
+        var terminalService = new GeoprocessingJobTerminalService(
+            jobService,
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobTerminalService>.Instance);
+
         _sut = new HonuaProcessService(
             jobService,
+            terminalService,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance);
     }
 
@@ -332,8 +338,13 @@ public sealed class GrpcProcessServiceTests
                 "policy/rate",
                 "Admission rate exceeded.",
                 retryAfterSeconds: 12)));
+        var terminalService = new GeoprocessingJobTerminalService(
+            jobService,
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobTerminalService>.Instance);
         var service = new HonuaProcessService(
             jobService,
+            terminalService,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance);
         using var context = CreateCallContext();
 
@@ -379,8 +390,13 @@ public sealed class GrpcProcessServiceTests
                 "policy/concurrency",
                 "Partition capacity is exhausted.",
                 retryAfterSeconds: 12)));
+        var terminalService = new GeoprocessingJobTerminalService(
+            jobService,
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GeoprocessingJobTerminalService>.Instance);
         var service = new HonuaProcessService(
             jobService,
+            terminalService,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance);
         using var context = CreateCallContext();
 
@@ -539,7 +555,11 @@ public sealed class GrpcProcessServiceTests
 
         var response = await _sut.CancelJob(request, CreateCallContext());
 
+        // #4630: cancellation was only DELEGATED to the worker (not yet confirmed), so the
+        // durable job status is still Running. The response must project that real nonterminal
+        // state instead of manufacturing a terminal Cancelled the runtime never confirmed.
         response.Should().NotBeNull();
+        response.State.Should().Be(Proto.JobState.Running);
         _cancellationNotifier.Received(1).Cancel("job-123");
         await _jobStore.DidNotReceive().SetAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
@@ -551,14 +571,24 @@ public sealed class GrpcProcessServiceTests
     public async Task CancelJob_WhenNoWorkerClaims_PersistsCancelled()
     {
         var jobRecord = CreateTestJobRecord("job-123", ExecutionJobStatus.Running);
-        _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(jobRecord);
+        var currentRecord = jobRecord;
+        _jobStore.GetAsync("job-123", Arg.Any<CancellationToken>()).Returns(_ => currentRecord);
+        _jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                currentRecord = callInfo.Arg<ExecutionJobRecord>();
+                return true;
+            });
         _cancellationNotifier.Cancel("job-123").Returns(false);
 
         var request = new Proto.CancelJobRequest { JobId = "job-123" };
 
         var response = await _sut.CancelJob(request, CreateCallContext());
 
+        // #4630: cancellation was confirmed (no worker claimed the job, so the durable store was
+        // updated synchronously), so the response must report the confirmed terminal Cancelled.
         response.Should().NotBeNull();
+        response.State.Should().Be(Proto.JobState.Cancelled);
         _cancellationNotifier.Received(1).Cancel("job-123");
         await _jobStore.Received(1).TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j => j.Status == ExecutionJobStatus.Cancelled),

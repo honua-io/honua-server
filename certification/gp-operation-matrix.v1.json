@@ -5,7 +5,8 @@
   "audit": {
     "recordedAt": "2026-09-02T02:30:00Z",
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
-    "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848"
+    "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
+    "layerReceiptEnforcement": "PR Gate step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all."
   },
   "scope": "Every process returned by BuiltInProcessCatalog.ListProcesses(). A proven row requires concrete input, the production operation/executor path, and a semantic output-content assertion.",
   "statusDefinitions": {
@@ -575,6 +576,12 @@
           "test": "Rugosity_PeakAndDepression_MatchesIndependentNeighborhoodStatistics",
           "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
           "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary."
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
+          "test": "TpiOracle_SiblingNeighborhoodStatisticSubstituted_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
+          "assertion": "#3913 discrimination receipt. Three plausible wrong-but-well-formed TPI grids, each produced by real execution rather than synthesis, satisfy every structural check the proof makes -- dimensions, CRS, six affine ordinates, band count, Float32 type, the -9999 sentinel and the validity mask -- and each is rejected by the signed per-cell oracle: a sibling gdaldem neighbourhood statistic over the same DEM, an unsigned magnitude index that preserves the peak and destroys only the depression's sign, and a source hole consumed as an elevation. Companion cases TpiOracle_UnsignedMagnitudeSubstitutedForSignedIndex_IsRejected and TpiOracle_SourceHoleConsumedAsElevation_IsRejected."
         }
       ]
     },

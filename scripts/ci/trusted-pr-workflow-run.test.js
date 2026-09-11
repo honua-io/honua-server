@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fsModule = require('node:fs');
+const osModule = require('node:os');
+const pathModule = require('node:path');
 const test = require('node:test');
 
 const {
@@ -512,4 +515,133 @@ test('recordObservationSkip mirrors the resolver skip surface and bounds its cod
       /bounded code/,
     );
   }
+});
+
+// The observer's post-observation recheck is the ONLY consumer that can decide
+// to discard an already-produced observation, and #3343 showed why running it
+// for real matters: it used to warn, set `retain=false` and leave the run with
+// no artifact at all, so the evidence ledger read a successful observer shell
+// that owed a receipt and found none — receipt loss. That single hole was all
+// 24 lost native receipts in the 2026-09-04 ledger (4.25% of the native stream
+// against a 5% budget). Exercise the workflow's own script, not a copy of it.
+function recheckScript() {
+  const source = fsModule.readFileSync(
+    pathModule.join(__dirname, '..', '..', '.github/workflows/native-image-impact-observe.yml'),
+    'utf8',
+  );
+  const marker = source.indexOf('      - id: recheck\n');
+  assert.ok(marker >= 0, 'the observer must keep an id: recheck step');
+  const opener = source.indexOf('          script: |\n', marker);
+  assert.ok(opener >= 0, 'the recheck step must carry an inline script');
+  const body = source.slice(opener + '          script: |\n'.length).split('\n');
+  const lines = [];
+  for (const line of body) {
+    if (line.trim() !== '' && !line.startsWith('            ')) break;
+    lines.push(line.slice(12));
+  }
+  return lines.join('\n');
+}
+
+async function runRecheck(github, { env = {}, temporary }) {
+  const core = recordingCore();
+  const previous = { ...process.env };
+  Object.assign(process.env, {
+    RUNNER_TEMP: temporary,
+    SOURCE_RUN_ID: '123',
+    SOURCE_RUN_ATTEMPT: '2',
+    SOURCE_RUN_CONCLUSION: 'success',
+    EXPECTED_PR: '42',
+    EXPECTED_BASE: BASE,
+    EXPECTED_HEAD: HEAD,
+    ...env,
+  });
+  const shim = (request) => (
+    request === './policy/scripts/ci/trusted-pr-workflow-run'
+      ? require('./trusted-pr-workflow-run')
+      : require(request)
+  );
+  try {
+    // eslint-disable-next-line no-new-func
+    await new Function(
+      'github', 'core', 'context', 'require',
+      `return (async () => {\n${recheckScript()}\n})();`,
+    )(github, core, { repo: { owner: 'honua-io', repo: 'honua-server' } }, shim);
+  } finally {
+    for (const key of Object.keys(process.env)) delete process.env[key];
+    Object.assign(process.env, previous);
+  }
+  return core;
+}
+
+async function withTemporaryDirectory(body) {
+  const temporary = fsModule.mkdtempSync(pathModule.join(osModule.tmpdir(), 'recheck-'));
+  try {
+    await body(temporary);
+  } finally {
+    fsModule.rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
+test('a still-current pull request retains its observation and writes no marker', async () => {
+  await withTemporaryDirectory(async (temporary) => {
+    const { github } = fixtures();
+    github.rest.repos = { get: async () => ({ data: { default_branch: 'trunk', id: 1 } }) };
+    const core = await runRecheck(github, { temporary });
+    assert.equal(core.outputs.retain, 'true');
+    assert.equal(core.outputs.skip, undefined);
+    assert.deepEqual(fsModule.readdirSync(temporary), []);
+  });
+});
+
+test('a discarded observation records a skip marker instead of losing a receipt', async () => {
+  // The exact shape behind all 24 lost receipts: the check run's association
+  // array came back empty on the recheck, which the resolver classifies as the
+  // superseded-source code `no-pull-request-association`.
+  await withTemporaryDirectory(async (temporary) => {
+    const { github } = fixtures({ checkRun: { pull_requests: [] } });
+    github.rest.repos = { get: async () => ({ data: { default_branch: 'trunk', id: 1 } }) };
+    const core = await runRecheck(github, { temporary });
+    assert.equal(core.outputs.retain, 'false');
+    assert.equal(core.outputs.skip, 'true');
+    assert.equal(core.outputs.skip_code, 'no-pull-request-association');
+    assert.ok(SKIP_CODE.test(core.outputs.skip_code));
+    const marker = JSON.parse(
+      fsModule.readFileSync(pathModule.join(temporary, 'observation-skipped.json'), 'utf8'),
+    );
+    assert.equal(marker.contract, 'honua.ci.observation-skipped/v1');
+    assert.equal(marker.observer, 'native-image-impact');
+    assert.equal(marker.code, 'no-pull-request-association');
+    assert.equal(marker.source_run_id, '123');
+  });
+});
+
+test('an identity that moved during observation is recorded under its own code', async () => {
+  await withTemporaryDirectory(async (temporary) => {
+    const { github } = fixtures();
+    github.rest.repos = { get: async () => ({ data: { default_branch: 'trunk', id: 1 } }) };
+    const core = await runRecheck(github, {
+      temporary,
+      env: { EXPECTED_HEAD: 'f'.repeat(40) },
+    });
+    assert.equal(core.outputs.retain, 'false');
+    assert.equal(core.outputs.skip, 'true');
+    assert.equal(core.outputs.skip_code, 'pull-request-identity-moved-during-observation');
+    assert.ok(SKIP_CODE.test(core.outputs.skip_code));
+    // The ledger reads the code straight out of the artifact NAME, so a code
+    // the auditor cannot parse is the same as no marker at all.
+    assert.match(
+      `native-image-impact-skipped-${core.outputs.skip_code}-attempt-1`,
+      /^native-image-impact-skipped-[a-z][a-z0-9-]{0,47}-attempt-[1-9][0-9]*$/,
+    );
+    assert.ok(fsModule.existsSync(pathModule.join(temporary, 'observation-skipped.json')));
+  });
+});
+
+test('misconfiguration in the recheck still throws rather than recording a skip', async () => {
+  await withTemporaryDirectory(async (temporary) => {
+    const { github } = fixtures({ run: { path: '.github/workflows/other.yml' } });
+    github.rest.repos = { get: async () => ({ data: { default_branch: 'trunk', id: 1 } }) };
+    await assert.rejects(() => runRecheck(github, { temporary }));
+    assert.deepEqual(fsModule.readdirSync(temporary), []);
+  });
 });

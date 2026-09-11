@@ -717,6 +717,27 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var jobId = CreateJobId(resolvedKey);
         var requestFingerprint = CreateRequestFingerprint(plan);
 
+        // Resolve authorized existing submissions before charging admission/quota or
+        // minting new side effects (server#4627): a caller-supplied idempotency key whose
+        // job already exists short-circuits here, before raster-source resolution,
+        // custom-code token minting, and the admission/quota gate below run again for a
+        // request that was already accepted. Without this early check, an otherwise valid
+        // replay (the client never saw the first response, or is proactively deduplicating)
+        // could be denied at quota even though the original submission already succeeded.
+        // Without an idempotency key, CreateJobId minted a fresh random id above, so this
+        // lookup would never find a match — skip the round trip on that (default) path.
+        if (resolvedKey is not null)
+        {
+            var existingByKey = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (existingByKey != null)
+            {
+                EnsureMatchingIdempotentRequest(existingByKey, requestFingerprint, principal);
+                EnsureSubmissionDidNotRollback(existingByKey);
+                GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
+                return existingByKey;
+            }
+        }
+
         // Resolve any native raster/surface step that references a registered catalog
         // raster by layerId/rasterId to an immutable metadata-only descriptor (#2264/#3090).
         // The fingerprint above is computed on the caller's original (reference-carrying)
@@ -762,7 +783,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var partitionKey = ResolvePartitionKey(specParams);
-        var costWeight = (double)Math.Max(plan.Steps.Count, 1);
+        // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
+        // the plan's steps, overridden by any explicit gp.resource.* request values. Resolved
+        // BEFORE the admission cost weight below (#4629) so the partition throttle can charge by
+        // the plan's actual catalog-derived resource class, not merely its node count.
+        var resourceProfile = ResolveResourceProfile(
+            plan,
+            specParams,
+            isCustomCode,
+            processCatalog);
+        // #4629: a static costWeight=stepCount treats a 1-step raster/native op the same as a
+        // 1-step managed op over ten features — neither reflects real resource cost. Charging the
+        // catalog-derived vCPU class (Managed=1, Native=2, Raster=4; see GpResourceProfile) makes
+        // the partition throttle in ExecutionAdmissionEvaluator admit fewer concurrent heavy jobs
+        // per partition than light ones, while never charging less than one unit per plan step.
+        var costWeight = (double)Math.Max(plan.Steps.Count, resourceProfile.Vcpus ?? 1);
         var priority = ResolvePriority(specParams);
 
         await AdmissionSubmissionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -788,15 +823,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             var requiredRuntimeProfile = isCustomCode
                 ? CustomCodeJobContract.RuntimeProfile
                 : ResolveRequiredRuntimeProfile(plan, processCatalog);
-            // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
-            // the plan's steps, overridden by any explicit gp.resource.* request values. Projected onto
-            // the spec's batch.* params so AwsBatchComputeBackend.SubmitJob sizes vCPU/memory/timeout/
-            // retry/GPU and selects the ephemeral job-def tier per job. Instant and terraform-free.
-            var resourceProfile = ResolveResourceProfile(
-                plan,
-                specParams,
-                isCustomCode,
-                processCatalog);
             var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile, resourceProfile);
 
             var jobRecord = new ExecutionJobRecord

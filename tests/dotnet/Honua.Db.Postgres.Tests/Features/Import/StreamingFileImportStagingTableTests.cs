@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using System.Text;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.FileImport;
@@ -79,6 +80,23 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || staging_name || '_geometry', schema_name, staging_name);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || staging_name || '_properties', schema_name, staging_name);
             RETURN staging_name;
+        END;
+        $$;
+
+        -- Mirrors src/Honua.Server/Migrations/115_AddDropImportStagingTable.sql: a replace
+        -- that must not promote an incomplete staging sibling (#4006) drops it instead.
+        CREATE OR REPLACE FUNCTION honua.drop_import_staging_table(schema_name text, table_name text)
+        RETURNS void
+        LANGUAGE plpgsql
+        AS $$
+        DECLARE
+            staging_name text;
+        BEGIN
+            staging_name := table_name || '__staging';
+            IF length(staging_name) > 63 THEN
+                staging_name := 'stg_' || md5(table_name);
+            END IF;
+            EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
         END;
         $$;
 
@@ -306,6 +324,116 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             rows.Select(row => (row.Name, row.Code, row.Wkt)).Should().Equal(
                 OverwriteGuardFixtureRows[0],
                 OverwriteGuardFixtureRows[1]);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    /// <summary>
+    /// honua-server#4006 — a replace whose load skipped an invalid feature under
+    /// <c>ContinueOnError</c>/<c>SkipInvalidGeometry</c> still promoted the staging sibling over
+    /// the live target, reporting <c>Success = true</c> even though the promoted dataset was
+    /// missing the skipped row. A replace must be complete-for-complete or a no-op: it must
+    /// never swap in a dataset that dropped input rows, and it must report the loss rather than
+    /// claiming success.
+    /// </summary>
+    [IntegrationTest]
+    public async Task ImportFileAsync_ReplaceWithSkippedHostileFeature_DoesNotPromotePartialDataset()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests) + "_partial_replace");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var strictSkipLimits = ImportLimits.Default with
+            {
+                GeometryValidityMode = Honua.Core.Configuration.ValidationMode.Strict,
+                SkipInvalidGeometry = true,
+                ContinueOnError = true,
+            };
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance,
+                strictSkipLimits);
+
+            await using (var seed = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson)))
+            {
+                var seedResult = await service.ImportFileAsync(new ImportRequest
+                {
+                    FileStream = seed,
+                    FileName = "seed.geojson",
+                    TableName = "partial_replace_guard",
+                    TargetSchema = schema,
+                    SourceSrid = 4326,
+                    TargetSrid = 4326,
+                    OverwriteExisting = true,
+                });
+                seedResult.Success.Should().BeTrue(seedResult.ErrorMessage);
+            }
+
+            // All segments are fixed literals and can never be rooted, so Path.Join cannot drop
+            // earlier segments here (cs/path-combine false positive).
+            var fixturePath = Path.Join(
+                AppContext.BaseDirectory, "Features", "Import", "Fixtures", "LoadMode", "mixed-validity-replace.geojson");
+            await using var hostile = File.OpenRead(fixturePath);
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = hostile,
+                FileName = "mixed-validity-replace.geojson",
+                TableName = "partial_replace_guard",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                OverwriteExisting = true,
+            });
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            int liveRowCount;
+            int seededRowCount;
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"SELECT COUNT(*)::int, COUNT(*) FILTER (WHERE properties->>'name' IN ('a', 'b'))::int FROM \"{schema}\".imported_partial_replace_guard";
+                await using var reader = await command.ExecuteReaderAsync();
+                (await reader.ReadAsync()).Should().BeTrue();
+                liveRowCount = reader.GetInt32(0);
+                seededRowCount = reader.GetInt32(1);
+            }
+
+            // The never-promoted staging sibling must be gone: honua.drop_import_staging_table
+            // cleans it up so a blocked replace does not leave a full second copy of the dataset
+            // behind. A missing helper would surface here rather than as a silent leak.
+            bool stagingSurvived;
+            await using (var stagingCommand = connection.CreateCommand())
+            {
+                stagingCommand.CommandText = """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM pg_catalog.pg_class AS relation
+                        INNER JOIN pg_catalog.pg_namespace AS namespace
+                            ON namespace.oid = relation.relnamespace
+                        WHERE namespace.nspname = @schema_name
+                          AND relation.relname = 'imported_partial_replace_guard__staging')
+                    """;
+                var schemaParameter = stagingCommand.CreateParameter();
+                schemaParameter.ParameterName = "schema_name";
+                schemaParameter.Value = schema;
+                stagingCommand.Parameters.Add(schemaParameter);
+                stagingSurvived = (bool)(await stagingCommand.ExecuteScalarAsync())!;
+            }
+
+            using (new AssertionScope())
+            {
+                result.Success.Should().BeFalse("a replace with skipped input rows must not claim a complete successful replacement");
+                result.Warnings.Should().Contain(w => w.Contains("skipped", StringComparison.OrdinalIgnoreCase));
+                liveRowCount.Should().Be(2, "a partial replacement must leave the prior complete target in place");
+                seededRowCount.Should().Be(2, "the prior rows must survive the skipped hostile feature");
+                stagingSurvived.Should().BeFalse("the never-promoted staging sibling must be dropped, not left behind as a second copy");
+            }
         }
         finally
         {

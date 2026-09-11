@@ -1254,6 +1254,60 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_NativeGdalPlan_ChargesCostWeightAboveStepCount()
+    {
+        // #4629: a static costWeight=stepCount treated a 1-step native/raster op the same
+        // as a 1-step managed op — neither reflects real resource cost. gdal.gdalwarp's
+        // catalog-declared Raster output routes it to the raster GpResourceProfile tier
+        // (4 vCPU), which must now raise the single-step plan's charged cost weight above
+        // the step count of 1.
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var admission = Substitute.For<IExecutionAdmissionEvaluator>();
+        admission.EvaluateAsync(Arg.Any<ExecutionAdmissionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ExecutionAdmissionDecision.Admitted(new ExecutionAdmissionSnapshot()));
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            admissionEvaluator: admission);
+
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-native-cost",
+            IntentId = "intent-native-cost",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "gdal.gdalwarp",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = "AAAA",
+                        ["targetSrs"] = "3857"
+                    }
+                }
+            ]
+        };
+
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.Parameters.Should().ContainKey(ExecutionAdmissionEvaluator.CostWeightParameterKey)
+            .WhoseValue.Should().Be("4");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_ManagedReprojectFastPath_LeavesRuntimeProfileUnstamped()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())

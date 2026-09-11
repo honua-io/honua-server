@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using Grpc.Core;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Backpressure;
 using Honua.ServiceDefaults;
 using Proto = Geospatial.V1;
@@ -12,18 +13,32 @@ namespace Honua.Geoprocessing;
 
 /// <summary>
 /// gRPC service implementation for typed geoprocessing execution and job lifecycle management.
-/// Thin proto-to-domain translator that delegates to <see cref="IGeoprocessingJobService"/>.
+/// Thin proto-to-domain translator that delegates to <see cref="IGeoprocessingJobService"/> and,
+/// for cancellation, the canonical <see cref="IGeoprocessingJobTerminalService"/> so this adapter
+/// reports the same truthful, non-fabricated cancellation outcome as the OGC API Processes and
+/// GPServer adapters (#4630) instead of manufacturing a terminal state the runtime never confirmed.
 /// </summary>
 internal sealed partial class HonuaProcessService : Proto.ProcessService.ProcessServiceBase
 {
+    /// <summary>
+    /// Bounded budget for a single cancellation request, matching the OGC API Processes
+    /// (<c>Honua.Protocols.OgcApi.Processes</c>) and GPServer
+    /// (<c>Honua.Protocols.GeoServices.GPServer</c>) adapters so all three protocol surfaces make
+    /// the same confirm-or-report-nonterminal tradeoff.
+    /// </summary>
+    private static readonly TimeSpan CancelTimeout = TimeSpan.FromSeconds(30);
+
     private readonly IGeoprocessingJobService _jobService;
+    private readonly IGeoprocessingJobTerminalService _terminalService;
     private readonly ILogger<HonuaProcessService> _logger;
 
     public HonuaProcessService(
         IGeoprocessingJobService jobService,
+        IGeoprocessingJobTerminalService terminalService,
         ILogger<HonuaProcessService> logger)
     {
         _jobService = jobService;
+        _terminalService = terminalService;
         _logger = logger;
     }
 
@@ -204,14 +219,79 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
 
         try
         {
-            await _jobService.CancelJobAsync(
-                request.JobId, context.GetHttpContext().User, context.CancellationToken).ConfigureAwait(false);
-            return new Proto.CancelJobResponse { JobId = request.JobId, State = Proto.JobState.Cancelled };
+            // Route through the shared terminal/cancellation service (the same one the OGC API
+            // Processes and GPServer adapters use) instead of calling CancelJobAsync directly and
+            // assuming its success means the job is now Cancelled: CancelJobAsync can return after
+            // only DELEGATING cancellation to a worker/remote backend that has not yet confirmed
+            // it, in which case the job is still in its prior nonterminal state.
+            var result = await _terminalService.CancelAsync(
+                request.JobId, context.GetHttpContext().User, CancelTimeout, context.CancellationToken)
+                .ConfigureAwait(false);
+
+            switch (result.Outcome)
+            {
+                case GeoprocessingCancelOutcome.Cancelled:
+                    return ToProtoCancelJobResponse(request.JobId, result.Job, context);
+
+                case GeoprocessingCancelOutcome.AlreadyTerminal:
+                    // A race that lands on Cancelled anyway is an idempotent success (mirrors the
+                    // OGC API Processes DismissJob handling); any other terminal state is reported
+                    // as the precondition failure it is — cancellation never rewrites a committed
+                    // outcome.
+                    if (result.Job?.Status == ExecutionJobStatus.Cancelled)
+                    {
+                        return ToProtoCancelJobResponse(request.JobId, result.Job, context);
+                    }
+
+                    var terminalStatus = result.Job?.Status.ToString() ?? "terminal";
+                    throw new RpcException(new Status(StatusCode.FailedPrecondition,
+                        $"Job '{request.JobId}' reached terminal state '{terminalStatus}' before cancellation could be applied."));
+
+                case GeoprocessingCancelOutcome.Unsupported:
+                    throw new RpcException(new Status(StatusCode.FailedPrecondition,
+                        $"Job '{request.JobId}' runs on a backend which does not support cancellation."));
+
+                case GeoprocessingCancelOutcome.Unconfirmed:
+                    throw new RpcException(new Status(StatusCode.FailedPrecondition,
+                        $"Job '{request.JobId}' cancellation could not be confirmed after retries."));
+
+                case GeoprocessingCancelOutcome.NotFound:
+                    throw new RpcException(new Status(StatusCode.NotFound, $"Job '{request.JobId}' not found."));
+
+                case GeoprocessingCancelOutcome.Timeout:
+                    throw new RpcException(new Status(StatusCode.DeadlineExceeded,
+                        $"Job '{request.JobId}' cancellation did not complete within the bounded window."));
+
+                case GeoprocessingCancelOutcome.ClientDisconnected:
+                    throw new RpcException(new Status(StatusCode.Cancelled, "The operation was cancelled."));
+
+                default:
+                    throw new InvalidOperationException($"Unexpected cancellation outcome '{result.Outcome}'.");
+            }
         }
         catch (Exception ex) when (ex is not RpcException)
         {
             throw MapToRpcException(ex, context);
         }
+    }
+
+    /// <summary>
+    /// Projects the canonical job's ACTUAL status onto the response — never a fabricated terminal
+    /// state — via the same <c>ToProtoJobState</c> mapping every other job-lifecycle response uses.
+    /// </summary>
+    private static Proto.CancelJobResponse ToProtoCancelJobResponse(
+        string jobId, ExecutionJobRecord? job, ServerCallContext context)
+    {
+        if (job is null)
+        {
+            throw new RpcException(new Status(StatusCode.NotFound, $"Job '{jobId}' not found."));
+        }
+
+        return new Proto.CancelJobResponse
+        {
+            JobId = jobId,
+            State = GeoprocessingConversionHelpers.ToProtoJobState(job.Status)
+        };
     }
 
     // -----------------------------------------------------------------------

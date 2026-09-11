@@ -11,6 +11,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
+using Honua.TestKit.Seeding;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Proto = Geospatial.V1;
@@ -52,6 +53,10 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     private const double ExtentYMin = 0.0;
     private const double ExtentXMax = 1.0;
     private const double ExtentYMax = 1.0;
+
+    // A database-registered-but-inactive scene, used to prove GetScene never
+    // discloses a deactivated record (see GetScene_ForInactiveScene_ThrowsNotFound).
+    private const string InactiveSceneId = "inactive-grpc-scene";
 
     private readonly WebAppFixture _fixture;
     private readonly string _missingContentRoot;
@@ -158,9 +163,29 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         });
     }
 
+    /// <summary>
+    /// Removes this instance's rows from the shared, process-global
+    /// <c>honua.scene_datasets</c> table (see the comment on the
+    /// <c>DELETE FROM honua.scene_datasets</c> line in tests/seed/server.yaml).
+    /// That table is NOT scoped by this fixture's per-test schema isolation, and
+    /// every OTHER isolated <see cref="WebAppFixture"/> host applies the same
+    /// default seed on startup; if this instance left its own id row behind,
+    /// another concurrently-initializing host's seed would leave it there
+    /// indefinitely (the seed excludes these ids for exactly that reason) and
+    /// the next <see cref="SceneGrpcIntegrationTests"/> test to register the
+    /// same id would fail on the unique constraint. Deleting it here — before
+    /// the schema/host teardown below — keeps each test's registered rows
+    /// scoped to its own lifetime, matching the per-test isolation every other
+    /// table in this fixture already gets.
+    /// </summary>
+    private Task DeleteRegisteredScenesAsync()
+        => _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+            $"DELETE FROM honua.scene_datasets WHERE id IN ('{ExtentSceneId}', '{InactiveSceneId}');");
+
     public async Task DisposeAsync()
     {
         _channel?.Dispose();
+        await DeleteRegisteredScenesAsync();
         await _fixture.DisposeAsync();
 
         foreach (var root in new[] { _missingContentRoot, _missingTilesetRoot, _malformedTilesetRoot, _oversizedTileRoot })
@@ -321,6 +346,30 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
 
         response.Scenes.Count.Should().Be(total);
         response.NextPageToken.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_AfterConcurrentPeerHostAppliesDefaultSeed_StillIncludesRegisteredScene()
+    {
+        // Regression test for the flaky "Server Tests (Operator Eval Harness)" shard: another
+        // isolated WebAppFixture host initializing concurrently in the same shard (a different
+        // xUnit collection than "Database.SceneGrpc", so it is free to run in parallel with this
+        // test) applies the same default seed (tests/seed/server.yaml) against its own fresh
+        // schema during its own InitializeAsync. That seed's "DELETE FROM honua.scene_datasets"
+        // statement targets the literal, process-global honua.scene_datasets table — not this
+        // fixture's per-test search_path schema — so without excluding this fixture's own ids it
+        // deletes "extent-scene" out from under this test between InitializeAsync's registration
+        // and any later ListScenes call. Simulate that peer host's seed apply directly and assert
+        // the registered scene survives it.
+        await _fixture.Postgres.CreateSeededSchemaAsync(
+            nameof(SceneGrpcIntegrationTests) + "Peer",
+            RepositoryPaths.Resolve("tests", "seed", "server.yaml"));
+
+        var response = await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers);
+
+        response.Scenes.Should().Contain(scene => scene.SceneId == ExtentSceneId);
     }
 
     [IntegrationTest]
@@ -1070,12 +1119,11 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     {
         // A registered-but-inactive scene must never be disclosed via GetScene;
         // it surfaces as NotFound just like a scene that does not exist.
-        const string inactiveSceneId = "inactive-grpc-scene";
         var registration = _fixture.GetService<ISceneRegistrationService>();
         await registration.RegisterAsync(new SceneDatasetRecord
         {
             DatasetId = Guid.NewGuid(),
-            Id = inactiveSceneId,
+            Id = InactiveSceneId,
             Name = "Inactive Scene",
             AssetRoot = _missingContentRoot,
             TilesetFileName = "tileset.json",
@@ -1088,7 +1136,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         });
 
         var act = async () => await _sceneClient!.GetSceneAsync(
-            new Proto.GetSceneRequest { SceneId = inactiveSceneId },
+            new Proto.GetSceneRequest { SceneId = InactiveSceneId },
             _headers);
 
         (await act.Should().ThrowAsync<RpcException>())

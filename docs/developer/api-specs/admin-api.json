@@ -24921,12 +24921,27 @@
               "enum": [
                 "FeatureServer",
                 "MapServer",
+                "ImageServer",
+                "GPServer",
+                "VectorTileServer",
                 "OgcFeatures",
+                "OGC-API-Maps",
+                "OGC-API-Coverages",
+                "OGC-API-Tiles",
+                "Wfs20",
+                "Wms",
+                "Wmts",
+                "Wcs",
                 "OData",
-                "Grpc"
+                "Grpc",
+                "Stac",
+                "SensorThings",
+                "Terrain",
+                "Elevation"
               ]
             },
-            "minItems": 1
+            "minItems": 1,
+            "description": "Protocols the service exposes. Replaces the existing set rather than adding to it. These are the per-service toggles only; instance-level surfaces (Geometry Service, geocoding, OGC API Processes/Records/Styles, EDR, WPS, MCP, PMTiles, 3D scenes) and licence-gated ones (NAServer, VersionManagementServer) are not set here."
           }
         }
       },
