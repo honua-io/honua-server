@@ -103,25 +103,38 @@ def main() -> None:
         "'pull_request' && github.run_attempt == 1"
     )
     require(pr_gate, wait_condition, "attempt 1 does not fail closed in enforce mode")
-    full_condition = (
-        "if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != "
+    review_clause = (
+        "env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != "
         "'pull_request' || github.run_attempt > 1"
     )
+    full_condition = f"if: {review_clause}"
+    # The docs-only exit (scripts/ci/docs-only-diff.sh) ANDs one clause onto the
+    # expensive steps that follow its classification. The review clause stays
+    # whole and parenthesised, so a docs-only verdict can only skip more on
+    # attempt 1; it can never release a step early.
+    docs_gated_condition = (
+        f"if: ({review_clause}) && steps.docs-only.outputs.docs_only != 'true'"
+    )
+
+    def review_gated(step: str) -> bool:
+        return full_condition in step or docs_gated_condition in step
+
     # Trunk's fourteen expensive steps (the real remote-source, raster and GDAL CLI
     # proofs, PostGIS pre-pull and server boot smoke in build/test, plus four in
     # parallel format) and this change's two production PDAL proof steps. All
     # sixteen must remain attempt-2-only in review-first enforcement.
-    if pr_gate.count(full_condition) != 16:
+    if pr_gate.count(full_condition) + pr_gate.count(docs_gated_condition) != 16:
         raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
-    raster_step = build_test_job.split("- name: Prove raster catalog execution with production GDAL", 1)[1].split("- name:", 1)[0]
-    require(raster_step, full_condition, "real raster execution must remain behind exact-head review")
-    remote_step = build_test_job.split("- name: Prove remote source execution with real HTTP and PostGIS", 1)[1].split("- name:", 1)[0]
-    require(remote_step, full_condition, "real remote-source execution must remain behind exact-head review")
-    gdal_cli_step = build_test_job.split("- name: Prove the real-GDAL CLI cases run on the required gate", 1)[1].split("- name:", 1)[0]
-    require(gdal_cli_step, full_condition, "real GDAL CLI execution must remain behind exact-head review")
-    for name in ['Build production PDAL native tools', 'Prove point-cloud execution with production PDAL']:
+    for name, message in [
+        ("Prove raster catalog execution with production GDAL", "real raster execution must remain behind exact-head review"),
+        ("Prove remote source execution with real HTTP and PostGIS", "real remote-source execution must remain behind exact-head review"),
+        ("Prove the real-GDAL CLI cases run on the required gate", "real GDAL CLI execution must remain behind exact-head review"),
+        ("Build production PDAL native tools", "Build production PDAL native tools must remain behind exact-head review"),
+        ("Prove point-cloud execution with production PDAL", "Prove point-cloud execution with production PDAL must remain behind exact-head review"),
+    ]:
         proof_step = build_test_job.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
-        require(proof_step, full_condition, f"{name} must remain behind exact-head review")
+        if not review_gated(proof_step):
+            raise AssertionError(message)
 
     revalidation_condition = (
         "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "

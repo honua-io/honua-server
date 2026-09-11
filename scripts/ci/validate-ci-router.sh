@@ -194,6 +194,12 @@ scripts/ci/validate-shell-syntax.sh
 echo "Checking local pre-PR change routing..."
 scripts/ci/fixtures/validate-pre-pr-routing.sh
 
+# The PR Gate docs-only exit decides which required-gate steps skip, so its
+# classifier is validated with the other routing logic. Offline: scratch git
+# repositories only.
+echo "Checking the PR Gate docs-only exit..."
+scripts/ci/fixtures/validate-docs-only-diff.sh
+
 if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Checking Python helper syntax..."
   "${PYTHON_BIN}" -m py_compile scripts/ci/*.py

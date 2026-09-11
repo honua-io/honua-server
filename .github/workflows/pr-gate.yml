@@ -11,6 +11,9 @@ name: PR Gate
 #
 # Do not rename the workflow/job or add a paths filter: either change silently
 # un-gates trunk or leaves pull requests waiting for a status that never exists.
+# The docs-only exit (scripts/ci/docs-only-diff.sh) therefore lives INSIDE the
+# jobs: on a documentation-only diff every job still runs and concludes success
+# itself, it just skips its build and test steps.
 on:
   pull_request:
     branches: [trunk]
@@ -66,18 +69,24 @@ jobs:
         with:
           fetch-depth: 2
 
+      # Docs-only exit; see the `Classify docs-only diff` step of the
+      # build/test job below.
+      - name: Classify docs-only diff
+        id: docs-only
+        run: scripts/ci/docs-only-diff.sh --github-output
+
       - name: Setup .NET
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         run: scripts/ci/dotnet-restore-retry.sh Honua.sln
 
       - name: Format Check
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         uses: ./.github/actions/format-check
         with:
           format-scope: affected
@@ -188,10 +197,39 @@ jobs:
               core.setFailed(`Exact-head Review Gate is ${reviewGate?.state || 'missing'}.`);
             }
 
+      # DOCS-ONLY EXIT (operator ruling A, 2026-09-11; #3213). A diff that
+      # touches only documentation cannot change what the steps below compile
+      # or execute, so they skip and this job still concludes success: the
+      # required context reports green itself, which is why the exit lives
+      # inside the job rather than in a paths filter. What counts as docs-only
+      # -- including the scan that keeps any document a test or build reads
+      # out of the class -- is defined once, in scripts/ci/docs-only-diff.sh,
+      # which the format and affected-shards-select jobs call as well. It sits
+      # after the review-first admission steps, so an enforced attempt 1 still
+      # fails at `Await exact-head review` exactly as before and never gets here.
+      #
+      # The classifier is PR-authored and decides what this very job skips, so
+      # its fixtures run first, the same way the shard selector is validated
+      # before it is consumed (offline, seconds).
+      - name: Validate the docs-only classifier before consuming it
+        run: scripts/ci/fixtures/validate-docs-only-diff.sh
+
+      - name: Classify docs-only diff
+        id: docs-only
+        run: scripts/ci/docs-only-diff.sh --github-output
+
+      # The lean gate's one documentation check. It scans every *.md for a raw
+      # curl example, and a docs-only diff is exactly what it exists for, so it
+      # runs here whenever the lean gate below is skipped.
+      - name: Documentation Command Policy (docs-only diff)
+        if: steps.docs-only.outputs.docs_only == 'true'
+        shell: pwsh
+        run: scripts/ci/check-markdown-command-policy.ps1
+
       # The full-solution Release build can exhaust ubuntu-latest disk once
       # every project writes bin/obj. Best-effort cleanup mirrors ci.yml.
       - name: Free disk space
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         run: |
           sudo rm -rf /usr/local/lib/android || true
           sudo rm -rf /usr/share/swift || true
@@ -200,7 +238,7 @@ jobs:
           df -h / || true
 
       - name: Setup .NET
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
@@ -229,11 +267,11 @@ jobs:
       # existing lean build runs so the required path pays only sidecar startup
       # and migrations, not a cold image fetch.
       - name: Pre-pull Testcontainers PostGIS image (background)
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         run: scripts/ci/prepull-testcontainers-postgis.sh
 
       - name: Lean gate (build + fast unit/architecture smoke)
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         uses: ./.github/actions/lean-gate
         with:
           trx-prefix: pr-gate
@@ -250,7 +288,7 @@ jobs:
           run-format: 'false'
 
       - name: Prove remote source execution with real HTTP and PostGIS
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         timeout-minutes: 10
         run: |
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
@@ -258,7 +296,7 @@ jobs:
             --logger 'trx;LogFileName=remote-source-execution-proof.trx' --results-directory tests/TestResults
 
       - name: Upload remote source execution proof
-        if: always()
+        if: always() && steps.docs-only.outputs.docs_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: remote-source-execution-proof
@@ -266,7 +304,7 @@ jobs:
 
       - name: Prove raster catalog execution with production GDAL
         id: raster-execution-proof
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         timeout-minutes: 10
         run: |
           image=$(sed -n 's/^ARG GDAL_BASE_IMAGE=//p' docker/worker-gdal/Dockerfile)
@@ -451,7 +489,7 @@ jobs:
         # job uses), with the same counts-based tripwire. HONUA_REQUIRE_GDAL_CLI
         # turns a missing tool into a failure rather than a skip.
         id: gdal-cli-proof
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         timeout-minutes: 10
         env:
           HONUA_REQUIRE_GDAL_CLI: "true"
@@ -505,7 +543,7 @@ jobs:
           fi
 
       - name: Upload imagery classify execution proof
-        if: always()
+        if: always() && steps.docs-only.outputs.docs_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: imagery-classify-execution-proof
@@ -513,7 +551,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Build production PDAL native tools
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         timeout-minutes: 30
         run: |
           docker build --target native-tools -f docker/worker-gdal/Dockerfile -t honua-pdal-proof .
@@ -521,7 +559,7 @@ jobs:
           echo "HONUA_GDAL_PROOF_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
 
       - name: Prove point-cloud execution with production PDAL
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         timeout-minutes: 10
         run: |
           dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
@@ -529,14 +567,14 @@ jobs:
             --logger 'trx;LogFileName=pdal-execution-proof.trx' --results-directory tests/TestResults
 
       - name: Upload point-cloud execution proof
-        if: always()
+        if: always() && steps.docs-only.outputs.docs_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: pdal-execution-proof
           path: tests/TestResults/pdal-execution-proof.trx
 
       - name: Upload raster execution proof
-        if: always()
+        if: always() && steps.docs-only.outputs.docs_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: raster-execution-proof
@@ -546,7 +584,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload layer execution proof
-        if: always()
+        if: always() && steps.docs-only.outputs.docs_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: layer-execution-proof
@@ -554,13 +592,13 @@ jobs:
           if-no-files-found: warn
 
       - name: Await Testcontainers PostGIS pre-pull
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         env:
           PREPULL_AWAIT_TIMEOUT_SECONDS: '120'
         run: scripts/ci/prepull-testcontainers-postgis.sh --await
 
       - name: Upload copy-features execution proof
-        if: always()
+        if: always() && steps.docs-only.outputs.docs_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: copy-features-execution-proof
@@ -568,14 +606,14 @@ jobs:
           if-no-files-found: warn
 
       - name: Honua.Server boot + migrations smoke
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         run: timeout 175s scripts/ci/server-boot-smoke.sh
 
       # Exercise all clean and injected-rootfs fixtures here without building a
       # container. The separate serving-image workflow and release/deploy/nightly
       # lanes apply this detector to the final production root filesystems.
       - name: Test serving-image boundary detector
-        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true'
         run: |
           python3 scripts/ci/fixtures/validate-serving-image-boundary.py
           python3 scripts/ci/fixtures/validate-promote-verified-image.py
@@ -663,8 +701,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      skip: ${{ steps.select.outputs.skip }}
-      reason: ${{ steps.select.outputs.reason }}
+      # A docs-only diff skips selection and publishes `skip`, which the
+      # aggregate below already reports as a green `skipped` verdict.
+      skip: ${{ steps.docs-only.outputs.docs_only == 'true' && 'true' || steps.select.outputs.skip }}
+      reason: ${{ steps.docs-only.outputs.docs_only == 'true' && 'docs_only' || steps.select.outputs.reason }}
       selected_count: ${{ steps.select.outputs.selected_count }}
       matrix_include: ${{ steps.select.outputs.matrix_include }}
     steps:
@@ -699,11 +739,20 @@ jobs:
       # treats a diff touching the selectors as unable to scope itself; the
       # same reasoning applies to a lane consuming its own PR-authored
       # selector. Offline (no network, no dotnet), so it costs seconds.
+      #
+      # Docs-only exit; see the `Classify docs-only diff` step of the
+      # build/test job above.
+      - name: Classify docs-only diff
+        id: docs-only
+        run: scripts/ci/docs-only-diff.sh --github-output
+
       - name: Validate the shard selector before consuming it
+        if: steps.docs-only.outputs.docs_only != 'true'
         run: python3 scripts/ci/fixtures/validate-affected-shards.py
 
       - name: Select affected shard families
         id: select
+        if: steps.docs-only.outputs.docs_only != 'true'
         env:
           CAP: ${{ env.AFFECTED_SHARDS_CAP }}
         run: |
@@ -715,7 +764,7 @@ jobs:
           cat "${RUNNER_TEMP}/affected-shards.md" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload selection receipt
-        if: always()
+        if: always() && steps.docs-only.outputs.docs_only != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: pr-gate-affected-shards-selection
