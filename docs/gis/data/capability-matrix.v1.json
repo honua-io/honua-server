@@ -899,7 +899,7 @@
       "displayName": "Offline/Field Sync",
       "category": "FieldOps",
       "edition": "Pro",
-      "status": null,
+      "status": "preview",
       "entryCount": 18,
       "provingTestCount": 159,
       "maturity": {
@@ -2224,7 +2224,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 45,
+      "provingTestCount": 47,
       "maturity": {
         "implemented": 7
       },

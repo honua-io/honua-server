@@ -12,7 +12,7 @@
 
 ## Status
 
-Honua Server is open core under the [Elastic License 2.0](LICENSE). The GA-tier core (protocol surfaces, editing, imports, auth, operations) is production-ready and tracked on the [public roadmap](https://github.com/orgs/honua-io/projects/3) under the v1.0 (GA) milestone — upvote what you want next. Versioned `v*` releases have not been tagged yet; until the first one is cut, run the nightly-built container image (see Quick start). The server runs in Community mode with no license file; paid Pro/Enterprise features activate only via signed entitlements and are marked **(Pro)** / **(Enterprise)** below (see [Editions and licensing](docs/concepts/editions-and-licensing.md)).
+Honua Server is open core under the [Elastic License 2.0](LICENSE). The GA-tier core (protocol surfaces, editing, imports, auth, operations) is production-ready and tracked under the v1.0 (GA) milestone. Feature requests and priorities go in [issues](https://github.com/honua-io/honua-server/issues). Versioned `v*` releases have not been tagged yet; until the first one is cut, run the nightly-built container image (see Quick start). The server runs in Community mode with no license file; paid Pro/Enterprise features activate only via signed entitlements and are marked **(Pro)** / **(Enterprise)** below (see [Editions and licensing](docs/concepts/editions-and-licensing.md)).
 
 ## Quick start
 

@@ -62,7 +62,7 @@ Beyond the protocol endpoints, Honua works directly with the cloud-native geospa
 
 ## Where each protocol is documented
 
-Each protocol has exactly one reference page, and that page is its canonical
+Each protocol has at most one reference page, and where it exists that page is its canonical
 home. This page stays the matrix: what exists, where it lives, and which one to
 reach for. Per-operation detail, request and response shapes, version
 differences and limits live in the reference.
@@ -71,7 +71,8 @@ differences and limits live in the reference.
 |---|---|
 | GeoServices REST — FeatureServer, MapServer, ImageServer, Geometry Service, GPServer, GeocodeServer, VectorTileServer, NAServer, VersionManagementServer, portal tokens | [GeoServices REST](../reference/protocols/geoservices-rest.md) |
 | OGC API — Features, Maps, Tiles, Coverages, Processes, Records, Styles, EDR | [OGC APIs](../reference/protocols/ogc-apis.md) |
-| Classic OGC — WMS, WFS, WCS, WMTS, WPS | [WMS, WFS, WCS & WMTS](../reference/protocols/wms-wfs-wcs-wmts.md) |
+| Classic OGC — WMS, WFS, WCS, WMTS | [WMS, WFS, WCS & WMTS](../reference/protocols/wms-wfs-wcs-wmts.md) |
+| Classic OGC — WPS 2.0 | No reference page yet — see [honua-server#4685](https://github.com/honua-io/honua-server/issues/4685) |
 | OData v4 | [OData](../reference/protocols/odata.md) |
 | STAC | [STAC](../reference/protocols/stac.md) |
 | Vector tiles (MVT) + TileJSON, PMTiles | [Vector tiles](../reference/protocols/vector-tiles.md) |
