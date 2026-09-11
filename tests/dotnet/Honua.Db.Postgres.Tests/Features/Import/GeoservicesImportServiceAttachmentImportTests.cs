@@ -80,8 +80,14 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
         }
     }
 
+    /// <summary>
+    /// Issue #4600: a lost attachment is lost source data, so the run must not report a successful
+    /// migration. The copy loop still continues past the failure (the rest of the attachments are
+    /// copied), but the fidelity gate routes the run to operator review with an explicit,
+    /// attachment-scoped difference rather than a warning buried in the result.
+    /// </summary>
     [Fact]
-    public async Task ImportLayerAsync_WhenAttachmentDownloadFails_CountsFailureAndContinues()
+    public async Task ImportLayerAsync_WhenAttachmentDownloadFails_CountsFailureAndBlocksSuccess()
     {
         const string tableName = "geoservices_attachment_partial";
         var schemaName = await fixture.CreateIsolatedSchemaAsync(
@@ -107,10 +113,25 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
                 ServiceName = "default"
             });
 
-            result.Success.Should().BeTrue();
+            // The copy continued past the failed attachment: the other two still landed.
             result.AttachmentCount.Should().Be(2);
             result.FailedAttachments.Should().Be(1);
             result.Warnings.Should().Contain(static w => w.Contains("failure", StringComparison.OrdinalIgnoreCase));
+
+            // ...but a migration missing one of the source's attachments is not a successful
+            // migration (#4600). Feature counts match here, which is exactly why attachment parity
+            // has to be reconciled on its own evidence.
+            result.Success.Should().BeFalse();
+            result.NeedsReview.Should().BeTrue();
+            result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+
+            var lost = result.FidelityDifferences
+                .Should().ContainSingle(d => d.Code == MigrationFidelityDifferenceCodes.AttachmentsLost)
+                .Subject;
+            lost.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Blocking);
+            lost.Subject.Should().Be("attachments");
+            lost.Expected.Should().Be("3 attachments in the target store");
+            lost.Actual.Should().Be("2 attachments in the target store");
         }
         finally
         {

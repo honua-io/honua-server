@@ -313,7 +313,7 @@ internal sealed partial class GeoservicesImportService
                     ? $"Relationship type '{derivedType ?? "composite"}' carries side-effects (composite delete or junction attributes) that this slice does not recreate automatically."
                     : isManyToMany
                         ? "Many-to-many relationships require a junction table and are deferred from automated migration."
-                        : "Relationship metadata was detected and captured for operator review; automated relationship migration is not implemented.";
+                        : "Relationship metadata was captured but the source did not advertise enough of the relationship shape to recreate it automatically; map it onto the target before cutover.";
 
             var manualSteps = automationStatus == MigrationFidelityAutomationStatuses.ManualReview
                 ? new[] { "Map related layers or tables to target relationship configuration before cutover." }

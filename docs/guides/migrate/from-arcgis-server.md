@@ -89,6 +89,27 @@ honua query parcels/0 --limit 5 --format geojson
 
 Compare those results with the source inventory and ArcGIS Pro or another source-native client. Check feature counts, schemas, extents, representative records, relationships, and metadata before cutover.
 
+### Read the fidelity verdict
+
+Every import job carries a `fidelityVerdict` alongside its status. The status says whether the job
+finished; the verdict says whether the migrated layer is equivalent to the source. Read the verdict,
+not the status, before you cut over:
+
+| Verdict | Meaning | What to do |
+|---|---|---|
+| `full-fidelity` | Every required check ran and passed. | Safe to proceed to cutover. |
+| `unverified` | Nothing blocking was found, but at least one required check did not run. | Treat parity as unproven. Check `fidelityDifferences` for which check was skipped and verify that construct by hand. |
+| `incomplete` | A blocking difference was found: dropped records, missing attachments, an omitted relationship, or a schema/metadata mismatch between source and target. | The job reports `needs-review` and is not a successful migration. Fix the cause and re-import. |
+
+`fidelityDifferences` lists the actionable per-resource findings behind the verdict, each with a
+stable `code`, the affected `subject`, and the `expected` and `actual` values. Attachments and
+relationships are reconciled on their own evidence, so a layer whose feature counts match can still
+be `incomplete` because its attachments or relationship classes did not survive the import.
+
+A skipped check is never treated as a passing check. An import run on a deployment without the
+catalog read-back seam, for example, completes as `unverified` rather than `full-fidelity`, because
+counts can match while the schema is wrong.
+
 The runtime-neutral `honua-migrate reconcile compare` command exists for a durable `MigrationRun` plus portable source and target snapshots. The ArcGIS service adapter does not yet emit that run/snapshot bundle, so this guide does not present a command that would fail. Automated ArcGIS reconciliation remains deferred until that adapter is wired.
 
 ## 6. Repoint clients

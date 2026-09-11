@@ -139,7 +139,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         int attachmentsProcessed = 0,
         int failedAttachments = 0,
         MigrationReconciliationArtifact? reconciliationArtifact = null,
-        MigrationCatalogReconciliationReport? catalogReconciliationReport = null)
+        MigrationCatalogReconciliationReport? catalogReconciliationReport = null,
+        string? fidelityVerdict = null,
+        MigrationFidelityDifference[]? fidelityDifferences = null)
     {
         progress?.Report(new GeoservicesImportProgress
         {
@@ -158,7 +160,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             AttachmentsProcessed = attachmentsProcessed,
             FailedAttachments = failedAttachments,
             ReconciliationArtifact = reconciliationArtifact,
-            CatalogReconciliationReport = catalogReconciliationReport
+            CatalogReconciliationReport = catalogReconciliationReport,
+            FidelityVerdict = fidelityVerdict,
+            FidelityDifferences = fidelityDifferences ?? []
         });
     }
 
@@ -286,5 +290,10 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         [LoggerMessage(7841, LogLevel.Warning,
             "Reconciliation gate could not run for table {TableName}; import completed without a reconciliation verdict")]
         public static partial void ReconciliationGateUnavailable(ILogger logger, string tableName, Exception exception);
+
+        [LoggerMessage(7842, LogLevel.Warning,
+            "Migration fidelity difference on table {TableName}: [{Code}/{Severity}] {Summary}")]
+        public static partial void FidelityDifference(
+            ILogger logger, string tableName, string code, string severity, string summary);
     }
 }

@@ -200,7 +200,9 @@ public sealed class EsriConstructCapabilityRegistry : IEsriConstructCapabilityRe
             ConstructKey = Keys.ResourceSubtypes,
             AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
             Code = ImportCompatibilityCodes.ArcGisSubtypesManualReview,
-            Reason = "Subtype metadata was detected and captured for operator review; automated subtype migration is not implemented.",
+            Reason = "Subtype metadata is captured and carried through publish onto the target resource; the subtype-driven "
+                + "editing behavior (per-subtype defaults and domain overrides on applyEdits) still needs operator review "
+                + "before cutover.",
             ManualSteps = ["Recreate subtype behavior or document an accepted gap before cutover."],
             CanTransform = false,
             CanServe = false,
@@ -211,7 +213,9 @@ public sealed class EsriConstructCapabilityRegistry : IEsriConstructCapabilityRe
             ConstructKey = Keys.ResourceRelationships,
             AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
             Code = ImportCompatibilityCodes.ArcGisRelationshipsManualReview,
-            Reason = "Relationship metadata was detected and captured for operator review; automated relationship migration is not implemented.",
+            Reason = "Relationship metadata is captured and simple (1:1 / 1:N) relationship classes are persisted onto the "
+                + "target automatically; composite and many-to-many classes need their junction or cascade behavior "
+                + "modelled by an operator before cutover.",
             ManualSteps = ["Map related layers or tables to target relationship configuration before cutover."],
             CanTransform = false,
             CanServe = false,
@@ -222,7 +226,9 @@ public sealed class EsriConstructCapabilityRegistry : IEsriConstructCapabilityRe
             ConstructKey = Keys.ResourceAttachments,
             AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
             Code = ImportCompatibilityCodes.ArcGisAttachments,
-            Reason = "Attachment capability was detected, but attachment content migration is not implemented by this slice.",
+            Reason = "Attachment capability was detected. Attachment content is copied into the Honua attachment store during "
+                + "import when ImportAttachments is enabled and auto-publish succeeds; a source served without those "
+                + "prerequisites still needs an operator-planned attachment migration.",
             ManualSteps = ["Plan a separate attachment migration alongside the core data import."],
             CanTransform = false,
             CanServe = false,

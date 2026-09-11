@@ -237,6 +237,9 @@ internal sealed partial class GeoservicesImportService
                     cancellationToken).ConfigureAwait(false);
             }
 
+            // #4600: attachment accounting is kept on its own evidence (advertised / copied / failed /
+            // unreadable-inventory) so attachment parity is decided independently of feature counts.
+            MigrationFidelityAttachmentInput? attachmentFidelity = null;
             var attachmentCount = 0;
             var failedAttachments = 0;
             if (layerInfo.HasAttachments
@@ -245,7 +248,7 @@ internal sealed partial class GeoservicesImportService
                 && _attachmentStore != null
                 && objectIdMap.Count > 0)
             {
-                (attachmentCount, failedAttachments) = await CopyAttachmentsAsync(
+                var attachmentOutcome = await CopyAttachmentsAsync(
                     request,
                     layerInfo,
                     publishedLayer.LayerId,
@@ -256,11 +259,26 @@ internal sealed partial class GeoservicesImportService
                     startedAt,
                     featuresProcessed,
                     cancellationToken).ConfigureAwait(false);
+
+                attachmentCount = attachmentOutcome.Copied;
+                failedAttachments = attachmentOutcome.Failed;
+                attachmentFidelity = new MigrationFidelityAttachmentInput
+                {
+                    Advertised = attachmentOutcome.Advertised,
+                    Copied = attachmentOutcome.Copied,
+                    Failed = attachmentOutcome.Failed,
+                    UnverifiedParents = attachmentOutcome.UnverifiedParents
+                };
             }
             else if (layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore == null)
             {
                 warnings.Add(
                     "Layer advertises attachments, but no attachment store is registered; attachments were not copied.");
+                attachmentFidelity = new MigrationFidelityAttachmentInput { CopySkipped = true };
+            }
+            else if (layerInfo.HasAttachments)
+            {
+                attachmentFidelity = new MigrationFidelityAttachmentInput { CopySkipped = true };
             }
 
             // Phase 5: Validating â€” reconcile the published layer against the apply-time source
@@ -286,12 +304,36 @@ internal sealed partial class GeoservicesImportService
 
             stopwatch.Stop();
 
-            if (reconciliation.NeedsReview)
+            // #4600: one verdict, not two. Data-movement reconciliation, catalog (schema/domain/
+            // identifier/subtype) reconciliation, dropped records, lost attachments and deferred
+            // relationships all fold into a single fidelity evaluation. Any blocking difference
+            // routes the run to NeedsReview; a check that never executed downgrades the run to
+            // 'unverified' rather than letting it be reported as a full-fidelity migration.
+            var fidelity = MigrationFidelityEvaluator.Evaluate(new MigrationFidelityEvaluationInput
             {
-                Log.ReconciliationGateBlocked(_logger, request.TableName, reconciliation.ReviewReason ?? "reconciliation failed");
+                LayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
+                DataReconciliation = reconciliation.Artifact,
+                DataReconciliationExecuted = reconciliation.DataCheckExecuted,
+                CatalogReconciliation = reconciliation.CatalogReport,
+                CatalogReconciliationExecuted = reconciliation.CatalogCheckExecuted,
+                PublishedTarget = publishedLayer is not null,
+                FailedFeatures = failedFeatures,
+                Attachments = attachmentFidelity
+            });
+
+            foreach (var difference in fidelity.Differences)
+            {
+                Log.FidelityDifference(_logger, request.TableName, difference.Code, difference.Severity, difference.Summary);
+            }
+
+            if (fidelity.IsBlocking)
+            {
+                var reviewReason = fidelity.BlockingReason
+                    ?? "Post-publish reconciliation reported a blocking discrepancy.";
+                Log.ReconciliationGateBlocked(_logger, request.TableName, reviewReason);
 
                 ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.NeedsReview, request,
-                    "Import published but requires operator review (reconciliation gate)",
+                    "Import published but requires operator review (fidelity gate)",
                     featuresProcessed,
                     featuresProcessed,
                     layerInfo.Name,
@@ -299,7 +341,9 @@ internal sealed partial class GeoservicesImportService
                     attachmentsProcessed: attachmentCount,
                     failedAttachments: failedAttachments,
                     reconciliationArtifact: reconciliation.Artifact,
-                    catalogReconciliationReport: reconciliation.CatalogReport);
+                    catalogReconciliationReport: reconciliation.CatalogReport,
+                    fidelityVerdict: fidelity.Verdict,
+                    fidelityDifferences: fidelity.Differences);
 
                 return GeoservicesImportResult.CreateNeedsReview(
                     request.TableName,
@@ -316,7 +360,9 @@ internal sealed partial class GeoservicesImportService
                     failedAttachments,
                     reconciliation.Artifact,
                     reconciliation.CatalogReport,
-                    reconciliation.ReviewReason ?? "Post-publish reconciliation reported a blocking discrepancy.");
+                    reviewReason,
+                    fidelity.Verdict,
+                    fidelity.Differences);
             }
 
             Log.ImportCompleted(_logger, request.TableName, featuresProcessed, failedFeatures,
@@ -332,7 +378,9 @@ internal sealed partial class GeoservicesImportService
                 attachmentsProcessed: attachmentCount,
                 failedAttachments: failedAttachments,
                 reconciliationArtifact: reconciliation.Artifact,
-                catalogReconciliationReport: reconciliation.CatalogReport);
+                catalogReconciliationReport: reconciliation.CatalogReport,
+                fidelityVerdict: fidelity.Verdict,
+                fidelityDifferences: fidelity.Differences);
 
             return GeoservicesImportResult.CreateSuccess(
                 request.TableName,
@@ -348,7 +396,9 @@ internal sealed partial class GeoservicesImportService
                 attachmentCount: attachmentCount,
                 failedAttachments: failedAttachments,
                 reconciliationArtifact: reconciliation.Artifact,
-                catalogReconciliationReport: reconciliation.CatalogReport);
+                catalogReconciliationReport: reconciliation.CatalogReport,
+                fidelityVerdict: fidelity.Verdict,
+                fidelityDifferences: fidelity.Differences);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
