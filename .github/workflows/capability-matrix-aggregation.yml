@@ -10,8 +10,8 @@ name: Capability Matrix Aggregation
 # the merge train's workflow_run event with the heavy full CI matrix -- see
 # ci.yml's header comment). This workflow is a single dependency-light Python
 # script (no dotnet build, no services:), so it follows the same lightweight
-# PR generator validation with advisory drift. Trunk commits are owned by
-# generated-files-on-trunk.yml, which refreshes all upstream projections first.
+# pattern as openapi-drift.yml: a pull_request drift-check plus a push-to-trunk
+# regeneration/publish job, rather than living inside ci.yml.
 on:
   pull_request:
     branches:
@@ -35,9 +35,25 @@ on:
       - 'src/Honua.Server/ogc-maps-openapi.json'
       - 'src/Honua.Server/ogc-coverages-openapi.json'
       - 'src/Honua.Server/ogc-processes-openapi.json'
-      - 'scripts/ci/report-generated-file-drift.sh'
-      - 'scripts/ci/generated-files.sh'
       - '.github/workflows/capability-matrix-aggregation.yml'
+  push:
+    branches:
+      - trunk
+    paths:
+      - 'docs/gis/data/feature-catalog.json'
+      - 'docs/cite-status.md'
+      - 'docs/gis/data/geoservices-rest-parity.json'
+      - 'docs/gis/data/capability-keys.v1.json'
+      - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
+      - 'tests/baselines/client-compat/**'
+      - 'scripts/ci/generate-capability-matrix.py'
+      - 'scripts/ci/capability-impact.py'
+      - 'scripts/ci/validate-cite-openapi-compliance.py'
+      - 'src/Honua.Server/openapi.json'
+      - 'src/Honua.Server/ogc-tiles-openapi.json'
+      - 'src/Honua.Server/ogc-maps-openapi.json'
+      - 'src/Honua.Server/ogc-coverages-openapi.json'
+      - 'src/Honua.Server/ogc-processes-openapi.json'
   schedule:
     # Weekly freshness check: cite-status.md and geoservices-rest-parity.json
     # are hand-refreshed on their own cadence (not every push touches this
@@ -71,8 +87,13 @@ jobs:
       - name: Regenerate capability-matrix.v1.json
         run: python3 scripts/ci/generate-capability-matrix.py
 
-      - name: Report generated matrix drift (advisory)
-        run: bash scripts/ci/report-generated-file-drift.sh docs/gis/data/capability-matrix.v1.json
+      - name: Drift check against the committed artifact
+        run: |
+          if ! git diff --exit-code -- docs/gis/data/capability-matrix.v1.json; then
+            echo "::error::docs/gis/data/capability-matrix.v1.json is stale. Run 'python3 scripts/ci/generate-capability-matrix.py' and commit the result." >&2
+            exit 1
+          fi
+          echo "docs/gis/data/capability-matrix.v1.json is up to date."
 
       - name: Validate CITE evidence-table joins against OpenAPI metadata
         run: python3 scripts/ci/validate-cite-openapi-compliance.py
