@@ -1,6 +1,6 @@
 # Impact-routing evidence ledger
 
-Status: report-only. Contracts: promotion policy `/v2`, ledger `/v2`.
+Status: report-only. Contracts: promotion policy `/v4`, ledger `/v4`.
 Tracking: #3204 and umbrella #3213. The docs-only PR Gate experiment (#3235)
 was closed as not planned on 2026-08-17 UTC; its cohort thresholds below are
 retained only as the standard the native-image stream is still measured
@@ -24,10 +24,8 @@ run:
 The ledger first discovers a bounded set of trusted producer runs, then reads
 each run's artifact catalog and selects only the name whose attempt equals the
 run's current `run_attempt`. Retained artifacts from earlier rerun attempts can
-therefore neither poison nor satisfy the cohort. The catalog count shares the
-same hard budget as receipt downloads, keeping the workflow below the
-repository token limit even though the repository has tens of thousands of
-artifacts. The ledger rejects missing, duplicate, expired, oversized,
+therefore neither poison nor satisfy the cohort. Catalog listings and receipt downloads have separate hard budgets, even
+though the repository has tens of thousands of artifacts. The ledger rejects missing, duplicate, expired, oversized,
 unsafe-archive, wrong-workflow, wrong-policy, and cross-head evidence. It
 deduplicates successful observations by full head SHA and never counts a head
 associated with more than one pull request.
@@ -67,64 +65,100 @@ is. Exhausting one prints an error naming the collection, the count consumed,
 the declared total, and the policy key to change. The three bounds are distinct
 resources and are sized independently:
 
-- `maximum_pages_per_query` (8, i.e. 800 runs per paged query) bounds each run
-  catalog. On 2026-08-17 the widest collection, `serving-image-boundary.yml`
-  `pull_request` runs, was 430 over a trailing 7-day window (worker-gdal-image
-  388, native observer 188, PR Gate observer 151), and the image window is the
-  receipt window plus `image_outcome_lookback_hours`.
-- `maximum_producer_run_catalogs` (900) bounds the per-run artifact listings.
-  Only **successful** observer runs are catalogued, because only they can have
-  uploaded a receipt or a skip marker; non-success runs stay in the run catalog
-  so `discover` keeps reporting them as `observer-run-<conclusion>`. This bound
-  used to be `maximum_receipt_downloads`, which made a 500-request download cap
-  the binding limit on how many observer runs the window could contain. At the
-  2026-08-17 rate of roughly 50 completed runs per day per observer (~100 a day
-  combined, 339 completed and 296 successful over the trailing 7 days) a full
-  7-day window needs about 700 catalog listings, so the old cap would have
-  tripped around 2026-08-19.
-- `maximum_receipt_downloads` (420, validator-bounded at 500) bounds actual
-  archive transfers, which is the expensive resource it was always meant to
-  describe.
+- `maximum_runs_per_query` (1,000) bounds each time slice, matching
+  [GitHub's filtered workflow-run listing ceiling](https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow).
+  The collector binds one closed seven-day window (plus the existing producer
+  and image lookbacks), recursively partitions it into disjoint inclusive
+  creation-time ranges, and checks each range's page totals and unique IDs.
+  It retries an inconsistent slice from page one. Status is not a query filter:
+  a run completing during pagination cannot shift page membership. Incomplete
+  observers remain visible exclusions and owe no receipt yet.
+- `maximum_producer_run_catalogs` (3,000) bounds the successful observers that
+  need an artifact catalog. Failed and incomplete observers remain in the run
+  catalogs.
+- `maximum_receipt_downloads` (2,500) bounds the indexed receipts per audit.
 
-Both streams bind the Git blobs of the authoritative PR Gate workflow and
-`scripts/ci/trusted-pr-workflow-run.js`, which resolved the canonical PR, base,
-head, workflow, run, and attempt. A gate or resolver change therefore starts a
-new policy cohort instead of mixing identities established under superseded
-logic. Receipts collected under the previous blobs are then reported as
-`policy inputs are not current` INTEGRITY FAILURES, not as exclusions, so the
-ledger stays red for the whole retention window unless `observation_started_at`
-is advanced in the same change. Any pull request that edits
-`scripts/ci/trusted-pr-workflow-run.js` or either observer workflow must
-therefore bump `observation_started_at` to its own merge time; the
-2026-08-17 entry restarts the cohort for exactly that reason (the concrete
-failures are `PR Gate receipt policy inputs are not current` and
-`native-image receipt policy inputs are not current`). The receipt records the
-workflow blobs from the observed PR head, while the ledger accepts them only
-when they equal the current default-branch policy.
-Native receipts additionally bind both authoritative image workflows
-and record the Serving Image Boundary workflow's replayed per-variant decision.
-Serving narrowing is the strict difference between that legacy variant count
-and the candidate variant count; reproducing an existing
-Lambda-only, Functions-only, or generic-only selection does not count.
-Native receipts also bind one content digest per image class over that class's
-exact build-input file set, taken over the **merge** tree the image workflows
-actually check out (`refs/pull/<N>/merge`, accepted only when its parents are
-exactly the observed base and head). Each record is `[mode, path, blob id]`, so
-an exec-bit or symlink change is a different address. A receipt that could only
-address the head tree records `image_input_tree: head` and is excluded from both
-sides of the reuse cohort. Two heads sharing a digest consume byte-identical
-build inputs, which is what makes an earlier successful image run reusable. An image
-outcome is authoritative only when its GitHub-managed workflow association
-matches the receipt's PR number, base SHA, and head SHA; an earlier run for a
-reopened same-head PR cannot satisfy a later-base observation.
+The collector fails on a truncated catalog, persistent pagination race, or a
+single second exceeding the query ceiling. These are collection errors, not
+fabricated receipt-integrity findings. Per-query slicing replaces the old
+800-run page budget without shortening retention or changing the 5% loss gate.
 
-Observer receipts use a seven-day rolling retention window. At current activity
-that keeps per-run catalog discovery and downloads below the repository token's
-bounded request budget while requiring the positive/narrowed cohorts to reflect
-the current workload rather than stale historical examples.
+### GITHUB_TOKEN request budget
 
-The workflow runs only from the default branch with read-only Actions and
-contents permissions. It is `report-only`, has no status or routing authority,
+The audit job uses only `github.token`. GitHub meters that token at 1,000
+requests per repository per hour, and other workflows draw on the same pool.
+`github_token_request_limit` (1,000) less `github_token_request_reserve` (200)
+is the job's allowance. The allowance shrinks further when the unmetered
+`/rate_limit` endpoint reports less remaining this hour. Every run-catalog
+page, artifact listing, download, retry, and expiry lookup is charged to
+`evidence/request-budget.json` before it is sent. The trend step reserves its
+41 history requests up front, or reports the current run alone. The
+per-phase spend is printed in the step summary and retained with the ledger.
+
+At the 2026-09-03..09 volume (1,307 runs per observer, 876 + 866 successful,
+801 + 775 receipts), the previous shape made one catalog request per
+successful observer and one download per receipt. With run catalogs and trend
+history, that was about 3,390 requests, more than four hours of the token
+pool. The current shape stays inside the allowance:
+
+| Phase | Requests |
+|---|---:|
+| Run catalogs (two sliced observer windows, serving, worker) | ~33 |
+| Name-filtered receipt listings, 100 per page, newest first | ~21 |
+| Per-run catalogs for runs that list no current-attempt receipt (skips, losses) | ~166 |
+| Receipt downloads not already in the cache (one day of new receipts) | ~225 |
+| Trend history (reserved) | 41 |
+| **Steady-state total** | **~486 of 800** |
+
+Receipt archives are immutable per artifact ID. The job restores them from a
+default-branch-scoped Actions cache. Pull request runs can neither restore nor
+write that cache. A cached archive is reused only while its SHA-256 matches
+the artifact catalog's `digest`. Archives outside the current index are
+pruned, so the cache tracks the retention window. When the cache is cold,
+receipt transfers run until the allowance is spent. The step then fails with
+the spend. The archives it verified are saved anyway, so the next audit
+resumes from them. A fully cold seven-day window completes on the third audit.
+Dispatching those three runs an hour apart recovers the ledger the same day.
+`scripts/ci/collect-impact-routing-runs.test.py` replays a slightly hotter
+volume (1,804 successful observers, 1,610 receipts) through the real
+collector, discovery, and downloader. It measures 3,455 requests for the old
+shape and 33 + 216 + 230 + 41 = 520 for a warm audit. A cold cache takes
+800, 800, then 763 requests across three audits. The replay also asserts that
+synthesized and per-run catalogs produce identical indexes.
+
+### Receipt store identity and concurrency
+
+The receipt store is Actions artifacts, not an issue body. Each immutable upload
+belongs to a producer run and has an attempt-bound name. Discovery keys it by
+stream, run ID and current attempt, rejects duplicate artifacts, and summary
+counts each validated head once. Concurrent producers append independent
+artifacts; they never replace a shared receipt list. Repeated audits are
+idempotent. There is no issue-body CAS operation to add here; the separate
+merge-train state-issue gap is tracked in #3519 and is outside this ledger.
+
+A native observation discarded at the final identity recheck now uploads the
+same skip marker as a collect-time skip. It preserves the reason for discarding
+a moved PR without pretending that the discarded bytes are a retained receipt.
+The seven-day replay covers independent producers, repeated reads, full-mode
+PR Gate artifacts, successful native outcomes with moved live PR pointers,
+empty diffs, and post-observation skips. Empty diffs are valid only when both
+recorded policies select no image work; contradictory routing still fails.
+
+Both streams bind the authoritative PR Gate workflow and trusted resolver blobs.
+Native receipts also bind image workflows and content digests over the exact
+merge-tree build inputs. Changed policy generations remain visible cohort
+exclusions, and contradictions against a receipt's own policy head remain
+integrity failures. Authoritative image matching uses the immutable run head
+and workflow identity; mutable PR tip pointers cannot invalidate historical
+runs. The detailed failure classification and supersession rules below apply.
+
+Observer receipts use a seven-day rolling retention window. The positive and
+narrowed cohorts therefore reflect the current workload rather than stale
+historical examples. The request budget above, not the window, bounds API cost.
+
+The live audit runs only from the default branch with read-only Actions and
+contents permissions. Pull requests touching this ledger run its seven-day
+fixture replay in a separate job; fixture results never seed the live streak. It is `report-only`, has no status or routing authority,
 and cannot dispatch, cancel, label, normalize, merge, or publish an image.
 
 ## Promotion cohorts

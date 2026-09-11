@@ -15,7 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v3"
+POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v4"
 INDEX_CONTRACT = "honua.impact-routing-evidence-index/v2"
 # v4 resets retained trend samples after candidate-only, unexecuted routes
 # stopped being promotion-countable.  trend() accepts only the current contract,
@@ -71,6 +71,8 @@ NATIVE_SKIP_ARTIFACT = re.compile(
 PR_GATE_RECEIPT = "pr-gate-impact-observation.json"
 NATIVE_RECEIPT = "native-image-impact-observation.json"
 NATIVE_SUMMARY = "native-image-impact-summary.md"
+# `<slice>-<page>.json`, written by the collector's sliced pagination.
+QUERY_PAGE = re.compile(r"^(?P<query>q[0-9]{3,})-(?P<page>[0-9]{3,})\.json$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
@@ -177,7 +179,20 @@ def load_policy(value: object) -> dict[str, Any]:
     )
     if lookback > 48:
         raise ValueError("image outcome lookback exceeds the policy bound")
-    pages = positive_int(value.get("maximum_pages_per_query"), "maximum pages per query")
+    # Bound one QUERY in runs, not pages, because the thing being bounded is
+    # not a budget we chose — it is GitHub's hard ceiling. The Actions
+    # workflow-runs listing serves at most 1,000 records for a filter: asking
+    # for record 1,001 returns `total_count: 0` with an empty page at any
+    # `per_page`, which is indistinguishable from a genuinely short catalog
+    # unless the real total is already known. No page budget could ever have
+    # collected the seven-day window once either observer stream passed 1,000
+    # runs (both were at ~1,360 on 2026-09-07); the window has to be collected
+    # as disjoint time slices, each small enough to be served whole. This bound
+    # is per slice. The bound on the WINDOW stays
+    # `maximum_producer_run_catalogs` / `maximum_receipt_downloads` below.
+    runs = positive_int(value.get("maximum_runs_per_query"), "maximum runs per query")
+    if runs > 1000:
+        raise ValueError("maximum runs per query exceeds GitHub's listing ceiling")
     downloads = positive_int(value.get("maximum_receipt_downloads"), "maximum downloads")
     # Listing one run's artifact catalog is a cheap paged GET; downloading a
     # receipt is a real archive transfer. Conflating the two made the download
@@ -190,10 +205,22 @@ def load_policy(value: object) -> dict[str, Any]:
     # 1,000-download ceiling rejected the policy's required retention period.
     # Keep finite ceilings above current throughput while still failing closed
     # before an accidental policy edit can make the API work unbounded.
-    if pages > 10 or downloads > 2500 or catalogs > 3000:
-        raise ValueError("GitHub query, catalog, or download bound is unsafe")
+    if downloads > 2500 or catalogs > 3000:
+        raise ValueError("GitHub catalog or download bound is unsafe")
     if catalogs < downloads:
         raise ValueError("catalog bound must not be smaller than the download bound")
+    # Those bounds cap the window; the token caps the job. GitHub meters
+    # GITHUB_TOKEN at 1,000 requests per repository per hour, shared with every
+    # other workflow, so the collector spends at most `limit - reserve` and less
+    # when /rate_limit shows the hour is already partly used.
+    request_limit = positive_int(
+        value.get("github_token_request_limit"), "GitHub token request limit"
+    )
+    request_reserve = positive_int(
+        value.get("github_token_request_reserve"), "GitHub token request reserve"
+    )
+    if request_limit > 1000 or request_reserve >= request_limit:
+        raise ValueError("GitHub token request budget is unsafe")
     for field in (
         "minimum_docs_only_heads",
         "minimum_native_heads",
@@ -335,30 +362,54 @@ def current_blobs(root: Path) -> dict[str, str]:
 
 
 def flatten_pages(root: Path, collection: str) -> list[dict[str, Any]]:
+    """Flatten one window collected as several disjoint, individually paged queries.
+
+    GitHub will not serve past record 1,000 of a workflow-runs listing, so the
+    collector slices the window by creation time until each slice fits and
+    pages each slice separately. Completeness is therefore a per-SLICE property:
+    every page of a slice must agree on that slice's declared total and the
+    slice's items must add up to it exactly. Verifying it window-wide instead
+    would let a slice that silently lost its tail hide behind the others.
+    """
     files = sorted(root.glob("*.json"))
     if not files:
         raise ValueError(f"{collection} query pages are missing")
-    expected_total: int | None = None
-    items: list[dict[str, Any]] = []
+    queries: dict[str, list[Path]] = defaultdict(list)
     for file in files:
-        page = load_json(file)
-        if not isinstance(page, dict) or not isinstance(page.get("total_count"), int):
-            raise ValueError(f"{collection} query page is invalid")
-        values = page.get(collection)
-        if not isinstance(values, list):
-            raise ValueError(f"{collection} query collection is invalid")
-        if expected_total is None:
-            expected_total = page["total_count"]
-        elif expected_total != page["total_count"]:
-            raise ValueError(f"{collection} query total changed during pagination")
-        if not all(isinstance(item, dict) for item in values):
-            raise ValueError(f"{collection} query item is invalid")
-        items.extend(values)
-    if expected_total is None or len(items) != expected_total:
-        raise ValueError(f"{collection} query is truncated")
+        match = QUERY_PAGE.fullmatch(file.name)
+        if match is None:
+            # Retained ledgers predate sliced catalogs; preserve their replay.
+            if re.fullmatch(r"[0-9]{3,}\.json", file.name):
+                queries["legacy"].append(file)
+                continue
+            raise ValueError(f"{collection} query page filename is invalid")
+        queries[match.group("query")].append(file)
+    items: list[dict[str, Any]] = []
+    for query in sorted(queries):
+        expected_total: int | None = None
+        sliced: list[dict[str, Any]] = []
+        for file in sorted(queries[query]):
+            page = load_json(file)
+            if not isinstance(page, dict) or not isinstance(page.get("total_count"), int):
+                raise ValueError(f"{collection} query page is invalid")
+            values = page.get(collection)
+            if not isinstance(values, list):
+                raise ValueError(f"{collection} query collection is invalid")
+            if expected_total is None:
+                expected_total = page["total_count"]
+            elif expected_total != page["total_count"]:
+                raise ValueError(f"{collection} query total changed during pagination")
+            if not all(isinstance(item, dict) for item in values):
+                raise ValueError(f"{collection} query item is invalid")
+            sliced.extend(values)
+        if expected_total is None or len(sliced) != expected_total:
+            raise ValueError(f"{collection} query is truncated")
+        items.extend(sliced)
     identifiers = [item.get("id") for item in items]
     if any(isinstance(item, bool) or not isinstance(item, int) for item in identifiers):
         raise ValueError(f"{collection} query identity is invalid")
+    # Slices are disjoint by construction, so a run seen twice means the
+    # collector's slice boundaries overlapped and the window is not a partition.
     if len(set(identifiers)) != len(identifiers):
         raise ValueError(f"{collection} query contains duplicate identities")
     return items
@@ -371,8 +422,11 @@ def _valid_observer_run(run: dict[str, Any], workflow: str, cutoff: datetime) ->
         and isinstance(run.get("run_attempt"), int)
         and run["run_attempt"] > 0
         and run.get("event") in ALLOWED_OBSERVER_EVENTS
-        and run.get("status") == "completed"
-        and run.get("conclusion") in TERMINAL_CONCLUSIONS
+        and (
+            (run.get("status") == "completed" and run.get("conclusion") in TERMINAL_CONCLUSIONS)
+            or (run.get("status") in {"queued", "in_progress", "waiting", "pending", "requested"}
+                and run.get("conclusion") is None)
+        )
         and run.get("path") == workflow
         and run.get("head_branch") == DEFAULT_BRANCH
         and SHA.fullmatch(str(run.get("head_sha", ""))) is not None
@@ -469,6 +523,10 @@ def _discover_stream(
                 raise ValueError("observer workflow run is invalid")
         except (TypeError, ValueError) as error:
             failures.append({"stream": stream, "producer_run_id": run_id, "reason": str(error)})
+            continue
+        if run["status"] != "completed":
+            exclusions.append({"stream": stream, "producer_run_id": run_id,
+                               "reason": "observer-run-incomplete"})
             continue
         if run["conclusion"] != "success":
             exclusions.append({
@@ -939,7 +997,14 @@ def _validate_native(
     head = exact_sha(value.get("head_sha"), "native-image head")
     base = exact_sha(value.get("base_sha"), "native-image base")
     paths = value.get("changed_paths")
-    if not isinstance(paths, list) or not paths or not all(isinstance(item, str) for item in paths):
+    # An empty list is an observable state, not a malformed receipt: a head
+    # whose three-dot diff against its base contributes nothing (a merge commit
+    # that only re-lands base content) legitimately changes no path. The
+    # producer raises rather than emitting on a failed `git diff`, so empty
+    # never encodes "the diff could not be taken". It is cross-checked against
+    # the routing decision below instead, which binds it harder than a
+    # non-empty list is bound.
+    if not isinstance(paths, list) or not all(isinstance(item, str) for item in paths):
         raise ValueError("native-image changed paths are invalid")
     if len(set(paths)) != len(paths) or any(
         not item
@@ -1009,6 +1074,17 @@ def _validate_native(
     }
     if comparison != expected_comparison:
         raise ValueError("native-image comparison does not replay")
+    # Every routing decision is a function of the changed paths, so a head that
+    # changed nothing must route nothing on BOTH policies. This is what makes
+    # the empty list above safe to accept: a truncated or dropped path list
+    # that mattered to routing cannot satisfy it.
+    if not paths and (
+        candidate_serving
+        or candidate["worker_build"]
+        or legacy_serving
+        or legacy["worker_trigger"]
+    ):
+        raise ValueError("native-image empty diff contradicts its routing decision")
     # Same ordering rule as the PR Gate receipt: prove the receipt is sound
     # first, then decide whether it belongs to the current cohort.
     if drifted:
@@ -1867,7 +1943,13 @@ def main() -> int:
         return 0
     policy = load_policy(load_json(args.policy))
     if args.command == "policy":
-        cutoff_value = receipt_cutoff(policy)
+        # One fixed upper bound for the whole collection. An open-ended
+        # `created>=` filter keeps admitting runs while the collector pages,
+        # which both moves the declared total under it and shifts every
+        # newest-first page by one. Closing the window makes each slice a set
+        # that can actually be read whole.
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        cutoff_value = receipt_cutoff(policy, now)
         cutoff = cutoff_value.isoformat().replace("+00:00", "Z")
         image_cutoff = (
             cutoff_value - timedelta(hours=policy["image_outcome_lookback_hours"])
@@ -1878,9 +1960,12 @@ def main() -> int:
                 cutoff_value - timedelta(hours=1)
             ).isoformat().replace("+00:00", "Z"),
             "image_run_cutoff": image_cutoff,
-            "maximum_pages_per_query": policy["maximum_pages_per_query"],
+            "collection_upper": now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "maximum_runs_per_query": policy["maximum_runs_per_query"],
             "maximum_producer_run_catalogs": policy["maximum_producer_run_catalogs"],
             "maximum_receipt_downloads": policy["maximum_receipt_downloads"],
+            "github_token_request_limit": policy["github_token_request_limit"],
+            "github_token_request_reserve": policy["github_token_request_reserve"],
         }
         if args.github_output:
             with args.github_output.open("a", encoding="utf-8", newline="\n") as handle:
