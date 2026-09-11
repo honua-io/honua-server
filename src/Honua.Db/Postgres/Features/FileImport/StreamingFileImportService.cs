@@ -52,6 +52,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private const string EnsureImportTableSql = "SELECT honua.ensure_import_table(@schema_name, @table_name, @target_srid)";
     private const string CreateImportStagingTableSql = "SELECT honua.create_import_staging_table(@schema_name, @table_name, @target_srid)";
     private const string SwapImportTableSql = "SELECT honua.swap_import_table(@schema_name, @table_name)";
+    private const string DropImportStagingTableSql = "SELECT honua.drop_import_staging_table(@schema_name, @table_name)";
     private const string EnsureImportUpsertKeySql = "SELECT honua.ensure_import_upsert_key(@schema_name, @table_name, @key_columns)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties)";
     private const string InsertImportFeatureWithDatumSql = "SELECT honua.insert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties, @datum_pipeline)";

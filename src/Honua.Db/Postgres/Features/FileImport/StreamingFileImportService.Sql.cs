@@ -227,10 +227,10 @@ internal sealed partial class StreamingFileImportService
     }
 
     /// <summary>
-    /// Drops a never-promoted <c>&lt;table&gt;__staging</c> sibling. Used when a replace's
-    /// load left features out (skip/continue) and the live target must not be swapped for an
-    /// incomplete dataset (#4006); the staging table is otherwise harmless dead weight until
-    /// the next replace's <see cref="CreateStagingTableAsync"/> drops it anyway.
+    /// Drops the never-promoted <c>&lt;table&gt;__staging</c> sibling of <paramref name="tableName"/>.
+    /// Used when a replace's load left features out (skip/continue) and the live target must not
+    /// be swapped for an incomplete dataset (#4006); the staging table is otherwise dead weight
+    /// until the next replace's <see cref="CreateStagingTableAsync"/> drops it anyway.
     /// </summary>
     private static async Task DropStagingTableAsync(
         NpgsqlConnection connection,
@@ -238,10 +238,9 @@ internal sealed partial class StreamingFileImportService
         string tableName,
         CancellationToken cancellationToken)
     {
-        var quotedSchemaName = SchemaSearchPath.ValidateAndQuote(schemaName);
-        var quotedTableName = SchemaSearchPath.ValidateAndQuote(tableName);
-        await using var command = new NpgsqlCommand(
-            $"DROP TABLE IF EXISTS {quotedSchemaName}.{quotedTableName}", connection);
+        await using var command = new NpgsqlCommand(DropImportStagingTableSql, connection);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("table_name", tableName);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

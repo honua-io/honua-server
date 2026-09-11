@@ -253,7 +253,7 @@ internal sealed partial class StreamingFileImportService
             {
                 if (replacementBlocked)
                 {
-                    await DropStagingTableAsync(connection, targetSchema, loadTableName, cancellationToken);
+                    await DropStagingTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
                 }
                 else
                 {
