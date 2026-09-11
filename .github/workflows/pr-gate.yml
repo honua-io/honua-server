@@ -512,11 +512,28 @@ jobs:
           path: tests/TestResults/imagery-classify-execution-proof.trx
           if-no-files-found: warn
 
+      # Read-only registry cache for the native-tools stage (apt from
+      # archive.ubuntu.com + PDAL compiled from source); see the matching step
+      # in ci.yml's Worker GDAL Tests job for why it is never written here.
+      - name: Set up Docker Buildx for production PDAL
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      - name: Log in to GHCR for the production PDAL build cache
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build production PDAL native tools
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         timeout-minutes: 30
         run: |
-          docker build --target native-tools -f docker/worker-gdal/Dockerfile -t honua-pdal-proof .
+          docker buildx build --load --target native-tools -f docker/worker-gdal/Dockerfile \
+            --cache-from type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-worker-gdal-amd64 \
+            -t honua-pdal-proof .
           echo "HONUA_PDAL_PROOF_IMAGE=$(docker image inspect --format '{{.Id}}' honua-pdal-proof)" >> "$GITHUB_ENV"
           echo "HONUA_GDAL_PROOF_USER=$(id -u):$(id -g)" >> "$GITHUB_ENV"
 
