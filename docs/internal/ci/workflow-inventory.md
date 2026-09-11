@@ -450,3 +450,5 @@ Five composite actions were added to `.github/actions/` for shared CI setup and 
 `cite-conformance.yml` and `cite-tiles-conformance.yml` now call `cite-conformance-common.yml`, matching the single-suite CITE wrappers for GML, GeoPackage, KML, WMS, and WMTS.
 
 **Rationale**: Features and Tiles used the same checkout/build/run/parse/upload/fail skeleton as the reusable CITE workflow. Keeping only suite-specific inputs in the dispatcher files reduces drift in cache scopes, artifact upload behavior, and failure handling.
+
+<!-- throwaway docs-only proof for #4658; this PR is closed unmerged -->
