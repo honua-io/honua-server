@@ -671,10 +671,44 @@ public sealed record MetadataReleaseContext
     public MetadataReleaseExecutionPlan? ExecutionPlan { get; init; }
 
     /// <summary>
-    /// Prior current Metadata v2 revision captured before activation so a reversible rollback can
-    /// reactivate it. Null when no prior revision existed.
+    /// Active Metadata v2 revision captured before any mutation. The candidate is prepared from
+    /// this immutable revision and activation is conditional on it still being current. A rebase
+    /// onto a concurrent update replaces it with the revision the candidate was rebased onto.
     /// </summary>
     public long? PriorRevision { get; init; }
+
+    /// <summary>
+    /// ETag of <see cref="PriorRevision"/>, used as the optimistic-concurrency precondition for
+    /// activation.
+    /// </summary>
+    public string? PriorEtag { get; init; }
+
+    /// <summary>
+    /// Staged, immutable candidate revision prepared from <see cref="PriorRevision"/>. Invisible to
+    /// canonical readers until activation. Null until staged.
+    /// </summary>
+    public long? CandidateRevision { get; init; }
+
+    /// <summary>
+    /// ETag of <see cref="CandidateRevision"/>.
+    /// </summary>
+    public string? CandidateEtag { get; init; }
+
+    /// <summary>
+    /// Schema operations this release actually changed relative to <see cref="PriorRevision"/>.
+    /// Rollback reverts only these, so fields that already existed and unrelated updates survive.
+    /// </summary>
+    public IReadOnlyList<MetadataReleaseScriptOperation> OwnedOperations { get; init; } = Array.Empty<MetadataReleaseScriptOperation>();
+
+    /// <summary>
+    /// When the candidate was confirmed active. Null while canonical readers stay on the prior revision.
+    /// </summary>
+    public DateTimeOffset? ActivatedAt { get; init; }
+
+    /// <summary>
+    /// Number of times the candidate was rebased onto a concurrent update before activation.
+    /// </summary>
+    public int RebaseCount { get; init; }
 
     /// <summary>
     /// Blocking reason codes or messages specific to metadata release progression.

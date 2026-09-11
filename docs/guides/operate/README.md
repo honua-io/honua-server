@@ -195,6 +195,16 @@ and its rollback plan. The gateway executor for `MetadataRelease` is create-only
 by design; it does not invent a new rollback payload for an already-submitted
 release operation.
 
+A metadata release stages its change as a separate revision and keeps every
+reader on the current revision until the change passes its smoke check. It then
+switches over in one step, and only if nobody else published in the meantime.
+A concurrent publish is rebased onto, not overwritten. Rolling back removes only
+what that release added, keeps later changes to other services, and never
+restores or rewrites feature data. The operation reports `RolledBack` only after
+the recovered service passes the same checks. Releases that drop or retype
+fields, or run a data job that writes anything other than the new optional
+fields, are refused before anything changes.
+
 Telemetry-gated deploy backends can trigger rollback during a configured rollout
 when their error-rate, latency, or synthetic health-probe gates breach. That is
 deploy-safety behavior for a specific operation. It is not a blanket unattended

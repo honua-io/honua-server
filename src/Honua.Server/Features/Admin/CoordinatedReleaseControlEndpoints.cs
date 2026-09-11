@@ -100,6 +100,7 @@ internal static class CoordinatedReleaseControlEndpoints
             ResourceSemanticId = request.ResourceSemanticId!,
             NewFieldName = request.NewFieldName!,
             DataPopulateWorkloadId = request.DataPopulateWorkloadId,
+            DataPopulateFields = request.DataPopulateFields ?? Array.Empty<string>(),
             Script = new MetadataReleaseScript
             {
                 ScriptId = scriptId,

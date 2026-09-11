@@ -6,6 +6,7 @@ using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
@@ -186,6 +187,89 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         {
             await fixture.DropSchemaAsync(schema);
         }
+    }
+
+    [IntegrationTest]
+    public async Task StageAsync_KeepsReadersOnCurrent_AndActivationNeverOverwritesANewerRevision()
+    {
+        // #4619: a protected metadata release stages its candidate as an immutable retained revision,
+        // keeps canonical readers on the active revision until an ETag-conditional activation, and a
+        // concurrent publish that lands first is reported as a typed conflict instead of overwritten.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider,
+                environment: "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName: schema);
+            var prior = await store.SaveAsync(GraphWith("parcels"), expectedEtag: null);
+
+            var staged = await store.StageAsync(GraphWith("parcels", "candidate-only"));
+
+            staged.Revision.Should().Be(prior.Revision + 1, "staging allocates a store-owned revision above every retained snapshot");
+            (await store.GetCurrentAsync()).Revision.Should().Be(prior.Revision, "a staged candidate is invisible to canonical readers");
+            (await store.GetByRevisionAsync(staged.Revision))!.Etag.Should().Be(staged.Etag);
+            (await CountAsync(schema, $"metadata_v2_resources_idx WHERE environment = 'Test' AND revision = {staged.Revision}"))
+                .Should().Be(0, "staging must not publish derived lookup rows for the candidate");
+
+            // A concurrent publish (for example another service's update) becomes current first.
+            var concurrent = await store.SaveAsync(GraphWith("parcels", "roads"), prior.Etag);
+            concurrent.Revision.Should().Be(staged.Revision + 1, "revision allocation never reuses a staged revision");
+
+            var activate = () => store.ActivateRevisionAsync(staged.Revision, prior.Etag);
+            var conflict = await activate.Should().ThrowAsync<MetadataV2GraphConcurrencyException>();
+            conflict.Which.ExpectedEtag.Should().Be(prior.Etag);
+            conflict.Which.ActualEtag.Should().Be(concurrent.Etag);
+            var afterConflict = await store.GetCurrentAsync();
+            afterConflict.Revision.Should().Be(concurrent.Revision, "a newer update is never overwritten");
+            afterConflict.Graph.Resources.Select(resource => resource.Metadata.Id).Should().BeEquivalentTo(new[] { "parcels", "roads" });
+
+            var discardCurrent = () => store.DiscardStagedAsync(concurrent.Revision);
+            await discardCurrent.Should().ThrowAsync<InvalidOperationException>("the current revision is never discardable");
+            (await store.DiscardStagedAsync(staged.Revision)).Should().BeTrue();
+            (await store.DiscardStagedAsync(staged.Revision)).Should().BeFalse("discarding is idempotent");
+            (await store.GetByRevisionAsync(staged.Revision)).Should().BeNull();
+
+            // Rebased candidate: staged on top of the concurrent revision and activated against its ETag.
+            var rebased = await store.StageAsync(GraphWith("parcels", "roads", "candidate-only"));
+            var activated = await store.ActivateRevisionAsync(rebased.Revision, concurrent.Etag);
+
+            activated.Revision.Should().Be(rebased.Revision);
+            var current = await store.GetCurrentAsync();
+            current.Revision.Should().Be(rebased.Revision);
+            current.Graph.Resources.Select(resource => resource.Metadata.Id)
+                .Should().BeEquivalentTo(new[] { "parcels", "roads", "candidate-only" }, "the concurrent update survives the rebased activation");
+            (await CountAsync(schema, $"metadata_v2_resources_idx WHERE environment = 'Test' AND revision = {rebased.Revision}"))
+                .Should().Be(3, "activation publishes the candidate's derived lookup rows atomically with the pointer");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+
+        static MetadataV2Graph GraphWith(params string[] resourceIds) => new()
+        {
+            Environment = "Test",
+            GeneratedAt = DateTimeOffset.UtcNow,
+            Resources = resourceIds
+                .Select(id => new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
+                    Type = MetadataV2ResourceType.FeatureDataset,
+                })
+                .ToArray(),
+        };
+    }
+
+    private async Task<int> CountAsync(string schema, string tableAndPredicate)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".{tableAndPredicate}";
+        return (int)(await command.ExecuteScalarAsync())!;
     }
 
     [IntegrationTest]
