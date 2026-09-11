@@ -64,7 +64,7 @@ public class AnalyticsLimits
     /// (#4629). Charged while streaming, independently of <see cref="MaxInputFeatures"/>, so a
     /// modest number of very large features cannot exhaust a worker's memory.
     /// </summary>
-    [Range(typeof(long), "1", "9223372036854775807")]
+    [Range(1, long.MaxValue)]
     public long MaxInputBytes { get; set; } = 512L * 1024 * 1024;
 
     /// <summary>
