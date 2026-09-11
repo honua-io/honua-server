@@ -364,7 +364,8 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, rotate.StatusCode);
         var effective = await _client.GetFromJsonAsync<ApiResponse<AdminApiKeyEffectivePermissionsResponse>>(
             $"/api/v1/admin/api-keys/{created.ApiKey.Id}/effective-permissions", _jsonOptions);
-        Assert.NotNull(effective?.Data);
+        Assert.NotNull(effective);
+        Assert.NotNull(effective.Data);
         Assert.Equal("expired", effective.Data.Status);
         Assert.False(effective.Data.CanAuthenticate);
 
