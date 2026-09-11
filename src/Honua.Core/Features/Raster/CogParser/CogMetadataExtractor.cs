@@ -98,16 +98,18 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             var ifdPredictor = TilePixelLayout.PredictorNone;
             IfdEntry? tileOffsetsEntry = null;
             IfdEntry? tileByteCountsEntry = null;
+            byte[]? ifdJpegTables = null;
 
             foreach (var entry in entries)
             {
                 switch (entry.Tag)
                 {
                     case TiffConstants.TagJpegTables:
-                        // Tile ranges cannot be advertised as standalone JPEGs when their
-                        // decoding tables live outside the tile. Reject before persisting
-                        // metadata or returning a payload until table assembly is supported.
-                        throw new InvalidDataException("COG sources declaring shared JPEGTables are not supported for direct tile serving.");
+                        // Each IFD may carry its own tables (overviews can use another quality),
+                        // so they are kept per level for JpegTileAssembler.
+                        ifdJpegTables = await ReadJpegTablesAsync(
+                            reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
+                        break;
                     case TiffConstants.TagPhotometricInterpretation when levelIndex == 0:
                         photometricInterpretation = (int)entry.ValueOrOffset;
                         break;
@@ -298,7 +300,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
 
             overviewLevels.Add(new CogOverviewLevel(
                 levelIndex, ifdWidth, ifdHeight, ifdFileOffset,
-                tileOffsets, tileByteCounts));
+                tileOffsets, tileByteCounts, ifdJpegTables));
 
             currentOffset = nextIfdOffset;
             levelIndex++;
@@ -355,6 +357,29 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
         var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
         return parser.ReadIntArray(data, (int)entry.Count, entry.Type);
+    }
+
+    private static async Task<byte[]> ReadJpegTablesAsync(
+        ICloudRangeReader reader, string bucket, string key,
+        IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
+    {
+        if (entry.Type is not (TiffConstants.TypeUndefined or TiffConstants.TypeByte)
+            || entry.Count is < 4 or > JpegTileAssembler.MaxJpegTablesBytes)
+        {
+            throw new InvalidDataException(
+                $"COG JPEGTables must hold 4-{JpegTileAssembler.MaxJpegTablesBytes} UNDEFINED bytes.");
+        }
+
+        var tables = entry.IsInline
+            ? parser.ReadInlineIntArray(entry.ValueOrOffset, (int)entry.Count, entry.Type)
+                .Select(value => (byte)value).ToArray()
+            : await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, (int)entry.Count, ct).ConfigureAwait(false);
+        if (tables.Length != entry.Count || !JpegTileAssembler.IsValidTables(tables))
+        {
+            throw new InvalidDataException("COG JPEGTables is not a well-formed tables-only JPEG stream.");
+        }
+
+        return tables;
     }
 
     /// <summary>
