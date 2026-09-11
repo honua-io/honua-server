@@ -89,6 +89,11 @@ same authorized tenant scope; access policies are evaluated again before replay.
 Changing credentials does not grant access to another tenant's resources.
 SensorThings subscriptions require an explicit tenant claim for non-admin users
 and are live-only: cursor or `Last-Event-ID` resume attempts return HTTP 400.
+A SensorThings subscription refused by an admission cap never opens a stream:
+HTTP 429 means the caller's own credential or tenant already holds its share of
+concurrent subscriptions (close one or wait), and HTTP 503 means the node is at
+capacity. Both carry `Retry-After`; clients must honour it rather than reconnect
+in a tight loop.
 These local regression guarantees do not certify a release candidate; exact-image
 live issuer/SDK evidence is still required by the qualification gate.
 

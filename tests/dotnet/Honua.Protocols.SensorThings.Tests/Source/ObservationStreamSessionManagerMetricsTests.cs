@@ -63,7 +63,7 @@ public sealed class ObservationStreamSessionManagerMetricsTests
         using var manager = new ObservationStreamSessionManager(
             NullLogger<ObservationStreamSessionManager>.Instance,
             redis: null,
-            maxBufferPerConnection: 1);
+            new ObservationStreamOptions { MaxBufferPerConnection = 1 });
         var scope = new ObservationStreamScope("tenant-a", "schema_a");
         using var session = manager.TryCreateSession("sse", datastreamId: 7, scope)!;
 

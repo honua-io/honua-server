@@ -1010,6 +1010,13 @@
       "source": "src/Honua.Protocols.SensorThings/Streaming/ObservationStreamSessionManager.cs"
     },
     {
+      "instrument": "honua_sensorthings_observation_stream_rejections_total",
+      "kind": "Counter",
+      "unit": null,
+      "series": ["honua_sensorthings_observation_stream_rejections_total"],
+      "source": "src/Honua.Protocols.SensorThings/Streaming/ObservationStreamSessionManager.cs"
+    },
+    {
       "instrument": "honua_serving_request_duration_ms",
       "kind": "Histogram",
       "unit": null,
