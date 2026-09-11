@@ -21,10 +21,13 @@ namespace Honua.Core.Features.FileImport.Services.FileGdb;
 internal static class FileGdbAdvancedConstructs
 {
     // GDB_Items XML definition type keywords that indicate advanced constructs.
+    // Domain definitions use the "GP" (geoprocessing object) type prefix, not "DE" (dataset
+    // element) - confirmed against real FileGDB output from GDAL's OpenFileGDB write driver,
+    // which never emits "DECodedValueDomain"/"DERangeDomain".
     private static readonly string[] DomainTypes =
     [
-        "DECodedValueDomain",
-        "DERangeDomain",
+        "GPCodedValueDomain",
+        "GPRangeDomain",
     ];
 
     private static readonly string[] RelationshipTypes =
