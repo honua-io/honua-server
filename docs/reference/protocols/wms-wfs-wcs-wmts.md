@@ -12,7 +12,7 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | Service | Versions | Notes |
 | --- | --- | --- |
 | WMS | 1.3.0, 1.1.1 | Version negotiated per request; 1.3.0 is default. |
-| WFS | 2.0.0, 1.1.0, 1.0.0 | Single dispatcher endpoint; version negotiated via `VERSION`/`ACCEPTVERSIONS`. |
+| WFS | 2.0.0, 1.1.0, 1.0.0 | Single dispatcher endpoint; version negotiated via `VERSION`/`ACCEPTVERSIONS`. Legacy versions serve GML rather than the 2.0 encodings: **1.1.0 → GML 3.1.1**, **1.0.0 → GML 2.1.2**. |
 | WCS | 2.0.1 | KVP only. |
 | WMTS | 1.0.0 | KVP and RESTful tile paths. |
 
