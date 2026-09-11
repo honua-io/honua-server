@@ -85,6 +85,55 @@ def is_real_calendar_date(value: str) -> bool:
     return 1 <= day <= calendar.monthrange(year, month)[1]
 
 
+MERMAID_RE = re.compile(r"```mermaid\r?\n(.*?)```", re.DOTALL)
+MERMAID_NODE_RE = re.compile(r"^\s*(\w+)[\[\(\{]", re.MULTILINE)
+MERMAID_SUBGRAPH_ID_RE = re.compile(r"^\s*subgraph\s+(\w+)[\[\(]", re.MULTILINE)
+MERMAID_EDGE_RE = re.compile(r"^\s*(\w+)\s*-[.-]*->(?:\|[^|]*\|)?\s*(\w+)", re.MULTILINE)
+
+
+def check_mermaid_diagrams(root: pathlib.Path, excluded) -> list[str]:
+    """A diagram that does not render is worse than no diagram.
+
+    ASCII box-drawing always renders and is unreadable to anything that is not a
+    human eye; mermaid is parseable by both but fails silently when it is
+    malformed — GitBook shows an error card and the markdown reader sees source.
+    These are the two breakages that actually happen when a diagram is edited:
+    an unbalanced `subgraph`/`end`, and an edge naming a node that no longer
+    exists after a rename.
+
+    This is the foundation the WS8 `diagram` concept type needs. Checking that a
+    diagram's referenced capability ids resolve comes with that type; checking
+    that the diagram renders at all comes first.
+    """
+    problems: list[str] = []
+    for path in sorted(root.rglob("*.md")):
+        if excluded(path):
+            continue
+        text = path.read_text(encoding="utf-8")
+        for index, block in enumerate(MERMAID_RE.findall(text), start=1):
+            rel = path.relative_to(REPO_ROOT).as_posix()
+            opens = len(re.findall(r"^\s*subgraph\b", block, re.MULTILINE))
+            closes = len(re.findall(r"^\s*end\s*$", block, re.MULTILINE))
+            if opens != closes:
+                problems.append(
+                    f"{rel}: mermaid block {index} has {opens} `subgraph` and {closes} `end`; "
+                    "it will render as an error card"
+                )
+                continue
+            declared = set(MERMAID_NODE_RE.findall(block)) | set(MERMAID_SUBGRAPH_ID_RE.findall(block))
+            declared.discard("subgraph")
+            endpoints = set()
+            for left, right in MERMAID_EDGE_RE.findall(block):
+                endpoints.update((left, right))
+            dangling = sorted(endpoints - declared)
+            if dangling:
+                problems.append(
+                    f"{rel}: mermaid block {index} draws edges to undeclared node(s): "
+                    f"{', '.join(dangling)}"
+                )
+    return problems
+
+
 SUMMARY_LINK_RE = re.compile(r"\]\(([^)]+\.md)(?:#[^)]*)?\)")
 
 
@@ -266,6 +315,7 @@ def main(argv: list[str]) -> int:
 
     problems.extend(check_runbook_typing(root, excluded))
     problems.extend(check_summary_is_in_bundle(root, excluded))
+    problems.extend(check_mermaid_diagrams(root, excluded))
 
     if problems:
         print("OKF bundle validation failed:", file=sys.stderr)

@@ -178,6 +178,28 @@ def test_a_remediation_target_must_be_typed_runbook():
         target.write_text(original, encoding="utf-8")
 
 
+def test_rejects_mermaid_that_will_not_render():
+    unbalanced = VALID + "\n```mermaid\nflowchart LR\n  subgraph a[\"A\"]\n    x[\"X\"]\n```\n"
+    with synthetic({"a.md": unbalanced}) as (code, output):
+        assert_that(code == 1, "unbalanced subgraph/end passed")
+        assert_that("render as an error card" in output, output)
+
+    dangling = VALID + "\n```mermaid\nflowchart LR\n  x[\"X\"]\n  x --> ghost\n```\n"
+    with synthetic({"a.md": dangling}) as (code, output):
+        assert_that(code == 1, "an edge to an undeclared node passed")
+        assert_that("undeclared node(s): ghost" in output, output)
+
+
+def test_accepts_a_well_formed_mermaid_diagram():
+    good = (
+        VALID
+        + "\n```mermaid\nflowchart LR\n  subgraph s[\"S\"]\n    a[\"A\"]\n    b[\"B\"]\n  end\n"
+        "  c[\"C\"]\n  a --> b\n  b -.-> c\n```\n"
+    )
+    with synthetic({"a.md": good}) as (code, output):
+        assert_that(code == 0, f"a valid diagram was rejected: {output}")
+
+
 def test_the_live_repository_is_green():
     out, err = StringIO(), StringIO()
     with redirect_stdout(out), redirect_stderr(err):
