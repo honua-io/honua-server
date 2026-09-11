@@ -242,6 +242,22 @@ tests to clear it). `.github/workflows/merge-train.yml` remains for manual
 and release-candidate batch validation via explicit `train_apply=true`
 dispatch; it is no longer the routine landing path.
 
+**Batch verification by the lander (shadow, CI velocity plan v2).** The same
+lander also verifies *candidate batches* of landable PRs: it reproduces
+GitHub's sequential squash merges on a private `land/batch/<base7>/<id>` ref
+(never `train/batch/*`), dispatches `ci.yml` there with `selective_base` set
+to the last verified trunk head, and judges the run by a verification receipt
+(see `docs/internal/ci/gate-model.md`, "Verification receipts and batch
+landing"), never by a job count. While it runs in shadow it only records
+would-land / would-quarantine outcomes: per-PR landing is unchanged and no PR
+is merged, labelled or commented on by the batch path. `land/batch/*` branches
+and `CI lander-batch-*` runs belong to the lander — do not push to, rerun or
+delete them, and never read one as a verdict on trunk or on your PR. When
+batch landing goes live (a separate operator decision), a red batch
+quarantines its members until a verified green subset containing them exists;
+a quarantine is keyed to the head it was judged at, so pushing a fix releases
+it.
+
 ### Base every PR on `trunk` — do not stack (#3248)
 
 **A PR's base branch must be `trunk`.** Stacking a PR on another feature branch
