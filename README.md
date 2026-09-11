@@ -1,8 +1,3 @@
----
-type: index
-title: "Honua Server"
-description: "A cloud-native geospatial server that speaks every major GIS protocol from one container on your PostGIS database."
----
 # Honua Server
 
 [![CI](https://github.com/honua-io/honua-server/actions/workflows/ci.yml/badge.svg?branch=trunk)](https://github.com/honua-io/honua-server/actions/workflows/ci.yml)
