@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -53,11 +54,20 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     private protected LayerSourcedFeatureExecutor(
         IServiceScopeFactory serviceScopeFactory,
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
-        ILogger logger)
+        ILogger logger,
+        IOptions<LimitsOptions>? limitsOptions = null)
     {
         _serviceScopeFactory = serviceScopeFactory;
         Options = options;
         _logger = logger;
+        // Reuse the SAME canonical admission limits the synchronous SpatialAnalytics/
+        // DataEnrichment request handlers already enforce (AnalyticsLimits.MaxInputFeatures)
+        // and the same per-geometry vertex ceiling FeatureServer edits enforce
+        // (GeometryLimits.MaxVerticesPerGeometry), rather than inventing a GP-local budget
+        // (#4629): a dispatched layer-sourced job and its synchronous sibling now fail at
+        // the same admission point instead of the job path materializing what the
+        // synchronous path would have already refused.
+        Limits = limitsOptions?.Value ?? new LimitsOptions();
     }
 
     /// <summary>The single dotted process id this executor handles (e.g. <c>analytics.buffer-aggregate</c>).</summary>
@@ -65,6 +75,14 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
     /// <summary>Shared executor options (artifact caps, output roots).</summary>
     private protected IOptionsMonitor<GeoprocessingExecutorOptions> Options { get; }
+
+    /// <summary>
+    /// Canonical system limits (input feature counts, per-geometry vertex ceilings) shared
+    /// with the synchronous SpatialAnalytics/DataEnrichment request handlers and FeatureServer
+    /// edit validation, so a dispatched GP job admits input under the same budget its
+    /// synchronous sibling would (#4629).
+    /// </summary>
+    private protected LimitsOptions Limits { get; }
 
     /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds =>
@@ -120,7 +138,26 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         List<IFeature> features;
         try
         {
-            features = await ReadLayerAsync(source, request, cancellationToken).ConfigureAwait(false);
+            // Bound the target layer read by the same canonical admission limits the
+            // synchronous analytics/enrichment handlers already enforce (#4629): the read
+            // fails closed WHILE STREAMING on the first oversized feature count or
+            // oversized single geometry, instead of materializing, computing, and
+            // serializing an unbounded input before MaxArtifactBytes is ever checked.
+            features = await ReadLayerAsync(
+                    source,
+                    request,
+                    cancellationToken,
+                    Limits.Analytics.MaxInputFeatures,
+                    $"layer {request.LayerId}",
+                    Limits.Geometry.MaxVerticesPerGeometry)
+                .ConfigureAwait(false);
+        }
+        catch (TransformInputException ex)
+        {
+            // The feature/vertex-count budgets surface here with concrete remedies (narrow
+            // where/bbox, raise the configured limit), so the message must reach the caller
+            // verbatim rather than collapsing to a bare exception type name.
+            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -246,13 +283,21 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     /// Shared by the base's primary layer read, by two-layer ops that resolve a
     /// second catalog layer through the same connector, and by the standalone
     /// <c>enrichment.enrich</c> executor (#2283).
+    ///
+    /// <para>
+    /// The optional <paramref name="maxVerticesPerGeometry"/> charges a per-geometry vertex
+    /// ceiling independently of <paramref name="maxFeatures"/> (#4629): a feature-count cap
+    /// alone does not bound a single deliberately oversized geometry (one feature, millions of
+    /// vertices), so this fails closed as soon as the oversized geometry streams in.
+    /// </para>
     /// </summary>
     internal static async Task<List<IFeature>> ReadLayerAsync(
         IDagFeatureSource source,
         DagSourceRequest request,
         CancellationToken cancellationToken,
         int? maxFeatures = null,
-        string? limitLabel = null)
+        string? limitLabel = null,
+        int? maxVerticesPerGeometry = null)
     {
         var geoJsonReader = new GeoJsonReader();
         var features = new List<IFeature>();
@@ -270,7 +315,19 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     + "narrow the selection (where/bbox) or raise the limit.");
             }
 
-            features.Add(ToNtsFeature(sourceFeature, geoJsonReader));
+            var feature = ToNtsFeature(sourceFeature, geoJsonReader);
+
+            if (maxVerticesPerGeometry is { } vertexCap
+                && feature.Geometry is { } geometry
+                && geometry.NumPoints > vertexCap)
+            {
+                throw new TransformInputException(
+                    $"{limitLabel ?? "layer"} contains a geometry with {geometry.NumPoints} vertices, "
+                    + $"exceeding the configured limit of {vertexCap}; simplify the source geometry or "
+                    + "raise the limit.");
+            }
+
+            features.Add(feature);
         }
 
         return features;

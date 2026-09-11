@@ -228,7 +228,23 @@ internal sealed class MapServerSettingsResponse
 internal sealed class UpdateProtocolsRequest
 {
     /// <summary>
-    /// Protocols to enable. Valid values: "FeatureServer", "MapServer", "OgcFeatures", "OData", "Grpc".
+    /// Protocols to enable. Replaces the service's protocol set rather than adding to it,
+    /// so send every protocol the service should expose, not only the ones being turned on.
+    /// <para>
+    /// Valid values are the identifiers in <c>ServiceProtocols.All</c>:
+    /// "FeatureServer", "MapServer", "ImageServer", "GPServer", "VectorTileServer",
+    /// "OgcFeatures", "OGC-API-Maps", "OGC-API-Coverages", "OGC-API-Tiles", "Wfs20",
+    /// "Wms", "Wmts", "Wcs", "OData", "Grpc", "Stac", "SensorThings", "Terrain", "Elevation".
+    /// </para>
+    /// <para>
+    /// These are the protocols a <em>service</em> toggles, which is fewer than the protocols
+    /// Honua speaks. Instance-level surfaces are not listed here and cannot be set through
+    /// this endpoint: the Geometry Service, geocoding locators, OGC API Processes, OGC API
+    /// Records, OGC API Styles, EDR, WPS, MCP, PMTiles and hosted 3D scenes are reached on
+    /// their own routes regardless of any service's protocol set. NAServer and
+    /// VersionManagementServer are likewise absent because they are licence-gated rather
+    /// than per-service toggles. See docs/concepts/protocols.md for the full matrix.
+    /// </para>
     /// </summary>
     public required string[] EnabledProtocols { get; init; }
 }
