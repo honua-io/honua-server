@@ -62,8 +62,10 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
         var result = response.MetricDataResults?.FirstOrDefault();
         if (result?.Values is { Count: > 0 } values)
         {
-            // ScanBy.TimestampDescending orders datapoints newest-first.
-            return values[0];
+            // ScanBy.TimestampDescending orders datapoints newest-first. Metric-math over an
+            // undefined ratio (for example 0/0) can yield NaN/Infinity; treat that the same as no
+            // datapoint rather than a real reading that could silently satisfy a threshold (#4617).
+            return double.IsFinite(values[0]) ? values[0] : null;
         }
 
         return null;

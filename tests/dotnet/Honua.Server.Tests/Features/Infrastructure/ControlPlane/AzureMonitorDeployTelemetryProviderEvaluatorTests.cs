@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
@@ -162,6 +163,57 @@ public sealed class AzureMonitorDeployTelemetryProviderEvaluatorTests
         await Evaluate(client, baseUrl: "https://api.loganalytics.us");
 
         client.LastEndpointOverride.Should().Be("https://api.loganalytics.us");
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(-0.5)]
+    public async Task EvaluateAsync_InvalidErrorRateReading_IsTreatedAsAbsentNotHealthy(double invalidReading)
+    {
+        // #4617: the provider-neutral gate rejects non-finite/negative readings from any provider.
+        var client = new FakeAzureMonitorMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleQuery] = 50,
+            [ErrorRateQuery] = invalidReading,
+            [LatencyQuery] = 120
+        });
+
+        var decision = await Evaluate(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("an invalid reading must never satisfy the error-rate threshold");
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("error-rate");
+    }
+
+    [Fact]
+    public void ParseScalar_MultipleRows_IsAmbiguousAndRejected()
+    {
+        using var document = JsonDocument.Parse("""{"tables":[{"columns":[{"name":"v","type":"real"}],"rows":[[0.01],[0.9]]}]}""");
+
+        var act = () => AzureMonitorLogsQueryClient.ParseScalar(document.RootElement);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*2 rows*");
+    }
+
+    [Theory]
+    [InlineData("""{"tables":[{"columns":[{"name":"v","type":"real"}],"rows":[["NaN"]]}]}""")]
+    [InlineData("""{"tables":[{"columns":[{"name":"v","type":"real"}],"rows":[]}]}""")]
+    [InlineData("""{"tables":[]}""")]
+    public void ParseScalar_NonFiniteOrEmpty_IsAbsent(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+
+        AzureMonitorLogsQueryClient.ParseScalar(document.RootElement).Should().BeNull();
+    }
+
+    [Fact]
+    public void ParseScalar_SingleFiniteRow_ReturnsValue()
+    {
+        using var document = JsonDocument.Parse("""{"tables":[{"columns":[{"name":"v","type":"real"}],"rows":[[0.0125]]}]}""");
+
+        AzureMonitorLogsQueryClient.ParseScalar(document.RootElement).Should().Be(0.0125);
     }
 
     private static async Task<DeployTelemetryDecision?> Evaluate(

@@ -16,23 +16,38 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class DeployTelemetryPolicyTests
 {
     [Fact]
-    public void Parse_WithoutTelemetryConnection_ReturnsNull()
+    public void Parse_WithNoTelemetryParameters_ReturnsNull()
     {
+        // Only a deploy with no operator-authored telemetry.* parameter has "no gate". The evaluator's
+        // own runtime bookkeeping key does not count as configuration.
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["deployment.canary_weight_percentage"] = "10",
+            [DeployTelemetrySignalEvaluator.BreachStreakParameterKey] = "2"
+        }));
+
+        policy.Should().BeNull("no telemetry parameter means the gate is not configured");
+    }
+
+    [Fact]
+    public void Parse_WithTelemetryParametersButNoConnection_ProducesInvalidPolicy()
+    {
+        // #4617: this used to return null, silently dropping the operator's telemetry configuration.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.prometheus.job"] = "honua-prod"
         }));
 
-        policy.Should().BeNull("no telemetry.connection means the gate is not configured");
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeFalse("configured telemetry without a connection would otherwise be silently ignored");
+        policy.ValidationError.Should().Contain("telemetry.connection is missing").And.Contain("telemetry.prometheus.job");
     }
 
     [Fact]
-    public void Parse_WithConnectionButNoQueries_ReturnsNull()
+    public void Parse_WithConnectionAndUnsupportedPreset_ProducesInvalidPolicy()
     {
-        // An unsupported preset synthesizes no queries and the operator supplied no explicit query, so
-        // there is no signal at all and Parse returns null (rather than a structurally invalid policy).
-        // Note: the built-in kubernetes-honua-http preset defaults the Prometheus job to "honua" and so
-        // always synthesizes queries — it can never reach this no-signal path; only an unknown preset can.
+        // #4617: an unknown preset with no query used to yield null, so the connection the operator
+        // configured was silently ignored and the deploy ran ungated.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(
             new Dictionary<string, string>
             {
@@ -40,7 +55,9 @@ public sealed class DeployTelemetryPolicyTests
                 ["telemetry.policy"] = "no-such-preset"
             }));
 
-        policy.Should().BeNull("an unsupported preset with no explicit query yields no signal");
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeFalse();
+        policy.ValidationError.Should().Contain("'no-such-preset' is not supported");
     }
 
     [Theory]
@@ -84,21 +101,18 @@ public sealed class DeployTelemetryPolicyTests
             ["telemetry.error_rate.threshold"] = "0.05"
         }));
 
-        // With an explicit override the preset validation error is intentionally cleared (the
-        // override-only policy is validated by its own per-query threshold checks), so the policy is
-        // valid. This documents the override-supersedes-preset contract.
+        // #4617: an explicit override no longer hides an unsupported preset name — silently ignoring
+        // the preset the operator asked for is itself a rejected configuration.
         policy.Should().NotBeNull();
-        policy!.IsValid.Should().BeTrue("an explicit query override supersedes the unsupported preset");
+        policy!.IsValid.Should().BeFalse("an unsupported preset is rejected even alongside explicit query overrides");
+        policy.ValidationError.Should().Contain("'totally-made-up-preset' is not supported");
     }
 
     [Fact]
-    public void Parse_UnsupportedPresetWithoutOverride_ReturnsNull()
+    public void Parse_UnsupportedPresetWithoutOverride_ProducesInvalidPolicy()
     {
-        // An unsupported preset synthesizes no queries. telemetry.prometheus.job is only consumed by the
-        // BUILT-IN presets, so it does not create a signal for an unknown preset. With no explicit query
-        // override either, Parse short-circuits to null (no signal to evaluate) before the unsupported-
-        // preset validation error could surface. This documents that the "policy not supported" error is
-        // only reachable when a built-in preset is misconfigured, not for an unknown preset name.
+        // An unsupported preset synthesizes no queries, so telemetry.prometheus.job has nothing to feed.
+        // #4617: this used to short-circuit to null (ungated deploy); it is now a rejected policy.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.connection"] = "prod-prom",
@@ -106,7 +120,9 @@ public sealed class DeployTelemetryPolicyTests
             ["telemetry.prometheus.job"] = "honua-prod"
         }));
 
-        policy.Should().BeNull("an unsupported preset with no explicit query override yields no signal");
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeFalse();
+        policy.ValidationError.Should().Contain("'totally-made-up-preset' is not supported");
     }
 
     [Fact]
@@ -128,32 +144,27 @@ public sealed class DeployTelemetryPolicyTests
         policy.HasExplicitQueryOverride.Should().BeTrue();
     }
 
-    [Fact]
-    public void Parse_ZeroAndNegativeWarmup_FallsBackToPresetDefault()
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-30")]
+    [InlineData("soon")]
+    [InlineData("NaN")]
+    [InlineData("99999999")]
+    public void Parse_ZeroNegativeMalformedOrUnboundedWarmup_IsRejected(string rawValue)
     {
-        // A zero/negative warmup must not produce an instant or negative warmup window; the parser
-        // falls back to the preset default rather than silently honoring an invalid value.
-        var policyZero = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        // A zero/negative warmup must not produce an instant or negative warmup window, and an unusable
+        // value must not be silently replaced by the preset default either (#4617): it is rejected.
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.connection"] = "prod-prom",
             ["telemetry.policy"] = "kubernetes-honua-http",
             ["telemetry.prometheus.job"] = "honua-prod",
-            ["telemetry.warmup_seconds"] = "0"
+            ["telemetry.warmup_seconds"] = rawValue
         }));
 
-        policyZero.Should().NotBeNull();
-        policyZero!.WarmupDuration.Should().BeGreaterThan(TimeSpan.Zero);
-
-        var policyNegative = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
-        {
-            ["telemetry.connection"] = "prod-prom",
-            ["telemetry.policy"] = "kubernetes-honua-http",
-            ["telemetry.prometheus.job"] = "honua-prod",
-            ["telemetry.warmup_seconds"] = "-30"
-        }));
-
-        policyNegative.Should().NotBeNull();
-        policyNegative!.WarmupDuration.Should().BeGreaterThan(TimeSpan.Zero);
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeFalse();
+        policy.ValidationError.Should().Contain("telemetry.warmup_seconds must be");
     }
 
     [Fact]
@@ -223,8 +234,10 @@ public sealed class DeployTelemetryPolicyTests
     }
 
     [Fact]
-    public void Parse_HealthProbeNonPositiveOverrides_FallBackToDefaults()
+    public void Parse_HealthProbeNonPositiveOrMalformedOverrides_AreRejected()
     {
+        // #4617: these used to fall back to defaults silently, so the probe ran with settings the
+        // operator never chose. Each unusable value is now named in the validation error.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.connection"] = "prod-prom",
@@ -235,9 +248,11 @@ public sealed class DeployTelemetryPolicyTests
         }));
 
         policy.Should().NotBeNull();
-        policy!.HealthProbeFailureThreshold.Should().Be(1, "a non-positive threshold falls back to the default");
-        policy.HealthProbeSamples.Should().Be(3);
-        policy.HealthProbeTimeoutSeconds.Should().Be(5);
+        policy!.IsValid.Should().BeFalse();
+        policy.ValidationError.Should()
+            .Contain("telemetry.healthz.failure_threshold must be")
+            .And.Contain("telemetry.healthz.samples must be")
+            .And.Contain("telemetry.healthz.timeout_seconds must be");
     }
 
     // Each invalid case pins an EXPLICIT per-signal query override (so HasExplicitQueryOverride is true)
@@ -279,15 +294,165 @@ public sealed class DeployTelemetryPolicyTests
                 "telemetry.sample_count.minimum is missing"
             },
             {
-                "a non-numeric (malformed) error-rate threshold is treated as missing",
+                "a non-numeric (malformed) error-rate threshold is rejected, not replaced by a default",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.error_rate.query"] = "errors / requests",
+                    ["telemetry.error_rate.threshold"] = "not-a-number"
+                },
+                "telemetry.error_rate.threshold must be"
+            },
+            {
+                "a negative error-rate threshold can never be satisfied honestly and is rejected",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.error_rate.query"] = "errors / requests",
+                    ["telemetry.error_rate.threshold"] = "-1"
+                },
+                "telemetry.error_rate.threshold must be a finite number >= 0"
+            },
+            {
+                "a non-finite latency threshold is rejected",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.latency_p95.threshold_ms"] = "Infinity"
+                },
+                "telemetry.latency_p95.threshold_ms must be"
+            },
+            {
+                "a zero sample floor admits zero traffic and is rejected",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.sample_count.minimum"] = "0"
+                },
+                "telemetry.sample_count.minimum must be"
+            },
+            {
+                "error-rate/latency signals without any sample floor are rejected",
                 new Dictionary<string, string>
                 {
                     ["telemetry.connection"] = "prod-prom",
                     ["telemetry.policy"] = "no-such-preset",
                     ["telemetry.error_rate.query"] = "errors / requests",
-                    ["telemetry.error_rate.threshold"] = "not-a-number"
+                    ["telemetry.error_rate.threshold"] = "0.05"
                 },
-                "telemetry.error_rate.threshold is missing"
+                "require a sample floor"
+            },
+            {
+                "an unrecognized telemetry key is rejected rather than silently ignored",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.error_rate.treshold"] = "0.05"
+                },
+                "'telemetry.error_rate.treshold' is not a recognized deploy telemetry parameter"
+            },
+            {
+                "a staleness bound of zero would reject every sample and is rejected",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.max_staleness_seconds"] = "0"
+                },
+                "telemetry.max_staleness_seconds must be"
+            },
+            {
+                "a staleness bound above one hour is rejected rather than clamped",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.max_staleness_seconds"] = "86400"
+                },
+                "telemetry.max_staleness_seconds must be"
+            },
+            {
+                "an exposure deadline above two hours is rejected",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.exposure_deadline_seconds"] = "90000"
+                },
+                "telemetry.exposure_deadline_seconds must be"
+            },
+            {
+                "a malformed anti-flap threshold is rejected",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.rollback.consecutive_breaches"] = "0"
+                },
+                "telemetry.rollback.consecutive_breaches must be"
+            },
+            {
+                "a failure threshold above the sample count means the probe can never fail",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+                    ["telemetry.healthz.samples"] = "2",
+                    ["telemetry.healthz.failure_threshold"] = "3"
+                },
+                "could never fail"
+            },
+            {
+                "an out-of-range expected status is rejected",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+                    ["telemetry.healthz.expected_status"] = "700"
+                },
+                "telemetry.healthz.expected_status must be"
+            },
+            {
+                "health-probe settings without a probe URL would never apply",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.healthz.samples"] = "5"
+                },
+                "without telemetry.healthz.url"
+            },
+            {
+                "golden-query expectations without a URL would never be checked",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.golden_query.forbidden_contains"] = "FALLBACK"
+                },
+                "without telemetry.golden_query.url"
+            },
+            {
+                "the health-only profile rejects a metrics connection it would ignore",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.policy"] = "health-only",
+                    ["telemetry.connection"] = "prod-prom",
+                    ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+                },
+                "does not use a metrics connection"
+            },
+            {
+                "the health-only profile rejects metric parameters instead of dropping them",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.policy"] = "health-only",
+                    ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+                    ["telemetry.error_rate.threshold"] = "0.05"
+                },
+                "cannot carry metric parameters (telemetry.error_rate.threshold)"
+            },
+            {
+                "the health-only profile needs at least one probe",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.policy"] = "health-only"
+                },
+                "requires telemetry.healthz.url or telemetry.golden_query.url"
             }
         };
 
@@ -304,12 +469,21 @@ public sealed class DeployTelemetryPolicyTests
                 }
             },
             {
-                "a negative threshold parses to a value (HasValue) so the policy is structurally valid",
+                "the explicit health-only profile is valid with a readiness probe and no metrics connection",
                 new Dictionary<string, string>
                 {
-                    ["telemetry.connection"] = "prod-prom",
-                    ["telemetry.error_rate.query"] = "errors / requests",
-                    ["telemetry.error_rate.threshold"] = "-1"
+                    ["telemetry.policy"] = "health-only",
+                    ["telemetry.healthz.url"] = "https://example.com/healthz/ready"
+                }
+            },
+            {
+                "the explicit health-only profile is valid with only a golden-query correctness probe",
+                new Dictionary<string, string>
+                {
+                    ["telemetry.policy"] = "health-only",
+                    ["telemetry.golden_query.url"] = "https://example.com/rest/services/probe",
+                    ["telemetry.golden_query.expected_contains"] = "GOLDEN-OK",
+                    ["telemetry.golden_query.forbidden_contains"] = "FALLBACK"
                 }
             },
             {
@@ -326,6 +500,196 @@ public sealed class DeployTelemetryPolicyTests
                 }
             }
         };
+
+    [Fact]
+    public void Parse_WithoutEvidenceGraceParameter_DefaultsToFifteenMinutes()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua-prod"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.EvidenceGraceDuration.Should().Be(TimeSpan.FromMinutes(15));
+    }
+
+    [Fact]
+    public void Parse_WithEvidenceGraceSeconds_UsesConfiguredValue()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua-prod",
+            ["telemetry.evidence_grace_seconds"] = "600"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.EvidenceGraceDuration.Should().Be(TimeSpan.FromSeconds(600));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-30")]
+    [InlineData("not-a-number")]
+    [InlineData("999999")]
+    public void Parse_WithInvalidOrUnboundedEvidenceGraceSeconds_IsRejected(string rawValue)
+    {
+        // A misconfigured grace must never disable or unbound the evidence deadline (#4617), and it is
+        // not silently replaced by the default either: the deploy is rejected at plan time.
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua-prod",
+            ["telemetry.evidence_grace_seconds"] = rawValue
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeFalse();
+        policy.ValidationError.Should().Contain("telemetry.evidence_grace_seconds must be a finite number in (0, 3600]");
+    }
+
+    [Fact]
+    public void Parse_WithoutMaxStalenessParameter_AppliesFiveMinuteFreshnessBound()
+    {
+        // #4617: freshness is always enforced; an unconfigured policy gets the default bound rather
+        // than accepting samples of any age.
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua-prod"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeTrue();
+        policy.MaximumEvidenceStaleness.Should().Be(TimeSpan.FromMinutes(5));
+        policy.ToDescriptor().MaximumEvidenceStaleness.Should().Be(TimeSpan.FromMinutes(5), "providers receive the bound");
+    }
+
+    [Fact]
+    public void Parse_ExposureDeadline_DefaultsToThirtyMinutes_AndHonoursConfiguredValue()
+    {
+        var defaulted = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua-prod"
+        }));
+        var configured = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua-prod",
+            ["telemetry.exposure_deadline_seconds"] = "900"
+        }));
+
+        defaulted!.ExposureDeadline.Should().Be(TimeSpan.FromMinutes(30));
+        configured!.IsValid.Should().BeTrue();
+        configured.ExposureDeadline.Should().Be(TimeSpan.FromSeconds(900));
+    }
+
+    [Fact]
+    public void Parse_HealthOnlyProfile_HasNoMetricSignalsAndNoConnection()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.policy"] = "health-only",
+            ["telemetry.healthz.url"] = "https://example.com/healthz/ready",
+            ["telemetry.golden_query.url"] = "https://example.com/rest/services/probe",
+            ["telemetry.golden_query.expected_contains"] = "GOLDEN-OK",
+            ["telemetry.golden_query.forbidden_contains"] = "FALLBACK"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeTrue();
+        policy.IsHealthOnly.Should().BeTrue();
+        policy.HasMetricSignals.Should().BeFalse("the Kubernetes preset must not synthesize metric queries for a health-only profile");
+        policy.ConnectionId.Should().BeEmpty();
+        policy.HasHealthProbe.Should().BeTrue();
+        policy.HasGoldenQuery.Should().BeTrue();
+        policy.GoldenQueryForbiddenContains.Should().Be("FALLBACK");
+    }
+
+    [Fact]
+    public void Parse_WithMaxStalenessSeconds_UsesConfiguredValue()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua-prod",
+            ["telemetry.max_staleness_seconds"] = "120"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.MaximumEvidenceStaleness.Should().Be(TimeSpan.FromSeconds(120));
+    }
+
+    // ---- target/revision identity while traffic is split (#4617) ----------
+
+    [Theory]
+    [InlineData("deployment.canary_weight_percentage", "10")]
+    [InlineData("deployment.canary_ramp.step_weights", "5,25,100")]
+    public void Parse_SplitRolloutWithAggregatePresetMetrics_IsRejected(string splitKey, string splitValue)
+    {
+        // The Kubernetes default preset reads all traffic for the job, so during a 10% canary the stable
+        // revision's healthy 90% would mask a failing candidate.
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua-prod",
+            [splitKey] = splitValue
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeFalse();
+        policy.ValidationError.Should().Contain("cannot identify the candidate revision");
+    }
+
+    [Fact]
+    public void Parse_SplitRolloutWithCanaryJob_UsesCandidateScopedKubernetesPreset()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.canary_job"] = "honua-canary-prod",
+            ["deployment.canary_weight_percentage"] = "10"
+        }));
+
+        policy.Should().NotBeNull();
+        policy!.IsValid.Should().BeTrue(policy.ValidationError);
+        policy.IsCandidateScoped.Should().BeTrue();
+        policy.ErrorRateQuery.Should().Contain("job=\"honua-canary-prod\"");
+        policy.MinimumSampleQuery.Should().Contain("job=\"honua-canary-prod\"");
+        policy.LatencyP95Query.Should().Contain("job=\"honua-canary-prod\"");
+    }
+
+    [Fact]
+    public void Parse_SplitRolloutWithExplicitCandidateQueries_IsValid()
+    {
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["deployment.canary_weight_percentage"] = "10",
+            ["telemetry.error_rate.query"] = "honua_canary_error_rate",
+            ["telemetry.error_rate.threshold"] = "0.05",
+            ["telemetry.sample_count.query"] = "honua_canary_sample_count",
+            ["telemetry.sample_count.minimum"] = "20"
+        }));
+
+        policy!.IsValid.Should().BeTrue(policy.ValidationError);
+    }
+
+    [Fact]
+    public void Parse_FullReplacementRolloutWithAggregatePreset_IsValid()
+    {
+        // Without a traffic split every post-exposure request is served by the candidate.
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua-prod"
+        }));
+
+        policy!.IsValid.Should().BeTrue(policy.ValidationError);
+        policy.IsCandidateScoped.Should().BeFalse();
+    }
 
     private static DeployOperationSpec CreateSpec(IReadOnlyDictionary<string, string> parameters)
         => new()

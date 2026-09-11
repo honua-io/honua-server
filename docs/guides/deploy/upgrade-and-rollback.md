@@ -188,7 +188,35 @@ Beyond metric thresholds, a deploy target can declare a synthetic `/healthz/read
 | `telemetry.healthz.expected_status` | `200` | HTTP status a healthy check returns. |
 | `telemetry.healthz.timeout_seconds` | `5` | Per-check timeout. |
 
-A failing probe drives the **same** automatic-rollback path as an error-rate/latency breach and respects the anti-flap debounce (`telemetry.rollback.consecutive_breaches`). The probe URL is validated (HTTPS-only, no private/loopback destinations). A target may gate purely on health (`telemetry.healthz.url` with no metric queries) or combine the probe with the metric gate.
+A failing probe drives the **same** automatic-rollback path as an error-rate/latency breach and respects the anti-flap debounce (`telemetry.rollback.consecutive_breaches`). The probe URL is validated (HTTPS-only, no private/loopback destinations). A readiness response that returns the expected `2xx` but whose body is an error envelope or an `Unhealthy` health report counts as a failed check.
+
+To gate purely on health, select the probe-only profile explicitly with `telemetry.policy: health-only` and set `telemetry.healthz.url` and/or a golden query. That profile needs no `telemetry.connection` and rejects metric parameters. A metrics profile never silently falls back to probe-only gating.
+
+The golden-query correctness probe (`telemetry.golden_query.url` plus `expected_sha256` and/or `expected_contains`) also fails when a `2xx` response is really an error: a GeoServices `{"error": …}` envelope, an OGC exception report, an OGC API exception, or an RFC 7807 problem document. Set `telemetry.golden_query.forbidden_contains` to a wrong-result marker (for example a fallback or empty-result sentinel) that must never appear in a correct answer.
+
+### Telemetry gate validity and bounded decisions
+
+The telemetry gate is validated when a rollout is planned, before anything is submitted to the backend. A plan whose gate is invalid reports `readyToSubmit: false` with a `Telemetry gate configuration rejected: …` blocking reason naming every problem, and the operation cannot be submitted. The plan is rejected when:
+
+- a `telemetry.*` key is not recognized (typos are not ignored);
+- a numeric value is malformed, non-finite, or outside its range. Values are never replaced by defaults;
+- a named preset is not supported, even alongside explicit query overrides;
+- telemetry parameters are set without `telemetry.connection` (outside the `health-only` profile), or the connection is not configured under `ControlPlane__TelemetryConnections`;
+- error-rate or latency signals have no sample floor (`telemetry.sample_count.query` + `telemetry.sample_count.minimum`);
+- the rollout splits traffic (a canary weight or ramp) but its metrics are aggregate. Set `telemetry.prometheus.canary_selector` or `telemetry.prometheus.canary_job`, a canary preset, or explicit candidate-scoped queries, so the stable revision's traffic cannot mask a failing candidate;
+- probe settings or golden-query expectations are set without their URL, or `telemetry.healthz.failure_threshold` exceeds `telemetry.healthz.samples`;
+- `deployment.promotion_gate` is not `telemetry`, `health`, or `manual`.
+
+At runtime, a reading only counts as evidence when it is present, finite, non-negative, from a single series or row, and fresh. Empty results, `NaN`/`±Inf`, negative values, multi-series or multi-row answers, samples below the sample floor, and samples whose timestamp is further from now than the freshness bound all hold the rollout. None of them ever satisfies the gate.
+
+| Parameter | Default | Purpose |
+|---|---|---|
+| `telemetry.max_staleness_seconds` | `300` | Freshness bound for provider samples, in (0, 3600]. |
+| `telemetry.warmup_seconds` | preset (`120` for `honua-http`) | Bake time after the candidate first receives traffic, in (0, 21600]. |
+| `telemetry.evidence_grace_seconds` | `900` | How long missing or invalid evidence (provider outage, unconfigured connection, stale or ambiguous data, unreachable probe) is tolerated after warmup before the rollout is rolled back, in (0, 3600]. |
+| `telemetry.exposure_deadline_seconds` | `1800` | How long a submitted rollout may wait for the candidate to receive traffic. Past it, the rollout is rolled back without the candidate ever being activated. In (0, 7200]. |
+
+Warmup and bake windows start when the backend first reports the candidate serving traffic, not when the operation was created. That exposure time is stored on the operation, so a control-plane restart or lease hand-off resumes the same window rather than restarting it. There is no path on which missing data promotes a rollout: before exposure it holds until the exposure deadline, and after exposure it holds until warmup plus the evidence grace, then rolls back.
 
 ## Promotion requirements
 

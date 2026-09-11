@@ -94,7 +94,8 @@ internal sealed partial class DeployWorkflowReconciler(
                     {
                         CurrentRevision = string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision)
                             ? observation.ObservedRevision ?? operation.Deploy.CurrentRevision
-                            : operation.Deploy.CurrentRevision
+                            : operation.Deploy.CurrentRevision,
+                        TrafficExposedAt = StampTrafficExposure(operation, observation.Status)
                     }
                 };
 
@@ -194,6 +195,31 @@ internal sealed partial class DeployWorkflowReconciler(
         }
     }
 
+    /// <summary>
+    /// Stamps the first observation that the candidate is serving (Reconciling, or a backend that cuts
+    /// over straight to Succeeded) as the traffic-exposure moment, so the telemetry gate's warmup/bake
+    /// window anchors on actual exposure rather than operation creation (#4617). The stamp is persisted
+    /// with the operation and never moved, so it survives controller restarts and lease hand-offs. An
+    /// operation that was already serving before exposure tracking existed keeps its prior CreatedAt
+    /// anchor rather than having its bake window restarted by an upgrade.
+    /// </summary>
+    private static DateTimeOffset? StampTrafficExposure(WorkflowOperationRecord operation, WorkflowOperationStatus observedStatus)
+    {
+        if (operation.Deploy?.TrafficExposedAt is { } existing)
+        {
+            return existing;
+        }
+
+        if (observedStatus is not (WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded))
+        {
+            return null;
+        }
+
+        return operation.Status is WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded
+            ? operation.CreatedAt
+            : DateTimeOffset.UtcNow;
+    }
+
     private static bool IsTerminal(WorkflowOperationStatus status)
         => status is WorkflowOperationStatus.Succeeded
             or WorkflowOperationStatus.Failed
@@ -256,7 +282,11 @@ internal sealed partial class DeployWorkflowReconciler(
                 {
                     current = current with
                     {
-                        Status = WorkflowOperationStatus.Reconciling,
+                        // A pre-exposure hold keeps Submitted: Reconciling means the candidate is serving,
+                        // and the traffic-exposure stamp keys off that distinction (#4617).
+                        Status = current.Status == WorkflowOperationStatus.Submitted
+                            ? WorkflowOperationStatus.Submitted
+                            : WorkflowOperationStatus.Reconciling,
                         UpdatedAt = DateTimeOffset.UtcNow,
                         CompletedAt = null,
                         CurrentPhase = telemetryDecision.Message,
