@@ -1,3 +1,8 @@
+---
+type: index
+title: "Operating Honua"
+description: "Honua's day-2 operating model is one loop shared by humans, Console, and MCP agents: observe, diagnose, remediate, learn, and graduate."
+---
 # Operating Honua
 
 Honua's day-2 operating model is one loop shared by humans, Console, and MCP

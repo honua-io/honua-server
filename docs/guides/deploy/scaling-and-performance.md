@@ -1,3 +1,8 @@
+---
+type: runbook
+title: "Scale and tune performance"
+description: "You'll size the database admission limits, add Redis-backed caching, scale Honua horizontally, and tune outbound HTTP resilience."
+---
 # Scale and tune performance
 
 You'll size the database admission limits, add Redis-backed caching, scale Honua horizontally, and tune outbound HTTP resilience.

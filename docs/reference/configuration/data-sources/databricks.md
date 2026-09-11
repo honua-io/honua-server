@@ -1,3 +1,7 @@
+---
+type: reference
+title: "Databricks provider (read-only, best-effort)"
+---
 # Databricks provider (read-only, best-effort)
 
 ## Protocol routing

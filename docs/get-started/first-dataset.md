@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Publish your first dataset"
+description: "Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients."
+---
 # Publish your first dataset
 
 Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.

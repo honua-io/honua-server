@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Users, roles, and licensing"
+description: "Reference for the identity and entitlement endpoints: scoped API keys, roles and permissions, users, OIDC providers, and the offline license file."
+---
 # Users, roles, and licensing
 
 Reference for the identity and entitlement endpoints: scoped API keys, roles and permissions, users, OIDC providers, and the offline license file.

@@ -1,3 +1,8 @@
+---
+type: reference
+title: "gRPC"
+description: "Honua hosts a versioned gRPC surface from the `Geospatial.Grpc` protocol package (geospatial.v1 protobuf package, Geospatial.V1 .NET namespace) for high-throughput feature, geoprocessing, spec, and scene access."
+---
 # gRPC
 
 Honua hosts a versioned gRPC surface from the [`Geospatial.Grpc`](https://github.com/honua-io/geospatial-grpc) protocol package (`geospatial.v1` protobuf package, `Geospatial.V1` .NET namespace) for high-throughput feature, geoprocessing, spec, and scene access.

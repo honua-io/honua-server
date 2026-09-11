@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Cloud-native formats"
+description: "Honua's support for the cloud-native geospatial format family: what each format is used for, the endpoints involved, and an honest status per format."
+---
 # Cloud-native formats
 
 Honua's support for the cloud-native geospatial format family: what each format is used for, the endpoints involved, and an honest status per format. Formats fall into three roles — **registered sources** (data stays in object storage, Honua serves it), **produced artifacts** (Honua generates them), and **wire formats** (query output negotiation).

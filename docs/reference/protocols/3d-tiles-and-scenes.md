@@ -1,3 +1,8 @@
+---
+type: reference
+title: "3D Tiles and scenes"
+description: "The canonical representation, discovery, authentication, I3S projection, and terrain boundaries are defined by ADR-0078."
+---
 # 3D Tiles and scenes
 
 The canonical representation, discovery, authentication, I3S projection, and terrain boundaries are defined by [ADR-0078](../../internal/contributor/adr/0078-3d-scene-architecture.md).

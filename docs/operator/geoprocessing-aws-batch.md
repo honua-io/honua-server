@@ -1,4 +1,9 @@
-# Routing geoprocessing jobs to AWS Batch (#2165)
+---
+type: guide
+title: "Routing geoprocessing jobs to AWS Batch"
+description: "By default Honua runs geoprocessing (GP) jobs on the local / Kubernetes Job baseline workload (geoprocessing-local)."
+---
+# Routing geoprocessing jobs to AWS Batch
 
 By default Honua runs geoprocessing (GP) jobs on the **local / Kubernetes Job**
 baseline workload (`geoprocessing-local`). To run GP jobs on **AWS Batch**

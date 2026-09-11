@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Get started with the Python SDK"
+description: "Install the Honua Python SDK, construct a client, authenticate with an API key, and make your first feature query."
+---
 # Get started with the Python SDK
 
 Install the Honua Python SDK, construct a client, authenticate with an API key, and make your first feature query.

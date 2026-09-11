@@ -1,3 +1,8 @@
+---
+type: concept
+title: "Editions and licensing"
+description: "Honua's source is available under the Elastic License 2.0 — free to use, deploy, and modify."
+---
 # Editions and licensing
 
 Honua's source is available under the [Elastic License 2.0](https://github.com/honua-io/honua-server/blob/trunk/LICENSE) — free to use, deploy, and modify. At runtime, the server operates in one of three editions:

@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Registry clients and package credentials"
+description: "The customer install manifest records the pins and their origins."
+---
 # Registry clients and package credentials
 
 The [customer install manifest](https://honua.io/data/customer-install-manifest.json)

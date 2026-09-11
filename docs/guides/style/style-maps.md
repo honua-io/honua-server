@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Style map layers"
+description: "Set a layer's cartography once, as a MapLibre Style Spec v8 document, and have the same style drive vector tiles, WMS/static-map rendering, and ArcGIS-compatible clients."
+---
 # Style map layers
 
 Set a layer's cartography once, as a MapLibre Style Spec v8 document, and have the same style drive vector tiles, WMS/static-map rendering, and ArcGIS-compatible clients.

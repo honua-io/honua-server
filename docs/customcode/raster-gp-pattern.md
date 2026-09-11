@@ -1,3 +1,7 @@
+---
+type: guide
+title: "Raster/vector geoprocessing in custom-code GP tools"
+---
 # Raster/vector geoprocessing in custom-code GP tools
 
 **TL;DR — GDAL is the engine, the Honua SDK is transport.** A custom-code GP tool

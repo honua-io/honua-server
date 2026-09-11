@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Supported clients and known limitations"
+description: "This page lists the clients Honua Server is tested against, the protocol each one uses, and the honest list of current gaps."
+---
 # Supported clients and known limitations
 
 This page lists the clients Honua Server is tested against, the protocol each one

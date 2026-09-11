@@ -1,0 +1,4962 @@
+{
+  "schemaVersion": "1.0.0",
+  "generator": "scripts/ci/generate-operation-capability.py",
+  "description": "Every documented OpenAPI operation joined to the capability that governs it. Routes are resolved with openapi-drift-check.py's own prefix and normalization logic; capabilities come from feature-catalog.json, which stamps one on every registered route. Regenerate with the script; the committed copy is drift-gated.",
+  "sources": {
+    "operations": "OpenAPI documents declared in scripts/ci/openapi-drift-check.py SPECS",
+    "capabilities": "docs/gis/data/feature-catalog.json"
+  },
+  "summary": {
+    "operationCount": 491,
+    "unresolvedCount": 0,
+    "capabilityCount": 23,
+    "perSpec": {
+      "admin-api": 401,
+      "ogc-api-coverages": 8,
+      "ogc-api-features": 19,
+      "ogc-api-maps": 8,
+      "ogc-api-processes": 10,
+      "ogc-api-tiles": 13,
+      "stac-api": 10,
+      "studio-api": 22
+    },
+    "perCapability": {
+      "admin.control-plane": 282,
+      "admin.multi-tenancy": 7,
+      "alerts.evaluation": 18,
+      "analytics.h3": 1,
+      "fieldops.forms": 16,
+      "fieldops.offline-sync": 5,
+      "geocoding.forward": 4,
+      "identity.mtls-client-certificate": 13,
+      "identity.oidc": 6,
+      "import.file": 26,
+      "import.geoserver": 5,
+      "import.geoservices": 10,
+      "process.ogc-api-processes": 10,
+      "raster.cloud-cog-serving": 5,
+      "raster.multidim-coverage": 11,
+      "routing.solve": 13,
+      "scene.bim-ingest": 1,
+      "scene.pointcloud-ingest": 1,
+      "serve.ogc-api-coverages": 8,
+      "serve.ogc-api-features": 18,
+      "serve.ogc-api-maps": 8,
+      "serve.ogc-api-tiles": 13,
+      "serve.stac": 10
+    }
+  },
+  "operations": [
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/channels",
+      "operationId": "listAlertChannelStates",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-alerts-channels"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/channels/{channel}/pause",
+      "operationId": "pauseAlertChannel",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "post-api-v1-admin-alerts-channels-channel-pause"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/channels/{channel}/resume",
+      "operationId": "resumeAlertChannel",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "post-api-v1-admin-alerts-channels-channel-resume"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/dispatch/redrive",
+      "operationId": "redriveAlertDeadLetters",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "post-api-v1-admin-alerts-dispatch-redrive"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/rules",
+      "operationId": "listAlertRules",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-alerts-rules"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/rules",
+      "operationId": "createAlertRule",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "post-api-v1-admin-alerts-rules"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/rules/test",
+      "operationId": "testAlertRule",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "post-api-v1-admin-alerts-rules-test"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}",
+      "operationId": "deleteAlertRule",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "delete-api-v1-admin-alerts-rules-ruleid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}",
+      "operationId": "getAlertRule",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-alerts-rules-ruleid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}",
+      "operationId": "updateAlertRule",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "put-api-v1-admin-alerts-rules-ruleid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}/enabled",
+      "operationId": "setAlertRuleEnabled",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "put-api-v1-admin-alerts-rules-ruleid-enabled"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}/events",
+      "operationId": "listAlertRuleEvents",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-alerts-rules-ruleid-events"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/rules/{ruleId}/health",
+      "operationId": "getAlertRuleHealth",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-alerts-rules-ruleid-health"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/zones",
+      "operationId": "listAlertZones",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-alerts-zones"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/alerts/zones",
+      "operationId": "createAlertZone",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "post-api-v1-admin-alerts-zones"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/alerts/zones/{zoneId}",
+      "operationId": "deleteAlertZone",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "delete-api-v1-admin-alerts-zones-zoneid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/zones/{zoneId}",
+      "operationId": "getAlertZone",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-alerts-zones-zoneid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/alerts/zones/{zoneId}",
+      "operationId": "updateAlertZone",
+      "capability": "alerts.evaluation",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "put-api-v1-admin-alerts-zones-zoneid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/api-keys",
+      "operationId": "listAdminApiKeys",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-api-keys"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/api-keys",
+      "operationId": "createAdminApiKey",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-api-keys"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/api-keys/{id}/effective-permissions",
+      "operationId": "getAdminApiKeyEffectivePermissions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-api-keys-id-effective-permissions"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/api-keys/{id}/revoke",
+      "operationId": "revokeAdminApiKey",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-api-keys-id-revoke"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/api-keys/{id}/rotate",
+      "operationId": "rotateAdminApiKey",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-api-keys-id-rotate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/auth/bearer",
+      "operationId": "issueAdminOperatorBearer",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-auth-bearer"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/auth/config",
+      "operationId": "getAdminAuthConfig",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-auth-config"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/auth/logout",
+      "operationId": "logoutAdminAuthSession",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-auth-logout"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/auth/providers/{providerKey}/authorize-url",
+      "operationId": "createAdminAuthAuthorizeUrl",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-auth-providers-providerkey-authorize-url"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/auth/providers/{providerKey}/logout-url",
+      "operationId": "getAdminAuthLogoutUrl",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-auth-providers-providerkey-logout-url"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/auth/providers/{providerKey}/token",
+      "operationId": "requestAdminAuthToken",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-auth-providers-providerkey-token"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/auth/session",
+      "operationId": "getAdminAuthSession",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-auth-session"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/cache/invalidate",
+      "operationId": "invalidateAdminCache",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-cache-invalidate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/cache/status",
+      "operationId": "getAdminCacheStatus",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-cache-status"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/capabilities",
+      "operationId": "getAdminCapabilities",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-capabilities"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/cloud-rasters",
+      "operationId": "listCloudRasters",
+      "capability": "raster.cloud-cog-serving",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-cloud-rasters"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/cloud-rasters",
+      "operationId": "registerCloudRaster",
+      "capability": "raster.cloud-cog-serving",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-cloud-rasters"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/cloud-rasters/{id}",
+      "operationId": "unregisterCloudRaster",
+      "capability": "raster.cloud-cog-serving",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-cloud-rasters-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/cloud-rasters/{id}",
+      "operationId": "getCloudRaster",
+      "capability": "raster.cloud-cog-serving",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-cloud-rasters-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/cloud-rasters/{id}/refresh",
+      "operationId": "refreshCloudRaster",
+      "capability": "raster.cloud-cog-serving",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-cloud-rasters-id-refresh"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/compliance/dashboard",
+      "operationId": "getComplianceDashboard",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-compliance-dashboard"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/compliance/encryption/rotate-key",
+      "operationId": "rotateComplianceEncryptionKey",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-compliance-encryption-rotate-key"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/compliance/report",
+      "operationId": "exportComplianceReport",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-compliance-report"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/compliance/residency/evaluate",
+      "operationId": "evaluateResidencyPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-compliance-residency-evaluate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/config",
+      "operationId": "getConfiguration",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-config"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/audit",
+      "operationId": "getConfigurationAuditInfo",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-configuration-audit"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/auto-documentation",
+      "operationId": "getConfigurationAutoDocumentation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-configuration-auto-documentation"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/discover",
+      "operationId": "discoverConfiguration",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-configuration-discover"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/metadata",
+      "operationId": "getConfigurationDiscoveryMetadata",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-configuration-metadata"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/secrets/validate",
+      "operationId": "validateConfigurationSecrets",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-configuration-secrets-validate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/configuration/summary",
+      "operationId": "getConfigurationSummary",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-configuration-summary"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/connections",
+      "operationId": "getConnections",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-connections"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/connections",
+      "operationId": "createConnection",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-connections"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/encryption/rotate-key",
+      "operationId": "rotateConnectionEncryptionKey",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-connections-encryption-rotate-key"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/encryption/validate",
+      "operationId": "validateConnectionEncryption",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-connections-encryption-validate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/test",
+      "operationId": "testDraftConnection",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-connections-test"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/connections/{id}",
+      "operationId": "deleteConnection",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-connections-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/connections/{id}",
+      "operationId": "getConnection",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-connections-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/connections/{id}",
+      "operationId": "updateConnection",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-connections-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/connections/{id}/layers",
+      "operationId": "getPublishedLayers",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-connections-id-layers"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/layers",
+      "operationId": "publishLayer",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-connections-id-layers"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/connections/{id}/layers/enabled",
+      "operationId": "setServiceLayersEnabled",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-connections-id-layers-enabled"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/layers/extents/refresh",
+      "operationId": "refreshConnectionLayerExtents",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-connections-id-layers-extents-refresh"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/connections/{id}/layers/{layerId}/enabled",
+      "operationId": "setLayerEnabled",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-connections-id-layers-layerid-enabled"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/layers/{layerId}/features/refresh",
+      "operationId": "refreshConnectionLayerFeatures",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-connections-id-layers-layerid-features-refresh"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/connections/{id}/tables",
+      "operationId": "getConnectionTables",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-connections-id-tables"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/tables/validate",
+      "operationId": "validateConnectionTableForPublish",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-connections-id-tables-validate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/connections/{id}/test",
+      "operationId": "testConnection",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-connections-id-test"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/deploy/operations",
+      "operationId": "listDeployOperations",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-deploy-operations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/deploy/operations",
+      "operationId": "createDeployOperation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-deploy-operations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/deploy/operations/{operationId}",
+      "operationId": "getDeployOperation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-deploy-operations-operationid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/deploy/operations/{operationId}/promote",
+      "operationId": "promoteDeployOperation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-deploy-operations-operationid-promote"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/deploy/operations/{operationId}/rollback",
+      "operationId": "rollbackDeployOperation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-deploy-operations-operationid-rollback"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/deploy/operations/{operationId}/submit",
+      "operationId": "submitDeployOperation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-deploy-operations-operationid-submit"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/deploy/plan",
+      "operationId": "planDeployOperation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-deploy-plan"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/deploy/preflight",
+      "operationId": "getDeployPreflight",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-deploy-preflight"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/embed/keys",
+      "operationId": "listEmbedKeys",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-embed-keys"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/embed/keys",
+      "operationId": "createEmbedKey",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-embed-keys"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/embed/keys/{id}",
+      "operationId": "getEmbedKey",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-embed-keys-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/embed/keys/{id}/revoke",
+      "operationId": "revokeEmbedKey",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-embed-keys-id-revoke"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/embed/keys/{id}/rotate",
+      "operationId": "rotateEmbedKey",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-embed-keys-id-rotate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/embed/usage",
+      "operationId": "getEmbedUsage",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-embed-usage"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/external-services/discover",
+      "operationId": "discoverExternalService",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-external-services-discover"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/feature-events/replay",
+      "operationId": "replayFeatureChangeEvents",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-feature-events-replay"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/features",
+      "operationId": "getFeatureOverview",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-features"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/federation/sources",
+      "operationId": "listFederationSources",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-federation-sources"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/federation/sources/{id}/plan",
+      "operationId": "planFederationSourceQuery",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-federation-sources-id-plan"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/field-mask-policies",
+      "operationId": "listFieldMaskPolicies",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-field-mask-policies"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/field-mask-policies",
+      "operationId": "createFieldMaskPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-field-mask-policies"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/field-mask-policies/{id}",
+      "operationId": "deleteFieldMaskPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-field-mask-policies-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/field-mask-policies/{id}",
+      "operationId": "getFieldMaskPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-field-mask-policies-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/field-workflows/exports",
+      "operationId": "listFieldWorkflowExports",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-field-workflows-exports"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/exports",
+      "operationId": "createFieldWorkflowExport",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-field-workflows-exports"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/field-workflows/submissions",
+      "operationId": "listFieldWorkflowSubmissions",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-field-workflows-submissions"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}",
+      "operationId": "getFieldWorkflowSubmission",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-field-workflows-submissions-submissionid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}/assignment",
+      "operationId": "assignFieldWorkflowSubmission",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-field-workflows-submissions-submissionid-assignment"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}/comments",
+      "operationId": "commentFieldWorkflowSubmission",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-field-workflows-submissions-submissionid-comments"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/field-workflows/submissions/{submissionId}/decision",
+      "operationId": "decideFieldWorkflowSubmission",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-field-workflows-submissions-submissionid-decision"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages",
+      "operationId": "listFormPackages",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-forms-packages"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages",
+      "operationId": "createFormPackageDraft",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-forms-packages"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages/{formId}",
+      "operationId": "getCurrentFormPackage",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-forms-packages-formid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions",
+      "operationId": "listFormPackageVersions",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-forms-packages-formid-versions"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}",
+      "operationId": "getFormPackageVersion",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-forms-packages-formid-versions-packageversion"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}",
+      "operationId": "updateFormPackageDraft",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-forms-packages-formid-versions-packageversion"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish",
+      "operationId": "publishFormPackageVersion",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-forms-packages-formid-versions-packageversion-publish"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen",
+      "operationId": "reopenFormPackageVersion",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-forms-packages-formid-versions-packageversion-reopen"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate",
+      "operationId": "validateFormPackageVersion",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-forms-packages-formid-versions-packageversion-validate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/geocoding/providers",
+      "operationId": "getGeocodingProviders",
+      "capability": "geocoding.forward",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-geocoding-providers"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/geocoding/reference-data/import",
+      "operationId": "importGeocoderReferenceData",
+      "capability": "geocoding.forward",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-geocoding-reference-data-import"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/geoprocessing/tools/usage-ranking",
+      "operationId": "getGeoprocessingToolUsageRanking",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-geoprocessing-tools-usage-ranking"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/identity/providers",
+      "operationId": "getIdentityProviders",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-identity-providers"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/identity/providers/{providerType}/test",
+      "operationId": "testIdentityProviderConnectivity",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-identity-providers-providertype-test"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/arcgis/migrations",
+      "operationId": "listArcGisMigrationRuns",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-arcgis-migrations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/manifest",
+      "operationId": "getArcGisMigrationManifest",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-arcgis-migrations-runid-manifest"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/manifest",
+      "operationId": "recordArcGisMigrationManifest",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-arcgis-migrations-runid-manifest"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/parity",
+      "operationId": "getArcGisMigrationParity",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-arcgis-migrations-runid-parity"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/arcgis/migrations/{runId}/parity",
+      "operationId": "recordArcGisMigrationParity",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-arcgis-migrations-runid-parity"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/formats",
+      "operationId": "getImportFormats",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-formats"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoserver/discover",
+      "operationId": "discoverGeoServerService",
+      "capability": "import.geoserver",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-geoserver-discover"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoserver/jobs",
+      "operationId": "listGeoServerImportJobs",
+      "capability": "import.geoserver",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-geoserver-jobs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoserver/jobs/{jobId}",
+      "operationId": "getGeoServerImportJob",
+      "capability": "import.geoserver",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-geoserver-jobs-jobid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoserver/jobs/{jobId}/cancel",
+      "operationId": "cancelGeoServerImportJob",
+      "capability": "import.geoserver",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-geoserver-jobs-jobid-cancel"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoserver/start",
+      "operationId": "startGeoServerImport",
+      "capability": "import.geoserver",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-geoserver-start"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoservices/discover",
+      "operationId": "discoverGeoservicesService",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-geoservices-discover"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoservices/jobs",
+      "operationId": "listGeoservicesImportJobs",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-geoservices-jobs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/geoservices/jobs/{jobId}",
+      "operationId": "getGeoservicesImportJob",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-geoservices-jobs-jobid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoservices/jobs/{jobId}/cancel",
+      "operationId": "cancelGeoservicesImportJob",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-geoservices-jobs-jobid-cancel"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/geoservices/start",
+      "operationId": "startGeoservicesImport",
+      "capability": "import.geoservices",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-geoservices-start"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/jobs",
+      "operationId": "getActiveImportJobs",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-jobs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/jobs/{jobId}",
+      "operationId": "getImportJobStatus",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-jobs-jobid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/jobs/{jobId}/cancel",
+      "operationId": "cancelImportJob",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-jobs-jobid-cancel"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/limits",
+      "operationId": "getImportLimits",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-limits"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/migrations",
+      "operationId": "startMigrationBatch",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-migrations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/migrations/{batchId}",
+      "operationId": "getMigrationBatch",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-migrations-batchid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-api-features/collection",
+      "operationId": "importOgcApiFeaturesCollection",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-ogc-api-features-collection"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-tiles/export",
+      "operationId": "exportOgcTileCache",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-ogc-tiles-export"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-wcs/import",
+      "operationId": "importOgcWcsCoverages",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-ogc-wcs-import"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc-wfs/start",
+      "operationId": "startOgcWfsImport",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-ogc-wfs-start"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/ogc/coverages/import",
+      "operationId": "importOgcCoverages",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-ogc-coverages-import"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/preview",
+      "operationId": "previewImportFile",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-preview"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/preview-url",
+      "operationId": "previewImportFileFromUrl",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-preview-url"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/raster",
+      "operationId": "importRasterFile",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-raster"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/raster/formats",
+      "operationId": "getRasterImportFormats",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-raster-formats"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/import/raster/{rasterId}",
+      "operationId": "deleteImportedRaster",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-import-raster-rasterid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PATCH",
+      "path": "/api/v1/admin/import/raster/{rasterId}",
+      "operationId": "updateImportedRaster",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "patch-api-v1-admin-import-raster-rasterid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/scan",
+      "operationId": "scanMigrationSource",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-scan"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/tile-package",
+      "operationId": "importTileCachePackage",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-tile-package"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/toolbox/translation/validate",
+      "operationId": "validateToolboxTranslation",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-toolbox-translation-validate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/upload",
+      "operationId": "uploadImportFile",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-upload"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/upload-url",
+      "operationId": "uploadImportFileFromUrl",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-upload-url"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/uploads",
+      "operationId": "listActiveImportUploads",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-uploads"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/cancel",
+      "operationId": "cancelImportUpload",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-import-uploads-uploadid-cancel"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/import/uploads/{uploadId}/progress",
+      "operationId": "getImportUploadProgress",
+      "capability": "import.file",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-import-uploads-uploadid-progress"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/imports",
+      "operationId": "compatibilityImportFileFromUrl",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-imports"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/imports/jobs",
+      "operationId": "getCompatibilityActiveImportJobs",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-imports-jobs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/imports/jobs/{jobId}",
+      "operationId": "getCompatibilityImportJobStatus",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-imports-jobs-jobid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/imports/jobs/{jobId}/cancel",
+      "operationId": "cancelCompatibilityImportJob",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-imports-jobs-jobid-cancel"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/investigations",
+      "operationId": "listInvestigations",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-investigations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/investigations",
+      "operationId": "createInvestigation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-investigations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/investigations/{investigationId}",
+      "operationId": "getInvestigation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-investigations-investigationid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PATCH",
+      "path": "/api/v1/admin/investigations/{investigationId}",
+      "operationId": "updateInvestigation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "patch-api-v1-admin-investigations-investigationid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/investigations/{investigationId}/links",
+      "operationId": "addInvestigationLink",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-investigations-investigationid-links"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/investigations/{investigationId}/links/{linkId}",
+      "operationId": "removeInvestigationLink",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-investigations-investigationid-links-linkid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/investigations/{investigationId}/pins",
+      "operationId": "addInvestigationPin",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-investigations-investigationid-pins"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/investigations/{investigationId}/pins/{pinId}",
+      "operationId": "removeInvestigationPin",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-investigations-investigationid-pins-pinid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs",
+      "operationId": "listConsoleJobs",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-jobs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}",
+      "operationId": "getConsoleJob",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-jobs-jobid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}/actions",
+      "operationId": "getConsoleJobActions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-jobs-jobid-actions"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}/artifacts",
+      "operationId": "getConsoleJobArtifacts",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-jobs-jobid-artifacts"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/jobs/{jobId}/cancel",
+      "operationId": "cancelConsoleJob",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-jobs-jobid-cancel"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}/logs",
+      "operationId": "getConsoleJobLogs",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-jobs-jobid-logs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/jobs/{jobId}/retry",
+      "operationId": "retryConsoleJob",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-jobs-jobid-retry"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs/{jobId}/steps",
+      "operationId": "getConsoleJobSteps",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-jobs-jobid-steps"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/license",
+      "operationId": "getLicenseStatus",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-license"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/license",
+      "operationId": "uploadLicense",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-license"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/license/capacity",
+      "operationId": "getLicenseCapacityState",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-license-capacity"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/license/capacity/surge",
+      "operationId": "setLicenseCapacitySurgeMode",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-license-capacity-surge"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/license/entitlements",
+      "operationId": "getLicenseEntitlements",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-license-entitlements"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/license/features",
+      "operationId": "getLicenseFeatures",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-license-features"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/license/status",
+      "operationId": "getPlatformLicenseStatus",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-license-status"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/license/upload",
+      "operationId": "uploadLicenseFile",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-license-upload"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/coordinated-releases/operations",
+      "operationId": "createCoordinatedReleaseOperation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-metadata-coordinated-releases-operations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}",
+      "operationId": "approveCoordinatedReleaseGate",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-metadata-coordinated-releases-operations-operationid-approve-gate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/rollback",
+      "operationId": "rollbackCoordinatedReleaseOperation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-metadata-coordinated-releases-operations-operationid-rollback"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/coordinated-releases/{packageId}/operation",
+      "operationId": "getCoordinatedReleaseOperation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-coordinated-releases-packageid-operation"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/environment-bindings/query",
+      "operationId": "queryMetadataEnvironmentBindings",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-metadata-environment-bindings-query"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/environments/{environment}/inventory",
+      "operationId": "getMetadataSemanticInventory",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-environments-environment-inventory"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
+      "operationId": "getAdminLayerDrawingInfo",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-drawing-info"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
+      "operationId": "setAdminLayerDrawingInfo",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-drawing-info"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/fields",
+      "operationId": "getAdminLayerFields",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-fields"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/fields",
+      "operationId": "updateAdminLayerFields",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-fields"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/filter",
+      "operationId": "getAdminLayerFilter",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-filter"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/filter",
+      "operationId": "updateAdminLayerFilter",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-filter"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/popup-info",
+      "operationId": "getAdminLayerPopupInfo",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-popup-info"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/popup-info",
+      "operationId": "setAdminLayerPopupInfo",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-popup-info"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/relationships",
+      "operationId": "getAdminLayerRelationships",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-relationships"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/relationships",
+      "operationId": "setAdminLayerRelationships",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-relationships"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/style",
+      "operationId": "getAdminLayerStyle",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-style"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/style",
+      "operationId": "updateAdminLayerStyle",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-layerid-style"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/style/export-sld",
+      "operationId": "exportLayerSldStyle",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-style-export-sld"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/style/import-sld",
+      "operationId": "importLayerSldStyle",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-metadata-layers-layerid-style-import-sld"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/suggest-style",
+      "operationId": "suggestLayerStyle",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-metadata-layers-layerid-suggest-style"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/layers/{layerId}/validation",
+      "operationId": "getAdminLayerValidation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-layers-layerid-validation"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/prevalidate",
+      "operationId": "prevalidateMetadataReleasePackageCompatibility",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-metadata-prevalidate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/release-packages",
+      "operationId": "listMetadataReleasePackages",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-release-packages"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/release-packages",
+      "operationId": "createMetadataReleasePackage",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-metadata-release-packages"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/release-packages/{packageId}",
+      "operationId": "getMetadataReleasePackage",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-release-packages-packageid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest",
+      "operationId": "getMetadataReleaseGitOpsManifest",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-release-packages-packageid-gitops-manifest"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/metadata/releases/operations",
+      "operationId": "createMetadataReleaseOperation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-metadata-releases-operations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/metadata/releases/{packageId}/operation",
+      "operationId": "getMetadataReleaseOperationByPackageId",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-metadata-releases-packageid-operation"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/performance-evidence/history",
+      "operationId": "listMigrationPerformanceEvidenceHistory",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-migration-performance-evidence-history"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/performance-evidence/latest",
+      "operationId": "getLatestMigrationPerformanceEvidence",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-migration-performance-evidence-latest"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/performance-evidence/{evidenceId}",
+      "operationId": "getMigrationPerformanceEvidenceById",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-migration-performance-evidence-evidenceid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs",
+      "operationId": "listMigrationRuns",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-migration-runs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs",
+      "operationId": "recordMigrationRunStarted",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-migration-runs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs/{runId}",
+      "operationId": "getMigrationRun",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-migration-runs-runid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs/{runId}/cancel",
+      "operationId": "cancelMigrationRun",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-migration-runs-runid-cancel"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs/{runId}/complete",
+      "operationId": "completeMigrationRun",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-migration-runs-runid-complete"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs/{runId}/evidence-pack",
+      "operationId": "getMigrationRunEvidencePack",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-migration-runs-runid-evidence-pack"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/migration/runs/{runId}/scorecard",
+      "operationId": "getMigrationRunScorecard",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-migration-runs-runid-scorecard"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/migration/runs/{runId}/scorecard",
+      "operationId": "recordMigrationRunScorecard",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-migration-runs-runid-scorecard"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/multidim-coverages",
+      "operationId": "listMultidimCoverages",
+      "capability": "raster.multidim-coverage",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-multidim-coverages"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/multidim-coverages",
+      "operationId": "registerMultidimCoverage",
+      "capability": "raster.multidim-coverage",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-multidim-coverages"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/multidim-coverages/jobs/{jobId}",
+      "operationId": "getMultidimCoverageScanJob",
+      "capability": "raster.multidim-coverage",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-multidim-coverages-jobs-jobid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/multidim-coverages/{id}",
+      "operationId": "unregisterMultidimCoverage",
+      "capability": "raster.multidim-coverage",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-multidim-coverages-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/multidim-coverages/{id}",
+      "operationId": "getMultidimCoverage",
+      "capability": "raster.multidim-coverage",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-multidim-coverages-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/multidim-coverages/{id}/refresh",
+      "operationId": "refreshMultidimCoverage",
+      "capability": "raster.multidim-coverage",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-multidim-coverages-id-refresh"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets",
+      "operationId": "listNetworkDatasets",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-network-datasets"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets",
+      "operationId": "registerNetworkDataset",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-network-datasets"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/network-datasets/{id}",
+      "operationId": "deleteNetworkDataset",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-network-datasets-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}",
+      "operationId": "getNetworkDataset",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-network-datasets-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/network-datasets/{id}",
+      "operationId": "updateNetworkDataset",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-network-datasets-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}/generations",
+      "operationId": "listNetworkTopologyGenerations",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-network-datasets-id-generations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/generations",
+      "operationId": "allocateNetworkTopologyDraftGeneration",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-network-datasets-id-generations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/generations/{generation}/edits",
+      "operationId": "applyNetworkTopologyEditBatch",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-network-datasets-id-generations-generation-edits"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild",
+      "operationId": "submitNetworkTopologyRebuild",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-network-datasets-id-generations-generation-rebuild"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}/generations/{generation}/rebuild/{attempt}",
+      "operationId": "getNetworkTopologyRebuildAttempt",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-network-datasets-id-generations-generation-rebuild-attempt"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/promote",
+      "operationId": "promoteNetworkTopologyGeneration",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-network-datasets-id-promote"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/network-datasets/{id}/promotions",
+      "operationId": "listNetworkTopologyPromotions",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-network-datasets-id-promotions"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/network-datasets/{id}/rollback",
+      "operationId": "rollbackNetworkTopologyGeneration",
+      "capability": "routing.solve",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-network-datasets-id-rollback"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/oauth-clients",
+      "operationId": "listOAuthClients",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-oauth-clients"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/oauth-clients",
+      "operationId": "registerOAuthClient",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-oauth-clients"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/oauth-clients/{id}",
+      "operationId": "deleteOAuthClient",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-oauth-clients-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/oauth-clients/{id}",
+      "operationId": "getOAuthClient",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-oauth-clients-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/oauth-scopes",
+      "operationId": "listOAuthScopes",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-oauth-scopes"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/oauth-scopes",
+      "operationId": "defineOAuthScope",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-oauth-scopes"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/oauth-scopes/{scope}",
+      "operationId": "deleteOAuthScope",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-oauth-scopes-scope"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/alerts",
+      "operationId": "listObservabilityAlerts",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-alerts"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/alerts/{eventId}",
+      "operationId": "getObservabilityAlert",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-alerts-eventid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/observability/alerts/{eventId}/acknowledge",
+      "operationId": "acknowledgeObservabilityAlert",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-observability-alerts-eventid-acknowledge"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/observability/alerts/{eventId}/resolve",
+      "operationId": "resolveObservabilityAlert",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-observability-alerts-eventid-resolve"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/observability/alerts/{eventId}/suppress",
+      "operationId": "suppressObservabilityAlert",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-observability-alerts-eventid-suppress"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/audit",
+      "operationId": "listObservabilityAuditEntries",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-audit"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/audit/export",
+      "operationId": "exportObservabilityAudit",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-audit-export"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/audit/verify",
+      "operationId": "verifyObservabilityAudit",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-audit-verify"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/autonomy/policies",
+      "operationId": "listOpsAutonomyPolicies",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-autonomy-policies"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/autonomy/policies/{rule}",
+      "operationId": "getOpsAutonomyPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-autonomy-policies-rule"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/observability/autonomy/policies/{rule}",
+      "operationId": "setOpsAutonomyPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-observability-autonomy-policies-rule"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/autonomy/settings",
+      "operationId": "getOpsAutonomySettings",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-autonomy-settings"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/observability/autonomy/settings",
+      "operationId": "setOpsAutonomySettings",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-observability-autonomy-settings"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/errors",
+      "operationId": "getRecentErrors",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-errors"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/events",
+      "operationId": "listOperateEvents",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-events"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/findings",
+      "operationId": "listOpsFindings",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-findings"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/observability/findings/{findingId}/propose",
+      "operationId": "proposeOpsFinding",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-observability-findings-findingid-propose"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/logs",
+      "operationId": "listOperateLogs",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-logs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/migrations",
+      "operationId": "getMigrationStatus",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-migrations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/ops-health",
+      "operationId": "getOpsHealthSnapshot",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-ops-health"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/ops-health/history",
+      "operationId": "getOpsHealthHistory",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-ops-health-history"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/observability/telemetry",
+      "operationId": "getTelemetryStatus",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-observability-telemetry"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/oidc/providers",
+      "operationId": "listOidcProviders",
+      "capability": "identity.oidc",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-oidc-providers"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/oidc/providers",
+      "operationId": "createOidcProvider",
+      "capability": "identity.oidc",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-oidc-providers"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/oidc/providers/{id}",
+      "operationId": "deleteOidcProvider",
+      "capability": "identity.oidc",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-oidc-providers-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/oidc/providers/{id}",
+      "operationId": "getOidcProvider",
+      "capability": "identity.oidc",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-oidc-providers-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/oidc/providers/{id}",
+      "operationId": "updateOidcProvider",
+      "capability": "identity.oidc",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-oidc-providers-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/oidc/providers/{id}/test",
+      "operationId": "testOidcProvider",
+      "capability": "identity.oidc",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-oidc-providers-id-test"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/openapi.json",
+      "operationId": "getAdminOpenApi",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-openapi-json"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/active",
+      "operationId": "listActiveOperations",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-operations-active"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/cache/health",
+      "operationId": "getOperationsCacheHealth",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-operations-cache-health"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/operations/cache/invalidate",
+      "operationId": "invalidateOperationsCache",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-operations-cache-invalidate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/cache/redis",
+      "operationId": "getOperationsCacheRedisMetrics",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-operations-cache-redis"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/cache/statistics",
+      "operationId": "getOperationsCacheStatistics",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-operations-cache-statistics"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/geocoding/configuration",
+      "operationId": "getOperationsGeocodingConfiguration",
+      "capability": "geocoding.forward",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-operations-geocoding-configuration"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/geocoding/providers",
+      "operationId": "getOperationsGeocodingProviders",
+      "capability": "geocoding.forward",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-operations-geocoding-providers"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/streaming/alerts",
+      "operationId": "streamOperationsAlerts",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-operations-streaming-alerts"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/streaming/subscribers",
+      "operationId": "listOperationsStreamingSubscribers",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-operations-streaming-subscribers"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/operations/streaming/subscribers/{subscriberId}",
+      "operationId": "disconnectOperationsStreamingSubscriber",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-operations-streaming-subscribers-subscriberid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/type/{operationType}",
+      "operationId": "getOperationsByType",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-operations-type-operationtype"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/operations/{operationId}",
+      "operationId": "getOperationStatus",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-operations-operationid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/operations/{operationId}/cancel",
+      "operationId": "cancelOperation",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-operations-operationid-cancel"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/packages",
+      "operationId": "publishMapPackage",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-packages"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/packages/preview",
+      "operationId": "previewPackage",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-packages-preview"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/packages/validate",
+      "operationId": "validatePackage",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-packages-validate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/database/query-cache/statistics",
+      "operationId": "getDatabaseQueryCacheStatistics",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-performance-database-query-cache-statistics"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/cache/effectiveness",
+      "operationId": "getEnhancedCacheEffectiveness",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-performance-enhanced-cache-effectiveness"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/performance/enhanced/cache/invalidate",
+      "operationId": "invalidateEnhancedQueryResultCache",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-performance-enhanced-cache-invalidate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/cache/statistics",
+      "operationId": "getEnhancedCacheStatistics",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-performance-enhanced-cache-statistics"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/database/query-performance",
+      "operationId": "getEnhancedQueryPerformanceStatistics",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-performance-enhanced-database-query-performance"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/database/slow-queries",
+      "operationId": "getEnhancedSlowQueries",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-performance-enhanced-database-slow-queries"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/exceptions/recent",
+      "operationId": "getEnhancedRecentExceptions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-performance-enhanced-exceptions-recent"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/exceptions/statistics",
+      "operationId": "getEnhancedExceptionStatistics",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-performance-enhanced-exceptions-statistics"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/resources/potential-leaks",
+      "operationId": "getEnhancedPotentialResourceLeaks",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-performance-enhanced-resources-potential-leaks"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/performance/enhanced/resources/scan-leaks",
+      "operationId": "scanEnhancedResourceLeaks",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-performance-enhanced-resources-scan-leaks"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/resources/tracking",
+      "operationId": "getEnhancedResourceTracking",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-performance-enhanced-resources-tracking"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/performance/enhanced/summary",
+      "operationId": "getEnhancedPerformanceSummary",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-performance-enhanced-summary"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/platform-release/converge",
+      "operationId": "convergePlatformRelease",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-platform-release-converge"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/proposals",
+      "operationId": "listOperationProposals",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-proposals"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/proposals/{id}",
+      "operationId": "getOperationProposal",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-proposals-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/proposals/{id}/approve",
+      "operationId": "approveOperationProposal",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-proposals-id-approve"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/proposals/{id}/reject",
+      "operationId": "rejectOperationProposal",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-proposals-id-reject"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/rate-limits",
+      "operationId": "listRateLimitPolicies",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-rate-limits"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/rate-limits",
+      "operationId": "createRateLimitPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-rate-limits"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/rate-limits/status",
+      "operationId": "getRateLimitStatus",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-rate-limits-status"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/rate-limits/{id}",
+      "operationId": "deleteRateLimitPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-rate-limits-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/rate-limits/{id}",
+      "operationId": "getRateLimitPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-rate-limits-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/rate-limits/{id}",
+      "operationId": "updateRateLimitPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-rate-limits-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/rls-policies",
+      "operationId": "listRlsPolicies",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-rls-policies"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/rls-policies",
+      "operationId": "createRlsPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-rls-policies"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/rls-policies/{id}",
+      "operationId": "deleteRlsPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-rls-policies-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/rls-policies/{id}",
+      "operationId": "getRlsPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-rls-policies-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/roles",
+      "operationId": "listRoles",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-roles"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/roles",
+      "operationId": "createRole",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-roles"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/roles/{id}",
+      "operationId": "deleteRole",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-roles-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/roles/{id}",
+      "operationId": "getRole",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-roles-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/roles/{id}",
+      "operationId": "updateRole",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-roles-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/roles/{id}/permissions",
+      "operationId": "getRolePermissions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-roles-id-permissions"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/roles/{id}/permissions",
+      "operationId": "setRolePermissions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-roles-id-permissions"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes",
+      "operationId": "listSceneDatasets",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-scenes"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/scenes",
+      "operationId": "registerSceneDataset",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-scenes"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/scenes/generate",
+      "operationId": "generateScene",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "post-api-v1-admin-scenes-generate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/scenes/ingest/citygml",
+      "operationId": "ingestCityGmlScene",
+      "capability": "scene.bim-ingest",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "post-api-v1-admin-scenes-ingest-citygml"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/scenes/ingest/pointcloud",
+      "operationId": "ingestPointCloudScene",
+      "capability": "scene.pointcloud-ingest",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "post-api-v1-admin-scenes-ingest-pointcloud"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/scenes/{id}",
+      "operationId": "deactivateSceneDataset",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-scenes-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/{id}",
+      "operationId": "getSceneDataset",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-scenes-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/scenes/{id}",
+      "operationId": "updateSceneDataset",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-scenes-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/scenes/{id}/resolve",
+      "operationId": "resolveSceneDataset",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-scenes-id-resolve"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/security/client-certificates/profiles",
+      "operationId": "listClientCertificateTrustProfiles",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-security-client-certificates-profiles"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/security/client-certificates/profiles",
+      "operationId": "createClientCertificateTrustProfile",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "post-api-v1-admin-security-client-certificates-profiles"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}",
+      "operationId": "disableClientCertificateTrustProfile",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "delete-api-v1-admin-security-client-certificates-profiles-profileid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}",
+      "operationId": "getClientCertificateTrustProfile",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-security-client-certificates-profiles-profileid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}",
+      "operationId": "updateClientCertificateTrustProfile",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "put-api-v1-admin-security-client-certificates-profiles-profileid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings",
+      "operationId": "listClientCertificatePrincipalMappings",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-security-client-certificates-profiles-profileid-mappings"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings",
+      "operationId": "createClientCertificatePrincipalMapping",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "post-api-v1-admin-security-client-certificates-profiles-profileid-mappings"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}",
+      "operationId": "disableClientCertificatePrincipalMapping",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "delete-api-v1-admin-security-client-certificates-profiles-profileid-mappings-mappingid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}",
+      "operationId": "updateClientCertificatePrincipalMapping",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "put-api-v1-admin-security-client-certificates-profiles-profileid-mappings-mappingid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations",
+      "operationId": "listClientCertificateRevocations",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "get-api-v1-admin-security-client-certificates-profiles-profileid-revocations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations",
+      "operationId": "addClientCertificateRevocation",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "post-api-v1-admin-security-client-certificates-profiles-profileid-revocations"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations/{revocationId}",
+      "operationId": "removeClientCertificateRevocation",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "delete-api-v1-admin-security-client-certificates-profiles-profileid-revocations-revocationid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/security/client-certificates/validate",
+      "operationId": "validateClientCertificate",
+      "capability": "identity.mtls-client-certificate",
+      "family": "Admin API",
+      "maturity": "experimental",
+      "catalogEntryId": "post-api-v1-admin-security-client-certificates-validate"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services",
+      "operationId": "listServices",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-services"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas",
+      "operationId": "listServiceReplicas",
+      "capability": "fieldops.offline-sync",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-services-serviceid-replicas"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}",
+      "operationId": "getServiceReplica",
+      "capability": "fieldops.offline-sync",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-services-serviceid-replicas-replicaid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts",
+      "operationId": "listServiceReplicaConflicts",
+      "capability": "fieldops.offline-sync",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-services-serviceid-replicas-replicaid-conflicts"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}",
+      "operationId": "getServiceReplicaConflict",
+      "capability": "fieldops.offline-sync",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-services-serviceid-replicas-replicaid-conflicts-conflictid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve",
+      "operationId": "resolveServiceReplicaConflict",
+      "capability": "fieldops.offline-sync",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "post-api-v1-admin-services-serviceid-replicas-replicaid-conflicts-conflictid-resolve"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/services/{serviceName}/access-policy",
+      "operationId": "updateServiceAccessPolicy",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-services-servicename-access-policy"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/export",
+      "operationId": "exportServiceLayer",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-services-servicename-layers-layerid-export"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata",
+      "operationId": "updateLayerMetadata",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-services-servicename-layers-layerid-metadata"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic",
+      "operationId": "getLayerShareTrafficSummary",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-services-servicename-layers-layerid-share-traffic"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series",
+      "operationId": "getLayerShareTrafficSeries",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-services-servicename-layers-layerid-share-traffic-series"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/services/{serviceName}/mapserver",
+      "operationId": "updateServiceMapServer",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-services-servicename-mapserver"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/services/{serviceName}/protocols",
+      "operationId": "updateServiceProtocols",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-services-servicename-protocols"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/services/{serviceName}/settings",
+      "operationId": "getServiceSettings",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-services-servicename-settings"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/services/{serviceName}/timeinfo",
+      "operationId": "updateServiceTimeInfo",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-services-servicename-timeinfo"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports",
+      "operationId": "listShareExports",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-share-exports"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports",
+      "operationId": "createShareExport",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-share-exports"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/share/exports/{exportId}",
+      "operationId": "deleteShareExport",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-share-exports-exportid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports/{exportId}",
+      "operationId": "getShareExport",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-share-exports-exportid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/share/exports/{exportId}",
+      "operationId": "updateShareExport",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-share-exports-exportid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports/{exportId}/pause",
+      "operationId": "pauseShareExport",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-share-exports-exportid-pause"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports/{exportId}/resume",
+      "operationId": "resumeShareExport",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-share-exports-exportid-resume"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports/{exportId}/runs",
+      "operationId": "listShareExportRuns",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-share-exports-exportid-runs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/share/exports/{exportId}/runs/{runId}",
+      "operationId": "getShareExportRun",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-share-exports-exportid-runs-runid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/share/exports/{exportId}/trigger",
+      "operationId": "triggerShareExport",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-share-exports-exportid-trigger"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/share/traffic",
+      "operationId": "getShareTrafficSummary",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-share-traffic"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/share/traffic/series",
+      "operationId": "getShareTrafficSeries",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-share-traffic-series"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/streaming/conformance/reset",
+      "operationId": "resetFeatureStreamConformanceSource",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-streaming-conformance-reset"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/streaming/features/sessions",
+      "operationId": "listFeatureStreamSessions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-streaming-features-sessions"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/streaming/features/sessions/{sessionId}",
+      "operationId": "disconnectFeatureStreamSession",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "delete-api-v1-admin-streaming-features-sessions-sessionid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants",
+      "operationId": "listTenants",
+      "capability": "admin.multi-tenancy",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-tenants"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/tenants",
+      "operationId": "createTenant",
+      "capability": "admin.multi-tenancy",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "post-api-v1-admin-tenants"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/usage",
+      "operationId": "exportTenantUsage",
+      "capability": "admin.multi-tenancy",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-tenants-usage"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/tenants/{tenantId}",
+      "operationId": "deleteTenant",
+      "capability": "admin.multi-tenancy",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "delete-api-v1-admin-tenants-tenantid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/{tenantId}",
+      "operationId": "getTenant",
+      "capability": "admin.multi-tenancy",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "get-api-v1-admin-tenants-tenantid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/tenants/{tenantId}/resume",
+      "operationId": "resumeTenant",
+      "capability": "admin.multi-tenancy",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "post-api-v1-admin-tenants-tenantid-resume"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/tenants/{tenantId}/suspend",
+      "operationId": "suspendTenant",
+      "capability": "admin.multi-tenancy",
+      "family": "Admin API",
+      "maturity": "preview",
+      "catalogEntryId": "post-api-v1-admin-tenants-tenantid-suspend"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/tile-operations/cache/inventory",
+      "operationId": "getTileCacheInventory",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-tile-operations-cache-inventory"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/evict",
+      "operationId": "evictTileCache",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-tile-operations-evict"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/tile-operations/jobs",
+      "operationId": "listTileOperationJobs",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-tile-operations-jobs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/jobs",
+      "operationId": "startTileOperationJob",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-tile-operations-jobs"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/tile-operations/jobs/{jobId}",
+      "operationId": "getTileOperationJob",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-tile-operations-jobs-jobid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/jobs/{jobId}/cancel",
+      "operationId": "cancelTileOperationJob",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-tile-operations-jobs-jobid-cancel"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/tile-operations/jobs/{jobId}/retry",
+      "operationId": "retryTileOperationJob",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-tile-operations-jobs-jobid-retry"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/users",
+      "operationId": "listManagedUsers",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-users"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/users/{id}",
+      "operationId": "deprovisionManagedUser",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-users-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/users/{id}",
+      "operationId": "getManagedUser",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-users-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/users/{id}/effective-permissions",
+      "operationId": "getManagedUserEffectivePermissions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-users-id-effective-permissions"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/users/{id}/roles",
+      "operationId": "updateManagedUserRoles",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-users-id-roles"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/version",
+      "operationId": "getAdminVersion",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-version"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/zarr-stores",
+      "operationId": "listZarrStores",
+      "capability": "raster.multidim-coverage",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-zarr-stores"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/zarr-stores",
+      "operationId": "registerZarrStore",
+      "capability": "raster.multidim-coverage",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-zarr-stores"
+    },
+    {
+      "spec": "admin-api",
+      "method": "DELETE",
+      "path": "/api/v1/admin/zarr-stores/{id}",
+      "operationId": "unregisterZarrStore",
+      "capability": "raster.multidim-coverage",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-admin-zarr-stores-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/zarr-stores/{id}",
+      "operationId": "getZarrStore",
+      "capability": "raster.multidim-coverage",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-zarr-stores-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/zarr-stores/{id}/refresh",
+      "operationId": "refreshZarrStore",
+      "capability": "raster.multidim-coverage",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-zarr-stores-id-refresh"
+    },
+    {
+      "spec": "ogc-api-coverages",
+      "method": "GET",
+      "path": "/ogc/coverages",
+      "operationId": null,
+      "capability": "serve.ogc-api-coverages",
+      "family": "OGC API Coverages",
+      "maturity": "preview",
+      "catalogEntryId": "get-ogc-coverages"
+    },
+    {
+      "spec": "ogc-api-coverages",
+      "method": "GET",
+      "path": "/ogc/coverages/api",
+      "operationId": null,
+      "capability": "serve.ogc-api-coverages",
+      "family": "OGC API Coverages",
+      "maturity": "preview",
+      "catalogEntryId": "get-ogc-coverages-api"
+    },
+    {
+      "spec": "ogc-api-coverages",
+      "method": "GET",
+      "path": "/ogc/coverages/collections",
+      "operationId": null,
+      "capability": "serve.ogc-api-coverages",
+      "family": "OGC API Coverages",
+      "maturity": "preview",
+      "catalogEntryId": "get-ogc-coverages-collections"
+    },
+    {
+      "spec": "ogc-api-coverages",
+      "method": "GET",
+      "path": "/ogc/coverages/collections/{collectionId}",
+      "operationId": null,
+      "capability": "serve.ogc-api-coverages",
+      "family": "OGC API Coverages",
+      "maturity": "preview",
+      "catalogEntryId": "get-ogc-coverages-collections-collectionid"
+    },
+    {
+      "spec": "ogc-api-coverages",
+      "method": "GET",
+      "path": "/ogc/coverages/collections/{collectionId}/coverage",
+      "operationId": null,
+      "capability": "serve.ogc-api-coverages",
+      "family": "OGC API Coverages",
+      "maturity": "preview",
+      "catalogEntryId": "get-ogc-coverages-collections-collectionid-coverage"
+    },
+    {
+      "spec": "ogc-api-coverages",
+      "method": "GET",
+      "path": "/ogc/coverages/collections/{collectionId}/schema",
+      "operationId": null,
+      "capability": "serve.ogc-api-coverages",
+      "family": "OGC API Coverages",
+      "maturity": "preview",
+      "catalogEntryId": "get-ogc-coverages-collections-collectionid-schema"
+    },
+    {
+      "spec": "ogc-api-coverages",
+      "method": "GET",
+      "path": "/ogc/coverages/conformance",
+      "operationId": null,
+      "capability": "serve.ogc-api-coverages",
+      "family": "OGC API Coverages",
+      "maturity": "preview",
+      "catalogEntryId": "get-ogc-coverages-conformance"
+    },
+    {
+      "spec": "ogc-api-coverages",
+      "method": "GET",
+      "path": "/ogc/coverages/openapi.json",
+      "operationId": null,
+      "capability": "serve.ogc-api-coverages",
+      "family": "OGC API Coverages",
+      "maturity": "preview",
+      "catalogEntryId": "get-ogc-coverages-openapi-json"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "GET",
+      "path": "/ogc/features",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-features"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "GET",
+      "path": "/ogc/features/api",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-features-api"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "GET",
+      "path": "/ogc/features/collections",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-features-collections"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "GET",
+      "path": "/ogc/features/collections/{collectionId}",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-features-collections-collectionid"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "POST",
+      "path": "/ogc/features/collections/{collectionId}/buffer-aggregate",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "post-ogc-features-collections-collectionid-buffer-aggregate"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "POST",
+      "path": "/ogc/features/collections/{collectionId}/clusters",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "post-ogc-features-collections-collectionid-clusters"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "POST",
+      "path": "/ogc/features/collections/{collectionId}/density",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "post-ogc-features-collections-collectionid-density"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "GET",
+      "path": "/ogc/features/collections/{collectionId}/h3",
+      "operationId": null,
+      "capability": "analytics.h3",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-features-collections-collectionid-h3"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "GET",
+      "path": "/ogc/features/collections/{collectionId}/items",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-features-collections-collectionid-items"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "POST",
+      "path": "/ogc/features/collections/{collectionId}/items",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "post-ogc-features-collections-collectionid-items"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "POST",
+      "path": "/ogc/features/collections/{collectionId}/items/batch",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "post-ogc-features-collections-collectionid-items-batch"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "DELETE",
+      "path": "/ogc/features/collections/{collectionId}/items/{featureId}",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-ogc-features-collections-collectionid-items-featureid"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "GET",
+      "path": "/ogc/features/collections/{collectionId}/items/{featureId}",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-features-collections-collectionid-items-featureid"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "PATCH",
+      "path": "/ogc/features/collections/{collectionId}/items/{featureId}",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "patch-ogc-features-collections-collectionid-items-featureid"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "PUT",
+      "path": "/ogc/features/collections/{collectionId}/items/{featureId}",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "put-ogc-features-collections-collectionid-items-featureid"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "GET",
+      "path": "/ogc/features/collections/{collectionId}/queryables",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-features-collections-collectionid-queryables"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "POST",
+      "path": "/ogc/features/collections/{collectionId}/spatial-join",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "post-ogc-features-collections-collectionid-spatial-join"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "GET",
+      "path": "/ogc/features/conformance",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-features-conformance"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "GET",
+      "path": "/ogc/features/schemas/honua-ogcapi-features.xsd",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-features-schemas-honua-ogcapi-features-xsd"
+    },
+    {
+      "spec": "ogc-api-maps",
+      "method": "GET",
+      "path": "/ogc/maps",
+      "operationId": null,
+      "capability": "serve.ogc-api-maps",
+      "family": "OGC API Maps",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-maps"
+    },
+    {
+      "spec": "ogc-api-maps",
+      "method": "GET",
+      "path": "/ogc/maps/collections/{collectionId}/map",
+      "operationId": null,
+      "capability": "serve.ogc-api-maps",
+      "family": "OGC API Maps",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-maps-collections-collectionid-map"
+    },
+    {
+      "spec": "ogc-api-maps",
+      "method": "GET",
+      "path": "/ogc/maps/collections/{collectionId}/map/tiles",
+      "operationId": null,
+      "capability": "serve.ogc-api-maps",
+      "family": "OGC API Maps",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-maps-collections-collectionid-map-tiles"
+    },
+    {
+      "spec": "ogc-api-maps",
+      "method": "GET",
+      "path": "/ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}",
+      "operationId": null,
+      "capability": "serve.ogc-api-maps",
+      "family": "OGC API Maps",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-maps-collections-collectionid-map-tiles-tilematrixsetid"
+    },
+    {
+      "spec": "ogc-api-maps",
+      "method": "GET",
+      "path": "/ogc/maps/collections/{collectionId}/styles/{styleId}/map",
+      "operationId": null,
+      "capability": "serve.ogc-api-maps",
+      "family": "OGC API Maps",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-maps-collections-collectionid-styles-styleid-map"
+    },
+    {
+      "spec": "ogc-api-maps",
+      "method": "GET",
+      "path": "/ogc/maps/conformance",
+      "operationId": null,
+      "capability": "serve.ogc-api-maps",
+      "family": "OGC API Maps",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-maps-conformance"
+    },
+    {
+      "spec": "ogc-api-maps",
+      "method": "GET",
+      "path": "/ogc/maps/map",
+      "operationId": null,
+      "capability": "serve.ogc-api-maps",
+      "family": "OGC API Maps",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-maps-map"
+    },
+    {
+      "spec": "ogc-api-maps",
+      "method": "GET",
+      "path": "/ogc/maps/openapi.json",
+      "operationId": null,
+      "capability": "serve.ogc-api-maps",
+      "family": "OGC API Maps",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-maps-openapi-json"
+    },
+    {
+      "spec": "ogc-api-processes",
+      "method": "GET",
+      "path": "/ogc/processes",
+      "operationId": "OgcProcessesLandingPage",
+      "capability": "process.ogc-api-processes",
+      "family": "OGC API Processes",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-processes"
+    },
+    {
+      "spec": "ogc-api-processes",
+      "method": "GET",
+      "path": "/ogc/processes/conformance",
+      "operationId": "OgcProcessesConformance",
+      "capability": "process.ogc-api-processes",
+      "family": "OGC API Processes",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-processes-conformance"
+    },
+    {
+      "spec": "ogc-api-processes",
+      "method": "GET",
+      "path": "/ogc/processes/jobs",
+      "operationId": "OgcProcessesJobList",
+      "capability": "process.ogc-api-processes",
+      "family": "OGC API Processes",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-processes-jobs"
+    },
+    {
+      "spec": "ogc-api-processes",
+      "method": "DELETE",
+      "path": "/ogc/processes/jobs/{jobId}",
+      "operationId": "OgcProcessesDismissJob",
+      "capability": "process.ogc-api-processes",
+      "family": "OGC API Processes",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-ogc-processes-jobs-jobid"
+    },
+    {
+      "spec": "ogc-api-processes",
+      "method": "GET",
+      "path": "/ogc/processes/jobs/{jobId}",
+      "operationId": "OgcProcessesJobStatus",
+      "capability": "process.ogc-api-processes",
+      "family": "OGC API Processes",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-processes-jobs-jobid"
+    },
+    {
+      "spec": "ogc-api-processes",
+      "method": "GET",
+      "path": "/ogc/processes/jobs/{jobId}/results",
+      "operationId": "OgcProcessesJobResults",
+      "capability": "process.ogc-api-processes",
+      "family": "OGC API Processes",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-processes-jobs-jobid-results"
+    },
+    {
+      "spec": "ogc-api-processes",
+      "method": "GET",
+      "path": "/ogc/processes/openapi.json",
+      "operationId": "OgcProcessesOpenApiSpec",
+      "capability": "process.ogc-api-processes",
+      "family": "OGC API Processes",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-processes-openapi-json"
+    },
+    {
+      "spec": "ogc-api-processes",
+      "method": "GET",
+      "path": "/ogc/processes/processes",
+      "operationId": "OgcProcessesList",
+      "capability": "process.ogc-api-processes",
+      "family": "OGC API Processes",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-processes-processes"
+    },
+    {
+      "spec": "ogc-api-processes",
+      "method": "GET",
+      "path": "/ogc/processes/processes/{processId}",
+      "operationId": "OgcProcessDescription",
+      "capability": "process.ogc-api-processes",
+      "family": "OGC API Processes",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-processes-processes-processid"
+    },
+    {
+      "spec": "ogc-api-processes",
+      "method": "POST",
+      "path": "/ogc/processes/processes/{processId}/execution",
+      "operationId": "OgcProcessExecute",
+      "capability": "process.ogc-api-processes",
+      "family": "OGC API Processes",
+      "maturity": "implemented",
+      "catalogEntryId": "post-ogc-processes-processes-processid-execution"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles",
+      "operationId": "core.getLandingPage",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/collections",
+      "operationId": "collections.getCollections",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-collections"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/collections/{collectionId}",
+      "operationId": "collections.getCollection",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-collections-collectionid"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/collections/{collectionId}/tiles",
+      "operationId": "collections.getTilesets",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-collections-collectionid-tiles"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}",
+      "operationId": "collections.getTileset",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-collections-collectionid-tiles-tilematrixsetid"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}",
+      "operationId": "collections.getTile",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-collections-collectionid-tiles-tilematrixsetid-tilematrix-tilerow-tilecol"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/conformance",
+      "operationId": "core.getConformance",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-conformance"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/openapi.json",
+      "operationId": "core.getApiDefinition",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-openapi-json"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/tileMatrixSets",
+      "operationId": "tileMatrixSets.getTileMatrixSets",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-tilematrixsets"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/tileMatrixSets/{tileMatrixSetId}",
+      "operationId": "tileMatrixSets.getTileMatrixSet",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-tilematrixsets-tilematrixsetid"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/tiles",
+      "operationId": "tilesets.getTilesets",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-tiles"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/tiles/{tileMatrixSetId}",
+      "operationId": "tilesets.getTileset",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-tiles-tilematrixsetid"
+    },
+    {
+      "spec": "ogc-api-tiles",
+      "method": "GET",
+      "path": "/ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}",
+      "operationId": "tilesets.getTile",
+      "capability": "serve.ogc-api-tiles",
+      "family": "OGC API Tiles",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-tiles-tiles-tilematrixsetid-tilematrix-tilerow-tilecol"
+    },
+    {
+      "spec": "stac-api",
+      "method": "GET",
+      "path": "/stac",
+      "operationId": null,
+      "capability": "serve.stac",
+      "family": "STAC API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-stac"
+    },
+    {
+      "spec": "stac-api",
+      "method": "GET",
+      "path": "/stac/collections",
+      "operationId": null,
+      "capability": "serve.stac",
+      "family": "STAC API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-stac-collections"
+    },
+    {
+      "spec": "stac-api",
+      "method": "GET",
+      "path": "/stac/collections/{collectionId}",
+      "operationId": null,
+      "capability": "serve.stac",
+      "family": "STAC API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-stac-collections-collectionid"
+    },
+    {
+      "spec": "stac-api",
+      "method": "GET",
+      "path": "/stac/collections/{collectionId}/items",
+      "operationId": null,
+      "capability": "serve.stac",
+      "family": "STAC API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-stac-collections-collectionid-items"
+    },
+    {
+      "spec": "stac-api",
+      "method": "GET",
+      "path": "/stac/collections/{collectionId}/items/{itemId}",
+      "operationId": null,
+      "capability": "serve.stac",
+      "family": "STAC API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-stac-collections-collectionid-items-itemid"
+    },
+    {
+      "spec": "stac-api",
+      "method": "GET",
+      "path": "/stac/collections/{collectionId}/queryables",
+      "operationId": null,
+      "capability": "serve.stac",
+      "family": "STAC API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-stac-collections-collectionid-queryables"
+    },
+    {
+      "spec": "stac-api",
+      "method": "GET",
+      "path": "/stac/conformance",
+      "operationId": null,
+      "capability": "serve.stac",
+      "family": "STAC API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-stac-conformance"
+    },
+    {
+      "spec": "stac-api",
+      "method": "GET",
+      "path": "/stac/queryables",
+      "operationId": null,
+      "capability": "serve.stac",
+      "family": "STAC API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-stac-queryables"
+    },
+    {
+      "spec": "stac-api",
+      "method": "GET",
+      "path": "/stac/search",
+      "operationId": null,
+      "capability": "serve.stac",
+      "family": "STAC API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-stac-search"
+    },
+    {
+      "spec": "stac-api",
+      "method": "POST",
+      "path": "/stac/search",
+      "operationId": null,
+      "capability": "serve.stac",
+      "family": "STAC API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-stac-search"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/ai/capabilities",
+      "operationId": "getStudioAiCapabilities",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-ai-capabilities"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/ai/chat",
+      "operationId": "streamStudioAiChat",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-ai-chat"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/app-packages/generate",
+      "operationId": "generateStudioAppPackage",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-app-packages-generate"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/content-items",
+      "operationId": "listStudioContentItems",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-content-items"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/content-items/{itemId}/rollback-requests",
+      "operationId": "createStudioRollbackRequest",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-content-items-itemid-rollback-requests"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/content-items/{itemId}/version-comparisons",
+      "operationId": "compareStudioContentVersions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-content-items-itemid-version-comparisons"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/content-items/{itemId}/versions",
+      "operationId": "listStudioContentVersions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-content-items-itemid-versions"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/content-items/{itemId}/versions/{versionId}",
+      "operationId": "getStudioContentVersion",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-content-items-itemid-versions-versionid"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests",
+      "operationId": "createStudioPublicationRequest",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-content-items-itemid-versions-versionid-publish-requests"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests/{requestId}",
+      "operationId": "getStudioPublicationRequest",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-content-items-itemid-versions-versionid-publish-requests-requestid"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen",
+      "operationId": "reopenStudioContentVersion",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-content-items-itemid-versions-versionid-reopen"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/map-packages/generate",
+      "operationId": "generateStudioMapPackage",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-map-packages-generate"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/package-drafts",
+      "operationId": "listStudioPackageDrafts",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-package-drafts"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/package-drafts",
+      "operationId": "createStudioPackageDraft",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-package-drafts"
+    },
+    {
+      "spec": "studio-api",
+      "method": "DELETE",
+      "path": "/api/v1/studio/package-drafts/{draftId}",
+      "operationId": "deleteStudioPackageDraft",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "delete-api-v1-studio-package-drafts-draftid"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/package-drafts/{draftId}",
+      "operationId": "getStudioPackageDraft",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-package-drafts-draftid"
+    },
+    {
+      "spec": "studio-api",
+      "method": "PUT",
+      "path": "/api/v1/studio/package-drafts/{draftId}",
+      "operationId": "updateStudioPackageDraft",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-studio-package-drafts-draftid"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/package-drafts/{draftId}/content-versions",
+      "operationId": "createStudioContentVersion",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-package-drafts-draftid-content-versions"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/package-drafts/{draftId}/preview-plan",
+      "operationId": "previewStudioPackageDraft",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-package-drafts-draftid-preview-plan"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/package-drafts/{draftId}/validate",
+      "operationId": "validateStudioPackageDraft",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-package-drafts-draftid-validate"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/package-families",
+      "operationId": "listStudioPackageFamilies",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-package-families"
+    },
+    {
+      "spec": "studio-api",
+      "method": "POST",
+      "path": "/api/v1/studio/{kind}/{id}/export",
+      "operationId": "exportStudioDeliverable",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-studio-kind-id-export"
+    }
+  ],
+  "unresolved": []
+}

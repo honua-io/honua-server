@@ -1,3 +1,8 @@
+---
+type: reference
+title: "ImageServer admin operations → Honua admin API"
+description: "ArcGIS ImageServer exposes a set of admin/mutation operations (addRasters, deleteRasters, updateRaster, uploads, downloadRasters, validate, calculateVolume, computeMultidimensionalInfo, computeTiePoints)."
+---
 # ImageServer admin operations → Honua admin API
 
 ArcGIS ImageServer exposes a set of **admin/mutation** operations

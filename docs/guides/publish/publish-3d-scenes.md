@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Publish 3D scenes"
+description: "You'll have a 3D Tiles tileset served from Honua — generated from a PostGIS layer or hosted from existing files — and rendering in CesiumJS in about 15 minutes."
+---
 # Publish 3D scenes
 
 You'll have a 3D Tiles tileset served from Honua — generated from a PostGIS layer or hosted from existing files — and rendering in CesiumJS in about 15 minutes.

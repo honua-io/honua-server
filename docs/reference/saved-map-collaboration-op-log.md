@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Saved-map collaborative edit operation log"
+description: "Server-owned durable ordering and conflict behavior for multi-user saved-map editing."
+---
 # Saved-map collaborative edit operation log
 
 Server-owned durable ordering and conflict behavior for multi-user saved-map editing. Where presence and live cursors are ephemeral ([collaboration session transport](#related-surfaces)), saved-map edits are durable: every accepted edit is appended to a per-map operation log, assigned a monotonic server cursor, and replayable for reconnecting clients. This page is the contract for `honua-sdk-js` and Portal consumers.

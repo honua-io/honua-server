@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Harden a production deployment"
+description: "Work through this checklist before exposing Honua to the internet; each item is enforced or configured by a setting you can verify in .env.production.example."
+---
 # Harden a production deployment
 
 Work through this checklist before exposing Honua to the internet; each item is enforced or configured by a setting you can verify in `.env.production.example`.

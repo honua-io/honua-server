@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Control access to services and layers"
+description: "Decide who can read and who can write each published service and layer, using access policies for coarse rules and roles with per-operation grants for fine-grained RBAC."
+---
 # Control access to services and layers
 
 Decide who can read and who can write each published service and layer, using access policies for coarse rules and roles with per-operation grants for fine-grained RBAC.

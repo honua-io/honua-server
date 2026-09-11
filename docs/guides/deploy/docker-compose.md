@@ -1,3 +1,8 @@
+---
+type: runbook
+title: "Deploy with Docker Compose"
+description: "Run a single-node Production configuration from published artifacts on Windows with Docker Desktop (Linux containers), PowerShell 5.1 or 7 and Python 3.11+."
+---
 # Deploy with Docker Compose
 
 Run a single-node Production configuration from published artifacts on Windows

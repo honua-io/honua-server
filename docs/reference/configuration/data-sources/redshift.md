@@ -1,3 +1,7 @@
+---
+type: reference
+title: "Amazon Redshift provider"
+---
 # Amazon Redshift provider
 
 ## Protocol routing

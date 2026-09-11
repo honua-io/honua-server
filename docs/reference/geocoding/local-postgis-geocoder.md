@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Local PostGIS-backed geocoder"
+description: "The local geocoder (provider = \"local\") is a self-hosted, offline geocoding backend that runs entirely against a PostGIS reference dataset you load yourself."
+---
 # Local PostGIS-backed geocoder
 
 The local geocoder (`provider = "local"`) is a self-hosted, offline geocoding backend that runs

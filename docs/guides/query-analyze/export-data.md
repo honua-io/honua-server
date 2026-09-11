@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Export data"
+description: "Pull a layer's features out of Honua as GeoJSON, CSV, GeoParquet, GeoArrow, FlatGeobuf, GeoPackage, or Shapefile — straight from the query endpoints or as a bulk admin export."
+---
 # Export data
 
 Pull a layer's features out of Honua as GeoJSON, CSV, GeoParquet, GeoArrow, FlatGeobuf, GeoPackage, or Shapefile — straight from the query endpoints or as a bulk admin export.

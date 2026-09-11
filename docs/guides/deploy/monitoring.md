@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Monitor Honua Server"
+description: "You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice."
+---
 # Monitor Honua Server
 
 You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice. For the higher-level operate story - the loop, Console and MCP seats, autonomy ladder, rollback taxonomy, and when Grafana is optional depth - start with [Operating Honua](../operate/README.md). The profiled Console Operate service in the Docker quickstart is the first local ops view once a compatible Console image is published; Grafana and Prometheus are optional depth for teams that want an external metrics backend.

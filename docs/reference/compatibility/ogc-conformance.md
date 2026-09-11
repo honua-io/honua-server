@@ -1,3 +1,8 @@
+---
+type: reference
+title: "OGC conformance"
+description: "Honua Server currently passes 1137/1138 OGC CITE assertions across 14 suites on trunk."
+---
 # OGC conformance
 
 Honua Server currently passes 1137/1138 OGC CITE assertions across 14 suites on

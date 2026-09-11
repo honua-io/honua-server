@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Deploy on AWS and Azure"
+description: "You'll pick a managed-cloud deployment pattern for Honua — ECS/Fargate, Lambda, Azure Container Apps, or Azure Functions — and know which image, configuration, and rollout mechanism each one uses."
+---
 # Deploy on AWS and Azure
 
 You'll pick a managed-cloud deployment pattern for Honua — ECS/Fargate, Lambda, Azure Container Apps, or Azure Functions — and know which image, configuration, and rollout mechanism each one uses.

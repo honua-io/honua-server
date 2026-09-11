@@ -1,3 +1,8 @@
+---
+type: reference
+title: "CITE status"
+description: "The authoritative snapshot of Honua's OGC CITE conformance runs."
+---
 # CITE Status — Authoritative Snapshot
 
 Last reviewed: 2026-09-02

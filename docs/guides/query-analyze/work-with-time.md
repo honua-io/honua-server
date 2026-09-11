@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Work with time"
+description: "Make a layer time-aware, discover its temporal extent, and filter or animate it with the same time-window semantics across GeoServices, OGC, and vector tiles."
+---
 # Work with time
 
 Make a layer time-aware, discover its temporal extent, and filter or animate it with the same time-window semantics across GeoServices, OGC, and vector tiles.

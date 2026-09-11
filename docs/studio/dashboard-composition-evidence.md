@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Dashboard composition execution evidence"
+description: "On 2026-09-05, the Windows lane executed the final dashboard integration fixture at source revision 5727260904de5cfde60d52dfc9aff614cc289d47 using the native Windows .NET SDK in Release mode, -maxcpucount:4, and Docker Desktop Postgres."
+---
 # Dashboard composition execution evidence
 
 On 2026-09-05, the Windows lane executed the final dashboard integration fixture

@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Use the .NET lifecycle client"
+description: "Honua.Sdk.Studio exposes the durable draft/version lifecycle independently of the preview browser UI."
+---
 # Use the .NET lifecycle client
 
 `Honua.Sdk.Studio` exposes the durable draft/version lifecycle independently

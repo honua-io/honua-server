@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Ops evidence posture"
+description: "The 2026.1 operational read surfaces add an evidencePosture object to their existing JSON responses."
+---
 # Ops evidence posture
 
 The 2026.1 operational read surfaces add an `evidencePosture` object to their existing JSON responses. This is an additive contract: existing fields remain present and retain their meanings. In particular, `generatedAt` is response/evaluation time and must not be interpreted as source observation time.

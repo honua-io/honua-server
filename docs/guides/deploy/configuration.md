@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Configure Honua Server"
+description: "You'll understand how Honua's configuration model works so you can set any option in any deployment target."
+---
 # Configure Honua Server
 
 You'll understand how Honua's configuration model works so you can set any option in any deployment target. The full variable table lives in the [environment variable reference](../../reference/configuration/environment-variables.md).

@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Imports and jobs"
+description: "Reference for importing vector and raster data (file upload, URL, GeoServer/GeoServices migration, raster registration) and for the job and operations endpoints used to track long-running work."
+---
 # Imports and jobs
 
 Reference for importing vector and raster data (file upload, URL, GeoServer/GeoServices migration, raster registration) and for the job and operations endpoints used to track long-running work.

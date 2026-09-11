@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Publish rasters"
+description: "You'll have raster data imported into PostGIS and served through ImageServer, WCS, and OGC API Coverages in about 10 minutes."
+---
 # Publish rasters
 
 You'll have raster data imported into PostGIS and served through ImageServer, WCS, and OGC API Coverages in about 10 minutes. Direct cloud COG tile serving currently uses the ImageServer tile fallback only.

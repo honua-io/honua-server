@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Terminate TLS and require client certificates"
+description: "Encrypt every hop — browser to edge, edge to Honua, Honua to PostgreSQL — and optionally require mTLS client certificates on admin and native surfaces."
+---
 # Terminate TLS and require client certificates
 
 Encrypt every hop — browser to edge, edge to Honua, Honua to PostgreSQL — and optionally require mTLS client certificates on admin and native surfaces.

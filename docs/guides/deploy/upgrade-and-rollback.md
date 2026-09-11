@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Upgrade and roll back"
+description: "You'll roll a new Honua version forward safely — preflight first, backward-compatible migrations, app rollback before database restore."
+---
 # Upgrade and roll back
 
 You'll roll a new Honua version forward safely — preflight first, backward-compatible migrations, app rollback before database restore.

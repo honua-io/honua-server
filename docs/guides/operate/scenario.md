@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Operate scenario: evidence before action"
+description: "Follow one deployment/readiness failure through the bounded loop:"
+---
 # Operate scenario: evidence before action
 
 Follow one deployment/readiness failure through the bounded loop:

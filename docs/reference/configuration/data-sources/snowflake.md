@@ -1,3 +1,7 @@
+---
+type: reference
+title: "Snowflake provider"
+---
 # Snowflake provider
 
 ## Protocol routing

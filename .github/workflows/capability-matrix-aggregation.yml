@@ -23,6 +23,7 @@ on:
       - 'docs/gis/data/capability-keys.v1.json'
       - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
       - 'docs/gis/data/capability-matrix.v1.json'
+      - 'docs/gis/data/operation-capability.v1.json'
       - 'tests/baselines/client-compat/**'
       - 'scripts/ci/generate-capability-matrix.py'
       # generate-capability-matrix.py imports parse_timestamp/is_green/
@@ -30,6 +31,12 @@ on:
       # change the committed matrix.
       - 'scripts/ci/capability-impact.py'
       - 'scripts/ci/validate-cite-openapi-compliance.py'
+      # The operation -> capability join reads the same catalog and every
+      # OpenAPI document the drift checker declares, so both move it.
+      - 'scripts/ci/generate-operation-capability.py'
+      - 'scripts/ci/generate-operation-capability.test.py'
+      - 'scripts/ci/openapi-drift-check.py'
+      - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/openapi.json'
       - 'src/Honua.Server/ogc-tiles-openapi.json'
       - 'src/Honua.Server/ogc-maps-openapi.json'
@@ -49,6 +56,12 @@ on:
       - 'scripts/ci/generate-capability-matrix.py'
       - 'scripts/ci/capability-impact.py'
       - 'scripts/ci/validate-cite-openapi-compliance.py'
+      # The operation -> capability join reads the same catalog and every
+      # OpenAPI document the drift checker declares, so both move it.
+      - 'scripts/ci/generate-operation-capability.py'
+      - 'scripts/ci/generate-operation-capability.test.py'
+      - 'scripts/ci/openapi-drift-check.py'
+      - 'docs/developer/api-specs/**'
       - 'src/Honua.Server/openapi.json'
       - 'src/Honua.Server/ogc-tiles-openapi.json'
       - 'src/Honua.Server/ogc-maps-openapi.json'
@@ -94,6 +107,17 @@ jobs:
             exit 1
           fi
           echo "docs/gis/data/capability-matrix.v1.json is up to date."
+
+      # WS2 of the OKF knowledge-graph program: the OpenAPI operation ->
+      # capability correspondence was computed on every run and discarded. It is
+      # now an artifact, and stale means the join moved without anyone saying so.
+      # Proved before it is trusted, like the doc gates: a join that wrongly
+      # reports complete is the failure mode that matters.
+      - name: Test the operation-capability join
+        run: python3 scripts/ci/generate-operation-capability.test.py
+
+      - name: Drift check operation-capability.v1.json
+        run: python3 scripts/ci/generate-operation-capability.py --check
 
       - name: Validate CITE evidence-table joins against OpenAPI metadata
         run: python3 scripts/ci/validate-cite-openapi-compliance.py

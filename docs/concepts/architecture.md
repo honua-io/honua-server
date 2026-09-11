@@ -1,3 +1,8 @@
+---
+type: concept
+title: "Architecture"
+description: "Honua is a geospatial server that publishes, queries, edits, and renders spatial data through standard protocols."
+---
 # Architecture
 
 Honua is a geospatial server that publishes, queries, edits, and renders spatial data through standard protocols. It ships as a single container running one ASP.NET Core (.NET 10) process. There is no site model, no separate tile server, and no required sidecar: one process serves every protocol, the admin API, and the web endpoints.
@@ -13,18 +18,50 @@ Run a reverse proxy or load balancer in front for TLS. Health probes are `GET /h
 
 ## Data flow
 
+```mermaid
+flowchart LR
+  subgraph clients["Clients"]
+    esri["ArcGIS Pro / Esri SDKs"]
+    ogc["QGIS / MapLibre / Cesium"]
+    bi["Excel / Power BI"]
+    sdk["SDKs / gRPC / AI agents (MCP)"]
+  end
+
+  subgraph server["Honua Server — one process"]
+    adapters["Protocol adapters"]
+    pipeline["One shared pipeline<br/>query · edit · metadata · render"]
+    adapters --> pipeline
+  end
+
+  subgraph storage["Storage"]
+    postgis["PostGIS — read/write"]
+    duckdb["DuckDB — read-only"]
+    mssql["SQL Server — read-only"]
+    oracle["Oracle — read-only"]
+    mysql["MySQL / MariaDB — read-only"]
+  end
+
+  redis["Redis — optional<br/>shared cache · durable jobs"]
+  files["File storage<br/>local · S3 · Azure Blob"]
+
+  esri --> adapters
+  ogc --> adapters
+  bi --> adapters
+  sdk --> adapters
+
+  pipeline --> postgis
+  pipeline --> duckdb
+  pipeline --> mssql
+  pipeline --> oracle
+  pipeline --> mysql
+
+  pipeline -.-> redis
+  pipeline -.-> files
 ```
- Clients                         Honua Server                    Storage
- -------                         ------------                    -------
- ArcGIS Pro / Esri SDKs ──┐   ┌─────────────────────┐   ┌─ PostGIS (read/write)
- QGIS / MapLibre / Cesium ┼──▶│ Protocol adapters    │──▶├─ DuckDB        (read-only)
- Excel / Power BI ────────┤   │   over one shared    │   ├─ SQL Server    (read-only)
- SDKs / gRPC / AI (MCP) ──┘   │   query/edit/render  │   ├─ Oracle        (read-only)
-                              │   pipeline           │   └─ MySQL/MariaDB (read-only)
-                              └──────────┬───────────┘
-                                         ├─ Redis (optional: cache, durable jobs)
-                                         └─ Local / S3 / Azure Blob file storage
-```
+
+Dashed edges are optional infrastructure: remove Redis and the server still
+runs, with caching falling back to in-memory and the durable job and workflow
+endpoints reporting unavailable.
 
 Every protocol endpoint is a thin adapter over the same canonical query, edit, metadata, and rendering pipeline. Publish a layer once and it is served simultaneously through every protocol its service enables — see [Data model](data-model.md) and the [protocol matrix](protocols.md).
 

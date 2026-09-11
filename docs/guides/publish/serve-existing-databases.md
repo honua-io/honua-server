@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Serve existing databases"
+description: "You'll have tables you already own served as live layers, without copying data, in about 10 minutes."
+---
 # Serve existing databases
 
 You'll have tables you already own served as live layers, without copying data, in about 10 minutes.

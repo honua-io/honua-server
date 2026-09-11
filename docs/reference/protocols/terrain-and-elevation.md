@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Terrain and elevation"
+description: "Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for MapLibre/Mapbox raster-dem rendering, and JSON elevation endpoints for numeric point, profile, and surface-analysis queries."
+---
 # Terrain and elevation
 
 Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for MapLibre/Mapbox `raster-dem` rendering, and JSON elevation endpoints for numeric point, profile, and surface-analysis queries. Both surfaces share the same raster catalog and mosaic pipeline.

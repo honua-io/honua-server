@@ -1,3 +1,8 @@
+---
+type: runbook
+title: "Troubleshoot Honua Server"
+description: "You'll diagnose the most common operational failures by symptom and apply the verified fix."
+---
 # Troubleshoot Honua Server
 
 You'll diagnose the most common operational failures by symptom and apply the verified fix.
