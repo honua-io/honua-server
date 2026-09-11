@@ -44,6 +44,7 @@ on:
       - 'scripts/ci/check-okf-bundle.py'
       - 'scripts/ci/check-okf-bundle.test.py'
       - 'scripts/ci/okf-bundle.v1.json'
+      - 'scripts/ci/generate-llms-txt.py'
       - 'scripts/ci/doc-wire-reference-allowlist.v1.json'
       - 'scripts/docs-validation/test_windows_package_verification.py'
       - '.github/workflows/docs-link-gate.yml'
@@ -94,6 +95,12 @@ jobs:
       # outside by a recorded decision rather than by being un-navigable.
       - name: Check the OKF concept bundle
         run: python3 scripts/ci/check-okf-bundle.py --summary
+
+      # llms.txt is derived from SUMMARY.md plus each page's frontmatter, so it
+      # cannot drift from the docs on its own -- but it can go stale against
+      # them, which is what this catches.
+      - name: Check docs/llms.txt is current
+        run: python3 scripts/ci/generate-llms-txt.py --check
 
       - name: Reject raw curl additions in documentation
         run: python3 scripts/ci/check-doc-example-surfaces.py --base "${{ github.event.pull_request.base.sha || 'origin/trunk' }}"
