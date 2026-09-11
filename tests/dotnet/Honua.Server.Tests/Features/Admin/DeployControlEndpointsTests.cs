@@ -645,7 +645,11 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            document.RootElement.GetProperty("status").GetString().Should().Be("Succeeded");
+            // honua-server#4618: a forced manual promotion opens the same post-activation observation
+            // window an automatic promotion does, so the operation stays Reconciling with a Protection
+            // record rather than jumping straight to a terminal Succeeded.
+            document.RootElement.GetProperty("status").GetString().Should().Be("Reconciling");
+            document.RootElement.GetProperty("protection").GetProperty("phase").GetString().Should().Be("observing");
             backend.PromoteCalls.Should().Be(1);
         }
         finally

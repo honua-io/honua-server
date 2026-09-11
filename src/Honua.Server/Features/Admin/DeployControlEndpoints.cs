@@ -931,7 +931,30 @@ internal static class DeployControlEndpoints
             MetadataRelease = operation.MetadataRelease == null ? null : MapMetadataReleaseResponse(operation.MetadataRelease),
             CreatedAt = operation.CreatedAt,
             UpdatedAt = operation.UpdatedAt,
-            CompletedAt = operation.CompletedAt
+            CompletedAt = operation.CompletedAt,
+            Protection = operation.Deploy?.Protection == null ? null : MapProtectionResponse(operation.Deploy.Protection)
+        };
+
+    private static DeployProtectionResponse MapProtectionResponse(DeployProtectionState protection)
+        => new()
+        {
+            PreviousRevision = protection.PreviousRevision,
+            CandidateRevision = protection.CandidateRevision,
+            FirstExposureAt = protection.FirstExposureAt,
+            ObservationDeadline = protection.ObservationDeadline,
+            RecoveryDeadline = protection.RecoveryDeadline,
+            PolicyDigest = protection.PolicyDigest,
+            ApprovalScope = protection.ApprovalScope,
+            Phase = protection.Phase switch
+            {
+                DeployProtectionPhase.Observing => "observing",
+                DeployProtectionPhase.Protected => "protected",
+                DeployProtectionPhase.Recovering => "recovering",
+                DeployProtectionPhase.Expired => "expired",
+                DeployProtectionPhase.Unavailable => "unavailable",
+                _ => protection.Phase.ToString().ToLowerInvariant()
+            },
+            ReasonCode = protection.ReasonCode
         };
 
     private static MetadataReleaseContextResponse MapMetadataReleaseResponse(MetadataReleaseContext metadataRelease)

@@ -332,6 +332,28 @@ public interface IDeployBackend
     Task<DeployObservation> RollbackAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finalizes a completed post-activation observation window (honua-server#4618): retires any
+    /// retained previous-revision capacity a backend held open purely to serve deterministic recovery
+    /// (for example a co-located standby process) now that the window elapsed without a rollback
+    /// trigger. Backends that do not retain anything beyond their own <see cref="PromoteAsync"/> cutover
+    /// (their provider already owns retention/termination of the prior revision) can accept the default,
+    /// which is a no-op success.
+    /// </summary>
+    /// <param name="operation">Workflow operation record whose protection window just elapsed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Latest observation from the provider; a <see cref="WorkflowOperationStatus.Failed"/> status leaves the operation in <see cref="WorkflowOperationStatus.ManualInterventionRequired"/> rather than silently dropping retained capacity.</returns>
+    Task<DeployObservation> CompleteProtectionAsync(
+        WorkflowOperationRecord operation,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new DeployObservation
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            ProviderOperationId = operation.ProviderOperationId,
+            ObservedRevision = operation.Deploy?.Protection?.CandidateRevision ?? operation.Deploy?.CurrentRevision,
+            Message = "Post-activation observation window elapsed."
+        });
 }
 
 /// <summary>

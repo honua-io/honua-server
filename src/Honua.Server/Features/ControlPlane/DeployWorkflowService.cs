@@ -517,7 +517,7 @@ internal sealed partial class DeployWorkflowService
                 "Only deploy workflow operations can be promoted.");
         }
 
-        var preconditionDetail = DescribePromotionPrecondition(operation.Status);
+        var preconditionDetail = DescribePromotionPrecondition(operation);
         if (preconditionDetail != null)
         {
             return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation, preconditionDetail);
@@ -596,6 +596,12 @@ internal sealed partial class DeployWorkflowService
             Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
         };
 
+        // honua-server#4618: a manual promote bypasses the reconcile loop (it drives the backend
+        // directly, above), so it must open the same post-activation observation window the reconciler
+        // opens for an automatic promotion — otherwise a forced cutover would skip straight to a
+        // terminal Succeeded with no recovery window at all.
+        updated = DeployWorkflowReconciler.BeginPostActivationObservationIfPromoted(updated);
+
         await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
         Log.DeployManuallyPromoted(
             _logger,
@@ -611,11 +617,16 @@ internal sealed partial class DeployWorkflowService
     /// Returns a human-readable reason when an operation cannot be manually promoted from its current
     /// status, or <see langword="null"/> when promotion may proceed. Promotion is valid only while the
     /// rollout is in flight (<see cref="WorkflowOperationStatus.Submitted"/> /
-    /// <see cref="WorkflowOperationStatus.Reconciling"/>).
+    /// <see cref="WorkflowOperationStatus.Reconciling"/>) and has not already activated a candidate — a
+    /// <see cref="WorkflowOperationStatus.Reconciling"/> operation with <c>Deploy.Protection</c> set
+    /// (honua-server#4618) is already past cutover and observing, so it is treated the same as
+    /// <see cref="WorkflowOperationStatus.Succeeded"/> here.
     /// </summary>
-    private static string? DescribePromotionPrecondition(WorkflowOperationStatus status)
-        => status switch
+    private static string? DescribePromotionPrecondition(WorkflowOperationRecord operation)
+        => operation.Status switch
         {
+            WorkflowOperationStatus.Reconciling when operation.Deploy?.Protection != null =>
+                "The deploy operation has already been promoted.",
             WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling => null,
             WorkflowOperationStatus.Planned or WorkflowOperationStatus.AwaitingApproval =>
                 "The deploy operation must be submitted before it can be promoted.",
@@ -625,8 +636,8 @@ internal sealed partial class DeployWorkflowService
                 "The deploy operation has already been promoted.",
             WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Failed
                 or WorkflowOperationStatus.ManualInterventionRequired =>
-                $"The deploy operation is already in a terminal state ({status}) and cannot be promoted.",
-            _ => $"The deploy operation cannot be promoted from status {status}."
+                $"The deploy operation is already in a terminal state ({operation.Status}) and cannot be promoted.",
+            _ => $"The deploy operation cannot be promoted from status {operation.Status}."
         };
 
     private static OperationAuditInfo MergePromotionAudit(OperationAuditInfo audit, string? requestedBy, string? reason)
@@ -717,7 +728,11 @@ internal sealed partial class DeployWorkflowService
                     {
                         RequestedBy = requestedBy ?? operation.Audit.RequestedBy,
                         Reason = reason ?? operation.Audit.Reason
-                    }
+                    },
+                    Deploy = DeployWorkflowReconciler.WithProtectionPhase(
+                        operation.Deploy,
+                        DeployProtectionPhase.Unavailable,
+                        "rollback-backend-unavailable")
                 };
             }
             else
@@ -757,6 +772,20 @@ internal sealed partial class DeployWorkflowService
                     await MarkRollbackSubmissionRetryableAsync(rollbackClaim, ex).ConfigureAwait(false);
                     throw;
                 }
+                // honua-server#4618: an out-of-band rollback (manual, or coordinated-release-driven via
+                // CoordinatedContainerStepExecutor) bypasses the reconciler's own rollback signaling, so
+                // it must keep Deploy.Protection's phase consistent with reality itself — otherwise a
+                // record promoted into an observation window would show "observing" forever even after
+                // recovery settled or failed.
+                var rollbackDeploySpec = observation.Status == WorkflowOperationStatus.RolledBack
+                    ? DeployWorkflowReconciler.WithoutProtection(rollbackClaim.Deploy!)
+                    : DeployWorkflowReconciler.WithProtectionPhase(
+                        rollbackClaim.Deploy!,
+                        observation.Status is WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired
+                            ? DeployProtectionPhase.Unavailable
+                            : DeployProtectionPhase.Recovering,
+                        "rollback-requested-out-of-band");
+
                 updated = rollbackClaim with
                 {
                     Status = observation.Status,
@@ -768,7 +797,8 @@ internal sealed partial class DeployWorkflowService
                         : null,
                     ProviderOperationId = observation.ProviderOperationId ?? operation.ProviderOperationId,
                     CurrentPhase = observation.Message ?? "Rollback requested",
-                    ErrorMessage = observation.Status == WorkflowOperationStatus.Failed ? observation.Message : null
+                    ErrorMessage = observation.Status == WorkflowOperationStatus.Failed ? observation.Message : null,
+                    Deploy = rollbackDeploySpec
                 };
 
                 if (!await _workflowStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))

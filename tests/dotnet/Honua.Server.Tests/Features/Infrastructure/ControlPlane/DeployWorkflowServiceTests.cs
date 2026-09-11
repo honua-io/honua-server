@@ -475,9 +475,13 @@ public sealed class DeployWorkflowServiceTests
 
         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
         var succeeded = await store.GetAsync(operation.OperationId);
-        succeeded!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
-        succeeded.CompletedAt.Should().NotBeNull();
-        succeeded.Deploy!.CurrentRevision.Should().Be("sha256:old");
+        // honua-server#4618: promotion opens a post-activation observation window instead of finishing
+        // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
+        succeeded!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        succeeded.CompletedAt.Should().BeNull();
+        succeeded.Deploy!.Protection.Should().NotBeNull();
+        succeeded.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
+        succeeded.Deploy.CurrentRevision.Should().Be("sha256:old");
         succeeded.ObservedState.Should().Be(succeeded.Deploy.DesiredRevision);
     }
 
@@ -592,8 +596,11 @@ public sealed class DeployWorkflowServiceTests
         var updated = await store.GetAsync(operation.OperationId);
 
         updated.Should().NotBeNull();
-        updated!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
-        updated.CurrentPhase.Should().Contain("Telemetry gate passed");
+        // honua-server#4618: promotion opens a post-activation observation window instead of settling
+        // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
+        updated!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        updated.Deploy!.Protection.Should().NotBeNull();
+        updated.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
     }
 
     [Fact]
@@ -672,8 +679,12 @@ public sealed class DeployWorkflowServiceTests
         var promoted = await store.GetAsync(operation.OperationId);
 
         promoted.Should().NotBeNull();
-        promoted!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
-        promoted.Deploy!.CurrentRevision.Should().Be("sha256:old");
+        // honua-server#4618: promotion opens a post-activation observation window instead of settling
+        // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
+        promoted!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        promoted.Deploy!.Protection.Should().NotBeNull();
+        promoted.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
+        promoted.Deploy.CurrentRevision.Should().Be("sha256:old");
         promoted.ObservedState.Should().Be("sha256:new");
         backend.PromoteCount.Should().Be(1);
     }
@@ -703,14 +714,19 @@ public sealed class DeployWorkflowServiceTests
             await Task.Delay(10);
             await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
             var snapshot = await store.GetAsync(operation.OperationId);
-            if (snapshot!.Status == WorkflowOperationStatus.Succeeded)
+            // honua-server#4618: the terminal step's promotion opens a post-activation observation
+            // window rather than settling immediately, so "promoted" is now signalled by an open
+            // Protection record rather than a terminal Succeeded status.
+            if (snapshot!.Deploy?.Protection != null)
             {
                 break;
             }
         }
 
         var promoted = await store.GetAsync(operation.OperationId);
-        promoted!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        promoted!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        promoted.Deploy!.Protection.Should().NotBeNull();
+        promoted.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
         promoted.ObservedState.Should().Be("sha256:new");
         // Intermediate steps (25, 50) are applied through StartAsync; the terminal step promotes.
         backend.AppliedCanaryWeights.Should().ContainInOrder("25", "50");
@@ -738,7 +754,8 @@ public sealed class DeployWorkflowServiceTests
             snapshot = await store.GetAsync(operation.OperationId);
             if (snapshot!.Status is WorkflowOperationStatus.RollbackRequested
                 or WorkflowOperationStatus.RolledBack
-                or WorkflowOperationStatus.Succeeded)
+                or WorkflowOperationStatus.Succeeded
+                || snapshot.Deploy?.Protection != null)
             {
                 break;
             }
@@ -783,7 +800,11 @@ public sealed class DeployWorkflowServiceTests
         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
         var promoted = await store.GetAsync(operation.OperationId);
 
-        promoted!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        // honua-server#4618: promotion opens a post-activation observation window instead of settling
+        // immediately, so the operation stays Reconciling (non-terminal) with an open Protection record.
+        promoted!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        promoted.Deploy!.Protection.Should().NotBeNull();
+        promoted.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
         promoted.ObservedState.Should().Be("sha256:new");
         backend.PromoteCount.Should().Be(1, "single-step deploys promote once with no ramp stepping");
         backend.AppliedCanaryWeights.Should().BeEmpty("no intermediate StartAsync calls without a ramp");
