@@ -108,8 +108,14 @@ public sealed class GeoservicesRelationshipApplyTests
         writer.VerifyNoOtherCalls();
     }
 
+    /// <summary>
+    /// Issue #4600 (acceptance criterion 2): a relationship this slice cannot recreate must produce
+    /// an <em>explicit</em> incomplete-migration signal, never a silent omission. It is still not
+    /// written to the catalog — the writer is never called — but it now leaves a deferred outcome
+    /// the fidelity gate can block on.
+    /// </summary>
     [Fact]
-    public async Task ApplyRelationshipsAsync_ManualReviewClassification_IsSkipped()
+    public async Task ApplyRelationshipsAsync_ManualReviewClassification_IsDeferredNotSilentlyDropped()
     {
         var writer = new Mock<IMigrationCatalogWriter>(MockBehavior.Strict);
         var service = CreateService(writer.Object);
@@ -130,7 +136,15 @@ public sealed class GeoservicesRelationshipApplyTests
             graphStore: null,
             CancellationToken.None);
 
-        outcomes.Should().BeEmpty();
+        var outcome = outcomes.Should().ContainSingle().Subject;
+        outcome.Deferred.Should().BeTrue();
+        outcome.Message.Should().Contain(MigrationManifestRelationshipClassifications.ManualReview);
+        // The origin layer is in the published map, so the deferred outcome carries a usable
+        // target reference for the operator to act on.
+        outcome.TargetRelationshipRef.Should().Be("rel-200-5");
+
+        // Still never persisted: the writer is not called for a relationship this slice cannot
+        // recreate.
         writer.VerifyNoOtherCalls();
     }
 

@@ -50,6 +50,18 @@ internal sealed partial class GeoservicesImportService
             {
                 if (!IsApplyEligible(relationship.Classification))
                 {
+                    // #4600: a composite / many-to-many / unsupported relationship used to drop out
+                    // of the apply loop here without leaving any trace, so the run reported success
+                    // while the target was missing a construct the source had. Emit an explicit
+                    // deferred outcome instead so the fidelity gate blocks on it.
+                    skipped.Add(BuildSkippedOutcome(
+                        relationship.SourceRelationshipId,
+                        $"Relationship is classified '{relationship.Classification}' and is not recreated by automated "
+                        + "apply; the junction/composite behavior must be modelled on the target before cutover.",
+                        publishedLayerMap.TryGetValue(target.SourceResourceId, out var ineligibleOriginLayerId)
+                            ? ineligibleOriginLayerId
+                            : null,
+                        relationship));
                     continue;
                 }
 
@@ -185,7 +197,11 @@ internal sealed partial class GeoservicesImportService
             SourceRelationshipId = sourceRelationshipId,
             Outcome = MigrationCatalogWriteOutcome.AlreadyExists,
             Message = message,
-            TargetRelationshipRef = refValue
+            TargetRelationshipRef = refValue,
+            // #4600: mark the omission explicitly. AlreadyExists is also what a successful
+            // idempotent re-apply reports, so without this flag the fidelity gate cannot tell a
+            // persisted relationship from a dropped one.
+            Deferred = true
         };
     }
 }
