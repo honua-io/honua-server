@@ -52,6 +52,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private const string EnsureImportTableSql = "SELECT honua.ensure_import_table(@schema_name, @table_name, @target_srid)";
     private const string CreateImportStagingTableSql = "SELECT honua.create_import_staging_table(@schema_name, @table_name, @target_srid)";
     private const string SwapImportTableSql = "SELECT honua.swap_import_table(@schema_name, @table_name)";
+    private const string DropImportStagingTableSql = "SELECT honua.drop_import_staging_table(@schema_name, @table_name)";
     private const string EnsureImportUpsertKeySql = "SELECT honua.ensure_import_upsert_key(@schema_name, @table_name, @key_columns)";
     private const string InsertImportFeatureSql = "SELECT honua.insert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties)";
     private const string InsertImportFeatureWithDatumSql = "SELECT honua.insert_import_feature(@schema_name, @table_name, @wkb, @source_srid, @target_srid, @properties, @datum_pipeline)";
@@ -543,7 +544,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             IReadOnlyList<ImportValidationIssue> rowIssues;
             int repairedCount;
             string physicalTableName;
-            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName) = await ImportStreamingAsync(
+            bool replacementBlocked;
+            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
@@ -558,6 +560,23 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             if (importedCount == 0 && failedCount == 0)
             {
                 errorMessage = "No features found in file";
+                result = ImportResult.CreateFailure(
+                    request.TableName,
+                    format.Value,
+                    errorMessage,
+                    stopwatch.Elapsed,
+                    warnings);
+                return result;
+            }
+
+            // A replace whose load dropped rows against an already-populated target never
+            // promoted its staging sibling (see ImportStreamingAsync) — the live target is
+            // unchanged. Report that truthfully rather than a complete success: the caller asked
+            // to replace the whole dataset and got nothing applied instead (#4006).
+            if (replacementBlocked)
+            {
+                errorMessage = $"Import failed: {failedCount} feature(s) could not be imported; " +
+                    "the replace was not applied and the prior target is unchanged.";
                 result = ImportResult.CreateFailure(
                     request.TableName,
                     format.Value,

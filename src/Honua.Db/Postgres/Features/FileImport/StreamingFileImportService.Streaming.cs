@@ -24,7 +24,7 @@ internal sealed partial class StreamingFileImportService
     /// <summary>
     /// Stream features from source and insert into database in batches.
     /// </summary>
-    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName)> ImportStreamingAsync(
+    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
         SupportedFileFormat format,
@@ -76,6 +76,7 @@ internal sealed partial class StreamingFileImportService
             // first statement; preparing the table here (autocommit, on the SAME connection)
             // guarantees it is committed and visible before that snapshot.
             string loadTableName;
+            var hadExistingTarget = false;
             switch (loadMode)
             {
                 case ImportLoadMode.Append:
@@ -88,7 +89,12 @@ internal sealed partial class StreamingFileImportService
                     loadTableName = allowedTableName;
                     break;
                 default:
-                    // Replace via transactional staging-table swap.
+                    // Replace via transactional staging-table swap. Record whether a live
+                    // target already existed before this request: a first-ever replace into a
+                    // brand-new target has no prior complete dataset to protect (#4006), so it
+                    // must still promote even if the load dropped rows.
+                    hadExistingTarget = await ImportTableExistsAsync(
+                        connection, targetSchema, allowedTableName, cancellationToken);
                     loadTableName = await CreateStagingTableAsync(
                         connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
                     break;
@@ -229,15 +235,38 @@ internal sealed partial class StreamingFileImportService
                 batchesCommitted++;
             }
 
-            // For a replace, the load streamed into the staging sibling; atomically rename it
-            // over the live target now that every batch committed successfully. A failure or
-            // cancellation before this point left the live table untouched.
+            // Roll geometry-gate skips into the failure tally before the replace path decides
+            // whether to promote: a skip excludes the feature entirely rather than reporting a
+            // batch insert failure (see InsertBatchFastAsync/InsertBatchIndividuallyAsync), so
+            // totalFailed would otherwise read zero here even though input rows were dropped.
+            totalFailed += repairTally.SkippedInvalid;
+
+            // For a replace, the load streamed into the staging sibling. Promote it over the
+            // live target unless doing so would destroy a prior COMPLETE dataset: when a target
+            // already existed and this load dropped rows (skip/continue), promoting the
+            // incomplete staging sibling would silently replace a complete dataset with a
+            // partial one (#4006). A first-ever replace into a brand-new target has nothing to
+            // protect, so it still promotes even with dropped rows — that is a normal partial
+            // import, not data loss.
+            var replacementBlocked = loadMode == ImportLoadMode.Replace && hadExistingTarget && totalFailed > 0;
             if (loadMode == ImportLoadMode.Replace)
             {
-                await SwapStagingTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+                if (replacementBlocked)
+                {
+                    await DropStagingTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+                }
+                else
+                {
+                    await SwapStagingTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+                }
             }
 
-            await AnalyzeTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+            // Skip ANALYZE when the replace was blocked: the live table is unchanged, so its
+            // statistics are already current, and re-analyzing it is pure overhead.
+            if (!replacementBlocked)
+            {
+                await AnalyzeTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+            }
 
             // Surface skipped null-geometry rows in the completion progress report
             // so background/queued imports expose the same warning as synchronous results.
@@ -289,11 +318,11 @@ internal sealed partial class StreamingFileImportService
                 completionWarningsBuilder.Add(string.Format(null, _repairedGeometryWarningFormat, repairTally.Repaired));
             }
 
-            // Features the geometry gate excluded entirely (SkipInvalidGeometry): count them as
-            // not-imported rows and surface the loss so a skip is never silent.
+            // Features the geometry gate excluded entirely (SkipInvalidGeometry): already rolled
+            // into totalFailed above (before the replace promotion decision); surface the loss
+            // here so a skip is never silent.
             if (repairTally.SkippedInvalid > 0)
             {
-                totalFailed += repairTally.SkippedInvalid;
                 completionWarningsBuilder.Add(string.Format(null, _skippedInvalidGeometryWarningFormat, repairTally.SkippedInvalid));
             }
 
@@ -323,7 +352,7 @@ internal sealed partial class StreamingFileImportService
                 CurrentPhase = "Import completed"
             });
 
-            return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName);
+            return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked);
         }
         finally
         {

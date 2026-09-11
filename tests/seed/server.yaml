@@ -1036,6 +1036,28 @@ sql:
       END;
       $$;
   - |
+      -- Mirrors migration 115_AddDropImportStagingTable.sql. A Replace whose load dropped
+      -- rows against an already-populated target never promotes its staging sibling (#4006)
+      -- and drops it instead, so this migration-skipping fixture must declare the helper or
+      -- that path fails with 42883 on "honua.drop_import_staging_table".
+      CREATE OR REPLACE FUNCTION honua.drop_import_staging_table(
+          schema_name text,
+          table_name text)
+      RETURNS void
+      LANGUAGE plpgsql
+      AS $$
+      DECLARE
+          staging_name text;
+      BEGIN
+          PERFORM honua.assert_import_identifier(schema_name, 'Schema name');
+          PERFORM honua.assert_import_identifier(table_name, 'Table name');
+
+          staging_name := honua.import_staging_table_name(table_name);
+
+          EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
+      END;
+      $$;
+  - |
       CREATE OR REPLACE FUNCTION honua.ensure_import_upsert_key(
           schema_name text,
           table_name text,
