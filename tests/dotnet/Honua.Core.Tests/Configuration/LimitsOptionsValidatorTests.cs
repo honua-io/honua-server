@@ -393,4 +393,42 @@ public class LimitsOptionsValidatorTests
             f => f.Contains("Elevation", StringComparison.Ordinal)
                  && f.Contains("DefaultSampleCount", StringComparison.Ordinal));
     }
+
+    [UnitTest]
+    public void Validate_AnalyticsMaxInputBytesBelowRange_ReturnsFail()
+    {
+        // MaxInputBytes must be >= 1 per the trim-safe Range attribute on AnalyticsLimits (#4629).
+        var options = new LimitsOptions
+        {
+            Analytics = new AnalyticsLimits
+            {
+                MaxInputBytes = 0
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("Analytics", StringComparison.Ordinal)
+                 && f.Contains("MaxInputBytes", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void Validate_AnalyticsMaxInputBytesAtInt64Max_ReturnsSuccess()
+    {
+        // The upper bound stays long.MaxValue: the full Int64 range above the floor is accepted.
+        var options = new LimitsOptions
+        {
+            Analytics = new AnalyticsLimits
+            {
+                MaxInputBytes = long.MaxValue
+            }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded, string.Join("; ", result.Failures ?? Array.Empty<string>()));
+    }
 }
