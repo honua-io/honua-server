@@ -47,13 +47,15 @@ jobs:
       cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      changed: ${{ steps.package.outputs.changed }}
     steps:
+      # Generators, MSBuild and tests run repository code: they get only the
+      # read-only GITHUB_TOKEN, and checkout does not persist even that.
       - uses: actions/checkout@v7
         with:
           ref: trunk
-          # Existing ruleset-bypass credential also used by merge-train.yml.
-          # No GITHUB_TOKEN fallback: that identity cannot write protected trunk.
-          token: ${{ secrets.MERGE_TRAIN_TOKEN }}
+          persist-credentials: false
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -72,5 +74,47 @@ jobs:
             --configuration Release --no-build --no-restore \
             --filter 'FullyQualifiedName~FeatureCatalog|FullyQualifiedName~GeoServicesParityMatrixDriftTests|FullyQualifiedName~PublicInterfaceProofLedgerTests'
 
+      - name: Package projections for the isolated writer
+        id: package
+        run: bash scripts/ci/package-generated-files.sh "$RUNNER_TEMP/generated-files"
+
+      - name: Upload projections
+        if: steps.package.outputs.changed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: generated-files
+          path: ${{ runner.temp }}/generated-files
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: regenerate
+    if: needs.regenerate.outputs.changed == 'true'
+    # A fresh runner that never executes generator code. Only its final step
+    # sees the ruleset-bypass credential.
+    concurrency:
+      group: generated-files-on-trunk-publish
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: trunk
+          persist-credentials: false
+
+      - name: Download projections
+        uses: actions/download-artifact@v8
+        with:
+          name: generated-files
+          path: ${{ runner.temp }}/generated-files
+
+      - name: Validate and apply untrusted generator output
+        run: bash scripts/ci/apply-generated-files.sh "$RUNNER_TEMP/generated-files"
+
+      # Existing ruleset-bypass credential also used by merge-train.yml.
+      # No GITHUB_TOKEN fallback: that identity cannot write protected trunk.
       - name: Commit changed projections once
+        env:
+          GENERATED_FILES_PUSH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}
         run: bash scripts/ci/commit-generated-files.sh --commit

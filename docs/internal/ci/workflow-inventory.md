@@ -320,7 +320,7 @@ which is why both the run count and exact observed span are recorded.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `generated-files-on-trunk.yml` | Regenerate Generated Files on Trunk | `push` (trunk) | Serializes regeneration of the six repository-state projections, validates authored inputs, and commits changed outputs as Mike McDougall using the existing merge-train credential. Own commits skip the job; no drift means no commit. See [inventory and dry run](generated-files-on-trunk.md). |
+| `generated-files-on-trunk.yml` | Regenerate Generated Files on Trunk | `push` (trunk) | Serializes regeneration of the six repository-state projections, validates authored inputs with the read-only token, then commits changed outputs as Mike McDougall from an isolated writer job whose final push step alone receives the existing merge-train credential. Own commits skip the job; no drift means no commit. See [inventory and dry run](generated-files-on-trunk.md). |
 | `trunk-sanity.yml` | Trunk Sanity | `push` (trunk), `workflow_dispatch` | Cheap post-merge restore/build only; heavy CI does not run on merge-to-trunk pushes. |
 | `label-sync.yml` | Capability Label Sync | `push` (trunk), `workflow_dispatch` | Creates/updates `cap/<category>` labels from the canonical category list; never deletes or renames (#2896). |
 | `reusable-sdk-pr-gate.yml` | SDK PR Gate | `workflow_call` | Reusable gate consumed by `honua-sdk-js`, `honua-sdk-dotnet`, and `honua-sdk-python`. |

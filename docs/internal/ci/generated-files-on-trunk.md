@@ -60,12 +60,23 @@ The separate capability aggregation check now also reports drift with a notice.
 The existing normalization producer/consumer remains in observation mode and
 continues its bounded reproducibility checks without modifying PR branches.
 
-Trunk generation uses the existing `MERGE_TRAIN_TOKEN`, whose identity already
-has ruleset bypass for the merge train. The workflow token remains read-only.
-No new secret or branch-protection change is required. Generation runs only on
-trusted trunk code. A serialized writer checks out current trunk, validates,
-stages only the six outputs, and creates at most one commit with author and
-committer `Mike McDougall <mike@honua.io>` and footer `Refs #3213`.
+Generation and writing run on separate runners. The `regenerate` job runs
+the generators, MSBuild and tests. It holds only the read-only `GITHUB_TOKEN`,
+and its checkout sets `persist-credentials: false`. It packages the six outputs
+and the source SHA (`scripts/ci/package-generated-files.sh`) as an artifact.
+The `publish` job runs on a fresh runner that executes no generator code. It
+checks out current trunk without persisted credentials, then treats the
+artifact as untrusted bytes. `scripts/ci/apply-generated-files.sh` rejects
+extra, missing, symlinked or oversized entries. It also rejects any source SHA
+other than the checked-out trunk head, so a claimed descendant commit can
+never be fast-forwarded. Only the final commit step receives the existing
+`MERGE_TRAIN_TOKEN`, whose identity already has merge-train ruleset bypass.
+It is passed as `GENERATED_FILES_PUSH_TOKEN` and reaches only the `git push`
+process through `GIT_CONFIG_*` environment variables. It never appears in
+`.git/config` or on a command line. No new secret or branch-protection change
+is required. The writer stages only the six outputs. It creates at most one
+commit with author and committer `Mike McDougall <mike@honua.io>` and footer
+`Refs #3213`.
 
 No diff produces no commit. The generated commit subject plus its
 `Generated-From` trailer skip its own push-triggered job; a similarly titled

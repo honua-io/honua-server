@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Called only in the dedicated trunk checkout, after successful regeneration.
+# Called only on the isolated writer's trunk checkout, after apply-generated-files.sh.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 source scripts/ci/generated-files.sh
@@ -23,11 +23,22 @@ GIT_COMMITTER_NAME='Mike McDougall' GIT_COMMITTER_EMAIL='mike@honua.io' \
   git -c user.name='Mike McDougall' -c user.email='mike@honua.io' commit \
     -m 'ci: regenerate generated files on trunk' \
     -m "Generated-From: ${source_sha}" -m 'Refs #3213'
+# The bypass credential reaches only the push process, through its environment:
+# never .git/config (checkout does not persist it) and never a command line.
+push() {
+  if [[ -z "${GENERATED_FILES_PUSH_TOKEN:-}" ]]; then
+    git push origin HEAD:refs/heads/trunk
+    return
+  fi
+  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0='http.https://github.com/.extraheader' \
+  GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GENERATED_FILES_PUSH_TOKEN" | base64 -w0)" \
+    git push origin HEAD:refs/heads/trunk
+}
 # Never rebase generated blobs onto a different source tree or force-push.
 # A concurrent trunk merge gets its own queued regeneration run.
 for delay in 0 10 30 60 120; do
   (( delay == 0 )) || sleep "$delay"
-  if git push origin HEAD:refs/heads/trunk >push-generated.log 2>&1; then
+  if push >push-generated.log 2>&1; then
     cat push-generated.log
     rm push-generated.log
     exit 0
