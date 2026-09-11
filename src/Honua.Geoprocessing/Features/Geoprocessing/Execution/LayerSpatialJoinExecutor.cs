@@ -77,13 +77,28 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
 
         // Resolve the second (join) layer through the same source.honua-layer connector
         // that streamed the target layer. Only the join layer id windows this read; the
-        // shared analytics where/bbox filters apply to the target layer.
+        // shared analytics where/bbox filters apply to the target layer. Bounded by the
+        // SAME admission limits as the target layer (#4629): a two-layer op that only
+        // bounded one side would let the unbounded side alone destabilize the worker.
         var joinLayerId = RequireLayerId(inputs, "joinLayerId");
         var joinRequest = new DagSourceRequest { LayerId = joinLayerId };
-        var joinFeatures = await ReadLayerAsync(context.LayerSource, joinRequest, cancellationToken)
+        var joinFeatures = await ReadLayerAsync(
+                context.LayerSource,
+                joinRequest,
+                cancellationToken,
+                Limits.Analytics.MaxInputFeatures,
+                $"join layer {joinLayerId}",
+                Limits.Geometry.MaxVerticesPerGeometry)
             .ConfigureAwait(false);
 
         var index = SpatialJoinSupport.BuildIndex(joinFeatures, cancellationToken);
+
+        // The join itself is a Cartesian product: two per-layer-admitted but broadly
+        // overlapping layers can still evaluate far more candidate pairs and carry far more
+        // matched values than either input's feature count implies (honua-server#3075). The
+        // enrichment.enrich executor already charges this same shared budget; this executor
+        // was the one two-layer op still passing budget: null (#4629).
+        var budget = new SpatialJoinSupport.MatchBudget(SpatialJoinSupport.DefaultMaxCarriedMatchValues);
 
         var output = new List<IFeature>(context.Features.Count);
         foreach (var target in context.Features)
@@ -93,7 +108,7 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
             // overlapping dataset can spend a long time in the candidate loop, so checking
             // only between targets left a dismissed job running (honua-server#3075).
             output.Add(SpatialJoinSupport.Join(
-                target, index, predicate, distance, carryFields, stats, budget: null, cancellationToken));
+                target, index, predicate, distance, carryFields, stats, budget, cancellationToken));
         }
 
         return output;

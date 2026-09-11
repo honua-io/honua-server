@@ -119,14 +119,6 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     /// </summary>
     private const int MaxInputFeaturesCeiling = 1_000_000;
 
-    /// <summary>
-    /// Cumulative ceiling on carried match values across an entire join. Bounds the
-    /// Cartesian growth the per-layer input caps cannot see (targets x matches x
-    /// carried fields), so two individually permitted but highly overlapping layers
-    /// cannot exhaust the worker before the artifact-size check.
-    /// </summary>
-    private const long DefaultMaxCarriedMatchValues = 20_000_000L;
-
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly ILogger<EnrichmentJobExecutor> _logger;
@@ -556,8 +548,8 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 
         // Same posture as the input cap: the caller may only LOWER the join budget.
         var maxCarriedMatchValues = Math.Min(
-            TryReadNonNegativeLong(inputs, "maxCarriedMatchValues") ?? DefaultMaxCarriedMatchValues,
-            DefaultMaxCarriedMatchValues);
+            TryReadNonNegativeLong(inputs, "maxCarriedMatchValues") ?? SpatialJoinSupport.DefaultMaxCarriedMatchValues,
+            SpatialJoinSupport.DefaultMaxCarriedMatchValues);
 
         return new EnrichmentPlan(
             methodName, nearest, predicate, distance, carryFields, stats, maxInputFeatures, maxCarriedMatchValues);
