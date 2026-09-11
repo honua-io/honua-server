@@ -221,8 +221,6 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
         using var stream = new MemoryStream(payload);
         using var reader = new ParquetSharp.Arrow.FileReader(stream);
 
-        reader.Schema.Metadata.TryGetValue("geo", out var geoMetadata);
-
         var wkbReader = new WKBReader();
         var rows = new List<DecodedRow>();
 
@@ -231,10 +229,10 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
         {
             using (batch)
             {
-                var objectIds = (Int64Array)batch.Column("objectid");
-                var names = (StringArray)batch.Column("name");
-                var states = (StringArray)batch.Column("state");
-                var geometries = (BinaryArray)batch.Column("geometry");
+                var objectIds = RequireColumn<Int64Array>(batch, "objectid");
+                var names = RequireColumn<StringArray>(batch, "name");
+                var states = RequireColumn<StringArray>(batch, "state");
+                var geometries = RequireColumn<BinaryArray>(batch, "geometry");
 
                 for (var index = 0; index < batch.Length; index++)
                 {
@@ -248,7 +246,32 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
             }
         }
 
+        // The Arrow reader only surfaces the file's key-value metadata on its schema once a batch
+        // has been read (the same "materialize schema" order the FeatureServer f=parquet tests
+        // use); read before that, Schema.Metadata is null. Stay null-safe so a file that truly
+        // carries no 'geo' key fails AssertGeoMetadata with that message rather than an NRE.
+        string? geoMetadata = null;
+        reader.Schema.Metadata?.TryGetValue("geo", out geoMetadata);
+
         return new DecodedParquet(rows, geoMetadata);
+    }
+
+    /// <summary>
+    /// Resolves a named column, failing with the columns the file actually carries rather than
+    /// Arrow's bare index-out-of-range when the served schema does not name it.
+    /// </summary>
+    private static TArray RequireColumn<TArray>(RecordBatch batch, string name)
+        where TArray : IArrowArray
+    {
+        var index = batch.Schema.GetFieldIndex(name);
+        index.Should().BeGreaterThanOrEqualTo(0,
+            "the served GeoParquet must carry column '{0}' (it carries: {1})",
+            name,
+            string.Join(", ", batch.Schema.FieldsList.Select(field => field.Name)));
+
+        var column = batch.Column(index);
+        column.Should().BeOfType<TArray>("column '{0}' must decode as {1}", name, typeof(TArray).Name);
+        return (TArray)column;
     }
 
     private sealed record DecodedParquet(IReadOnlyList<DecodedRow> Rows, string? GeoMetadata);
