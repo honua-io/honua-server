@@ -199,8 +199,23 @@ require(
     text=PR_GATE_TEXT,
 )
 require(
-    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, format\]",
-    "keep the required PR Gate context as a fail-closed aggregator",
+    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, format, ci-router-validation\]",
+    "keep the required PR Gate context as a fail-closed aggregator over "
+    "build/tests, format, and CI router validation",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"ci-router-validation:\n[\s\S]*?run: scripts/ci/pr-touches-ci-surface\.sh --github-output",
+    "classify every PR Gate run for CI-surface changes before deciding "
+    "whether to run the router/merge-authority guards",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"steps\.ci-surface\.outputs\.ci_surface == 'true'\n"
+    r"\s+run: \|\n\s+scripts/ci/validate-ci-router\.sh\n"
+    r"\s+bash scripts/ci/validate-single-merge-authority\.sh",
+    "run both trunk-only router guard scripts in PR Gate when a PR touches "
+    "the CI surface",
     text=PR_GATE_TEXT,
 )
 require(
