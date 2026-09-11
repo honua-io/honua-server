@@ -16,7 +16,7 @@ name: PR Gate
 # itself, it just skips its build and test steps.
 on:
   pull_request:
-    branches: [trunk]
+    branches: [trunk, tmp/docs-only-proof-base]
   workflow_dispatch:
 
 permissions:
