@@ -1,4 +1,28 @@
 <Project>
+  <!--
+    Version identity for the whole repository. honua-server carried none: no
+    <Version>, no version file, no release manifest and no tags, so every
+    assembly built as the .NET default 1.0.0 and nothing downstream could name
+    the server it was built from. The Helm chart's appVersion gate refuses the
+    placeholder 0.0.0 for exactly this reason.
+
+    The scheme is calendar-based: <year>.<release>.<patch>, matching the
+    delivery arcs the release program already names (2026.1, 2026.2). It is a
+    valid SemVer triple, so `docker/metadata-action` stamps images as
+    2026.1.1-aot and v2026.1.1-aot from a v2026.1.1 tag, which is the exact
+    form honua-helm expects.
+
+    Because the major number tracks the year rather than compatibility, the
+    breaking-change signal for clients lives in the protocol version
+    (geospatial.v1 -> v2) and in the capability manifest, not here.
+
+    VersionPrefix rather than Version so CI can append a prerelease suffix
+    (-rc.1, -nightly.N) without editing this file.
+  -->
+  <PropertyGroup>
+    <VersionPrefix>2026.1.1</VersionPrefix>
+  </PropertyGroup>
+
   <PropertyGroup>
     <LangVersion>preview</LangVersion>
     <Nullable>enable</Nullable>
