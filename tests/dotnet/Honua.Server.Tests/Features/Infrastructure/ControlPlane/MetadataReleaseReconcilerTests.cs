@@ -849,8 +849,8 @@ public sealed class MetadataReleaseReconcilerTests
 
         public List<Dictionary<string, object?>> Rows(int layerId) => _rows[layerId];
 
-        public IReadOnlyList<IReadOnlyDictionary<string, object?>> Snapshot(int layerId)
-            => Rows(layerId).Select(row => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(row)).ToArray();
+        public Dictionary<string, object?>[] Snapshot(int layerId)
+            => Rows(layerId).Select(row => new Dictionary<string, object?>(row)).ToArray();
     }
 
     /// <summary>
