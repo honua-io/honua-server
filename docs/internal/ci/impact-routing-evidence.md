@@ -73,14 +73,58 @@ resources and are sized independently:
   It retries an inconsistent slice from page one. Status is not a query filter:
   a run completing during pagination cannot shift page membership. Incomplete
   observers remain visible exclusions and owe no receipt yet.
-- `maximum_producer_run_catalogs` (3,000) bounds artifact listings for successful
-  observers. Failed and incomplete observers remain in the run catalogs.
-- `maximum_receipt_downloads` (2,500) bounds actual receipt archive transfers.
+- `maximum_producer_run_catalogs` (3,000) bounds the successful observers that
+  need an artifact catalog. Failed and incomplete observers remain in the run
+  catalogs.
+- `maximum_receipt_downloads` (2,500) bounds the indexed receipts per audit.
 
 The collector fails on a truncated catalog, persistent pagination race, or a
 single second exceeding the query ceiling. These are collection errors, not
 fabricated receipt-integrity findings. Per-query slicing replaces the old
 800-run page budget without shortening retention or changing the 5% loss gate.
+
+### GITHUB_TOKEN request budget
+
+The audit job uses only `github.token`. GitHub meters that token at 1,000
+requests per repository per hour, and other workflows draw on the same pool.
+`github_token_request_limit` (1,000) less `github_token_request_reserve` (200)
+is the job's allowance. The allowance shrinks further when the unmetered
+`/rate_limit` endpoint reports less remaining this hour. Every run-catalog
+page, artifact listing, download, retry, and expiry lookup is charged to
+`evidence/request-budget.json` before it is sent. The trend step reserves its
+41 history requests up front, or reports the current run alone. The
+per-phase spend is printed in the step summary and retained with the ledger.
+
+At the 2026-09-03..09 volume (1,307 runs per observer, 876 + 866 successful,
+801 + 775 receipts), the previous shape made one catalog request per
+successful observer and one download per receipt. With run catalogs and trend
+history, that was about 3,390 requests, more than four hours of the token
+pool. The current shape stays inside the allowance:
+
+| Phase | Requests |
+|---|---:|
+| Run catalogs (two sliced observer windows, serving, worker) | ~33 |
+| Name-filtered receipt listings, 100 per page, newest first | ~21 |
+| Per-run catalogs for runs that list no current-attempt receipt (skips, losses) | ~166 |
+| Receipt downloads not already in the cache (one day of new receipts) | ~225 |
+| Trend history (reserved) | 41 |
+| **Steady-state total** | **~486 of 800** |
+
+Receipt archives are immutable per artifact ID. The job restores them from a
+default-branch-scoped Actions cache. Pull request runs can neither restore nor
+write that cache. A cached archive is reused only while its SHA-256 matches
+the artifact catalog's `digest`. Archives outside the current index are
+pruned, so the cache tracks the retention window. When the cache is cold,
+receipt transfers run until the allowance is spent. The step then fails with
+the spend. The archives it verified are saved anyway, so the next audit
+resumes from them. A fully cold seven-day window completes on the third audit.
+Dispatching those three runs an hour apart recovers the ledger the same day.
+`scripts/ci/collect-impact-routing-runs.test.py` replays a slightly hotter
+volume (1,804 successful observers, 1,610 receipts) through the real
+collector, discovery, and downloader. It measures 3,455 requests for the old
+shape and 33 + 216 + 230 + 41 = 520 for a warm audit. A cold cache takes
+800, 800, then 763 requests across three audits. The replay also asserts that
+synthesized and per-run catalogs produce identical indexes.
 
 ### Receipt store identity and concurrency
 
@@ -108,10 +152,9 @@ integrity failures. Authoritative image matching uses the immutable run head
 and workflow identity; mutable PR tip pointers cannot invalidate historical
 runs. The detailed failure classification and supersession rules below apply.
 
-Observer receipts use a seven-day rolling retention window. At current activity
-that keeps per-run catalog discovery and downloads below the repository token's
-bounded request budget while requiring the positive/narrowed cohorts to reflect
-the current workload rather than stale historical examples.
+Observer receipts use a seven-day rolling retention window. The positive and
+narrowed cohorts therefore reflect the current workload rather than stale
+historical examples. The request budget above, not the window, bounds API cost.
 
 The live audit runs only from the default branch with read-only Actions and
 contents permissions. Pull requests touching this ledger run its seven-day

@@ -209,6 +209,18 @@ def load_policy(value: object) -> dict[str, Any]:
         raise ValueError("GitHub catalog or download bound is unsafe")
     if catalogs < downloads:
         raise ValueError("catalog bound must not be smaller than the download bound")
+    # Those bounds cap the window; the token caps the job. GitHub meters
+    # GITHUB_TOKEN at 1,000 requests per repository per hour, shared with every
+    # other workflow, so the collector spends at most `limit - reserve` and less
+    # when /rate_limit shows the hour is already partly used.
+    request_limit = positive_int(
+        value.get("github_token_request_limit"), "GitHub token request limit"
+    )
+    request_reserve = positive_int(
+        value.get("github_token_request_reserve"), "GitHub token request reserve"
+    )
+    if request_limit > 1000 or request_reserve >= request_limit:
+        raise ValueError("GitHub token request budget is unsafe")
     for field in (
         "minimum_docs_only_heads",
         "minimum_native_heads",
@@ -1952,6 +1964,8 @@ def main() -> int:
             "maximum_runs_per_query": policy["maximum_runs_per_query"],
             "maximum_producer_run_catalogs": policy["maximum_producer_run_catalogs"],
             "maximum_receipt_downloads": policy["maximum_receipt_downloads"],
+            "github_token_request_limit": policy["github_token_request_limit"],
+            "github_token_request_reserve": policy["github_token_request_reserve"],
         }
         if args.github_output:
             with args.github_output.open("a", encoding="utf-8", newline="\n") as handle:

@@ -38,6 +38,8 @@ def policy(**overrides: object) -> dict:
         "maximum_runs_per_query": 60,
         "maximum_producer_run_catalogs": 40,
         "maximum_receipt_downloads": 20,
+        "github_token_request_limit": 1000,
+        "github_token_request_reserve": 200,
         "minimum_docs_only_heads": 1,
         "minimum_native_heads": 2,
         "minimum_serving_impacted_heads": 1,
@@ -1199,8 +1201,16 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     assert "permissions:\n  actions: read\n  contents: read\n" in ledger
     assert ledger.count("permissions:") == 1
     assert "ref: ${{ github.workflow_sha }}" in ledger
-    assert "actions/runs/${run_id}/artifacts?per_page=100" in ledger
     assert "producer_count > MAXIMUM_CATALOGS" in ledger
+    # Every catalog, download and history request is charged to one
+    # GITHUB_TOKEN allowance; receipt archives come from a digest-checked cache.
+    assert 'budget --output evidence/request-budget.json' in ledger
+    assert ledger.count("--budget evidence/request-budget.json") == 6
+    assert "gh api" not in ledger.split("id: trend", 1)[0]
+    assert "--name pr-gate-impact-docs-only-v3 --name pr-gate-impact-full-v3" in ledger
+    assert "--name native-image-impact-observation-v3" in ledger
+    assert "restore-keys: impact-routing-receipts-v1-" in ledger
+    assert ledger.count("key: impact-routing-receipts-v1-${{ github.run_id }}") == 2
     # The run catalog is bounded in RUNS, read from the declared total before
     # paging, so the collection budget is comparable with the catalog and
     # download budgets instead of being a page count that silently undercut
@@ -1209,8 +1219,6 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     assert "collect-impact-routing-runs.py" in ledger
     assert 'COLLECTION_UPPER: ${{ steps.policy.outputs.collection_upper }}' in ledger
     assert 'id: download' in ledger
-    assert 'zipfile.is_zipfile(sys.argv[1])' in ledger
-    assert 'receipt artifact %s was unavailable or invalid after 4 attempts' in ledger
     assert "steps.download.outcome == 'success'" in ledger
     assert 'DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}' in ledger
     assert "collect_runs serving-image-boundary.yml" in ledger
