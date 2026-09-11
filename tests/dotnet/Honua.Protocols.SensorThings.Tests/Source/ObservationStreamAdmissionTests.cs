@@ -36,18 +36,19 @@ public sealed class ObservationStreamAdmissionTests
     public void TryCreateSession_EachCapRefusesExactlyAtItsLimit_AndNamesTheCapHit()
     {
         using var manager = CreateManager(perPrincipal: 2, perTenant: 3, node: 4);
-        var held = new List<ObservationStreamSession>();
-        try
         {
             // Principal cap: the third session for one credential is refused while its tenant
             // (2 of 3) and the node (2 of 4) still have room.
-            held.Add(Admit(manager, TenantA, "alice", out _)!);
-            held.Add(Admit(manager, TenantA, "alice", out _)!);
+            using var alice1 = Admit(manager, TenantA, "alice", out _);
+            using var alice2 = Admit(manager, TenantA, "alice", out _);
+            Assert.NotNull(alice1);
+            Assert.NotNull(alice2);
             Assert.Null(Admit(manager, TenantA, "alice", out var aliceLimit));
             Assert.Equal(ObservationStreamAdmissionLimit.Principal, aliceLimit);
 
             // A different principal in the same tenant is still admitted: alice cannot lock bob out.
-            held.Add(Admit(manager, TenantA, "bob", out var bobLimit)!);
+            using var bob = Admit(manager, TenantA, "bob", out var bobLimit);
+            Assert.NotNull(bob);
             Assert.Equal(ObservationStreamAdmissionLimit.None, bobLimit);
 
             // Tenant cap: tenant-a now holds 3 of 3, so a fresh principal there is refused.
@@ -55,7 +56,8 @@ public sealed class ObservationStreamAdmissionTests
             Assert.Equal(ObservationStreamAdmissionLimit.Tenant, carolLimit);
 
             // Another tenant is unaffected by tenant-a's saturation; this takes the last node slot.
-            held.Add(Admit(manager, TenantB, "alice", out var otherTenantLimit)!);
+            using var aliceElsewhere = Admit(manager, TenantB, "alice", out var otherTenantLimit);
+            Assert.NotNull(aliceElsewhere);
             Assert.Equal(ObservationStreamAdmissionLimit.None, otherTenantLimit);
             Assert.Equal(4, manager.SessionCount);
 
@@ -64,11 +66,8 @@ public sealed class ObservationStreamAdmissionTests
             Assert.Equal(ObservationStreamAdmissionLimit.Node, nodeLimit);
             Assert.Equal(4, manager.SessionCount);
         }
-        finally
-        {
-            held.ForEach(session => session.Dispose());
-        }
 
+        // Leaving the scope disposed every held session; each released its slot.
         Assert.Equal(0, manager.SessionCount);
     }
 

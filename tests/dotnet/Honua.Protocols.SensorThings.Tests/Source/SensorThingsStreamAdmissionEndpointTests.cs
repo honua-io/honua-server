@@ -53,63 +53,59 @@ public sealed class SensorThingsStreamAdmissionEndpointTests : IAsyncLifetime
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
         var ct = timeout.Token;
-        var open = new List<HttpResponseMessage>();
-        try
+
+        // One credential (the admin API key, scoped to tenant-a) fills its own quota of 2.
+        using var admin = _fixture.CreateAdminClient();
+        admin.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-a");
+        var firstAdminStream = await OpenStreamAsync(admin, Route, ct);
+        using var closedMidTest = firstAdminStream;
+        using var secondAdminStream = await OpenStreamAsync(admin, Route, ct);
+
+        using (var overQuota = await SendStreamRequestAsync(admin, Route, ct))
         {
-            // One credential (the admin API key, scoped to tenant-a) fills its own quota of 2.
-            using var admin = _fixture.CreateAdminClient();
-            admin.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-a");
-            open.Add(await OpenStreamAsync(admin, Route, ct));
-            open.Add(await OpenStreamAsync(admin, Route, ct));
-
-            using (var overQuota = await SendStreamRequestAsync(admin, Route, ct))
-            {
-                await AssertRefusedAsync(overQuota, HttpStatusCode.TooManyRequests, "2 concurrent sessions per principal", ct);
-            }
-
-            // The WebSocket transport is refused by the same admission check, before the upgrade.
-            var socketClient = _fixture.CreateWebSocketClient();
-            socketClient.ConfigureRequest = request =>
-            {
-                request.Headers["X-API-Key"] = WebAppFixture.SharedAdminPassword;
-                request.Headers["X-Honua-Test-Schema"] = _fixture.CurrentSchema;
-                request.Headers["X-Honua-Tenant"] = "tenant-a";
-            };
-            var upgrade = () => socketClient.ConnectAsync(new Uri("ws://localhost" + Route), ct);
-            (await upgrade.Should().ThrowAsync<InvalidOperationException>())
-                .Which.Message.Should().Contain("429");
-
-            // A different principal in the same tenant is still admitted: the saturated
-            // credential cannot lock other subscribers out (the #4198 defect).
-            open.Add(await OpenStreamAsync(_fixture.Client, await PortalRouteAsync("sta-admission-1", "tenant-a", ct), ct, Referer));
-
-            // tenant-a now holds 3 of 3: a fresh principal there is refused by the tenant cap.
-            using (var tenantFull = await SendStreamRequestAsync(
-                _fixture.Client, await PortalRouteAsync("sta-admission-2", "tenant-a", ct), ct, Referer))
-            {
-                await AssertRefusedAsync(tenantFull, HttpStatusCode.TooManyRequests, "3 concurrent sessions per tenant", ct);
-            }
-
-            // Another tenant is unaffected by tenant-a's saturation and takes the last node slot.
-            open.Add(await OpenStreamAsync(_fixture.Client, await PortalRouteAsync("sta-admission-3", "tenant-b", ct), ct, Referer));
-
-            // The node holds 4 of 4: an idle principal in an idle tenant gets 503, not 429.
-            using var tenantC = _fixture.CreateAdminClient();
-            tenantC.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-c");
-            using (var nodeFull = await SendStreamRequestAsync(tenantC, Route, ct))
-            {
-                await AssertRefusedAsync(nodeFull, HttpStatusCode.ServiceUnavailable, "capacity on this node is exhausted", ct);
-            }
-
-            // Closing one of the admin's own streams releases its slot; the admin is re-admitted.
-            open[0].Dispose();
-            open.RemoveAt(0);
-            open.Add(await OpenStreamWhenReleasedAsync(admin, ct));
+            await AssertRefusedAsync(overQuota, HttpStatusCode.TooManyRequests, "2 concurrent sessions per principal", ct);
         }
-        finally
+
+        // The WebSocket transport is refused by the same admission check, before the upgrade.
+        var socketClient = _fixture.CreateWebSocketClient();
+        socketClient.ConfigureRequest = request =>
         {
-            open.ForEach(response => response.Dispose());
+            request.Headers["X-API-Key"] = WebAppFixture.SharedAdminPassword;
+            request.Headers["X-Honua-Test-Schema"] = _fixture.CurrentSchema;
+            request.Headers["X-Honua-Tenant"] = "tenant-a";
+        };
+        var upgrade = () => socketClient.ConnectAsync(new Uri("ws://localhost" + Route), ct);
+        (await upgrade.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain("429");
+
+        // A different principal in the same tenant is still admitted: the saturated
+        // credential cannot lock other subscribers out (the #4198 defect).
+        using var otherPrincipalStream = await OpenStreamAsync(
+            _fixture.Client, await PortalRouteAsync("sta-admission-1", "tenant-a", ct), ct, Referer);
+
+        // tenant-a now holds 3 of 3: a fresh principal there is refused by the tenant cap.
+        using (var tenantFull = await SendStreamRequestAsync(
+            _fixture.Client, await PortalRouteAsync("sta-admission-2", "tenant-a", ct), ct, Referer))
+        {
+            await AssertRefusedAsync(tenantFull, HttpStatusCode.TooManyRequests, "3 concurrent sessions per tenant", ct);
         }
+
+        // Another tenant is unaffected by tenant-a's saturation and takes the last node slot.
+        using var otherTenantStream = await OpenStreamAsync(
+            _fixture.Client, await PortalRouteAsync("sta-admission-3", "tenant-b", ct), ct, Referer);
+
+        // The node holds 4 of 4: an idle principal in an idle tenant gets 503, not 429.
+        using var tenantC = _fixture.CreateAdminClient();
+        tenantC.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-c");
+        using (var nodeFull = await SendStreamRequestAsync(tenantC, Route, ct))
+        {
+            await AssertRefusedAsync(nodeFull, HttpStatusCode.ServiceUnavailable, "capacity on this node is exhausted", ct);
+        }
+
+        // Closing one of the admin's own streams releases its slot; the admin is re-admitted.
+        // (The using declaration's later dispose of the same response is a no-op.)
+        firstAdminStream.Dispose();
+        using var readmitted = await OpenStreamWhenReleasedAsync(admin, ct);
     }
 
     private async Task<string> PortalRouteAsync(string clientId, string tenant, CancellationToken ct)
@@ -140,7 +136,11 @@ public sealed class SensorThingsStreamAdmissionEndpointTests : IAsyncLifetime
         try
         {
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var reader = new StreamReader(await response.Content.ReadAsStreamAsync(ct), Encoding.UTF8);
+
+            // leaveOpen: the session is held for as long as the response body stays open, so
+            // disposing the reader must not close the stream underneath the caller.
+            using var reader = new StreamReader(
+                await response.Content.ReadAsStreamAsync(ct), Encoding.UTF8, leaveOpen: true);
             (await reader.ReadLineAsync(ct)).Should().Be("event: status");
             (await reader.ReadLineAsync(ct)).Should().Contain("\"connected\"");
             return response;
@@ -158,16 +158,18 @@ public sealed class SensorThingsStreamAdmissionEndpointTests : IAsyncLifetime
         // request aborts. Anything other than admission or a principal-cap refusal is a failure.
         while (true)
         {
-            var response = await SendStreamRequestAsync(client, Route, ct);
-            if (response.StatusCode != HttpStatusCode.TooManyRequests)
+            using (var response = await SendStreamRequestAsync(client, Route, ct))
             {
-                response.Dispose();
-                return await OpenStreamAsync(client, Route, ct);
+                if (response.StatusCode != HttpStatusCode.TooManyRequests)
+                {
+                    break;
+                }
             }
 
-            response.Dispose();
             await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
         }
+
+        return await OpenStreamAsync(client, Route, ct);
     }
 
     private static async Task AssertRefusedAsync(
