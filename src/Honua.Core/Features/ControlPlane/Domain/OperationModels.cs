@@ -542,6 +542,83 @@ public sealed record DeployOperationSpec
     /// back to <c>CreatedAt</c> so existing in-flight deploys keep their prior behavior.
     /// </summary>
     public DateTimeOffset? TrafficExposedAt { get; init; }
+
+    /// <summary>
+    /// Durable post-activation observation/recovery state (honua-server#4618). Set by the reconciler
+    /// when a candidate is fully promoted and cleared once the protection window completes or a
+    /// triggered recovery finishes; null before promotion and for operations that never activate a
+    /// candidate.
+    /// </summary>
+    public DeployProtectionState? Protection { get; init; }
+}
+
+/// <summary>
+/// Post-activation protection phase for a durable deploy operation observing a newly promoted
+/// candidate before the rollback protection window elapses (honua-server#4618). Distinct from
+/// <see cref="WorkflowOperationStatus"/>: while a protection window is open the operation's status
+/// stays <see cref="WorkflowOperationStatus.Reconciling"/> so the reconciler keeps driving it, and this
+/// phase carries the finer-grained, operator/API-facing detail the status alone cannot express.
+/// </summary>
+public enum DeployProtectionPhase
+{
+    /// <summary>The candidate was just exposed and is being observed against the durable policy.</summary>
+    Observing,
+
+    /// <summary>The observation window is holding a healthy candidate open for the full protection window.</summary>
+    Protected,
+
+    /// <summary>An approved safety policy triggered rollback and deterministic recovery is executing.</summary>
+    Recovering,
+
+    /// <summary>The observation window elapsed without a policy trigger; the previous revision was retired.</summary>
+    Expired,
+
+    /// <summary>Recovery was triggered but the previous revision or its controller could not be reached.</summary>
+    Unavailable
+}
+
+/// <summary>
+/// Durable post-activation observation/recovery state persisted on a promoted deploy operation
+/// (honua-server#4618). Created the first time a candidate is fully exposed to traffic and cleared once
+/// the observation window completes cleanly or a triggered recovery finishes; retained (with
+/// <see cref="Phase"/> set to <see cref="DeployProtectionPhase.Unavailable"/>) when recovery itself
+/// cannot be proven, so the durable record keeps the evidence an operator needs.
+/// </summary>
+public sealed record DeployProtectionState
+{
+    /// <summary>Revision, alias, or image that was serving before the candidate was activated.</summary>
+    public required string PreviousRevision { get; init; }
+
+    /// <summary>Revision, alias, or image activated and currently under observation.</summary>
+    public required string CandidateRevision { get; init; }
+
+    /// <summary>Time the candidate first received live traffic.</summary>
+    public required DateTimeOffset FirstExposureAt { get; init; }
+
+    /// <summary>Time the observation window closes if no recovery trigger fires before it.</summary>
+    public required DateTimeOffset ObservationDeadline { get; init; }
+
+    /// <summary>
+    /// Bound on how long a triggered recovery may take to settle before it is treated as unavailable.
+    /// Null until a recovery trigger sets it.
+    /// </summary>
+    public DateTimeOffset? RecoveryDeadline { get; init; }
+
+    /// <summary>
+    /// Stable digest of the safety-policy configuration (promotion gate, telemetry/rollback
+    /// parameters) in effect when the candidate was activated, so policy drift mid-window is
+    /// detectable and recovery always replays the policy that was actually approved.
+    /// </summary>
+    public required string PolicyDigest { get; init; }
+
+    /// <summary>Approval policy reference in effect for this activation, when the operation required approval.</summary>
+    public string? ApprovalScope { get; init; }
+
+    /// <summary>Current post-activation protection phase.</summary>
+    public DeployProtectionPhase Phase { get; init; } = DeployProtectionPhase.Observing;
+
+    /// <summary>Bounded, operator-safe reason code for the current phase (for example a telemetry breach or backend signal), when applicable.</summary>
+    public string? ReasonCode { get; init; }
 }
 
 /// <summary>

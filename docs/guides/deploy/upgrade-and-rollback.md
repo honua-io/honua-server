@@ -234,6 +234,31 @@ Notes:
 - **Using a private/on-prem Prometheus for the telemetry gate:** the outbound URL guard rejects private/loopback endpoints by default (SSRF hardening). To point a telemetry connection at an on-prem Prometheus (for example `http://prometheus.internal:9090` or a `10.x`/`192.168.x` address), set `AllowPrivateNetworks: true` on that `ControlPlane__TelemetryConnections` entry. This is a per-connection opt-in; the default posture (HTTPS-only, no private destinations) is unchanged for every other connection. Only enable it for a trusted endpoint inside your own network.
 - **Manual promotion (escape hatch):** `POST /api/v1/admin/deploy/operations/{operationId}/promote` forces the cutover on a rollout parked in `Reconciling` (or `Submitted`). It requires admin authorization, records the operator on the audit trail, and returns `409 Conflict` with a reason when the operation cannot be promoted (not yet submitted, already promoted, rolling back, or terminal). Use it when a gate never clears (for example a metrics connection is down) or when you deliberately run the `manual` gate.
 
+## Post-activation observation window
+
+Promotion is not the end of a rollout's protection. Once a candidate cuts over, the operation stays
+non-terminal for a bounded **observation window** (`deployment.protection.observation_window_seconds`,
+default 10 minutes, capped at 24 hours) instead of finishing immediately — the same rollback signals
+that gated promotion (telemetry breach, unhealthy probe, backend-detected controller failure) keep
+running through this window, and the previous revision is kept available so a trigger during the
+window can recover deterministically without a second approval. `GET .../operations/{operationId}`
+reports the window as a `protection` object on the operation:
+
+| `protection.phase` | Meaning |
+|---|---|
+| `observing` | The candidate is exposed and being watched; nothing has triggered yet. |
+| `protected` | Reserved for a future confirmed-healthy sub-state within the window. |
+| `recovering` | A rollback trigger fired and deterministic recovery to `protection.previousRevision` is in progress. |
+| `expired` | The window elapsed with no trigger; the deploy is fully committed and the previous revision's retained capacity has been retired. |
+| `unavailable` | Recovery (or retiring retained capacity) could not be proven; the operation moved to `ManualInterventionRequired` and needs an operator. |
+
+`protection.policyDigest` is a hash of the promotion/telemetry/rollback parameters in effect when the
+candidate was activated, so drifting that configuration mid-window is detectable; `protection.reasonCode`
+carries a bounded, operator-safe code for the current phase. The self-hosted rolling backend
+(`honua-yarp-rolling`) is the concrete case this protects: the previous replica is kept running
+(not stopped at cutover) until the window's `expired` finalize step retires it, so a candidate that
+fails moments after cutover still has something to recover to.
+
 ## Rollback
 
 Application rollback first — whenever readiness fails, errors or latency regress, and migrations were additive:

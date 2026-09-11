@@ -38,6 +38,7 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(DeployPlanTargetResponse))]
 [JsonSerializable(typeof(DeployBackendCapabilitiesResponse))]
 [JsonSerializable(typeof(DeployOperationResponse))]
+[JsonSerializable(typeof(DeployProtectionResponse))]
 [JsonSerializable(typeof(DeployOperationListResponse))]
 [JsonSerializable(typeof(MetadataReleaseContextResponse))]
 [JsonSerializable(typeof(MetadataRollbackPlanResponse))]

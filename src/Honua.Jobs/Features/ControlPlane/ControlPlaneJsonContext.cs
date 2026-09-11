@@ -12,6 +12,7 @@ namespace Honua.ControlPlane;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(WorkflowOperationRecord))]
 [JsonSerializable(typeof(CanaryRampSpec))]
+[JsonSerializable(typeof(DeployProtectionState))]
 [JsonSerializable(typeof(MetadataReleaseContext))]
 [JsonSerializable(typeof(MetadataRollbackPlan))]
 [JsonSerializable(typeof(MetadataEvidenceRef))]

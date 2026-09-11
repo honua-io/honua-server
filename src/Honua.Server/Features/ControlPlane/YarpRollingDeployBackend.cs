@@ -410,8 +410,6 @@ internal sealed partial class YarpRollingDeployBackend(
                 };
             }
 
-            var replicas = await DiscoverReplicasAsync(operation, target, cancellationToken).ConfigureAwait(false);
-
             // Atomic single-switch cutover: point the proxy at the standby destination.
             var standbyAddress = ReplicaAddress(target, target.StandbyPort);
             await proxySwapper.SwapAsync(standbyAddress, cancellationToken).ConfigureAwait(false);
@@ -431,25 +429,19 @@ internal sealed partial class YarpRollingDeployBackend(
                 };
             }
 
-            // Keep-old-until-healthy: only after the new replica is confirmed serving do we drain and
-            // stop the old replica, after a configurable delay so in-flight requests can complete.
-            if (replicas.Active is { } active)
-            {
-                if (_options.DrainDelaySeconds > 0)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(_options.DrainDelaySeconds), cancellationToken).ConfigureAwait(false);
-                }
-
-                await containerRuntime.StopAsync(target.ContainerRuntime, active.Name, cancellationToken).ConfigureAwait(false);
-                Log.OldReplicaStopped(logger, operation.OperationId, spec.TargetId, active.Name);
-            }
-
+            // Retain-through-observation (honua-server#4618): the old replica keeps running after
+            // cutover instead of being stopped here. Stopping it immediately would disconnect the
+            // advertised rollback protection window from reality — a candidate that fails moments
+            // after cutover would have nothing left to recover to. The reconciler's post-activation
+            // observation window now owns retiring it, through CompleteProtectionAsync below, once the
+            // window elapses without a rollback trigger. RollbackAsync repoints traffic straight back
+            // to this still-running replica if a trigger fires first.
             return new DeployObservation
             {
                 Status = WorkflowOperationStatus.Succeeded,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = spec.DesiredRevision,
-                Message = $"Rolling deploy promoted: traffic now flows to revision '{spec.DesiredRevision}' on port {target.StandbyPort}; the old replica was drained and stopped."
+                Message = $"Rolling deploy promoted: traffic now flows to revision '{spec.DesiredRevision}' on port {target.StandbyPort}; the old replica is retained for recovery until the post-activation observation window elapses."
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -492,16 +484,18 @@ internal sealed partial class YarpRollingDeployBackend(
 
             // Classify from ground truth, not only in-memory proxy state. The in-memory
             // ActiveDestinationAddress is reset to the configured active port when the front process
-            // restarts, so after a promote+restart it wrongly reads "not promoted". Container labels
-            // survive the restart: the new revision is serving when its standby replica is running and
-            // the previous active replica is gone (PromoteAsync removes it at cutover). Either signal
-            // (the live proxy address in-process, or the discovered container state after a restart)
-            // marks the cutover as done.
+            // restarts, so after a promote+restart it wrongly reads "not promoted". The durable
+            // operation record is the authoritative signal that survives any restart: PromoteAsync's
+            // caller (the reconciler) only ever sets Deploy.Protection once cutover has actually
+            // completed (honua-server#4618), so its presence proves promotion happened even though the
+            // old replica is now retained (not removed) at cutover and would otherwise look
+            // indistinguishable from the pre-cutover state. The container-label fallback covers
+            // callers/tests that construct an operation without a durable Protection record.
             var proxyPointsAtStandby = string.Equals(
                 proxySwapper.ActiveDestinationAddress, standbyAddress, StringComparison.OrdinalIgnoreCase);
             var newRevisionServing = replicas.Standby is { Running: true }
                 && (replicas.Active is null || !replicas.Active.Running);
-            var alreadyPromoted = proxyPointsAtStandby || newRevisionServing;
+            var alreadyPromoted = proxyPointsAtStandby || spec.Protection != null || newRevisionServing;
 
             if (replicas.Active is { Running: true } active &&
                 (!active.Labels.TryGetValue(LabelRevision, out var activeRevision) ||
@@ -552,7 +546,10 @@ internal sealed partial class YarpRollingDeployBackend(
                 };
             }
 
-            // The old replica is gone; attempt to relaunch the previous revision if we know it.
+            // Fallback path: the retained old replica is unexpectedly gone (for example an operator
+            // removed it, or CompleteProtectionAsync already retired it before this trigger arrived).
+            // Attempt to relaunch the previous revision if we know it, rather than leaving the target
+            // fully on the failed candidate with no recovery route.
             if (!string.IsNullOrWhiteSpace(spec.CurrentRevision))
             {
                 var request = new ContainerRunRequest
@@ -602,6 +599,52 @@ internal sealed partial class YarpRollingDeployBackend(
                 Status = WorkflowOperationStatus.Failed,
                 ProviderOperationId = operation.ProviderOperationId,
                 Message = "Rolling deploy rollback failed. Check the deploy controller logs for details."
+            };
+        }
+    }
+
+    /// <summary>
+    /// Retires the old replica retained through cutover (honua-server#4618) once the reconciler's
+    /// post-activation observation window elapses without a rollback trigger. This is the deferred half
+    /// of what <see cref="PromoteAsync"/> used to do immediately at cutover: only after the durable
+    /// operation itself decides the window is over does the previous revision's capacity actually go
+    /// away, so a candidate that fails mid-window always has somewhere to recover to.
+    /// </summary>
+    public async Task<DeployObservation> CompleteProtectionAsync(
+        WorkflowOperationRecord operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy workflow operation is missing deploy metadata.");
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var target = ResolveTarget(spec);
+
+        try
+        {
+            var replicas = await DiscoverReplicasAsync(operation, target, cancellationToken).ConfigureAwait(false);
+            if (replicas.Active is { } active)
+            {
+                await containerRuntime.StopAsync(target.ContainerRuntime, active.Name, cancellationToken).ConfigureAwait(false);
+                Log.OldReplicaStopped(logger, operation.OperationId, spec.TargetId, active.Name);
+            }
+
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Succeeded,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = spec.DesiredRevision,
+                Message = "Post-activation observation window elapsed: the retained old replica was stopped."
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.OperationFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Failed,
+                ProviderOperationId = operation.ProviderOperationId,
+                Message = "Failed to retire the retained old replica after the observation window elapsed."
             };
         }
     }

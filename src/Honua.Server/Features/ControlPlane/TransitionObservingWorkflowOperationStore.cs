@@ -68,25 +68,45 @@ internal sealed partial class TransitionObservingWorkflowOperationStore : IWorkf
     }
 
     private Task RaiseClassifiedAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken)
-        => TryClassify(operation.Status, out var kind)
+        => TryClassify(operation, out var kind)
             ? RaiseAsync(operation, kind, cancellationToken)
             : Task.CompletedTask;
 
     /// <summary>
-    /// Maps a persisted status to a transition kind. Intermediate states (planned / awaiting approval /
+    /// Maps a persisted operation to a transition kind. Intermediate states (planned / awaiting approval /
     /// reconciling / failed) are intentionally not surfaced: the seam reports operator-meaningful
     /// lifecycle moments, and mapping only <see cref="WorkflowOperationStatus.Submitted"/> (not the
     /// repeatedly-written <see cref="WorkflowOperationStatus.Reconciling"/>) keeps in-flight polling from
     /// emitting duplicate submitted events.
+    /// <para>
+    /// The one deliberate exception (honua-server#4618): a candidate that just cut over now stays
+    /// <see cref="WorkflowOperationStatus.Reconciling"/> for its post-activation observation window
+    /// instead of jumping straight to <see cref="WorkflowOperationStatus.Succeeded"/>, so the operator-
+    /// meaningful "promoted" milestone needs a signal that survives that change without re-firing on
+    /// every repeatedly-written observation-window bookkeeping update. <c>Deploy.Protection</c> is
+    /// created exactly once per activation, and only the write that creates it stamps the record's
+    /// <c>UpdatedAt</c> and the protection's <c>FirstExposureAt</c> from the very same timestamp — every
+    /// later write during the window advances <c>UpdatedAt</c> further while <c>FirstExposureAt</c> stays
+    /// fixed, so comparing the two is a write-once signal without needing the previous record.
+    /// </para>
     /// </summary>
-    private static bool TryClassify(WorkflowOperationStatus status, out WorkflowOperationTransitionKind kind)
+    private static bool TryClassify(WorkflowOperationRecord operation, out WorkflowOperationTransitionKind kind)
     {
-        switch (status)
+        switch (operation.Status)
         {
             case WorkflowOperationStatus.Submitted:
                 kind = WorkflowOperationTransitionKind.Submitted;
                 return true;
-            case WorkflowOperationStatus.Succeeded:
+            // Skip Succeeded here when Protection is Expired: that write is this operation's
+            // observation window closing, and the "promoted" milestone already fired below when the
+            // window opened. Any other Succeeded (Protection null, or a path that never opened a
+            // window) still fires normally.
+            case WorkflowOperationStatus.Succeeded when operation.Deploy?.Protection?.Phase != DeployProtectionPhase.Expired:
+                kind = WorkflowOperationTransitionKind.Promoted;
+                return true;
+            case WorkflowOperationStatus.Reconciling
+                when operation.Deploy?.Protection is { Phase: DeployProtectionPhase.Observing } protection
+                    && operation.UpdatedAt == protection.FirstExposureAt:
                 kind = WorkflowOperationTransitionKind.Promoted;
                 return true;
             case WorkflowOperationStatus.RollbackRequested:

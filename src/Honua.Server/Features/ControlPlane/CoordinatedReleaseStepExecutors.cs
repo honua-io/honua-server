@@ -50,7 +50,7 @@ internal sealed class CoordinatedContainerStepExecutor(
 
         return new CoordinatedStepResult
         {
-            Outcome = MapOutcome(deploy.Status),
+            Outcome = MapOutcome(deploy),
             ChildOperationId = deploy.OperationId,
             Detail = deploy.CurrentPhase ?? "Container rollout submitted.",
             ObservedRevision = deploy.ObservedState,
@@ -78,7 +78,7 @@ internal sealed class CoordinatedContainerStepExecutor(
 
         return new CoordinatedStepResult
         {
-            Outcome = MapOutcome(deploy.Status),
+            Outcome = MapOutcome(deploy),
             ChildOperationId = childOperationId,
             Detail = deploy.CurrentPhase,
             ObservedRevision = deploy.ObservedState,
@@ -106,7 +106,7 @@ internal sealed class CoordinatedContainerStepExecutor(
             }
             : new CoordinatedStepResult
             {
-                Outcome = MapOutcome(deploy.Status),
+                Outcome = MapOutcome(deploy),
                 ChildOperationId = childOperationId,
                 Detail = deploy.CurrentPhase,
                 ObservedRevision = deploy.ObservedState,
@@ -114,9 +114,20 @@ internal sealed class CoordinatedContainerStepExecutor(
             };
     }
 
-    private static CoordinatedStepOutcome MapOutcome(WorkflowOperationStatus status) => status switch
+    /// <summary>
+    /// Maps the container child's durable status to a coordinated-step outcome. A container operation
+    /// promoted into its post-activation observation window (honua-server#4618) — non-terminal
+    /// <see cref="WorkflowOperationStatus.Reconciling"/> with <c>Deploy.Protection</c> set — is treated
+    /// as <see cref="CoordinatedStepOutcome.Succeeded"/> for orchestration purposes: the candidate is
+    /// already exposed and the coordinated release's own rollback path can still unwind it (through
+    /// <see cref="RollbackAsync"/>, which drives the SAME deploy reconciler) at any point during that
+    /// window. Waiting for the window to fully elapse before letting the release proceed to its next
+    /// step would block coordinated releases for the whole observation duration for no added safety.
+    /// </summary>
+    private static CoordinatedStepOutcome MapOutcome(WorkflowOperationRecord deploy) => deploy.Status switch
     {
         WorkflowOperationStatus.Succeeded => CoordinatedStepOutcome.Succeeded,
+        WorkflowOperationStatus.Reconciling when deploy.Deploy?.Protection != null => CoordinatedStepOutcome.Succeeded,
         WorkflowOperationStatus.RolledBack => CoordinatedStepOutcome.RolledBack,
         WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired => CoordinatedStepOutcome.Failed,
         _ => CoordinatedStepOutcome.Pending
