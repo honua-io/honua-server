@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Import;
 ///
 /// The expected warning sets below are not guesses: each fixture's raw GDB_Items table
 /// (a00000004.gdbtable) was independently grepped for the Esri type-name keywords that
-/// <see cref="FileGdbAdvancedConstructs"/> scans for, and cross-checked with GDAL's
+/// <c>FileGdbAdvancedConstructs</c> scans for, and cross-checked with GDAL's
 /// OpenFileGDB driver (ogrinfo). testopenfilegdb.gdb and sparse.gdb contain none of those
 /// keywords, so they must report zero warnings. domain-coded.gdb, domain-range.gdb and
 /// relationship-class.gdb were generated with GDAL's OpenFileGDB *write* driver specifically
