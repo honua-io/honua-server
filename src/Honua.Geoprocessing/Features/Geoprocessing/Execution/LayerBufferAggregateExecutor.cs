@@ -61,8 +61,14 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
                 "'outStatistics' requires dissolve=true; per-feature output cannot carry aggregate columns.");
         }
 
+        // #4629: without dissolve every buffered geometry is emitted as-is, so the running
+        // vertex total of the buffers is already a lower bound on the artifact; charge it WHILE
+        // buffering instead of discovering the overflow after every buffer was computed. With
+        // dissolve the union can shrink the output, so the base's pre-serialization check
+        // bounds the final result instead.
+        long? maxOutputVertices = dissolve ? null : Options.CurrentValue.MaxArtifactBytes / MinSerializedBytesPerVertex;
         var bufferedGeometries = await BufferSourceFeaturesAsync(
-                context, inputs, source, distanceMeters, cancellationToken)
+                context, inputs, source, distanceMeters, maxOutputVertices, cancellationToken)
             .ConfigureAwait(false);
 
         var buffered = new List<(IFeature Feature, NtsGeometry Geometry, string GroupKey)>(source.Count);
@@ -170,9 +176,11 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
         StepInputReader inputs,
         List<IFeature> source,
         double distanceMeters,
+        long? maxOutputVertices,
         CancellationToken cancellationToken)
     {
         var results = new NtsGeometry?[source.Count];
+        long outputVertices = 0;
         if (source.TrueForAll(f => f.Geometry is null || f.Geometry.IsEmpty))
         {
             return results;
@@ -218,7 +226,17 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
                 throw new TransformInputException(ex.Message);
             }
 
-            results[i] = wkbReader.Read(bufferedWkb);
+            var buffered = wkbReader.Read(bufferedWkb);
+            outputVertices += buffered.NumPoints;
+            if (maxOutputVertices is { } budget && outputVertices > budget)
+            {
+                throw new TransformInputException(
+                    $"the buffered output reached {outputVertices} vertices after {i + 1} of {source.Count} features, more than "
+                    + "the configured MaxArtifactBytes can hold; stopped during buffering. Narrow the selection, set dissolve=true, "
+                    + "or raise Geoprocessing:Executor:MaxArtifactBytes, then resubmit.");
+            }
+
+            results[i] = buffered;
         }
 
         return results;

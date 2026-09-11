@@ -47,6 +47,12 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     /// <summary>The <see cref="IDagFeatureSource.SourceId"/> this base reads from.</summary>
     private protected const string HonuaLayerSourceId = "source.honua-layer";
 
+    /// <summary>
+    /// A provable lower bound on the GeoJSON bytes one coordinate occupies: <c>[x,y]</c> is at
+    /// least five characters even with single-digit ordinates, before any separator (#4629).
+    /// </summary>
+    private protected const long MinSerializedBytesPerVertex = 5;
+
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger _logger;
     private IReadOnlySet<string>? _processIds;
@@ -149,7 +155,9 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     cancellationToken,
                     Limits.Analytics.MaxInputFeatures,
                     $"layer {request.LayerId}",
-                    Limits.Geometry.MaxVerticesPerGeometry)
+                    Limits.Geometry.MaxVerticesPerGeometry,
+                    Limits.Geometry.MaxGeometrySize,
+                    Limits.Analytics.MaxInputBytes)
                 .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
@@ -192,11 +200,29 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+
+        // #4629: serialization allocates the GeoJSON text, a parsed copy and the re-emitted
+        // payload, so checking MaxArtifactBytes only afterwards let an oversized output cost
+        // several times its size before failing. Refuse up front when even the smallest possible
+        // encoding of the output's coordinates cannot fit; the post-serialization check below
+        // still covers attributes and real ordinate widths.
+        var maxBytes = Options.CurrentValue.MaxArtifactBytes;
+        var outputVertices = output.Sum(feature => (long)(feature.Geometry?.NumPoints ?? 0));
+        if (outputVertices * MinSerializedBytesPerVertex > maxBytes)
+        {
+            await context.ReportProgressAsync(80, $"{ProcessId} stopped: output exceeds the artifact budget", cancellationToken)
+                .ConfigureAwait(false);
+            return JobExecutionResult.Failed(
+                $"{ProcessId} output has {outputVertices} vertices across {output.Count} features, which needs at least " +
+                $"{outputVertices * MinSerializedBytesPerVertex} bytes once serialized and exceeds the configured " +
+                $"MaxArtifactBytes={maxBytes}; stopped before serialization. Narrow the selection (where/objectIds/geometry/time), " +
+                "simplify the input, or raise Geoprocessing:Executor:MaxArtifactBytes, then resubmit.");
+        }
+
         await context.ReportProgressAsync(80, $"Encoding {ProcessId} artifact", cancellationToken).ConfigureAwait(false);
 
         var payload = FeatureCollectionArtifact.WriteFeatureCollection(output, ProcessId,
             request.OutputSrid is { } outputSrid ? [("srid", outputSrid)] : null);
-        var maxBytes = Options.CurrentValue.MaxArtifactBytes;
         if (payload.Length > maxBytes)
         {
             return JobExecutionResult.Failed(
@@ -290,6 +316,13 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     /// alone does not bound a single deliberately oversized geometry (one feature, millions of
     /// vertices), so this fails closed as soon as the oversized geometry streams in.
     /// </para>
+    ///
+    /// <para>
+    /// <paramref name="maxGeometryBytes"/> and <paramref name="maxInputBytes"/> charge the
+    /// serialized size of each geometry and the cumulative geometry+attribute payload (#4629)
+    /// BEFORE the geometry is parsed into NetTopologySuite objects, so neither a single huge
+    /// geometry nor a moderate count of large features is materialized past its budget.
+    /// </para>
     /// </summary>
     internal static async Task<List<IFeature>> ReadLayerAsync(
         IDagFeatureSource source,
@@ -297,10 +330,13 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         CancellationToken cancellationToken,
         int? maxFeatures = null,
         string? limitLabel = null,
-        int? maxVerticesPerGeometry = null)
+        int? maxVerticesPerGeometry = null,
+        long? maxGeometryBytes = null,
+        long? maxInputBytes = null)
     {
         var geoJsonReader = new GeoJsonReader();
         var features = new List<IFeature>();
+        long inputBytes = 0;
         await foreach (var sourceFeature in source.ReadAsync(request, cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -313,6 +349,24 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                 throw new TransformInputException(
                     $"{limitLabel ?? "layer"} exceeds the configured limit of {cap} features; "
                     + "narrow the selection (where/bbox) or raise the limit.");
+            }
+
+            long geometryBytes = sourceFeature.GeometryGeoJson?.Length ?? 0;
+            if (maxGeometryBytes is { } geometryCap && geometryBytes > geometryCap)
+            {
+                throw new TransformInputException(
+                    $"{limitLabel ?? "layer"} contains a geometry of {geometryBytes} serialized bytes, exceeding the "
+                    + $"configured limit of {geometryCap} bytes (Limits:Geometry:MaxGeometrySize); simplify the source "
+                    + "geometry or raise the limit.");
+            }
+
+            inputBytes += geometryBytes + EstimateAttributeBytes(sourceFeature.Attributes);
+            if (maxInputBytes is { } inputCap && inputBytes > inputCap)
+            {
+                throw new TransformInputException(
+                    $"{limitLabel ?? "layer"} exceeds the configured input budget of {inputCap} bytes "
+                    + $"(Limits:Analytics:MaxInputBytes) at feature {features.Count + 1}; narrow the selection "
+                    + "(where/objectIds/geometry/time) or raise the limit.");
             }
 
             var feature = ToNtsFeature(sourceFeature, geoJsonReader);
@@ -331,6 +385,27 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         }
 
         return features;
+    }
+
+    /// <summary>
+    /// Serialized-size estimate of a streamed feature's attributes for the input byte budget:
+    /// key and string lengths as written, a fixed width for scalars.
+    /// </summary>
+    private static long EstimateAttributeBytes(IEnumerable<KeyValuePair<string, object?>> attributes)
+    {
+        long bytes = 0;
+        foreach (var (key, value) in attributes)
+        {
+            bytes += key.Length + value switch
+            {
+                null => 4,
+                string text => text.Length + 2,
+                byte[] blob => blob.Length,
+                _ => 8,
+            };
+        }
+
+        return bytes;
     }
 
     /// <summary>
