@@ -100,6 +100,17 @@ internal sealed partial class StreamingFileImportService
                     break;
             }
 
+            // A Replace load streams into a <table>__staging sibling (loadTableName) rather than
+            // the live table. Before this try, the only path that ever reclaimed that sibling on
+            // failure was the NEXT replace's CreateStagingTableAsync (DROP TABLE IF EXISTS ...
+            // CREATE TABLE), so a thrown exception or a cancellation anywhere below left it and
+            // its indexes behind indefinitely (#4422). DROP TABLE IF EXISTS makes the cleanup safe
+            // to call even when the failure happened after a successful promotion (nothing left to
+            // drop, since SwapStagingTableAsync already renamed it away) or before the staging
+            // table was created (nothing ever existed).
+            try
+            {
+
             // 2-D default writer. CreateWkb upgrades to an emitZ and/or emitM writer per
             // geometry when the source geometry actually carries Z and/or M ordinates
             // (see SelectWkbWriter / DetectZm), so GPX/KML/3-D GeoJSON altitudes and
@@ -353,6 +364,20 @@ internal sealed partial class StreamingFileImportService
             });
 
             return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked);
+            }
+            catch when (loadMode == ImportLoadMode.Replace)
+            {
+                try
+                {
+                    await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                }
+                catch (Exception cleanupEx)
+                {
+                    ImportLog.StagingTableCleanupFailed(_logger, cleanupEx, targetSchema, allowedTableName);
+                }
+
+                throw;
+            }
         }
         finally
         {

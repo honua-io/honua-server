@@ -135,6 +135,12 @@ internal sealed partial class StreamingFileImportService
             Level = LogLevel.Debug,
             Message = "Streaming CRS auto-detection failed for format {Format}; falling back to explicit source SRID or default")]
         public static partial void CrsDetectionFailed(ILogger logger, Exception exception, SupportedFileFormat format);
+
+        [LoggerMessage(
+            EventId = 7445,
+            Level = LogLevel.Warning,
+            Message = "Failed to drop orphaned staging table for {SchemaName}.{TableName} after a failed or cancelled replace")]
+        public static partial void StagingTableCleanupFailed(ILogger logger, Exception exception, string schemaName, string tableName);
     }
 
     private static partial class ShapefileLog
