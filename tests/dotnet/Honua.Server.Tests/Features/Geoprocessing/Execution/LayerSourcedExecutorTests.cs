@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.GeometryService.Abstractions;
@@ -76,6 +78,102 @@ public sealed class LayerSourcedExecutorTests
         geometry.EnvelopeInternal.MaxY.Should().BeApproximately(1001, 0.001);
         geometry.Area.Should().BeInRange(3_120_000, 3_130_000,
             "the dissolved output must be the union of two overlapping 1000-unit point buffers");
+    }
+
+    [UnitTest]
+    public async Task Dissolve_AtConfiguredFeatureLimit_Succeeds()
+    {
+        // #4629 threshold boundary: exactly the configured cap must be admitted.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0), PointFeature(1, 1)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxInputFeatures: 2)),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
+    public async Task Dissolve_ExceedsConfiguredFeatureLimit_FailsBeforeComputation()
+    {
+        // #4629: one feature over the configured cap must fail closed WHILE STREAMING,
+        // with an actionable message — never silently truncate or compute over a partial read.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId,
+            [PointFeature(0, 0), PointFeature(1, 1), PointFeature(2, 2)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxInputFeatures: 2)),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        _lastErrorForAssertions.Should().Contain("exceeds the configured limit of 2 features");
+    }
+
+    [UnitTest]
+    public async Task Dissolve_SingleGeometryExceedsVertexLimit_FailsBeforeComputation()
+    {
+        // #4629: a feature-count cap alone does not bound one deliberately oversized
+        // geometry; the per-geometry vertex ceiling must charge independently.
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [LineFeature(vertexCount: 100)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxVerticesPerGeometry: 50)),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        _lastErrorForAssertions.Should().Contain("100 vertices").And.Contain("exceeding the configured limit of 50");
+    }
+
+    [UnitTest]
+    public async Task Dissolve_SingleGeometryAtVertexLimit_Succeeds()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [LineFeature(vertexCount: 50)]);
+
+        var (status, _, _) = await RunAsync(
+            new LayerDissolveExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerDissolveExecutor>.Instance,
+                LimitsOptions(maxVerticesPerGeometry: 50)),
+            LayerDissolveExecutor.HandledProcessId,
+            ("layerId", "9"),
+            ("dissolve", "false"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+    }
+
+    [UnitTest]
+    public async Task SpatialJoin_JoinLayerExceedsConfiguredFeatureLimit_FailsBeforeComputation()
+    {
+        // #4629: the join (second) layer must be bounded by the SAME admission limits as
+        // the target layer — a two-layer op that only bounded one side would let the
+        // unbounded side alone destabilize the worker.
+        var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
+        {
+            [1] = [PointFeature(0, 0)],
+            [2] = [PointFeature(0, 0), PointFeature(1, 1), PointFeature(2, 2)],
+        });
+
+        var (status, _, _) = await RunAsync(
+            new LayerSpatialJoinExecutor(
+                ScopeFactory(source), Options(), NullLogger<LayerSpatialJoinExecutor>.Instance,
+                LimitsOptions(maxInputFeatures: 2)),
+            LayerSpatialJoinExecutor.HandledProcessId,
+            ("layerId", "1"),
+            ("joinLayerId", "2"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        _lastErrorForAssertions.Should().Contain("join layer 2").And.Contain("exceeds the configured limit of 2 features");
     }
 
     [UnitTest]
@@ -656,6 +754,39 @@ public sealed class LayerSourcedExecutorTests
     }
 
     /// <summary>
+    /// A <see cref="LimitsOptions"/> with a tightened <see cref="AnalyticsLimits.MaxInputFeatures"/>
+    /// and/or <see cref="GeometryLimits.MaxVerticesPerGeometry"/> (#4629), so admission tests can
+    /// force the bound without depending on the production defaults (100,000 / 50,000).
+    /// </summary>
+    private static IOptions<LimitsOptions> LimitsOptions(int? maxInputFeatures = null, int? maxVerticesPerGeometry = null)
+    {
+        var limits = new LimitsOptions();
+        if (maxInputFeatures is { } features)
+        {
+            limits.Analytics.MaxInputFeatures = features;
+        }
+
+        if (maxVerticesPerGeometry is { } vertices)
+        {
+            limits.Geometry.MaxVerticesPerGeometry = vertices;
+        }
+
+        return Microsoft.Extensions.Options.Options.Create(limits);
+    }
+
+    /// <summary>A LineString feature with exactly <paramref name="vertexCount"/> vertices.</summary>
+    private static DagSourceFeature LineFeature(int vertexCount)
+    {
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        var coordinates = string.Join(",", Enumerable.Range(0, vertexCount).Select(i => $"[{i.ToString(ci)},0]"));
+        return new DagSourceFeature
+        {
+            GeometryGeoJson = $$"""{"type":"LineString","coordinates":[{{coordinates}}]}""",
+            Attributes = new Dictionary<string, object?>(),
+        };
+    }
+
+    /// <summary>
     /// Scope factory for <c>analytics.buffer-aggregate</c> tests (#4623): registers the
     /// CRS-aware <see cref="IGeometryOperationService"/> (a self-contained, independently
     /// coded Web-Mercator/native-unit buffer implementation — NOT a delegate to production
@@ -751,10 +882,12 @@ public sealed class LayerSourcedExecutorTests
         };
 
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+        _lastErrorForAssertions = result.ErrorMessage;
         return (result.Status, publishedUri, _lastRequestForAssertions);
     }
 
     private static DagSourceRequest? _lastRequestForAssertions;
+    private static string? _lastErrorForAssertions;
 
     private static List<IFeature> ReadFeatures(string dataUri)
     {
