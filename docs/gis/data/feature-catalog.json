@@ -21357,7 +21357,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsFeatureGateTests.StaDatastreamsPost_WhenFeatureDisabled_Returns404",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostDatastream_MissingBody_Returns400",
-        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostDatastream_WithInlineRelatedEntities_CreatesQueryableDatastream"
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostDatastream_WithInlineRelatedEntities_CreatesQueryableDatastream",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestIdentityTests.PostDatastream_AfterAClientSuppliedId_AllocatesAboveItRatherThanColliding",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestIdentityTests.PostDatastreams_FromConcurrentWriters_AllocateDistinctIdsForDatastreamsAndRelatedEntities"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "preview",
@@ -21390,6 +21392,9 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservation_MissingDatastream_Returns404",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservation_SingleIntoSeededDatastream_PersistsAndIsReadable",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservations_BulkEnvelope_PersistsAllRows",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestIdentityTests.PostObservation_AfterSeededRows_ContinuesTheIdSeriesInsteadOfReusingIt",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestIdentityTests.PostObservations_ConcurrentBulkEnvelopes_AllocateDistinctIdsAcrossBatches",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestIdentityTests.PostObservations_FromConcurrentWriters_AllocateDistinctIdsThatResolveToTheirOwnResult",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsWriteAuthorizationTests.PostObservation_AnonymousWhenAnonymousWritesDisabled_ReturnsUnauthorizedBeforeBodyValidation",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsWriteAuthorizationTests.PostObservation_WithAdminApiKeyWhenAnonymousWritesDisabled_CreatesObservation"
       ],

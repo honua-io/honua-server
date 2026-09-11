@@ -485,6 +485,70 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CoreSchemaGuard_WhenSensorThingsIdSequencesAreMissing_RejectsTheSensorThingsRequirement()
+    {
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+        var result = await runner.RunMigrationsAsync(
+            _connectionString,
+            Assembly.GetAssembly(typeof(Program))!);
+        result.Successful.Should().BeTrue();
+        result.AppliedScripts.Should().Contain(
+            ServerCoreSchemaMigrations.Manifest.SensorThingsIdSequencesMigration!);
+
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        // A fully migrated database satisfies the requirement the observation store asserts.
+        var satisfied = () => guard.VerifyRequirementAsync(
+            connection,
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaRequirement.SensorThings);
+        await satisfied.Should().NotThrowAsync();
+
+        // Ingest allocates @iot.ids from these sequences: dropping them must fail the floor
+        // against the migration that owns them, not surface as a NOT NULL violation on the
+        // first insert (#4199).
+        await using (var drop = connection.CreateCommand())
+        {
+            // CASCADE also drops the column defaults that reference them, which is exactly
+            // the state a partially-restored schema is in.
+            drop.CommandText = "DROP SEQUENCE honua.sta_observation_id_seq, honua.sta_datastream_id_seq CASCADE;";
+            await drop.ExecuteNonQueryAsync();
+        }
+
+        var missingSequences = () => guard.VerifyRequirementAsync(
+            connection,
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaRequirement.SensorThings);
+        var sequenceFailure = await missingSequences.Should()
+            .ThrowAsync<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
+        sequenceFailure.Which.MigrationScript.Should()
+            .Be(ServerCoreSchemaMigrations.Manifest.SensorThingsIdSequencesMigration);
+        sequenceFailure.Which.FailureKind.Should().Be(
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
+        sequenceFailure.Which.Message.Should().Contain("sta_observation_id_seq");
+        sequenceFailure.Which.Message.Should().Contain("sta_datastream_id_seq");
+
+        // An un-journaled sequence migration is a pending upgrade, reported as such.
+        await using (var unjournal = connection.CreateCommand())
+        {
+            unjournal.CommandText = "DELETE FROM public.schema_versions WHERE scriptname = @script;";
+            unjournal.Parameters.AddWithValue(
+                "script", ServerCoreSchemaMigrations.Manifest.SensorThingsIdSequencesMigration!);
+            await unjournal.ExecuteNonQueryAsync();
+        }
+
+        var notApplied = () => guard.VerifyRequirementAsync(
+            connection,
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaRequirement.SensorThings);
+        var journalFailure = await notApplied.Should()
+            .ThrowAsync<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
+        journalFailure.Which.MigrationScript.Should()
+            .Be(ServerCoreSchemaMigrations.Manifest.SensorThingsIdSequencesMigration);
+        journalFailure.Which.FailureKind.Should().Be(
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal);
+    }
+
+    [Fact]
     public async Task CoreSchemaGuard_WhenRasterDataIsMissing_RejectsJournaledMigration()
     {
         var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
