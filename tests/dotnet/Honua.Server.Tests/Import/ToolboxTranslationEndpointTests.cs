@@ -900,23 +900,24 @@ public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]
     public async Task ValidateTranslation_ProcessReachableOnlyThroughItsProtocol_IsNotCertifiedExecutable()
     {
-        // conversion.geometry-format validates cleanly but is reachable only through its
-        // owning synchronous protocol endpoint, and translated tools execute through the
+        // data-management.delete-features validates cleanly but is reachable only through
+        // its owning synchronous protocol endpoint, and translated tools execute through the
         // job runtime. A report that certifies it tells a migrating user a tool works when
         // it can never execute from a toolbox (#3040 review, #4409 entry points).
+        // (conversion.geometry-format was this exemplar until #3936 gave it a job executor.)
         var response = await PostJsonAsync(
             "/api/v1/admin/import/toolbox/translation/validate",
             """
             {
-              "toolboxName": "ConversionToolbox",
+              "toolboxName": "DataManagementToolbox",
               "sourceFormat": "pyt",
               "tools": [
                 {
-                  "toolName": "ConvertGeometryFormat",
-                  "targetProcessId": "conversion.geometry-format",
+                  "toolName": "DeleteFeatures",
+                  "targetProcessId": "data-management.delete-features",
                   "parameterMappings": [
-                    { "sourceName": "in_geometry", "targetParameter": "geometry" },
-                    { "sourceName": "out_format", "targetParameter": "target" }
+                    { "sourceName": "in_features", "targetParameter": "layerId" },
+                    { "sourceName": "where_clause", "targetParameter": "where" }
                   ]
                 }
               ]
