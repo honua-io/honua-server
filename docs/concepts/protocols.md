@@ -27,7 +27,7 @@ Honua serves every published layer through multiple protocols at once — the sa
 | OGC API Coverages | `/ogc/coverages` | Science/raster tooling | REST/JSON raster coverage discovery and GeoTIFF export |
 | OGC API Processes | `/ogc/processes` | OGC processing clients | Standards-based async geoprocessing |
 | OGC API Records | `/ogc/records` | Catalog/metadata search clients | Standards-based catalog discovery and record search |
-| OGC API Environmental Data Retrieval (EDR) | `/edr` | Environmental/scientific tooling | Query environmental data resources by position or cube |
+| OGC API Environmental Data Retrieval (EDR) **(Preview)** | `/edr` | Environmental/scientific tooling | Query environmental data resources by position or cube. Preview: CRS, temporal-selection, output-format and coordinate-query corrections target 2026.2 |
 | OGC API Styles | `/ogc/styles` | Style-aware map clients | Discover and fetch published layer styles and metadata |
 | OGC SensorThings v1.1 (Preview) | `/sta/v1.1` | IoT/observation clients | REST access to Things, Datastreams, Sensors, and Observations; enable `Capabilities:Experimental:serve.sensorthings:Enabled=true` |
 | WMS 1.3 / 1.1.1 | `/rest/services/{serviceId}/MapServer/WMS` or `/ogc/services/{serviceId}/wms` | QGIS, legacy OGC clients | Clients expect classic GetMap/GetFeatureInfo |
@@ -60,91 +60,42 @@ Beyond the protocol endpoints, Honua works directly with the cloud-native geospa
 - **Cloud-optimized HDF5 / NetCDF4** — multidimensional coverage registration and catalog metadata (`/api/v1/admin/multidim-coverages`); the reader is build-optional and protocol serving is not yet exposed.
 - **STAC** — the catalog surface (`/stac`) for discovering these assets.
 
-## GeoServices REST (Esri-compatible)
+## Where each protocol is documented
 
-Honua implements the ArcGIS GeoServices REST contract so Esri clients connect without plugins — see [GeoServices parity](../reference/compatibility/geoservices-parity.md) for the per-operation contract.
+Each protocol has exactly one reference page, and that page is its canonical
+home. This page stays the matrix: what exists, where it lives, and which one to
+reach for. Per-operation detail, request and response shapes, version
+differences and limits live in the reference.
 
-- **FeatureServer** — query, `addFeatures`/`updateFeatures`/`deleteFeatures`/`applyEdits`, attachments, related records, replicas. Output: Esri JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, GeoArrow.
-  `GET /rest/services/parcels/FeatureServer/0/query?where=1=1&f=geojson`
-- **MapServer** — `export`, `identify`, `legend`, `find`, per-layer query, tiles.
-  `GET /rest/services/parcels/MapServer/export?bbox=-122.5,37.7,-122.4,37.8&f=image`
-- **ImageServer** — `exportImage`, `identify`, tiles, raster catalog `query`, per-band statistics and histograms. See [GeoServices parity](../reference/compatibility/geoservices-parity.md) for limits.
-  `GET /rest/services/dem/ImageServer/exportImage?bbox=…&f=image`
-- **Geometry Service** — buffer, simplify, project, intersect, union, clip, difference, areas/lengths, and more.
-  `POST /rest/services/Utilities/Geometry/GeometryServer/buffer`
-- **GPServer** — catalog-backed task discovery, async `submitJob`, job polling, cancellation, per-parameter results over the canonical process runtime.
-  `POST /rest/services/analysis/GPServer/geometry.buffer/submitJob`
-- **Portal token issuance** — `POST /sharing/rest/generateToken` exchanges username/password for an opaque token presented via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. See [Authentication](../guides/secure/authentication.md).
+| Protocol family | Canonical reference |
+|---|---|
+| GeoServices REST — FeatureServer, MapServer, ImageServer, Geometry Service, GPServer, GeocodeServer, VectorTileServer, NAServer, VersionManagementServer, portal tokens | [GeoServices REST](../reference/protocols/geoservices-rest.md) |
+| OGC API — Features, Maps, Tiles, Coverages, Processes, Records, Styles, EDR | [OGC APIs](../reference/protocols/ogc-apis.md) |
+| Classic OGC — WMS, WFS, WCS, WMTS, WPS | [WMS, WFS, WCS & WMTS](../reference/protocols/wms-wfs-wcs-wmts.md) |
+| OData v4 | [OData](../reference/protocols/odata.md) |
+| STAC | [STAC](../reference/protocols/stac.md) |
+| Vector tiles (MVT) + TileJSON, PMTiles | [Vector tiles](../reference/protocols/vector-tiles.md) |
+| Terrain-RGB + elevation | [Terrain & elevation](../reference/protocols/terrain-and-elevation.md) |
+| 3D Tiles scenes | [3D Tiles & scenes](../reference/protocols/3d-tiles-and-scenes.md) |
+| gRPC (`geospatial.v1`) | [gRPC](../reference/protocols/grpc.md) |
+| MCP | [AI agents and MCP](../guides/connect/ai-agents-mcp.md) |
 
-## OGC API
+Three surfaces are worth calling out because they are one runtime behind several
+front doors, which is not obvious from the matrix:
 
-Modern resource-oriented OGC standards, each with its own landing page, `/conformance`, and OpenAPI document. CITE conformance evidence: [OGC conformance](../reference/compatibility/ogc-conformance.md).
-
-- **Features** (`/ogc/features`) — collections, items, feature CRUD, CQL2 filtering, GML via content negotiation.
-  `GET /ogc/features/collections/parcels/items?bbox=-122.5,37.7,-122.4,37.8`
-- **Maps** (`/ogc/maps`) — rendered map images for datasets and collections (PNG, JPEG, TIFF).
-  `GET /ogc/maps/collections/parcels/map?bbox=…`
-- **Tiles** (`/ogc/tiles`) — tile access addressed by tile matrix set.
-  `GET /ogc/tiles/collections/parcels/tiles/WebMercatorQuad/12/654/1583`
-- **Coverages** (`/ogc/coverages`) — raster collection metadata and coverage export with bbox/CRS/band/scaling controls.
-  `GET /ogc/coverages/collections/dem/coverage?bbox=…&f=png`
-- **Environmental Data Retrieval (EDR) — Preview** (`/edr`) — environmental data
-  queries by position or cube. Remaining CRS, temporal-selection, output-format,
-  and coordinate-query corrections target release 2026.2.
-- **Processes** (`/ogc/processes`) — async process execution and job lifecycle over the same runtime as GPServer and MCP.
-  `POST /ogc/processes/processes/honua-geoprocessing/execution`
-
-## Classic OGC services
-
-For clients pinned to the pre-REST OGC generation. All are KVP-style and read-only except WFS 2.0 transactions.
-
-- **WMS 1.3 / 1.1.1** — GetCapabilities, GetMap, GetFeatureInfo, GetLegendGraphic. WMS 1.1.1 uses `SRS`, `X`/`Y`, and lon/lat `EPSG:4326` BBOX order.
-  `GET /ogc/services/parcels/wms?service=WMS&version=1.3.0&request=GetMap&…`
-- **WFS 2.0 / 1.1.0 / 1.0.0** — GetFeature with version-appropriate GML (3.2 / 3.1.1 / 2.1.2). Legacy versions are read-only.
-  `GET /wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=parcels`
-- **WCS 2.0.1** — GetCapabilities, DescribeCoverage, GetCoverage for raster layers (GeoTIFF default).
-  `GET /ogc/services/dem/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId=0&format=image/tiff`
-- **WMTS 1.0** — GetCapabilities, GetTile, GetFeatureInfo. WebMercatorQuad tile matrix set.
-  `GET /rest/services/parcels/MapServer/WMTS?service=WMTS&request=GetTile&…`
-
-## OData v4
-
-`/odata` exposes published layers as entity sets with `$metadata`, `$filter` (including spatial functions), `$batch`, and CRUD — built for Excel, Power BI, Tableau, and other non-GIS consumers.
-
-`GET /odata/Layers(0)/Features?$filter=assessed_value gt 100000&$top=50`
-
-## STAC
-
-`/stac` serves a STAC API catalog over published collections: collection metadata, items, and GET/POST `/stac/search` with CQL2 filtering, `fields`, and `sortby`. Collection details cross-link to the matching OGC API Features collection.
-
-`GET /stac/search?bbox=-122.5,37.7,-122.44,37.75&limit=10`
-
-## Vector tiles (MVT) + TileJSON
-
-Mapbox Vector Tiles generated from PostGIS with TileJSON metadata and an auto-generated MapLibre style per layer (`/api/styles/{layerId}.json`, with deterministic `?theme=dark|colorblind-safe|print` variants).
-
-`GET /tiles/0/12/654/1583.mvt`
-
-## Terrain-RGB + elevation API
-
-For registered DEM rasters:
-
-- **Terrain-RGB tiles** — `/terrain/{datasetId}/tile.json` and `/terrain/{datasetId}/{z}/{x}/{y}.png` for MapLibre/Mapbox `raster-dem` sources.
-- **Elevation API** — `/elevation/{datasetId}/value` (point lookup) and `/elevation/{datasetId}/profile` (distance/elevation samples along a WKT LineString).
-
-`GET /elevation/dem/value?lon=-122.45&lat=37.75`
-
-## 3D Tiles scenes
-
-`/scenes/{sceneId}/tileset.json` serves OGC 3D Tiles tilesets — either already-built bundles registered through the admin scene registry, or tilesets generated from a PostGIS layer via `POST /api/v1/admin/scenes/generate`. Relative asset URIs resolve under the scene route, so CesiumJS loads them without URL rewriting. See [Hosted 3D scenes](../guides/publish/publish-3d-scenes.md) and [Scene generation](../guides/publish/publish-3d-scenes.md).
-
-## gRPC (`geospatial.v1`)
-
-Native gRPC on port `8081` (h2c) and gRPC-Web on `8080`, implementing the open [geospatial-grpc](https://github.com/honua-io/geospatial-grpc) protocol: `FeatureService`, `ProcessService`, `SpecService`, `SceneService`, `TileService`, and `ElevationService`. Used by the Honua SDKs and mobile clients. See the [gRPC reference](../reference/protocols/grpc.md) for versioning and stability guarantees.
-
-## MCP
-
-`/mcp` is a JSON-RPC Model Context Protocol surface for AI agents: geoprocessing plan validation, dry runs, execution submission, cancellation, job/result inspection, and natural-language grounding over the process and layer catalogs. It adapts the same canonical runtime as GPServer and OGC API Processes. See [AI agents and MCP](../guides/connect/ai-agents-mcp.md) and the open [geospatial-mcp](https://github.com/honua-io/geospatial-mcp) standard.
+- **GPServer, OGC API Processes, WPS and MCP are not four geoprocessing
+  implementations.** They are four adapters over the same canonical process
+  runtime — the same job lifecycle, the same cancellation, the same results. A
+  geoprocessing bug is almost never in the protocol.
+- **Authentication is shared.** Portal token issuance at
+  `/sharing/rest/generateToken` mints tokens the other GeoServices surfaces
+  accept; see [Authentication](../guides/secure/authentication.md).
+- **Conformance evidence is separate from the contract.** For what a client can
+  actually do today, use the [client compatibility
+  contract](../reference/compatibility/clients.md), [GeoServices
+  parity](../reference/compatibility/geoservices-parity.md) and [OGC conformance
+  evidence](../reference/compatibility/ogc-conformance.md) rather than this
+  matrix.
 
 ## Choosing a protocol
 
