@@ -783,7 +783,21 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var partitionKey = ResolvePartitionKey(specParams);
-        var costWeight = (double)Math.Max(plan.Steps.Count, 1);
+        // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
+        // the plan's steps, overridden by any explicit gp.resource.* request values. Resolved
+        // BEFORE the admission cost weight below (#4629) so the partition throttle can charge by
+        // the plan's actual catalog-derived resource class, not merely its node count.
+        var resourceProfile = ResolveResourceProfile(
+            plan,
+            specParams,
+            isCustomCode,
+            processCatalog);
+        // #4629: a static costWeight=stepCount treats a 1-step raster/native op the same as a
+        // 1-step managed op over ten features — neither reflects real resource cost. Charging the
+        // catalog-derived vCPU class (Managed=1, Native=2, Raster=4; see GpResourceProfile) makes
+        // the partition throttle in ExecutionAdmissionEvaluator admit fewer concurrent heavy jobs
+        // per partition than light ones, while never charging less than one unit per plan step.
+        var costWeight = (double)Math.Max(plan.Steps.Count, resourceProfile.Vcpus ?? 1);
         var priority = ResolvePriority(specParams);
 
         await AdmissionSubmissionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -809,15 +823,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             var requiredRuntimeProfile = isCustomCode
                 ? CustomCodeJobContract.RuntimeProfile
                 : ResolveRequiredRuntimeProfile(plan, processCatalog);
-            // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
-            // the plan's steps, overridden by any explicit gp.resource.* request values. Projected onto
-            // the spec's batch.* params so AwsBatchComputeBackend.SubmitJob sizes vCPU/memory/timeout/
-            // retry/GPU and selects the ephemeral job-def tier per job. Instant and terraform-free.
-            var resourceProfile = ResolveResourceProfile(
-                plan,
-                specParams,
-                isCustomCode,
-                processCatalog);
             var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile, resourceProfile);
 
             var jobRecord = new ExecutionJobRecord

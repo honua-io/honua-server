@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using Honua.Core.Configuration;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -33,8 +34,9 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
     public LayerBufferAggregateExecutor(
         IServiceScopeFactory serviceScopeFactory,
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
-        ILogger<LayerBufferAggregateExecutor> logger)
-        : base(serviceScopeFactory, options, logger)
+        ILogger<LayerBufferAggregateExecutor> logger,
+        IOptions<LimitsOptions>? limitsOptions = null)
+        : base(serviceScopeFactory, options, logger, limitsOptions)
     {
     }
 
