@@ -133,6 +133,45 @@ def test_the_committed_artifact_is_current():
     assert_that(code == 0, f"committed crosswalk is stale:\n{err.getvalue()}{out.getvalue()}")
 
 
+def test_the_parser_sees_every_row_in_the_array():
+    """The gate's promise is 'every manifest id'. That is worth checking against
+    the source rather than against the parser's own output.
+
+    An earlier descriptor pattern accepted only `null` or a string literal in the
+    entitlement slot and silently skipped the nine rows passing a
+    `FeatureCatalog.*Key` constant: 48 rows in, 39 out, `--check` green, all
+    tests passing. A parser that drops rows and reports success is worse than no
+    parser, so the row count is now asserted against the array itself.
+    """
+    import re
+
+    src = MODULE.REGISTRY_CS.read_text(encoding="utf-8")
+    start = src.index("BuildManifestCapabilityDescriptors")
+    array = src.index("capabilities =", start)
+    end = src.index("];", array)
+    block = MODULE.COMMENT_RE.sub("", src[array:end])
+    declared = len(re.findall(r"CapabilityKind\.", block))
+
+    parsed = MODULE.manifest_descriptors()
+    assert_that(
+        len(parsed) == declared,
+        f"parser saw {len(parsed)} of {declared} rows — it is silently dropping manifest ids",
+    )
+    assert_that(declared >= 48, f"only {declared} rows found; the array look-up is wrong")
+
+    ids = {d["manifestId"] for d in parsed}
+    for constant_row in ("security.mtls", "edit.features", "versioning.branch", "sync.offline"):
+        assert_that(constant_row in ids, f"{constant_row} (FeatureCatalog.* entitlement) was dropped")
+
+
+def test_feature_catalog_entitlement_constants_resolve():
+    parsed = {d["manifestId"]: d for d in MODULE.manifest_descriptors()}
+    assert_that(parsed["security.mtls"]["entitlementKey"] == "identity.mtls-client-certificate",
+                f"security.mtls -> {parsed['security.mtls']['entitlementKey']}")
+    assert_that(parsed["versioning.branch"]["entitlementKey"] == "editing.branch-versioning",
+                f"versioning.branch -> {parsed['versioning.branch']['entitlementKey']}")
+
+
 def main() -> int:
     cases = [v for n, v in sorted(globals().items()) if n.startswith("test_")]
     for case in cases:

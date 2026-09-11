@@ -9,17 +9,38 @@
     "adjudication": "docs/gis/data/capability-manifest-adjudication.v1.json"
   },
   "summary": {
-    "manifestIdCount": 39,
-    "resolvedCount": 31,
+    "manifestIdCount": 48,
+    "resolvedCount": 40,
     "byResolution": {
-      "direct": 16,
-      "entitlement": 4,
+      "direct": 21,
+      "entitlement": 8,
       "mapped": 7,
       "not-licensable": 8,
       "registered": 4
     }
   },
   "entries": [
+    {
+      "manifestId": "admin.multi-tenancy",
+      "category": "control-plane",
+      "kind": "Feature",
+      "capability": "admin.multi-tenancy",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "ai.grounding",
+      "category": "ai",
+      "kind": "Feature",
+      "capability": "ai.grounding",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "ai.spec-apply",
+      "category": "ai",
+      "kind": "Feature",
+      "capability": "ai.spec-apply",
+      "resolution": "direct"
+    },
     {
       "manifestId": "alerts.geofence",
       "category": "alerts",
@@ -50,6 +71,13 @@
       "capability": "collaboration.map-sessions",
       "resolution": "mapped",
       "note": "Cross-node lock coordination is a deployment property of the same capability — it is what the locks require once the server runs multi-node — not a capability a customer licenses separately."
+    },
+    {
+      "manifestId": "edit.features",
+      "category": "edit",
+      "kind": "Feature",
+      "capability": "editing.featureserver-edits",
+      "resolution": "entitlement"
     },
     {
       "manifestId": "edit.geoservices-version-tokens",
@@ -175,11 +203,32 @@
       "resolution": "entitlement"
     },
     {
+      "manifestId": "scene.bim-ingest",
+      "category": "scene",
+      "kind": "Feature",
+      "capability": "scene.bim-ingest",
+      "resolution": "direct"
+    },
+    {
       "manifestId": "scene.catalog",
       "category": "scene",
       "kind": "Feature",
       "capability": "scene.catalog",
       "resolution": "direct"
+    },
+    {
+      "manifestId": "scene.pointcloud-ingest",
+      "category": "scene",
+      "kind": "Feature",
+      "capability": "scene.pointcloud-ingest",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "security.mtls",
+      "category": "security",
+      "kind": "Feature",
+      "capability": "identity.mtls-client-certificate",
+      "resolution": "entitlement"
     },
     {
       "manifestId": "serve.3d-tiles-scene",
@@ -229,6 +278,13 @@
       "kind": "ProtocolOperation",
       "capability": "serve.wmts",
       "resolution": "direct"
+    },
+    {
+      "manifestId": "sync.offline",
+      "category": "sync",
+      "kind": "Feature",
+      "capability": "fieldops.offline-sync",
+      "resolution": "entitlement"
     },
     {
       "manifestId": "temporal.animation-api",
@@ -310,6 +366,13 @@
       "category": "upload",
       "kind": "Feature",
       "capability": "import.file",
+      "resolution": "entitlement"
+    },
+    {
+      "manifestId": "versioning.branch",
+      "category": "versioning",
+      "kind": "Feature",
+      "capability": "editing.branch-versioning",
       "resolution": "entitlement"
     }
   ]

@@ -40,9 +40,25 @@ KEYS = REPO_ROOT / "docs" / "gis" / "data" / "capability-keys.v1.json"
 ADJUDICATION = REPO_ROOT / "docs" / "gis" / "data" / "capability-manifest-adjudication.v1.json"
 OUTPUT = REPO_ROOT / "docs" / "gis" / "data" / "capability-manifest-crosswalk.v1.json"
 
+# The entitlement slot is deliberately permissive. An earlier version accepted
+# only `null` or a string literal, which silently skipped the nine rows passing a
+# `FeatureCatalog.*Key` constant — the gate then reported "39 manifest ids, all
+# accounted for" while the array held 48. A regex that drops rows is worse than
+# no gate, because it reports success. `assert_complete` below is the guard that
+# makes any future format change fail loudly instead.
 DESCRIPTOR_RE = re.compile(
-    r'\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(null|"[^"]*")\s*,\s*CapabilityKind\.(\w+)'
+    r'\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*([^,]+?)\s*,\s*CapabilityKind\.(\w+)'
 )
+FEATURE_CATALOG_CONST_RE = re.compile(
+    r'public\s+const\s+string\s+(\w+)\s*=\s*"([^"]+)"'
+)
+COMMENT_RE = re.compile("//[^" + chr(10) + "]*|/[*].*?[*]/", re.DOTALL)
+
+
+def feature_catalog_constants() -> dict[str, str]:
+    """`FeatureCatalog.XKey` -> the capability key it holds."""
+    path = REPO_ROOT / "src" / "Honua.Core" / "Features" / "Licensing" / "Domain" / "FeatureCatalog.cs"
+    return dict(FEATURE_CATALOG_CONST_RE.findall(path.read_text(encoding="utf-8")))
 
 
 def manifest_descriptors() -> list[dict]:
@@ -51,15 +67,36 @@ def manifest_descriptors() -> list[dict]:
     start = src.index("BuildManifestCapabilityDescriptors")
     array = src.index("capabilities =", start)
     end = src.index("];", array)
+    block = COMMENT_RE.sub("", src[array:end])
+
+    constants = feature_catalog_constants()
     rows = []
-    for manifest_id, category, entitlement, kind in DESCRIPTOR_RE.findall(src[array:end]):
+    for manifest_id, category, entitlement, kind in DESCRIPTOR_RE.findall(block):
+        entitlement = entitlement.strip()
+        if entitlement == "null":
+            key = None
+        elif entitlement.startswith('"'):
+            key = entitlement.strip('"')
+        elif entitlement.startswith("FeatureCatalog."):
+            name = entitlement.split(".", 1)[1]
+            key = constants.get(name)
+            if key is None:
+                raise RuntimeError(
+                    f"{manifest_id}: cannot resolve entitlement constant {entitlement!r} in FeatureCatalog.cs"
+                )
+        else:
+            raise RuntimeError(f"{manifest_id}: unrecognised entitlement expression {entitlement!r}")
         rows.append(
-            {
-                "manifestId": manifest_id,
-                "category": category,
-                "kind": kind,
-                "entitlementKey": None if entitlement == "null" else entitlement.strip('"'),
-            }
+            {"manifestId": manifest_id, "category": category, "kind": kind, "entitlementKey": key}
+        )
+
+    # The array has one CapabilityKind. per row, so a mismatch means the pattern
+    # stopped matching a row shape. Fail loudly rather than under-report.
+    expected = len(re.findall(r"CapabilityKind\.", block))
+    if len(rows) != expected:
+        raise RuntimeError(
+            f"parsed {len(rows)} manifest descriptors but the array declares {expected} rows — "
+            "the descriptor pattern no longer matches every row shape"
         )
     return rows
 
