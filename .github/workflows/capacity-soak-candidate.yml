@@ -547,7 +547,17 @@ jobs:
           set -euo pipefail
           # Exactly honua-release capacity-soak.yml's fetch: HTTPS only, no redirect following.
           case "$RECEIPT_URL" in https://*) ;; *) echo "receipt_url must use HTTPS"; exit 1;; esac
-          curl --fail --silent --show-error --proto '=https' --tlsv1.2 "$RECEIPT_URL" -o "$RUNNER_TEMP/published-receipt.json"
+          # Same flags the gate uses. The retry is for raw.githubusercontent propagation of a commit
+          # made seconds ago, not for the contract: the flags themselves never change, so a URL that
+          # needs a redirect still fails here exactly as it would fail in the gate.
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --silent --show-error --proto '=https' --tlsv1.2 "$RECEIPT_URL" -o "$RUNNER_TEMP/published-receipt.json"; then
+              break
+            fi
+            echo "published receipt not fetchable yet (attempt $attempt)"
+            sleep 10
+          done
+          test -s "$RUNNER_TEMP/published-receipt.json"
           cmp "$RUNNER_TEMP/published-receipt.json" "$RUNNER_TEMP/capacity-soak-receipt.json"
           gh attestation verify "$RUNNER_TEMP/published-receipt.json" --repo "$GITHUB_REPOSITORY"
           curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
