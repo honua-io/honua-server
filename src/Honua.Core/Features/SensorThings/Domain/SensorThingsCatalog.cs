@@ -142,16 +142,43 @@ public sealed record SensorThingsObservation
 /// <param name="DatastreamId">Restrict to a single datastream when set.</param>
 /// <param name="WhereSql">A parameterized SQL WHERE fragment translated from a STA <c>$filter</c>.</param>
 /// <param name="WhereParameters">Ordered parameter values for <paramref name="WhereSql"/> placeholders <c>@p0..@pN</c>.</param>
-/// <param name="OrderByDescending">When true order by <c>phenomenonTime</c> descending; otherwise ascending.</param>
+/// <param name="OrderBySql">
+/// The ORDER BY body translated from a STA <c>$orderby</c>. Like <paramref name="WhereSql"/>
+/// this is a server-built fragment over whitelisted column names, never request text.
+/// </param>
 /// <param name="Skip">Number of leading rows to skip (<c>$skip</c>).</param>
 /// <param name="Top">Maximum number of rows to return (<c>$top</c>); the caller clamps this.</param>
 public readonly record struct ObservationQuery(
     long? DatastreamId,
     string? WhereSql,
     IReadOnlyList<object?> WhereParameters,
-    bool OrderByDescending,
+    string? OrderBySql,
     int Skip,
     int Top);
+
+/// <summary>
+/// A filtered, ordered, paged query over one of the SensorThings catalog entity sets
+/// (Things, Sensors, ObservedProperties, Datastreams).
+/// </summary>
+/// <param name="WhereSql">A parameterized SQL WHERE fragment translated from a STA <c>$filter</c>.</param>
+/// <param name="WhereParameters">Ordered parameter values for <paramref name="WhereSql"/> placeholders <c>@p0..@pN</c>.</param>
+/// <param name="OrderBySql">
+/// The ORDER BY body translated from a STA <c>$orderby</c>, or null for the entity's
+/// default ordering. Built by the protocol adapter from a whitelist of column names.
+/// </param>
+/// <param name="Skip">Number of leading rows to skip (<c>$skip</c>).</param>
+/// <param name="Top">Maximum number of rows to return (<c>$top</c>); the caller clamps this.</param>
+public readonly record struct CatalogQuery(
+    string? WhereSql,
+    IReadOnlyList<object?> WhereParameters,
+    string? OrderBySql,
+    int Skip,
+    int Top)
+{
+    /// <summary>An unfiltered, unordered query over the first page of an entity set.</summary>
+    public static CatalogQuery Page(int skip, int top) =>
+        new(null, Array.Empty<object?>(), null, skip, top);
+}
 
 /// <summary>
 /// A single observation row supplied to <c>IObservationStore.IngestObservationsAsync</c>

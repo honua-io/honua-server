@@ -58,26 +58,10 @@ internal sealed record StaQueryOptions
     /// <summary>Whether <c>$count=true</c> was requested.</summary>
     public bool Count { get; init; }
 
-    /// <summary>True when <c>$orderby</c> requests descending order on the leading property.</summary>
-    public bool OrderByDescending =>
-        OrderBy is not null && OrderBy.TrimEnd().EndsWith(" desc", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>Returns true when <c>$expand</c> names the given navigation property.</summary>
-    public bool ExpandsTo(string navigation) =>
-        Expand is not null && Expand
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Any(part =>
-            {
-                // Strip nested option parentheses, e.g. "Observations($top=5)".
-                var name = part;
-                var paren = name.IndexOf('(', StringComparison.Ordinal);
-                if (paren >= 0)
-                {
-                    name = name[..paren];
-                }
-
-                return string.Equals(name.Trim(), navigation, StringComparison.OrdinalIgnoreCase);
-            });
+    // $orderby, $select and $expand are interpreted by StaQueryPlan against the target
+    // entity's schema: the option's meaning depends on which properties the entity set has,
+    // and an option this server cannot honour must fail the request rather than be dropped
+    // here (#4201).
 
     /// <summary>Binds query options from the request query string, clamping paging values.</summary>
     public static StaQueryOptions FromRequest(HttpRequest request)
