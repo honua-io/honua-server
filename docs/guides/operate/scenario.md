@@ -181,8 +181,49 @@ the returned ID:
 honua admin operate getOperationProposal --path "id=$proposalId" --profile proposer
 ```
 
-The separate human reviews the sealed target, diff, risk, policy, scope and
-evidence before running:
+### Check protection before approval
+
+The proposal detail alone does **not** expose backend capabilities or the full
+protection policy. Before approving, an authorized operator uses the installed
+Admin CLI's planning route with the target and desired revision from the
+server-authored finding/release handoff. Obtain the current revision from an
+observed deployment/provider receipt; do not infer it from the desired image.
+If there is no verified prior revision, stop the protected-update flow.
+
+Replace the three placeholders with those independently observed identities.
+The planning profile needs authority for `POST /api/v1/admin/deploy/plan`;
+do not broaden the separate approver's grants merely to perform this lookup.
+
+```powershell
+$planRequest = @{
+  targetId = "<target-id>"
+  desiredRevision = "<desired-revision>"
+  currentRevision = "<observed-current-revision>"
+} | ConvertTo-Json -Compress
+honua admin release planDeployOperation --body $planRequest --profile planner --yes --json
+```
+
+This calls the plan endpoint, which does not create, submit or approve a deploy;
+`--yes` confirms the CLI's POST operation. Inspect `target.targetId`, `target.backend`,
+`target.currentRevision`, `target.desiredRevision`, `target.parameters`,
+`backendRegistered`, `capabilities.supportsRollback`, `blockingReasons` and
+`warnings`. The current revision in the plan reflects the supplied value, so
+the plan is not independent proof that the provider is serving it. An absent
+backend/capability, `supportsRollback=false`, missing prior revision or blocking
+reason means protection is unavailable; stop and report **Needs attention**.
+`readyToSubmit` alone is insufficient and may be false pending required approval.
+
+Retain the plan and the installed profile's observation/recovery limits and
+policy identity. Match them to the sealed proposal's target, prior/desired
+revisions and effective parameters immediately before approval. Do not decode
+or reconstruct a hidden executable payload. If the client cannot establish
+that match, or cannot expose the exact limits/policy for review, leave the
+proposal unapproved: this candidate has not established the protected path.
+Show that limitation plainly to the user. A plan response cannot repair a
+missing prior identity in a sealed finding proposal.
+
+Only after those checks, the separate human reviews the sealed target, diff,
+risk, policy, scope and evidence before running:
 
 ```powershell
 honua admin operate approveOperationProposal --path "id=$proposalId" --profile approver --yes

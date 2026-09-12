@@ -67,6 +67,11 @@ literal path ID and `executed=false`. This verifies installed syntax and request
 construction; it is not an authenticated CLI execution transcript.
 [The syntax receipt](../../guides/operate/evidence/3302-installed-cli-syntax.json)
 retains the commands and independently specified method/path/ID assertions.
+A third dry run checks `honua admin release planDeployOperation`: POST
+`/deploy/plan` with independently specified target/current/desired revisions,
+with no execution. The runbook now requires this capability/parameter lookup
+before approval and stops if the sealed proposal cannot be matched to the
+observed prior revision and protection policy.
 
 ## Candidate receipt requirements
 

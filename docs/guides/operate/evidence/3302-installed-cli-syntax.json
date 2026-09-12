@@ -4,7 +4,7 @@
   "package": "@honua/sdk-js",
   "version": "0.1.9-beta.0",
   "integrity": "sha512-xVJnTpZnscV1exvoSGH/I1qbqhlxTy3FcldKJTCQe8N2gq5legwV8huu2FKGVmvi+/bc9pnvu4HobpsIGnR5OQ==",
-  "completedAt": "2026-09-12T23:22:18.855974+00:00",
+  "completedAt": "2026-09-12T23:29:41.390657+00:00",
   "checks": [
     {
       "command": "honua admin operate getOperationProposal --path id=proposal-fixture --base-url http://127.0.0.1:1 --dry-run --json",
@@ -71,6 +71,48 @@
           },
           "query": {},
           "headers": {}
+        },
+        "executed": false
+      },
+      "passed": true
+    },
+    {
+      "command": "honua admin release planDeployOperation --body {\"targetId\":\"target-fixture\",\"desiredRevision\":\"candidate-fixture\",\"currentRevision\":\"prior-fixture\"} --base-url http://127.0.0.1:1 --dry-run --yes --json",
+      "expected": {
+        "method": "POST",
+        "path": "/deploy/plan",
+        "body": {
+          "targetId": "target-fixture",
+          "desiredRevision": "candidate-fixture",
+          "currentRevision": "prior-fixture"
+        },
+        "executed": false
+      },
+      "observed": {
+        "operationId": "planDeployOperation",
+        "method": "POST",
+        "path": "/deploy/plan",
+        "summary": "Plan Deploy Operation",
+        "tags": [
+          "Deploy"
+        ],
+        "mutating": true,
+        "group": "release",
+        "requestContentTypes": [
+          "application/json"
+        ],
+        "responseContentTypes": [
+          "application/json"
+        ],
+        "request": {
+          "path": {},
+          "query": {},
+          "headers": {},
+          "body": {
+            "targetId": "target-fixture",
+            "desiredRevision": "candidate-fixture",
+            "currentRevision": "prior-fixture"
+          }
         },
         "executed": false
       },
