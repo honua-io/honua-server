@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "honua.operate-cli-syntax/v1",
+  "scope": "installed package syntax and request construction only; no server request or candidate journey execution",
+  "package": "@honua/sdk-js",
+  "version": "0.1.9-beta.0",
+  "integrity": "sha512-xVJnTpZnscV1exvoSGH/I1qbqhlxTy3FcldKJTCQe8N2gq5legwV8huu2FKGVmvi+/bc9pnvu4HobpsIGnR5OQ==",
+  "completedAt": "2026-09-12T23:22:18.855974+00:00",
+  "checks": [
+    {
+      "command": "honua admin operate getOperationProposal --path id=proposal-fixture --base-url http://127.0.0.1:1 --dry-run --json",
+      "expected": {
+        "method": "GET",
+        "path": "/proposals/{id}",
+        "pathParameters": {
+          "id": "proposal-fixture"
+        },
+        "executed": false
+      },
+      "observed": {
+        "operationId": "getOperationProposal",
+        "method": "GET",
+        "path": "/proposals/{id}",
+        "summary": "Get Operation Proposal",
+        "tags": [
+          "Proposals"
+        ],
+        "mutating": false,
+        "group": "operate",
+        "requestContentTypes": [],
+        "responseContentTypes": [
+          "application/json"
+        ],
+        "request": {
+          "path": {
+            "id": "proposal-fixture"
+          },
+          "query": {},
+          "headers": {}
+        },
+        "executed": false
+      },
+      "passed": true
+    },
+    {
+      "command": "honua admin operate approveOperationProposal --path id=proposal-fixture --base-url http://127.0.0.1:1 --dry-run --json --yes",
+      "expected": {
+        "method": "POST",
+        "path": "/proposals/{id}/approve",
+        "pathParameters": {
+          "id": "proposal-fixture"
+        },
+        "executed": false
+      },
+      "observed": {
+        "operationId": "approveOperationProposal",
+        "method": "POST",
+        "path": "/proposals/{id}/approve",
+        "summary": "Approve Operation Proposal",
+        "tags": [
+          "Proposals"
+        ],
+        "mutating": true,
+        "group": "operate",
+        "requestContentTypes": [],
+        "responseContentTypes": [
+          "application/json"
+        ],
+        "request": {
+          "path": {
+            "id": "proposal-fixture"
+          },
+          "query": {},
+          "headers": {}
+        },
+        "executed": false
+      },
+      "passed": true
+    }
+  ]
+}

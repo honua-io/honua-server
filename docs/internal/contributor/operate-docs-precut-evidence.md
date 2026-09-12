@@ -57,8 +57,16 @@ Paths are relative to the repository root.
 Route and operation IDs were checked against
 `docs/developer/api-specs/admin-api.json`; MCP names against
 `src/Honua.Ai/Features/Protocols/Mcp/Mcp/Tools/PlatformOpsTools.cs` and the
-workflow view catalog. CLI operation IDs agree with OpenAPI; installed-package
-syntax and generated CLI-reference checks still require the candidate client.
+workflow view catalog. The manifest-pinned published `@honua/sdk-js@0.1.9-beta.0` was installed in
+an isolated directory; its package-lock integrity matches the manifest's SHA-512.
+`honua admin operations operate --json` includes both documented proposal operations.
+Dry runs of `getOperationProposal --path id=proposal-fixture` and
+`approveOperationProposal --path id=proposal-fixture --yes` produce the expected
+GET `/proposals/{id}` and POST `/proposals/{id}/approve`, respectively, with the
+literal path ID and `executed=false`. This verifies installed syntax and request
+construction; it is not an authenticated CLI execution transcript.
+[The syntax receipt](../../guides/operate/evidence/3302-installed-cli-syntax.json)
+retains the commands and independently specified method/path/ID assertions.
 
 ## Candidate receipt requirements
 
