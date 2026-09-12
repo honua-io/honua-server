@@ -54,7 +54,9 @@ public sealed class OperationsToolsetTests
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns("Test");
         var readiness = Substitute.For<IReadinessCheckService>();
+        readiness.CheckReadinessAsync(Arg.Any<CancellationToken>()).Returns(ReadinessResult.Ready());
         services.AddSingleton(readiness);
+        services.AddSingleton<IOperationPolicyDecisionPoint>(new AllowAllPolicyDecisionPoint());
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
         // Deliberately leave IStudioPackageLifecycleService unresolved. Constructing its
         // executor used to prevent even validation of an unrelated status operation.
@@ -64,6 +66,11 @@ public sealed class OperationsToolsetTests
 
         var validation = await invoker.ValidateAsync(new OperationRequest { OperationId = "admin.server.status" });
         validation.IsValid.Should().BeTrue();
+        var status = await invoker.SubmitAsync(
+            new OperationRequest { OperationId = "admin.server.status" }, new OperationPolicyContext());
+        status.Status.Should().Be(OperationHandleStatus.Completed);
+        status.Result!.Details["status"].Should().Be("ready");
+        status.Result.Details["message"].Should().Be("Ready");
         var failed = await invoker.SubmitAsync(
             new OperationRequest { OperationId = StudioDraftOperations.Create }, new OperationPolicyContext());
         failed.Status.Should().Be(OperationHandleStatus.Failed);
@@ -87,7 +94,8 @@ public sealed class OperationsToolsetTests
             descriptor.ImplementationType == typeof(ServicePublishApprovalRequestMapper));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationType == typeof(DeferredServicePublishExecutor));
+            descriptor.IsKeyedService &&
+            descriptor.KeyedImplementationType == typeof(DeferredServicePublishExecutor));
         services
             .Where(descriptor =>
                 descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
@@ -106,16 +114,20 @@ public sealed class OperationsToolsetTests
                 StudioDraftOperations.Rollback);
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationType == typeof(StudioDraftDeleteExecutor));
+            descriptor.IsKeyedService &&
+            descriptor.KeyedImplementationType == typeof(StudioDraftDeleteExecutor));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationType == typeof(StudioCreatePublicationRequestExecutor));
+            descriptor.IsKeyedService &&
+            descriptor.KeyedImplementationType == typeof(StudioCreatePublicationRequestExecutor));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationType == typeof(StudioReopenVersionExecutor));
+            descriptor.IsKeyedService &&
+            descriptor.KeyedImplementationType == typeof(StudioReopenVersionExecutor));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationType == typeof(StudioRollbackExecutor));
+            descriptor.IsKeyedService &&
+            descriptor.KeyedImplementationType == typeof(StudioRollbackExecutor));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationEnvelopeFactory) &&
             descriptor.Lifetime == ServiceLifetime.Singleton);

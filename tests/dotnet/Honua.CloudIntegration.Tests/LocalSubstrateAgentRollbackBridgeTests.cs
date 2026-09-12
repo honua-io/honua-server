@@ -251,9 +251,10 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             throw new InvalidOperationException($"MCP rollback proposal returned {error.GetRawText()}.");
         }
 
-        var structured = document.RootElement
-            .GetProperty("result")
-            .GetProperty("structuredContent");
+        var result = document.RootElement.GetProperty("result");
+        (result.TryGetProperty("isError", out var isError) && isError.GetBoolean())
+            .Should().BeFalse("the real MCP rollback call must succeed before its proposal receipt is inspected");
+        result.TryGetProperty("structuredContent", out var structured).Should().BeTrue();
 
         structured.GetProperty("outcome").GetString().Should().Be("ProposalCreated");
         structured.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
