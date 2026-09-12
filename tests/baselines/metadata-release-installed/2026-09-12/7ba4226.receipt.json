@@ -7,7 +7,7 @@
     "reference": "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
     "manifestSha256": "8c71ca3c29d0a09676d579f918c1a2627556f257f7ac80454fe840ff7a6e3bec"
   },
-  "createdAt": "2026-09-12T21:52:53.526845+00:00",
+  "createdAt": "2026-09-12T22:09:59.880982+00:00",
   "fixtureSha256": "83eb29ac38a3fb54914c1252b273dbb7f7f4d651a8204aafb4108d14d6d23727",
   "scenarios": [],
   "status": "failed",
@@ -25,8 +25,8 @@
     "status": "Reconciling",
     "version": 4,
     "priority": 1,
-    "createdAt": "2026-09-12T21:53:19.8976274+00:00",
-    "updatedAt": "2026-09-12T21:53:33.421407+00:00",
+    "createdAt": "2026-09-12T22:10:35.0738195+00:00",
+    "updatedAt": "2026-09-12T22:10:47.4530234+00:00",
     "currentPhase": "Applied additive schema script 'add-owner_email'.",
     "warnings": [],
     "blockingReasons": [],
@@ -82,9 +82,9 @@
   },
   "stagingObservation": {
     "priorRevision": 3,
-    "priorEtag": "\"447609eb37672a0e50c6eb083e79e787172227d7bc4ca2386a19b0cd789c07a5\"",
+    "priorEtag": "\"f74a7a0c6579e7acc8046d63ee22f7c9cd1281267c06651dc29c23a87807978c\"",
     "liveRevisionAtStaging": 4,
-    "liveEtagAtStaging": "\"f8c09a471e0ae5986a8053125314b7d5f7ab304822c0f3f6e7e9bd5f01b94739\"",
+    "liveEtagAtStaging": "\"a16560e12b604f209be6c0bdd3d0ec903632a7dd0debc02eb6f8deae48e6e582\"",
     "liveFieldNames": [
       "objectid",
       "name",
@@ -98,7 +98,7 @@
     ]
   },
   "error": "prior identity missing or captured after mutation",
-  "serverLogSha256": "21bcd09ffb999af27da8ad9e956f53f29400dfab6fb9b94d6d83bafc8ff8a4e7",
+  "serverLogSha256": "2c5892b88ac4a28d95614c1790c6bea012f842c4bfd088fdf982f946bdb22749",
   "cleanup": "removed lane containers and network",
-  "harnessSha256": "7e20ca3562b6a1416f351266c5d991aea97c75b8cbc4220d0e862d38ff2366ee"
+  "harnessSha256": "64825397f147c2af9c800cc6dcba43a4e0e4418735751b2c8e5e4842236a846b"
 }
