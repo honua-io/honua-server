@@ -1,6 +1,7 @@
 ---
 type: reference
 title: "Databricks provider (read-only, best-effort)"
+resource: "honua://capability/provider.databricks"
 ---
 # Databricks provider (read-only, best-effort)
 

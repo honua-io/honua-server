@@ -2,6 +2,7 @@
 type: reference
 title: "Saved-map collaborative edit operation log"
 description: "Server-owned durable ordering and conflict behavior for multi-user saved-map editing."
+resource: "honua://capability/collaboration.map-sessions"
 ---
 # Saved-map collaborative edit operation log
 

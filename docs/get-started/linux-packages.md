@@ -2,6 +2,7 @@
 type: guide
 title: "Linux: install published packages"
 description: "Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv and pip 22.3+, and a Bash terminal."
+resource: "https://github.com/honua-io/honua-server/releases"
 ---
 # Linux: install published packages
 

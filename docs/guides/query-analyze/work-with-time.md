@@ -2,6 +2,7 @@
 type: guide
 title: "Work with time"
 description: "Make a layer time-aware, discover its temporal extent, and filter or animate it with the same time-window semantics across GeoServices, OGC, and vector tiles."
+resource: "honua://capability/temporal.filtering"
 ---
 # Work with time
 

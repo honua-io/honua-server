@@ -2,6 +2,7 @@
 type: guide
 title: "Automate workflows"
 description: "Chain geoprocessing steps into a declarative DAG, publish it on a cron schedule, and watch runs — the orchestration engine handles step wiring, retries, and crash recovery."
+resource: "honua://capability/jobs.durable-runtime"
 ---
 # Automate workflows
 

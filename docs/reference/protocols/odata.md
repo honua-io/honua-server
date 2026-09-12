@@ -2,6 +2,7 @@
 type: reference
 title: "OData v4"
 description: "Honua exposes layers and features as an OData v4 service at /odata, so BI tools (Power BI, Excel, Tableau via connectors) and OData clients can query geospatial data with standard query options."
+resource: "honua://capability/serve.odata"
 ---
 # OData v4
 

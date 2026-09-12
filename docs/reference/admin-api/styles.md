@@ -2,6 +2,7 @@
 type: reference
 title: "Styles"
 description: "Reference for managing layer styles."
+resource: "honua://capability/styling.defaults"
 ---
 # Styles
 

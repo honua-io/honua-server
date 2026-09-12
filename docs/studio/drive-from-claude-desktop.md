@@ -2,6 +2,7 @@
 type: guide
 title: "Drive Studio from Claude Desktop"
 description: "Claude Desktop can act as an external MCP host for the same draft tools."
+resource: "honua://capability/ai.mcp-discovery"
 ---
 # Drive Studio from Claude Desktop
 

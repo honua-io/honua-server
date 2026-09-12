@@ -2,6 +2,7 @@
 type: reference
 title: "Admin API overview"
 description: "The admin API is Honua's control-plane REST surface at /api/v1/admin/."
+resource: "honua://capability/admin.control-plane"
 ---
 # Admin API overview
 

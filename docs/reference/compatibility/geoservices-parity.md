@@ -2,6 +2,7 @@
 type: reference
 title: "GeoServices REST parity"
 description: "Honua provides protocol-level compatibility at Esri GeoServices REST paths for selected, operation-scoped workflows."
+resource: "honua://capability/serve.geoservices-root"
 ---
 # GeoServices REST parity
 

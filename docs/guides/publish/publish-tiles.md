@@ -2,6 +2,7 @@
 type: guide
 title: "Publish tiles"
 description: "You'll have a published layer serving vector tiles, a seeded tile cache, and (optionally) a durable PMTiles artifact in about 10 minutes."
+resource: "honua://capability/serve.vector-tiles"
 ---
 # Publish tiles
 
