@@ -219,6 +219,9 @@ class TestGeoParquetSdkInterop:
         assert frame.crs.equals(pyproj.CRS.from_epsg(out_sr), ignore_axis_order=True)
         assert frame["objectid"].tolist() == list(range(1, row_count + 1))
         table_rows = pyarrow_parquet.read_table(io.BytesIO(response.content)).to_pylist()
+        # pandas may represent nullable strings as NaN; verify its missing-value
+        # semantics and the actual Arrow nulls independently.
+        assert frame["description"].isna().all()
         geo = _read_geo_metadata(response.content)
         column = geo["columns"][geo["primary_column"]]
         # seed_test_catalog declares an untyped Mixed geometry column. Its type
@@ -234,7 +237,7 @@ class TestGeoParquetSdkInterop:
             assert row.name == f"fixture-{index}"
             assert row.count == index
             assert row.ratio == index * 1.25
-            assert row.description is None
+            assert table_rows[index - 1]["description"] is None
             bbox = table_rows[index - 1][bbox_column]
             if index == row_count:
                 assert row.geometry is None
