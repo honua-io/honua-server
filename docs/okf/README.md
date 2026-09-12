@@ -69,6 +69,8 @@ python3 scripts/ci/generate-capability-concepts.py --check   # fail on drift
 python3 scripts/ci/generate-capability-concepts.py           # regenerate
 python3 scripts/ci/generate-capability-concepts.py --report  # prose coverage
 python3 scripts/ci/check-okf-bundle.test.py            # the checker's own tests
+python3 scripts/ci/generate-llms-txt.py                # docs/llms.txt, stale after any SUMMARY edit
+python3 scripts/ci/check-doc-links.py                  # links, anchors, and llms.txt freshness
 ```
 
 CI runs these in
