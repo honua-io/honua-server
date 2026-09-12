@@ -47,6 +47,42 @@ public sealed class McpWorkflowViewTests
     // ------------------------------------------------------------------
 
     [UnitTest]
+    public async Task SetupView_LiveStudioOperationCatalog_IncludesEditingSaveAndReopenWithinBudget()
+    {
+        var catalog = new Honua.Core.Features.Operations.Services.OperationCatalog(
+            [new Honua.Server.Features.Operations.ServerOperationDescriptorProvider()], TimeProvider.System);
+        var descriptors = Honua.Server.Features.Operations.StudioDraftOperations.BuildDescriptors();
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: descriptors.Select(descriptor =>
+                new Honua.Server.Features.Operations.StudioDraftApprovalRequestMapper(descriptor.OperationId)));
+        var surface = BuildFullSurface(source);
+        var view = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName);
+        var full = await ListToolsAsync(surface, McpWorkflowViewNegotiation.FullCatalogViewName);
+
+        view.Names.Should().Contain([
+            "honua_op_studio_draft_update",
+            "honua_op_studio_draft_save_version",
+            "honua_op_studio_content_reopen_version"]);
+        foreach (var descriptor in view.Tools)
+        {
+            var canonical = full.Tools.Single(tool => tool.GetProperty("name").GetString() ==
+                descriptor.GetProperty("name").GetString());
+            descriptor.GetRawText().Should().Be(canonical.GetRawText());
+        }
+
+        var bytes = Encoding.UTF8.GetByteCount("[" + string.Join(",", view.Tools.Select(tool => tool.GetRawText())) + "]");
+        var largest = view.Tools.Max(tool => Encoding.UTF8.GetByteCount(tool.GetRawText()));
+        view.NextCursor.Should().BeNull();
+        view.Tools.Length.Should().BeLessThanOrEqualTo(48);
+        bytes.Should().BeLessThanOrEqualTo(128 * 1024);
+        largest.Should().BeLessThanOrEqualTo(16 * 1024);
+        _output.WriteLine($"Live setup catalog: {view.Tools.Length} descriptors, {bytes} bytes, ~{(bytes + 3) / 4} tokens, largest {largest} bytes.");
+    }
+
+    [UnitTest]
     public async Task ToolsList_WithSetupView_ReturnsOnlyServerSelectedDescriptors()
     {
         var surface = BuildFullSurface();
