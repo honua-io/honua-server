@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "honua.admin-approve-candidate/v1",
+  "image": "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+  "imageId": "sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+  "sourceRevision": "7ba422672e0c751843b17beb36e954a019cc19fb",
+  "environment": "Development",
+  "devGrantEdition": "Pro",
+  "scope": "server API; excludes Console browser qualification",
+  "checks": {
+    "mintReadApproveAndReadOnlyKeys": "passed",
+    "exactEffectiveGrantsAndUnrelatedWriteDenial": "passed",
+    "readOnlyDecisionsDenyWithoutChangingProposalOrDraft": "passed",
+    "approveDeletesOnlyApprovedDraftAndRejectPreservesExactDraft": "passed",
+    "expiredApproveKeyCannotRotateOrAuthenticate": "passed"
+  },
+  "decisions": [
+    {
+      "decision": "approve",
+      "proposalId": "proposal-49b73943f59f48ff8782c5e4e7ab4404",
+      "operationInstanceId": "opinst-7f339816986248f68b16b070206485d8",
+      "draftId": "bef8cd3c-006b-449b-83bc-4a4a0af65149",
+      "status": "Succeeded"
+    },
+    {
+      "decision": "reject",
+      "proposalId": "proposal-189f4e72b4d9453c883ca32473b9f66e",
+      "operationInstanceId": "opinst-ec5207dcfe80451088bbd581a29d2104",
+      "draftId": "174cc091-f926-44f3-ba2c-7e75feb71bdb",
+      "status": "Rejected"
+    }
+  ],
+  "completedAt": "2026-09-12T21:40:28.005875+00:00"
+}
