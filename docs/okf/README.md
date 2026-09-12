@@ -96,7 +96,7 @@ honest a year from now.
 | --- | --- |
 | [Capability concepts](capabilities/README.md) | The generated half of the bundle, and the worked example of `resource` as identity. |
 | [Reference](../reference/README.md) | Where these pages sit in the table of contents. |
-| [Concepts](../concepts/README.md) | What `type: concept` looks like in practice. |
+| [Architecture](../concepts/architecture.md) | What `type: concept` looks like in practice. |
 | [Guides](../guides/README.md) | What `type: guide` looks like in practice. |
 
 ## This is a nine-repo contract now
