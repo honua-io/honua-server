@@ -86,13 +86,18 @@ public sealed class McpWorkflowViewTests
             descriptor.GetRawText().Should().Be(canonical.GetRawText());
         }
 
-        var bytes = Encoding.UTF8.GetByteCount("[" + string.Join(",", view.Tools.Select(tool => tool.GetRawText())) + "]");
+        var aggregate = Encoding.UTF8.GetBytes("[" + string.Join(",", view.Tools.Select(tool => tool.GetRawText())) + "]");
+        var bytes = aggregate.Length;
+        view.Meta.GetProperty("descriptorBytes").GetInt32().Should().Be(bytes);
+        view.Meta.GetProperty("descriptorDigest").GetString().Should().Be(
+            "sha256:" + Convert.ToHexStringLower(SHA256.HashData(aggregate)));
+        view.Meta.GetProperty("estimatedTokens").GetInt32().Should().Be(bytes / 4);
         var largest = view.Tools.Max(tool => Encoding.UTF8.GetByteCount(tool.GetRawText()));
         view.NextCursor.Should().BeNull();
         view.Tools.Length.Should().BeLessThanOrEqualTo(48);
         bytes.Should().BeLessThanOrEqualTo(128 * 1024);
         largest.Should().BeLessThanOrEqualTo(16 * 1024);
-        _output.WriteLine($"Live setup catalog: {view.Tools.Length} descriptors, {bytes} bytes, ~{(bytes + 3) / 4} tokens, largest {largest} bytes.");
+        _output.WriteLine($"Live setup catalog: {view.Tools.Length} descriptors, {bytes} bytes, ~{bytes / 4} tokens, largest {largest} bytes.");
     }
 
     [UnitTest]
