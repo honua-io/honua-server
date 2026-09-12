@@ -7,6 +7,11 @@ proof below exercises that implementation through the real HTTP host with
 PostGIS and Redis. It also extends #4637's expired-key rotation regression
 to a key carrying `admin:read` and `admin:approve`.
 
+The [2026-09-12 receipt](admin-approve-candidate-receipt.json) records five
+passing server check groups at the manifest-pinned server revision. A negative
+harness check also confirmed that a floating image tag is rejected and removes
+any stale success receipt before execution.
+
 ## Reproduce the server proof
 
 Use the server digest and source revision from the release manifest. Pull the
