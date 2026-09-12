@@ -1,0 +1,118 @@
+name: GeoParquet Interop Evidence
+
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - '.github/workflows/geoparquet-interop.yml'
+      - 'scripts/ci/check-geoparquet-interop.py'
+      - 'tests/python/feature_server/test_geoparquet_interop.py'
+      - 'tests/python/requirements.txt'
+      - 'tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataParquetFormatTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Import/GeoParquetImportTests.cs'
+      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoParquetSdkInteropConformanceTests.cs'
+      - 'src/Honua.Hosting/Features/Services/GeoParquetFeatureWriter.cs'
+      - 'src/Honua.Protocols.GeoServices/FeatureServer/Services/GeoParquetQueryFormatter.cs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: geoparquet-interop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  HONUA_TEST_CONFIGURATION: Release
+  HONUA_MSBUILD_NODE_CAP: 4
+  PRODUCER_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  evidence:
+    name: GeoParquet execution evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.PRODUCER_COMMIT }}
+
+      - uses: ./.github/actions/setup-dotnet-ci
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: tests/python/requirements.txt
+
+      - name: Install native writer and independent readers
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq libatomic1
+          python -m pip install -r tests/python/requirements.txt
+
+      - name: Verify OData values, filters and geometry
+        run: |
+          dotnet test tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj \
+            --configuration Release --filter 'FullyQualifiedName~ODataParquetFormatTests' \
+            --logger 'trx;LogFileName=geoparquet-odata.trx' --results-directory tests/TestResults
+
+      - name: Verify public import readback and large row groups
+        if: ${{ !cancelled() }}
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release --filter 'FullyQualifiedName~GeoParquetImportTests' \
+            --logger 'trx;LogFileName=geoparquet-import.trx' --results-directory tests/TestResults
+
+      - name: Verify independent schemas
+        if: ${{ !cancelled() }}
+        run: |
+          dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj \
+            --configuration Release --filter 'FullyQualifiedName~GeoParquetSdkInteropConformanceTests' \
+            --logger 'trx;LogFileName=geoparquet-schema.trx' --results-directory tests/TestResults
+
+      - name: Verify live HTTP with GeoPandas and pyarrow
+        if: ${{ !cancelled() }}
+        working-directory: tests/python
+        env:
+          GITHUB_SHA: ${{ env.PRODUCER_COMMIT }}
+        run: |
+          mkdir -p ../TestResults
+          report="../TestResults/geoparquet-interop.xml"
+          status=0
+          pytest --tb=short -q feature_server/test_geoparquet_interop.py --junitxml="${report}" || status=$?
+          python ../../scripts/ci/check-geoparquet-interop.py "${report}" "${status}"
+
+      - name: Require every .NET evidence cell to pass
+        if: ${{ !cancelled() }}
+        run: |
+          python - <<'PYTHON'
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          counts = {}
+          for name, expected in {"odata": 3, "import": 8, "schema": 10}.items():
+              report = Path(f"tests/TestResults/geoparquet-{name}.trx")
+              rows = list(ET.parse(report).getroot().iter("{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}UnitTestResult"))
+              counts[name] = dict(tests=len(rows), passed=sum(row.get("outcome") == "Passed" for row in rows), expected=expected)
+          passing = all(row["tests"] >= row["expected"] and row["passed"] == row["tests"] for row in counts.values())
+          receipt = json.dumps(dict(commit=os.environ["PRODUCER_COMMIT"], suites=counts, passing=passing), indent=2)
+          Path("tests/TestResults/geoparquet-dotnet.json").write_text(receipt + "\n")
+          print(receipt)
+          if not passing:
+              raise SystemExit("Every required .NET GeoParquet cell must execute and pass")
+          PYTHON
+
+      - name: Retain execution receipts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: geoparquet-evidence-${{ env.PRODUCER_COMMIT }}
+          path: tests/TestResults/geoparquet-*
+          if-no-files-found: error
+          retention-days: 30
