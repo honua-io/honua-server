@@ -102,7 +102,23 @@ internal static class Program
             context = context.WithTargetScenarios(targets.ToArray());
         }
 
-        var stats = context.Run();
+        context = context
+            .DisplayConsoleMetrics(!Console.IsOutputRedirected)
+            .WithReportingSinks(new LoadProgressSink())
+            .WithScenarioCompletionTimeout(LoadTestScenarios.RequestTimeout + TimeSpan.FromSeconds(10));
+
+        var budget = profile.RampUp + profile.Duration + profile.RampDown
+            + LoadTestScenarios.RequestTimeout + TimeSpan.FromMinutes(2);
+        Console.WriteLine($"Load harness completion budget: {budget} (including request drain and final statistics).");
+        var run = Task.Factory.StartNew(context.Run, CancellationToken.None,
+            TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        if (!run.Wait(budget))
+        {
+            Console.Error.WriteLine($"Load harness did not complete within {budget}; refusing incomplete statistics. Last progress: {LoadProgressSink.LastProgress}");
+            return 124;
+        }
+
+        var stats = run.GetAwaiter().GetResult();
         if (!string.IsNullOrWhiteSpace(options.StatsOut))
         {
             WriteStatsSummary(stats, options.StatsOut!, options.Profile, baseUrl);
