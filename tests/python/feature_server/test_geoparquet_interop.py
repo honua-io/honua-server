@@ -23,39 +23,19 @@ Reader-side SDK tracking: honua-sdk-js#630.
 
 from __future__ import annotations
 
-import importlib
 import io
 import json
-import os
+import math
 
+import geopandas as gpd
 import httpx
+import pyarrow.parquet as pyarrow_parquet
+import pyproj
 import pytest
 
-# The GeoParquet reader stack is declared in tests/python/requirements.txt:
-# geopandas / pyproj / shapely, plus an explicit pyarrow. GeoPandas lists pyarrow only under
-# its `all` extra, so Parquet support is not installed transitively and pyarrow has to be a
-# first-class requirement of this suite.
-#
-# honua-server#4396: importorskip alone made a lane that failed to install the reader stack
-# report green with zero executed cells. A lane that is *supposed* to run this evidence sets
-# HONUA_REQUIRE_GEOPARQUET_INTEROP=1, and a missing dependency is then an import error rather
-# than a skip. Local runs without the stack still skip cleanly.
-_REQUIRE_INTEROP_STACK = os.environ.get(
-    "HONUA_REQUIRE_GEOPARQUET_INTEROP", ""
-).strip().lower() in ("1", "true", "yes")
-
-
-def _import_reader(module: str):
-    """Import an independent-reader dependency, honouring the require-stack declaration."""
-    if _REQUIRE_INTEROP_STACK:
-        return importlib.import_module(module)
-    return pytest.importorskip(module, reason=f"{module} is required for the GeoParquet interop lane")
-
-
-gpd = _import_reader("geopandas")
-pyarrow_parquet = _import_reader("pyarrow.parquet")
-pyproj = _import_reader("pyproj")
-
+# Required evidence runs on glibc Linux (CI ubuntu-latest). The native writer's
+# musl runtime is unsupported by this lane; a 404/501 never declares an exemption.
+# All reader dependencies are mandatory, including during local collection.
 PARQUET_CONTENT_TYPE = "application/vnd.apache.parquet"
 
 
@@ -76,32 +56,11 @@ def _fetch_parquet(
     )
 
 
-# honua-server#4396: this lane used to call ``pytest.skip`` whenever the server answered
-# 404/501, so a runtime that had lost its Parquet writer reported GREEN — and under the
-# 2026-09-04 ruling that "skipped required cells are non-passing evidence", the cell could
-# not count at all. The unsupported runtime is now *declared*, not inferred: the musl lane
-# sets HONUA_PARQUET_WRITER_UNSUPPORTED=1 and this module then asserts the server really
-# does answer 501 there. Everywhere else, a missing Parquet writer is a hard failure.
-PARQUET_WRITER_DECLARED_UNSUPPORTED = os.environ.get(
-    "HONUA_PARQUET_WRITER_UNSUPPORTED", ""
-).strip().lower() in ("1", "true", "yes")
-
-
 def _require_parquet_available(response: httpx.Response) -> None:
-    """Fail on a missing Parquet writer unless this runtime declared it unsupported."""
-    if PARQUET_WRITER_DECLARED_UNSUPPORTED:
-        assert response.status_code == 501, (
-            "HONUA_PARQUET_WRITER_UNSUPPORTED is set, so the server must answer 501 for "
-            f"f=parquet; got HTTP {response.status_code}. Either the runtime does support "
-            "GeoParquet (unset the variable) or the not-supported denial has regressed."
-        )
-        pytest.xfail("GeoParquet writer is declared unsupported on this runtime")
-
-    assert response.status_code not in (404, 501), (
-        f"GeoParquet output is required on this runtime but the server answered HTTP "
-        f"{response.status_code}. If this runtime genuinely cannot ship the native Parquet "
-        "writer, declare it by setting HONUA_PARQUET_WRITER_UNSUPPORTED=1 in the lane rather "
-        "than letting the test infer it from the response (honua-server#4396)."
+    """The supported interop lane must actually serve GeoParquet."""
+    assert response.status_code == 200, (
+        f"GeoParquet is required on the supported glibc runtime: HTTP "
+        f"{response.status_code}: {response.text[:300] if response.status_code != 200 else ''}"
     )
 
 
@@ -166,7 +125,7 @@ class TestGeoParquetSdkInterop:
 
         # Default output CRS is EPSG:4326 (OGC:CRS84 lon/lat), resolved by pyproj from the geo metadata.
         assert gdf.crs is not None, "geopandas could not reconstruct the CRS from the geo metadata"
-        assert gdf.crs.to_epsg() == 4326
+        assert gdf.crs.equals(pyproj.CRS.from_epsg(4326), ignore_axis_order=True)
 
         # Reference view: the same query as GeoJSON. Feature counts and names must agree.
         geojson_response = http_client.get(
@@ -223,3 +182,63 @@ class TestGeoParquetSdkInterop:
         assert max(abs(miny), abs(maxy)) > 180.0, (
             "projected northing (Y) must be in metres, proving reprojection + (x, y) axis order"
         )
+
+    @pytest.mark.parametrize("out_sr", [4326, 3857])
+    def test_parquet_known_rows_preserve_values_geometry_nulls_and_covering(
+        self, postgis, worker_schema, http_client, test_service_id, test_layer_id, out_sr
+    ):
+        """Decode a multi-row fixture against arithmetic, including a null final row."""
+        row_count = 1025
+        with postgis.get_connection(worker_schema) as connection:
+            connection.execute("TRUNCATE features RESTART IDENTITY")
+            connection.execute(
+                """
+                INSERT INTO features (layer_id, geometry, attributes)
+                SELECT %s,
+                    CASE WHEN i = %s THEN NULL ELSE
+                        ST_SetSRID(ST_MakePoint(-120.0 + i * 0.001, 35.0 + i * 0.0001), 4326) END,
+                    jsonb_build_object('name', 'fixture-' || i, 'count', i,
+                        'ratio', i * 1.25, 'description', NULL)
+                FROM generate_series(1, %s) AS i
+                """,
+                (test_layer_id, row_count, row_count),
+            )
+            connection.commit()
+
+        response = http_client.get(
+            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
+            params={"where": "1=1", "f": "parquet", "outSR": out_sr,
+                    "resultRecordCount": row_count, "orderByFields": "objectid ASC"},
+        )
+        _require_parquet_available(response)
+        frame = gpd.read_parquet(io.BytesIO(response.content))
+        assert frame.crs.equals(pyproj.CRS.from_epsg(out_sr), ignore_axis_order=True)
+        assert frame["objectid"].tolist() == list(range(1, row_count + 1))
+        table_rows = pyarrow_parquet.read_table(io.BytesIO(response.content)).to_pylist()
+        geo = _read_geo_metadata(response.content)
+        column = geo["columns"][geo["primary_column"]]
+        assert column["geometry_types"] == ["Point"]
+        covering = column["covering"]["bbox"]
+        bbox_column = covering["xmin"][0]
+        for ordinate in ("xmin", "ymin", "xmax", "ymax"):
+            assert covering[ordinate] == [bbox_column, ordinate]
+
+        for index, row in enumerate(frame.itertuples(), start=1):
+            assert row.name == f"fixture-{index}"
+            assert row.count == index
+            assert row.ratio == index * 1.25
+            assert row.description is None
+            bbox = table_rows[index - 1][bbox_column]
+            if index == row_count:
+                assert row.geometry is None
+                assert bbox is None
+                continue
+            x, y = -120.0 + index * 0.001, 35.0 + index * 0.0001
+            if out_sr == 3857:
+                # Spherical Web Mercator equations, independent of Honua and PROJ.
+                x = 6378137.0 * math.radians(x)
+                y = 6378137.0 * math.log(math.tan(math.pi / 4 + math.radians(y) / 2))
+            assert row.geometry.geom_type == "Point"
+            assert row.geometry.x == pytest.approx(x, abs=1e-7, rel=0)
+            assert row.geometry.y == pytest.approx(y, abs=1e-7, rel=0)
+            assert bbox == pytest.approx(dict(xmin=x, ymin=y, xmax=x, ymax=y), abs=1e-7, rel=0)

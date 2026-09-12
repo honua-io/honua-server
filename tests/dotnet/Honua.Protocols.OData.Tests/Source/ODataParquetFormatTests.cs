@@ -65,7 +65,7 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
     public async Task Features_FormatParquet_ReturnsGeoParquetPayload()
     {
         var response = await _fixture.Client.GetAsync(
-            $"/odata/Features({TestLayerId})?$format=parquet");
+            $"/odata/Features({TestLayerId})?$format=parquet&$top=100");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be(ParquetContentType);
@@ -85,14 +85,12 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
             AssertPoint(row.Geometry, city.X, city.Y);
         }
 
-        // Feature 13 ("Virtual City") is seeded with no geometry. Whether it appears depends on
-        // the route's default page size, so this is conditional on its presence — but when it is
-        // returned, a reader must see a null geometry rather than an empty or default one.
-        var nullGeometryRow = decoded.Rows.SingleOrDefault(r => r.ObjectId == 13);
-        if (nullGeometryRow is not null)
-        {
-            nullGeometryRow.Geometry.Should().BeNull("the seeded geometry-less feature must decode as null");
-        }
+        decoded.Rows.Select(row => row.ObjectId).Should().BeEquivalentTo(
+            Enumerable.Range(1, 15).Select(id => (long)id));
+        var nullGeometryRow = decoded.Rows.Single(row => row.ObjectId == 13);
+        nullGeometryRow.Name.Should().Be("Virtual City");
+        nullGeometryRow.State.Should().BeNull();
+        nullGeometryRow.Geometry.Should().BeNull();
 
         AssertGeoMetadata(decoded.GeoMetadata);
     }
@@ -145,11 +143,9 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
 
         var decoded = await DecodeAsync(payload);
 
-        decoded.Rows.Should().NotBeEmpty();
-        decoded.Rows.Select(row => row.ObjectId).Should().Contain([1L, 2L, 3L, 4L, 5L],
-            "every seeded California city falls inside the requested window");
-        decoded.Rows.Select(row => row.ObjectId).Should().NotContain(6L,
-            "Seattle is north of the requested window and must be filtered out");
+        // The window includes Las Vegas as well as all five California cities.
+        decoded.Rows.Select(row => row.ObjectId).Should().BeEquivalentTo([1L, 2L, 3L, 4L, 5L, 11L]);
+        AssertPoint(decoded.Rows.Single(row => row.ObjectId == 11).Geometry, -115.1398, 36.1699);
 
         // Every returned geometry must genuinely be inside the requested envelope.
         foreach (var row in decoded.Rows.Where(row => row.Geometry is not null))
@@ -182,8 +178,9 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
         using var document = JsonDocument.Parse(geoMetadata!);
         var root = document.RootElement;
 
+        root.GetProperty("version").GetString().Should().Be("1.1.0");
         var primaryColumn = root.GetProperty("primary_column").GetString();
-        primaryColumn.Should().NotBeNullOrWhiteSpace();
+        primaryColumn.Should().Be("geometry");
 
         var column = root.GetProperty("columns").GetProperty(primaryColumn!);
         column.GetProperty("encoding").GetString().Should().Be("WKB");
@@ -200,7 +197,9 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
                 "an explicit GeoParquet 'crs' must be a PROJJSON object, not a bare string or null");
             crs.TryGetProperty("type", out var crsType).Should().BeTrue(
                 "PROJJSON requires a 'type' member for a reader to reconstruct the CRS");
-            crsType.GetString().Should().NotBeNullOrWhiteSpace();
+            crsType.GetString().Should().Be("GeographicCRS");
+            crs.GetProperty("id").GetProperty("authority").GetString().Should().Be("EPSG");
+            crs.GetProperty("id").GetProperty("code").GetInt32().Should().Be(4326);
         }
     }
 

@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
@@ -11,7 +11,6 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Import;
 
@@ -252,86 +251,55 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         responseContent.Should().Contain("geo");
     }
 
-    /// <summary>
-    /// Reads back the rows the import committed, using the physical location the import itself
-    /// reported.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// honua-server#4396 asks for a readback "through the public API". The file-import surface
-    /// creates a raw table and does <em>not</em> register a service layer (there is no
-    /// layer-registration call anywhere in <c>src/Honua.Import</c>), so there is no public read
-    /// route for an imported table to go through. This reads the committed rows directly, which
-    /// is still a readback of persisted state rather than an assertion about the response body.
-    /// </para>
-    /// <para>
-    /// Two provider details drive the query shape and must not be guessed at:
-    /// <c>StreamingFileImportService.GetAllowedTableName</c> stages into
-    /// <c>imported_&lt;table&gt;</c> inside the operational schema, and
-    /// <c>honua.create_import_table</c> materializes only
-    /// <c>(id, geometry, properties JSONB, created_at)</c> — source attributes such as
-    /// <c>objectid</c> and <c>name</c> live inside <c>properties</c>, not as physical columns.
-    /// The physical identifiers are taken from <c>ImportResult.PhysicalTableName</c>/
-    /// <c>ImportResult.Schema</c> on the response so the test tracks the provider rather than
-    /// re-deriving its naming convention.
-    /// </para>
-    /// </remarks>
+    // Publish the actual imported table, then read it through the same public query route
+    // a client uses. No copied rows or response-reported feature counts serve as the oracle.
     private async Task<IReadOnlyList<ImportedRow>> ReadImportedRowsAsync(string importResponseJson)
     {
         using var document = JsonDocument.Parse(importResponseJson);
         var root = document.RootElement;
+        var connectionId = await _fixture.GetTestSecureConnectionIdAsync();
+        connectionId.Should().NotBeNull();
+        using var publishResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/admin/connections/{connectionId}/layers",
+            new
+            {
+                Schema = root.GetProperty("schema").GetString(),
+                Table = root.GetProperty("physicalTableName").GetString(),
+                LayerName = "GeoParquet readback",
+                ServiceName = $"geoparquet_readback_{Guid.NewGuid():N}",
+                GeometryColumn = "geometry",
+                PrimaryKey = "id",
+                Fields = new[] { "id", "properties" },
+                Enabled = true
+            });
+        var publishJson = await publishResponse.Content.ReadAsStringAsync();
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, publishJson);
+        using var published = JsonDocument.Parse(publishJson);
+        var layer = published.RootElement.GetProperty("data");
+        var serviceName = layer.GetProperty("serviceName").GetString();
+        var layerId = layer.GetProperty("layerId").GetInt32();
 
-        root.TryGetProperty("physicalTableName", out var physicalTableElement).Should().BeTrue(
-            "the import response must report the physical staging table it created");
-        root.TryGetProperty("schema", out var schemaElement).Should().BeTrue(
-            "the import response must report the schema that owns the physical staging table");
-
-        var physicalTableName = physicalTableElement.GetString();
-        var schema = schemaElement.GetString();
-        physicalTableName.Should().NotBeNullOrWhiteSpace();
-        schema.Should().NotBeNullOrWhiteSpace();
-
-        var reader = new WKBReader();
+        using var response = await _client.GetAsync(
+            $"/rest/services/{serviceName}/FeatureServer/{layerId}/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=json");
+        var responseJson = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, responseJson);
+        using var queried = JsonDocument.Parse(responseJson);
+        queried.RootElement.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
         var rows = new List<ImportedRow>();
-
-        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
-
-        // A response that names a table the import never created is itself a failure, and one
-        // worth reporting as such rather than as an opaque "relation does not exist".
-        await using (var exists = connection.CreateCommand())
+        foreach (var feature in queried.RootElement.GetProperty("features").EnumerateArray())
         {
-            exists.CommandText = """
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM pg_catalog.pg_class AS relation
-                    INNER JOIN pg_catalog.pg_namespace AS namespace
-                        ON namespace.oid = relation.relnamespace
-                    WHERE namespace.nspname = @schema
-                      AND relation.relname = @table)
-                """;
-            exists.Parameters.AddWithValue("schema", schema!);
-            exists.Parameters.AddWithValue("table", physicalTableName!);
-            ((bool?)await exists.ExecuteScalarAsync()).Should().BeTrue(
-                "the import reported physical table '{0}'.'{1}', so it must exist",
-                schema,
-                physicalTableName);
-        }
+            var propertiesValue = feature.GetProperty("attributes").GetProperty("properties");
+            using var propertiesDocument = JsonDocument.Parse(propertiesValue.ValueKind == JsonValueKind.String
+                ? propertiesValue.GetString()!
+                : propertiesValue.GetRawText());
+            var properties = propertiesDocument.RootElement;
+            Point? point = null;
+            if (feature.TryGetProperty("geometry", out var geometry) && geometry.ValueKind != JsonValueKind.Null)
+            {
+                point = new Point(geometry.GetProperty("x").GetDouble(), geometry.GetProperty("y").GetDouble()) { SRID = 4326 };
+            }
 
-        await using var command = connection.CreateCommand();
-        // Both identifiers come from the server's own response, never from client input, and the
-        // attribute keys are read as JSONB values rather than interpolated identifiers.
-        command.CommandText =
-            "SELECT properties ->> 'objectid', properties ->> 'name', ST_AsEWKB(geometry) "
-            + $"FROM \"{schema}\".\"{physicalTableName}\" ORDER BY id";
-
-        await using var result = await command.ExecuteReaderAsync();
-        while (await result.ReadAsync())
-        {
-            var geometry = result.IsDBNull(2) ? null : reader.Read((byte[])result.GetValue(2));
-            rows.Add(new ImportedRow(
-                result.IsDBNull(0) ? null : long.Parse(result.GetString(0), CultureInfo.InvariantCulture),
-                result.IsDBNull(1) ? null : result.GetString(1),
-                geometry));
+            rows.Add(new ImportedRow(properties.GetProperty("objectid").GetInt64(), properties.GetProperty("name").GetString(), point));
         }
 
         return rows;
