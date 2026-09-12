@@ -8,7 +8,7 @@ services:
     volumes:
       - ${GP_PROOF_REPO_ROOT:?}/docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
-      test: [CMD-SHELL, 'pg_isready -U honua -d honua']
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U honua -d honua']
       interval: 2s
       retries: 30
   redis:
