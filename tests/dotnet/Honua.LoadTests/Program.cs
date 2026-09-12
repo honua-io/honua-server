@@ -88,6 +88,12 @@ internal static class Program
 
         Console.WriteLine($"Reports: {reportFolder}");
 
+        // An interrupted repeat must not leave a previous run's successful receipt input.
+        if (!string.IsNullOrWhiteSpace(options.StatsOut))
+        {
+            File.Delete(options.StatsOut);
+        }
+
         var context = LoadTestScenarios.CreateLoadTestSuite(
             baseUrl,
             profile,
@@ -110,15 +116,12 @@ internal static class Program
         var budget = profile.RampUp + profile.Duration + profile.RampDown
             + LoadTestScenarios.RequestTimeout + TimeSpan.FromMinutes(2);
         Console.WriteLine($"Load harness completion budget: {budget} (including request drain and final statistics).");
-        var run = Task.Factory.StartNew(context.Run, CancellationToken.None,
-            TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        if (!run.Wait(budget))
+        if (!LoadRunDeadline.TryComplete(context.Run, budget, out var stats))
         {
             Console.Error.WriteLine($"Load harness did not complete within {budget}; refusing incomplete statistics. Last progress: {LoadProgressSink.LastProgress}");
             return 124;
         }
 
-        var stats = run.GetAwaiter().GetResult();
         if (!string.IsNullOrWhiteSpace(options.StatsOut))
         {
             WriteStatsSummary(stats, options.StatsOut!, options.Profile, baseUrl);
