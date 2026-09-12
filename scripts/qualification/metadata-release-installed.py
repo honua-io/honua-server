@@ -59,6 +59,7 @@ def pinned_server(manifest: Path) -> dict:
 
 class Harness:
     def __init__(self, candidate: dict, output: Path):
+        self.harness_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
         self.candidate = candidate
         self.output = output
         self.prefix = "honua-4619-" + secrets.token_hex(4)
@@ -235,12 +236,6 @@ class Harness:
         self.start()
         self.receipt["baseline"] = self.features()
         before = self.current()
-        failed = self.submit("missing-resource", resourceSemanticId="missing-resource")
-        result = self.terminal(failed)
-        assert result["status"].lower() == "failed", result
-        assert "metadata-release-resource-missing" in result["metadataRelease"]["blockers"], result
-        assert self.current() == before
-        self.receipt["scenarios"].append({"name": "preparation-failure", "status": "passed", "operation": result})
 
         operation_id = self.submit("staged-crash-recovery")
         staged = self.until(operation_id, "ServicePublication")
@@ -298,6 +293,29 @@ class Harness:
                           "ratio": "double", "active": "boolean", "observed_at": "datetime", "geometry": "geometry"}, fields
         self.receipt["scenarios"].append({"name": "etag-rebase-and-owned-only-recovery", "status": "passed", "operation": recovered,
                                          "functionalAssertions": self.features(edited=True)})
+        before = self.current()
+        failed = self.submit("missing-resource", resourceSemanticId="missing-resource")
+        result = self.terminal(failed)
+        assert result["status"].lower() == "failed", result
+        assert "metadata-release-resource-missing" in result["metadataRelease"]["blockers"], result
+        assert self.current() == before
+        self.receipt["scenarios"].append({"name": "preparation-failure", "status": "passed", "operation": result})
+
+        for label, extra, blocker in [
+            ("unsafe-etl-rejected", {"dataPopulateWorkloadId": "unregistered-workload", "dataPopulateFields": ["population"]}, "metadata-release-etl-unproven-compensation"),
+            ("etl-failure-cleans-stage", {"dataPopulateWorkloadId": "unregistered-workload", "dataPopulateFields": ["owner_email"]}, "metadata-release-etl-failed"),
+        ]:
+            before = self.current()
+            operation_id = self.submit(label, **extra)
+            result = self.terminal(operation_id)
+            assert result["status"] == "Failed", result
+            assert blocker in result["metadataRelease"]["blockers"], result
+            assert self.current() == before, "failed preparation changed the live graph"
+            candidate_revision = result["metadataRelease"].get("candidateRevision")
+            if candidate_revision is not None:
+                assert self.sql(f"SELECT count(*) FROM honua.metadata_v2_snapshots WHERE environment='default' AND revision={int(candidate_revision)}") == "0"
+            self.receipt["scenarios"].append({"name": label, "status": "passed", "operation": result,
+                                             "functionalAssertions": self.features(edited=True)})
         self.receipt["status"] = "passed"
 
     def finish(self):
@@ -320,7 +338,7 @@ class Harness:
             if self.created:
                 cleanup_errors.append(str(error))
         self.receipt["cleanup"] = cleanup_errors or "removed lane containers and network"
-        self.receipt["harnessSha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        self.receipt["harnessSha256"] = self.harness_hash
         if cleanup_errors:
             self.receipt["status"] = "failed"
         (self.output / "receipt.json").write_text(json.dumps(self.receipt, indent=2) + "\n")
