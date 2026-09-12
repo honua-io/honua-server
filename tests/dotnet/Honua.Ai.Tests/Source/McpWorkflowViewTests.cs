@@ -47,6 +47,19 @@ public sealed class McpWorkflowViewTests
     // ------------------------------------------------------------------
 
     [UnitTest]
+    public async Task SetupView_EligibleLifecycleOperationAddedAndRemoved_RefreshesMembership()
+    {
+        var before = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
+        var after = await ListToolsAsync(
+            BuildFullSurface(new StubToolSource("honua_op_studio_content_reopen_version")),
+            McpWorkflowViewCatalog.SetupViewName);
+        after.Names.Should().Contain("honua_op_studio_content_reopen_version");
+        after.MembershipDigestOf().Should().NotBe(before.MembershipDigestOf());
+        var removed = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
+        removed.MembershipDigestOf().Should().Be(before.MembershipDigestOf());
+    }
+
+    [UnitTest]
     public async Task SetupView_LiveStudioOperationCatalog_IncludesEditingSaveAndReopenWithinBudget()
     {
         var catalog = new Honua.Core.Features.Operations.Services.OperationCatalog(

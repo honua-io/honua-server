@@ -166,6 +166,15 @@ Select a view three ways, highest precedence first:
 
 The shipped view is `setup`: the bounded terminal path of readiness → connect/import → publish service and layer → verify access → canonical style and render → bounded geoprocessing → Studio map/dashboard composition and lifecycle → publication submit and status. It is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`.
 
+The `setup.v2` revision also selects the canonical `studio.draft.*` and
+`studio.content.*` operation families when `Mcp:PublishOperations:Enabled` is
+set. These supply draft edits, immutable version saves, and version reopen;
+creating and validating a draft alone does not complete the saved-map journey.
+Their descriptors come from the enabled operation catalog, including its
+publication policy and deterministic-profile restrictions. A deployment that
+withholds those lifecycle operations cannot claim the complete setup journey.
+
+
 A view is **discovery, not authority**:
 
 - Selecting one can only *narrow* what `tools/list` returns. Membership grants nothing, caches no prior allow decision, and never widens a principal's reach.

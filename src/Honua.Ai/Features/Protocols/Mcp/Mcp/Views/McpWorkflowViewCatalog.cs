@@ -92,7 +92,7 @@ internal static class McpWorkflowViewCatalog
             + "layer, verify access, apply canonical style and render, run bounded geoprocessing, compose and save "
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
             + "only the descriptors that path needs; the full paginated catalog is an explicit escape hatch.",
-        Revision = "setup.v1",
+        Revision = "setup.v2",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -180,6 +180,11 @@ internal static class McpWorkflowViewCatalog
                 [
                     McpWorkflowViewMemberRule.Exact("honua_studio_create_draft"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_validate_draft"),
+                    // Lifecycle operations come from the live canonical operation catalog.
+                    // They carry update/save/reopen behavior absent from the hand-authored
+                    // draft tools; keep the family server-owned as capabilities evolve.
+                    McpWorkflowViewMemberRule.Prefix("honua_op_studio_draft_"),
+                    McpWorkflowViewMemberRule.Prefix("honua_op_studio_content_"),
                 ],
 
                 // Publication submit belongs to the publication stage below even
