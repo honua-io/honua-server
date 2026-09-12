@@ -40,6 +40,44 @@ jobs:
   load-soak:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # Server configuration lives at job level so the start step and the post-seed restart
+    # (#3812) boot the same deployment; a restart with a different configuration would run
+    # the load profile against a server the readiness check never validated.
+    env:
+      # Literals, not ${{ env.* }}: the env context is not available to a job-level env
+      # block. They mirror the workflow-level constants above.
+      ASPNETCORE_URLS: "http://localhost:5000"
+      ASPNETCORE_ENVIRONMENT: Production
+      HONUA_ADMIN_PASSWORD: "Load-Soak-Admin-Pass1!"
+      PUBLIC_BASE_URL: "http://localhost:5000"
+      HostValidation__AllowedHosts__0: "localhost"
+      # The soak harness deliberately floods the server from a single host, so the
+      # opt-in app-level rate limiter (activated by #355 / appsettings.Security.json,
+      # GlobalRequestsPerMinute=1000 per tenant/identity/IP partition) would reject
+      # ~94% of requests as 429s and mask real latency/throughput signal. Production
+      # posture is edge rate limiting (ADR-0004); disable the app-level limiter here
+      # so the load/soak run measures the server, not the throttle.
+      RateLimiting__Enabled: "false"
+      Security__DisableHttpsRedirection: "true"
+      Security__ConnectionEncryption__MasterKey: "test-master-key-32-chars-long-000000"
+      # Production startup requires the canonical operation policy to be active
+      # and fail closed for unmatched operations. The load topology has no
+      # approval operator, so deny is the honest safe default.
+      Operations__Policy__Enabled: "true"
+      Operations__Policy__DefaultDecision: Deny
+      ConnectionStrings__redis: "localhost:6379"
+      # PostgresDataSourceFactory applies Limits:Connections to the data source after
+      # parsing the connection string. Keep both settings aligned: setting only
+      # Maximum Pool Size here is otherwise overridden by the production default
+      # (200), which exceeds the GitHub service container's PostgreSQL client
+      # budget and produces "too many clients already" under the nightly load.
+      # Reserve ample capacity for the health check, migrations, and maintenance
+      # connections while keeping the application below the container limit.
+      Limits__Connections__MaxConcurrentQueries: "40"
+      Limits__Connections__MaxConnectionPoolSize: "40"
+      Limits__Connections__MinConnectionPoolSize: "0"
+      Limits__Connections__ConnectionAcquisitionTimeoutSeconds: "15"
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=honua_load;Username=honua;Password=honua_password;Maximum Pool Size=40
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -90,6 +128,37 @@ jobs:
           print("Seed dependencies ready.")
           PY
 
+      - name: Build server
+        run: dotnet build src/Honua.Server/Honua.Server.csproj -c Release
+
+      - name: Start server
+        run: |
+          dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile > server.log 2>&1 &
+          echo $! > server.pid
+
+      - name: Wait for readiness
+        run: |
+          # Production cold start runs the PostGIS preflight check, database
+          # migrations, and high-frequency query preparation before /healthz/ready
+          # reports 200, so budget generously (90 iterations x 2s = 180s).
+          for i in {1..90}; do
+            if curl -sf "$BASE_URL/healthz/ready" >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not become ready in time."
+          cat server.log
+          exit 1
+
+      # SEED AFTER THE SERVER HAS MIGRATED (#3812). tests/seed/server.yaml is the
+      # migration-SKIPPING fixture: it creates the migration-owned core schema itself. Applying
+      # it first left tables such as honua.raster_layer_statistics present with no row in
+      # public.schema_versions, so the Production startup policy's PostgresCoreSchemaGuard failed
+      # closed at migration 003 with SchemaExistsWithoutJournal, the server exited, and this lane
+      # died at "Wait for readiness" every night from 2026-09-02. The server owns the core schema;
+      # data is seeded on top of it afterwards, which is the order
+      # .github/actions/setup-honua-server already uses.
       - name: Seed database
         env:
           DB_HOST: localhost
@@ -136,61 +205,27 @@ jobs:
           conn.close()
           PY
 
-      - name: Build server
-        run: dotnet build src/Honua.Server/Honua.Server.csproj -c Release
-
-      - name: Start server
+      - name: Republish the served catalogue and confirm it is served
         env:
-          ASPNETCORE_URLS: ${{ env.BASE_URL }}
-          ASPNETCORE_ENVIRONMENT: Production
-          HONUA_ADMIN_PASSWORD: "Load-Soak-Admin-Pass1!"
-          PUBLIC_BASE_URL: ${{ env.BASE_URL }}
-          HostValidation__AllowedHosts__0: "localhost"
-          # The soak harness deliberately floods the server from a single host, so the
-          # opt-in app-level rate limiter (activated by #355 / appsettings.Security.json,
-          # GlobalRequestsPerMinute=1000 per tenant/identity/IP partition) would reject
-          # ~94% of requests as 429s and mask real latency/throughput signal. Production
-          # posture is edge rate limiting (ADR-0004); disable the app-level limiter here
-          # so the load/soak run measures the server, not the throttle.
-          RateLimiting__Enabled: "false"
-          Security__DisableHttpsRedirection: "true"
-          Security__ConnectionEncryption__MasterKey: "test-master-key-32-chars-long-000000"
-          # Production startup requires the canonical operation policy to be active
-          # and fail closed for unmatched operations. The load topology has no
-          # approval operator, so deny is the honest safe default.
-          Operations__Policy__Enabled: "true"
-          Operations__Policy__DefaultDecision: Deny
-          ConnectionStrings__redis: "localhost:6379"
-          # PostgresDataSourceFactory applies Limits:Connections to the data source after
-          # parsing the connection string. Keep both settings aligned: setting only
-          # Maximum Pool Size here is otherwise overridden by the production default
-          # (200), which exceeds the GitHub service container's PostgreSQL client
-          # budget and produces "too many clients already" under the nightly load.
-          # Reserve ample capacity for the health check, migrations, and maintenance
-          # connections while keeping the application below the container limit.
-          Limits__Connections__MaxConcurrentQueries: "40"
-          Limits__Connections__MaxConnectionPoolSize: "40"
-          Limits__Connections__MinConnectionPoolSize: "0"
-          Limits__Connections__ConnectionAcquisitionTimeoutSeconds: "15"
-          ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=${{ env.DB_NAME }};Username=${{ env.DB_USER }};Password=${{ env.DB_PASSWORD }};Maximum Pool Size=40
+          HONUA_API_KEY: "Load-Soak-Admin-Pass1!"
         run: |
-          dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile > server.log 2>&1 &
+          set -euo pipefail
+          # The server compiles its served metadata-v2 snapshot at startup, so a catalogue seeded
+          # afterwards is invisible until it is recompiled; restarting picks up the snapshot the
+          # seed wrote. Nothing queries the catalogue between startup and the seed, so there is no
+          # negative cache entry to clear.
+          kill "$(cat server.pid)" >/dev/null 2>&1 || true
+          for _ in {1..30}; do kill -0 "$(cat server.pid)" 2>/dev/null || break; sleep 1; done
+          dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile >> server.log 2>&1 &
           echo $! > server.pid
-
-      - name: Wait for readiness
-        run: |
-          # Production cold start runs the PostGIS preflight check, database
-          # migrations, and high-frequency query preparation before /healthz/ready
-          # reports 200, so budget generously (90 iterations x 2s = 180s).
-          for i in {1..90}; do
-            if curl -sf "$BASE_URL/healthz/ready" >/dev/null; then
-              exit 0
-            fi
+          for _ in {1..90}; do
+            if curl -sf "$BASE_URL/healthz/ready" >/dev/null; then break; fi
             sleep 2
           done
-          echo "Server did not become ready in time."
-          cat server.log
-          exit 1
+          # A load run against an empty catalogue measures 404s, not the server. Fail here instead.
+          count="$(curl -fsS "$BASE_URL/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&returnCountOnly=true")"
+          echo "seeded layer 0: $count"
+          case "$count" in *'"count"'*) ;; *) echo "seeded catalogue is not being served"; cat server.log; exit 1;; esac
 
       - name: Run load/soak tests
         env:

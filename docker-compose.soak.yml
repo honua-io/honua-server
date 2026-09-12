@@ -1,0 +1,138 @@
+# Local-docker substrate for the candidate capacity soak (honua-release#235, operator
+# ruling A 2026-09-12). One PostGIS, one Redis, one Honua Server running the CANDIDATE
+# image under the Production startup policy — the same posture the receipt claims, on a
+# substrate the producer can also fault-inject into (the recovery drill restarts the
+# `honua` service and measures how long it takes to serve again).
+#
+# This file is driven by .github/workflows/capacity-soak-candidate.yml; every value it
+# needs comes from the environment so the workflow, not the file, decides what the run
+# certifies. See docs/ops/capacity-soak-receipt.md.
+
+name: honua-capacity-soak
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: ${SOAK_DB_NAME:-honua_soak}
+      POSTGRES_USER: ${SOAK_DB_USER:-honua}
+      POSTGRES_PASSWORD: ${SOAK_DB_PASSWORD:?Set SOAK_DB_PASSWORD}
+      POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+    command:
+      # The envelope's 170 virtual users plus the soak driver's own probes need more client
+      # slots than the image default (100), and the server's pool is sized against this.
+      ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=512MB"]
+    volumes:
+      - ./scripts/soak/init-db.sql:/docker-entrypoint-initdb.d/20_soak.sql:ro
+    ports:
+      - "127.0.0.1:${SOAK_DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SOAK_DB_USER:-honua} -d ${SOAK_DB_NAME:-honua_soak}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    # Append-only persistence is not a nicety here: without it the server rejects the Redis
+    # durability attestation, does not advertise `jobs.runner`, and the geoprocessing queue the
+    # envelope declares (gpWorkers/gpQueueDepth) runs on a store that can lose acknowledged jobs.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:${SOAK_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  honua:
+    image: ${SOAK_SERVER_IMAGE:?Set SOAK_SERVER_IMAGE to the candidate image built from candidate_sha}
+    ports:
+      - "127.0.0.1:${SOAK_SERVER_PORT:-5000}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: "http://+:8080"
+      PUBLIC_BASE_URL: "http://localhost:${SOAK_SERVER_PORT:-5000}"
+      AllowedHosts: "localhost;127.0.0.1"
+      HostValidation__AllowedHosts__0: "localhost"
+      HONUA_ADMIN_PASSWORD: ${SOAK_ADMIN_PASSWORD:?Set SOAK_ADMIN_PASSWORD}
+      # Immutable deployment identity (#3038). The receipt's observedRevision is read back
+      # out of the running server, so this has to be the candidate SHA and nothing else.
+      HONUA_GIT_SHA: ${SOAK_CANDIDATE_SHA:?Set SOAK_CANDIDATE_SHA}
+      ConnectionStrings__DefaultConnection: >-
+        Host=postgres;Port=5432;Database=${SOAK_DB_NAME:-honua_soak};Username=${SOAK_DB_USER:-honua};Password=${SOAK_DB_PASSWORD};Maximum Pool Size=100
+      ConnectionStrings__redis: "redis:6379"
+      Security__DisableHttpsRedirection: "true"
+      Security__ConnectionEncryption__MasterKey: ${SOAK_MASTER_KEY:?Set SOAK_MASTER_KEY}
+      # The soak floods the server from a single host, so the opt-in app-level limiter
+      # (GlobalRequestsPerMinute=1000 per tenant/identity/IP partition) would reject most of
+      # the offered load as 429s and measure the throttle instead of the server. Production
+      # posture is edge rate limiting (ADR-0004); the same reasoning as load-soak-nightly.
+      RateLimiting__Enabled: "false"
+      # Production startup requires the canonical operation policy active and failing closed.
+      # The soak topology has no approval operator, so deny is the honest default.
+      Operations__Policy__Enabled: "true"
+      Operations__Policy__DefaultDecision: Deny
+      # PostgresDataSourceFactory applies Limits:Connections to the data source after parsing
+      # the connection string; keep the two aligned or the production default (200) silently
+      # wins and exhausts the server's client budget under load.
+      Limits__Connections__MaxConcurrentQueries: "100"
+      Limits__Connections__MaxConnectionPoolSize: "100"
+      Limits__Connections__MinConnectionPoolSize: "10"
+      Limits__Connections__ConnectionAcquisitionTimeoutSeconds: "15"
+      # The declared envelope's GP dimension: one worker (gpWorkers=1).
+      ExecutionAdmission__Enabled: "true"
+      ExecutionAdmission__MaxConcurrentJobsGlobal: "${SOAK_GP_WORKERS:-1}"
+      ExecutionAdmission__MaxConcurrentJobsPerPartition: "${SOAK_GP_WORKERS:-1}"
+      # The soak submits geoprocessing work continuously from one principal; the per-principal
+      # submission rate gate is not part of the declared envelope, so it is not the thing under
+      # test here.
+      ExecutionAdmission__MaxSubmissionsPerWindow: "0"
+      # A real signed Pro license, minted for this run only (scripts/soak/mint_license.sh).
+      # Licensing:DevGrantEdition is refused in Production by design, and the declared envelope
+      # covers Pro surfaces (feature streams), so the soak runs on the same licensing path a
+      # customer does.
+      Licensing__LicenseContent: ${SOAK_LICENSE_CONTENT:?Set SOAK_LICENSE_CONTENT}
+      Licensing__TrustedKeys__soak: ${SOAK_LICENSE_TRUSTED_KEY:?Set SOAK_LICENSE_TRUSTED_KEY}
+      # The envelope declares capacity for two surfaces that ship Preview (off by default) in
+      # 2026.1: activeSubscriptions (realtime.feature-streams) and alertEvaluationsPerSecond
+      # (alerts.geofence). Opting in through the canonical gate is the only way to drive them.
+      Capabilities__Experimental__realtime.feature-streams__Enabled: "true"
+      # The declared envelope holds 1,000 concurrent subscriptions; the feature-stream session
+      # cap defaults to 256 per tenant/principal, which would refuse the declared load.
+      FeatureStreaming__MaxConcurrentSessions: "${SOAK_MAX_STREAM_SESSIONS:-1200}"
+      # Alerts__Enabled is deliberately NOT set here, and the envelope's
+      # alertEvaluationsPerSecond dimension is reported as declared-not-exercised in the
+      # receipt. The alert pipeline validates at startup that tenant-context resolution is OFF
+      # ("alert evaluation and delivery stores are instance-wide"), and with
+      # MultiTenancy:Enabled=false the OGC API Features item query — which the soak profile
+      # drives, and which the declared envelope's four layers are served through — answers
+      # 403 "Tenant context is required to query collection items". The two cannot both hold
+      # on one deployment in this candidate, so the soak keeps the serving surface the
+      # envelope is about and records the gap instead of faking the signal.
+      # MultiTenancy resolution therefore stays at its default (enabled); the deployment is
+      # still single-tenant, which is what the envelope's tenants=1 declares.
+      FileStorage__Provider: Local
+      FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - honua_storage:/var/lib/honua/storage
+    restart: "no"
+    # Bounded, rotated logs. At the declared 1,000 active subscriptions this server writes about a
+    # megabyte of Information records per second (honua-server#4711: one "Replaying 0 events" line
+    # per session per cross-node sweep), which reached 3.8 GB in 90 minutes on the first soak.
+    # Rotation keeps the substrate from being taken down by its own log volume; it does not reduce
+    # the work the server does, so the cost of that logging is still inside the measurement.
+    logging:
+      driver: json-file
+      options:
+        max-size: "64m"
+        max-file: "3"
+
+volumes:
+  honua_storage:
