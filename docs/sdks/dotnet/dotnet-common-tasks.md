@@ -6,7 +6,7 @@ resource: "https://github.com/orgs/honua-io/packages?repo_name=honua-sdk-dotnet"
 ---
 # .NET SDK: common tasks
 
-Two of the most common reads with the Honua .NET SDK: querying a FeatureServer layer and searching a STAC catalog. Both assume a registered client — see [Get started with the .NET SDK](getting-started.md).
+Two of the most common reads with the Honua .NET SDK: querying a FeatureServer layer and searching a STAC catalog. Both assume a registered client — see [Get started with the .NET SDK](dotnet-getting-started.md).
 
 ## Query a FeatureServer layer
 
@@ -81,7 +81,7 @@ Other STAC helpers:
 
 ## Next steps
 
-- [Get started with the .NET SDK](getting-started.md)
+- [Get started with the .NET SDK](dotnet-getting-started.md)
 - [GeoServices REST reference](../../reference/protocols/geoservices-rest.md)
 - [STAC reference](../../reference/protocols/stac.md)
 - [SDK overview](../README.md)

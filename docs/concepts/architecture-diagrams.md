@@ -1,3 +1,10 @@
+---
+type: concept
+title: "Architecture diagrams"
+description: "Twelve C4 diagrams of Honua: system context, containers, components, query and edit data flow, filter translation, the schema ERD, and Kubernetes and AWS deployment."
+tags: [architecture, diagrams, c4]
+---
+
 # Honua Architecture Diagrams
 
 Visual representations of the Honua system architecture using Mermaid diagrams.
@@ -551,4 +558,4 @@ graph TB
 ## See Also
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed architecture prose
-- [ADRs](adr/README.md) - Architecture Decision Records
+- [ADRs](../internal/contributor/adr/README.md) - Architecture Decision Records

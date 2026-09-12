@@ -97,7 +97,7 @@ More general failures: [Troubleshooting](../../guides/deploy/troubleshooting.md)
 
 ## Next steps
 
-- [JavaScript common tasks](common-tasks.md) — query a FeatureServer layer and run a STAC search
+- [JavaScript common tasks](javascript-common-tasks.md) — query a FeatureServer layer and run a STAC search
 - [honua-sdk-js on GitHub](https://github.com/honua-io/honua-sdk-js) — full package list, MCP server, and codemod
 - [MapLibre web maps](../../guides/connect/maplibre-web-maps.md) — render SDK results on a map
 - [SDK overview](../README.md)

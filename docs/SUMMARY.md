@@ -13,6 +13,7 @@
 ## Concepts
 
 - [Architecture](concepts/architecture.md)
+- [Architecture diagrams](concepts/architecture-diagrams.md)
 - [Protocols & standards](concepts/protocols.md)
 - [Data model](concepts/data-model.md)
 - [Ecosystem & SDKs](concepts/ecosystem.md)
@@ -22,14 +23,14 @@
 
 - [SDK overview](sdks/README.md)
 - .NET
-  - [Get started](sdks/dotnet/getting-started.md)
-  - [Common tasks](sdks/dotnet/common-tasks.md)
+  - [Get started](sdks/dotnet/dotnet-getting-started.md)
+  - [Common tasks](sdks/dotnet/dotnet-common-tasks.md)
 - Python
-  - [Get started](sdks/python/getting-started.md)
-  - [Common tasks](sdks/python/common-tasks.md)
+  - [Get started](sdks/python/python-getting-started.md)
+  - [Common tasks](sdks/python/python-common-tasks.md)
 - JavaScript / TypeScript
-  - [Get started](sdks/javascript/getting-started.md)
-  - [Common tasks](sdks/javascript/common-tasks.md)
+  - [Get started](sdks/javascript/javascript-getting-started.md)
+  - [Common tasks](sdks/javascript/javascript-common-tasks.md)
 
 ## Guides
 

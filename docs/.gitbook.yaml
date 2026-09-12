@@ -154,3 +154,14 @@ redirects:
   reference/protocols/specifications/odata-v4-coverage: reference/protocols/odata.md
   guides/run-studio-ai-proxy: studio/byom.md
   guides/run-studio-ai-on-bedrock: studio/byom.md
+
+  # Per-language SDK pages renamed so their filenames cannot collide
+  # when GitBook flattens an area into one slug namespace.
+  sdks/dotnet/getting-started: sdks/dotnet/dotnet-getting-started.md
+  sdks/dotnet/common-tasks: sdks/dotnet/dotnet-common-tasks.md
+  sdks/javascript/getting-started: sdks/javascript/javascript-getting-started.md
+  sdks/javascript/common-tasks: sdks/javascript/javascript-common-tasks.md
+  sdks/python/getting-started: sdks/python/python-getting-started.md
+  sdks/python/common-tasks: sdks/python/python-common-tasks.md
+  # Promoted out of the contributor tree into the published bundle.
+  internal/contributor/ARCHITECTURE_DIAGRAMS: concepts/architecture-diagrams.md

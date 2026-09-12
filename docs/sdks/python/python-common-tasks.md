@@ -6,7 +6,7 @@ resource: "https://pypi.org/project/honua-sdk/"
 ---
 # Python SDK: common tasks
 
-Two of the most common reads with the Honua Python SDK: querying a FeatureServer layer and searching a STAC catalog. Both assume a constructed client — see [Get started with the Python SDK](getting-started.md). Examples use the synchronous `HonuaClient`; `AsyncHonuaClient` exposes the same calls with `await`.
+Two of the most common reads with the Honua Python SDK: querying a FeatureServer layer and searching a STAC catalog. Both assume a constructed client — see [Get started with the Python SDK](python-getting-started.md). Examples use the synchronous `HonuaClient`; `AsyncHonuaClient` exposes the same calls with `await`.
 
 ## Query a FeatureServer layer
 
@@ -89,7 +89,7 @@ with HonuaClient("http://localhost:8080", api_key=API_KEY) as client:
 
 ## Next steps
 
-- [Get started with the Python SDK](getting-started.md)
+- [Get started with the Python SDK](python-getting-started.md)
 - [GeoServices REST reference](../../reference/protocols/geoservices-rest.md)
 - [STAC reference](../../reference/protocols/stac.md)
 - [SDK overview](../README.md)
