@@ -64,6 +64,12 @@ internal sealed partial class GeoservicesImportService
             var totalFeatures = layerInfo.FeatureCount;
             var batchSize = request.BatchSize ?? layerInfo.MaxRecordCount ?? 1000;
 
+            // #4600: a replacement must never trade a complete prior target for a weaker one. The
+            // DROP below runs inside the import transaction, so rolling back restores the prior table
+            // untouched; remember whether there is one to protect.
+            var replacingExistingTarget = request.OverwriteExisting
+                && await TableExistsAsync(connection, targetSchema, request.TableName, cancellationToken);
+
             // Phase 2: Create table
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.CreatingTable, request,
                 "Creating PostGIS table", 0, totalFeatures, layerInfo.Name);
@@ -207,9 +213,25 @@ internal sealed partial class GeoservicesImportService
                     : queryResult.ExceededTransferLimit || queryResult.Features.Length == batchSize;
             }
 
+            // #4600: the loop stops polling the source once the token fires. Surface that as a
+            // cancellation (rolled back below, so a replaced target is retained) rather than letting it
+            // read as a generic incomplete transfer.
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (objectIdWindows is { } && batchNumber < objectIdWindows.Length)
             {
                 throw new InvalidOperationException("ArcGIS object-id window import did not process all source object IDs.");
+            }
+
+            if (replacingExistingTarget && failedFeatures > 0)
+            {
+                // #4600: refuse the swap. Committing here would replace a complete prior target with
+                // one missing the records that failed to load; the rollback restores the prior table.
+                await transaction.RollbackAsync(CancellationToken.None);
+                stopwatch.Stop();
+                Log.ReplacementRefused(_logger, request.TableName, failedFeatures);
+                return BuildReplacementRefusedResult(
+                    request, layerInfo, featuresProcessed, failedFeatures, warnings, stopwatch.Elapsed);
             }
 
             // Phase 4: Create spatial index
@@ -437,6 +459,42 @@ internal sealed partial class GeoservicesImportService
             },
             _ => "Import from ArcGIS service failed."
         };
+
+    private static GeoservicesImportResult BuildReplacementRefusedResult(
+        GeoservicesImportRequest request,
+        GeoservicesLayerInfo layerInfo,
+        int loadedFeatures,
+        int failedFeatures,
+        List<string> warnings,
+        TimeSpan duration)
+    {
+        // The evaluator supplies the same records-lost difference a completed run would carry, so the
+        // refusal is actionable from the persisted result rather than only from the message text.
+        var fidelity = MigrationFidelityEvaluator.Evaluate(new MigrationFidelityEvaluationInput
+        {
+            LayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
+            FailedFeatures = failedFeatures
+        });
+
+        var message = string.Create(
+            CultureInfo.InvariantCulture,
+            $"Replacement refused: {failedFeatures} of {loadedFeatures + failedFeatures} source record(s) failed to load, "
+            + $"so the existing target table '{request.TableName}' was retained unchanged. Resolve the failing records and retry the import.");
+
+        return GeoservicesImportResult.CreateFailure(
+            request.TableName,
+            request.ServiceUrl,
+            request.LayerId,
+            message,
+            duration) with
+        {
+            FailedFeatures = failedFeatures,
+            SourceLayerName = layerInfo.Name,
+            ServiceName = request.ServiceName,
+            Warnings = warnings,
+            FidelityDifferences = fidelity.Differences
+        };
+    }
 
     private async Task CreateTableAsync(
         NpgsqlConnection connection,
