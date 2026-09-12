@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Xml.Linq;
@@ -36,7 +37,7 @@ public sealed class OgcFeaturesStreamingTestsFixture : IAsyncLifetime
             INSERT INTO features (objectid, layer_id, geometry, attributes)
             SELECT i, 0, CASE WHEN i % 10 = 0 THEN NULL
                 ELSE ST_SetSRID(ST_MakePoint(-120 + i * 0.001, 30 + i * 0.001), 4326) END,
-                jsonb_build_object('name', repeat('x', 1024), 'value', i, 'category', 'stream-fixture')
+                jsonb_build_object('name', repeat('x', 1024), 'population', i, 'category', 'stream-fixture')
             FROM generate_series(1, 1200) AS i;
             """;
         await command.ExecuteNonQueryAsync();
@@ -138,7 +139,7 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
         }
 
         var expectedCount = limit ?? 300;
-        var query = $"sortby=value&f={(gml ? "gml" : "json")}";
+        var query = $"sortby=objectid&f={(gml ? "gml" : "json")}";
         if (limit.HasValue)
         {
             query += $"&limit={limit.Value}";
@@ -168,7 +169,7 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
                 XNamespace wfs = "http://www.opengis.net/wfs/2.0";
                 XNamespace gmlNamespace = "http://www.opengis.net/gml/3.2";
                 document.Root!.Attribute("numberMatched")!.Value.Should().Be("1200");
-                document.Root.Attribute("numberReturned")!.Value.Should().Be(returned.ToString());
+                document.Root.Attribute("numberReturned")!.Value.Should().Be(returned.ToString(CultureInfo.InvariantCulture));
                 var members = document.Root.Elements(wfs + "member").ToArray();
                 members.Should().HaveCount(returned);
                 for (var i = 0; i < returned; i++)
@@ -182,15 +183,15 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
                     else
                     {
                         var ordinates = position!.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(value => double.Parse(value, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+                            .Select(value => double.Parse(value, CultureInfo.InvariantCulture)).ToArray();
                         ordinates.Should().HaveCount(2);
                         ordinates[0].Should().BeApproximately(-120 + id * 0.001, 1e-9);
                         ordinates[1].Should().BeApproximately(30 + id * 0.001, 1e-9);
                     }
                     members[i].Descendants().Single(element => element.Name.LocalName == "name")
                         .Value.Should().Be(new string('x', 1024));
-                    members[i].Descendants().Single(element => element.Name.LocalName == "value")
-                        .Value.Should().Be(id.ToString());
+                    members[i].Descendants().Single(element => element.Name.LocalName == "population")
+                        .Value.Should().Be(id.ToString(CultureInfo.InvariantCulture));
                 }
             }
             else
@@ -207,7 +208,7 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
                     features[i].GetProperty("id").GetInt64().Should().Be(id);
                     var properties = features[i].GetProperty("properties");
                     properties.GetProperty("name").GetString().Should().Be(new string('x', 1024));
-                    properties.GetProperty("value").GetInt32().Should().Be(id);
+                    properties.GetProperty("population").GetInt32().Should().Be(id);
                     var geometry = features[i].GetProperty("geometry");
                     if (id % 10 == 0)
                     {
