@@ -610,13 +610,17 @@ public sealed class OperationDispatcher : IOperationInvoker
             Details = $"operationId={envelope.OperationId};status={envelope.Status}",
         }, cancellationToken);
 
+    // A secret-bearing operation may only actuate through an executor composed with the
+    // consume-once secret channel. When no such executor is registered the operation stays
+    // closed rather than degrading to a runtime that would persist plaintext credentials.
     private IOperationExecutor ResolveExecutor(string operationId)
         => _executors.TryGetValue(operationId, out var executor)
             ? executor
             : AdminMcpOperationExclusions.RequiresSecretAwareRuntime(operationId)
                 ? throw new OperationUnavailableException(
                     operationId,
-                    $"Operation '{operationId}' is unavailable through the operations runtime until issue #4187 lands.")
+                    $"Operation '{operationId}' handles one-time secret material and has no secret-aware "
+                    + "executor composed in this runtime.")
                 : throw new OperationNotFoundException(operationId);
 
     private async Task<OperationHandle> BuildDecisionHandleAsync(
