@@ -46,9 +46,9 @@ public sealed class DisabledLicenseIntegrationTests
                         ["Licensing:DevGrantEdition"] = null
                     }));
             });
+        await fixture.InitializeAsync();
         try
         {
-            await fixture.InitializeAsync();
             Assert.Equal(Environments.Production, fixture.GetService<IHostEnvironment>().EnvironmentName);
             Assert.All(FeatureCatalog.All, feature =>
                 Assert.True(LicenseGate.CheckEntitlement(fixture.Services, feature.Key).IsActive));
@@ -65,8 +65,10 @@ public sealed class DisabledLicenseIntegrationTests
                 Assert.Equal("disabled", data.GetProperty("mode").GetString());
                 Assert.Equal("Unlicensed-2026.1", data.GetProperty("edition").GetString());
                 Assert.Equal("Disabled", data.GetProperty("validationState").GetString());
+                Assert.True(data.GetProperty("isValid").GetBoolean());
                 Assert.False(data.GetProperty("expiryWarning").GetBoolean());
                 Assert.True(!data.TryGetProperty("expiresAt", out var expires) || expires.ValueKind == JsonValueKind.Null);
+                Assert.True(!data.TryGetProperty("daysUntilExpiry", out var days) || days.ValueKind == JsonValueKind.Null);
                 var entitlements = data.GetProperty("entitlements").EnumerateArray().ToArray();
                 Assert.Equal(FeatureCatalog.All.Count, entitlements.Length);
                 Assert.All(entitlements, item => Assert.True(item.GetProperty("isActive").GetBoolean()));
@@ -94,6 +96,10 @@ public sealed class DisabledLicenseIntegrationTests
                 Assert.True(item.GetProperty("isEnabled").GetBoolean());
                 Assert.False(item.GetProperty("upgradeRequired").GetBoolean());
             });
+
+            using var unauthenticated = fixture.CreateClient();
+            using var unauthorized = await unauthenticated.GetAsync("/api/v1/admin/license");
+            Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
         }
         finally
         {
