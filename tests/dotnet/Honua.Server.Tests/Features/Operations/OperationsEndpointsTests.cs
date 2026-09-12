@@ -13,6 +13,7 @@ using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -366,6 +367,9 @@ public sealed class OperationsEndpointsTests
         {
             OperationInstanceId = operationInstanceId,
             OperationId = "admin.api-key.create",
+            // Owned by the tenant the reader's request resolves to, so the ownership boundary
+            // admits the status read and the assertion isolates the secret-material boundary.
+            TenantId = new TenantContextOptions().DefaultTenantId,
             CorrelationId = $"corr-{Guid.NewGuid():N}",
             Status = OperationHandleStatus.Completed,
             CreatedAt = DateTimeOffset.UtcNow,

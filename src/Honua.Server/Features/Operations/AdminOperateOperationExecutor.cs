@@ -535,7 +535,7 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
 
     private string SerializeBody(IEnumerable<KeyValuePair<string, string?>> parameters)
     {
-        var schema = AdminOperateOperationCatalog.Descriptors.Single(item => item.OperationId == OperationId).InputSchema;
+        var schema = _descriptor.InputSchema;
         var buffer = new System.Buffers.ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
