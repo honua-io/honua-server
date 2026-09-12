@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
 using Honua.Infrastructure.Helpers;
@@ -19,6 +22,12 @@ namespace Honua.Protocols.SensorThings;
 /// envelopes are STA-conformance-shaped (<c>@iot.id</c>/<c>@iot.selfLink</c>/
 /// <c>@iot.navigationLink</c>, <c>value</c> arrays, <c>@iot.nextLink</c> paging).
 /// </summary>
+/// <remarks>
+/// Every request's system query options are turned into a <see cref="StaQueryPlan"/>
+/// before the store is touched. An option the plan cannot honour fails the request —
+/// 400 when it is malformed or names an unknown property, 501 when it is recognised but
+/// unimplemented — rather than being dropped (STA 1.1 Req 28-35, OData 4.0 §8.2.1).
+/// </remarks>
 internal static class SensorThingsEndpoints
 {
     internal const string BasePath = "/sta/v1.1";
@@ -64,7 +73,9 @@ internal static class SensorThingsEndpoints
             .WithSummary("Get the Observations of a Datastream")
             .WithTags("SensorThings")
             .Produces<StaEntitySet<StaObservation>>(200, "application/json")
-            .Produces(404);
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
 
         // Phase 2 ingest (REST/bulk observation creation + datastream creation) and
         // Phase 3 real-time streaming (SSE/WebSocket) are mapped from their partial-class
@@ -83,7 +94,8 @@ internal static class SensorThingsEndpoints
             .WithSummary($"List {entitySet}")
             .WithTags("SensorThings")
             .Produces(200, contentType: "application/json")
-            .Produces(400);
+            .Produces(400)
+            .Produces(501);
 
     private static void ConfigureById(RouteHandlerBuilder builder, string entitySet) =>
         builder
@@ -92,7 +104,9 @@ internal static class SensorThingsEndpoints
             .WithSummary($"Get a single {entitySet} entity by id")
             .WithTags("SensorThings")
             .Produces(200, contentType: "application/json")
-            .Produces(404);
+            .Produces(400)
+            .Produces(404)
+            .Produces(501);
 
     private static string StaBase(HttpContext context) => $"{BaseUrlResolver.GetBaseUrl(context)}{BasePath}";
 
@@ -115,6 +129,65 @@ internal static class SensorThingsEndpoints
         };
         return Results.Json(document, SensorThingsJsonContext.Default.StaServiceDocument);
     }
+
+    // ---- Query-option plumbing ----
+
+    /// <summary>
+    /// Builds the plan for a collection request, or the error response the unsupported
+    /// option earns.
+    /// </summary>
+    private static bool TryPlanCollection(
+        HttpContext context,
+        StaEntitySchema schema,
+        StaFilterTranslator filterTranslator,
+        out StaQueryPlan plan,
+        out IResult failure)
+    {
+        var result = StaQueryPlan.Create(context.Request, schema, filterTranslator);
+        if (!result.IsSuccess)
+        {
+            plan = null!;
+            failure = PlanFailure(context, result);
+            return false;
+        }
+
+        plan = result.Plan!;
+        failure = null!;
+        return true;
+    }
+
+    /// <summary>
+    /// Builds the plan for a single-entity request. <c>$filter</c> and <c>$orderby</c>
+    /// cannot apply to one entity, so naming them is a client error rather than something
+    /// to quietly drop.
+    /// </summary>
+    private static bool TryPlanEntity(
+        HttpContext context,
+        StaEntitySchema schema,
+        StaFilterTranslator filterTranslator,
+        out StaQueryPlan plan,
+        out IResult failure)
+    {
+        if (!TryPlanCollection(context, schema, filterTranslator, out plan, out failure))
+        {
+            return false;
+        }
+
+        var rejected = plan.Options.Filter is not null ? "$filter" : plan.Options.OrderBy is not null ? "$orderby" : null;
+        if (rejected is not null)
+        {
+            failure = StandardErrorHelpers.CreateBadRequest(
+                context, $"{rejected} cannot be applied to a single {schema.EntitySet} entity.");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static IResult PlanFailure(HttpContext context, StaQueryPlanResult result) =>
+        result.StatusCode == 501
+            ? StandardErrorHelpers.CreateNotImplemented(context, result.Error!)
+            : StandardErrorHelpers.CreateBadRequest(context, result.Error!);
 
     private static string? NextLink(HttpContext context, StaQueryOptions options, int returnedCount)
     {
@@ -147,116 +220,228 @@ internal static class SensorThingsEndpoints
         return QueryHelpers.AddQueryString($"{staBase}{path}", query);
     }
 
+    /// <summary>
+    /// Serializes an entity-set envelope, applying the <c>$select</c> projection when the
+    /// request asked for one. The projection runs over the source-generated JSON, so an
+    /// unprojected response takes the same path it always did.
+    /// </summary>
+    private static IResult JsonEntitySet<T>(
+        StaEntitySet<T> entitySet,
+        JsonTypeInfo<StaEntitySet<T>> typeInfo,
+        StaQueryPlan plan)
+    {
+        if (!plan.HasProjection)
+        {
+            return Results.Json(entitySet, typeInfo);
+        }
+
+        var node = JsonSerializer.SerializeToNode(entitySet, typeInfo)!.AsObject();
+        return ProjectedJson(StaProjection.ProjectEntitySet(node, plan.ProjectedMembers));
+    }
+
+    private static IResult JsonEntity<T>(T entity, JsonTypeInfo<T> typeInfo, StaQueryPlan plan)
+    {
+        if (!plan.HasProjection)
+        {
+            return Results.Json(entity, typeInfo);
+        }
+
+        var node = JsonSerializer.SerializeToNode(entity, typeInfo)!.AsObject();
+        return ProjectedJson(StaProjection.ProjectEntity(node, plan.ProjectedMembers));
+    }
+
+    // JsonNode writes itself; serializing the node with the source-generated context is
+    // not possible (the projected shape has no DTO), and reflection-based serialization is
+    // not available under AOT.
+    private static IResult ProjectedJson(JsonObject node) =>
+        Results.Text(node.ToJsonString(), "application/json", System.Text.Encoding.UTF8);
+
     // ---- Things ----
 
-    private static async Task<IResult> HandleListThings(HttpContext context, [FromServices] IObservationStore store)
+    private static async Task<IResult> HandleListThings(
+        HttpContext context,
+        [FromServices] IObservationStore store,
+        [FromServices] StaFilterTranslator filterTranslator)
     {
-        var options = StaQueryOptions.FromRequest(context.Request);
+        if (!TryPlanCollection(context, StaEntitySchema.Things, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
         var ct = context.RequestAborted;
-        var things = await store.ListThingsAsync(options.Skip, options.FetchTop, ct).ConfigureAwait(false);
+        var things = await store.ListThingsAsync(plan.CatalogQuery, ct).ConfigureAwait(false);
         var staBase = StaBase(context);
-        var value = things.Take(options.Top).Select(t => StaEntityMapper.MapThing(t, staBase)).ToList();
-        return Results.Json(
+        var value = things.Take(plan.Options.Top).Select(t => StaEntityMapper.MapThing(t, staBase)).ToList();
+        return JsonEntitySet(
             new StaEntitySet<StaThing>
             {
                 Value = value,
-                Count = options.Count ? await store.CountThingsAsync(ct).ConfigureAwait(false) : null,
-                NextLink = NextLink(context, options, things.Count)
+                Count = plan.Options.Count ? await store.CountThingsAsync(plan.CatalogQuery, ct).ConfigureAwait(false) : null,
+                NextLink = NextLink(context, plan.Options, things.Count)
             },
-            SensorThingsJsonContext.Default.StaEntitySetStaThing);
+            SensorThingsJsonContext.Default.StaEntitySetStaThing,
+            plan);
     }
 
-    private static async Task<IResult> HandleGetThing(long id, HttpContext context, [FromServices] IObservationStore store)
+    private static async Task<IResult> HandleGetThing(
+        long id,
+        HttpContext context,
+        [FromServices] IObservationStore store,
+        [FromServices] StaFilterTranslator filterTranslator)
     {
+        if (!TryPlanEntity(context, StaEntitySchema.Things, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
         var thing = await store.GetThingAsync(id, context.RequestAborted).ConfigureAwait(false);
         return thing is null
             ? StandardErrorHelpers.CreateNotFound(context, $"Thing({id}) not found.")
-            : Results.Json(StaEntityMapper.MapThing(thing, StaBase(context)), SensorThingsJsonContext.Default.StaThing);
+            : JsonEntity(
+                StaEntityMapper.MapThing(thing, StaBase(context)),
+                SensorThingsJsonContext.Default.StaThing,
+                plan);
     }
 
     // ---- Sensors ----
 
-    private static async Task<IResult> HandleListSensors(HttpContext context, [FromServices] IObservationStore store)
+    private static async Task<IResult> HandleListSensors(
+        HttpContext context,
+        [FromServices] IObservationStore store,
+        [FromServices] StaFilterTranslator filterTranslator)
     {
-        var options = StaQueryOptions.FromRequest(context.Request);
-        var sensors = await store.ListSensorsAsync(options.Skip, options.FetchTop, context.RequestAborted).ConfigureAwait(false);
+        if (!TryPlanCollection(context, StaEntitySchema.Sensors, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
+        var ct = context.RequestAborted;
+        var sensors = await store.ListSensorsAsync(plan.CatalogQuery, ct).ConfigureAwait(false);
         var staBase = StaBase(context);
-        var value = sensors.Take(options.Top).Select(s => StaEntityMapper.MapSensor(s, staBase)).ToList();
-        return Results.Json(
+        var value = sensors.Take(plan.Options.Top).Select(s => StaEntityMapper.MapSensor(s, staBase)).ToList();
+        return JsonEntitySet(
             new StaEntitySet<StaSensor>
             {
                 Value = value,
-                Count = options.Count ? await store.CountSensorsAsync(context.RequestAborted).ConfigureAwait(false) : null,
-                NextLink = NextLink(context, options, sensors.Count)
+                Count = plan.Options.Count ? await store.CountSensorsAsync(plan.CatalogQuery, ct).ConfigureAwait(false) : null,
+                NextLink = NextLink(context, plan.Options, sensors.Count)
             },
-            SensorThingsJsonContext.Default.StaEntitySetStaSensor);
+            SensorThingsJsonContext.Default.StaEntitySetStaSensor,
+            plan);
     }
 
-    private static async Task<IResult> HandleGetSensor(long id, HttpContext context, [FromServices] IObservationStore store)
+    private static async Task<IResult> HandleGetSensor(
+        long id,
+        HttpContext context,
+        [FromServices] IObservationStore store,
+        [FromServices] StaFilterTranslator filterTranslator)
     {
+        if (!TryPlanEntity(context, StaEntitySchema.Sensors, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
         var sensor = await store.GetSensorAsync(id, context.RequestAborted).ConfigureAwait(false);
         return sensor is null
             ? StandardErrorHelpers.CreateNotFound(context, $"Sensor({id}) not found.")
-            : Results.Json(StaEntityMapper.MapSensor(sensor, StaBase(context)), SensorThingsJsonContext.Default.StaSensor);
+            : JsonEntity(
+                StaEntityMapper.MapSensor(sensor, StaBase(context)),
+                SensorThingsJsonContext.Default.StaSensor,
+                plan);
     }
 
     // ---- ObservedProperties ----
 
-    private static async Task<IResult> HandleListObservedProperties(HttpContext context, [FromServices] IObservationStore store)
+    private static async Task<IResult> HandleListObservedProperties(
+        HttpContext context,
+        [FromServices] IObservationStore store,
+        [FromServices] StaFilterTranslator filterTranslator)
     {
-        var options = StaQueryOptions.FromRequest(context.Request);
-        var properties = await store.ListObservedPropertiesAsync(options.Skip, options.FetchTop, context.RequestAborted).ConfigureAwait(false);
+        if (!TryPlanCollection(context, StaEntitySchema.ObservedProperties, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
+        var ct = context.RequestAborted;
+        var properties = await store.ListObservedPropertiesAsync(plan.CatalogQuery, ct).ConfigureAwait(false);
         var staBase = StaBase(context);
-        var value = properties.Take(options.Top).Select(p => StaEntityMapper.MapObservedProperty(p, staBase)).ToList();
-        return Results.Json(
+        var value = properties.Take(plan.Options.Top).Select(p => StaEntityMapper.MapObservedProperty(p, staBase)).ToList();
+        return JsonEntitySet(
             new StaEntitySet<StaObservedProperty>
             {
                 Value = value,
-                Count = options.Count ? await store.CountObservedPropertiesAsync(context.RequestAborted).ConfigureAwait(false) : null,
-                NextLink = NextLink(context, options, properties.Count)
+                Count = plan.Options.Count ? await store.CountObservedPropertiesAsync(plan.CatalogQuery, ct).ConfigureAwait(false) : null,
+                NextLink = NextLink(context, plan.Options, properties.Count)
             },
-            SensorThingsJsonContext.Default.StaEntitySetStaObservedProperty);
+            SensorThingsJsonContext.Default.StaEntitySetStaObservedProperty,
+            plan);
     }
 
-    private static async Task<IResult> HandleGetObservedProperty(long id, HttpContext context, [FromServices] IObservationStore store)
+    private static async Task<IResult> HandleGetObservedProperty(
+        long id,
+        HttpContext context,
+        [FromServices] IObservationStore store,
+        [FromServices] StaFilterTranslator filterTranslator)
     {
+        if (!TryPlanEntity(context, StaEntitySchema.ObservedProperties, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
         var property = await store.GetObservedPropertyAsync(id, context.RequestAborted).ConfigureAwait(false);
         return property is null
             ? StandardErrorHelpers.CreateNotFound(context, $"ObservedProperty({id}) not found.")
-            : Results.Json(StaEntityMapper.MapObservedProperty(property, StaBase(context)), SensorThingsJsonContext.Default.StaObservedProperty);
+            : JsonEntity(
+                StaEntityMapper.MapObservedProperty(property, StaBase(context)),
+                SensorThingsJsonContext.Default.StaObservedProperty,
+                plan);
     }
 
     // ---- Datastreams ----
 
-    private static async Task<IResult> HandleListDatastreams(HttpContext context, [FromServices] IObservationStore store)
+    private static async Task<IResult> HandleListDatastreams(
+        HttpContext context,
+        [FromServices] IObservationStore store,
+        [FromServices] StaFilterTranslator filterTranslator)
     {
-        var options = StaQueryOptions.FromRequest(context.Request);
-        var ct = context.RequestAborted;
-        var datastreams = await store.ListDatastreamsAsync(options.Skip, options.FetchTop, ct).ConfigureAwait(false);
-        var staBase = StaBase(context);
-
-        var value = new List<StaDatastream>(datastreams.Count);
-        foreach (var datastream in datastreams.Take(options.Top))
+        if (!TryPlanCollection(context, StaEntitySchema.Datastreams, filterTranslator, out var plan, out var failure))
         {
-            value.Add(StaEntityMapper.MapDatastream(
-                datastream,
-                staBase,
-                await ExpandObservationsAsync(options, store, datastream.Id, staBase, ct).ConfigureAwait(false)));
+            return failure;
         }
 
-        return Results.Json(
+        var ct = context.RequestAborted;
+        var datastreams = await store.ListDatastreamsAsync(plan.CatalogQuery, ct).ConfigureAwait(false);
+        var staBase = StaBase(context);
+
+        var expander = new StaDatastreamExpander(store, plan, staBase);
+        var value = new List<StaDatastream>(datastreams.Count);
+        foreach (var datastream in datastreams.Take(plan.Options.Top))
+        {
+            value.Add(await expander.MapAsync(datastream, ct).ConfigureAwait(false));
+        }
+
+        return JsonEntitySet(
             new StaEntitySet<StaDatastream>
             {
                 Value = value,
-                Count = options.Count ? await store.CountDatastreamsAsync(ct).ConfigureAwait(false) : null,
-                NextLink = NextLink(context, options, datastreams.Count)
+                Count = plan.Options.Count ? await store.CountDatastreamsAsync(plan.CatalogQuery, ct).ConfigureAwait(false) : null,
+                NextLink = NextLink(context, plan.Options, datastreams.Count)
             },
-            SensorThingsJsonContext.Default.StaEntitySetStaDatastream);
+            SensorThingsJsonContext.Default.StaEntitySetStaDatastream,
+            plan);
     }
 
-    private static async Task<IResult> HandleGetDatastream(long id, HttpContext context, [FromServices] IObservationStore store)
+    private static async Task<IResult> HandleGetDatastream(
+        long id,
+        HttpContext context,
+        [FromServices] IObservationStore store,
+        [FromServices] StaFilterTranslator filterTranslator)
     {
-        var options = StaQueryOptions.FromRequest(context.Request);
+        if (!TryPlanEntity(context, StaEntitySchema.Datastreams, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
         var ct = context.RequestAborted;
         var datastream = await store.GetDatastreamAsync(id, ct).ConfigureAwait(false);
         if (datastream is null)
@@ -265,45 +450,26 @@ internal static class SensorThingsEndpoints
         }
 
         var staBase = StaBase(context);
-        var expanded = await ExpandObservationsAsync(options, store, id, staBase, ct).ConfigureAwait(false);
-        return Results.Json(
-            StaEntityMapper.MapDatastream(datastream, staBase, expanded),
-            SensorThingsJsonContext.Default.StaDatastream);
-    }
-
-    private static async Task<IReadOnlyList<StaObservation>?> ExpandObservationsAsync(
-        StaQueryOptions options,
-        IObservationStore store,
-        long datastreamId,
-        string staBase,
-        CancellationToken ct)
-    {
-        if (!options.ExpandsTo("Observations"))
-        {
-            return null;
-        }
-
-        var observations = await store.QueryObservationsAsync(
-            new ObservationQuery(datastreamId, null, Array.Empty<object?>(), OrderByDescending: true, Skip: 0, Top: StaQueryOptions.DefaultTop),
-            ct).ConfigureAwait(false);
-        return observations.Select(o => StaEntityMapper.MapObservation(o, staBase)).ToList();
+        var expander = new StaDatastreamExpander(store, plan, staBase);
+        return JsonEntity(
+            await expander.MapAsync(datastream, ct).ConfigureAwait(false),
+            SensorThingsJsonContext.Default.StaDatastream,
+            plan);
     }
 
     // ---- Observations ----
 
-    private static async Task<IResult> HandleListObservations(
+    private static Task<IResult> HandleListObservations(
         HttpContext context,
         [FromServices] IObservationStore store,
-        [FromServices] StaObservationFilterTranslator filterTranslator)
-    {
-        return await QueryObservationsAsync(context, store, filterTranslator, datastreamId: null).ConfigureAwait(false);
-    }
+        [FromServices] StaFilterTranslator filterTranslator) =>
+        QueryObservationsAsync(context, store, filterTranslator, datastreamId: null);
 
     private static async Task<IResult> HandleDatastreamObservations(
         long id,
         HttpContext context,
         [FromServices] IObservationStore store,
-        [FromServices] StaObservationFilterTranslator filterTranslator)
+        [FromServices] StaFilterTranslator filterTranslator)
     {
         var datastream = await store.GetDatastreamAsync(id, context.RequestAborted).ConfigureAwait(false);
         if (datastream is null)
@@ -317,44 +483,142 @@ internal static class SensorThingsEndpoints
     private static async Task<IResult> QueryObservationsAsync(
         HttpContext context,
         IObservationStore store,
-        StaObservationFilterTranslator filterTranslator,
+        StaFilterTranslator filterTranslator,
         long? datastreamId)
     {
-        var options = StaQueryOptions.FromRequest(context.Request);
-
-        var translation = filterTranslator.Translate(options.Filter);
-        if (!translation.IsSuccess)
+        if (!TryPlanCollection(context, StaEntitySchema.Observations, filterTranslator, out var plan, out var failure))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, translation.Error ?? "Invalid $filter.");
+            return failure;
         }
 
-        var query = new ObservationQuery(
-            datastreamId,
-            translation.Sql,
-            translation.Parameters,
-            options.OrderByDescending,
-            options.Skip,
-            options.FetchTop);
-
-        var observations = await store.QueryObservationsAsync(query, context.RequestAborted).ConfigureAwait(false);
+        var query = plan.ObservationQuery(datastreamId);
+        var ct = context.RequestAborted;
+        var observations = await store.QueryObservationsAsync(query, ct).ConfigureAwait(false);
         var staBase = StaBase(context);
-        var value = observations.Take(options.Top).Select(o => StaEntityMapper.MapObservation(o, staBase)).ToList();
+        var value = observations.Take(plan.Options.Top).Select(o => StaEntityMapper.MapObservation(o, staBase)).ToList();
 
-        return Results.Json(
+        return JsonEntitySet(
             new StaEntitySet<StaObservation>
             {
                 Value = value,
-                Count = options.Count ? await store.CountObservationsAsync(query, context.RequestAborted).ConfigureAwait(false) : null,
-                NextLink = NextLink(context, options, observations.Count)
+                Count = plan.Options.Count ? await store.CountObservationsAsync(query, ct).ConfigureAwait(false) : null,
+                NextLink = NextLink(context, plan.Options, observations.Count)
             },
-            SensorThingsJsonContext.Default.StaEntitySetStaObservation);
+            SensorThingsJsonContext.Default.StaEntitySetStaObservation,
+            plan);
     }
 
-    private static async Task<IResult> HandleGetObservation(long id, HttpContext context, [FromServices] IObservationStore store)
+    private static async Task<IResult> HandleGetObservation(
+        long id,
+        HttpContext context,
+        [FromServices] IObservationStore store,
+        [FromServices] StaFilterTranslator filterTranslator)
     {
+        if (!TryPlanEntity(context, StaEntitySchema.Observations, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
         var observation = await store.GetObservationAsync(id, context.RequestAborted).ConfigureAwait(false);
         return observation is null
             ? StandardErrorHelpers.CreateNotFound(context, $"Observation({id}) not found.")
-            : Results.Json(StaEntityMapper.MapObservation(observation, StaBase(context)), SensorThingsJsonContext.Default.StaObservation);
+            : JsonEntity(
+                StaEntityMapper.MapObservation(observation, StaBase(context)),
+                SensorThingsJsonContext.Default.StaObservation,
+                plan);
+    }
+
+    /// <summary>
+    /// Materialises the <c>$expand</c> items of a Datastream. Related catalog entities are
+    /// memoised for the request: a page of datastreams usually shares a handful of Things,
+    /// Sensors and ObservedProperties, and expanding is not a reason to issue one lookup
+    /// per row per navigation.
+    /// </summary>
+    private sealed class StaDatastreamExpander(IObservationStore store, StaQueryPlan plan, string staBase)
+    {
+        private readonly Dictionary<long, StaThing?> _things = [];
+        private readonly Dictionary<long, StaSensor?> _sensors = [];
+        private readonly Dictionary<long, StaObservedProperty?> _observedProperties = [];
+
+        public async Task<StaDatastream> MapAsync(SensorThingsDatastream datastream, CancellationToken ct)
+        {
+            return StaEntityMapper.MapDatastream(
+                datastream,
+                staBase,
+                await ExpandObservationsAsync(datastream.Id, ct).ConfigureAwait(false),
+                await ExpandThingAsync(datastream.ThingId, ct).ConfigureAwait(false),
+                await ExpandSensorAsync(datastream.SensorId, ct).ConfigureAwait(false),
+                await ExpandObservedPropertyAsync(datastream.ObservedPropertyId, ct).ConfigureAwait(false));
+        }
+
+        private async Task<IReadOnlyList<StaObservation>?> ExpandObservationsAsync(long datastreamId, CancellationToken ct)
+        {
+            if (plan.Expansion("Observations") is not { } expansion)
+            {
+                return null;
+            }
+
+            var observations = await store.QueryObservationsAsync(
+                new ObservationQuery(
+                    datastreamId,
+                    expansion.WhereSql,
+                    expansion.WhereParameters,
+                    expansion.OrderBySql,
+                    expansion.Skip,
+                    expansion.Top),
+                ct).ConfigureAwait(false);
+            return observations.Select(o => StaEntityMapper.MapObservation(o, staBase)).ToList();
+        }
+
+        private async Task<StaThing?> ExpandThingAsync(long thingId, CancellationToken ct)
+        {
+            if (plan.Expansion("Thing") is null)
+            {
+                return null;
+            }
+
+            if (!_things.TryGetValue(thingId, out var thing))
+            {
+                var entity = await store.GetThingAsync(thingId, ct).ConfigureAwait(false);
+                thing = entity is null ? null : StaEntityMapper.MapThing(entity, staBase);
+                _things[thingId] = thing;
+            }
+
+            return thing;
+        }
+
+        private async Task<StaSensor?> ExpandSensorAsync(long sensorId, CancellationToken ct)
+        {
+            if (plan.Expansion("Sensor") is null)
+            {
+                return null;
+            }
+
+            if (!_sensors.TryGetValue(sensorId, out var sensor))
+            {
+                var entity = await store.GetSensorAsync(sensorId, ct).ConfigureAwait(false);
+                sensor = entity is null ? null : StaEntityMapper.MapSensor(entity, staBase);
+                _sensors[sensorId] = sensor;
+            }
+
+            return sensor;
+        }
+
+        private async Task<StaObservedProperty?> ExpandObservedPropertyAsync(long observedPropertyId, CancellationToken ct)
+        {
+            if (plan.Expansion("ObservedProperty") is null)
+            {
+                return null;
+            }
+
+            if (!_observedProperties.TryGetValue(observedPropertyId, out var property))
+            {
+                var entity = await store.GetObservedPropertyAsync(observedPropertyId, ct).ConfigureAwait(false);
+                property = entity is null ? null : StaEntityMapper.MapObservedProperty(entity, staBase);
+                _observedProperties[observedPropertyId] = property;
+            }
+
+            return property;
+        }
     }
 }

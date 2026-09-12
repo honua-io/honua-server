@@ -10,8 +10,8 @@ name: Capability Matrix Aggregation
 # the merge train's workflow_run event with the heavy full CI matrix -- see
 # ci.yml's header comment). This workflow is a single dependency-light Python
 # script (no dotnet build, no services:), so it follows the same lightweight
-# pattern as openapi-drift.yml: a pull_request drift-check plus a push-to-trunk
-# regeneration/publish job, rather than living inside ci.yml.
+# PR generator validation with advisory drift. Trunk commits are owned by
+# generated-files-on-trunk.yml, which refreshes all upstream projections first.
 on:
   pull_request:
     branches:
@@ -49,38 +49,9 @@ on:
       - 'src/Honua.Server/ogc-maps-openapi.json'
       - 'src/Honua.Server/ogc-coverages-openapi.json'
       - 'src/Honua.Server/ogc-processes-openapi.json'
+      - 'scripts/ci/report-generated-file-drift.sh'
+      - 'scripts/ci/generated-files.sh'
       - '.github/workflows/capability-matrix-aggregation.yml'
-  push:
-    branches:
-      - trunk
-    paths:
-      - 'docs/gis/data/feature-catalog.json'
-      - 'docs/cite-status.md'
-      - 'docs/gis/data/geoservices-rest-parity.json'
-      - 'docs/gis/data/capability-keys.v1.json'
-      - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
-      - 'tests/baselines/client-compat/**'
-      - 'scripts/ci/generate-capability-matrix.py'
-      - 'scripts/ci/capability-impact.py'
-      - 'scripts/ci/validate-cite-openapi-compliance.py'
-      # The operation -> capability join reads the same catalog and every
-      # OpenAPI document the drift checker declares, so both move it.
-      - 'scripts/ci/generate-operation-capability.py'
-      - 'scripts/ci/generate-operation-capability.test.py'
-      # WS1: the manifest crosswalk reads the registry source, the keys and the
-      # adjudication, so all three move it.
-      - 'scripts/ci/generate-capability-manifest-crosswalk.py'
-      - 'scripts/ci/generate-capability-manifest-crosswalk.test.py'
-      - 'docs/gis/data/capability-manifest-adjudication.v1.json'
-      - 'docs/gis/data/capability-manifest-crosswalk.v1.json'
-      - 'src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs'
-      - 'scripts/ci/openapi-drift-check.py'
-      - 'docs/developer/api-specs/**'
-      - 'src/Honua.Server/openapi.json'
-      - 'src/Honua.Server/ogc-tiles-openapi.json'
-      - 'src/Honua.Server/ogc-maps-openapi.json'
-      - 'src/Honua.Server/ogc-coverages-openapi.json'
-      - 'src/Honua.Server/ogc-processes-openapi.json'
   schedule:
     # Weekly freshness check: cite-status.md and geoservices-rest-parity.json
     # are hand-refreshed on their own cadence (not every push touches this
@@ -114,13 +85,8 @@ jobs:
       - name: Regenerate capability-matrix.v1.json
         run: python3 scripts/ci/generate-capability-matrix.py
 
-      - name: Drift check against the committed artifact
-        run: |
-          if ! git diff --exit-code -- docs/gis/data/capability-matrix.v1.json; then
-            echo "::error::docs/gis/data/capability-matrix.v1.json is stale. Run 'python3 scripts/ci/generate-capability-matrix.py' and commit the result." >&2
-            exit 1
-          fi
-          echo "docs/gis/data/capability-matrix.v1.json is up to date."
+      - name: Report generated matrix drift (advisory)
+        run: bash scripts/ci/report-generated-file-drift.sh docs/gis/data/capability-matrix.v1.json
 
       # WS2 of the OKF knowledge-graph program: the OpenAPI operation ->
       # capability correspondence was computed on every run and discarded. It is

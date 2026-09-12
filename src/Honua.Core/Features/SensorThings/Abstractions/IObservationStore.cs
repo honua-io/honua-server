@@ -12,49 +12,46 @@ namespace Honua.Core.Features.SensorThings.Abstractions;
 /// </summary>
 public interface IObservationStore
 {
-    /// <summary>Counts all Things in the current catalog, independently of paging.</summary>
-    Task<long> CountThingsAsync(CancellationToken cancellationToken);
+    /// <summary>Counts the Things matching the query's filter, ignoring paging and ordering.</summary>
+    Task<long> CountThingsAsync(CatalogQuery query, CancellationToken cancellationToken);
 
-    /// <summary>Counts all Sensors in the current catalog, independently of paging.</summary>
-    Task<long> CountSensorsAsync(CancellationToken cancellationToken);
+    /// <summary>Counts the Sensors matching the query's filter, ignoring paging and ordering.</summary>
+    Task<long> CountSensorsAsync(CatalogQuery query, CancellationToken cancellationToken);
 
-    /// <summary>Counts all ObservedProperties in the current catalog, independently of paging.</summary>
-    Task<long> CountObservedPropertiesAsync(CancellationToken cancellationToken);
+    /// <summary>Counts the ObservedProperties matching the query's filter, ignoring paging and ordering.</summary>
+    Task<long> CountObservedPropertiesAsync(CatalogQuery query, CancellationToken cancellationToken);
 
-    /// <summary>Counts all Datastreams in the current catalog, independently of paging.</summary>
-    Task<long> CountDatastreamsAsync(CancellationToken cancellationToken);
+    /// <summary>Counts the Datastreams matching the query's filter, ignoring paging and ordering.</summary>
+    Task<long> CountDatastreamsAsync(CatalogQuery query, CancellationToken cancellationToken);
 
     /// <summary>Counts observations matching the datastream and filter, ignoring paging and ordering.</summary>
     Task<long> CountObservationsAsync(ObservationQuery query, CancellationToken cancellationToken);
 
-    /// <summary>Lists all datastreams in the catalog.</summary>
-    /// <param name="skip">Number of leading rows to skip.</param>
-    /// <param name="top">Maximum rows to return.</param>
+    /// <summary>Lists the datastreams matching the query's filter, ordering, and paging.</summary>
+    /// <param name="query">The filter, ordering, and paging to apply.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<IReadOnlyList<SensorThingsDatastream>> ListDatastreamsAsync(
-        int skip,
-        int top,
+        CatalogQuery query,
         CancellationToken cancellationToken);
 
     /// <summary>Gets a single datastream by identifier, or <see langword="null"/> if absent.</summary>
     Task<SensorThingsDatastream?> GetDatastreamAsync(long id, CancellationToken cancellationToken);
 
-    /// <summary>Lists all Things in the catalog.</summary>
-    Task<IReadOnlyList<SensorThingsThing>> ListThingsAsync(int skip, int top, CancellationToken cancellationToken);
+    /// <summary>Lists the Things matching the query's filter, ordering, and paging.</summary>
+    Task<IReadOnlyList<SensorThingsThing>> ListThingsAsync(CatalogQuery query, CancellationToken cancellationToken);
 
     /// <summary>Gets a single Thing by identifier, or <see langword="null"/> if absent.</summary>
     Task<SensorThingsThing?> GetThingAsync(long id, CancellationToken cancellationToken);
 
-    /// <summary>Lists all Sensors in the catalog.</summary>
-    Task<IReadOnlyList<SensorThingsSensor>> ListSensorsAsync(int skip, int top, CancellationToken cancellationToken);
+    /// <summary>Lists the Sensors matching the query's filter, ordering, and paging.</summary>
+    Task<IReadOnlyList<SensorThingsSensor>> ListSensorsAsync(CatalogQuery query, CancellationToken cancellationToken);
 
     /// <summary>Gets a single Sensor by identifier, or <see langword="null"/> if absent.</summary>
     Task<SensorThingsSensor?> GetSensorAsync(long id, CancellationToken cancellationToken);
 
-    /// <summary>Lists all ObservedProperties in the catalog.</summary>
+    /// <summary>Lists the ObservedProperties matching the query's filter, ordering, and paging.</summary>
     Task<IReadOnlyList<SensorThingsObservedProperty>> ListObservedPropertiesAsync(
-        int skip,
-        int top,
+        CatalogQuery query,
         CancellationToken cancellationToken);
 
     /// <summary>Gets a single ObservedProperty by identifier, or <see langword="null"/> if absent.</summary>

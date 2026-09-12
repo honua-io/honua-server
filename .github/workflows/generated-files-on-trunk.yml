@@ -1,0 +1,54 @@
+name: Regenerate Generated Files on Trunk
+
+on:
+  push:
+    branches: [trunk]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: generated-files-on-trunk
+  cancel-in-progress: false
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: trunk
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # PR Gate already enforces analyzers. Match the trailing foundation
+      # rebuild: compiler errors and generator/input validation remain hard.
+      - name: Regenerate repository projections
+        run: bash scripts/ci/regenerate-generated-files.sh --configuration Release /p:RunAnalyzers=false
+
+      - name: Validate authored inputs against fresh projections
+        run: |
+          python3 scripts/ci/validate-cite-openapi-compliance.py
+          dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            --filter 'FullyQualifiedName~FeatureCatalog|FullyQualifiedName~GeoServicesParityMatrixDriftTests|FullyQualifiedName~PublicInterfaceProofLedgerTests'
+
+      # Never a direct trunk write; see the header of publish-generated-files.sh
+      # for why (#3213, #4540/#4653). A merge of the PR this opens is itself a
+      # trunk push, but the diff it lands is byte-identical to what this run
+      # just committed, so that follow-up run finds nothing to publish and
+      # exits at the check above -- no self-trigger guard needed.
+      - name: Open or refresh the generated-files PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/publish-generated-files.sh

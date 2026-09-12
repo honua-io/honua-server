@@ -68,7 +68,10 @@ internal static class StaEntityMapper
     public static StaDatastream MapDatastream(
         SensorThingsDatastream datastream,
         string staBase,
-        IReadOnlyList<StaObservation>? expandedObservations = null)
+        IReadOnlyList<StaObservation>? expandedObservations = null,
+        StaThing? expandedThing = null,
+        StaSensor? expandedSensor = null,
+        StaObservedProperty? expandedObservedProperty = null)
     {
         string? phenomenonTime = null;
         if (datastream.PhenomenonTimeStart is { } start && datastream.PhenomenonTimeEnd is { } end)
@@ -94,7 +97,10 @@ internal static class StaEntityMapper
             ThingNavigationLink = $"{staBase}/Datastreams({datastream.Id})/Thing",
             SensorNavigationLink = $"{staBase}/Datastreams({datastream.Id})/Sensor",
             ObservedPropertyNavigationLink = $"{staBase}/Datastreams({datastream.Id})/ObservedProperty",
-            Observations = expandedObservations
+            Observations = expandedObservations,
+            Thing = expandedThing,
+            Sensor = expandedSensor,
+            ObservedProperty = expandedObservedProperty
         };
     }
 }

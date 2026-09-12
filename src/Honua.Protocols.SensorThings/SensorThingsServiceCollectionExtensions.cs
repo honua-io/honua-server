@@ -30,7 +30,7 @@ internal static class SensorThingsServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.TryAddScoped<StaObservationFilterTranslator>();
+        services.TryAddScoped<StaFilterTranslator>();
 
         // Per-principal, per-tenant and per-node admission caps (#4198). Validated at
         // startup so a per-scope cap can never be configured at or above the node cap.
