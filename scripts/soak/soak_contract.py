@@ -41,6 +41,15 @@ SIGNATURE_MEMBERS = ("signature", "signingIdentity", "signatureFormat", "signing
 #: Signal status values. Only OBSERVED can pass: a skipped, failed or unattempted
 #: measurement keeps its own status and reds the run, per the capacity envelope doc
 #: ("a skipped, null, non-finite, stale, or revision-mismatched signal fails").
+#: Envelope-dimension coverage. `verified` means the soak established the dimension on the
+#: deployment under test AND re-observed it there. `not-exercised` means the lock declares the
+#: dimension but this run deliberately did not drive it — the receipt says so out loud, in
+#: `envelopeCoverage.declaredNotExercised`, rather than letting a verbatim copy of the lock's
+#: envelope block imply coverage that did not happen. There is no third, silent state: a
+#: dimension with neither record fails `build_receipt`.
+COVERAGE_VERIFIED = "verified"
+COVERAGE_NOT_EXERCISED = "not-exercised"
+
 STATUS_OBSERVED = "observed"
 STATUS_UNOBSERVED = "unobserved"
 STATUS_FAILED = "failed"
@@ -223,14 +232,26 @@ def build_receipt(
     is how the checker's equality test is satisfied, but the claim it makes is backed by
     `envelopeVerification`, not by the copy.
     """
-    unverified = [
+    declared_dimensions = set((lock.get("supportedEnvelope") or {}).keys())
+    recorded = set(envelope_verification)
+    missing = declared_dimensions - recorded
+    if missing:
+        raise ContractError(
+            "refusing to claim the declared envelope: no coverage record for " + ", ".join(sorted(missing))
+        )
+
+    bad_coverage = sorted(
         name
         for name, record in envelope_verification.items()
-        if not record.get("verified")
-    ]
-    if unverified:
+        if record.get("coverage") not in (COVERAGE_VERIFIED, COVERAGE_NOT_EXERCISED)
+        or (record.get("coverage") == COVERAGE_VERIFIED and not record.get("verified"))
+    )
+    if bad_coverage:
+        # A dimension that was meant to be verified and was not is a failed run, not a
+        # footnote: the alternative is a receipt whose `envelope` block claims capacity the
+        # soak never established.
         raise ContractError(
-            "refusing to claim the declared envelope: unverified dimension(s): " + ", ".join(sorted(unverified))
+            "refusing to claim the declared envelope: unverified dimension(s): " + ", ".join(bad_coverage)
         )
 
     missing = [name for name in required_signals(lock) if name not in signals]
@@ -262,6 +283,15 @@ def build_receipt(
     }
     if unobserved:
         receipt["unobservedSignals"] = unobserved
+
+    not_exercised = sorted(
+        name for name, record in envelope_verification.items()
+        if record.get("coverage") == COVERAGE_NOT_EXERCISED
+    )
+    receipt["envelopeCoverage"] = {
+        "verified": sorted(set(envelope_verification) - set(not_exercised)),
+        "declaredNotExercised": not_exercised,
+    }
     return receipt
 
 

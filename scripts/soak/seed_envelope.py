@@ -31,6 +31,7 @@ from typing import Any
 import psycopg
 
 SERVICE_NAME = "test"
+FEATURES_SCHEMA = "public"
 
 # The spatial scenario in tests/dotnet/Honua.TestKit/Performance/LoadTestScenarios.cs
 # generates envelopes inside this box, so features have to live here for the soak to
@@ -48,6 +49,11 @@ def _layer_rows(layer_count: int) -> list[tuple[Any, ...]]:
                 layer_id,
                 f"Capacity Soak Layer {layer_id}",
                 "Capacity envelope layer seeded by scripts/soak/seed_envelope.py",
+                # Explicit, never current_schema(): migration 001 creates `features` in the
+                # database's default schema (public), while the seeding session's search_path can
+                # resolve to honua. A layer row pointing at honua.features compiles into the served
+                # catalog and then 500s on every query with 42P01.
+                FEATURES_SCHEMA,
                 "features",
                 "Point",
                 4326,
@@ -79,13 +85,13 @@ def seed(connection, *, layer_count: int, features_per_layer: int) -> None:
             ("test", "Capacity soak service (honua-release#235)", minx, miny, maxx, maxy),
         )
 
-        for layer_id, name, description, table_name, geometry_type, srid, visible in _layer_rows(layer_count):
+        for layer_id, name, description, table_schema, table_name, geometry_type, srid, visible in _layer_rows(layer_count):
             cur.execute(
                 """
                 INSERT INTO honua.layers (
                     layer_id, layer_name, description, table_schema, table_name,
                     geometry_type, srid, extent, default_visibility, metadata)
-                VALUES (%s, %s, %s, current_schema(), %s, %s, %s,
+                VALUES (%s, %s, %s, %s, %s, %s, %s,
                         ST_MakeEnvelope(%s, %s, %s, %s, 4326), %s,
                         '{"timeInfo":{"startTimeField":"timestamp","endTimeField":"event_date"}}'::jsonb)
                 ON CONFLICT (layer_id) DO UPDATE SET
@@ -99,7 +105,7 @@ def seed(connection, *, layer_count: int, features_per_layer: int) -> None:
                     default_visibility = EXCLUDED.default_visibility,
                     metadata = EXCLUDED.metadata;
                 """,
-                (layer_id, name, description, table_name, geometry_type, srid,
+                (layer_id, name, description, table_schema, table_name, geometry_type, srid,
                  minx, miny, maxx, maxy, visible),
             )
             cur.execute(
@@ -139,14 +145,14 @@ def seed(connection, *, layer_count: int, features_per_layer: int) -> None:
 
         # Re-seeding must be idempotent: the envelope is "featuresPerLayer", not
         # "featuresPerLayer per run".
-        cur.execute("DELETE FROM features WHERE layer_id = ANY(%s);", (list(range(layer_count)),))
+        cur.execute(f"DELETE FROM {FEATURES_SCHEMA}.features WHERE layer_id = ANY(%s);", (list(range(layer_count)),))
 
         for layer_id in range(layer_count):
             # Deterministic, evenly distributed points across the seeded extent, generated
             # server-side so 10k rows/layer cost one statement rather than 10k round trips.
             cur.execute(
                 """
-                INSERT INTO features (layer_id, geometry, attributes)
+                INSERT INTO public.features (layer_id, geometry, attributes)
                 SELECT
                     %s,
                     ST_SetSRID(ST_MakePoint(
@@ -166,7 +172,7 @@ def seed(connection, *, layer_count: int, features_per_layer: int) -> None:
                 (layer_id, minx, maxx, minx, miny, maxy, miny, features_per_layer),
             )
 
-        cur.execute("ANALYZE features;")
+        cur.execute(f"ANALYZE {FEATURES_SCHEMA}.features;")
     connection.commit()
 
 
@@ -178,7 +184,7 @@ def observe(connection, *, layer_count: int) -> dict[str, Any]:
         cur.execute("SELECT COUNT(*) FROM honua.service_layers WHERE service_name = %s;", (SERVICE_NAME,))
         layers = cur.fetchone()[0]
         cur.execute(
-            "SELECT layer_id, COUNT(*) FROM features WHERE layer_id = ANY(%s) GROUP BY layer_id ORDER BY layer_id;",
+            "SELECT layer_id, COUNT(*) FROM public.features WHERE layer_id = ANY(%s) GROUP BY layer_id ORDER BY layer_id;",
             (list(range(layer_count)),),
         )
         per_layer = {str(row[0]): row[1] for row in cur.fetchall()}
