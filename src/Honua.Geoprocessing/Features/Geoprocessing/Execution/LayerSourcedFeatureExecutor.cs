@@ -518,6 +518,15 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     if (bytes > budget) { break; }
                 }
                 break;
+            case System.Collections.IDictionary dictionary:
+                bytes += 8;
+                foreach (System.Collections.DictionaryEntry entry in dictionary)
+                {
+                    ChargeValue(entry.Key, ref bytes, budget, depth + 1);
+                    ChargeValue(entry.Value, ref bytes, budget, depth + 1);
+                    if (bytes > budget) { break; }
+                }
+                break;
             case System.Collections.IEnumerable items:
                 bytes += 8;
                 foreach (var item in items)

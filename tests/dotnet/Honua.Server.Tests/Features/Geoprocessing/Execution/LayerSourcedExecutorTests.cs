@@ -180,13 +180,20 @@ public sealed class LayerSourcedExecutorTests
         geometryOps.ReceivedCalls().Should().BeEmpty();
     }
 
-    [UnitTest]
-    public async Task Dissolve_NestedUnicodeAttributes_AreChargedToInputBudget()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task Dissolve_NestedUnicodeAttributes_AreChargedToInputBudget(bool jsonElement)
     {
         using var document = System.Text.Json.JsonDocument.Parse("{\"items\":[\"" + new string('界', 200) + "\"]}");
         var feature = PointFeature(1, 2) with
         {
-            Attributes = new Dictionary<string, object?> { ["tree"] = document.RootElement }
+            Attributes = new Dictionary<string, object?>
+            {
+                ["tree"] = jsonElement ? document.RootElement : new Dictionary<string, string> { ["items"] = new string('界', 200) }
+            }
         };
         var (status, uri, _) = await RunAsync(
             new LayerDissolveExecutor(ScopeFactory(new FakeDagFeatureSource(HonuaLayerSourceId, [feature])),
