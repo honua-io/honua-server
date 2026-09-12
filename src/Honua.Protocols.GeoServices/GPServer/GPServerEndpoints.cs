@@ -502,12 +502,12 @@ internal static class GPServerEndpoints
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Failed)
             {
-                return BuildExecuteFailureResponse(terminal.Job!, "esriJobFailed");
+                return BuildExecuteFailureResponse(context, terminal.Job!, "esriJobFailed");
             }
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Cancelled)
             {
-                return BuildExecuteFailureResponse(terminal.Job!, "esriJobCancelled");
+                return BuildExecuteFailureResponse(context, terminal.Job!, "esriJobCancelled");
             }
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Timeout)
@@ -631,27 +631,35 @@ internal static class GPServerEndpoints
         return artifact.Label;
     }
 
-    private static IResult BuildExecuteFailureResponse(ExecutionJobRecord job, string esriStatus)
+    /// <summary>
+    /// A failed or cancelled synchronous <c>execute</c> is an error, not a result (#4034).
+    /// Esri clients (ArcGIS Maps SDK, ArcGIS API for Python, Pro) decide success by the
+    /// absence of an <c>error</c> object, so the former <c>{ results: [], jobStatus }</c>
+    /// envelope read as an empty successful run. Emit the GeoServices error envelope
+    /// (<c>{ "error": { "code": 500, ... } }</c>, the same shape ArcGIS Server returns for
+    /// "Error executing tool") and keep the job id, terminal status, and the job's own
+    /// error message in <c>details</c> so the failed job stays traceable.
+    /// </summary>
+    private static IResult BuildExecuteFailureResponse(HttpContext context, ExecutionJobRecord job, string esriStatus)
     {
-        var messages = new List<GPJobMessage>();
-        if (job.ErrorMessage != null)
+        var cancelled = string.Equals(esriStatus, "esriJobCancelled", StringComparison.Ordinal);
+        var details = new List<string>
         {
-            messages.Add(new GPJobMessage
-            {
-                Type = "esriJobMessageTypeError",
-                Description = job.ErrorMessage
-            });
+            $"jobId: {job.OperationId}",
+            $"jobStatus: {esriStatus}"
+        };
+        if (!string.IsNullOrWhiteSpace(job.ErrorMessage))
+        {
+            details.Add(job.ErrorMessage);
         }
 
-        var response = new GPExecuteResponse
-        {
-            Results = [],
-            Messages = [.. messages],
-            JobStatus = esriStatus
-        };
-
         return SetSpanErrorAndReturn(
-            Results.Json(response, GPServerJsonContext.Default.GPExecuteResponse, contentType: "application/json"),
+            StandardErrorHelpers.CreateInternalServerError(
+                context,
+                cancelled
+                    ? $"Error executing tool: synchronous GP job '{job.OperationId}' was cancelled."
+                    : $"Error executing tool: synchronous GP job '{job.OperationId}' failed.",
+                details),
             $"Synchronous execution {esriStatus}");
     }
 
@@ -1300,7 +1308,9 @@ internal static class GPServerEndpoints
     /// other <c>env:*</c> control is unsupported and surfaced for a 400 response.
     /// <c>env:workspace</c> mirrors arcpy's <c>arcpy.env.workspace</c> (default
     /// output location for tool results) and <c>env:overwriteOutput</c> mirrors
-    /// <c>arcpy.env.overwriteOutput</c> (default <c>False</c>).
+    /// <c>arcpy.env.overwriteOutput</c> (default <c>False</c>). The Esri 10.6.1+
+    /// <c>context</c> JSON parameter feeds the same <c>OutSr</c>/<c>ProcessSr</c> slots
+    /// (see <see cref="TryApplyContextControls"/>).
     /// </summary>
     private readonly record struct EnvControls(int? OutSr, int? ProcessSr, string? Workspace, bool? OverwriteOutput);
 
@@ -1396,9 +1406,145 @@ internal static class GPServerEndpoints
                 $"Unsupported GP env controls: {names}");
         }
 
+        var contextError = TryApplyContextControls(context, logger, allParams, ref outSr, ref processSr);
+        if (contextError != null)
+        {
+            return contextError;
+        }
+
         controls = new EnvControls(outSr, processSr, workspace, overwriteOutput);
         return null;
     }
+
+    /// <summary>
+    /// Applies the Esri 10.6.1+ <c>context</c> parameter, the JSON successor to the
+    /// <c>env:*</c> controls (#4030). <c>context.outSR</c> and <c>context.processSR</c>
+    /// resolve to the same controls as <c>env:outSR</c> / <c>env:processSR</c>, so both
+    /// execution routes treat them exactly like the env form. An absent, <c>null</c>, or
+    /// empty <c>extent</c> constrains nothing and is accepted; every other property —
+    /// including a non-empty <c>extent</c> — is rejected with a 400 rather than silently
+    /// ignored, the same accept-and-honor-or-reject convention as <c>env:*</c>. A context
+    /// spatial reference that disagrees with the corresponding <c>env:*</c> control is
+    /// ambiguous and rejected.
+    /// </summary>
+    private static IResult? TryApplyContextControls(
+        HttpContext context,
+        ILogger logger,
+        IReadOnlyDictionary<string, string> allParams,
+        ref int? outSr,
+        ref int? processSr)
+    {
+        if (!allParams.TryGetValue("context", out var rawContext) || string.IsNullOrWhiteSpace(rawContext))
+        {
+            return null;
+        }
+
+        System.Text.Json.JsonDocument document;
+        try
+        {
+            document = System.Text.Json.JsonDocument.Parse(rawContext);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, "context must be a JSON object."),
+                "Invalid GP context");
+        }
+
+        using (document)
+        {
+            var root = document.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context, "context must be a JSON object."),
+                    "Invalid GP context");
+            }
+
+            int? contextOutSr = null;
+            int? contextProcessSr = null;
+            List<string>? unsupported = null;
+            foreach (var property in root.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "outSR", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!TryParseContextSpatialReference(property.Value, out contextOutSr))
+                    {
+                        return SetSpanErrorAndReturn(
+                            StandardErrorHelpers.CreateBadRequest(context,
+                                $"context.outSR value '{property.Value.GetRawText()}' is not a valid WKID or spatial-reference object."),
+                            "Invalid context.outSR");
+                    }
+                }
+                else if (string.Equals(property.Name, "processSR", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!TryParseContextSpatialReference(property.Value, out contextProcessSr))
+                    {
+                        return SetSpanErrorAndReturn(
+                            StandardErrorHelpers.CreateBadRequest(context,
+                                $"context.processSR value '{property.Value.GetRawText()}' is not a valid WKID or spatial-reference object."),
+                            "Invalid context.processSR");
+                    }
+                }
+                else if (string.Equals(property.Name, "extent", StringComparison.OrdinalIgnoreCase)
+                    && IsEmptyContextValue(property.Value))
+                {
+                    continue;
+                }
+                else
+                {
+                    unsupported ??= [];
+                    unsupported.Add($"context.{property.Name}");
+                }
+            }
+
+            if (unsupported != null)
+            {
+                var names = string.Join(", ", unsupported);
+                GPServerLog.UnsupportedEnvControlsRejected(logger, names);
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context,
+                        $"GP context properties are not yet supported: {names}. " +
+                        "Remove these properties or wait for engine support."),
+                    $"Unsupported GP context properties: {names}");
+            }
+
+            var conflict = DescribeContextConflict("outSR", outSr, contextOutSr)
+                ?? DescribeContextConflict("processSR", processSr, contextProcessSr);
+            if (conflict != null)
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context, conflict),
+                    "Conflicting GP env and context controls");
+            }
+
+            outSr ??= contextOutSr;
+            processSr ??= contextProcessSr;
+            return null;
+        }
+    }
+
+    private static bool TryParseContextSpatialReference(System.Text.Json.JsonElement value, out int? srid)
+    {
+        srid = null;
+        return value.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.Null => true,
+            System.Text.Json.JsonValueKind.Number or System.Text.Json.JsonValueKind.Object =>
+                TryParseSpatialReferenceValue(value.GetRawText(), out srid),
+            System.Text.Json.JsonValueKind.String => TryParseSpatialReferenceValue(value.GetString(), out srid),
+            _ => false
+        };
+    }
+
+    private static bool IsEmptyContextValue(System.Text.Json.JsonElement value)
+        => value.ValueKind == System.Text.Json.JsonValueKind.Null
+            || (value.ValueKind == System.Text.Json.JsonValueKind.Object && !value.EnumerateObject().Any());
+
+    private static string? DescribeContextConflict(string name, int? envValue, int? contextValue)
+        => envValue is { } fromEnv && contextValue is { } fromContext && fromEnv != fromContext
+            ? $"env:{name}={fromEnv} conflicts with context.{name}={fromContext}; send one spatial reference."
+            : null;
 
     /// <summary>
     /// Parses an Esri-style boolean parameter value: <c>bool.TryParse</c> first
