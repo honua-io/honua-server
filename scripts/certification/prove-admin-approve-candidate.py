@@ -2,7 +2,7 @@
 """Prove scoped approval effects against an immutable candidate in isolated Docker.
 
 This is server API evidence, not a Console browser or terminal-journey receipt.
-Requires Docker Compose and an already pulled server image identified by digest.
+Requires Docker Compose and already pulled server and fixture images identified by digest.
 """
 
 import argparse
@@ -18,6 +18,10 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+
+
+POSTGIS_IMAGE = "postgis/postgis@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677"
+REDIS_IMAGE = "redis@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed"
 
 
 def require(condition, message):
@@ -37,10 +41,13 @@ def prove(image, revision):
                  '{{index .Config.Labels "org.opencontainers.image.revision"}}')
     require(actual == revision, "Candidate image source revision differs from the expected pin")
     image_id = run("docker", "image", "inspect", image, "--format", "{{.Id}}")
+    fixtures = {name: {"image": dependency,
+                       "imageId": run("docker", "image", "inspect", dependency, "--format", "{{.Id}}")}
+                for name, dependency in [("postgis", POSTGIS_IMAGE), ("redis", REDIS_IMAGE)]}
     project = "approve-proof-" + uuid.uuid4().hex[:12]
     admin_key = secrets.token_hex(32)
     receipt = {"schemaVersion": "honua.admin-approve-candidate/v1",
-               "image": image, "imageId": image_id, "sourceRevision": revision,
+               "image": image, "imageId": image_id, "sourceRevision": revision, "fixtureImages": fixtures,
                "environment": "Development", "devGrantEdition": "Pro",
                "scope": "server API; excludes Console browser qualification", "checks": {}}
 
@@ -58,11 +65,11 @@ def prove(image, revision):
             "Licensing__DevGrantEdition": "Pro",
         }
         compose = {"services": {
-            "postgres": {"image": "postgis/postgis:18-3.6", "environment": {
+            "postgres": {"image": POSTGIS_IMAGE, "environment": {
                 "POSTGRES_DB": "honua", "POSTGRES_USER": "honua", "POSTGRES_PASSWORD": admin_key},
                 "healthcheck": {"test": ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U honua -d honua"],
                                 "interval": "2s", "retries": 30}},
-            "redis": {"image": "redis:7.2-alpine", "command": ["redis-server", "--appendonly", "yes"]},
+            "redis": {"image": REDIS_IMAGE, "command": ["redis-server", "--appendonly", "yes"]},
             "server": {"image": image, "ports": ["127.0.0.1::8080"],
                        "environment": environment,
                        "depends_on": {"postgres": {"condition": "service_healthy"}}},

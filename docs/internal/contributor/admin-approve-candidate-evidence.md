@@ -15,7 +15,8 @@ any stale success receipt before execution.
 ## Reproduce the server proof
 
 Use the server digest and source revision from the release manifest. Pull the
-image first, then run the certification script; it checks the image's source
+server image and the two fixture digests declared in the script first, then run
+the certification script; it checks the image's source
 label against the supplied revision before starting any containers.
 
 ```bash
@@ -27,7 +28,8 @@ python3 scripts/certification/prove-admin-approve-candidate.py \
 
 The fixture uses the documented Development Pro entitlement, a private Compose
 network, random credentials, a loopback-only port, PostGIS 18/3.6, and Redis 7.2
-with AOF enabled. It removes its containers and volumes on completion. The
+with AOF enabled. Both fixture images are pinned by digest; the receipt records
+those references and their Docker image identities. It removes its containers and volumes on completion. The
 receipt contains no credentials. This is a development entitlement fixture,
 not a production license qualification or a restart/recovery proof.
 
