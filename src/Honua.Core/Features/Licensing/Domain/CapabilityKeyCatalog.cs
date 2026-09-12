@@ -110,6 +110,9 @@ public static class CapabilityKeyCatalog
 
         /// <summary>Third-party data enrichment dataset surfaces.</summary>
         public const string Enrichment = "Enrichment";
+
+        /// <summary>Durable job/task execution substrate surfaces.</summary>
+        public const string Jobs = "Jobs";
     }
 
     /// <summary>
@@ -168,6 +171,12 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Community, "Serve published 3D Tiles scene layers through the SceneServer surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately."),
         new("serve.elevation", "Elevation Query", Categories.Serve,
             HonuaEdition.Community, "Query elevation profile and point-value surfaces. Sun/shadow, slice, line-of-sight, and viewshed analytics are Pro-gated separately."),
+        new("serve.grpc", "gRPC (geospatial.v1)", Categories.Serve,
+            HonuaEdition.Community, "The geospatial.v1 gRPC surface — FeatureService, ProcessService, SpecService, SceneService, TileService and ElevationService — served natively over h2c on port 8081 and as gRPC-Web on 8080. Advertised as transport.grpc, transport.grpc-web and transport.native-grpc on the capability manifest, which are wire framings of this one capability."),
+
+        // Jobs
+        new("jobs.durable-runtime", "Durable Job Runtime", Categories.Jobs,
+            HonuaEdition.Community, "The durable job substrate behind imports, tile operations, geoprocessing and workflow orchestration. Advertised as jobs.runner on the honua.capability_manifest.v1 wire and named by typed dependency-unavailable refusals, so a client receiving one can resolve the id. The runtime itself is Community; durable persistence across restarts and nodes requires Redis, which caching.redis gates."),
 
         // Discovery
         new("discovery.capability-manifest", "Capability Manifest", Categories.Discovery,
