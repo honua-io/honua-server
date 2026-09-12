@@ -25,7 +25,7 @@ internal sealed class GeoprocessingExecutorOptions
     [Range(1024, 1024L * 1024L * 1024L, ErrorMessage = "MaxArtifactBytes must be between 1 KiB and 1 GiB")]
     public long MaxArtifactBytes { get; set; } = 50L * 1024L * 1024L;
 
-    /// <summary>Maximum wall time allowed for layer reading, managed computation and serialization.</summary>
+    /// <summary>Cancellation deadline for layer execution; checked between admitted managed topology calls.</summary>
     [Range(1, 3600)]
     public int MaxLayerExecutionSeconds { get; set; } = 300;
 
