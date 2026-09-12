@@ -9,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.SensorThings.Domain;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.Db.Postgres.Features.Raster;
@@ -203,7 +204,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             new TestConnectionProvider(connectionString),
             guard,
             schema);
-        var things = await observationStore.ListThingsAsync(0, 10, CancellationToken.None);
+        var things = await observationStore.ListThingsAsync(CatalogQuery.Page(0, 10), CancellationToken.None);
         things.Should().ContainSingle(thing => thing.Id == 1,
             "runtime SensorThings SQL must read from the same configured schema the guard verified");
 
@@ -425,7 +426,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             new TestConnectionProvider(connectionString),
             approvedGuard,
             schema);
-        (await observationStore.ListThingsAsync(0, 10, CancellationToken.None))
+        (await observationStore.ListThingsAsync(CatalogQuery.Page(0, 10), CancellationToken.None))
             .Should().ContainSingle(thing => thing.Id == 1,
                 "the adopted SensorThings rows must remain available through configured-schema runtime SQL");
 
@@ -681,7 +682,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
 
             case StoreOperation.SensorThingsRead:
                 var observationStore = new PostgresObservationStore(provider, guard);
-                await observationStore.ListThingsAsync(0, 1, CancellationToken.None);
+                await observationStore.ListThingsAsync(CatalogQuery.Page(0, 1), CancellationToken.None);
                 return;
 
             case StoreOperation.MetadataReleasePackageRead:
