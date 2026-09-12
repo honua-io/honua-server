@@ -83,6 +83,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0076](0076-retire-server-side-generation-families.md) | Retire the Server-Side Generation Families; Re-found Package Creation Deterministically | Accepted | 2026-08 |
 | [0077](0077-studio-model-routing-default.md) | Model Routing Is a Client Choice — Proxy Default for the Browser, Client-Direct Elsewhere | Accepted | 2026-08 |
 | [0078](0078-3d-scene-architecture.md) | 3D Scene Architecture — Canonical 3D Tiles, I3S Projection, and Runtime Resolution | Accepted | 2026-08 |
+| [0079](0079-protocol-route-scoping.md) | A protocol's route is scoped by its own addressable unit | Accepted | 2026-09 |
 
 ## Template
 

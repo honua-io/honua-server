@@ -89,6 +89,8 @@ Every published layer is reachable through every protocol its service enables. T
 | MCP (JSON-RPC) | `/mcp` | AI agents, operator automation, MCP clients |
 | gRPC (`geospatial.v1`) | port `8081` (h2c), gRPC-Web on `8080` | Honua SDKs, mobile, services |
 
+Path shapes differ on purpose: each protocol carries exactly the scope its own specification makes the addressable unit. WMS, WMTS and WCS render a composition, so a service is in the path; WFS returns features that `TYPENAMES` already identifies, so it is served unscoped at `/wfs` with no service-scoped form and no GeoServices alias. The rule, and why adding one for symmetry would be a regression, is [ADR-0079](docs/internal/contributor/adr/0079-protocol-route-scoping.md).
+
 Surfaces marked **(Pro)** / **(Enterprise)** require a signed license; everything unmarked is Community. The machine-readable capability vocabulary behind this table is [`docs/gis/data/capability-keys.v1.json`](docs/gis/data/capability-keys.v1.json) (generated from `CapabilityKeyCatalog.cs`) — keep the table in sync with it.
 
 Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), OpenAPI documents per OGC API, an interactive API explorer at `/docs` (dev mode or `HONUA_SERVE_API_DOCS=true`), the admin API (`/api/v1/admin`), and a capability manifest (`/api/v1/capabilities/manifest`) for clients to discover what a deployment supports.
