@@ -2,7 +2,7 @@
 """Exercise staged metadata release/recovery in a manifest-pinned installed image.
 
 Only lane-created Docker resources are touched. SQL establishes/observes the fixture;
-release submission and progression use the installed admin API, and feature/schema
+release submission uses the admin API and the installed worker advances stages; feature/schema
 assertions use its public FeatureServer. No source-built server or mocked services.
 """
 from __future__ import annotations
@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+STATUSES = ("Planned", "AwaitingApproval", "Submitted", "Reconciling", "Succeeded", "Failed", "RollbackRequested", "RolledBack", "ManualInterventionRequired")
+STAGES = ("Preflight", "Backup", "ScriptMigration", "MetadataApply", "ServicePublication", "Smoke", "SloWatch", "Promotion", "Complete", "Failed", "RollbackRequested")
 TERMINAL = {"Succeeded", "Failed", "RolledBack", "ManualInterventionRequired"}
 EXPECTED = {
     "Harbor City": (-122.4194, 37.7749, 1000000),
@@ -68,13 +70,13 @@ class Harness:
                         "createdAt": datetime.now(timezone.utc).isoformat(), "scenarios": [], "status": "failed"}
 
     def sql(self, statement: str) -> str:
-        return run("docker", "exec", "-i", self.pg, "psql", "-XAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "honua", data=statement)
+        return run("docker", "exec", "-i", "-e", "PGPASSWORD=" + self.password, self.pg, "psql", "-h", "127.0.0.1", "-XAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "honua", data=statement)
 
-    def request(self, path: str, payload=None, admin=False, status=200):
+    def request(self, path: str, payload=None, admin=False, status=200, method=None):
         headers = {"Content-Type": "application/json"}
         if admin:
             headers["X-API-Key"] = self.password
-        request = urllib.request.Request(self.base + path, data=None if payload is None else json.dumps(payload).encode(), headers=headers)
+        request = urllib.request.Request(self.base + path, data=None if payload is None else json.dumps(payload).encode(), headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
                 code, raw = response.status, response.read()
@@ -85,6 +87,7 @@ class Harness:
         return json.loads(raw) if raw else None
 
     def ready(self):
+        self.base = "http://" + run("docker", "port", self.server, "8080/tcp")
         deadline = time.monotonic() + 150
         while time.monotonic() < deadline:
             try:
@@ -111,7 +114,8 @@ class Harness:
             args = ["docker", "run", "-d", "--name", name, "--network", self.prefix]
             for entry in env:
                 args += ["-e", entry]
-            run(*args, image)
+            extra = ["redis-server", "--appendonly", "yes", "--appendfsync", "always"] if name == self.redis else []
+            run(*args, image, *extra)
             self.created.append(name)
         for _ in range(60):
             try:
@@ -120,15 +124,15 @@ class Harness:
             except RuntimeError:
                 pass
             time.sleep(1)
-        # Event mode suppresses polling; supported operation reads drive exactly one stage.
-        # The backstop remains configured, but its day-long interval cannot race this test.
+        # Durable test-owned leases pause the real polling worker between stages.
+        # Only the worker writes operation records; the harness never manufactures a stage.
         env = {
             "ASPNETCORE_ENVIRONMENT": "Development", "ASPNETCORE_URLS": "http://+:8080",
             "Kestrel__Endpoints__Http__Url": "http://+:8080", "PUBLIC_BASE_URL": "http://localhost:8080",
             "HONUA_ADMIN_PASSWORD": self.password, "Licensing__DevGrantEdition": "Enterprise",
             "ConnectionStrings__DefaultConnection": f"Host={self.pg};Database=honua;Username=postgres;Password={self.password}",
             "ConnectionStrings__Redis": self.redis + ":6379", "HostValidation__Enabled": "false",
-            "Cache__Enabled": "false", "ControlPlane__TriggerMode": "Event",
+            "Cache__Enabled": "false", "Metadata__Environment": "default", "ControlPlane__TriggerMode": "Poll",
             "ControlPlane__BackstopInterval": "1.00:00:00", "ControlPlane__StaleThreshold": "1.00:00:00",
             "ControlPlane__MetadataRelease__FaultInjection__Enabled": "true",
             "ControlPlane__MetadataRelease__FaultInjection__ForceSmokeFailure": "true",
@@ -150,18 +154,46 @@ class Harness:
         return json.loads(self.sql("SELECT json_build_object('revision',c.revision,'etag',c.etag,'graph',s.document) FROM honua.metadata_v2_current c JOIN honua.metadata_v2_snapshots s USING(environment,revision) WHERE c.environment='default';"))
 
     def operation(self, operation_id):
-        return json.loads(run("docker", "exec", self.redis, "redis-cli", "--raw", "GET", "controlplane:workflow:" + operation_id))
+        op = json.loads(run("docker", "exec", self.redis, "redis-cli", "--raw", "GET", "controlplane:workflow:" + operation_id))
+        if isinstance(op["status"], int):
+            op["status"] = STATUSES[op["status"]]
+        release = op["metadataRelease"]
+        if isinstance(release["currentStage"], int):
+            release["currentStage"] = STAGES[release["currentStage"]]
+        return op
 
     def submit(self, label, **overrides):
         payload = {"packageId": "installed-" + label, "targetEnvironment": "staging", "resourceSemanticId": "res-cng-1000",
                    "newFieldName": "owner_email", "newFieldType": "String", "idempotencyKey": label}
         payload.update(overrides)
+        operation_id = "metadata-release-" + label
+        self.hold(operation_id)
         response = self.request("/api/v1/admin/metadata/releases/operations", payload, admin=True, status=201)
         return response["operationId"]
 
+    def hold(self, operation_id):
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline:
+            result = run("docker", "exec", self.redis, "redis-cli", "--raw", "SET",
+                         "controlplane:workflow:lease:" + operation_id, self.prefix, "NX", "PX", "600000")
+            if result == "OK":
+                return
+            time.sleep(0.05)
+        raise AssertionError("could not pause worker at durable stage boundary")
+
     def advance(self, operation_id):
-        self.request("/api/v1/admin/deploy/operations/" + operation_id, admin=True)
-        return self.operation(operation_id)
+        before = self.operation(operation_id)
+        key = "controlplane:workflow:lease:" + operation_id
+        script = "if redis.call('GET',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) else return 0 end"
+        assert run("docker", "exec", self.redis, "redis-cli", "--raw", "EVAL", script, "1", key, self.prefix) == "1"
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            op = self.operation(operation_id)
+            if op["version"] != before["version"]:
+                self.hold(operation_id)
+                return self.operation(operation_id)
+            time.sleep(0.1)
+        raise AssertionError(f"worker did not advance operation: {before}")
 
     def until(self, operation_id, stage):
         for _ in range(20):
@@ -183,8 +215,10 @@ class Harness:
 
     def features(self, edited=False):
         data = self.request("/rest/services/cng/FeatureServer/1000/query?where=1%3D1&outFields=*&returnGeometry=true&f=json")
+        assert "features" in data, data
         rows = data["features"]
         assert len(rows) == 6, data
+        assert {row["attributes"]["name"] for row in rows} == set(EXPECTED), data
         assert data["spatialReference"]["wkid"] == 4326, data
         for row in rows:
             attrs, geom = row["attributes"], row["geometry"]
@@ -217,6 +251,10 @@ class Harness:
         assert release["candidateRevision"] != before["revision"]
         assert self.current() == before, "staging exposed a partial live catalog"
         self.features()
+        candidate = json.loads(self.sql(f"SELECT json_build_object('etag',etag,'graph',document) FROM honua.metadata_v2_snapshots WHERE environment='default' AND revision={int(release['candidateRevision'])}"))
+        assert candidate["etag"] == release["candidateEtag"]
+        assert "owner_email" in {f["name"] for f in candidate["graph"]["resources"][0]["schemaFields"]}
+        assert self.sql(f"SELECT count(*) FROM honua.metadata_v2_resources_idx WHERE environment='default' AND revision={int(release['candidateRevision'])}") == "0"
         self.receipt["stagedOperation"] = staged
         run("docker", "kill", "--signal", "KILL", self.server)
         run("docker", "start", self.server)
@@ -237,18 +275,57 @@ class Harness:
         assert {"smoke-candidate", "smoke", "smoke-recovered"} <= kinds, kinds
         values = self.features(edited=True)
         self.receipt["scenarios"].append({"name": "staged-crash-post-activation-recovery", "status": "passed", "operation": result, "functionalAssertions": values})
+        concurrent_id = self.submit("concurrent-services")
+        pending = self.until(concurrent_id, "MetadataApply")
+        old_candidate = pending["metadataRelease"]["candidateRevision"]
+        self.request("/api/v1/admin/services/cng-stac/access-policy", {"allowAnonymous": False}, admin=True, method="PUT")
+        foreign = self.current()
+        rebased = self.advance(concurrent_id)
+        assert rebased["metadataRelease"]["rebaseCount"] == 1, rebased
+        assert rebased["metadataRelease"]["priorEtag"] == foreign["etag"]
+        assert self.current() == foreign, "ETag conflict overwrote the other service"
+        assert self.sql(f"SELECT count(*) FROM honua.metadata_v2_snapshots WHERE environment='default' AND revision={int(old_candidate)}") == "0"
+        self.until(concurrent_id, "SloWatch")
+        # A second unrelated update after activation forces owned-only inverse recovery.
+        self.request("/api/v1/admin/services/cng-stac/access-policy", {"allowedRoles": ["recovery-reviewer"]}, admin=True, method="PUT")
+        later = self.current()
+        recovered = self.terminal(concurrent_id)
+        assert recovered["status"] == "RolledBack", recovered
+        graph = self.current()["graph"]
+        assert graph["services"] == later["graph"]["services"], "rollback discarded an unrelated service update"
+        fields = {f["name"]: f["type"] for f in graph["resources"][0]["schemaFields"]}
+        assert fields == {"objectid": "integer", "name": "string", "category": "string", "population": "integer",
+                          "ratio": "double", "active": "boolean", "observed_at": "datetime", "geometry": "geometry"}, fields
+        self.receipt["scenarios"].append({"name": "etag-rebase-and-owned-only-recovery", "status": "passed", "operation": recovered,
+                                         "functionalAssertions": self.features(edited=True)})
         self.receipt["status"] = "passed"
 
     def finish(self):
-        if self.server in self.created:
-            logs = run("docker", "logs", self.server).replace(self.password, "[redacted]")
-            (self.output / "server.log").write_text(logs)
+        cleanup_errors = []
+        try:
+            if self.server in self.created:
+                logs = run("docker", "logs", self.server).replace(self.password, "[redacted]")
+                (self.output / "server.log").write_text(logs)
+                self.receipt["serverLogSha256"] = hashlib.sha256(logs.encode()).hexdigest()
+        except Exception as error:
+            cleanup_errors.append(str(error))
         for name in reversed(self.created):
-            run("docker", "rm", "-f", "-v", name)
-        if self.created:
+            try:
+                run("docker", "rm", "-f", "-v", name)
+            except Exception as error:
+                cleanup_errors.append(str(error))
+        try:
             run("docker", "network", "rm", self.prefix)
-        self.receipt["cleanup"] = "removed lane containers and network"
+        except Exception as error:
+            if self.created:
+                cleanup_errors.append(str(error))
+        self.receipt["cleanup"] = cleanup_errors or "removed lane containers and network"
+        self.receipt["harnessSha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        if cleanup_errors:
+            self.receipt["status"] = "failed"
         (self.output / "receipt.json").write_text(json.dumps(self.receipt, indent=2) + "\n")
+        if cleanup_errors:
+            raise RuntimeError("proof cleanup failed: " + "; ".join(cleanup_errors))
 
 
 def main():
