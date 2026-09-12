@@ -31,7 +31,8 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 ### Why WFS has no `/ogc/services/{serviceId}/wfs`
 
 The asymmetry above is deliberate, and it is the one thing about these routes
-worth knowing before you construct a URL by pattern.
+worth knowing before you construct a URL by pattern. The rule is recorded as
+[ADR-0079](../../internal/contributor/adr/0079-protocol-route-scoping.md).
 
 **A protocol is scoped by whatever its own specification makes the addressable
 unit.** WMS, WMTS and WCS render a *composition* — which layers, in what order,
