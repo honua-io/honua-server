@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Sockets;
+using System.Xml.Linq;
+using Honua.Core.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
@@ -14,12 +18,28 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
 public sealed class OgcFeaturesStreamingTestsFixture : IAsyncLifetime
 {
-    public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    public WebAppFixture App { get; } = new WebAppFixture()
+        .UseKestrel()
+        .WithTestLicense(HonuaEdition.Pro)
+        .ConfigureServices(services => services.Configure<LimitsOptions>(options =>
+            options.Query.DefaultRecordCount = 300));
 
     public async Task InitializeAsync()
     {
         await App.InitializeAsync();
-        await App.EnsureLargeTestDatasetAsync();
+        App.Client.Timeout = TimeSpan.FromSeconds(15);
+        await using var connection = await App.Postgres.GetConnectionAsync(App.CurrentSchema!);
+        await using var command = connection.CreateCommand();
+        // A private schema with known ids, attributes and ordinates, independent of serializer output.
+        command.CommandText = """
+            DELETE FROM features WHERE layer_id = 0;
+            INSERT INTO features (objectid, layer_id, geometry, attributes)
+            SELECT i, 0, CASE WHEN i % 10 = 0 THEN NULL
+                ELSE ST_SetSRID(ST_MakePoint(-120 + i * 0.001, 30 + i * 0.001), 4326) END,
+                jsonb_build_object('name', repeat('x', 1024), 'value', i, 'category', 'stream-fixture')
+            FROM generate_series(1, 1200) AS i;
+            """;
+        await command.ExecuteNonQueryAsync();
     }
 
     public Task DisposeAsync() => App.DisposeAsync();
@@ -71,6 +91,142 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("<wfs:FeatureCollection");
+    }
+
+    [IntegrationTheory]
+    [InlineData(null, false)]
+    [InlineData(100, false)]
+    [InlineData(400, false)]
+    [InlineData(1000, false)]
+    [InlineData(null, true)]
+    [InlineData(100, true)]
+    [InlineData(400, true)]
+    [InlineData(1000, true)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_KeepAlive_CompletesPagesAndReusesConnection(int? limit, bool gml)
+    {
+        var connections = 0;
+        using var handler = new SocketsHttpHandler
+        {
+            UseProxy = false,
+            ConnectCallback = async (context, cancellationToken) =>
+            {
+                Interlocked.Increment(ref connections);
+                var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+                try
+                {
+                    await socket.ConnectAsync(context.DnsEndPoint, cancellationToken);
+                    return new NetworkStream(socket, ownsSocket: true);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
+            }
+        };
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = _fixture.Client.BaseAddress,
+            DefaultRequestVersion = HttpVersion.Version11,
+            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact,
+            Timeout = TimeSpan.FromSeconds(15)
+        };
+        foreach (var header in _fixture.Client.DefaultRequestHeaders)
+        {
+            client.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        var expectedCount = limit ?? 300;
+        var query = $"sortby=value&f={(gml ? "gml" : "json")}";
+        if (limit.HasValue)
+        {
+            query += $"&limit={limit.Value}";
+        }
+
+        // A second successful response on the same socket proves that the first response's
+        // framing terminated. Reading valid JSON alone would miss the original defect.
+        for (var page = 0; page < 2; page++)
+        {
+            using var response = await client.GetAsync(
+                $"/ogc/features/collections/{TestLayerId}/items?{query}&offset={page * expectedCount}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Version.Should().Be(HttpVersion.Version11);
+            response.Headers.ConnectionClose.Should().NotBe(true);
+            response.Headers.GetValues("Content-Crs").Should()
+                .ContainSingle().Which.Should().Contain("CRS84");
+            var body = await response.Content.ReadAsByteArrayAsync();
+            var returned = Math.Min(expectedCount, 1200 - page * expectedCount);
+            if (returned >= 300)
+            {
+                body.Length.Should().BeGreaterThan(256 * 1024);
+            }
+
+            if (gml)
+            {
+                var document = XDocument.Parse(System.Text.Encoding.UTF8.GetString(body));
+                XNamespace wfs = "http://www.opengis.net/wfs/2.0";
+                XNamespace gmlNamespace = "http://www.opengis.net/gml/3.2";
+                document.Root!.Attribute("numberMatched")!.Value.Should().Be("1200");
+                document.Root.Attribute("numberReturned")!.Value.Should().Be(returned.ToString());
+                var members = document.Root.Elements(wfs + "member").ToArray();
+                members.Should().HaveCount(returned);
+                for (var i = 0; i < returned; i++)
+                {
+                    var id = page * expectedCount + i + 1;
+                    var position = members[i].Descendants(gmlNamespace + "pos").SingleOrDefault();
+                    if (id % 10 == 0)
+                    {
+                        position.Should().BeNull();
+                    }
+                    else
+                    {
+                        var ordinates = position!.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(value => double.Parse(value, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+                        ordinates.Should().HaveCount(2);
+                        ordinates[0].Should().BeApproximately(-120 + id * 0.001, 1e-9);
+                        ordinates[1].Should().BeApproximately(30 + id * 0.001, 1e-9);
+                    }
+                    members[i].Descendants().Single(element => element.Name.LocalName == "name")
+                        .Value.Should().Be(new string('x', 1024));
+                    members[i].Descendants().Single(element => element.Name.LocalName == "value")
+                        .Value.Should().Be(id.ToString());
+                }
+            }
+            else
+            {
+                using var document = JsonDocument.Parse(body);
+                var root = document.RootElement;
+                root.GetProperty("numberMatched").GetInt32().Should().Be(1200);
+                root.GetProperty("numberReturned").GetInt32().Should().Be(returned);
+                var features = root.GetProperty("features").EnumerateArray().ToArray();
+                features.Should().HaveCount(returned);
+                for (var i = 0; i < returned; i++)
+                {
+                    var id = page * expectedCount + i + 1;
+                    features[i].GetProperty("id").GetInt64().Should().Be(id);
+                    var properties = features[i].GetProperty("properties");
+                    properties.GetProperty("name").GetString().Should().Be(new string('x', 1024));
+                    properties.GetProperty("value").GetInt32().Should().Be(id);
+                    var geometry = features[i].GetProperty("geometry");
+                    if (id % 10 == 0)
+                    {
+                        geometry.ValueKind.Should().Be(JsonValueKind.Null);
+                    }
+                    else
+                    {
+                        geometry.GetProperty("type").GetString().Should().Be("Point");
+                        var ordinates = geometry.GetProperty("coordinates");
+                        ordinates.GetArrayLength().Should().Be(2);
+                        ordinates[0].GetDouble().Should().BeApproximately(-120 + id * 0.001, 1e-9);
+                        ordinates[1].GetDouble().Should().BeApproximately(30 + id * 0.001, 1e-9);
+                    }
+                }
+                root.GetProperty("links").EnumerateArray().Any(link => link.GetProperty("rel").GetString() == "next")
+                    .Should().Be((page + 1) * expectedCount < 1200);
+            }
+        }
+        connections.Should().Be(1, "both complete pages must reuse the same keep-alive connection");
     }
 
     /// <summary>
