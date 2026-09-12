@@ -63,6 +63,13 @@ turn that failure green. The runtime fix carries the durable run tenant into
 observation, results, retry, and cancellation, preserving the cross-tenant denial
 introduced by the admission/ownership foundations.
 
+`WorkflowOrchestrationEngineTests.ReconcileWorkflowRun_ObservesChildInPersistedTenant_ReachesTerminalSuccess`
+asserts that reconciliation observes the child and reads its results in the
+persisted tenant before completing the parent. The companion
+`GeoprocessingJobServiceTests.JobAccess_WorkflowReconciliation_PreservesDurableTenantAndDeniesForeignJob`
+uses the production job service to check scoped access and foreign-tenant
+read/cancellation denial, including a tenantless legacy run.
+
 The release's whole-catalog GP GA promise still needs a new manifest-pinned
 image containing that fix and a passing rerun. The shared lifecycle/resilience
 receipt bill in #3848 is not replaced by this operation proof. Inline artifacts
