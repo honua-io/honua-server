@@ -48,6 +48,32 @@ public sealed class OperationsToolsetTests
     private const string TestConnectionId = "11111111-1111-1111-1111-111111111111";
 
     [UnitTest]
+    public async Task Dispatcher_BrokenStudioDependency_OnlyFailsTheSelectedStudioOperation()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        var readiness = Substitute.For<IReadinessCheckService>();
+        services.AddSingleton(readiness);
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        // Deliberately leave IStudioPackageLifecycleService unresolved. Constructing its
+        // executor used to prevent even validation of an unrelated status operation.
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<Honua.Core.Features.Operations.Abstractions.IOperationInvoker>();
+
+        var validation = await invoker.ValidateAsync(new OperationRequest { OperationId = "admin.server.status" });
+        validation.IsValid.Should().BeTrue();
+        var failed = await invoker.SubmitAsync(
+            new OperationRequest { OperationId = StudioDraftOperations.Create }, new OperationPolicyContext());
+        failed.Status.Should().Be(OperationHandleStatus.Failed);
+        failed.Reason.Should().Be("Operation validation failed (InvalidOperationException).");
+        failed.Reason.Should().NotContain("IStudioPackageLifecycleService");
+        (await invoker.ValidateAsync(new OperationRequest { OperationId = "admin.server.status" }))
+            .IsValid.Should().BeTrue("one failed actuator must not poison another invocation in the same scope");
+    }
+
+    [UnitTest]
     public void AddOperationsToolset_RegistersServicePublishApprovalMapperAndCanonicalActuator()
     {
         var services = new ServiceCollection();
