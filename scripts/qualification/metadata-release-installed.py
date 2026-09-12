@@ -98,6 +98,7 @@ class Harness:
                     if response.status == 200:
                         return
             except (OSError, urllib.error.URLError):
+                # Startup/restart briefly closes the listener; retry until the readiness deadline.
                 pass
             time.sleep(1)
         raise AssertionError("installed candidate never became ready")
@@ -125,6 +126,7 @@ class Harness:
                 if self.sql("SELECT 1") == "1":
                     break
             except RuntimeError:
+                # The fresh database may still be initializing; require a successful TCP query.
                 pass
             time.sleep(1)
         # Durable test-owned leases pause the real polling worker between stages.
