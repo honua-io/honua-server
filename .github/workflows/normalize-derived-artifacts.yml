@@ -80,7 +80,7 @@ jobs:
           projections=(
             'docs/gis/data/feature-catalog.json:4194304'
             'docs/gis/data/admin-openapi-operation-ids.json:131072'
-            'docs/gis/data/admin-mcp-projection-manifest.json:65536'
+            'docs/gis/data/admin-mcp-projection-manifest.json:131072'
             'docs/gis/data/geoservices-rest-parity.json:1048576'
             'docs/gis/data/capability-matrix.v1.json:1048576'
           )

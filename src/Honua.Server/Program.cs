@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Reflection;
+using Microsoft.AspNetCore.DataProtection;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
@@ -209,7 +210,11 @@ if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
         });
     });
 }
-builder.Services.AddDataProtection();
+// Keep the protector purpose stable across replay nodes. Production deployments must also
+// persist/share the ASP.NET data-protection key ring; otherwise an approved operation whose
+// envelope was created on another node fails closed instead of being replayed with plaintext.
+builder.Services.AddDataProtection()
+    .SetApplicationName("Honua.Server");
 
 // Enable Aspire integrations only when Aspire configuration is present.
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
@@ -383,6 +388,25 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
         redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
         redisDurabilityDetail = ex.Message;
+    }
+}
+
+if (connectedRedis is not null)
+{
+    // The operation-secret protector is intentionally backed by the same Redis authority
+    // as the proposal/instance stores so every replay node shares a rotation-capable key ring.
+    var keyRing = builder.Services.AddDataProtection()
+        .SetApplicationName("Honua.Server")
+        .AddKeyManagementOptions(options =>
+            options.XmlRepository = new RedisDataProtectionKeyRepository(connectedRedis));
+
+    // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own.
+    // When the operator supplies a certificate the decryption material lives outside Redis,
+    // so a Redis reader or snapshot no longer carries both halves.
+    var keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
+    if (keyRingCertificate is not null)
+    {
+        keyRing.ProtectKeysWithCertificate(keyRingCertificate);
     }
 }
 
@@ -894,6 +918,7 @@ builder.Services.AddServerFeatures(
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
+builder.Services.AddAdminAccessOperations();
 // #2483 (ADR-0056 Increment 4): publish validated operations-toolset descriptors as
 // first-class MCP tools. Off unless Mcp:PublishOperations:Enabled=true; wired after the
 // operations toolset so the tool source can resolve the canonical IOperationCatalog.

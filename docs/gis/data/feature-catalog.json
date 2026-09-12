@@ -5362,7 +5362,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.OperationsToolset.OperationsEndpointsTests.GetHandleStatus_AfterSubmit_ReturnsCompletedStatus"
+        "Honua.Server.Tests.Features.OperationsToolset.OperationsEndpointsTests.GetHandleStatus_AfterSubmit_ReturnsCompletedStatus",
+        "Honua.Server.Tests.Features.OperationsToolset.OperationsEndpointsTests.ReadOnlyPrincipal_CanReadStatusButCannotReadOperationSecret"
       ],
       "proof_ledger_surface": "operations-toolset",
       "maturity": "implemented",
@@ -17091,6 +17092,20 @@
       "proof_ledger_surface": "forms-runtime",
       "maturity": "implemented",
       "capability": "fieldops.forms"
+    },
+    {
+      "id": "post-api-v1-operations-handles-handleid-secrets-referenceid-consume",
+      "route": "/api/v1/operations/handles/{handleId}/secrets/{referenceId}/consume",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.OperationsToolset.OperationsEndpointsTests.OperationSecret_IsRedeemableExactlyOnce_ByTheBoundCaller"
+      ],
+      "proof_ledger_surface": "operations-toolset",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "post-api-v1-operations-id-submit",

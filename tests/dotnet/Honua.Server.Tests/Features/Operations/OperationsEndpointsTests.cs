@@ -9,9 +9,12 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -346,6 +349,185 @@ public sealed class OperationsEndpointsTests
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/v1/operations/handles/{handleId}/secrets/{referenceId}/consume")]
+    public async Task OperationSecret_IsRedeemableExactlyOnce_ByTheBoundCaller()
+    {
+        var instanceStore = new VolatileOperationInstanceStore();
+        var secretStore = new CapturingOperationSecretStore();
+        var operationInstanceId = $"opinst-{Guid.NewGuid():N}";
+
+        // Bound to a principal that is not the caller, so the first redemption must fail closed.
+        var otherPrincipalSecret = Guid.NewGuid().ToString("N");
+        var otherPrincipalReference = secretStore.Store(
+            operationInstanceId,
+            "admin.api-key.create",
+            principalId: $"someone-else-{Guid.NewGuid():N}",
+            tenantId: $"other-tenant-{Guid.NewGuid():N}",
+            "key",
+            otherPrincipalSecret);
+        var handle = new OperationHandle
+        {
+            OperationInstanceId = operationInstanceId,
+            OperationId = "admin.api-key.create",
+            TenantId = new TenantContextOptions().DefaultTenantId,
+            CorrelationId = $"corr-{Guid.NewGuid():N}",
+            Status = OperationHandleStatus.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Result = new OperationResultSummary
+            {
+                Summary = "completed",
+                Details = new Dictionary<string, string>
+                {
+                    ["response"] = "{\"data\":{\"apiKey\":\"id\"}}",
+                },
+                SecretReferences = [otherPrincipalReference],
+            },
+        };
+        await instanceStore.TryCreateAsync(handle);
+
+        var fixture = new WebAppFixture()
+            .ReplaceService<IOperationInstanceStore>(instanceStore)
+            .ReplaceService<IOperationSecretStore>(secretStore)
+            .UseSeed("tests/seed/server.yaml");
+        await fixture.InitializeAsync();
+        try
+        {
+            var client = fixture.CreateAdminClient();
+
+            // Another principal's reference is never redeemable, and never echoes the credential.
+            using var foreign = await client.PostAsync(
+                $"/api/v1/operations/handles/{operationInstanceId}/secrets/{otherPrincipalReference.ReferenceId}/consume",
+                content: null);
+            foreign.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await foreign.Content.ReadAsStringAsync()).Should().NotContain(otherPrincipalSecret);
+
+            // The endpoint redeems against the CALLER's identity, not the handle's, so bind the
+            // credential to exactly the identity that attempt reported.
+            secretStore.LastConsumeIdentity.Should().NotBeNull();
+            var caller = secretStore.LastConsumeIdentity!.Value;
+            var secret = Guid.NewGuid().ToString("N");
+            var reference = secretStore.Store(
+                operationInstanceId,
+                "admin.api-key.create",
+                caller.PrincipalId,
+                caller.TenantId,
+                "key",
+                secret);
+            await instanceStore.SetAsync(handle with
+            {
+                Result = handle.Result! with { SecretReferences = [reference] },
+            });
+
+            var route =
+                $"/api/v1/operations/handles/{operationInstanceId}/secrets/{reference.ReferenceId}/consume";
+            using var first = await client.PostAsync(route, content: null);
+            first.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            data.GetProperty("name").GetString().Should().Be("key");
+            data.GetProperty("value").GetString().Should().Be(secret);
+
+            // Consume-once: the second read finds nothing, and never the credential.
+            using var second = await client.PostAsync(route, content: null);
+            second.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await second.Content.ReadAsStringAsync()).Should().NotContain(secret);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/v1/operations/handles/{handleId}")]
+    public async Task ReadOnlyPrincipal_CanReadStatusButCannotReadOperationSecret()
+    {
+        var instanceStore = new VolatileOperationInstanceStore();
+        var secretStore = new VolatileOperationSecretStore();
+        var operationInstanceId = $"opinst-{Guid.NewGuid():N}";
+        var secret = Guid.NewGuid().ToString("N");
+        var reference = secretStore.Store(
+            operationInstanceId,
+            "admin.api-key.create",
+            principalId: null,
+            tenantId: null,
+            "key",
+            secret);
+        var handle = new OperationHandle
+        {
+            OperationInstanceId = operationInstanceId,
+            OperationId = "admin.api-key.create",
+            // Owned by the tenant the reader's request resolves to, so the ownership boundary
+            // admits the status read and the assertion isolates the secret-material boundary.
+            TenantId = new TenantContextOptions().DefaultTenantId,
+            CorrelationId = $"corr-{Guid.NewGuid():N}",
+            Status = OperationHandleStatus.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Result = new OperationResultSummary
+            {
+                Summary = "completed",
+                Details = new Dictionary<string, string>
+                {
+                    ["response"] = "{\"data\":{\"apiKey\":\"id\"}}",
+                },
+                SecretReferences = [reference],
+            },
+        };
+        await instanceStore.TryCreateAsync(handle);
+
+        var fixture = new WebAppFixture()
+            .ReplaceService<IOperationInstanceStore>(instanceStore)
+            .ReplaceService<IOperationSecretStore>(secretStore)
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var bootstrap = fixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var createResponse = await bootstrap.PostAsJsonAsync(
+                "/api/v1/admin/api-keys",
+                new CreateAdminApiKeyRequest
+                {
+                    Name = $"operation-reader-{Guid.NewGuid():N}",
+                    Permissions = ["admin:read"],
+                },
+                JsonOptions);
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            var created = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+                await createResponse.Content.ReadAsStringAsync(),
+                JsonOptions);
+            created?.Data.Should().NotBeNull();
+
+            using var reader = fixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("X-API-Key", created!.Data!.Key));
+            using var status = await reader.GetAsync($"/api/v1/operations/handles/{operationInstanceId}");
+            var statusBody = await status.Content.ReadAsStringAsync();
+            status.StatusCode.Should().Be(HttpStatusCode.OK);
+            statusBody.Should().NotContain(secret);
+            statusBody.Should().Contain(reference.ReferenceId);
+
+            using var consume = await reader.PostAsync(
+                $"/api/v1/operations/handles/{operationInstanceId}/secrets/{reference.ReferenceId}/consume",
+                content: null);
+            consume.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
     [Endpoint("POST /api/v1/operations/{id}/validate")]
     public async Task ValidateOperation_ServicePublish_DelegatesToValidator()
     {
@@ -400,6 +582,37 @@ public sealed class OperationsEndpointsTests
         finally
         {
             await fixture.DisposeAsync();
+        }
+    }
+
+    /// <summary>Volatile secret channel that records the identity the endpoint redeems against.</summary>
+    private sealed class CapturingOperationSecretStore : IOperationSecretStore
+    {
+        private readonly VolatileOperationSecretStore _inner = new();
+
+        public (string? PrincipalId, string? TenantId)? LastConsumeIdentity { get; private set; }
+
+        public bool IsAvailable => _inner.IsAvailable;
+
+        public OperationSecretReference Store(
+            string operationInstanceId,
+            string operationId,
+            string? principalId,
+            string? tenantId,
+            string name,
+            string value,
+            TimeSpan? ttl = null)
+            => _inner.Store(operationInstanceId, operationId, principalId, tenantId, name, value, ttl);
+
+        public string? Consume(
+            OperationSecretReference reference,
+            string operationInstanceId,
+            string operationId,
+            string? principalId,
+            string? tenantId)
+        {
+            LastConsumeIdentity = (principalId, tenantId);
+            return _inner.Consume(reference, operationInstanceId, operationId, principalId, tenantId);
         }
     }
 }
