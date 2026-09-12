@@ -5,7 +5,50 @@ description: "Honua's source is available under the Elastic License 2.0 — free
 ---
 # Editions and licensing
 
-Honua's source is available under the [Elastic License 2.0](https://github.com/honua-io/honua-server/blob/trunk/LICENSE) — free to use, deploy, and modify. At runtime, the server operates in one of three editions:
+Honua's source is available under the [Elastic License 2.0](https://github.com/honua-io/honua-server/blob/trunk/LICENSE) — free to use, deploy, and modify.
+
+## 2026.1: licensing disabled
+
+The first release uses the supported `Licensing__Mode=Disabled` setting, including in
+Production. No license file, signing key or license minting is required. All catalog
+entitlements are active, including GeoServices editing, Redis caching, geocoding and
+OIDC. License sources are not loaded or validated; capacity registration, metering,
+expiry notifications and license-driven operation cancellation are off. Uploads are
+rejected while this mode is active, and surge requests leave metering disabled.
+
+```bash
+Licensing__Mode=Disabled
+```
+
+Set the same mode on standalone GDAL workers; their job coordination still requires
+Redis, while licensing and capacity metering remain off. Restart each host after
+changing the mode. This explicit choice belongs in the
+deployment configuration: the server default remains `Licensing__Mode=Enabled`
+with Community when no edition or license source is configured. Honua's 2026.1
+deployment surfaces select Disabled through their own configuration.
+
+The admin license endpoints (`GET /api/v1/admin/license` and `/status`) report
+`mode: disabled`, `edition: Unlicensed-2026.1`, `validationState: Disabled`, no expiry
+and no expiry warning. `/api/v1/admin/license/capacity` reports
+`meteringEnabled: false`, no registrations and no enforcement. The Console license
+status view displays the returned edition and validation state.
+
+Disabling licensing grants entitlements only. Authentication, authorization and
+tenant isolation still apply; features still require their runtime configuration
+and dependencies. Preview and Experimental opt-ins and the release manifest's
+`experimental:` exclusions remain in effect. Multi-tenancy, alerting and offline
+sync remain Preview; all four cloud-native formats and the whole GA process catalog
+retain their release scope. `Licensing__DevGrantEdition` remains a development-only
+override and is refused in Production, including when Mode is Disabled.
+
+Licensing bands, metering and marketplace integration are scheduled for hardening
+and re-enablement in 2026.2. The edition and signed-license behavior below applies
+when `Licensing__Mode=Enabled`; it is not a license requirement for the 2026.1
+Disabled deployment posture.
+
+## Editions with licensing enabled
+
+With licensing enabled, the server operates in one of three editions:
 
 | Edition | How it activates | Scope |
 |---|---|---|
@@ -17,7 +60,7 @@ Community requires no license and is unaffected by license expiry. Pro and Enter
 
 ## Commercial boundaries for 2026.1
 
-The [2026-09-04 commercial-boundaries ruling](https://github.com/honua-io/honua-flow/blob/trunk/docs/2026.1-quality-contract.md) separates edition entitlement from release maturity:
+The [2026-09-04 commercial-boundaries ruling](https://github.com/honua-io/honua-flow/blob/trunk/docs/2026.1-quality-contract.md) separates edition entitlement from release maturity. These edition assignments apply with licensing enabled; Disabled mode grants them all without changing maturity:
 
 | Capability | Edition | 2026.1 boundary |
 |---|---|---|
@@ -50,6 +93,7 @@ Feature activation is entitlement-based: Community-tier features are active on C
 ## Configuration
 
 ```bash
+Licensing__Mode=Enabled
 Licensing__Edition=Pro
 Licensing__LicensePath=/etc/honua/license.honua-license.json
 Licensing__TrustedKeys__honua-2026-q2=base64url:<32-byte-raw-ed25519-public-key>
@@ -57,7 +101,8 @@ Licensing__AllowAdminUpload=false   # default
 Licensing__ExpiryWarningDays=30     # default
 ```
 
-- `Licensing__Edition` — `Community`, `Pro`, or `Enterprise`. Set it on every paid server and worker. If omitted, a configured source selects paid-license validation and a valid signed license determines the tier.
+- `Licensing__Mode` — `Enabled` (server default) or `Disabled`, case-insensitive. Unknown values refuse startup. Changing the mode requires restart.
+- `Licensing__Edition` — `Community`, `Pro`, or `Enterprise`, ignored in Disabled mode. With licensing enabled, set it on every paid server and worker. If omitted, a configured source selects paid-license validation and a valid signed license determines the tier.
 - `Licensing__LicensePath` — path to the signed license file and the location prefix for the persisted `.uploaded` override. With no paid edition declared and no file, inline content, or secret reference configured, the server runs Community mode.
 - `Licensing__LicenseContent` — inline signed JSON envelope.
 - `Licensing__LicenseContentSecretRef` — secret-store reference to the signed envelope.

@@ -19,6 +19,7 @@ internal static class LicenseStatusResponseMapper
 
         return new LicenseStatusResponse
         {
+            Mode = info.Mode.ToString().ToLowerInvariant(),
             Edition = info.Edition,
             ExpiresAt = info.ExpiresAt,
             IsValid = info.IsValid,
@@ -44,7 +45,8 @@ internal static class LicenseStatusResponseMapper
 
         return new LicenseStatusResponse
         {
-            Edition = status.Edition.ToString(),
+            Mode = status.Mode.ToString().ToLowerInvariant(),
+            Edition = status.EditionName,
             ExpiresAt = status.ExpiresAt,
             IsValid = status.IsValid,
             ValidationState = status.ValidationState.ToString(),

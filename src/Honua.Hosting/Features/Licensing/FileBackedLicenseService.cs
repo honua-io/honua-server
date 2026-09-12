@@ -168,6 +168,11 @@ internal sealed partial class FileBackedLicenseService :
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
+        if (LicenseOptions.ParseMode(configuration[$"{LicenseOptions.SectionName}:Mode"]) == LicenseMode.Disabled)
+        {
+            return DisabledLicenseService.CreateSnapshot();
+        }
+
         var options = new LicenseOptions();
         configuration.GetSection(LicenseOptions.SectionName).Bind(options);
 

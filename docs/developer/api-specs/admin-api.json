@@ -4003,7 +4003,7 @@
           "License"
         ],
         "summary": "Get License Status",
-        "description": "Returns the active runtime license snapshot. Empty LicensePath reports Community mode with isValid=true; invalid configured files report Community mode with isValid=false and a validationState.",
+        "description": "Returns the runtime license status. Licensing:Mode=Disabled reports mode=disabled, edition=Unlicensed-2026.1, validationState=Disabled, isValid=true, all entitlements active and no expiry. Enabled licensing retains Community defaults and validates configured paid licenses.",
         "operationId": "getLicenseStatus",
         "responses": {
           "200": {
@@ -4106,7 +4106,7 @@
           "License"
         ],
         "summary": "Get Platform License Status",
-        "description": "Returns the same active license status contract as GET /api/v1/admin/license.",
+        "description": "Returns the runtime license status. Licensing:Mode=Disabled reports mode=disabled, edition=Unlicensed-2026.1, validationState=Disabled, isValid=true, all entitlements active and no expiry. Enabled licensing retains Community defaults and validates configured paid licenses.",
         "operationId": "getPlatformLicenseStatus",
         "responses": {
           "200": {
@@ -27776,17 +27776,17 @@
         "properties": {
           "edition": {
             "type": "string",
-            "description": "Active platform edition label."
+            "description": "Active platform edition label, or Unlicensed-2026.1 when licensing is disabled."
           },
           "expiresAt": {
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "License expiry timestamp, or null for Community/perpetual licenses."
+            "description": "License expiry timestamp, or null for disabled licensing and Community/perpetual licenses."
           },
           "isValid": {
             "type": "boolean",
-            "description": "Whether the active configured license validated successfully."
+            "description": "True when licensing is disabled or the active licensing snapshot is valid."
           },
           "daysUntilExpiry": {
             "type": "integer",
@@ -27807,7 +27807,8 @@
               "Malformed",
               "UnknownKey",
               "InvalidSignature",
-              "Expired"
+              "Expired",
+              "Disabled"
             ],
             "description": "Runtime validation state for the active license snapshot."
           },
@@ -27830,6 +27831,14 @@
               "$ref": "#/components/schemas/EntitlementResponse"
             },
             "description": "Known FeatureCatalog entitlement inventory with active/inactive state."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "disabled"
+            ],
+            "description": "Runtime licensing mode. Disabled grants all catalog entitlements without license validation, expiry or capacity metering."
           }
         }
       },
@@ -46550,9 +46559,11 @@
               4,
               5,
               6,
-              7
+              7,
+              8,
+              9
             ],
-            "description": "Numeric LicenseCapacityBandState: 0 NotConfigured, 1 Excluded, 2 Normal, 3 ApproachingBand, 4 Burst, 5 Grace, 6 GraceExpired, 7 Surge."
+            "description": "Numeric LicenseCapacityBandState: 0 NotConfigured, 1 Excluded, 2 Normal, 3 ApproachingBand, 4 Burst, 5 Grace, 6 GraceExpired, 7 Surge, 8 MeteringGap, 9 Disabled."
           },
           "terms": {
             "$ref": "#/components/schemas/LicenseCapacityTermsView"
@@ -46658,6 +46669,10 @@
               "type": "string"
             },
             "description": "Safe operator-facing state messages."
+          },
+          "meteringEnabled": {
+            "type": "boolean",
+            "description": "False in Disabled licensing mode; no registrations, usage samples, surge state or capacity enforcement are active."
           }
         }
       },

@@ -4,6 +4,18 @@
 namespace Honua.Core.Features.Licensing.Domain;
 
 /// <summary>
+/// Selects signed-license enforcement or the supported unlicensed release posture.
+/// </summary>
+public enum LicenseMode
+{
+    /// <summary>Use normal Community or signed paid-license behavior (the server default).</summary>
+    Enabled = 0,
+
+    /// <summary>Grant all catalog entitlements without loading licenses or metering capacity.</summary>
+    Disabled = 1,
+}
+
+/// <summary>
 /// Honua platform edition levels for feature gating.
 /// </summary>
 public enum HonuaEdition
@@ -63,6 +75,9 @@ public enum LicenseValidationState
     /// The license expiry is in the past.
     /// </summary>
     Expired = 6,
+
+    /// <summary>License validation is disabled by the deployment's supported licensing mode.</summary>
+    Disabled = 7,
 }
 
 /// <summary>
@@ -88,6 +103,12 @@ public sealed record LicenseStatus(
     IReadOnlyList<Entitlement>? Entitlements = null,
     LicenseCapacityTerms? CapacityTerms = null)
 {
+    /// <summary>Deployment licensing mode, independent of the entitlement edition.</summary>
+    public LicenseMode Mode { get; init; } = LicenseMode.Enabled;
+
+    /// <summary>Operator-facing edition label, including the unlicensed release posture.</summary>
+    public string EditionName => Mode == LicenseMode.Disabled ? LicenseSnapshot.DisabledEditionName : Edition.ToString();
+
     /// <summary>
     /// Days until license expiry, null if no expiry.
     /// </summary>
@@ -125,6 +146,15 @@ public sealed record LicenseSnapshot(
     string? KeyId,
     LicenseCapacityTerms? CapacityTerms = null)
 {
+    /// <summary>Operator-facing edition label for the first release's unlicensed posture.</summary>
+    public const string DisabledEditionName = "Unlicensed-2026.1";
+
+    /// <summary>Deployment licensing mode, independent of the entitlement edition.</summary>
+    public LicenseMode Mode { get; init; } = LicenseMode.Enabled;
+
+    /// <summary>Operator-facing edition label, including the unlicensed release posture.</summary>
+    public string EditionName => Mode == LicenseMode.Disabled ? DisabledEditionName : Edition.ToString();
+
     /// <summary>
     /// Gets whether the supplied entitlement key is active in this snapshot.
     /// </summary>
@@ -148,7 +178,11 @@ public sealed record LicenseEntitlementDecision(
     HonuaEdition Edition,
     LicenseValidationState ValidationState,
     HonuaEdition? RequiredEdition,
-    string UpgradeMessage);
+    string UpgradeMessage)
+{
+    /// <summary>Deployment licensing mode used to evaluate this decision.</summary>
+    public LicenseMode Mode { get; init; } = LicenseMode.Enabled;
+}
 
 /// <summary>
 /// Result of a license upload operation.
