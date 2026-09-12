@@ -47,6 +47,14 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
         (4, "San Diego", "California", -117.1611, 32.7157),
         (5, "San Jose", "California", -121.8863, 37.3382),
         (6, "Seattle", "Washington", -122.3321, 47.6062),
+        (7, "Portland", "Oregon", -122.6765, 45.5231),
+        (8, "Salt Lake City", "Utah", -111.891, 40.7608),
+        (9, "Denver", "Colorado", -104.9903, 39.7392),
+        (10, "Phoenix", "Arizona", -112.074, 33.4484),
+        (11, "Las Vegas", "Nevada", -115.1398, 36.1699),
+        (12, "Tucson", "Arizona", -110.9265, 32.2226),
+        (14, "Albuquerque", "New Mexico", -106.6504, 35.0844),
+        (15, "Boise", "Idaho", -116.2023, 43.6150),
     ];
 
     public async Task InitializeAsync()
@@ -115,12 +123,17 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
         // The six California/Washington cities and nothing else. A filter that was ignored would
         // return all 15+ seeded rows and a filter that over-matched would drop one of these.
         decoded.Rows.Select(row => row.ObjectId).Should().BeEquivalentTo(
-            SeededCities.Select(city => city.ObjectId),
+            SeededCities.Where(city => city.State is "California" or "Washington").Select(city => city.ObjectId),
             "the OData $filter must be applied to the GeoParquet projection");
         decoded.Rows.Should().OnlyContain(row => row.State == "California" || row.State == "Washington");
 
-        var seattle = decoded.Rows.Single(row => row.ObjectId == 6);
-        AssertPoint(seattle.Geometry, -122.3321, 47.6062);
+        foreach (var city in SeededCities.Where(city => city.State is "California" or "Washington"))
+        {
+            var row = decoded.Rows.Single(row => row.ObjectId == city.ObjectId);
+            row.Name.Should().Be(city.Name);
+            row.State.Should().Be(city.State);
+            AssertPoint(row.Geometry, city.X, city.Y);
+        }
 
         AssertGeoMetadata(decoded.GeoMetadata);
     }
@@ -130,7 +143,7 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$format=parquet&bbox=...")]
     public async Task Features_FormatParquetWithBbox_ReturnsGeoParquetPayload()
     {
-        // A California-only window: it excludes Seattle (47.6N) and Portland (45.5N) to the
+        // A California/Nevada window: it excludes Seattle (47.6N) and Portland (45.5N) to the
         // north and everything east of -114.
         var response = await _fixture.Client.GetAsync(
             $"/odata/Features({TestLayerId})?$format=parquet&bbox=-124,32,-114,42");
@@ -147,9 +160,12 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
         decoded.Rows.Select(row => row.ObjectId).Should().BeEquivalentTo([1L, 2L, 3L, 4L, 5L, 11L]);
         AssertPoint(decoded.Rows.Single(row => row.ObjectId == 11).Geometry, -115.1398, 36.1699);
 
-        // Every returned geometry must genuinely be inside the requested envelope.
-        foreach (var row in decoded.Rows.Where(row => row.Geometry is not null))
+        foreach (var row in decoded.Rows)
         {
+            var city = SeededCities.Single(city => city.ObjectId == row.ObjectId);
+            row.Name.Should().Be(city.Name);
+            row.State.Should().Be(city.State);
+            AssertPoint(row.Geometry, city.X, city.Y);
             var point = (Point)row.Geometry!;
             point.X.Should().BeInRange(-124, -114);
             point.Y.Should().BeInRange(32, 42);
@@ -240,7 +256,7 @@ public sealed class ODataParquetFormatTests : IAsyncLifetime
                         objectIds.GetValue(index)!.Value,
                         names.IsNull(index) ? null : names.GetString(index),
                         states.IsNull(index) ? null : states.GetString(index),
-                        wkb is null || wkb.Length == 0 ? null : wkbReader.Read(wkb)));
+                        wkb is null ? null : wkbReader.Read(wkb)));
                 }
             }
         }

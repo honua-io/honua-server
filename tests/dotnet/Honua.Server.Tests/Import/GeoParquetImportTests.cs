@@ -152,6 +152,13 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         responseContent.Should().Contain("\"featureCount\":1");
         // Null-geometry skip should be surfaced as a warning
         responseContent.Should().Contain("skipped because geometry was null");
+        var rows = await ReadImportedRowsAsync(responseContent);
+        var row = rows.Should().ContainSingle().Subject;
+        row.ObjectId.Should().Be(1);
+        row.Name.Should().Be("Test Feature");
+        var point = row.Geometry.Should().BeOfType<Point>().Which;
+        point.X.Should().BeApproximately(-122.4194, 1e-9);
+        point.Y.Should().BeApproximately(37.7749, 1e-9);
     }
 
     [IntegrationTest]
@@ -224,6 +231,15 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         responseContent.Should().Contain("geoparquet_large_rg_test");
         responseContent.Should().Contain("\"success\":true");
         responseContent.Should().Contain("\"featureCount\":150000");
+        var rows = await ReadImportedRowsAsync(responseContent, 150_000, "id IN (1,75000,150000)");
+        rows.Select(row => row.ObjectId).Should().BeEquivalentTo(new long?[] { 1, 75000, 150000 });
+        foreach (var row in rows)
+        {
+            row.Name.Should().Be($"Feature {row.ObjectId}");
+            var point = row.Geometry.Should().BeOfType<Point>().Which;
+            point.X.Should().BeApproximately(-122.4194, 1e-9);
+            point.Y.Should().BeApproximately(37.7749, 1e-9);
+        }
     }
 
     [IntegrationTest]
@@ -253,7 +269,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
 
     // Publish the actual imported table, then read it through the same public query route
     // a client uses. No copied rows or response-reported feature counts serve as the oracle.
-    private async Task<IReadOnlyList<ImportedRow>> ReadImportedRowsAsync(string importResponseJson)
+    private async Task<IReadOnlyList<ImportedRow>> ReadImportedRowsAsync(string importResponseJson, int expectedCount = 1, string where = "1=1")
     {
         using var document = JsonDocument.Parse(importResponseJson);
         var root = document.RootElement;
@@ -279,8 +295,14 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         var serviceName = layer.GetProperty("serviceName").GetString();
         var layerId = layer.GetProperty("layerId").GetInt32();
 
+        var queryPath = $"/rest/services/{serviceName}/FeatureServer/{layerId}/query";
+        using var countResponse = await _client.GetAsync($"{queryPath}?where=1%3D1&returnCountOnly=true&f=json");
+        countResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var countDocument = JsonDocument.Parse(await countResponse.Content.ReadAsStringAsync());
+        countDocument.RootElement.GetProperty("count").GetInt32().Should().Be(expectedCount);
+
         using var response = await _client.GetAsync(
-            $"/rest/services/{serviceName}/FeatureServer/{layerId}/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=json");
+            $"{queryPath}?where={Uri.EscapeDataString(where)}&outFields=*&returnGeometry=true&outSR=4326&f=json");
         var responseJson = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, responseJson);
         using var queried = JsonDocument.Parse(responseJson);
