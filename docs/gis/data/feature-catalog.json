@@ -2455,7 +2455,8 @@
         "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetLicenseStatus_WithAdminAuth_ReturnsLicenseInfo",
         "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetLicenseStatus_WithCustomExpiryWarningDays_UsesConfiguredThreshold",
         "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetLicenseStatus_WithSignedStartupLicense_ReturnsLicenseIdentityAndEntitlements",
-        "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetLicenseStatus_WithoutAuth_ReturnsUnauthorized"
+        "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetLicenseStatus_WithoutAuth_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Licensing.DisabledLicenseIntegrationTests.Production_DisabledWithoutLicense_StartsWithActiveEntitlementsAndTruthfulAdminResponses"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2469,7 +2470,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetCapacity_WithAdminAuth_ReturnsMeterState"
+        "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetCapacity_WithAdminAuth_ReturnsMeterState",
+        "Honua.Server.Tests.Features.Licensing.DisabledLicenseIntegrationTests.Production_DisabledWithoutLicense_StartsWithActiveEntitlementsAndTruthfulAdminResponses"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2499,7 +2501,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetLicenseEntitlements_WithoutAuth_Returns401",
-        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetLicenseEntitlements_ReturnsFeatureList"
+        "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetLicenseEntitlements_ReturnsFeatureList",
+        "Honua.Server.Tests.Features.Licensing.DisabledLicenseIntegrationTests.Production_DisabledWithoutLicense_StartsWithActiveEntitlementsAndTruthfulAdminResponses"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2516,6 +2519,7 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetLicenseStatus_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.LicenseEndpointsTests.GetLicenseStatus_WithCustomExpiryWarningDays_UsesConfiguredThreshold",
         "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests.GetLicenseStatus_ReturnsValidResponse",
+        "Honua.Server.Tests.Features.Licensing.DisabledLicenseIntegrationTests.Production_DisabledWithoutLicense_StartsWithActiveEntitlementsAndTruthfulAdminResponses",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.DeploymentGlobalAdministration_PreservesAdminAuthorization",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
@@ -6857,6 +6861,8 @@
         "Honua.ProviderSmoke.Tests.PrimaryProviderSmokeTestsBase.OgcFeatures_ItemsWithCql2Filter_ReturnsFilteredFeatures",
         "Honua.ProviderSmoke.Tests.PrimaryProviderSmokeTestsBase.OgcFeatures_Items_ReturnsAllSeededFeatures",
         "Honua.ProviderSmoke.Tests.SqlServerProviderSmokeTests.OgcFeatures_Items_ReturnsAllSeededFeatures",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.OgcFeaturesInsert_OnLayerPublishedOverSourceTable_IsRefusedAndNeverPersisted",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.OgcFeaturesInsert_OnSourceBackedLayerDeclaringCreate_IsRefusedAsUnserviceable",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_FeatureServerQuery_ReadsSourceBackedPostGisTable",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
         "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests.ContentNegotiation_VariousFormats_ReturnCorrectContentType",
@@ -14310,6 +14316,8 @@
         "Honua.Server.Tests.Admin.LayerPublishingExceptionMappingTests.PublishLayer_ByConnectionName_ResolvesConnectionStringUsingPinnedId",
         "Honua.Server.Tests.Admin.LayerPublishingExceptionMappingTests.PublishLayer_WhenResolverThrowsResourceNotFound_ReturnsNotFound",
         "Honua.Server.Tests.Admin.LayerPublishingExceptionMappingTests.PublishLayer_WhenResolverThrowsUnexpectedInvalidOperation_ReturnsInternalServerError",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.OgcFeaturesInsert_OnLayerPublishedOverSourceTable_IsRefusedAndNeverPersisted",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.OgcFeaturesInsert_OnSourceBackedLayerDeclaringCreate_IsRefusedAsUnserviceable",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_BulkToggle_DisablesServiceLayers",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_ByConnectionName_RoutesStorageMappedFeatureServerQueries",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_CreatesDiscoverableStacCollection",
@@ -17969,6 +17977,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.OgcFeaturesInsert_OnLayerPublishedOverSourceTable_IsRefusedAndNeverPersisted",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.OgcFeaturesInsert_OnSourceBackedLayerDeclaringCreate_IsRefusedAsUnserviceable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAuthorizationTests.CreateFeature_WithApiKey_ReturnsCreated",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAuthorizationTests.CreateFeature_WithoutApiKey_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.CreateFeature_WithContentCrsAlias_ReturnsCreated",
