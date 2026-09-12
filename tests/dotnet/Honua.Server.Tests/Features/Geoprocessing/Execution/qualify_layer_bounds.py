@@ -5,6 +5,8 @@ Docker Compose, --image registry/image@sha256:digest and --receipt /path/receipt
 """
 
 import argparse
+import base64
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -22,6 +24,8 @@ def utc():
 
 
 def main():
+    if not __debug__:
+        raise RuntimeError("Qualification requires Python assertions; do not use optimization flags")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
     parser.add_argument("--receipt", required=True)
@@ -33,7 +37,8 @@ def main():
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     project = "gp-bounds-proof-" + uuid.uuid4().hex[:10]
     receipt = {"schema": "honua.layer-resource-proof.v1", "outcome": "fail", "startedAt": utc(),
-               "image": args.image, "scenarios": [], "serving": []}
+               "image": args.image, "scenarios": [], "serving": [],
+               "harnessSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     stop = threading.Event()
     monitor = None
     base = f"http://127.0.0.1:{args.port}"
@@ -43,8 +48,11 @@ def main():
             data=None if body is None else json.dumps(body).encode(),
             headers={"Content-Type": "application/json", "X-API-Key": "gp-bounds-local",
                      "Prefer": "respond-async"})
-        with urllib.request.urlopen(request, timeout=10) as response:
-            return json.load(response)
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            raise AssertionError(f"{request.method} {path}: {error.code} {error.read().decode()}") from error
 
     def readiness():
         for _ in range(120):
@@ -105,20 +113,23 @@ def main():
             # The third layer deliberately has 1001 vertices in ONE geometry.
             seed = """
 INSERT INTO honua.services(service_name) VALUES ('gp-bounds');
-CREATE TABLE honua_data.gp_bound_boxes(objectid BIGSERIAL PRIMARY KEY, geometry geometry(Polygon,4326), attributes jsonb);
-CREATE TABLE honua_data.gp_bound_ring(objectid BIGSERIAL PRIMARY KEY, geometry geometry(Polygon,4326), attributes jsonb);
+CREATE TABLE honua.features(objectid BIGSERIAL PRIMARY KEY, layer_id int NOT NULL, geometry geometry(Polygon,4326), attributes jsonb);
 INSERT INTO honua.layers(layer_id,layer_name,table_schema,table_name,geometry_type,srid)
-VALUES (946290,'boxes','honua_data','gp_bound_boxes','Polygon',4326),
-       (946291,'large-ring','honua_data','gp_bound_ring','Polygon',4326);
+VALUES (946290,'boxes','honua','features','Polygon',4326),
+       (946291,'large-ring','honua','features','Polygon',4326),
+       (946292,'join-boxes','honua','features','Polygon',4326);
 INSERT INTO honua.service_layers(service_name,layer_id,layer_order)
-VALUES ('gp-bounds',946290,0),('gp-bounds',946291,1);
+VALUES ('gp-bounds',946290,0),('gp-bounds',946291,1),('gp-bounds',946292,2);
 INSERT INTO honua.layer_fields(layer_id,field_name,field_type,field_order)
-VALUES (946290,'objectid','Oid',0),(946291,'objectid','Oid',0);
-INSERT INTO honua_data.gp_bound_boxes(geometry,attributes) VALUES
-(ST_GeomFromText('POLYGON((0 0,2 0,2 2,0 2,0 0))',4326),'{}'),
-(ST_GeomFromText('POLYGON((1 1,3 1,3 3,1 3,1 1))',4326),'{}');
-INSERT INTO honua_data.gp_bound_ring(geometry,attributes) VALUES
-(ST_Buffer(ST_SetSRID(ST_Point(0,0),4326),1,'quad_segs=250'),'{}');
+VALUES (946290,'objectid','Oid',0),(946291,'objectid','Oid',0),(946292,'objectid','Oid',0);
+INSERT INTO honua.features(layer_id,geometry,attributes) VALUES
+(946290,ST_GeomFromText('POLYGON((0 0,2 0,2 2,0 2,0 0))',4326),'{}'),
+(946290,ST_GeomFromText('POLYGON((1 1,3 1,3 3,1 3,1 1))',4326),'{}');
+INSERT INTO honua.features(layer_id,geometry,attributes) VALUES
+(946291,ST_Buffer(ST_SetSRID(ST_Point(0,0),4326),1,'quad_segs=250'),'{}');
+INSERT INTO honua.features(layer_id,geometry,attributes) SELECT 946292,geometry,attributes FROM honua.features WHERE layer_id=946290;
+UPDATE honua.layers SET extent=ST_MakeEnvelope(-1,-1,3,3,4326) WHERE layer_id IN (946290,946291,946292);
+UPDATE honua.services SET service_extent=ST_MakeEnvelope(-1,-1,3,3,4326) WHERE service_name='gp-bounds';
 """
             compose("exec", "-T", "postgres", "psql", "-U", "honua", "-d", "honua", "-v", "ON_ERROR_STOP=1", input=seed, text=True)
             # Publish the catalog using the repository's canonical metadata fixture.
@@ -147,8 +158,10 @@ INSERT INTO honua_data.gp_bound_ring(geometry,attributes) VALUES
             monitor = threading.Thread(target=observe_serving, daemon=True)
             monitor.start()
             scenarios = [
+                ("bounded-passthrough", "generalization.dissolve", {"layerId": 946290, "dissolve": False}, None),
                 ("dissolve-work-limit", "generalization.dissolve", {"layerId": 946290}, "MaxTopologyWork"),
-                ("join-both-sides", "analytics.spatial-join", {"layerId": 946290, "joinLayerId": 946290}, "MaxTopologyWork"),
+                ("join-both-sides", "analytics.spatial-join", {"layerId": 946290, "joinLayerId": 946292}, "MaxTopologyWork"),
+                ("buffer-work-limit", "analytics.buffer-aggregate", {"layerId": 946290, "distance": 1}, "MaxTopologyWork"),
                 ("single-geometry", "generalization.dissolve", {"layerId": 946291}, "vertices"),
             ]
             for name, process, inputs, expected in scenarios:
@@ -158,13 +171,31 @@ INSERT INTO honua_data.gp_bound_ring(geometry,attributes) VALUES
                     job = api(f"/ogc/processes/processes/{process}/execution", {"inputs": inputs})
                     job_id = job.get("jobID", job.get("jobId"))
                     assert job_id, job
-                    deadline = time.monotonic() + 45
+                    # Retain production retry/backoff behavior while requiring terminal failure.
+                    deadline = time.monotonic() + 180
                     while True:
                         job = api("/ogc/processes/jobs/" + job_id)
                         if job["status"] in ["successful", "failed", "dismissed"] or time.monotonic() >= deadline:
                             break
                         time.sleep(0.2)
                     scenario["job"] = job
+                    if expected is None:
+                        assert job["status"] == "successful", job
+                        artifacts = api(f"/api/v1/admin/jobs/{job_id}/artifacts")
+                        artifacts = artifacts.get("data", artifacts)
+                        refs = [item["artifactId"] for item in artifacts["items"]]
+                        assert len(refs) == 1 and refs[0].startswith("data:application/geo+json;base64,"), artifacts
+                        payload = base64.b64decode(refs[0].split(",", 1)[1], validate=True)
+                        document = json.loads(payload)
+                        assert document["featureCount"] == 2 and document["processId"] == process
+                        geometries = [feature["geometry"] for feature in document["features"]]
+                        assert geometries == [
+                            {"type": "Polygon", "coordinates": [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]]},
+                            {"type": "Polygon", "coordinates": [[[1, 1], [3, 1], [3, 3], [1, 3], [1, 1]]]}], geometries
+                        scenario["outputSha256"] = hashlib.sha256(payload).hexdigest()
+                        scenario["outcome"] = "pass"
+                        scenario["completedAt"] = utc()
+                        continue
                     assert job["status"] == "failed", job
                     assert expected in json.dumps(job), job
                     scenario["outcome"] = "pass"
@@ -191,6 +222,12 @@ INSERT INTO honua_data.gp_bound_ring(geometry,attributes) VALUES
             if cleanup.returncode:
                 receipt["outcome"] = "fail"
             receipt["completedAt"] = utc()
+            observations = receipt.pop("serving")
+            receipt["serving"] = {"samples": len(observations),
+                "failures": [o for o in observations if o["outcome"] != "pass"],
+                "maxSeconds": max((o["seconds"] for o in observations), default=None),
+                "first": observations[0] if observations else None,
+                "last": observations[-1] if observations else None}
             receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
     return 0 if receipt["outcome"] == "pass" else 1
 

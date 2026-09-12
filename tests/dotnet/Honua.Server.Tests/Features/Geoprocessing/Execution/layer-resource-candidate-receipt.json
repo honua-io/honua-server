@@ -1,0 +1,290 @@
+{
+  "schema": "honua.layer-resource-proof.v1",
+  "outcome": "fail",
+  "startedAt": "2026-09-12T21:55:38.954514+00:00",
+  "image": "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+  "scenarios": [
+    {
+      "name": "bounded-passthrough",
+      "startedAt": "2026-09-12T21:56:05.729864+00:00",
+      "outcome": "pass",
+      "job": {
+        "processID": "generalization.dissolve",
+        "type": "process",
+        "jobID": "gp-d2a6888f9b2b49d3bd809207b6f5af2e",
+        "status": "successful",
+        "message": "Completed",
+        "created": "2026-09-12T21:56:05.7606713+00:00",
+        "updated": "2026-09-12T21:56:08.6740823+00:00",
+        "progress": 100,
+        "links": [
+          {
+            "href": "http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-d2a6888f9b2b49d3bd809207b6f5af2e",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          },
+          {
+            "href": "http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-d2a6888f9b2b49d3bd809207b6f5af2e/results",
+            "rel": "http://www.opengis.net/def/rel/ogc/1.0/results",
+            "type": "application/json",
+            "title": "Job results"
+          }
+        ]
+      },
+      "outputSha256": "4cf1733be7df319f2dd7cf5a9395fbda3626fce41163376e4465b8913a4218ea",
+      "completedAt": "2026-09-12T21:56:08.792330+00:00"
+    },
+    {
+      "name": "dissolve-work-limit",
+      "startedAt": "2026-09-12T21:56:08.792354+00:00",
+      "outcome": "fail",
+      "job": {
+        "processID": "generalization.dissolve",
+        "type": "process",
+        "jobID": "gp-8099a9ceaaac420fba38a77d3bb60bb1",
+        "status": "successful",
+        "message": "Completed",
+        "created": "2026-09-12T21:56:08.8149504+00:00",
+        "updated": "2026-09-12T21:56:14.3335920+00:00",
+        "progress": 100,
+        "links": [
+          {
+            "href": "http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-8099a9ceaaac420fba38a77d3bb60bb1",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          },
+          {
+            "href": "http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-8099a9ceaaac420fba38a77d3bb60bb1/results",
+            "rel": "http://www.opengis.net/def/rel/ogc/1.0/results",
+            "type": "application/json",
+            "title": "Job results"
+          }
+        ]
+      },
+      "error": "{'processID': 'generalization.dissolve', 'type': 'process', 'jobID': 'gp-8099a9ceaaac420fba38a77d3bb60bb1', 'status': 'successful', 'message': 'Completed', 'created': '2026-09-12T21:56:08.8149504+00:00', 'updated': '2026-09-12T21:56:14.3335920+00:00', 'progress': 100, 'links': [{'href': 'http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-8099a9ceaaac420fba38a77d3bb60bb1', 'rel': 'self', 'type': 'application/json', 'title': 'Job status'}, {'href': 'http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-8099a9ceaaac420fba38a77d3bb60bb1/results', 'rel': 'http://www.opengis.net/def/rel/ogc/1.0/results', 'type': 'application/json', 'title': 'Job results'}]}",
+      "completedAt": "2026-09-12T21:56:14.541794+00:00"
+    },
+    {
+      "name": "join-both-sides",
+      "startedAt": "2026-09-12T21:56:14.541825+00:00",
+      "outcome": "fail",
+      "job": {
+        "processID": "analytics.spatial-join",
+        "type": "process",
+        "jobID": "gp-f2a1c54f02c44291891a780becc297bd",
+        "status": "successful",
+        "message": "Completed",
+        "created": "2026-09-12T21:56:14.5576898+00:00",
+        "updated": "2026-09-12T21:56:19.6866085+00:00",
+        "progress": 100,
+        "links": [
+          {
+            "href": "http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-f2a1c54f02c44291891a780becc297bd",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          },
+          {
+            "href": "http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-f2a1c54f02c44291891a780becc297bd/results",
+            "rel": "http://www.opengis.net/def/rel/ogc/1.0/results",
+            "type": "application/json",
+            "title": "Job results"
+          }
+        ]
+      },
+      "error": "{'processID': 'analytics.spatial-join', 'type': 'process', 'jobID': 'gp-f2a1c54f02c44291891a780becc297bd', 'status': 'successful', 'message': 'Completed', 'created': '2026-09-12T21:56:14.5576898+00:00', 'updated': '2026-09-12T21:56:19.6866085+00:00', 'progress': 100, 'links': [{'href': 'http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-f2a1c54f02c44291891a780becc297bd', 'rel': 'self', 'type': 'application/json', 'title': 'Job status'}, {'href': 'http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-f2a1c54f02c44291891a780becc297bd/results', 'rel': 'http://www.opengis.net/def/rel/ogc/1.0/results', 'type': 'application/json', 'title': 'Job results'}]}",
+      "completedAt": "2026-09-12T21:56:19.728545+00:00"
+    },
+    {
+      "name": "buffer-work-limit",
+      "startedAt": "2026-09-12T21:56:19.728579+00:00",
+      "outcome": "fail",
+      "job": {
+        "processID": "analytics.buffer-aggregate",
+        "type": "process",
+        "jobID": "gp-85198477252145898e7e725acfddbcb9",
+        "status": "successful",
+        "message": "Completed",
+        "created": "2026-09-12T21:56:19.7499842+00:00",
+        "updated": "2026-09-12T21:56:25.1726337+00:00",
+        "progress": 100,
+        "links": [
+          {
+            "href": "http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-85198477252145898e7e725acfddbcb9",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          },
+          {
+            "href": "http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-85198477252145898e7e725acfddbcb9/results",
+            "rel": "http://www.opengis.net/def/rel/ogc/1.0/results",
+            "type": "application/json",
+            "title": "Job results"
+          }
+        ]
+      },
+      "error": "{'processID': 'analytics.buffer-aggregate', 'type': 'process', 'jobID': 'gp-85198477252145898e7e725acfddbcb9', 'status': 'successful', 'message': 'Completed', 'created': '2026-09-12T21:56:19.7499842+00:00', 'updated': '2026-09-12T21:56:25.1726337+00:00', 'progress': 100, 'links': [{'href': 'http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-85198477252145898e7e725acfddbcb9', 'rel': 'self', 'type': 'application/json', 'title': 'Job status'}, {'href': 'http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-85198477252145898e7e725acfddbcb9/results', 'rel': 'http://www.opengis.net/def/rel/ogc/1.0/results', 'type': 'application/json', 'title': 'Job results'}]}",
+      "completedAt": "2026-09-12T21:56:25.378005+00:00"
+    },
+    {
+      "name": "single-geometry",
+      "startedAt": "2026-09-12T21:56:25.378035+00:00",
+      "outcome": "pass",
+      "job": {
+        "processID": "generalization.dissolve",
+        "type": "process",
+        "jobID": "gp-c71e2d29181c423c85914304867926ce",
+        "status": "failed",
+        "message": "Invalid generalization.dissolve inputs: layer 946291 contains a geometry with 1001 vertices, exceeding the configured limit of 100; simplify the source geometry or raise the limit.",
+        "created": "2026-09-12T21:56:25.4011747+00:00",
+        "updated": "2026-09-12T21:58:02.5935114+00:00",
+        "progress": 20,
+        "links": [
+          {
+            "href": "http://[::ffff:172.20.0.4]:8080/ogc/processes/jobs/gp-c71e2d29181c423c85914304867926ce",
+            "rel": "self",
+            "type": "application/json",
+            "title": "Job status"
+          }
+        ]
+      },
+      "completedAt": "2026-09-12T21:58:02.775183+00:00"
+    }
+  ],
+  "harnessSha256": "df16cfe68f62ef5078962d24990ee5c993b800cf00396d6556d5510e4352133c",
+  "candidate": {
+    "containerId": "e2ca08684877c952babf253edb66a39b72fa1fa6ed97cb9c5fbbc475d3164376",
+    "imageId": "sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+    "labels": {
+      "description": "Honua Geospatial Feature Server",
+      "honua.runtime.compilation": "native-aot",
+      "honua.runtime.entrypoint": "/app/Honua.Server",
+      "honua.runtime.profile": "web",
+      "maintainer": "Honua Development Team",
+      "org.opencontainers.image.created": "2026-09-11T10:08:22.453Z",
+      "org.opencontainers.image.description": "Cloud-native multi-protocol geospatial server \u2014 GeoServices REST, OGC API, WMS/WFS/WMTS/WCS, STAC, OData v4, vector tiles, MCP, and gRPC, backed by PostGIS",
+      "org.opencontainers.image.licenses": "NOASSERTION",
+      "org.opencontainers.image.revision": "7ba422672e0c751843b17beb36e954a019cc19fb",
+      "org.opencontainers.image.source": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.title": "honua-server",
+      "org.opencontainers.image.url": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.version": "nightly-amd64",
+      "security.capabilities.drop": "ALL",
+      "security.group": "1001",
+      "security.non-root": "true",
+      "security.read-only-root": "true",
+      "security.user": "1001",
+      "version": "1.0"
+    },
+    "memoryLimitBytes": 1073741824,
+    "nanoCpus": 1000000000,
+    "budgets": {
+      "Geoprocessing__Executors__MaxTopologyWork": "99",
+      "Geoprocessing__Executors__MaxLayerVertices": "100",
+      "Geoprocessing__Executors__MaxArtifactBytes": "32768",
+      "Geoprocessing__Executors__MaxLayerExecutionSeconds": "10",
+      "Limits__Analytics__MaxInputFeatures": "100",
+      "Limits__Analytics__MaxInputBytes": "1048576",
+      "Limits__Geometry__MaxVerticesPerGeometry": "100"
+    }
+  },
+  "catalog": {
+    "folders": [],
+    "services": [
+      {
+        "name": "gp-bounds",
+        "type": "FeatureServer",
+        "url": "http://[::ffff:172.20.0.4]:8080/rest/services/gp-bounds/FeatureServer"
+      },
+      {
+        "name": "gp-bounds",
+        "type": "GPServer",
+        "url": "http://[::ffff:172.20.0.4]:8080/rest/services/gp-bounds/GPServer"
+      },
+      {
+        "name": "gp-bounds",
+        "type": "MapServer",
+        "url": "http://[::ffff:172.20.0.4]:8080/rest/services/gp-bounds/MapServer"
+      }
+    ]
+  },
+  "finalContainerState": {
+    "Status": "running",
+    "Running": true,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 69813,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-12T21:56:00.353450632Z",
+    "FinishedAt": "2026-09-12T21:55:59.629301458Z",
+    "Health": {
+      "Status": "healthy",
+      "FailingStreak": 0,
+      "Log": [
+        {
+          "Start": "2026-09-12T21:55:56.880373879Z",
+          "End": "2026-09-12T21:55:57.290513788Z",
+          "ExitCode": 0,
+          "Output": ""
+        },
+        {
+          "Start": "2026-09-12T21:56:06.193258528Z",
+          "End": "2026-09-12T21:56:06.357146895Z",
+          "ExitCode": 0,
+          "Output": ""
+        },
+        {
+          "Start": "2026-09-12T21:56:36.346880925Z",
+          "End": "2026-09-12T21:56:36.467368371Z",
+          "ExitCode": 0,
+          "Output": ""
+        },
+        {
+          "Start": "2026-09-12T21:57:06.456891082Z",
+          "End": "2026-09-12T21:57:06.572796982Z",
+          "ExitCode": 0,
+          "Output": ""
+        },
+        {
+          "Start": "2026-09-12T21:57:36.562512023Z",
+          "End": "2026-09-12T21:57:36.664214329Z",
+          "ExitCode": 0,
+          "Output": ""
+        }
+      ]
+    }
+  },
+  "error": "candidate failed resource-bound qualification",
+  "cleanup": {
+    "outcome": "pass"
+  },
+  "completedAt": "2026-09-12T21:58:11.139413+00:00",
+  "serving": {
+    "samples": 474,
+    "failures": [],
+    "maxSeconds": 0.9188766220177058,
+    "first": {
+      "at": "2026-09-12T21:56:05.719030+00:00",
+      "outcome": "pass",
+      "response": {
+        "count": 2,
+        "exceededTransferLimit": false
+      },
+      "seconds": 0.030346924992045388
+    },
+    "last": {
+      "at": "2026-09-12T21:58:02.697943+00:00",
+      "outcome": "pass",
+      "response": {
+        "count": 2,
+        "exceededTransferLimit": false
+      },
+      "seconds": 0.018805745989084244
+    }
+  }
+}

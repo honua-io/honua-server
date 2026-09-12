@@ -68,7 +68,7 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
             ? Options.CurrentValue.MaxLayerVertices
             : Math.Min(Options.CurrentValue.MaxLayerVertices, Options.CurrentValue.MaxArtifactBytes / MinSerializedBytesPerVertex);
         var bufferedGeometries = await BufferSourceFeaturesAsync(
-                context, inputs, source, distanceMeters, maxOutputVertices, cancellationToken)
+                context, inputs, source, distanceMeters, maxOutputVertices, Options.CurrentValue.MaxTopologyWork, cancellationToken)
             .ConfigureAwait(false);
 
         var buffered = new List<(IFeature Feature, NtsGeometry Geometry, string GroupKey)>(source.Count);
@@ -180,6 +180,7 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
         List<IFeature> source,
         double distanceMeters,
         long? maxOutputVertices,
+        long maxTopologyWork,
         CancellationToken cancellationToken)
     {
         var results = new NtsGeometry?[source.Count];
@@ -214,6 +215,8 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
             {
                 continue;
             }
+
+            LayerComputationBudget.EnsureTopologyWork(geometry.NumPoints, geometry.NumPoints, maxTopologyWork);
 
             byte[] bufferedWkb;
             try

@@ -160,6 +160,27 @@ public sealed class LayerSourcedExecutorTests
     }
 
     [UnitTest]
+    public async Task BufferAggregate_OversizedTopology_IsRejectedBeforeGeometryService()
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [BoxFeature(0, 0, 2, 2)]);
+        var geometryOps = Substitute.For<IGeometryOperationService>();
+        var services = new ServiceCollection();
+        services.AddSingleton<IDagFeatureSource>(source);
+        services.AddSingleton(geometryOps);
+        services.AddSingleton<IMetadataV2GraphProvider>(new FakeMetadataV2GraphProvider(7, 3857));
+        using var provider = services.BuildServiceProvider();
+        var (status, uri, _) = await RunAsync(
+            new LayerBufferAggregateExecutor(provider.GetRequiredService<IServiceScopeFactory>(),
+                Options(maxTopologyWork: 24), NullLogger<LayerBufferAggregateExecutor>.Instance),
+            LayerBufferAggregateExecutor.HandledProcessId, ("layerId", "7"), ("distance", "1"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+        _lastErrorForAssertions.Should().Contain("MaxTopologyWork=24").And.Contain("stopped before computation");
+        geometryOps.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
     public async Task Dissolve_NestedUnicodeAttributes_AreChargedToInputBudget()
     {
         using var document = System.Text.Json.JsonDocument.Parse("{\"items\":[\"" + new string('界', 200) + "\"]}");
