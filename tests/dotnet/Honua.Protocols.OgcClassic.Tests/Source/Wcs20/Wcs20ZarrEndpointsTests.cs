@@ -13,6 +13,7 @@ using Honua.Core.Features.Raster.ZarrParser;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Formats;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
@@ -24,13 +25,24 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
 {
     private const long RasterId = 901;
+
+    /// <summary>Elevation levels in the fixture cube.</summary>
+    private const int FixtureLevels = 4;
+
+    /// <summary>Rows (y) in the fixture cube.</summary>
+    private const int FixtureRows = 4;
+
+    /// <summary>Columns (x) in the fixture cube.</summary>
+    private const int FixtureColumns = 4;
+
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private WebAppFixture _fixture = null!;
 
     public async Task InitializeAsync()
     {
         const string root = "stores/wcs-vertical";
-        var rangeReader = new WcsFixtureRangeReader(BuildVerticalStore(root, levels: 4, rows: 4, columns: 4));
+        var rangeReader = new WcsFixtureRangeReader(
+            BuildVerticalStore(root, FixtureLevels, FixtureRows, FixtureColumns));
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(rangeReader, "bucket", root);
         var registration = new ZarrRegistration
         {
@@ -178,6 +190,98 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
         content.Should().Contain("locator=\"SCALESIZE\"");
     }
 
+    /// <summary>
+    /// The served Zarr slice's pixels, not its signature (honua-server#4395).
+    /// </summary>
+    /// <remarks>
+    /// Every positive Zarr serving test asserted <c>image/png</c> and the eight-byte PNG signature,
+    /// so a response carrying the wrong elevation slice, a transposed grid or a blank image passed.
+    /// <para>
+    /// The request trims the full advertised extent and scales it to 8x8, so each of the cube's
+    /// 4x4 cells becomes a 2x2 pixel block: output pixel (px, py) has its centre inside cube cell
+    /// (row py/2, column px/2), which is what the reader's native-CRS sample grid resolves under
+    /// nearest-neighbour resampling. With no explicit stretch the renderer auto-ramps grey over the
+    /// selected slice's own minimum and maximum, so every pixel's grey level is computable from
+    /// <see cref="Sample"/> without rendering anything.
+    /// </para>
+    /// <para>
+    /// Two levels are requested because the auto-stretch is what makes a single-level assertion
+    /// weak: a fixture whose levels differ only by an additive constant normalises to the identical
+    /// grey image on every level, so the expected pixels would not depend on the SUBSET at all.
+    /// <see cref="Sample"/> instead varies the column ramp <em>slope</em> with the level, which
+    /// survives the stretch, and the two responses are additionally asserted to differ.
+    /// </para>
+    /// </remarks>
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_ZarrSlice_RendersTheSelectedElevationSlicesPixels()
+    {
+        // The elevation axis runs 0..1000 over four levels, so its coordinates are 0, 333.33,
+        // 666.67 and 1000: coordinate 0 selects level 0 and 333.3333 selects level 1.
+        var level0 = await GetSlicePngAsync("0");
+        var level1 = await GetSlicePngAsync("333.3333");
+
+        AssertSlicePixels(level0, level: 0);
+        AssertSlicePixels(level1, level: 1);
+
+        // The two levels are distinguishable through the auto-stretch. Without this the per-level
+        // oracles above could both hold for a reader that always served the same slice.
+        level1.Should().NotEqual(level0, "each elevation level must render its own values");
+    }
+
+    private async Task<byte[]> GetSlicePngAsync(string elevation)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
+            "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
+            "&FORMAT=image/png&SUBSET=Long(-180,180)&SUBSET=Lat(-90,90)" +
+            $"&SUBSET=elevation({elevation})&SCALESIZE=x(8),y(8)");
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, Encoding.UTF8.GetString(bytes));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        return bytes;
+    }
+
+    private static void AssertSlicePixels(byte[] png, int level)
+    {
+        var image = MiniPngDecoder.Decode(png);
+        image.Width.Should().Be(8);
+        image.Height.Should().Be(8);
+
+        var min = Sample(level, 0, 0);
+        var max = Sample(level, FixtureRows - 1, FixtureColumns - 1);
+
+        for (var py = 0; py < 8; py++)
+        {
+            var row = py / 2;
+            for (var px = 0; px < 8; px++)
+            {
+                var column = px / 2;
+                // Normalize in double precision so byte midpoint rounding stays exact.
+                double value = Sample(level, row, column);
+                var grey = (byte)Math.Clamp((int)Math.Round((value - min) / (max - min) * 255.0), 0, 255);
+                image.Pixel(px, py).Should().Be(
+                    (grey, grey, grey, (byte)255),
+                    "pixel ({0},{1}) renders cube cell (level {2}, row {3}, column {4}) whose value is {5}",
+                    px,
+                    py,
+                    level,
+                    row,
+                    column,
+                    value);
+            }
+        }
+
+        // The corners pin the orientation in cube terms: the north-west pixel is the slice minimum
+        // (pure black) and the south-east pixel its maximum (pure white). A vertically flipped or
+        // transposed render moves at least one of them.
+        image.Pixel(0, 0).Should().Be(((byte)0, (byte)0, (byte)0, (byte)255));
+        image.Pixel(7, 7).Should().Be(((byte)255, (byte)255, (byte)255, (byte)255));
+    }
+
     private static string BuildRequest(string path)
         => path + "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +
             "&FORMAT=image/png&SUBSET=Long(-180,180)&SUBSET=Lat(-90,90)" +
@@ -222,6 +326,28 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
             .Returns(raster.Extent);
     }
 
+    /// <summary>The fixture cube's value at <paramref name="level"/>, <paramref name="row"/>, <paramref name="column"/>.</summary>
+    /// <remarks>
+    /// The level contributes both an offset (the thousands digit names the slice) and the column
+    /// ramp's slope. The slope is the part that matters: the renderer auto-stretches each selected
+    /// slice to its own minimum and maximum, so levels that differed only by an additive constant
+    /// would all normalise to the identical grey image and no assertion on the returned pixels
+    /// could tell which slice was served. Varying the slope makes each level's normalised image
+    /// distinct. The pattern is also asymmetric in (row, column), so a transposed read differs.
+    /// <para>
+    /// Values are built in float space rather than as an integer product cast at the end, so there
+    /// is no overflow or precision-loss pattern for the analyzer to flag; every value the fixture
+    /// produces is exactly representable.
+    /// </para>
+    /// </remarks>
+    private static float Sample(int level, int row, int column)
+    {
+        float l = level;
+        float r = row;
+        float c = column;
+        return (l * 1000f) + (r * 10f) + (c * (l + 1f));
+    }
+
     private static Dictionary<string, byte[]> BuildVerticalStore(
         string root,
         int levels,
@@ -238,7 +364,8 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
                 "\"axes\":[{\"name\":\"elevation\",\"unit\":\"m\",\"start\":0,\"end\":1000}]}"),
             [root + "/temperature/.zarray"] = Encoding.UTF8.GetBytes(
                 "{\"chunks\":[" + levels + "," + rows + "," + columns +
-                "],\"compressor\":null,\"dtype\":\"<f4\",\"fill_value\":0,\"filters\":null," +
+                // Zero is a valid sample on level 0; keep the fill sentinel outside the data range.
+                "],\"compressor\":null,\"dtype\":\"<f4\",\"fill_value\":\"NaN\",\"filters\":null," +
                 "\"order\":\"C\",\"shape\":[" + levels + "," + rows + "," + columns + "],\"zarr_format\":2}"),
             [root + "/temperature/.zattrs"] = Encoding.UTF8.GetBytes(
                 "{\"_ARRAY_DIMENSIONS\":[\"elevation\",\"y\",\"x\"]}"),
@@ -251,11 +378,7 @@ public sealed class Wcs20ZarrEndpointsTests : IAsyncLifetime
                 for (var column = 0; column < columns; column++)
                 {
                     var offset = ((level * rows + row) * columns + column) * sizeof(float);
-                    // Build the value in float space from the start rather than multiplying as
-                    // integers and casting at the end, so there's no int/long overflow or
-                    // precision-loss pattern for the analyzer (or a future larger fixture) to flag.
-                    var value = level * 1000f + row * 10f + column;
-                    Buffer.BlockCopy(BitConverter.GetBytes(value), 0, values, offset, sizeof(float));
+                    Buffer.BlockCopy(BitConverter.GetBytes(Sample(level, row, column)), 0, values, offset, sizeof(float));
                 }
             }
         }

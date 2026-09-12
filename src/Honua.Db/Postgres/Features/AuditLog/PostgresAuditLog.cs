@@ -13,8 +13,8 @@ namespace Honua.Db.Postgres.Features.AuditLog;
 /// <summary>
 /// PostgreSQL-backed <see cref="IAuditLog"/> writing to <c>honua.audit_log</c>.
 /// Append-only by design (see migration 033): only INSERTs are issued, and
-/// transient failures are swallowed (logged) so that an audit-write hiccup
-/// never blocks the security-relevant action being audited.
+/// failures are logged and return no receipt. Callers requiring durable audit
+/// evidence must reject or roll back their mutation when no receipt is returned.
 /// </summary>
 internal sealed class PostgresAuditLog : IAuditLog
 {
@@ -96,8 +96,12 @@ internal sealed class PostgresAuditLog : IAuditLog
             // Serialize chain construction so the latest entry_hash we read is the
             // true tail of the chain. The advisory lock is transaction-scoped and
             // released on commit/rollback.
-            await using var transaction = await connection.Connection
-                .BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            // Borrow the actual explicit mutation transaction, regardless of the
+            // connection string's auto-enlistment setting. Otherwise own a local one.
+            await using var ownedTransaction = connection.Transaction is null
+                ? await connection.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+            var transaction = connection.Transaction ?? ownedTransaction;
 
             await using (var lockCommand = new NpgsqlCommand("SELECT pg_advisory_xact_lock(@key)", connection, transaction))
             {
@@ -146,7 +150,10 @@ internal sealed class PostgresAuditLog : IAuditLog
                 command.Parameters.AddWithValue("@entry_hash", entryHash);
 
                 var assignedAuditId = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+                if (ownedTransaction is not null)
+                {
+                    await ownedTransaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+                }
                 return Convert.ToString(assignedAuditId, CultureInfo.InvariantCulture);
             }
         }

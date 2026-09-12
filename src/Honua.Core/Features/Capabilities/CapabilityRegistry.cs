@@ -299,6 +299,12 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("scene.bim-ingest", "scene", FeatureCatalog.SceneBimIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("scene.pointcloud-ingest", "scene", FeatureCatalog.ScenePointCloudIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Preview),
+            // Honua 2026.1 is GA for single-tenant deployments. Multi-tenant operation
+            // remains an opt-in Preview/trial surface for non-production evaluation only,
+            // with no GA, availability, performance, durability, SLO, or scale claim and
+            // no customer production data. This maturity is claims-only and does not weaken the
+            // full-severity security floor for cross-tenant disclosure (#3906).
+            ("admin.multi-tenancy", "control-plane", FeatureCatalog.MultiTenancyKey, CapabilityKind.Feature, null, CapabilityMaturity.Preview),
             // Realtime remains opt-in Preview until the per-transport qualification
             // denominator passes against the exact release candidate (#3810).
             ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Preview),
@@ -346,6 +352,24 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("publication.metadata-release", "publication", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("upload.file", "upload", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("edit.features", "edit", FeatureCatalog.FeatureServerEditsKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+
+            // Collaborative-editing leases (#4402). The lease itself IS enforced on every
+            // feature-write path, so this is Implemented/Served; what a deployment may or may
+            // not have is an IFeatureLockAuthorizer, and that is reported as configured-or-not
+            // rather than as support — the shipped authorizer grants no lease at all.
+            ("collaboration.feature-locks", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+
+            // The two recorded 2026.1 feature-lock gaps (#4402), declared here so a client
+            // reads them off the manifest instead of off the docs page: a lease is node-local,
+            // and the GeoServices applyEdits surface honours no client-supplied version token.
+            // The version-token gap is named for the ONE surface that has it: OGC API Features
+            // enforces If-Match/412 on PUT, merge-PATCH and DELETE and the store-level
+            // precondition path is untouched, so a generically-named "edit.version-tokens"
+            // would tell a client to disable optimistic concurrency where it works.
+            // Planned maturity + the KnownGap status below is the same shape the unimplemented
+            // file-format writers already publish (supported=false, lifecycle "planned").
+            ("collaboration.feature-locks.cross-node", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
+            ("edit.geoservices-version-tokens", "edit", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
             // Branch versioning (VMS REST surface) — built-experimental (ADR-0058 / BH6-001/BH6-002 fix).
             // The VMS endpoints are gated OFF the GA surface by default (versioning.branch descriptor).
             // Opt in via Capabilities:Experimental:versioning.branch:Enabled=true.
@@ -364,6 +388,13 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Category = category,
                 Kind = kind,
                 Maturity = maturity,
+                // A roster entry declared Planned is a declared implementation gap, not a
+                // served capability: the gate resolver must refuse it with
+                // capability-not-implemented and the manifest must publish supported=false.
+                // Same pairing FileFormatDirection uses for an unimplemented codec direction.
+                ImplementationStatus = maturity == CapabilityMaturity.Planned
+                    ? CapabilityImplementationStatus.KnownGap
+                    : CapabilityImplementationStatus.Served,
                 RequiresOptIn = id is not ("serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages"),
                 EntitlementKey = entitlementKey,
                 MinimumEdition = ResolveMinimumEdition(entitlementKey),
@@ -379,13 +410,14 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
     private const string AppPackageSchemaVersion = "honua_app_package.v1";
 
     // -----------------------------------------------------------------------
-    // Data formats — the shared format readers/writers. The import formats mirror
-    // Honua.Core's SupportedFileFormat enum; esrijson/wkb are additional writer/
-    // codec-backed formats that are not import enum members.
-    // (canonical name, minimum edition or null)
+    // The original format.* identifiers gate shared codecs and protocol format
+    // negotiation; they do not promise file export. The read/write descriptors
+    // separately describe file import and the built-in admin file-export surface.
     // -----------------------------------------------------------------------
     private static IEnumerable<CapabilityDescriptor> BuildDataFormatDescriptors()
     {
+        var importFormats = Enum.GetValues<Honua.Core.Features.FileImport.Domain.SupportedFileFormat>()
+            .Select(format => format.ToString().ToLowerInvariant()).ToHashSet(StringComparer.Ordinal);
         string[] formats =
         [
             "geojson",
@@ -413,8 +445,24 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Maturity = CapabilityMaturity.Implemented,
                 StandardName = name,
             };
+
+            var readable = importFormats.Contains(name);
+            var writable = name is "csv" or "shapefile" or "geopackage";
+            yield return FileFormatDirection(name, "read", readable);
+            yield return FileFormatDirection(name, "write", writable);
         }
     }
+
+    private static CapabilityDescriptor FileFormatDirection(string name, string direction, bool served) => new()
+    {
+        Id = DataFormatIdPrefix + direction + "." + name,
+        Category = "format-" + direction,
+        Kind = CapabilityKind.DataFormat,
+        Maturity = served ? CapabilityMaturity.Implemented : CapabilityMaturity.Planned,
+        ImplementationStatus = served ? CapabilityImplementationStatus.Served : CapabilityImplementationStatus.KnownGap,
+        RequiresOptIn = false,
+        StandardName = name,
+    };
 
     private static HonuaEdition? ResolveMinimumEdition(string? entitlementKey)
         => entitlementKey is not null && EditionByEntitlementKey.TryGetValue(entitlementKey, out var edition)

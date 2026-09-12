@@ -10,6 +10,12 @@ using System.Text.Json;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Plugins;
+using Honua.Plugins.Abstractions;
+using Honua.Server.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -60,7 +66,8 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         string[]? entitlements = null,
         HonuaEdition edition = HonuaEdition.Pro,
         bool manifestFromRegistry = false,
-        bool experimentalGlobalEnabled = true)
+        bool experimentalGlobalEnabled = true,
+        bool tenantSchemaRoutingEnabled = false)
         => new WebAppFixture()
             .WithTestLicense(edition, entitlements: entitlements)
             .ConfigureServices(services =>
@@ -90,9 +97,145 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                         ["Grpc:StreamBatchSize"] = "42",
                         ["Capabilities:ManifestFromRegistry"] = manifestFromRegistry ? "true" : "false",
                         ["Capabilities:Experimental:Enabled"] = experimentalGlobalEnabled ? "true" : "false",
+                        ["MultiTenancy:SchemaRouting:Enabled"] = tenantSchemaRoutingEnabled ? "true" : "false",
                     });
                 });
             });
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_FileExportDirections_AdvertisesOnlyThreeImplementedWriters(bool fromRegistry)
+    {
+        await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry);
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var writers = document.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(capability => capability.GetProperty("category").GetString() == "format-write").ToArray();
+        writers.Should().HaveCount(13);
+        writers.Where(capability => capability.GetProperty("supported").GetBoolean())
+            .Select(capability => capability.GetProperty("id").GetString()).Should().BeEquivalentTo(
+                "format.write.csv", "format.write.shapefile", "format.write.geopackage");
+        foreach (var writer in writers)
+        {
+            var supported = writer.GetProperty("supported").GetBoolean();
+            writer.GetProperty("available").GetBoolean().Should().Be(supported);
+            writer.GetProperty("lifecycle").GetString().Should().Be(supported ? "implemented" : "planned");
+            if (!supported)
+            {
+                writer.GetProperty("reasonCode").GetString().Should().Be("unsupported");
+            }
+        }
+
+        using var anonymous = fixture.CreateClient();
+        using var anonymousResponse = await anonymous.GetAsync("/api/v1/capabilities/manifest");
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
+        var implemented = anonymousDocument.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(row => row.GetProperty("category").GetString() is "format-read" or "format-write")
+            .Where(row => row.GetProperty("supported").GetBoolean()).ToArray();
+        implemented.Should().HaveCount(16);
+        foreach (var capability in implemented)
+        {
+            capability.GetProperty("available").GetBoolean().Should().BeFalse();
+            capability.GetProperty("reasonCode").GetString().Should().Be("insufficient-policy");
+        }
+
+        foreach (var adminRead in new[] { false, true })
+        {
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Role, adminRead ? AdminApiKeyPermission.ScopedAdminRole : "editor"),
+                 new Claim(AdminApiKeyPermission.PermissionClaimType, adminRead ? "admin:read" : "features:read")],
+                "ApiKey"));
+            var manifest = await fixture.GetService<ICapabilityManifestService>().GetManifestAsync(
+                new CapabilityManifestRequest(principal, null, TenantContextSource.Anonymous, null, null, true));
+            var formats = manifest.Capabilities.Where(row => row.Category is "format-read" or "format-write")
+                .Where(row => row.Supported).ToArray();
+            formats.Should().HaveCount(16);
+            foreach (var capability in formats)
+            {
+                capability.Available.Should().Be(adminRead && capability.Category == "format-write",
+                    "import is an admin POST and synchronous export is an admin GET");
+                if (!capability.Available) { capability.ReasonCode.Should().Be("insufficient-policy"); }
+            }
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_FileReadersWithoutImportService_ReportMissingDependency(bool fromRegistry)
+    {
+        await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry)
+            .ConfigureServices(services => services.RemoveAll<IFileImportService>());
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var readers = document.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(row => row.GetProperty("category").GetString() == "format-read").ToArray();
+        readers.Should().HaveCount(13);
+        foreach (var reader in readers)
+        {
+            reader.GetProperty("supported").GetBoolean().Should().BeTrue();
+            reader.GetProperty("available").GetBoolean().Should().BeFalse();
+            reader.GetProperty("reasonCode").GetString().Should().Be("dependency-unavailable");
+        }
+        GetCapability(document.RootElement, "format.write.csv").GetProperty("available").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, false)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_FilePluginWriters_UsesLicensedEnabledDiscovery(bool fromRegistry, bool enabled, bool licensed)
+    {
+        var formats = new[] { "gpx", "fixture-tsv" }.Select(id =>
+        {
+            var format = Substitute.For<IFeatureOutputFormat>();
+            format.FormatId.Returns(id);
+            format.MediaType.Returns("application/octet-stream");
+            format.FileExtension.Returns(id);
+            return format;
+        }).ToArray();
+        await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry,
+            edition: licensed ? HonuaEdition.Enterprise : HonuaEdition.Pro)
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IFeatureOutputFormatRegistry>();
+                services.AddSingleton<IFeatureOutputFormatRegistry>(sp => new FeatureOutputFormatRegistry(
+                    formats, sp.GetRequiredService<ILicenseEntitlementService>(), Options.Create(new PluginOptions { Enabled = enabled })));
+            });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var writers = document.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Where(row => row.GetProperty("category").GetString() == "format-write").ToArray();
+        var active = enabled && licensed;
+        writers.Should().HaveCount(active ? 14 : 13);
+        writers.Select(row => row.GetProperty("id").GetString()).Should().OnlyHaveUniqueItems();
+        var gpx = GetCapability(document.RootElement, "format.write.gpx");
+        gpx.GetProperty("supported").GetBoolean().Should().Be(active);
+        gpx.GetProperty("available").GetBoolean().Should().Be(active);
+        gpx.GetProperty("lifecycle").GetString().Should().Be(active ? "implemented" : "planned");
+        writers.Any(row => row.GetProperty("id").GetString() == "format.write.fixture-tsv").Should().Be(active);
+        if (active)
+        {
+            GetCapability(document.RootElement, "format.write.fixture-tsv").GetProperty("available").GetBoolean().Should().BeTrue();
+        }
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
@@ -108,9 +251,11 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var document = await ReadDocumentAsync(response);
-            foreach (var id in new[] { "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var id in new[] { "admin.multi-tenancy", "realtime.feature-streams", "serve.sensorthings" })
             {
                 var capability = GetCapability(document.RootElement, id);
+                capability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
                 capability.GetProperty("available").GetBoolean().Should().BeFalse();
                 capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
             }
@@ -142,6 +287,71 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 capability.GetProperty("available").GetBoolean().Should().BeTrue();
                 capability.GetProperty("optInRequired").GetBoolean().Should().BeFalse();
             }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_MultiTenancy_ReflectsRuntimeLicenseAndAuthentication()
+    {
+        foreach (var fixture in new[] { false, true }.Select(fromRegistry => CreateManifestFixture(
+                     edition: HonuaEdition.Enterprise,
+                     manifestFromRegistry: fromRegistry,
+                     tenantSchemaRoutingEnabled: true)))
+        {
+            await fixture.InitializeAsync();
+
+            try
+            {
+                using var anonymousClient = fixture.CreateClient();
+                using var anonymousResponse = await anonymousClient.GetAsync("/api/v1/capabilities/manifest");
+                using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
+                var anonymousCapability = GetCapability(anonymousDocument.RootElement, "admin.multi-tenancy");
+                anonymousCapability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                anonymousCapability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
+                anonymousCapability.GetProperty("available").GetBoolean().Should().BeFalse();
+                anonymousCapability.GetProperty("reasonCode").GetString().Should().Be("insufficient-policy");
+                anonymousCapability.GetProperty("entitlementKey").GetString().Should().Be(FeatureCatalog.MultiTenancyKey);
+                anonymousCapability.GetProperty("minimumEdition").GetString().Should().Be("Enterprise");
+
+                using var adminClient = fixture.CreateAdminClient();
+                using var adminResponse = await adminClient.GetAsync("/api/v1/capabilities/manifest");
+                using var adminDocument = await ReadDocumentAsync(adminResponse);
+                var adminCapability = GetCapability(adminDocument.RootElement, "admin.multi-tenancy");
+                adminCapability.GetProperty("available").GetBoolean().Should().BeTrue();
+                adminCapability.GetProperty("lifecycle").GetString().Should().Be("preview",
+                    "opting into a trial must never promote tenancy to GA");
+                adminCapability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_MultiTenancyWithoutSchemaRouting_IsDisabledByConfiguration()
+    {
+        var fixture = CreateManifestFixture(
+            edition: HonuaEdition.Enterprise,
+            manifestFromRegistry: true,
+            tenantSchemaRoutingEnabled: false);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            using var document = await ReadDocumentAsync(response);
+            var capability = GetCapability(document.RootElement, "admin.multi-tenancy");
+            capability.GetProperty("available").GetBoolean().Should().BeFalse();
+            capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
         }
         finally
         {
@@ -691,6 +901,17 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             {
                 services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore());
                 services.AddSingleton<IJobQueue>(new InMemoryJobQueue());
+                services.Configure<DurableJobSubstrateOptions>(options =>
+                {
+                    options.RedisConfigured = true;
+                    options.RedisEntitled = true;
+                    options.RedisDurabilityAttestation = new RedisDurabilityAttestation(
+                        "redis.example.internal:6379",
+                        "aof (appendonly=yes, aof_enabled=1)",
+                        "appendfsync=always",
+                        "noeviction",
+                        DateTimeOffset.UtcNow);
+                });
             });
         await fixture.InitializeAsync();
 

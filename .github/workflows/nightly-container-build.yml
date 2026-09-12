@@ -56,7 +56,7 @@ jobs:
         run: echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
@@ -140,7 +140,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
@@ -189,16 +189,14 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          # Kept on its own nightly-* scopes rather than the shared honua-<variant>-<arch>
-          # scopes: this workflow overrides the base-image ARGs to its mirrored
-          # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
-          # from the first instruction down and the caches are not interchangeable.
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-aot-${{ matrix.arch }}
+          # Share one cache per Dockerfile variant and architecture with PR/release builds.
+          # BuildKit validates layer inputs, including the digest-pinned mirrored bases.
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-${{ matrix.arch }}
           # ignore-error: a failed/interrupted registry cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
           # not fail an otherwise-successful build. The cache is an accelerator,
           # not a release artifact.
-          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-aot-${{ matrix.arch }},mode=max,ignore-error=true
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-aot-${{ matrix.arch }},mode=max,ignore-error=true
           provenance: true
           sbom: true
 
@@ -255,7 +253,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
@@ -303,16 +301,14 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          # Kept on its own nightly-* scopes rather than the shared honua-<variant>-<arch>
-          # scopes: this workflow overrides the base-image ARGs to its mirrored
-          # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
-          # from the first instruction down and the caches are not interchangeable.
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-lambda-aot-${{ matrix.arch }}
+          # Share one cache per Dockerfile variant and architecture with PR/release builds.
+          # BuildKit validates layer inputs, including the digest-pinned mirrored bases.
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-lambda-aot-${{ matrix.arch }}
           # ignore-error: a failed/interrupted registry cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
           # not fail an otherwise-successful build. The cache is an accelerator,
           # not a release artifact.
-          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-lambda-aot-${{ matrix.arch }},mode=max,ignore-error=true
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-lambda-aot-${{ matrix.arch }},mode=max,ignore-error=true
           provenance: false
           sbom: false
 
@@ -428,7 +424,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
@@ -453,10 +449,10 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-functions-aot-amd64
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-functions-aot-amd64
           # ignore-error: a failed cache export must not fail an otherwise
           # successful build; the cache is an accelerator, not evidence.
-          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-functions-aot-amd64,mode=max,ignore-error=true
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-functions-aot-amd64,mode=max,ignore-error=true
           provenance: false
           sbom: false
 
@@ -483,7 +479,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
@@ -532,16 +528,14 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          # Kept on its own nightly-* scopes rather than the shared honua-<variant>-<arch>
-          # scopes: this workflow overrides the base-image ARGs to its mirrored
-          # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
-          # from the first instruction down and the caches are not interchangeable.
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-jit-${{ matrix.arch }}
+          # Share one cache per Dockerfile variant and architecture with PR/release builds.
+          # BuildKit validates layer inputs, including the digest-pinned mirrored bases.
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-${{ matrix.arch }}
           # ignore-error: a failed/interrupted registry cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
           # not fail an otherwise-successful build+push. The cache is a build
           # accelerator, not a release artifact.
-          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-jit-${{ matrix.arch }},mode=max,ignore-error=true
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-${{ matrix.arch }},mode=max,ignore-error=true
           provenance: true
           sbom: true
 

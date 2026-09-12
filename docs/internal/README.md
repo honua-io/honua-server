@@ -1,3 +1,8 @@
+---
+type: index
+title: "Internal engineering docs"
+description: "Contributor notes, ADRs, spikes and evidence; not part of the published product documentation."
+---
 # Internal engineering documentation
 
 This section holds Honua's internal engineering material: contributor guides, architecture decision records (ADRs), CI/CD gate definitions, conformance and certification evidence, design drafts, and security remediation logs.

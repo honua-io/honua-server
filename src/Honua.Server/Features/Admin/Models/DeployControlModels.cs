@@ -675,6 +675,49 @@ public sealed class DeployOperationResponse
 
     [JsonPropertyName("completedAt")]
     public DateTimeOffset? CompletedAt { get; init; }
+
+    /// <summary>
+    /// Durable post-activation observation/recovery window (honua-server#4618), present while a
+    /// promoted candidate is being observed, until the window elapses or a triggered recovery finishes.
+    /// </summary>
+    [JsonPropertyName("protection")]
+    public DeployProtectionResponse? Protection { get; init; }
+}
+
+/// <summary>
+/// Post-activation observation/recovery window state for a promoted deploy operation
+/// (honua-server#4618). Exposes stable, bounded reason codes and revision identity so clients can
+/// present outcome-oriented progress without inspecting provider telemetry or Git state directly.
+/// </summary>
+public sealed class DeployProtectionResponse
+{
+    [JsonPropertyName("previousRevision")]
+    public string PreviousRevision { get; init; } = string.Empty;
+
+    [JsonPropertyName("candidateRevision")]
+    public string CandidateRevision { get; init; } = string.Empty;
+
+    [JsonPropertyName("firstExposureAt")]
+    public DateTimeOffset FirstExposureAt { get; init; }
+
+    [JsonPropertyName("observationDeadline")]
+    public DateTimeOffset ObservationDeadline { get; init; }
+
+    [JsonPropertyName("recoveryDeadline")]
+    public DateTimeOffset? RecoveryDeadline { get; init; }
+
+    [JsonPropertyName("policyDigest")]
+    public string PolicyDigest { get; init; } = string.Empty;
+
+    [JsonPropertyName("approvalScope")]
+    public string? ApprovalScope { get; init; }
+
+    /// <summary>One of <c>observing</c>, <c>protected</c>, <c>recovering</c>, <c>expired</c>, or <c>unavailable</c>.</summary>
+    [JsonPropertyName("phase")]
+    public string Phase { get; init; } = string.Empty;
+
+    [JsonPropertyName("reasonCode")]
+    public string? ReasonCode { get; init; }
 }
 
 /// <summary>

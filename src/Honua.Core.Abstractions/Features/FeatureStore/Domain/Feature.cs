@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
@@ -33,6 +34,27 @@ public readonly record struct Feature
     /// Feature attributes as key-value pairs
     /// </summary>
     public required ImmutableDictionary<string, object?> Attributes { get; init; }
+
+    /// <summary>
+    /// Provider-captured concurrency token for the original, unmasked read snapshot.
+    /// This internal edit metadata is never part of a serialized feature response.
+    /// </summary>
+    [JsonIgnore]
+    public string? ReadStateToken { get; init; }
+
+    /// <summary>
+    /// Whether this partial edit preserves omitted attributes hidden by field security.
+    /// Replacement edits leave this false regardless of conditional request headers.
+    /// </summary>
+    [JsonIgnore]
+    public bool PreserveOmittedMaskedAttributes { get; init; }
+
+    /// <summary>
+    /// Attribute names explicitly removed by a materialized partial update.
+    /// These fields must not be restored from the masked read snapshot.
+    /// </summary>
+    [JsonIgnore]
+    public ImmutableArray<string> ExplicitAttributeRemovals { get; init; }
 
     /// <summary>
     /// Creates a new feature with the specified properties

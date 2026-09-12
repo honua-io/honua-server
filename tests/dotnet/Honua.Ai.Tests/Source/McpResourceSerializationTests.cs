@@ -317,9 +317,21 @@ public sealed class McpResourceSerializationTests
         buffer.GetProperty("supportedExecutionModes").EnumerateArray()
             .Select(mode => mode.GetString()).Should().BeEquivalentTo(["Async", "Sync"]);
 
+        buffer.GetProperty("entryPoints").EnumerateArray()
+            .Select(entry => entry.GetString()).Should().BeEquivalentTo(["job", "workflow"]);
+
         var source = processes.EnumerateArray()
             .Single(process => process.GetProperty("processId").GetString() == "source.geojson");
         source.GetProperty("executionKind").GetString().Should().Be("WorkflowOnly");
+        // GA is defined per entry point (#4409): a DAG-only source must not read as
+        // job-submittable to an agent planning an execution.
+        source.GetProperty("entryPoints").EnumerateArray()
+            .Select(entry => entry.GetString()).Should().BeEquivalentTo(["workflow"]);
+
+        var cluster = processes.EnumerateArray()
+            .Single(process => process.GetProperty("processId").GetString() == "analytics.cluster");
+        cluster.GetProperty("entryPoints").EnumerateArray()
+            .Select(entry => entry.GetString()).Should().BeEquivalentTo(["protocol"]);
 
         var imagery = processes.EnumerateArray()
             .Single(process => process.GetProperty("processId").GetString() == "imagery.classify");
@@ -327,8 +339,10 @@ public sealed class McpResourceSerializationTests
 
         var kriging = processes.EnumerateArray()
             .Single(process => process.GetProperty("processId").GetString() == "raster.interpolate-kriging");
-        kriging.GetProperty("executionKind").GetString().Should().Be("Unavailable");
-        kriging.GetProperty("executionCapabilityReason").GetString().Should().Contain("kriging");
+        kriging.GetProperty("executionKind").GetString().Should().Be("Job");
+        kriging.GetProperty("entryPoints").EnumerateArray()
+            .Select(entry => entry.GetString()).Should().BeEquivalentTo(["job", "workflow"]);
+        kriging.GetProperty("configurationDependency").GetString().Should().Be("runtime-profile:native");
         body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
     }
 

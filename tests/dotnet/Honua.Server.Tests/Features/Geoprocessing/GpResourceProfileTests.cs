@@ -200,4 +200,30 @@ public sealed class GpResourceProfileTests
 
         specParams.Should().BeEmpty();
     }
+
+    [UnitTest]
+    public void ResolveTimeoutPolicy_UsesSupportedWorkloadTimeout()
+    {
+        var policy = GpResourceProfile.ResolveTimeoutPolicy(new Dictionary<string, string>
+        {
+            ["batch.timeout_seconds"] = "7",
+        });
+
+        policy.Should().NotBeNull();
+        policy!.MaxDuration.Should().Be(TimeSpan.FromSeconds(7));
+    }
+
+    [UnitTest]
+    public void ResolveTimeoutPolicy_IgnoresMissingAndInvalidValues()
+    {
+        GpResourceProfile.ResolveTimeoutPolicy(new Dictionary<string, string>
+        {
+            ["batch.timeout_seconds"] = "0",
+        }).Should().BeNull();
+
+        GpResourceProfile.ResolveTimeoutPolicy(new Dictionary<string, string>
+        {
+            ["batch.timeout_seconds"] = "not-a-duration",
+        }).Should().BeNull();
+    }
 }

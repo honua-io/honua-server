@@ -30,10 +30,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 380,
-      "provingTestCount": 1159,
+      "entryCount": 373,
+      "provingTestCount": 1192,
       "maturity": {
-        "implemented": 377,
+        "implemented": 370,
         "preview": 2,
         "experimental": 1
       },
@@ -52,6 +52,24 @@
           }
         }
       ],
+      "geobench": []
+    },
+    {
+      "key": "admin.multi-tenancy",
+      "displayName": "Multi-Tenant Operation",
+      "category": "ControlPlane",
+      "edition": "Enterprise",
+      "status": "preview",
+      "entryCount": 7,
+      "provingTestCount": 12,
+      "maturity": {
+        "preview": 7
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
       "geobench": []
     },
     {
@@ -123,7 +141,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 115,
+      "provingTestCount": 118,
       "maturity": {
         "implemented": 4
       },
@@ -221,7 +239,7 @@
       "edition": "Pro",
       "status": "preview",
       "entryCount": 18,
-      "provingTestCount": 47,
+      "provingTestCount": 106,
       "maturity": {
         "preview": 18
       },
@@ -695,7 +713,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 30,
+      "provingTestCount": 39,
       "maturity": {
         "implemented": 2
       },
@@ -798,10 +816,10 @@
       "key": "editing.branch-versioning",
       "displayName": "Branch Versioning",
       "category": "Editing",
-      "edition": "Enterprise",
+      "edition": "Pro",
       "status": null,
       "entryCount": 15,
-      "provingTestCount": 28,
+      "provingTestCount": 37,
       "maturity": {
         "experimental": 15
       },
@@ -825,7 +843,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 110,
+      "provingTestCount": 140,
       "maturity": {
         "implemented": 7
       },
@@ -881,9 +899,9 @@
       "displayName": "Offline/Field Sync",
       "category": "FieldOps",
       "edition": "Pro",
-      "status": null,
+      "status": "preview",
       "entryCount": 18,
-      "provingTestCount": 150,
+      "provingTestCount": 159,
       "maturity": {
         "preview": 18
       },
@@ -1107,7 +1125,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 14,
+      "provingTestCount": 19,
       "maturity": {
         "implemented": 2
       },
@@ -1143,7 +1161,7 @@
       "edition": "Enterprise",
       "status": null,
       "entryCount": 17,
-      "provingTestCount": 34,
+      "provingTestCount": 35,
       "maturity": {
         "implemented": 17
       },
@@ -1161,7 +1179,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 74,
-      "provingTestCount": 219,
+      "provingTestCount": 230,
       "maturity": {
         "implemented": 74
       },
@@ -1202,6 +1220,28 @@
         "implemented": 10
       },
       "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "jobs.durable-runtime",
+      "displayName": "Durable Job Runtime",
+      "category": "Jobs",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "jobs.durable-runtime",
+        "category": "Jobs",
+        "edition": "Community",
+        "reasonCode": "ops-background-job",
+        "reason": "The durable job substrate is a background runtime behind the import, tile, geoprocessing and workflow routes rather than a route of its own; those routes are catalogued against their own capabilities. It is advertised as jobs.runner on the capability manifest and named by typed dependency-unavailable refusals, which is why it needs a key a client can resolve."
+      },
       "cite": [],
       "parity": [],
       "esriAssess": [],
@@ -1312,10 +1352,10 @@
       "category": "Process",
       "edition": "Community",
       "status": null,
-      "entryCount": 14,
-      "provingTestCount": 92,
+      "entryCount": 15,
+      "provingTestCount": 122,
       "maturity": {
-        "implemented": 14
+        "implemented": 15
       },
       "noSurface": null,
       "cite": [],
@@ -1339,7 +1379,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 10,
-      "provingTestCount": 188,
+      "provingTestCount": 197,
       "maturity": {
         "implemented": 10
       },
@@ -1423,7 +1463,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 5,
-      "provingTestCount": 11,
+      "provingTestCount": 15,
       "maturity": {
         "implemented": 5
       },
@@ -1463,7 +1503,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 12,
-      "provingTestCount": 23,
+      "provingTestCount": 25,
       "maturity": {
         "implemented": 12
       },
@@ -1521,7 +1561,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 75,
+      "provingTestCount": 76,
       "maturity": {
         "implemented": 19
       },
@@ -1635,7 +1675,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 47,
-      "provingTestCount": 410,
+      "provingTestCount": 430,
       "maturity": {
         "implemented": 47
       },
@@ -1734,7 +1774,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 48,
-      "provingTestCount": 131,
+      "provingTestCount": 132,
       "maturity": {
         "implemented": 48
       },
@@ -1758,7 +1798,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 142,
-      "provingTestCount": 378,
+      "provingTestCount": 397,
       "maturity": {
         "preview": 142
       },
@@ -1784,7 +1824,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 45,
-      "provingTestCount": 337,
+      "provingTestCount": 356,
       "maturity": {
         "implemented": 43,
         "preview": 2
@@ -1875,7 +1915,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 9,
-      "provingTestCount": 27,
+      "provingTestCount": 32,
       "maturity": {
         "implemented": 9
       },
@@ -1891,6 +1931,28 @@
       "esriAssess": [
         "vector-tiles"
       ],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "serve.grpc",
+      "displayName": "gRPC (geospatial.v1)",
+      "category": "Serve",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "serve.grpc",
+        "category": "Serve",
+        "edition": "Community",
+        "reasonCode": "non-http-transport",
+        "reason": "The geospatial.v1 services are served over native h2c gRPC on port 8081 and gRPC-Web on 8080. feature-catalog.json catalogues HTTP routes, so a protocol whose surface is a set of protobuf service methods has no entry there. This was the reason gRPC \u2014 alone among the 25 served protocols \u2014 had no capability key at all until #3607."
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
       "interop": [],
       "geobench": []
     },
@@ -1921,7 +1983,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 30,
-      "provingTestCount": 196,
+      "provingTestCount": 227,
       "maturity": {
         "implemented": 30
       },
@@ -1976,7 +2038,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 8,
-      "provingTestCount": 37,
+      "provingTestCount": 40,
       "maturity": {
         "preview": 8
       },
@@ -1994,7 +2056,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 6,
-      "provingTestCount": 29,
+      "provingTestCount": 31,
       "maturity": {
         "preview": 6
       },
@@ -2012,7 +2074,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 273,
+      "provingTestCount": 291,
       "maturity": {
         "implemented": 19
       },
@@ -2116,7 +2178,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 6,
-      "provingTestCount": 32,
+      "provingTestCount": 41,
       "maturity": {
         "implemented": 6
       },
@@ -2169,10 +2231,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 15,
-      "provingTestCount": 29,
+      "entryCount": 16,
+      "provingTestCount": 83,
       "maturity": {
-        "preview": 15
+        "preview": 16
       },
       "noSurface": null,
       "cite": [],
@@ -2188,7 +2250,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 12,
-      "provingTestCount": 129,
+      "provingTestCount": 138,
       "maturity": {
         "implemented": 12
       },
@@ -2206,7 +2268,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 40,
+      "provingTestCount": 47,
       "maturity": {
         "implemented": 7
       },
@@ -2234,7 +2296,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 5,
+      "provingTestCount": 6,
       "maturity": {
         "implemented": 1
       },
@@ -2262,7 +2324,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 121,
+      "provingTestCount": 126,
       "maturity": {
         "implemented": 2
       },
@@ -2392,7 +2454,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 1,
-      "provingTestCount": 6,
+      "provingTestCount": 9,
       "maturity": {
         "preview": 1
       },
@@ -2514,7 +2576,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 5,
-      "provingTestCount": 107,
+      "provingTestCount": 112,
       "maturity": {
         "implemented": 3,
         "preview": 2

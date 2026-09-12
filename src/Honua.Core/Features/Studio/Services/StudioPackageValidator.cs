@@ -316,8 +316,8 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
 
     /// <summary>
     /// Gates the standard-owned <c>interactions</c>/<c>layout</c> (geospatial-mcp ADR-0030)
-    /// and <c>controls</c> (ADR-0031) blocks of a map/app composition body. All three
-    /// blocks are OPTIONAL: a body that declares none produces no diagnostics. When present
+    /// and <c>controls</c> (ADR-0031) blocks of a map/app/dashboard composition body. All three
+    /// blocks are OPTIONAL: a body that declares none is still checked for layers/widgets/view validity. When present
     /// they must satisfy the closed event/verb/control-kind sets, the component-reference
     /// grammar, in-document reference resolution, id uniqueness, the
     /// per-<c>(on.ref, on.event)</c> fan-out cap, and the layout grid/placement bounds.
@@ -338,7 +338,9 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         var hasInteractions = body.TryGetProperty("interactions", out var rawInteractions);
         var hasLayout = body.TryGetProperty("layout", out var rawLayout);
         var hasControls = body.TryGetProperty("controls", out var rawControls);
-        if (!hasInteractions && !hasLayout && !hasControls)
+        var layersValid = ValidateCompositionCollection(body, "layers", requireKind: false, diagnostics);
+        var widgetsValid = ValidateCompositionCollection(body, "widgets", requireKind: true, diagnostics);
+        if (!layersValid || !widgetsValid)
         {
             return;
         }
@@ -365,8 +367,13 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             diagnostics.Add(Error(
                 "studio.composition.invalid",
                 "/body",
-                "the composition's interactions/layout blocks do not match the standard shape."));
+                "the composition members do not match the standard shape."));
             return;
+        }
+
+        if (!StudioCompositionViewBounds.TryValidate(composition.View, out var viewError))
+        {
+            diagnostics.Add(Error("studio.composition.view.invalid", "/body/view", viewError));
         }
 
         // Controls first: interaction and layout reference resolution reads the controls
@@ -375,6 +382,60 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         ValidateControls(composition, diagnostics);
         ValidateInteractions(composition, diagnostics);
         ValidateLayout(composition, diagnostics);
+    }
+
+    private static bool ValidateCompositionCollection(
+        JsonElement body,
+        string member,
+        bool requireKind,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        if (!body.TryGetProperty(member, out var collection))
+        {
+            return true;
+        }
+
+        if (collection.ValueKind != JsonValueKind.Array)
+        {
+            diagnostics.Add(Error($"studio.composition.{member}.array", $"/body/{member}", $"{member} must be an array."));
+            return false;
+        }
+
+        var valid = true;
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var index = 0;
+        foreach (var item in collection.EnumerateArray())
+        {
+            var path = $"/body/{member}/{index++}";
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                diagnostics.Add(Error("studio.composition.item.object", path, "composition items must be non-null objects."));
+                // Null reference nodes can still be parsed. Preserve the existing
+                // unresolved-reference diagnostics for interactions that target them.
+                valid &= item.ValueKind == JsonValueKind.Null;
+                continue;
+            }
+
+            if (ValidateRequiredString(item, "id", path, "studio.composition.item.id.required", diagnostics))
+            {
+                if (!ids.Add(item.GetProperty("id").GetString()!))
+                {
+                    diagnostics.Add(Error("studio.composition.item.id.duplicate", $"{path}/id", "composition ids must be unique within their collection."));
+                    valid = false;
+                }
+            }
+            else
+            {
+                valid = false;
+            }
+
+            if (requireKind)
+            {
+                valid &= ValidateRequiredString(item, "kind", path, "studio.composition.widget.kind.required", diagnostics);
+            }
+        }
+
+        return valid;
     }
 
     private static bool ValidateCompositionWireShape(

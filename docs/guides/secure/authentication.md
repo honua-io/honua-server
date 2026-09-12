@@ -1,10 +1,66 @@
+---
+type: guide
+title: "Authenticate clients"
+description: "Set up the three ways callers prove who they are: API keys for automation and the admin API, OIDC for browser and console sign-in, and ArcGIS-compatible portal tokens for Esri clients."
+resource: "honua://capability/identity.oidc"
+---
 # Authenticate clients
 
 Set up the three ways callers prove who they are: API keys for automation and the admin API, OIDC for browser and console sign-in, and ArcGIS-compatible portal tokens for Esri clients.
 
 **Prerequisites:** A running Honua server and the ability to set its environment variables. For what authenticated callers are then *allowed* to do, see [Control access](access-control.md); for client-certificate (mTLS) authentication, see [TLS and mTLS](tls-and-mtls.md).
 
+## Client response caching
+
+Authenticated HTTP responses use `Cache-Control: no-store`. HTTP 401/403 responses
+and equivalent protocol-formatted errors use the same policy, including Esri
+498/499 errors carried as HTTP 200. This prevents compliant HTTP caches from
+reusing an earlier response after credentials change. Public anonymous responses
+retain their normal endpoint cache policy.
+
+Portal `generateToken` and OAuth endpoints also return `Cache-Control: no-store`
+and `Pragma: no-cache`, including token exchange errors. Their credentials can be
+validated inside the endpoint without attaching an authenticated user to the
+request, so these routes explicitly prohibit response storage.
+
+An upgrade cannot invalidate responses that a client already cached or data it
+downloaded for offline use. Clear a pre-upgrade HTTP cache before verifying the
+new behavior, then test login, revocation and anonymous access without clearing
+the cache between credential changes.
+
 ## Steps
+
+### SensorThings observation streams (Preview)
+
+`GET /sta/v1.1/ObservationsStream` requires authentication before either an SSE
+handshake or a WebSocket upgrade. Use the configured authentication scheme (for
+example, `X-API-Key` for an API client). Anonymous requests receive `401`; enabling
+anonymous SensorThings writes does not enable anonymous streaming.
+
+A subscription receives observations only for its resolved tenant and database
+schema. Omitting `datastreamId` selects all datastreams within that boundary.
+Tenant overrides follow the shared tenant middleware's administrator rules; a
+datastream ID is never a cross-tenant identifier.
+
+Concurrent subscriptions are admitted against three nested caps under
+`SensorThings:Streaming`, so no single credential or tenant can hold every slot on
+a node:
+
+| Setting | Default | Refusal |
+|---|---:|---|
+| `MaxSessionsPerPrincipal` | 8 | `429` with `Retry-After` |
+| `MaxSessionsPerTenant` | 64 | `429` with `Retry-After` |
+| `MaxConcurrentSessions` (per node) | 256 | `503` with `Retry-After` |
+
+A per-tenant cap at or above the node cap, or a per-principal cap above the
+per-tenant cap, fails startup validation. `RetryAfterSeconds` (default 30) sets the
+hint returned with a refusal. A refused request never opens a stream: the problem
+response is returned before the SSE headers or the WebSocket upgrade.
+
+Upgrade every observation-stream node together. Scoped fan-out uses a new Redis
+channel, so old and updated nodes do not exchange observations during a rolling
+upgrade. Reconnect clients to updated nodes; streams remain best-effort, with no
+replay guarantee. Disable the old stream endpoints until their nodes are updated.
 
 ### 1. Set the admin API key
 
@@ -29,6 +85,18 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 ```
 
 The response's `data.key` is shown once — store it immediately. Manage the lifecycle with `POST /api/v1/admin/api-keys/{id}/rotate` (returns a new secret), `POST .../{id}/revoke`, and `GET .../{id}/effective-permissions`.
+
+Credential expiry denies authentication while preserving the managed key's
+metadata, so administrators can still inspect its expired or revoked status.
+Redis retains this metadata for 3,650 days after expiry, or after the latest
+registry write when there is no future expiry. Internal approval replay
+credentials remain short-lived and are removed at their credential expiry.
+
+After upgrading an existing Redis registry, older records retain their original
+Redis expiry until they are rewritten by successful authentication, rotation, or
+revocation. Rotate or revoke these keys before their original expiry to retain
+their metadata. Records already removed by Redis cannot be recovered by this
+change; create a replacement key if access is still needed.
 
 An empty permissions array is normalized to `admin:*` for legacy compatibility and
 therefore grants full admin access; do not use it for CI. Grant only the operations
@@ -98,6 +166,20 @@ Provider blocks exist for `Generic`, `AzureAd`, `Google`, `Okta`, and `Auth0`; O
 Esri clients (ArcGIS Pro, Maps SDKs) authenticate against the portal token endpoint, which is always on:
 
 Use `PortalCompat.generateToken` from `@honua/sdk-js/esri-compat` with `username`, `password`, `client: "referer"`, `referer: "https://app.example.com"`, and `expiration: 60`. ArcGIS Pro and other Esri clients discover the same endpoint automatically when they prompt for credentials.
+
+The local admin credential bridge accepts the bootstrap admin password and managed
+API keys that already confer full administration. Service/layer keys, narrow admin
+or operations grants, and approved-operation replay credentials cannot be exchanged
+through this admin bridge: issuance returns the Esri `400` "Unable to generate
+token" error. Continue using those keys through their supported API-key transport;
+configured OIDC identities use the separate identity-provider bridge. A refused
+exchange is not a successful scoped Portal-token workflow.
+
+When upgrading the bridge, address previously issued tokens as well. The fix
+prevents new privilege elevation but does not change existing cached token records;
+they remain valid until revoked or expired. Revoke tokens that may have been issued
+from constrained keys and require affected clients to authenticate again. Upgrade
+all token-issuance nodes before resuming those exchanges.
 
 The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side (Redis when enabled), and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the Esri SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400). An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider — register every redirect URI in `Authentication__PortalToken__OAuth2__AllowedRedirectUris` before enabling it.
 

@@ -173,15 +173,17 @@ public sealed class FeatureCatalogTests
     }
 
     [Fact]
-    public void All_BranchVersioningIsEnterpriseTier()
+    public void All_BranchVersioningIsProAndApprovalPolicyIsEnterprise()
     {
-        // Branch versioning stays an Enterprise entitlement, distinct from the Pro
-        // FeatureServer editing gate scoped in #1591.
+        // Commercial-boundaries ruling (2026-09-04): core versioning is Pro;
+        // organisational approval and policy controls remain Enterprise.
         var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.BranchVersioningKey);
 
         feature.Should().NotBeNull("feature catalog must define branch versioning");
         feature!.Category.Should().Be(FeatureCatalog.Categories.Editing);
-        feature.MinimumEdition.Should().Be(HonuaEdition.Enterprise);
+        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
+        FeatureCatalog.All.Single(f => f.Key == FeatureCatalog.AiApprovalWorkflowsKey)
+            .MinimumEdition.Should().Be(HonuaEdition.Enterprise);
     }
 
     [Fact]

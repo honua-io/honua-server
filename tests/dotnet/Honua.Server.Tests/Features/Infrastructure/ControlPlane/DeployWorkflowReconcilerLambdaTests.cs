@@ -131,10 +131,16 @@ public sealed class DeployWorkflowReconcilerLambdaTests
         var updated = await store.GetAsync(operation.OperationId);
 
         updated.Should().NotBeNull();
-        updated!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
-        updated.CompletedAt.Should().NotBeNull();
+        // honua-server#4618: a freshly-promoted operation opens a post-activation observation window
+        // rather than finishing immediately, so it stays Reconciling (non-terminal) with a Protection
+        // record rather than jumping straight to Succeeded.
+        updated!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        updated.CompletedAt.Should().BeNull();
+        updated.Deploy!.Protection.Should().NotBeNull();
+        updated.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
+        updated.Deploy.Protection.CandidateRevision.Should().Be("42");
         updated.ObservedState.Should().Be("42");
-        updated.Deploy!.CurrentRevision.Should().Be("41");
+        updated.Deploy.CurrentRevision.Should().Be("41");
         aliasClient.UpdateCalls.Should().HaveCountGreaterOrEqualTo(1);
         aliasClient.UpdateCalls.Last().FunctionVersion.Should().Be("42");
         aliasClient.UpdateCalls.Last().HasNoWeights.Should().BeTrue();

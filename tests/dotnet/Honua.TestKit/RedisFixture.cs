@@ -10,6 +10,13 @@ namespace Honua.TestKit;
 /// Shared Redis fixture for integration tests.
 /// Uses Testcontainers to manage container lifecycle.
 /// </summary>
+/// <remarks>
+/// The container runs the durable configuration the server's startup attestation requires
+/// (honua-server#3903): AOF persistence with a bounded fsync and <c>noeviction</c>. Without it
+/// the composition root refuses to advertise the durable job substrate, so every test that
+/// submits a durable job through the real host gets HTTP 503 instead of exercising the path
+/// under test. An external <c>HONUA_TEST_REDIS_URL</c> server must be configured the same way.
+/// </remarks>
 public sealed class RedisFixture : IAsyncLifetime
 {
     /// <summary>
@@ -44,6 +51,16 @@ public sealed class RedisFixture : IAsyncLifetime
                 if (string.IsNullOrWhiteSpace(externalConnectionString))
                 {
                     SharedState.SharedContainer = new RedisBuilder("redis:7.2-alpine")
+                        .WithCommand(
+                            "redis-server",
+                            "--appendonly",
+                            "yes",
+                            "--appendfsync",
+                            "everysec",
+                            "--save",
+                            "",
+                            "--maxmemory-policy",
+                            "noeviction")
                         .Build();
                     await SharedState.SharedContainer.StartAsync();
                     SharedState.SharedConnectionString = SharedState.SharedContainer.GetConnectionString();

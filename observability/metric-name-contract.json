@@ -135,6 +135,13 @@
       "source": "src/Honua.Ai/Features/AnalysisContent/AnalysisContentTelemetry.cs"
     },
     {
+      "instrument": "honua.attachments.orphans",
+      "kind": "Counter",
+      "unit": "{object}",
+      "series": ["honua_attachments_orphans_total"],
+      "source": "src/Honua.Core/Features/Attachments/Services/LoggingAttachmentOrphanLedger.cs"
+    },
+    {
       "instrument": "honua.audit.chain_broken",
       "kind": "ObservableGauge",
       "unit": "{state}",
@@ -1000,6 +1007,13 @@
       "kind": "Counter",
       "unit": null,
       "series": ["honua_sensorthings_observation_stream_drops_total"],
+      "source": "src/Honua.Protocols.SensorThings/Streaming/ObservationStreamSessionManager.cs"
+    },
+    {
+      "instrument": "honua_sensorthings_observation_stream_rejections_total",
+      "kind": "Counter",
+      "unit": null,
+      "series": ["honua_sensorthings_observation_stream_rejections_total"],
       "source": "src/Honua.Protocols.SensorThings/Streaming/ObservationStreamSessionManager.cs"
     },
     {

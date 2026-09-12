@@ -165,7 +165,7 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public void ValidatePlan_WorkflowOnlyAndUnavailableProcesses_ReportCanonicalCapability()
+    public void ValidatePlan_WorkflowOnlyAndProtocolOnlyProcesses_ReportCanonicalCapability()
     {
         var workflowPlan = new AnalysisPlan
         {
@@ -182,17 +182,17 @@ public sealed class GeoprocessingJobServiceTests
                 }
             ]
         };
-        var unavailablePlan = new AnalysisPlan
+        var protocolOnlyPlan = new AnalysisPlan
         {
-            PlanId = "plan-unavailable",
-            IntentId = "intent-unavailable",
+            PlanId = "plan-protocol-only",
+            IntentId = "intent-protocol-only",
             Steps =
             [
                 new AnalysisPlanStep
                 {
-                    StepId = "kriging",
+                    StepId = "cluster",
                     Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "raster.interpolate-kriging",
+                    ProcessId = "analytics.cluster",
                     Inputs = new Dictionary<string, string>()
                 }
             ]
@@ -200,8 +200,51 @@ public sealed class GeoprocessingJobServiceTests
 
         _sut.ValidatePlan(workflowPlan, CreatePrincipal()).Violations
             .Should().Contain(violation => violation.Code == "WORKFLOW_ONLY_PROCESS");
-        _sut.ValidatePlan(unavailablePlan, CreatePrincipal()).Violations
-            .Should().Contain(violation => violation.Code == "PROCESS_UNAVAILABLE");
+        _sut.ValidatePlan(protocolOnlyPlan, CreatePrincipal()).Violations
+            .Should().Contain(violation => violation.Code == "SYNC_ONLY_PROCESS");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public void ValidatePlan_UnavailableProcess_StaysFailClosed()
+    {
+        // The built-in catalog has no Unavailable entries — the entry-point ruling admits
+        // no advertised-but-unexecutable state (#4409) — but the submit path must still
+        // refuse one from a custom catalog rather than admitting an unclassified job.
+        var definition = new ProcessDefinition
+        {
+            ProcessId = "custom.unavailable",
+            Title = "Unavailable",
+            Description = "Test-only unavailable capability.",
+            Category = "custom",
+            Parameters = [],
+            OutputArtifactKinds = [],
+            ExecutionKind = ProcessExecutionKind.Unavailable,
+            SupportedExecutionModes = ProcessExecutionModes.None,
+            ExecutionCapabilityReason = "No backend is bundled in this build."
+        };
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.GetProcess(definition.ProcessId).Returns(definition);
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-unavailable",
+            IntentId = "intent-unavailable",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "unavailable",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = definition.ProcessId,
+                    Inputs = new Dictionary<string, string>()
+                }
+            ]
+        };
+
+        var (violations, _) = DirectSubmitPlanValidator.Evaluate(plan, catalog);
+
+        violations.Should().ContainSingle(violation => violation.Code == "PROCESS_UNAVAILABLE");
     }
 
     [UnitTest]
@@ -218,6 +261,7 @@ public sealed class GeoprocessingJobServiceTests
             Parameters = [],
             OutputArtifactKinds = [],
             ExecutionKind = ProcessExecutionKind.Job,
+            SupportedEntryPoints = ProcessEntryPoints.Job,
             SupportedExecutionModes = ProcessExecutionModes.Sync
         };
         var catalog = Substitute.For<IProcessCatalog>();
@@ -504,35 +548,6 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_NonJobCapability_RejectsBeforeDurablePersistence()
-    {
-        var unavailablePlan = new AnalysisPlan
-        {
-            PlanId = "plan-unavailable",
-            IntentId = "intent-unavailable",
-            Steps =
-            [
-                new AnalysisPlanStep
-                {
-                    StepId = "kriging",
-                    Kind = AnalysisPlanStepKind.Geoprocess,
-                    ProcessId = "raster.interpolate-kriging",
-                    Inputs = new Dictionary<string, string>(),
-                },
-            ],
-        };
-
-        var act = () => _sut.SubmitJobAsync(unavailablePlan, null, CreatePrincipal());
-
-        await act.Should().ThrowAsync<GeoprocessingValidationException>()
-            .WithMessage("*PROCESS_UNAVAILABLE*");
-        await _jobStore.DidNotReceive().TryCreateAsync(
-            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
-    }
-
-    [UnitTest]
-    [Operation(Operations.Create)]
-    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithoutGeoprocessStep_RejectsBeforeDurablePersistence()
     {
         var plan = new AnalysisPlan
@@ -616,6 +631,7 @@ public sealed class GeoprocessingJobServiceTests
             Parameters = [],
             OutputArtifactKinds = [],
             ExecutionKind = ProcessExecutionKind.WorkflowOnly,
+            SupportedEntryPoints = ProcessEntryPoints.Workflow,
             SupportedExecutionModes = ProcessExecutionModes.Sync
         };
         var catalog = Substitute.For<IProcessCatalog>();
@@ -1233,6 +1249,60 @@ public sealed class GeoprocessingJobServiceTests
         var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
 
         job.Spec.RuntimeProfile.Should().Be(RuntimeProfiles.Native);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_NativeGdalPlan_ChargesCostWeightAboveStepCount()
+    {
+        // #4629: a static costWeight=stepCount treated a 1-step native/raster op the same
+        // as a 1-step managed op — neither reflects real resource cost. gdal.gdalwarp's
+        // catalog-declared Raster output routes it to the raster GpResourceProfile tier
+        // (4 vCPU), which must now raise the single-step plan's charged cost weight above
+        // the step count of 1.
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var admission = Substitute.For<IExecutionAdmissionEvaluator>();
+        admission.EvaluateAsync(Arg.Any<ExecutionAdmissionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ExecutionAdmissionDecision.Admitted(new ExecutionAdmissionSnapshot()));
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            admissionEvaluator: admission);
+
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-native-cost",
+            IntentId = "intent-native-cost",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "gdal.gdalwarp",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = "AAAA",
+                        ["targetSrs"] = "3857"
+                    }
+                }
+            ]
+        };
+
+        var job = await sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.Parameters.Should().ContainKey(ExecutionAdmissionEvaluator.CostWeightParameterKey)
+            .WhoseValue.Should().Be("4");
     }
 
     [UnitTest]
@@ -4306,12 +4376,65 @@ public sealed class GeoprocessingJobServiceTests
             _jobStore,
             admissionEvaluator: admission);
 
-        var metadata = new Dictionary<string, string> { ["workspace.id"] = "ws-42" };
-        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal(), metadata);
+        // #3853: the admission partition is the submitter's trusted tenant, pinned on the submitter
+        // security snapshot, not a metadata value the caller can choose.
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreateTenantPrincipal("tenant-42"));
 
         job.Spec.Parameters.Should().ContainKey(ExecutionAdmissionEvaluator.CostWeightParameterKey);
         job.Spec.Parameters.Should().ContainKey(ExecutionAdmissionEvaluator.PartitionKeyParameterKey)
-            .WhoseValue.Should().Be("ws-42");
+            .WhoseValue.Should().Be("tenant-42");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CallerSuppliedAdmissionMetadata_CannotChoosePartitionOrCost()
+    {
+        // Workflow-package and analysis-content runs forward caller parameters into protocol
+        // metadata. Honouring these keys let a caller pick a fresh partition per request — escaping
+        // its tenant's concurrency and cost limits — or stamp a near-zero cost weight that every
+        // node's evaluator would later read back when summing active cost (#3853).
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var observed = new List<ExecutionAdmissionRequest>();
+        var admission = Substitute.For<IExecutionAdmissionEvaluator>();
+        admission.EvaluateAsync(Arg.Do<ExecutionAdmissionRequest>(observed.Add), Arg.Any<CancellationToken>())
+            .Returns(ExecutionAdmissionDecision.Admitted(new ExecutionAdmissionSnapshot()));
+
+        var sut = new GeoprocessingJobService(
+            _progressStore,
+            [_cancellationNotifier],
+            _authEvaluator,
+            _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions,
+            _jobStore,
+            admissionEvaluator: admission);
+
+        var callerMetadata = new Dictionary<string, string>
+        {
+            [ExecutionAdmissionEvaluator.PartitionKeyParameterKey] = "attacker-partition",
+            [ExecutionAdmissionEvaluator.CostWeightParameterKey] = "0.0001",
+            ["workspace.id"] = "attacker-workspace",
+            ["tenant.id"] = "attacker-tenant"
+        };
+
+        var tenantJob = await sut.SubmitJobAsync(
+            CreateValidPlan(), null, CreateTenantPrincipal("tenant-42"), callerMetadata);
+
+        observed.Should().ContainSingle().Which.PartitionKey.Should().Be("tenant-42");
+        tenantJob.Spec.Parameters[ExecutionAdmissionEvaluator.PartitionKeyParameterKey].Should().Be("tenant-42");
+        tenantJob.Spec.Parameters[ExecutionAdmissionEvaluator.CostWeightParameterKey].Should().Be("1");
+
+        // A tenant-less submitter lands in the shared default partition, whatever the metadata says.
+        var defaultJob = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal(), callerMetadata);
+
+        observed.Should().HaveCount(2);
+        observed[1].PartitionKey.Should().BeNull();
+        defaultJob.Spec.Parameters.Should().NotContainKey(ExecutionAdmissionEvaluator.PartitionKeyParameterKey);
+        defaultJob.Spec.Parameters[ExecutionAdmissionEvaluator.CostWeightParameterKey].Should().Be("1");
     }
 
     // -----------------------------------------------------------------------
@@ -5133,6 +5256,13 @@ public sealed class GeoprocessingJobServiceTests
     private static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, "test-user")], "Test"));
+
+    private static ClaimsPrincipal CreateTenantPrincipal(string tenantId)
+        => new(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.Name, "test-user"),
+                new Claim("tenant_id", tenantId)
+            ], "Test"));
 
     private static ClaimsPrincipal CreateStablePrincipal()
         => new(new ClaimsIdentity(

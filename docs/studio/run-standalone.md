@@ -1,3 +1,7 @@
+---
+type: guide
+title: "Run Studio standalone"
+---
 # Run Studio standalone
 
 {% hint style="danger" %}

@@ -109,7 +109,11 @@ internal sealed class QueryFeaturesTool : IMcpTool
             SpatialFilter = BuildBboxFilter(geometryService, argument.Bbox, argument.BboxSrid)
         };
 
-        var reader = httpContext.RequestServices.GetRequiredService<IFeatureReader>();
+        var reader = await MapToolLayerResolver.ResolveReaderAsync(httpContext, snapshot, layer,
+            returnCountOnly
+                ? Honua.Core.Features.FeatureStore.Services.FeatureProviderReadOperation.Count
+                : Honua.Core.Features.FeatureStore.Services.FeatureProviderReadOperation.Query,
+            cancellationToken).ConfigureAwait(false);
 
         // returnCountOnly: adapt to the canonical count seam and return {count}
         // with no features (a cheap cardinality check that never buffers geometry).

@@ -23,6 +23,138 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
 
     [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
+    public async Task ReplicaUpload_BatchWithoutOutbox_StampsEveryRowAndRestoresOrigin()
+    {
+        var schemaContext = (Honua.Infrastructure.Middleware.SchemaContext)_fixture
+            .GetService<Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext>();
+        var previousSchema = schemaContext.CurrentSchema;
+        schemaContext.CurrentSchema = _fixture.CurrentSchema;
+        try
+        {
+            var writer = _fixture.GetService<IFeatureWriter>();
+            var reader = _fixture.GetService<IFeatureReader>();
+            var tracker = _fixture.GetService<IChangeTracker>();
+            var baseline = await tracker.GetCurrentGenerationAsync();
+            Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.Current.Should().BeNull();
+            Feature MakeFeature(string name, double x, double y) => Feature.Create(0,
+                new NetTopologySuite.IO.WKBWriter().Write(new NetTopologySuite.Geometries.Point(x, y) { SRID = 4326 }),
+                System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty.Add("name", name));
+
+            FeatureEditResult uploaded;
+            using (ReplicaUploadOriginScope.Begin("bulk-replica"))
+            {
+                uploaded = await writer.ApplyEditsAsync(0, new FeatureEditBatch
+                {
+                    Creates = [MakeFeature("bulk-one", 10, 20), MakeFeature("bulk-two", 30, 40)],
+                    RollbackOnFailure = false
+                });
+            }
+            uploaded.CreatedCount.Should().Be(2, string.Join("; ", uploaded.CreateResults.Select(result => result.ErrorMessage)));
+            uploaded.CreatedIds.Should().OnlyHaveUniqueItems();
+            ReplicaUploadOriginScope.Current.Should().BeNull();
+            var foreign = await writer.ApplyEditsAsync(0, new FeatureEditBatch
+            {
+                Creates = [MakeFeature("foreign-after-bulk", 50, 60)],
+                RollbackOnFailure = false
+            });
+            foreign.CreatedCount.Should().Be(1);
+            var ownDelta = await tracker.GetChangesSinceAsync(baseline, [0], null, "bulk-replica");
+            ownDelta.Should().ContainSingle().Which.ObjectId.Should().Be(foreign.CreatedIds.Single());
+            ownDelta.Single().OriginReplicaId.Should().BeNull();
+            var otherDelta = await tracker.GetChangesSinceAsync(baseline, [0], null, "other-replica");
+            otherDelta.Where(change => change.OriginReplicaId == "bulk-replica")
+                .Select(change => change.ObjectId).Should().BeEquivalentTo(uploaded.CreatedIds);
+            for (var index = 0; index < 2; index++)
+            {
+                var stored = await reader.GetAsync(0, uploaded.CreatedIds[index]);
+                stored.Should().NotBeNull();
+                stored!.Value.Attributes["name"].Should().Be(index == 0 ? "bulk-one" : "bulk-two");
+                var geometry = new NetTopologySuite.IO.WKBReader().Read(stored.Value.Geometry!);
+                geometry.Coordinate.X.Should().Be(index == 0 ? 10 : 30);
+                geometry.Coordinate.Y.Should().Be(index == 0 ? 20 : 40);
+            }
+        }
+        finally
+        {
+            schemaContext.CurrentSchema = previousSchema;
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
+    public async Task ReplicaOrigins_CollapseForeignHistory_AndRemainVisibleToOtherReplicas()
+    {
+        const int layerId = 990112;
+        var tracker = _fixture.GetService<IChangeTracker>();
+        var baseline = await tracker.GetCurrentGenerationAsync();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        // These independently specified histories model A's two inserts, a later foreign update,
+        // an ordinary foreign insert, and B's insert. Transaction-local origins must not leak.
+        await using (var transaction = await connection.BeginTransactionAsync())
+        {
+            await using var command = new Npgsql.NpgsqlCommand("""
+                SELECT set_config('honua.origin_replica_id', 'replica-A', true);
+                INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+                VALUES (nextval('honua.sync_generation'), 990112, 8101, 1),
+                       (nextval('honua.sync_generation'), 990112, 8102, 1);
+                """, connection, transaction);
+            await command.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+        await using (var command = new Npgsql.NpgsqlCommand("""
+            INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+            VALUES (nextval('honua.sync_generation'), 990112, 8101, 2),
+                   (nextval('honua.sync_generation'), 990112, 8103, 1);
+            """, connection))
+        {
+            await command.ExecuteNonQueryAsync();
+        }
+        await using (var transaction = await connection.BeginTransactionAsync())
+        {
+            await using var command = new Npgsql.NpgsqlCommand("""
+                SELECT set_config('honua.origin_replica_id', 'replica-B', true);
+                INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+                VALUES (nextval('honua.sync_generation'), 990112, 8104, 1);
+                """, connection, transaction);
+            await command.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+
+        // A later partial update by A must not erase the preceding foreign update from its feed.
+        await using (var transaction = await connection.BeginTransactionAsync())
+        {
+            await using var command = new Npgsql.NpgsqlCommand("""
+                SELECT set_config('honua.origin_replica_id', 'replica-A', true);
+                INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+                VALUES (nextval('honua.sync_generation'), 990112, 8101, 2);
+                """, connection, transaction);
+            await command.ExecuteNonQueryAsync();
+            await transaction.CommitAsync();
+        }
+
+        var forA = await tracker.GetChangesSinceAsync(baseline, [layerId], null, "replica-A");
+        forA.Select(change => (change.ObjectId, change.Operation)).Should().BeEquivalentTo(new[]
+        {
+            (8101L, FeatureChangeOperation.Update),
+            (8103L, FeatureChangeOperation.Insert),
+            (8104L, FeatureChangeOperation.Insert)
+        });
+        forA.Single(change => change.ObjectId == 8101).OriginReplicaId.Should().BeNull();
+        forA.Single(change => change.ObjectId == 8103).OriginReplicaId.Should().BeNull();
+        forA.Single(change => change.ObjectId == 8104).OriginReplicaId.Should().Be("replica-B");
+
+        var forB = await tracker.GetChangesSinceAsync(baseline, [layerId], null, "replica-B");
+        forB.Select(change => (change.ObjectId, change.Operation)).Should().BeEquivalentTo(new[]
+        {
+            (8101L, FeatureChangeOperation.Insert),
+            (8102L, FeatureChangeOperation.Insert),
+            (8103L, FeatureChangeOperation.Insert)
+        });
+        forB.Single(change => change.ObjectId == 8102).OriginReplicaId.Should().Be("replica-A");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
     public async Task GetCurrentGeneration_ReturnsNonNegativeValue()
     {
         var tracker = _fixture.GetService<IChangeTracker>();

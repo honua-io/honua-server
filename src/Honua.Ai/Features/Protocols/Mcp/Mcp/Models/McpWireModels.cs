@@ -90,6 +90,9 @@ internal sealed class McpErrorData
     [JsonPropertyName("conflictingJobId")]
     public string? ConflictingJobId { get; set; }
 
+    [JsonPropertyName("currentGeneration")]
+    public long? CurrentGeneration { get; set; }
+
     [JsonPropertyName("retryable")]
     public bool? Retryable { get; set; }
 
@@ -423,6 +426,9 @@ internal sealed class McpToolsCallParams
 
     [JsonPropertyName("arguments")]
     public JsonElement? Arguments { get; set; }
+
+    [JsonPropertyName("_meta")]
+    public JsonElement? Meta { get; set; }
 }
 
 /// <summary>

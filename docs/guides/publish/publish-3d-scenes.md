@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Publish 3D scenes"
+description: "You'll have a 3D Tiles tileset served from Honua — generated from a PostGIS layer or hosted from existing files — and rendering in CesiumJS in about 15 minutes."
+resource: "honua://capability/scene.catalog"
+---
 # Publish 3D scenes
 
 You'll have a 3D Tiles tileset served from Honua — generated from a PostGIS layer or hosted from existing files — and rendering in CesiumJS in about 15 minutes.
@@ -5,6 +11,8 @@ You'll have a 3D Tiles tileset served from Honua — generated from a PostGIS la
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)) and admin credentials ([authentication](../secure/authentication.md)).
 
 Honua serves OGC 3D Tiles through `/scenes/{sceneId}/...` so CesiumJS resolves every nested tile, glTF, and texture URI without URL rewriting. You can generate tilesets from feature layers or host tilesets produced elsewhere.
+
+**Edition and lifecycle:** Existing serving, discovery, elevation and generation from feature layers remain Community. Specialised CityGML/BIM and point-cloud ingest and I3S remain Enterprise. 3D is Experimental in 2026.1; this guide is for evaluation, with no production commitment. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
 
 ## Steps
 

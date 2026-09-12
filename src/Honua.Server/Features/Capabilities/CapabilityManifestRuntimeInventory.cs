@@ -1,10 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Plugins.Abstractions;
 
 namespace Honua.Server.Features.Capabilities;
 
@@ -20,7 +23,10 @@ internal sealed class CapabilityManifestRuntimeInventory(
     IEnumerable<IOpsAutonomyPolicyStore> opsAutonomyPolicyStores,
     IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
     IEnumerable<IFeatureDataProvider> featureDataProviders,
-    IWebHostEnvironment hostEnvironment)
+    IEnumerable<IFeatureLockAuthorizer> featureLockAuthorizers,
+    IWebHostEnvironment hostEnvironment,
+    IServiceProviderIsService serviceInventory,
+    IFeatureOutputFormatRegistry outputFormats)
 {
     public IReadOnlyList<IBatchComputeBackend> BatchBackends { get; } = batchBackends.ToArray();
 
@@ -32,9 +38,24 @@ internal sealed class CapabilityManifestRuntimeInventory(
 
     public bool HasFieldCollectionSyncStore { get; } = fieldCollectionSyncStores.Any();
 
+    /// <summary>
+    /// Whether this deployment can actually grant a collaborative-editing lease (#4402).
+    /// Feature-lock enforcement always ships, but the authorizer Honua ships
+    /// (<c>FailClosedFeatureLockAuthorizer</c>) denies every claim, so out of the box no
+    /// lease is ever handed out. Reporting the capability as available on the strength of
+    /// the endpoints being routable would tell a client to try a claim that can only 403.
+    /// </summary>
+    public bool FeatureLockAuthorizerConfigured { get; } = featureLockAuthorizers
+        .Any(static authorizer => authorizer is not Collaboration.FeatureLocks.FailClosedFeatureLockAuthorizer);
+
     public IReadOnlySet<string> FeatureDataProviders { get; } = featureDataProviders
         .Select(static provider => provider.ProviderName)
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     public string EnvironmentName { get; } = hostEnvironment.EnvironmentName;
+
+    public bool HasFileImportService { get; } = serviceInventory.IsService(typeof(IFileImportService));
+
+    public IReadOnlyCollection<PluginOutputFormatDescriptor> ActiveOutputFormats => outputFormats.HasFormats
+        ? outputFormats.AdvertisedFormats : [];
 }

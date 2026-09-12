@@ -70,7 +70,7 @@ jobs:
       input_digests: ${{ steps.digests.outputs.value }}
       freshness_epoch: ${{ steps.freshness.outputs.value }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -179,21 +179,20 @@ jobs:
             description: canonical native-AOT serving image
             dockerfile: docker/Dockerfile.aot
             tag: honua-server:aot-boundary
-            # Cache scopes are unchanged from the serial job on purpose: warm
-            # `pr-*-boundary` caches survive this refactor.
-            cache_scope: pr-aot-boundary
+            # Share the nightly/release cache for this Dockerfile and architecture.
+            cache_scope: honua-aot-amd64
           - variant: lambda
             digest_key: serving_lambda
             description: Lambda native-AOT serving image
             dockerfile: docker/Dockerfile.lambda.aot
             tag: honua-server:lambda-aot-boundary
-            cache_scope: pr-lambda-aot-boundary
+            cache_scope: honua-lambda-aot-amd64
           - variant: functions
             digest_key: serving_functions
             description: Azure Functions native-AOT serving image
             dockerfile: docker/Dockerfile.functions.aot
             tag: honua-server:functions-aot-boundary
-            cache_scope: pr-functions-aot-boundary
+            cache_scope: honua-functions-aot-amd64
     env:
       # `matrix` is not available in a job-level `if`, so selection is applied
       # per step. An unselected leg costs one shallow checkout instead of the
@@ -207,7 +206,7 @@ jobs:
     steps:
       # No `fetch-depth: 0` here: only `detect` diffs base..head. A build leg
       # needs the build context, not the history.
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         if: env.IMPACTED == 'true'
 
       - name: Restore exact verification marker

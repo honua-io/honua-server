@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Text;
+using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -117,6 +118,10 @@ internal sealed partial class ProcessGdalCommandRunner(
 
         try
         {
+            await ExecutionQualificationBarrier.WaitAsync(
+                "native-process-started",
+                cancellationToken,
+                process.Id).ConfigureAwait(false);
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)

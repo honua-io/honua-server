@@ -8,6 +8,9 @@ namespace Honua.Core.Features.Admin.Domain;
 /// </summary>
 public sealed class LayerPublishRequest
 {
+    /// <summary>Allow an empty generated output with a known schema. Ordinary publication requires rows.</summary>
+    public bool AllowEmptyTable { get; init; }
+
     /// <summary>
     /// Schema containing the source table (e.g., "public").
     /// </summary>
@@ -110,6 +113,9 @@ public sealed class LayerPublishRequest
 /// </summary>
 public sealed class TablePublishValidationRequest
 {
+    /// <summary>Allow an empty generated output with a known schema. Defaults to false.</summary>
+    public bool AllowEmptyTable { get; init; }
+
     /// <summary>
     /// Schema containing the source table.
     /// </summary>

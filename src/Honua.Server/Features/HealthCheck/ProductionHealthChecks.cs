@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Capabilities;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -265,6 +266,7 @@ internal sealed class RedisHealthCheck : IHealthCheck
     private readonly IConnectionMultiplexer? _redis;
     private readonly IDistributedCache _distributedCache;
     private readonly ILogger<RedisHealthCheck> _logger;
+    private readonly DurableJobSubstrateOptions _durableJobSubstrate;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RedisHealthCheck"/> class.
@@ -272,14 +274,17 @@ internal sealed class RedisHealthCheck : IHealthCheck
     /// <param name="redis">Redis connection multiplexer.</param>
     /// <param name="distributedCache">Distributed cache.</param>
     /// <param name="logger">Logger instance.</param>
+    /// <param name="durableJobSubstrate">Startup Redis durability attestation state.</param>
     public RedisHealthCheck(
         IConnectionMultiplexer? redis,
         IDistributedCache distributedCache,
-        ILogger<RedisHealthCheck> logger)
+        ILogger<RedisHealthCheck> logger,
+        IOptions<DurableJobSubstrateOptions>? durableJobSubstrate = null)
     {
         _redis = redis;
         _distributedCache = distributedCache;
         _logger = logger;
+        _durableJobSubstrate = durableJobSubstrate?.Value ?? new DurableJobSubstrateOptions();
     }
 
     /// <inheritdoc/>
@@ -323,6 +328,15 @@ internal sealed class RedisHealthCheck : IHealthCheck
                 ["cacheOperationSuccess"] = retrievedValue == testValue
             };
 
+            if (_durableJobSubstrate.RedisDurabilityAttestation is { } attestation)
+            {
+                data["durabilityEndpoint"] = attestation.Endpoint;
+                data["persistenceMode"] = attestation.PersistenceMode;
+                data["acknowledgedWritePolicy"] = attestation.AcknowledgedWritePolicy;
+                data["evictionPolicy"] = attestation.EvictionPolicy;
+                data["durabilityObservedAt"] = attestation.ObservedAt;
+            }
+
             // Determine health status
             if (pingLatency.TotalMilliseconds > 1000 || !_redis.IsConnected)
             {
@@ -335,6 +349,36 @@ internal sealed class RedisHealthCheck : IHealthCheck
             {
                 return HealthCheckResult.Degraded(
                     "Redis cache operations are failing",
+                    data: data);
+            }
+
+            // honua-server#4502: the operations status surface for a non-durable job substrate,
+            // reported as DEGRADED — not Unhealthy. The durable job store IS composed and Redis
+            // IS serving; what is missing is the durability guarantee, which the capability
+            // manifest already withholds 'jobs.runner' for. Reporting Unhealthy here fails the
+            // roll-up and, before this fix, the readiness probe with it — turning "AOF is off"
+            // into a total outage.
+            //
+            // Evaluated AFTER the ping and the cache write/read/delete probes, and after the
+            // latency and cache-failure verdicts above, so a Redis that later goes unreachable or
+            // read-only reports the actual outage instead of being masked by the startup-time
+            // durability verdict. Durability is the diagnosis only once connectivity is proven.
+            if (_durableJobSubstrate.RedisEntitled
+                && _durableJobSubstrate.RedisDurabilityAttestation is null
+                && _durableJobSubstrate.RedisDurabilityFailure is { } durabilityCause)
+            {
+                // The description is what the ops-health snapshot (honua://ops/health) projects per
+                // entry, so it carries the whole diagnosis — cause, consequence, remediation — and
+                // not just a label an operator then has to go and decode.
+                data["cause"] = durabilityCause.ToString();
+                data["durabilityAttested"] = false;
+                data["consequence"] = DurableJobSubstrateRemediation.NonDurableConsequence;
+                data["remediation"] = DurableJobSubstrateRemediation.For(durabilityCause);
+
+                return HealthCheckResult.Degraded(
+                    $"Redis durability is not attested ({durabilityCause}). "
+                        + $"{DurableJobSubstrateRemediation.NonDurableConsequence} "
+                        + DurableJobSubstrateRemediation.For(durabilityCause),
                     data: data);
             }
 

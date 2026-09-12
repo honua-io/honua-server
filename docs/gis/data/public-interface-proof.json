@@ -717,7 +717,7 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage plus OperateStatusEndpointsTests integration tests assert the aggregated status endpoint returns a server-computed verdict, self-describing per-domain rollups, and the availability SLO block, and that the read-only ops:read scope can read status/findings but is denied mutating ops endpoints",
+          "proofMechanism": "EndpointRegistry coverage plus OperateStatusEndpointsTests integration tests assert the aggregated status endpoint returns a server-computed verdict, self-describing per-domain rollups, and an explicitly non-platform node-local retained-tail diagnostic, and that the read-only ops:read scope can read status/findings but is denied mutating ops endpoints",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.Operate.cs",
@@ -731,12 +731,14 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "The overall verdict is computed server-side by OperateStatusVerdictEvaluator with documented rules and the availability SLO/error-budget by OperateSloEvaluator; both are unit-pinned, and OperateStatusJsonContext keeps the response DTOs AOT-safe",
+          "proofMechanism": "The overall verdict is computed server-side by OperateStatusVerdictEvaluator; OperateSloEvaluator refuses to derive a platform SLO/error budget from the bounded replica-local tail and exposes its actual retained population instead. Both are unit-pinned, the four-cell distributed comparison is fail-closed, and OperateStatusJsonContext keeps the response DTOs AOT-safe",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Server/Features/Operations/Status/OperateStatusVerdictEvaluator.cs",
             "src/Honua.Server/Features/Operations/Status/OperateSloEvaluator.cs",
-            "src/Honua.Server/Features/Operations/Status/OperateStatusJsonContext.cs"
+            "src/Honua.Server/Features/Operations/Status/OperateStatusJsonContext.cs",
+            "scripts/scale/check-distributed-availability.py",
+            "scripts/scale/test_check_distributed_availability.py"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -3456,6 +3458,42 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#723",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "gpserver-soap-discovery",
+      "displayName": "GeoServices SOAP GPServer Discovery",
+      "surfaceKind": "http-route-family",
+      "protocol": "GeoServices SOAP GPServer",
+      "canonicalIdentifier": "/services/{serviceId}/GPServer",
+      "parentSurfaceId": "gpserver-adapter",
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/services/{serviceId}/GPServer"
+      ],
+      "endpointContains": [],
+      "operationKeys": [
+        "GPServer::GetExecutionType",
+        "GPServer::GetResultMapServerName",
+        "GPServer::GetTaskInfos",
+        "GPServer::GetTaskNames",
+        "GPServer::GetToolInfo",
+        "GPServer::GetToolInfos",
+        "GPServer::GetToolNames"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "SOAP discovery integration tests cover the captured ArcPy envelope, task and parameter metadata, Python-safe tool identifiers with metadata round trips, service authorization, malformed envelopes and unsupported operations. SOAP execution and real-client certification are not claimed by this proof.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#4614",
           "versionCaptureRule": null
         }
       ]

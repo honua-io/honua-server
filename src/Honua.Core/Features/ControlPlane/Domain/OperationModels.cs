@@ -531,6 +531,94 @@ public sealed record DeployOperationSpec
     /// deploy uses the default single-step bake-then-promote behavior.
     /// </summary>
     public CanaryRampSpec? CanaryRamp { get; init; }
+
+    /// <summary>
+    /// Timestamp the candidate revision first began receiving live traffic, stamped once by the
+    /// reconciler the first time the backend reports <see cref="WorkflowOperationStatus.Reconciling"/>
+    /// (honua-server#4617). Telemetry warmup/bake windows anchor on this rather than
+    /// <see cref="WorkflowOperationRecord.CreatedAt"/>, which can precede actual traffic exposure by an
+    /// unbounded amount of backend provisioning time. Null while the operation is still provisioning
+    /// (including for operations persisted before this field existed), in which case evaluators fall
+    /// back to <c>CreatedAt</c> so existing in-flight deploys keep their prior behavior.
+    /// </summary>
+    public DateTimeOffset? TrafficExposedAt { get; init; }
+
+    /// <summary>
+    /// Durable post-activation observation/recovery state (honua-server#4618). Set by the reconciler
+    /// when a candidate is fully promoted and cleared once the protection window completes or a
+    /// triggered recovery finishes; null before promotion and for operations that never activate a
+    /// candidate.
+    /// </summary>
+    public DeployProtectionState? Protection { get; init; }
+}
+
+/// <summary>
+/// Post-activation protection phase for a durable deploy operation observing a newly promoted
+/// candidate before the rollback protection window elapses (honua-server#4618). Distinct from
+/// <see cref="WorkflowOperationStatus"/>: while a protection window is open the operation's status
+/// stays <see cref="WorkflowOperationStatus.Reconciling"/> so the reconciler keeps driving it, and this
+/// phase carries the finer-grained, operator/API-facing detail the status alone cannot express.
+/// </summary>
+public enum DeployProtectionPhase
+{
+    /// <summary>The candidate was just exposed and is being observed against the durable policy.</summary>
+    Observing,
+
+    /// <summary>The observation window is holding a healthy candidate open for the full protection window.</summary>
+    Protected,
+
+    /// <summary>An approved safety policy triggered rollback and deterministic recovery is executing.</summary>
+    Recovering,
+
+    /// <summary>The observation window elapsed without a policy trigger; the previous revision was retired.</summary>
+    Expired,
+
+    /// <summary>Recovery was triggered but the previous revision or its controller could not be reached.</summary>
+    Unavailable
+}
+
+/// <summary>
+/// Durable post-activation observation/recovery state persisted on a promoted deploy operation
+/// (honua-server#4618). Created the first time a candidate is fully exposed to traffic and cleared once
+/// the observation window completes cleanly or a triggered recovery finishes; retained (with
+/// <see cref="Phase"/> set to <see cref="DeployProtectionPhase.Unavailable"/>) when recovery itself
+/// cannot be proven, so the durable record keeps the evidence an operator needs.
+/// </summary>
+public sealed record DeployProtectionState
+{
+    /// <summary>Revision, alias, or image that was serving before the candidate was activated.</summary>
+    public required string PreviousRevision { get; init; }
+
+    /// <summary>Revision, alias, or image activated and currently under observation.</summary>
+    public required string CandidateRevision { get; init; }
+
+    /// <summary>Time the candidate first received live traffic.</summary>
+    public required DateTimeOffset FirstExposureAt { get; init; }
+
+    /// <summary>Time the observation window closes if no recovery trigger fires before it.</summary>
+    public required DateTimeOffset ObservationDeadline { get; init; }
+
+    /// <summary>
+    /// Bound on how long a triggered recovery may take to settle before it is treated as unavailable.
+    /// Null until a recovery trigger sets it.
+    /// </summary>
+    public DateTimeOffset? RecoveryDeadline { get; init; }
+
+    /// <summary>
+    /// Stable digest of the safety-policy configuration (promotion gate, telemetry/rollback
+    /// parameters) in effect when the candidate was activated, so policy drift mid-window is
+    /// detectable and recovery always replays the policy that was actually approved.
+    /// </summary>
+    public required string PolicyDigest { get; init; }
+
+    /// <summary>Approval policy reference in effect for this activation, when the operation required approval.</summary>
+    public string? ApprovalScope { get; init; }
+
+    /// <summary>Current post-activation protection phase.</summary>
+    public DeployProtectionPhase Phase { get; init; } = DeployProtectionPhase.Observing;
+
+    /// <summary>Bounded, operator-safe reason code for the current phase (for example a telemetry breach or backend signal), when applicable.</summary>
+    public string? ReasonCode { get; init; }
 }
 
 /// <summary>
@@ -671,10 +759,44 @@ public sealed record MetadataReleaseContext
     public MetadataReleaseExecutionPlan? ExecutionPlan { get; init; }
 
     /// <summary>
-    /// Prior current Metadata v2 revision captured before activation so a reversible rollback can
-    /// reactivate it. Null when no prior revision existed.
+    /// Active Metadata v2 revision captured before any mutation. The candidate is prepared from
+    /// this immutable revision and activation is conditional on it still being current. A rebase
+    /// onto a concurrent update replaces it with the revision the candidate was rebased onto.
     /// </summary>
     public long? PriorRevision { get; init; }
+
+    /// <summary>
+    /// ETag of <see cref="PriorRevision"/>, used as the optimistic-concurrency precondition for
+    /// activation.
+    /// </summary>
+    public string? PriorEtag { get; init; }
+
+    /// <summary>
+    /// Staged, immutable candidate revision prepared from <see cref="PriorRevision"/>. Invisible to
+    /// canonical readers until activation. Null until staged.
+    /// </summary>
+    public long? CandidateRevision { get; init; }
+
+    /// <summary>
+    /// ETag of <see cref="CandidateRevision"/>.
+    /// </summary>
+    public string? CandidateEtag { get; init; }
+
+    /// <summary>
+    /// Schema operations this release actually changed relative to <see cref="PriorRevision"/>.
+    /// Rollback reverts only these, so fields that already existed and unrelated updates survive.
+    /// </summary>
+    public IReadOnlyList<MetadataReleaseScriptOperation> OwnedOperations { get; init; } = Array.Empty<MetadataReleaseScriptOperation>();
+
+    /// <summary>
+    /// When the candidate was confirmed active. Null while canonical readers stay on the prior revision.
+    /// </summary>
+    public DateTimeOffset? ActivatedAt { get; init; }
+
+    /// <summary>
+    /// Number of times the candidate was rebased onto a concurrent update before activation.
+    /// </summary>
+    public int RebaseCount { get; init; }
 
     /// <summary>
     /// Blocking reason codes or messages specific to metadata release progression.

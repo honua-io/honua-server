@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
@@ -382,7 +383,8 @@ public readonly record struct EditOperationResult
     /// <summary>
     /// Well-known error code reported when an edit operation is rejected because its
     /// optimistic-concurrency precondition no longer matched the stored row state.
-    /// Mirrors HTTP 412 (Precondition Failed) so protocol adapters can map it directly.
+    /// Uses the precondition-failure code; protocol adapters distinguish an HTTP condition failure
+    /// from a stale partial-update conflict using the rejecting snapshot.
     /// </summary>
     public const int PreconditionFailedErrorCode = 412;
 
@@ -414,9 +416,18 @@ public readonly record struct EditOperationResult
     /// <summary>
     /// Whether this operation was rejected because its optimistic-concurrency
     /// precondition (<see cref="FeatureEditPrecondition"/>) no longer matched the
-    /// stored row state at write time. Protocol adapters map this to HTTP 412.
+    /// stored row state at write time. Protocol adapters distinguish HTTP 409 and 412
+    /// using the rejecting snapshot and request conditions.
     /// </summary>
     public bool IsPreconditionFailure { get; init; }
+
+    /// <summary>
+    /// Field-masked row snapshot captured under the lock that rejected this edit.
+    /// Protocol adapters use this internal evidence to evaluate HTTP conditions
+    /// without racing a subsequent read. Null when no snapshot is available.
+    /// </summary>
+    [JsonIgnore]
+    public Feature? PreconditionFailureFeature { get; init; }
 
     /// <summary>
     /// Whether the provider could not determine if this failed operation committed before the

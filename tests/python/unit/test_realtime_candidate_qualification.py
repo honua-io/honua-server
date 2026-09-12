@@ -53,6 +53,33 @@ def complete_evidence():
             "runAttempt": 1,
             "artifactId": 99,
         })
+        if scenario in {"token-expiry", "token-revocation", "tenant-isolation", "tenant-scope-change"}:
+            rows[-1]["assertions"] = [
+                {"id": name, "passed": True} for name in (
+                    "no-cross-tenant-payload", "invalid-credentials-rejected",
+                    "old-credential-terminated", "replacement-resume", "changed-scope-rejected",
+                )
+            ]
+            rows[-1]["authorization"] = {
+                "issuerFingerprint": "sha256:" + "2" * 64,
+                "tenantIds": ["tenant-a", "tenant-b"],
+                "resourceIds": ["tenant-a/layers/0", "tenant-b/layers/1"],
+                "mutationIds": ["a-before", "b-after"],
+                "issuedAt": "2026-09-02T06:35:00Z",
+                "expiresAt": "2026-09-02T06:37:00Z" if scenario == "token-revocation" else "2026-09-02T06:36:00Z",
+                "revokedAt": "2026-09-02T06:36:00Z",
+                "terminatedAt": "2026-09-02T06:36:01Z",
+                "enforcementBoundMilliseconds": 5000,
+                "terminationReason": "unauthorized" if transport == "odata" else "authorization-ended",
+                "observations": [
+                    {"at": "2026-09-02T06:35:30Z", "raw": '{"objectId":"a-before"}'},
+                    {"at": "2026-09-02T06:36:01Z", "raw": {
+                        "sse": 'event: status\ndata: {"status":"error","code":"authorization-ended"}\n\n',
+                        "websocket": '{"type":"close","code":1008,"reason":"authorization-ended"}',
+                        "odata": 'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n',
+                    }[transport]},
+                ],
+            }
     return {
         "format": MODULE.EVIDENCE_FORMAT,
         "schemaVersion": 2,
@@ -81,6 +108,129 @@ def qualify(source):
 
 
 class RealtimeCandidateQualificationTests(unittest.TestCase):
+    def test_tenant_isolation_ledger_discloses_external_receipt_even_when_source_claims_local_execution(self):
+        source = complete_evidence()
+        for row in source["rows"]:
+            row["evidenceOrigin"] = {"kind": "server-local", "serverSuiteExecutedByQualifier": True}
+        receipt = qualify(source)
+        self.assertEqual("qualified", receipt["status"])
+        isolation = [row for row in receipt["rows"] if row["scenario"] == "tenant-isolation"]
+        self.assertEqual(5, len(isolation))
+        for row in isolation:
+            self.assertEqual({
+                "kind": "external-self-reported-receipt",
+                "repository": "honua-io/honua-sdk-js",
+                "artifactUrl": expected()["sourceArtifactUrl"],
+                "serverSuiteExecutedByQualifier": False,
+            }, row["evidenceOrigin"])
+
+    def test_revocation_requires_a_live_credential_and_termination_before_expiry(self):
+        # Independently specified clock cases: issuance 06:35, revocation 06:36,
+        # termination 06:36:01, expiry 06:37. An expiry cannot prove revocation.
+        cases = (
+            ("revokedAt", "2026-09-02T06:34:59Z", "revocation must occur during the token lifetime"),
+            ("issuedAt", "2026-09-02T06:36:00Z", "revocation must occur during the token lifetime"),
+            ("expiresAt", "2026-09-02T06:36:00Z", "revocation must occur during the token lifetime"),
+            ("expiresAt", "2026-09-02T06:35:59Z", "revocation must occur during the token lifetime"),
+            ("expiresAt", "2026-09-02T06:36:01Z", "revocation termination must precede token expiry"),
+            ("expiresAt", "2026-09-02T06:36:00.500Z", "revocation termination must precede token expiry"),
+        )
+        for surface, transport in (("feature-stream", "sse"), ("feature-stream", "websocket"),
+                                   ("feature-stream", "odata"), ("sensorthings", "sse"),
+                                   ("sensorthings", "websocket")):
+            for field, value, reason in cases:
+                with self.subTest(surface=surface, transport=transport, field=field, value=value):
+                    source = complete_evidence()
+                    target = next(row for row in source["rows"] if row["surface"] == surface
+                                  and row["transport"] == transport and row["scenario"] == "token-revocation")
+                    target["authorization"][field] = value
+                    receipt = qualify(source)
+                    self.assertEqual("rejected", receipt["status"])
+                    rejected = [row for row in receipt["rows"] if row["state"] == "rejected"]
+                    self.assertEqual(1, len(rejected))
+                    self.assertEqual((surface, transport, "token-revocation"),
+                                     tuple(rejected[0][key] for key in ("surface", "transport", "scenario")))
+                    self.assertIn(reason, " ".join(rejected[0]["reasons"]))
+                    self.assertEqual(SERVER_SHA, receipt["candidate"]["serverRevision"])
+                    self.assertEqual(SERVER_IMAGE, receipt["candidate"]["serverImage"])
+
+    def test_claimed_termination_must_match_the_actual_transport_observation(self):
+        for transport in ("sse", "websocket", "odata"):
+            for change in ("late", "missing", "wrong-outcome", "data-payload"):
+                with self.subTest(transport=transport, change=change):
+                    source = complete_evidence()
+                    target = next(row for row in source["rows"] if row["transport"] == transport
+                                  and row["scenario"] == "token-revocation")
+                    terminal = target["authorization"]["observations"][1]
+                    if change == "late":
+                        terminal["at"] = "2026-09-02T06:38:00Z"
+                    elif change == "missing":
+                        terminal["raw"] = "heartbeat"
+                    elif change == "data-payload":
+                        terminal["raw"] = '{"data":"authorization-ended","status":200}'
+                    else:
+                        terminal["raw"] = {
+                            "sse": 'event: feature\ndata: {"status":"error","code":"authorization-ended"}\n\n',
+                            "websocket": '{"type":"close","code":1000,"reason":"authorization-ended"}',
+                            "odata": 'HTTP/1.1 200 OK\r\n\r\n{"code":"authorization-ended"}',
+                        }[transport]
+                    receipt = qualify(source)
+                    self.assertEqual("rejected", receipt["status"])
+                    row = next(row for row in receipt["rows"] if row["transport"] == transport
+                               and row["scenario"] == "token-revocation")
+                    self.assertIn("termination timestamp must match a raw authorization outcome",
+                                  " ".join(row["reasons"]))
+
+    def test_authorization_boundary_and_termination_must_be_observed_in_the_live_run(self):
+        for scenario in ("token-expiry", "token-revocation"):
+            for field, value, reason in (
+                ("completedAt", "2026-09-02T06:36:00.500Z", "termination falls outside its claimed live workflow"),
+                ("startedAt", "2026-09-02T06:36:00.500Z", "boundary falls outside its claimed live workflow"),
+            ):
+                with self.subTest(scenario=scenario, field=field):
+                    source = complete_evidence()
+                    target = next(row for row in source["rows"] if row["scenario"] == scenario)
+                    workflow = deepcopy(source["workflow"])
+                    workflow[field] = value
+                    self.assertIn(reason, " ".join(MODULE._authorization_diagnostics(target, workflow)))
+
+    def test_expiry_does_not_stand_in_for_revocation_or_scope_change(self):
+        source = complete_evidence()
+        source["rows"] = [row for row in source["rows"] if row["scenario"] not in {"token-revocation", "tenant-scope-change"}]
+        result = qualify(source)
+        self.assertEqual("rejected", result["status"])
+        for transport in ("sse", "websocket", "odata"):
+            for scenario in ("token-revocation", "tenant-scope-change"):
+                row = next(row for row in result["rows"] if row["surface"] == "feature-stream"
+                           and row["transport"] == transport and row["scenario"] == scenario)
+                self.assertIn("does not contain", " ".join(row["reasons"]))
+
+    def test_projected_green_authorization_without_raw_receipt_is_rejected(self):
+        for field in ("issuerFingerprint", "tenantIds", "resourceIds", "mutationIds", "issuedAt", "expiresAt", "observations"):
+            with self.subTest(field=field):
+                source = complete_evidence()
+                target = next(row for row in source["rows"] if row["scenario"] == "token-expiry")
+                del target["authorization"][field]
+                self.assertEqual("rejected", qualify(source)["status"])
+
+    def test_late_termination_and_missing_security_assertions_are_rejected(self):
+        for change in ("late", "assertions", "after-only", "same-tenant", "revocation-time"):
+            with self.subTest(change=change):
+                source = complete_evidence()
+                target = next(row for row in source["rows"] if row["scenario"] == "token-revocation")
+                proof = target["authorization"]
+                if change == "late":
+                    proof["terminatedAt"] = "2026-09-02T06:36:06Z"
+                elif change == "assertions":
+                    target["assertions"] = [{"id": "live-assertion", "passed": True}]
+                elif change == "after-only":
+                    proof["observations"][0]["at"] = "2026-09-02T06:36:02Z"
+                elif change == "same-tenant":
+                    proof["tenantIds"] = ["tenant-a", "tenant-a"]
+                else:
+                    del proof["revokedAt"]
+                self.assertEqual("rejected", qualify(source)["status"])
+
     def test_complete_exact_candidate_preview_matrix_qualifies(self):
         receipt = qualify(complete_evidence())
         self.assertEqual("qualified", receipt["status"])

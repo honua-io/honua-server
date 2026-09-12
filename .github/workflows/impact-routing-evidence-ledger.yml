@@ -1,7 +1,22 @@
 name: Impact Routing Evidence Ledger
 
+# Cohort reset contract: changes to the impact classifiers, native routing
+# policy, observer workflows, trusted resolver, or authoritative gate workflow
+# start a new semantic generation because they decide what a receipt means and
+# which source run is eligible for collection. Legacy serving/worker workflow
+# pins remain provenance because their routing declarations are validated by
+# the native policy. Keep the 60-sample floor, seven-day green requirement, and
+# report-only promotion boundary unchanged.
+
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/impact-routing-evidence-ledger.yml'
+      - '.github/workflows/native-image-impact-observe.yml'
+      - '.github/impact-routing-*.json'
+      - 'scripts/ci/*impact*'
+      - 'scripts/ci/trusted-pr-workflow-run*'
   schedule:
     - cron: "47 13 * * *"
 
@@ -10,10 +25,25 @@ permissions:
   contents: read
 
 concurrency:
-  group: impact-routing-evidence-ledger
+  group: impact-routing-evidence-ledger-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  replay:
+    name: Replay seven-day receipt evidence
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Verify receipt collection and seven-day audit
+        run: |
+          python3 scripts/ci/collect-impact-routing-runs.test.py
+          python3 scripts/ci/audit-impact-routing-evidence.test.py
+          node scripts/ci/trusted-pr-workflow-run.test.js
+
   audit:
     name: Audit trusted impact-routing observations
     if: github.ref_name == github.event.repository.default_branch
@@ -21,7 +51,7 @@ jobs:
     # Indexing the PR Gate stream's receipts (previously invisible to the
     # reader, see PR_GATE_ARTIFACT) roughly doubles the number of receipt
     # archives this job downloads.
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - name: Checkout trusted ledger policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -39,79 +69,42 @@ jobs:
 
       - name: Validate impact-routing evidence fixtures
         run: |
+          python3 scripts/ci/collect-impact-routing-runs.test.py
           python3 scripts/ci/classify-pr-gate-impact.test.py
           python3 scripts/ci/audit-impact-routing-evidence.test.py
 
       - id: collect
-        name: Collect bounded workflow and artifact catalogs
+        name: Collect workflow and artifact catalogs within the token budget
         env:
           GH_TOKEN: ${{ github.token }}
           RECEIPT_CUTOFF: ${{ steps.policy.outputs.receipt_cutoff }}
           PRODUCER_RUN_CUTOFF: ${{ steps.policy.outputs.producer_run_cutoff }}
           IMAGE_RUN_CUTOFF: ${{ steps.policy.outputs.image_run_cutoff }}
-          MAXIMUM_PAGES: ${{ steps.policy.outputs.maximum_pages_per_query }}
+          COLLECTION_UPPER: ${{ steps.policy.outputs.collection_upper }}
+          MAXIMUM_RUNS: ${{ steps.policy.outputs.maximum_runs_per_query }}
           MAXIMUM_CATALOGS: ${{ steps.policy.outputs.maximum_producer_run_catalogs }}
+          REQUEST_LIMIT: ${{ steps.policy.outputs.github_token_request_limit }}
+          REQUEST_RESERVE: ${{ steps.policy.outputs.github_token_request_reserve }}
         run: |
           set -euo pipefail
           mkdir -p evidence/runs/{pr-gate,native,serving,worker} \
             evidence/artifacts/{pr-gate,native} evidence/archives
+          collector=scripts/ci/collect-impact-routing-runs.py
 
-          collect_pages() {
-            local endpoint="$1"
-            local collection="$2"
-            local output_root="$3"
-            shift 3
-            local expected_total=''
-            local complete=false
-            local page=1
-            while (( page <= MAXIMUM_PAGES )); do
-              local output
-              output="$(printf '%s/%03d.json' "${output_root}" "${page}")"
-              gh api --method GET "${endpoint}" \
-                -F per_page=100 \
-                -F page="${page}" \
-                "$@" > "${output}"
-              local total count
-              total="$(jq -er '.total_count | select(type == "number" and floor == . and . >= 0)' "${output}")"
-              count="$(jq -er --arg collection "${collection}" \
-                '.[$collection] | arrays | length' "${output}")"
-              if [[ -z "${expected_total}" ]]; then
-                expected_total="${total}"
-              elif [[ "${total}" != "${expected_total}" ]]; then
-                echo "${collection} total changed during pagination" >&2
-                exit 1
-              fi
-              if (( page * 100 >= expected_total )); then
-                complete=true
-                break
-              fi
-              if (( count != 100 )); then
-                echo "${collection} catalog ended before its declared total" >&2
-                exit 1
-              fi
-              page=$((page + 1))
-            done
-            if [[ "${complete}" != true ]]; then
-              # Fail closed and say exactly what to change. A truncated catalog
-              # cannot degrade gracefully here: `discover`/`summarize` count
-              # observed heads and reconcile authoritative image outcomes
-              # against these pages, so silently dropping the tail would turn a
-              # collection shortfall into fabricated integrity/outcome failures.
-              printf '::error::%s catalog needs more than %s page(s) of 100 (declared total %s). Raise maximum_pages_per_query in .github/impact-routing-promotion.json or shorten receipt_retention_days.\n' \
-                "${collection}" "${MAXIMUM_PAGES}" "${expected_total}" >&2
-              exit 1
-            fi
+          # Every GITHUB_TOKEN request this job makes, retries included, is
+          # charged to one allowance: policy limit less reserve, clamped to
+          # what the (unmetered) /rate_limit reports is left this hour.
+          python3 "${collector}" budget --output evidence/request-budget.json \
+            --limit "${REQUEST_LIMIT}" --reserve "${REQUEST_RESERVE}"
+
+          collect_runs() {
+            python3 "${collector}" runs --budget evidence/request-budget.json \
+              --endpoint "repos/${GITHUB_REPOSITORY}/actions/workflows/$1/runs" \
+              --lower "$2" --upper "${COLLECTION_UPPER}" \
+              --maximum "${MAXIMUM_RUNS}" --output "$3" "${@:4}"
           }
-
-          created_filter=">=${PRODUCER_RUN_CUTOFF}"
-          collect_pages \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/pr-gate-impact-observe.yml/runs" \
-            workflow_runs evidence/runs/pr-gate \
-            -f status=completed -f "created=${created_filter}"
-          collect_pages \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/native-image-impact-observe.yml/runs" \
-            workflow_runs evidence/runs/native \
-            -f status=completed -f "created=${created_filter}"
+          collect_runs pr-gate-impact-observe.yml "${PRODUCER_RUN_CUTOFF}" evidence/runs/pr-gate
+          collect_runs native-image-impact-observe.yml "${PRODUCER_RUN_CUTOFF}" evidence/runs/native
 
           # Only a SUCCESSFUL observer run can have uploaded a receipt or a
           # skip marker, so only those need an artifact catalog. Non-success
@@ -131,29 +124,20 @@ jobs:
             exit 1
           fi
 
-          collect_run_artifacts() {
-            local output_root="$1"
-            while read -r run_id; do
-              [[ "${run_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
-              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
-                > "${output_root}/${run_id}.json"
-            done
-          }
-          jq -r '.workflow_runs[] | select(.conclusion == "success") | .id' \
-            evidence/runs/pr-gate/*.json | sort -nu \
-            | collect_run_artifacts evidence/artifacts/pr-gate
-          jq -r '.workflow_runs[] | select(.conclusion == "success") | .id' \
-            evidence/runs/native/*.json | sort -nu \
-            | collect_run_artifacts evidence/artifacts/native
-          image_created_filter=">=${IMAGE_RUN_CUTOFF}"
-          collect_pages \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/serving-image-boundary.yml/runs" \
-            workflow_runs evidence/runs/serving \
-            -f event=pull_request -f "created=${image_created_filter}"
-          collect_pages \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/worker-gdal-image.yml/runs" \
-            workflow_runs evidence/runs/worker \
-            -f event=pull_request -f "created=${image_created_filter}"
+          # One request per successful observer would be ~1,740 at the current
+          # seven-day volume. Name-filtered repository listings return the same
+          # artifact objects 100 per request; only runs that list no current-
+          # attempt receipt (skips, losses) fall back to a per-run catalog.
+          python3 "${collector}" artifacts --budget evidence/request-budget.json \
+            --repository "${GITHUB_REPOSITORY}" --runs evidence/runs/pr-gate \
+            --name pr-gate-impact-docs-only-v3 --name pr-gate-impact-full-v3 \
+            --output evidence/artifacts/pr-gate
+          python3 "${collector}" artifacts --budget evidence/request-budget.json \
+            --repository "${GITHUB_REPOSITORY}" --runs evidence/runs/native \
+            --name native-image-impact-observation-v3 \
+            --output evidence/artifacts/native
+          collect_runs serving-image-boundary.yml "${IMAGE_RUN_CUTOFF}" evidence/runs/serving --event pull_request
+          collect_runs worker-gdal-image.yml "${IMAGE_RUN_CUTOFF}" evidence/runs/worker --event pull_request
 
       - id: discover
         name: Select exact current-attempt observation receipts
@@ -170,71 +154,44 @@ jobs:
         env:
           RECEIPT_CUTOFF: ${{ steps.policy.outputs.receipt_cutoff }}
 
+      # Receipt archives are immutable per artifact ID, so each is transferred
+      # once and then reused from this default-branch-scoped cache (pull
+      # request runs can neither restore nor write it). A cached archive is
+      # used only while it matches the catalog's SHA-256 digest; archives that
+      # left the retention window are pruned before the cache is saved again.
+      - name: Restore verified receipt archives
+        if: always() && hashFiles('evidence/index.json') != ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: evidence/archives
+          key: impact-routing-receipts-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: impact-routing-receipts-v1-
+
       - id: download
-        name: Download only indexed observation receipts
+        name: Download only indexed receipts missing from the cache
         if: always() && hashFiles('evidence/index.json') != ''
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           MAXIMUM_DOWNLOADS: ${{ steps.policy.outputs.maximum_receipt_downloads }}
         run: |
-          set -euo pipefail
-          count="$(jq -er '.artifacts | arrays | length' evidence/index.json)"
-          [[ "${count}" =~ ^[0-9]+$ && "${MAXIMUM_DOWNLOADS}" =~ ^[1-9][0-9]*$ ]] || exit 1
-          if (( count > MAXIMUM_DOWNLOADS )); then
-            printf '::error::%s indexed receipts exceed the %s download budget. Raise maximum_receipt_downloads in .github/impact-routing-promotion.json or shorten receipt_retention_days.\n' \
-              "${count}" "${MAXIMUM_DOWNLOADS}" >&2
-            exit 1
-          fi
-          download_receipt() {
-            local artifact_id="$1"
-            local destination="evidence/archives/${artifact_id}.zip"
-            local partial="${destination}.part"
-            local attempt
-            local invalid_archive=false
-            for attempt in 1 2 3 4; do
-              if gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
-                  > "${partial}"; then
-                if python3 - "${partial}" <<'PY'
-          import sys
-          import zipfile
+          python3 scripts/ci/collect-impact-routing-runs.py download \
+            --budget evidence/request-budget.json \
+            --repository "${GITHUB_REPOSITORY}" \
+            --index evidence/index.json \
+            --archives evidence/archives \
+            --catalogs evidence/artifacts/pr-gate \
+            --catalogs evidence/artifacts/native \
+            --maximum "${MAXIMUM_DOWNLOADS}"
 
-          raise SystemExit(0 if zipfile.is_zipfile(sys.argv[1]) else 1)
-          PY
-                then
-                  mv "${partial}" "${destination}"
-                  return 0
-                fi
-                invalid_archive=true
-              fi
-              if (( attempt < 4 )); then
-                sleep $((attempt * 2))
-              fi
-            done
-            expired=false
-            if [[ "${invalid_archive}" == false ]]; then
-              expired="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}" \
-                --jq '.expired' 2>/dev/null || true)"
-            fi
-            if [[ "${invalid_archive}" == false && "${expired}" == true ]]; then
-              rm -f "${partial}"
-              python3 scripts/ci/audit-impact-routing-evidence.py expire-indexed-receipt \
-                --index evidence/index.json \
-                --artifact-id "${artifact_id}"
-              printf '::warning::receipt artifact %s expired after discovery; counted as owed receipt loss\n' \
-                "${artifact_id}" >&2
-              return 0
-            fi
-            printf '::error::receipt artifact %s was unavailable or invalid after 4 attempts\n' \
-              "${artifact_id}" >&2
-            return 1
-          }
-
-          jq -r '.artifacts[].artifact_id' evidence/index.json \
-            | while read -r artifact_id; do
-                [[ "${artifact_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
-                download_receipt "${artifact_id}"
-              done
+      # Saved even when the download ran out of budget: the verified archives
+      # it did fetch are progress the next audit resumes from.
+      - name: Retain verified receipt archives for the next audit
+        if: always() && hashFiles('evidence/archives/*.zip') != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: evidence/archives
+          key: impact-routing-receipts-v1-${{ github.run_id }}-${{ github.run_attempt }}
 
       - id: summarize
         name: Reconcile receipts with authoritative exact-head image outcomes
@@ -265,14 +222,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RETAINED_LEDGER_RUNS: "20"
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           mkdir -p evidence/history
           cp evidence/ledger.json "evidence/history/${GITHUB_RUN_ID}.json"
-          gh api --method GET \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/impact-routing-evidence-ledger.yml/runs" \
-            -F per_page="${RETAINED_LEDGER_RUNS}" -F page=1 -F status=completed \
-            --jq '.workflow_runs[].id' > evidence/history-run-ids.txt
+          # Reserve the worst case up front: one run listing plus an artifact
+          # listing and a download per retained ledger.
+          if python3 scripts/ci/collect-impact-routing-runs.py spend \
+              --budget evidence/request-budget.json --label trend-history \
+              --requests "$((1 + 2 * RETAINED_LEDGER_RUNS))"; then
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/impact-routing-evidence-ledger.yml/runs" \
+              -F per_page="${RETAINED_LEDGER_RUNS}" -F page=1 -F status=completed \
+              -f branch="${DEFAULT_BRANCH}" \
+              --jq '.workflow_runs[].id' > evidence/history-run-ids.txt
+          else
+            printf '::notice::request budget cannot cover retained-ledger history; the streak reports this run only\n'
+            : > evidence/history-run-ids.txt
+          fi
           while read -r prior; do
             [[ "${prior}" =~ ^[1-9][0-9]*$ ]] || continue
             if [[ "${prior}" == "${GITHUB_RUN_ID}" ]]; then
@@ -315,10 +283,17 @@ jobs:
             evidence/ledger.md
             evidence/trend.json
             evidence/trend.md
+            evidence/request-budget.json
             evidence/runs
             evidence/artifacts
           if-no-files-found: error
           retention-days: 30
+
+      - name: Report GITHUB_TOKEN request spend
+        if: always() && hashFiles('evidence/request-budget.json') != ''
+        run: |
+          python3 scripts/ci/collect-impact-routing-runs.py report \
+            --budget evidence/request-budget.json >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Fail closed on receipt integrity errors
         if: always()

@@ -180,7 +180,7 @@ internal sealed class PostgresGeometryOperationService(
         }
 
         // Honor the explicit (Esri-parity) datum-transformation pipeline through the shared
-        // chokepoint that emits the 3-argument ST_Transform form. The pipeline string is
+        // chokepoint that emits ST_TransformPipeline. The pipeline string is
         // catalog-sourced (never user input), so it is embedded as a literal exactly as the
         // feature-query builders do.
         var transformExpression = DatumTransformSql.BuildTransformExpression(

@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Client template runbook"
+description: "How to produce and refresh the desktop and BI client templates used for cross-client certification."
+---
 # Client Templates and Manual Smoke Runbook
 
 This runbook provides first-party template starters and repeatable manual smoke checks for common desktop and BI clients:

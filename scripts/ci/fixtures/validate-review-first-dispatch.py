@@ -103,15 +103,42 @@ def main() -> None:
         "'pull_request' && github.run_attempt == 1"
     )
     require(pr_gate, wait_condition, "attempt 1 does not fail closed in enforce mode")
-    full_condition = (
-        "if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != "
+    review_clause = (
+        "env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != "
         "'pull_request' || github.run_attempt > 1"
     )
-    # Four expensive steps remain in the build/test job and four now live in
-    # the parallel format job (checkout, setup, restore, format). All eight
-    # must stay attempt-2-only when review-first enforcement is enabled.
-    if pr_gate.count(full_condition) != 8:
+    full_condition = f"if: {review_clause}"
+    # The docs-only exit (scripts/ci/docs-only-diff.sh) ANDs one clause onto the
+    # expensive steps that follow its classification. The review clause stays
+    # whole and parenthesised, so a docs-only verdict can only skip more on
+    # attempt 1; it can never release a step early.
+    docs_gated_condition = (
+        f"if: ({review_clause}) && steps.docs-only.outputs.docs_only != 'true'"
+    )
+
+    def review_gated(step: str) -> bool:
+        return full_condition in step or docs_gated_condition in step
+
+    # Trunk's fourteen expensive steps (the real remote-source, raster and GDAL CLI
+    # proofs, PostGIS pre-pull and server boot smoke in build/test, plus four in
+    # parallel format), the two production PDAL proof steps, and the docs-only
+    # exit's own gating of each. The Buildx setup that feeds the PDAL build its
+    # registry cache stays attempt-2-only but is never docs-gated (it is cheap
+    # and warms the cache even on a docs-only diff). All seventeen conditions
+    # (bare attempt-2-only plus docs-gated attempt-2-only) must remain
+    # attempt-2-only in review-first enforcement.
+    if pr_gate.count(full_condition) + pr_gate.count(docs_gated_condition) != 17:
         raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
+    for name, message in [
+        ("Prove raster catalog execution with production GDAL", "real raster execution must remain behind exact-head review"),
+        ("Prove remote source execution with real HTTP and PostGIS", "real remote-source execution must remain behind exact-head review"),
+        ("Prove the real-GDAL CLI cases run on the required gate", "real GDAL CLI execution must remain behind exact-head review"),
+        ("Build production PDAL native tools", "Build production PDAL native tools must remain behind exact-head review"),
+        ("Prove point-cloud execution with production PDAL", "Prove point-cloud execution with production PDAL must remain behind exact-head review"),
+    ]:
+        proof_step = build_test_job.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
+        if not review_gated(proof_step):
+            raise AssertionError(message)
 
     revalidation_condition = (
         "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "

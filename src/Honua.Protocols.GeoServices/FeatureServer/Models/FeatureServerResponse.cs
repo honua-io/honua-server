@@ -149,7 +149,7 @@ public sealed class FeatureServerResponse
     /// <summary>
     /// Whether the service exposes branch-versioned data. Emitted so Esri clients discover the
     /// VersionManagementServer surface (#1272, ADR-0051). True only when the active provider supports
-    /// branch versioning (Postgres) and the Enterprise branch-versioning entitlement is active.
+    /// branch versioning (Postgres) and the Pro branch-versioning entitlement is active.
     /// </summary>
     public bool HasVersionedData { get; init; }
 

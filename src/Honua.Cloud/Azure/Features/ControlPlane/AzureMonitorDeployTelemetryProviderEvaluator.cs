@@ -145,7 +145,7 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
     // The Log Analytics query response shape is { "tables": [ { "columns": [...],
     // "rows": [ [ <cell>, ... ], ... ] } ] }. A health/error/latency gate query is expected to
     // project a single scalar; read tables[0].rows[0][0] and coerce it to a double.
-    private static double? ParseScalar(JsonElement root)
+    internal static double? ParseScalar(JsonElement root)
     {
         if (!root.TryGetProperty("tables", out var tables) ||
             tables.ValueKind != JsonValueKind.Array ||
@@ -162,6 +162,16 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
             return null;
         }
 
+        // A health/error/latency gate query is expected to project exactly one row (a scalar). More
+        // than one is an ambiguous-cardinality configuration error (#4617): silently reading rows[0]
+        // can promote or hold a deploy on an arbitrary, unintended row.
+        if (rows.GetArrayLength() > 1)
+        {
+            throw new InvalidOperationException(
+                $"Telemetry query resolved to {rows.GetArrayLength()} rows; expected exactly one scalar row. " +
+                "Aggregate the query (for example with summarize) to a single value.");
+        }
+
         var firstRow = rows[0];
         if (firstRow.ValueKind != JsonValueKind.Array || firstRow.GetArrayLength() == 0)
         {
@@ -169,7 +179,7 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
         }
 
         var cell = firstRow[0];
-        return cell.ValueKind switch
+        var parsedValue = cell.ValueKind switch
         {
             JsonValueKind.Number => cell.GetDouble(),
             JsonValueKind.String when double.TryParse(
@@ -177,8 +187,12 @@ internal sealed class AzureMonitorLogsQueryClient(IHttpClientFactory httpClientF
                 System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture,
                 out var parsed) => parsed,
-            _ => null
+            _ => (double?)null
         };
+
+        // Guard the same non-finite class as every other provider (#4617): an undefined Log
+        // Analytics expression must not silently satisfy a threshold comparison.
+        return parsedValue.HasValue && double.IsFinite(parsedValue.Value) ? parsedValue.Value : null;
     }
 
     private static Uri ResolveEndpoint(string? endpointOverride)

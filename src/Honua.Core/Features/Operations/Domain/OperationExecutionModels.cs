@@ -49,6 +49,23 @@ public sealed record OperationRequest
     /// The canonical runtime still owns identity, validation, policy, and actuation.
     /// </summary>
     public Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest? GatewayRequest { get; init; }
+
+    /// <summary>
+    /// Secret inputs captured in an approval payload. References are resolved only by the
+    /// approved REST executor and are never serialized as part of the public request.
+    /// </summary>
+    public IReadOnlyDictionary<string, OperationSecretReference> SecretParameters { get; init; } =
+        new Dictionary<string, OperationSecretReference>(StringComparer.Ordinal);
+}
+
+/// <summary>Opaque, non-secret handle for one-time operation secret material.</summary>
+public sealed record OperationSecretReference
+{
+    /// <summary>Opaque identifier resolved by the operation secret channel.</summary>
+    public required string ReferenceId { get; init; }
+
+    /// <summary>Logical field name, such as <c>key</c> or <c>clientSecret</c>.</summary>
+    public required string Name { get; init; }
 }
 
 /// <summary>
@@ -158,6 +175,15 @@ public sealed record OperationValidation
     public IReadOnlyList<string> Messages { get; init; } = [];
 
     /// <summary>
+    /// Optional error taxonomy for a blocking validation failure (for example <c>argument</c>,
+    /// <c>not-found</c>, <c>conflict</c>). Pre-policy rejections carry no actuation handle of
+    /// their own, so this is the only seam that lets a caller-facing surface map a rejection
+    /// raised before policy routing onto the same status code it would get from actuation.
+    /// <see langword="null"/> keeps the historical opaque-failure behavior.
+    /// </summary>
+    public string? ErrorKind { get; init; }
+
+    /// <summary>
     /// Typed, validated approval plan produced from the accepted request. When policy requires
     /// approval, this exact plan is persisted with the proposal and consumed during replay.
     /// </summary>
@@ -256,6 +282,12 @@ public sealed record OperationResultSummary
     /// </summary>
     public IReadOnlyDictionary<string, string> Details { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Opaque references for one-time secret outputs. The material is available only through
+    /// the authenticated consume-once channel and is never part of this durable result.
+    /// </summary>
+    public IReadOnlyList<OperationSecretReference> SecretReferences { get; init; } = [];
 }
 
 /// <summary>

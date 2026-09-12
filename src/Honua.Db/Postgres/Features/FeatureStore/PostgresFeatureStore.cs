@@ -148,11 +148,37 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             return await _dataAccess.GetFeatureAsync(layerId, featureId, cancellationToken);
         }
 
-        query = query with { ObjectIds = ImmutableArray.Create(featureId), Limit = 1 };
+        // Capture the full row token and apply its field mask from the same database
+        // snapshot. A second unmasked read could race the projected read. The row
+        // visibility filter remains enforced by this query; raw attributes never
+        // leave this provider method.
+        var maskedFields = query.EnforcedMaskedFields ?? ImmutableArray<string>.Empty;
+        query = query with
+        {
+            ObjectIds = ImmutableArray.Create(featureId),
+            Limit = 1,
+            EnforcedMaskedFields = ImmutableArray<string>.Empty
+        };
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var selectQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
         var features = await _dataAccess.ExecuteSelectQueryAsync(selectQuery, query, layerId, cancellationToken).ConfigureAwait(false);
-        return features.IsDefaultOrEmpty ? null : features[0];
+        if (features.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        var feature = features[0];
+        if (maskedFields.IsDefaultOrEmpty)
+        {
+            return feature;
+        }
+
+        var masked = maskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return feature with
+        {
+            ReadStateToken = FeatureStateToken.Compute(feature),
+            Attributes = feature.Attributes.RemoveRange(feature.Attributes.Keys.Where(masked.Contains))
+        };
     }
 
     public async Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
@@ -572,6 +598,19 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken = default)
     {
+        if (!editBatch.Preconditions.IsDefaultOrEmpty)
+        {
+            // Preserve omitted masked fields inside the provider transaction; the
+            // read token still covers the full row, including those hidden fields.
+            var maskedFields = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
+            editBatch = editBatch with
+            {
+                Preconditions = editBatch.Preconditions
+                    .Select(precondition => precondition with { MaskedFields = maskedFields })
+                    .ToImmutableArray()
+            };
+        }
+
         return await _dataAccess.ApplyEditsAsync(layerId, editBatch, cancellationToken);
     }
 

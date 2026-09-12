@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Licensing;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -30,6 +33,19 @@ namespace Honua.Worker.Gdal;
 /// </summary>
 public static class GdalWorkerServiceCollectionExtensions
 {
+    internal static void AddLicenseSecretResolvers(IServiceCollection services, IConfiguration configuration)
+    {
+        if (LicenseOptions.ParseMode(configuration[$"{LicenseOptions.SectionName}:Mode"]) == LicenseMode.Disabled)
+        {
+            return;
+        }
+
+        Honua.Cloud.Aws.Features.Licensing.AwsLicenseSecretResolverServiceCollectionExtensions
+            .AddAwsLicenseSecretResolver(services, configuration);
+        Honua.Licensing.AzureLicenseSecretResolverServiceCollectionExtensions
+            .AddAzureLicenseSecretResolver(services, configuration);
+    }
+
     /// <summary>
     /// Wires the GDAL worker host: Redis connection, the shared durable execution
     /// substrate (queue, job store, log store, cancellation registry), the two
@@ -51,8 +67,40 @@ public static class GdalWorkerServiceCollectionExtensions
                 "The GDAL worker requires a 'redis' connection string (the durable job substrate's "
                 + "coordination layer per ADR-0031 / ADR-0038).");
 
-        services.TryAddSingleton<IConnectionMultiplexer>(
-            _ => ConnectionMultiplexer.Connect(redisConnectionString));
+        services.Configure<LicenseOptions>(configuration.GetSection(LicenseOptions.SectionName));
+        if (LicenseOptions.ParseMode(configuration[$"{LicenseOptions.SectionName}:Mode"]) == LicenseMode.Disabled)
+        {
+            services.TryAddSingleton<DisabledLicenseService>();
+            services.TryAddSingleton<ILicenseOperationPolicy>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.TryAddSingleton<ILicenseEntitlementService>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.TryAddSingleton<ILicenseStatusProvider>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.TryAddSingleton<ILicenseManager>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.TryAddSingleton<ILicenseCapacityMeter, DisabledLicenseCapacityMeter>();
+        }
+        else
+        {
+            AddLicenseSecretResolvers(services, configuration);
+            services.TryAddSingleton<IEd25519Verifier, BouncyCastleEd25519Verifier>();
+            services.TryAddSingleton<FileBackedLicenseService>();
+            services.TryAddSingleton<ILicenseOperationPolicy>(sp => sp.GetRequiredService<FileBackedLicenseService>());
+            services.AddHostedService(sp => sp.GetRequiredService<FileBackedLicenseService>());
+        }
+
+        var redisOptions = ConfigurationOptions.Parse(redisConnectionString, ignoreUnknown: true);
+        redisOptions.AllowAdmin = true;
+        redisOptions.AbortOnConnectFail = true;
+        var redis = ConnectionMultiplexer.Connect(redisOptions);
+        var durability = RedisDurabilityAttestor.InspectAsync(redis).GetAwaiter().GetResult();
+        if (!durability.Accepted)
+        {
+            redis.Dispose();
+            throw new InvalidOperationException(
+                $"The GDAL worker requires an accepted Redis durability attestation, but Redis was "
+                + $"rejected ({durability.FailureCause}): {durability.FailureDetail}");
+        }
+
+        services.TryAddSingleton<IConnectionMultiplexer>(redis);
+        services.TryAddSingleton(durability.Attestation!);
 
         // Shared durable substrate stores. These are the same internal Redis-backed
         // implementations the API/serving host registers; the worker host reuses them

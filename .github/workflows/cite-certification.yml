@@ -39,8 +39,9 @@ jobs:
     needs: cite
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
 
       - name: Download human-readable and raw CITE evidence
         uses: actions/download-artifact@v8
@@ -73,7 +74,7 @@ jobs:
             --run-url "$RUN_URL"
 
       - name: Upload normalized certification fragment
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: cite-protocol-certification-${{ github.run_id }}
           path: |

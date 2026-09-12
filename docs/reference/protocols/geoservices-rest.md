@@ -1,3 +1,9 @@
+---
+type: reference
+title: "GeoServices REST (ArcGIS-compatible)"
+description: "Honua serves a GeoServices REST surface under /rest/services, plus a Portal Sharing slice under /sharing/rest for token issuance and item discovery."
+resource: "honua://capability/serve.geoservices-root"
+---
 # GeoServices REST (ArcGIS-compatible)
 
 Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sharing slice under `/sharing/rest` for token issuance and item discovery. Compatibility is limited to the operations documented in the [GeoServices parity matrix](../compatibility/geoservices-parity.md) and the client workflows covered by the [cross-client certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md); it does not imply blanket support for ArcGIS Pro, Field Maps, Koop, or the ArcGIS Maps SDK for JavaScript.
@@ -28,7 +34,7 @@ Base: `/rest/services/{serviceId}/FeatureServer` (service and `/{layerId}` metad
 | Attachments | `/{layerId}/queryAttachments`, `/{layerId}/{featureId}/attachments`, `addAttachment`, `updateAttachment`, `deleteAttachments`, `attachments/{attachmentId}` | |
 | Related records | `/{layerId}/queryRelatedRecords` (GET, POST), `/relationships` | |
 | Offline sync | `createReplica`, `extractChanges`, `synchronizeReplica`, `unRegisterReplica`, `replicas`, `replicas/{replicaId}` | Preview/opt-in in 2026.1, with service-local `Sync` capability required. Security/isolation and lifecycle truth are in scope; broader parity is deferred to release/2026.2. |
-| Branch versioning | `/rest/services/{serviceId}/VersionManagementServer` — `versions`, `create`, per-version operations and jobs | Experimental and off by default; routes return 404 until `versioning.branch` is enabled. |
+| Branch versioning (Pro; Preview in 2026.1) | `/rest/services/{serviceId}/VersionManagementServer` — `versions`, `create`, per-version operations and jobs | Experimental and off by default; routes return 404 until `versioning.branch` is enabled. |
 | Bulk and SQL | `append` (service and layer), `/{layerId}/calculate`, `validateSQL`, `queryDomains`, `getEstimates` | |
 | Temporal and binning | `/{layerId}/queryTopFeatures`, `queryDateBins`, `temporalExtent`, `queryBins` | |
 | Spatial analytics (Pro tier) | `/{layerId}/queryH3` (GET, POST), `queryClusters`, `spatialJoin`, `queryBufferAggregate`, `queryDensity` (POST) | Return 402 when the entitlement is inactive. |
@@ -56,6 +62,12 @@ Base: `/rest/services/{serviceId}/MapServer` (service and `/{layerId}` metadata 
 | Related/attachments | `/{layerId}/queryRelatedRecords`, `/{layerId}/queryAttachments`, `/{layerId}/generateRenderer` | |
 | Cached tiles | `/tile/{z}/{y}/{x}` | |
 | OGC pass-through | `/WMS`, `/WMTS`, `/WMTS/{**restPath}` | See [WMS, WFS, WCS, WMTS](wms-wfs-wcs-wmts.md). |
+
+Map export accepts `bbox` as either `xmin,ymin,xmax,ymax` or an Esri JSON envelope
+with those four properties, including the envelope representation emitted by
+ArcGIS Pro. Both representations use CRS x/y coordinate order and the same finite
+coordinate, extent and geographic-range validation. `bboxSR` controls the input
+CRS and defaults to the service CRS when omitted.
 
 > Open `https://server.example.com/rest/services/roads/MapServer/export?bbox=-122.5,37.7,-122.3,37.9&size=800,600&format=png&f=image` in a browser.
 
@@ -127,7 +139,7 @@ Operations: `findAddressCandidates`, `reverseGeocode`, `suggest`, `geocodeAddres
 
 ## NAServer (network analysis)
 
-GET and POST solves are available for Route, ServiceArea, ClosestFacility, ODCostMatrix, and LocationAllocation under `/rest/services/{serviceId}/NAServer`; see the parity matrix for per-solver limitations.
+Route solves are available over GET and POST; ServiceArea, ClosestFacility, ODCostMatrix, and LocationAllocation solves are POST-only. All five live under `/rest/services/{serviceId}/NAServer` and read query-string or form parameters; see the parity matrix for per-solver limitations.
 
 ## SceneServer (I3S)
 

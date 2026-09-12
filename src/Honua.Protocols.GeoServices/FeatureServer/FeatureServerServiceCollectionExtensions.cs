@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Query;
@@ -53,6 +54,13 @@ internal static class FeatureServerServiceCollectionExtensions
                 serviceProvider.GetService<IConnectionMultiplexer>(),
                 serviceProvider.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
                 serviceProvider.GetRequiredService<ILogger<DistributedApplyEditsIdempotencyStore>>()));
+
+        // Collaborative-editing lock enforcement (#4402). Registered with TryAdd so a host
+        // that also calls AddFeatureLockCollaboration shares the SAME singleton lease store
+        // as the /collaboration/feature-locks endpoints — a lease handed out there and the
+        // guard consulted here must see one store, or enforcement would silently no-op.
+        services.TryAddSingleton<IFeatureLockService, InMemoryFeatureLockService>();
+        services.TryAddSingleton<IFeatureEditGuard, FeatureEditGuard>();
 
         services.AddScoped<FeatureServerEditsDependencies>();
         services.AddScoped<FeatureServerEditsHandler>();

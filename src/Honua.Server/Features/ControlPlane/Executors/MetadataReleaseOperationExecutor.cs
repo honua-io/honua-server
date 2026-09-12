@@ -152,6 +152,12 @@ internal sealed record MetadataReleaseExecutionPayload
     /// <summary>Optional ETL/data-populate workload identifier dispatched after the schema change.</summary>
     public string? DataPopulateWorkloadId { get; init; }
 
+    /// <summary>
+    /// Fields the data-populate workload writes. Required with <see cref="DataPopulateWorkloadId"/>;
+    /// the release is rejected before mutation unless every field is the new nullable field.
+    /// </summary>
+    public IReadOnlyList<string>? DataPopulateFields { get; init; }
+
     /// <summary>Stable script identifier for the additive change.</summary>
     public string? ScriptId { get; init; }
 
@@ -207,6 +213,7 @@ internal sealed record MetadataReleaseExecutionPayload
             ResourceSemanticId = ResourceSemanticId,
             NewFieldName = NewFieldName,
             DataPopulateWorkloadId = DataPopulateWorkloadId,
+            DataPopulateFields = DataPopulateFields ?? Array.Empty<string>(),
             Script = new MetadataReleaseScript
             {
                 ScriptId = scriptId,

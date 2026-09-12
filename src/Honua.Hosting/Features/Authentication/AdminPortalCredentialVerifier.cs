@@ -52,11 +52,7 @@ internal sealed class AdminPortalCredentialVerifier(
                 var apiKeyResult = await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
                 if (apiKeyResult is not null)
                 {
-                    return new PortalCredentialPrincipal(
-                        PrincipalId: AdminUsername,
-                        DisplayName: apiKeyResult.Record.Name,
-                        TenantId: _tenantContext?.TenantId,
-                        Roles: AdminRoles);
+                    return CreateManagedKeyPrincipal(apiKeyResult.Record);
                 }
             }
 
@@ -68,11 +64,7 @@ internal sealed class AdminPortalCredentialVerifier(
             var apiKeyResult = await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
             if (apiKeyResult is not null)
             {
-                return new PortalCredentialPrincipal(
-                    PrincipalId: AdminUsername,
-                    DisplayName: apiKeyResult.Record.Name,
-                    TenantId: _tenantContext?.TenantId,
-                    Roles: AdminRoles);
+                return CreateManagedKeyPrincipal(apiKeyResult.Record);
             }
         }
 
@@ -106,6 +98,25 @@ internal sealed class AdminPortalCredentialVerifier(
         return new PortalCredentialPrincipal(
             PrincipalId: AdminUsername,
             DisplayName: AdminUsername,
+            TenantId: _tenantContext?.TenantId,
+            Roles: AdminRoles);
+    }
+
+    private PortalCredentialPrincipal? CreateManagedKeyPrincipal(AdminApiKeyRecord record)
+    {
+        // This bridge mints an admin role, not API-key permission, layer-write,
+        // or approved-operation claims. Refuse credentials whose authority it
+        // cannot preserve. Use the same grant grammar and operation precedence
+        // as ApiKeyAuthenticationHandler rather than widening scoped keys.
+        if (!LayerScopedWriteKey.ConfersFullAdmin(record.Permissions) ||
+            record.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+        {
+            return null;
+        }
+
+        return new PortalCredentialPrincipal(
+            PrincipalId: AdminUsername,
+            DisplayName: record.Name,
             TenantId: _tenantContext?.TenantId,
             Roles: AdminRoles);
     }

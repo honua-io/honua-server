@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -72,6 +73,27 @@ public sealed class RemoteSourceExecutorTests
         captured.CollectionId.Should().Be("buildings");
         captured.Bbox.Should().Be("0,0,10,10");
         captured.Since.Should().Be("2026-01-01T00:00:00Z");
+    }
+
+    [UnitTest]
+    public async Task RemoteSource_PostgisBboxSrid_IsNotReportedAsTheGeometrySrid()
+    {
+        var fake = new FakeDagFeatureSource("source.postgis",
+        [new DagSourceFeature { GeometryGeoJson = """{"type":"Point","coordinates":[12,34]}""",
+            Attributes = new Dictionary<string, object?> { ["name"] = "stored point" } }]);
+        var resolver = Substitute.For<Honua.Core.Features.Security.Abstractions.ISecureConnectionResolver>();
+        resolver.ResolveConnectionStringAsync("fixture", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult("Host=fixture;Database=fixture"));
+        var executor = BuildExecutor("source.postgis", fake, services => services.AddSingleton(resolver));
+        var (status, uri, _) = await RunExecutorAsync(executor, "source.postgis",
+            ("connectionName", "fixture"), ("table", "points"), ("outSrid", "3857"),
+            ("bbox", "1000000,3000000,2000000,5000000"));
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        using var output = JsonDocument.Parse(Convert.FromBase64String(uri![DataUriPrefix.Length..]));
+        output.RootElement.TryGetProperty("srid", out _).Should().BeFalse();
+        var geometry = ReadFeatures(uri).Single().Geometry;
+        geometry.Coordinate.X.Should().Be(12);
+        geometry.Coordinate.Y.Should().Be(34);
     }
 
     [UnitTest]
@@ -169,10 +191,11 @@ public sealed class RemoteSourceExecutorTests
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static RemoteSourceExecutor BuildExecutor(string processId, IDagFeatureSource source)
+    private static RemoteSourceExecutor BuildExecutor(string processId, IDagFeatureSource source, Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(source);
+        configure?.Invoke(services);
         var provider = services.BuildServiceProvider();
         var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 

@@ -159,6 +159,21 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
     /// </summary>
     public MigrationCatalogReconciliationReport? CatalogReconciliationReport { get; init; }
 
+    /// <summary>
+    /// Unified migration fidelity verdict for the run (issue #4600). <c>null</c> until the terminal
+    /// phase, where it is one of <see cref="MigrationFidelityVerdicts.FullFidelity"/>,
+    /// <see cref="MigrationFidelityVerdicts.Unverified"/> or
+    /// <see cref="MigrationFidelityVerdicts.Incomplete"/>. The status says whether the job finished;
+    /// this says whether the migrated layer is equivalent to the source.
+    /// </summary>
+    public string? FidelityVerdict { get; init; }
+
+    /// <summary>
+    /// Actionable per-resource differences (and unexecuted checks) behind
+    /// <see cref="FidelityVerdict"/>, ordered deterministically by code then subject.
+    /// </summary>
+    public MigrationFidelityDifference[] FidelityDifferences { get; init; } = [];
+
     // IOperationProgress implementation
     string IOperationProgress.OperationId => JobId;
     OperationType IOperationProgress.Type => OperationType.ExternalImport;

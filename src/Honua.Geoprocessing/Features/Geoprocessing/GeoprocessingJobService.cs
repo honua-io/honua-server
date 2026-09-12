@@ -48,10 +48,6 @@ namespace Honua.Geoprocessing;
 /// </remarks>
 internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 {
-    // Admission is evaluated before the durable TryCreateAsync call. Serialize that
-    // check-and-create window on each node so concurrent submissions cannot all observe
-    // the same active-job snapshot (#52). Redis-backed rate claims cover cross-node rate.
-    private static readonly SemaphoreSlim AdmissionSubmissionGate = new(1, 1);
     private readonly IExecutionJobStore? _jobStore;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IReadOnlyList<IJobCancellationNotifier> _cancellationNotifiers;
@@ -132,7 +128,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IHttpContextAccessor? httpContextAccessor = null,
         IServiceScopeFactory? serviceScopeFactory = null,
         IPrincipalMembershipSource? principalMembershipSource = null,
-        Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory? operationEnvelopeFactory = null)
+        Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory? operationEnvelopeFactory = null,
+        ExecutionAdmissionCoordinator? admissionCoordinator = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -160,7 +157,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 backends,
                 admissionEvaluator,
                 operationGateway,
-                operationEnvelopeFactory),
+                operationEnvelopeFactory,
+                admissionCoordinator),
             new CustomCodeJobSubmissionGate(
                 logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
             new GeoprocessingJobArtifactService(
@@ -717,6 +715,27 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var jobId = CreateJobId(resolvedKey);
         var requestFingerprint = CreateRequestFingerprint(plan);
 
+        // Resolve authorized existing submissions before charging admission/quota or
+        // minting new side effects (server#4627): a caller-supplied idempotency key whose
+        // job already exists short-circuits here, before raster-source resolution,
+        // custom-code token minting, and the admission/quota gate below run again for a
+        // request that was already accepted. Without this early check, an otherwise valid
+        // replay (the client never saw the first response, or is proactively deduplicating)
+        // could be denied at quota even though the original submission already succeeded.
+        // Without an idempotency key, CreateJobId minted a fresh random id above, so this
+        // lookup would never find a match — skip the round trip on that (default) path.
+        if (resolvedKey is not null)
+        {
+            var existingByKey = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            if (existingByKey != null)
+            {
+                EnsureMatchingIdempotentRequest(existingByKey, requestFingerprint, principal);
+                EnsureSubmissionDidNotRollback(existingByKey);
+                GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
+                return existingByKey;
+            }
+        }
+
         // Resolve any native raster/surface step that references a registered catalog
         // raster by layerId/rasterId to an immutable metadata-only descriptor (#2264/#3090).
         // The fingerprint above is computed on the caller's original (reference-carrying)
@@ -761,13 +780,58 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             }
         }
 
-        var partitionKey = ResolvePartitionKey(specParams);
-        var costWeight = (double)Math.Max(plan.Steps.Count, 1);
+        // Admission partition (#3853): bound to the trusted tenant pinned on the submitter snapshot —
+        // captured from the request's tenant middleware on a live submit, restored from the durable
+        // proposal or workflow record on a deferred lane — never to caller-supplied metadata.
+        // Workflow-package and analysis-content runs forward caller parameters into protocol
+        // metadata, so honouring admission.partitionKey/workspace.id/tenant.id from it let a caller
+        // pick a fresh partition per request and escape its tenant's concurrency and cost limits.
+        // The admission keys are stamped server-side below; caller copies never reach the spec.
+        var partitionKey = string.IsNullOrWhiteSpace(resolvedSecurityContext.TenantId)
+            ? null
+            : resolvedSecurityContext.TenantId;
+        specParams.Remove(ExecutionAdmissionEvaluator.PartitionKeyParameterKey);
+        specParams.Remove(ExecutionAdmissionEvaluator.CostWeightParameterKey);
+        // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
+        // the plan's steps, overridden by any explicit gp.resource.* request values. Resolved
+        // BEFORE the admission cost weight below (#4629) so the partition throttle can charge by
+        // the plan's actual catalog-derived resource class, not merely its node count.
+        var resourceProfile = ResolveResourceProfile(
+            plan,
+            specParams,
+            isCustomCode,
+            processCatalog);
+        // #4629: a static costWeight=stepCount treats a 1-step raster/native op the same as a
+        // 1-step managed op over ten features — neither reflects real resource cost. Charging the
+        // catalog-derived vCPU class (Managed=1, Native=2, Raster=4; see GpResourceProfile) makes
+        // the partition throttle in ExecutionAdmissionEvaluator admit fewer concurrent heavy jobs
+        // per partition than light ones, while never charging less than one unit per plan step.
+        var costWeight = (double)Math.Max(plan.Steps.Count, resourceProfile.Vcpus ?? 1);
         var priority = ResolvePriority(specParams);
 
-        await AdmissionSubmissionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        // Admission reads the durable active set and the record is created afterwards; the window
+        // between them is fenced cluster-wide by the admission lease (#3853) so concurrent
+        // submissions on any node cannot all admit against the same snapshot. The lease covers
+        // only evaluate-then-create: once the record exists it is counted by every node, so the
+        // progress row, queueing, and backend submission run after the lease is released.
+        ExecutionJobRecord jobRecord;
+        await using (var admissionWindow = await _dispatcher.EnterAdmissionWindowAsync(cancellationToken).ConfigureAwait(false))
         {
+            // Records are only created inside this window, so a keyed replay whose first attempt
+            // (on any node) won the race is resolved here — before admission charges the replay a
+            // second rate slot or rejects it against its own original's active-job footprint.
+            if (resolvedKey is not null)
+            {
+                var existingInWindow = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+                if (existingInWindow != null)
+                {
+                    EnsureMatchingIdempotentRequest(existingInWindow, requestFingerprint, principal);
+                    EnsureSubmissionDidNotRollback(existingInWindow);
+                    GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
+                    return existingInWindow;
+                }
+            }
+
             var admission = await _dispatcher.EnsureAdmittedAsync(
                 principal, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
 
@@ -788,18 +852,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             var requiredRuntimeProfile = isCustomCode
                 ? CustomCodeJobContract.RuntimeProfile
                 : ResolveRequiredRuntimeProfile(plan, processCatalog);
-            // Per-job serverless sizing (#2165): the heaviest catalog-derived resource profile across
-            // the plan's steps, overridden by any explicit gp.resource.* request values. Projected onto
-            // the spec's batch.* params so AwsBatchComputeBackend.SubmitJob sizes vCPU/memory/timeout/
-            // retry/GPU and selects the ephemeral job-def tier per job. Instant and terraform-free.
-            var resourceProfile = ResolveResourceProfile(
-                plan,
-                specParams,
-                isCustomCode,
-                processCatalog);
             var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile, resourceProfile);
 
-            var jobRecord = new ExecutionJobRecord
+            jobRecord = new ExecutionJobRecord
             {
                 OperationId = jobId,
                 Status = ExecutionJobStatus.Queued,
@@ -821,8 +876,17 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     // it survives a restart and is available to whichever node dequeues the job.
                     SubmitterSecurityContext = resolvedSecurityContext
                 },
-                Spec = spec
+                Spec = spec,
+                // The workload's supported timeout policy must be durable on the job
+                // record. Workers and reconciliation then share the same deadline after
+                // claiming, restart, or a serving-node handoff.
+                TimeoutPolicy = GpResourceProfile.ResolveTimeoutPolicy(spec.Parameters)
             };
+
+            // A lease that expired while this node was paused may already be held by another
+            // node admitting against the same snapshot: confirm (and extend) it right before the
+            // record becomes visible, or reject without creating anything.
+            await admissionWindow.EnsureHeldAsync().ConfigureAwait(false);
 
             var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
@@ -840,41 +904,39 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
                 throw new InvalidOperationException("Failed to create or locate execution job.");
             }
-
-            try
-            {
-                var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, plan.PlanId);
-                await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
-                    .ConfigureAwait(false);
-
-                await _dispatcher.MaybeEnqueueLocalAsync(jobId, jobRecord.Spec.Backend, cancellationToken)
-                    .ConfigureAwait(false);
-
-                jobRecord = await _dispatcher.TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception) when (!cancellationToken.IsCancellationRequested)
-            {
-                await _customCodeGate.TryRevokeTokenAsync(mintedCustomCodeToken).ConfigureAwait(false);
-
-                await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
-                    jobStore,
-                    jobId,
-                    progressStore: _progressStore,
-                    progressRetention: ProgressRetention,
-                    failureMessage: "Submission failed.",
-                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
-
-                throw;
-            }
-
-            GeoprocessingServiceLog.JobSubmitted(_logger, jobId, plan.PlanId);
-
-            return jobRecord;
         }
-        finally
+
+        try
         {
-            AdmissionSubmissionGate.Release();
+            var progress = GeoprocessingProgress.CreateForSubmittedJob(jobId, plan.PlanId);
+            await _progressStore.SetProgressAsync(jobId, progress, ProgressRetention, cancellationToken)
+                .ConfigureAwait(false);
+
+            await _dispatcher.MaybeEnqueueLocalAsync(jobId, jobRecord.Spec.Backend, cancellationToken)
+                .ConfigureAwait(false);
+
+            jobRecord = await _dispatcher.TrySubmitToBackendAsync(jobRecord, jobStore, cancellationToken).ConfigureAwait(false);
         }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            await _customCodeGate.TryRevokeTokenAsync(mintedCustomCodeToken).ConfigureAwait(false);
+
+            // The rollback's terminal transition removes the record from the active set, which
+            // is what releases its concurrency and cost charge on every node.
+            await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+                jobStore,
+                jobId,
+                progressStore: _progressStore,
+                progressRetention: ProgressRetention,
+                failureMessage: "Submission failed.",
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
+
+            throw;
+        }
+
+        GeoprocessingServiceLog.JobSubmitted(_logger, jobId, plan.PlanId);
+
+        return jobRecord;
     }
 
     public async Task<ExecutionJobRecord> GetJobAsync(
@@ -1405,27 +1467,6 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "GeoprocessingApprovalResume"));
-    }
-
-    private static string? ResolvePartitionKey(Dictionary<string, string> specParams)
-    {
-        if (specParams.TryGetValue(ExecutionAdmissionEvaluator.PartitionKeyParameterKey, out var explicitKey)
-            && !string.IsNullOrWhiteSpace(explicitKey))
-        {
-            return explicitKey;
-        }
-
-        if (specParams.TryGetValue("workspace.id", out var workspaceId) && !string.IsNullOrWhiteSpace(workspaceId))
-        {
-            return workspaceId;
-        }
-
-        if (specParams.TryGetValue("tenant.id", out var tenantId) && !string.IsNullOrWhiteSpace(tenantId))
-        {
-            return tenantId;
-        }
-
-        return null;
     }
 
     private static OperationPriority ResolvePriority(Dictionary<string, string> specParams)

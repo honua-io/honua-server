@@ -204,8 +204,10 @@ internal static partial class VectorTileServerEndpoints
 
     /// <summary>
     /// Resolves the primary, access-permitted vector tile publication for the service (preferring
-    /// the publication flagged <see cref="MetadataV2Publication.IsPrimary"/>, then the lowest
-    /// layer index) together with its backing resource.
+    /// the <see cref="MetadataV2PublicationType.EsriVectorTileLayer"/> publication, then the one
+    /// flagged <see cref="MetadataV2Publication.IsPrimary"/>, then the lowest layer index) together
+    /// with its backing resource. The tile route and root.json both call this so the style always
+    /// describes the layer the tiles render (honua-server#4112).
     /// </summary>
     private static (MetadataV2Publication Publication, MetadataV2Resource Resource)? ResolvePrimaryVectorTilePublication(
         MetadataV2GraphSnapshot snapshot,

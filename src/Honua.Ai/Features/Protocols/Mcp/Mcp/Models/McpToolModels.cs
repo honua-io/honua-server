@@ -1090,6 +1090,9 @@ internal sealed class McpToolErrorOutput
     [JsonPropertyName("conflictingJobId")]
     public string? ConflictingJobId { get; set; }
 
+    [JsonPropertyName("currentGeneration")]
+    public long? CurrentGeneration { get; set; }
+
     [JsonPropertyName("retryable")]
     public bool? Retryable { get; set; }
 

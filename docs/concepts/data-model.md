@@ -1,3 +1,8 @@
+---
+type: concept
+title: "Data model"
+description: "Honua's catalog is built from four ideas: connections point at data, layers publish individual tables or rasters, services expose layers through protocols, and styles and metadata control how layers look and describe themselves."
+---
 # Data model
 
 Honua's catalog is built from four ideas: **connections** point at data, **layers** publish individual tables or rasters, **services** expose layers through protocols, and **styles and metadata** control how layers look and describe themselves. Understand these and the whole admin surface — UI, [admin API](../reference/admin-api/overview.md), and GitOps manifests — reads the same way.

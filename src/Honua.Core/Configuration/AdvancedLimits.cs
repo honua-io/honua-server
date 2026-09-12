@@ -59,6 +59,15 @@ public class AnalyticsLimits
     public int MaxInputFeatures { get; set; } = 100_000;
 
     /// <summary>
+    /// Maximum cumulative serialized size, in bytes, of the geometry and attribute payload a
+    /// layer-sourced geoprocessing job may stream in from one layer before it computes
+    /// (#4629). Charged while streaming, independently of <see cref="MaxInputFeatures"/>, so a
+    /// modest number of very large features cannot exhaust a worker's memory.
+    /// </summary>
+    [Range(1, long.MaxValue)]
+    public long MaxInputBytes { get; set; } = 512L * 1024 * 1024;
+
+    /// <summary>
     /// Maximum cluster count returned by clustering queries.
     /// </summary>
     [Range(10, 100_000)]

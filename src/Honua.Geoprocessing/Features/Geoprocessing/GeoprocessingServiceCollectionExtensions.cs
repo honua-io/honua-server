@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics.CodeAnalysis;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
@@ -92,8 +93,31 @@ internal static class GeoprocessingServiceCollectionExtensions
         // process-local store the dispatcher records into and an admin view ranks.
         services.TryAddSingleton<IProcessUsageTelemetry, InMemoryProcessUsageTelemetry>();
 
-        // Execution job store (ticket #722)
-        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        // Execution job store (ticket #722).
+        //
+        // REGISTRATION CONTRACT (honua-server#4502): whenever the durable job substrate is
+        // ENTITLED and a Redis multiplexer is composed, IExecutionJobStore IS resolvable.
+        // Durability attestation decides what the server ADVERTISES, never whether the store
+        // exists. #4141 gated this block on the accepted RedisDurabilityAttestation while every
+        // consumer of IExecutionJobStore stayed registered alongside the multiplexer (the
+        // reconcilers, the backstop sweep, the event handler, the queue-depth collector, the
+        // metadata-release reconciler — the `connectedRedis != null` block in Program.cs), so a
+        // stock non-AOF Redis aborted ServiceProvider descriptor validation with 31
+        // unresolved-service failures and exit 139 before the server bound a port.
+        //
+        // A rejected attestation now degrades instead: the same Redis-backed store is composed,
+        // Program.cs logs one warning naming the typed cause and its consequence, the capability
+        // manifest reports that cause rather than advertising 'jobs.runner'
+        // (DurableJobSubstrateOptions.Classify), and only an explicit Jobs:RequireDurableStore=true
+        // may turn the rejection into a typed startup refusal.
+        //
+        // The entitlement marker is required SEPARATELY from the attestation and is not
+        // interchangeable with it. Infrastructure Redis is connected in non-Development/Test
+        // deployments even when unentitled (requiresDurableDistributedEvents forces it), so
+        // keying this on the multiplexer alone would compose — and, for a Redis that does attest,
+        // ADVERTISE — durable jobs for a deployment with no jobs entitlement.
+        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer))
+            && services.Any(d => d.ServiceType == typeof(DurableJobSubstrateEntitlement)))
         {
             services.TryAddSingleton<IExecutionJobStore>(sp =>
                 new RedisExecutionJobStore(
@@ -114,6 +138,9 @@ internal static class GeoprocessingServiceCollectionExtensions
             .ValidateOnStart();
 
         services.TryAddSingleton<IExecutionAdmissionEvaluator, ExecutionAdmissionEvaluator>();
+        // One coordinator per process (#3853): its local gate serializes this node, and with a
+        // composed multiplexer its shared Redis lease serializes the admission window cluster-wide.
+        services.TryAddSingleton<ExecutionAdmissionCoordinator>();
 
         // Cohesive sub-services the shared job service delegates to (authorization/approval,
         // admission+queue+workload+backend dispatch, the custom-code submit-token gate, and
@@ -322,6 +349,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         Register<GeometrySnapJobExecutor>(services);
         Register<GeometryMakeValidJobExecutor>(services);
         Register<GeometryDifferenceJobExecutor>(services);
+        Register<GeometryFormatConvertJobExecutor>(services);
         Register<ManagedSpatialJoinExecutor>(services);
         Register<ManagedClusterExecutor>(services);
         Register<ManagedBufferAggregateExecutor>(services);
@@ -336,6 +364,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         // terminal SUCCEEDED state instead of being refused at dispatch.
         Register<LayerBufferAggregateExecutor>(services);
         Register<LayerFeatureProjectExecutor>(services);
+        Register<CopyFeaturesExecutor>(services);
         Register<LayerDissolveExecutor>(services);
         Register<LayerSimplifyExecutor>(services);
         // Two-layer analytics.spatial-join (#2322): resolves BOTH the target layerId and

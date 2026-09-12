@@ -558,7 +558,7 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "Style", "Only STYLE=default is supported.");
         }
 
-        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, includeFeatureInfoParameters: false, out var dimensionError))
+        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, out var dimensionError))
         {
             return dimensionError;
         }
@@ -778,7 +778,7 @@ internal static class WmtsRequestHandlers
                 StatusCodes.Status501NotImplemented);
         }
 
-        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, includeFeatureInfoParameters: true, out var dimensionError))
+        if (!TryValidateWmtsDimensionParameters(context, query, layer.Resource, out var dimensionError))
         {
             return dimensionError;
         }
@@ -966,8 +966,7 @@ internal static class WmtsRequestHandlers
         var remaining = Math.Min(featureCount, 1000);
 
         var plainText = new StringBuilder();
-        var jsonText = new StringBuilder();
-        var hasJsonFeature = false;
+        var jsonFeatures = new List<OgcClassicFeatureInfoFeature>();
         var layerName = GetWmsLayerName(layer.Resource, layer.Publication);
 
         var featureQuery = new FeatureQuery
@@ -992,60 +991,23 @@ internal static class WmtsRequestHandlers
             }
 
             remaining--;
+            var attributes = BuildVisibleFeatureInfoAttributes(item);
             if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
             {
-                if (!hasJsonFeature)
+                jsonFeatures.Add(new OgcClassicFeatureInfoFeature
                 {
-                    jsonText.Append("{\"type\":\"FeatureInfoResponse\",\"features\":[");
-                    hasJsonFeature = true;
-                }
-                else
-                {
-                    jsonText.Append(',');
-                }
-
-                jsonText.Append("{\"layer\":");
-                AppendJsonString(jsonText, layerName);
-                jsonText.Append(",\"attributes\":{");
-
-                var isFirstAttribute = true;
-                foreach (var attribute in item.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
-                {
-                    // Match the WMS GetFeatureInfo path: hide internal bookkeeping columns
-                    // and normalize values before serializing.
-                    if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
-                    {
-                        continue;
-                    }
-
-                    if (!isFirstAttribute)
-                    {
-                        jsonText.Append(',');
-                    }
-
-                    isFirstAttribute = false;
-                    AppendJsonString(jsonText, attribute.Key);
-                    jsonText.Append(':');
-                    AppendJsonString(jsonText, FormatFeatureInfoValue(FeatureAttributeValueNormalizer.Normalize(attribute.Value)));
-                }
-
-                jsonText.Append("}}");
+                    Layer = layerName,
+                    Attributes = attributes
+                });
                 continue;
             }
 
             plainText.Append("Layer=").Append(layerName).AppendLine();
-            foreach (var attribute in item.Attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+            foreach (var attribute in attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
             {
-                // Match the WMS GetFeatureInfo path: hide internal bookkeeping columns
-                // and normalize values before serializing.
-                if (FeatureAttributeVisibility.IsInternalAttribute(attribute.Key))
-                {
-                    continue;
-                }
-
                 plainText.Append(attribute.Key)
                     .Append('=')
-                    .Append(FormatFeatureInfoValue(FeatureAttributeValueNormalizer.Normalize(attribute.Value)))
+                    .Append(FormatFeatureInfoValue(attribute.Value))
                     .AppendLine();
             }
 
@@ -1054,13 +1016,12 @@ internal static class WmtsRequestHandlers
 
         if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))
         {
-            if (!hasJsonFeature)
+            var payload = new OgcClassicFeatureInfoResponse
             {
-                return Results.Content("{\"type\":\"FeatureInfoResponse\",\"features\":[]}", JsonMimeType);
-            }
+                Features = [.. jsonFeatures]
+            };
 
-            jsonText.Append("]}");
-            return Results.Content(jsonText.ToString(), JsonMimeType);
+            return Results.Json(payload, OgcClassicJsonContext.Default.OgcClassicFeatureInfoResponse, contentType: JsonMimeType);
         }
 
         var body = plainText.Length > 0
@@ -1983,7 +1944,6 @@ internal static class WmtsRequestHandlers
         HttpContext context,
         IQueryCollection query,
         MetadataV2Resource resource,
-        bool includeFeatureInfoParameters,
         out IResult errorResult)
     {
         errorResult = Results.Empty;
@@ -1993,30 +1953,10 @@ internal static class WmtsRequestHandlers
         var dummyLayer = new WmtsLayer(resource, new MetadataV2Publication(), 0, string.Empty);
         var dimensions = GetWmtsDimensionDefinitions(dummyLayer);
 
-        // Reject unknown query keys (including dimension identifiers such as
-        // `time` or `elevation` that the layer does not advertise) even when
-        // the layer publishes no dimensions at all. Without this scan a
-        // non-time-aware layer would silently accept and ignore `time=` and
-        // diverge from the docs/contract that says such requests must return
-        // InvalidParameterValue.
-        var dimensionLookup = dimensions.ToDictionary(dimension => dimension.Identifier, StringComparer.OrdinalIgnoreCase);
-        foreach (var key in query.Keys)
-        {
-            if (IsKnownWmtsQueryParameter(key, includeFeatureInfoParameters))
-            {
-                continue;
-            }
-
-            if (!dimensionLookup.ContainsKey(key))
-            {
-                errorResult = CreateWmtsExceptionReport(context,
-                    "InvalidParameterValue",
-                    key,
-                    $"Unsupported parameter '{key}'.");
-                return false;
-            }
-        }
-
+        // WMTS 1.0 sections 7.2.2.2 and 7.3.2.2 require unknown KVP keys,
+        // including unadvertised dimensions, to be ignored. Validate only
+        // dimensions advertised for this layer; known operation parameters
+        // are validated by the request handlers.
         foreach (var dimension in dimensions)
         {
             if (!query.ContainsKey(dimension.Identifier))
@@ -2058,33 +1998,6 @@ internal static class WmtsRequestHandlers
         }
 
         return true;
-    }
-
-    private static bool IsKnownWmtsQueryParameter(string key, bool includeFeatureInfoParameters)
-    {
-        if (string.Equals(key, "SERVICE", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "REQUEST", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "VERSION", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "LAYER", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "STYLE", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "FORMAT", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILEMATRIXSET", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILEMATRIX", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILEROW", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "TILECOL", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (!includeFeatureInfoParameters)
-        {
-            return false;
-        }
-
-        return string.Equals(key, "I", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "J", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "INFOFORMAT", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(key, "FEATURE_COUNT", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryResolveWmtsDimensionValue(
@@ -2170,8 +2083,8 @@ internal static class WmtsRequestHandlers
     /// matches the dimension that GetCapabilities advertises. CITE Terrain
     /// owns its own non-temporal "time" handling and is bypassed so existing
     /// CITE behavior is preserved. Resources without an opt-in temporal field
-    /// also bypass — those resources do not advertise the dimension and the
-    /// validator would have rejected an unknown parameter.
+    /// also bypass: their unadvertised time parameter is ignored as required
+    /// by the WMTS KVP binding.
     /// </summary>
     private static async Task<(TemporalFilter? Filter, IResult? Error)> TryBuildWmtsLayerTemporalFilterAsync(
         HttpContext context,
@@ -2259,8 +2172,8 @@ internal static class WmtsRequestHandlers
     /// Z-aware vector source yet (the Zarr datacube Z-slice render is the deferred Shape B
     /// follow-up). When the parameter is omitted the dimension's advertised default (100) is
     /// applied, matching the advertised contract. Layers that do not advertise an elevation
-    /// dimension (everything except CITE Terrain) never reach the resolve branch because the
-    /// validator would already have rejected an unknown <c>elevation</c> key.
+    /// dimension (everything except CITE Terrain) return no selection and ignore
+    /// an unknown <c>elevation</c> key as required by the WMTS KVP binding.
     /// </remarks>
     private static VerticalSelection? ResolveWmtsLayerVerticalSelection(WmtsLayer layer, IQueryCollection query)
     {
@@ -2917,55 +2830,6 @@ internal static class WmtsRequestHandlers
             "xml" => "application/xml",
             _ => extension
         };
-    }
-
-    private static void AppendJsonString(StringBuilder sb, string? value)
-    {
-        sb.Append('\"');
-        if (value is not null)
-        {
-            foreach (var ch in value)
-            {
-                switch (ch)
-                {
-                    case '\\':
-                        sb.Append("\\\\");
-                        break;
-                    case '\"':
-                        sb.Append("\\\"");
-                        break;
-                    case '\b':
-                        sb.Append("\\b");
-                        break;
-                    case '\f':
-                        sb.Append("\\f");
-                        break;
-                    case '\n':
-                        sb.Append("\\n");
-                        break;
-                    case '\r':
-                        sb.Append("\\r");
-                        break;
-                    case '\t':
-                        sb.Append("\\t");
-                        break;
-                    default:
-                        if (ch < 32)
-                        {
-                            sb.Append("\\u");
-                            sb.Append(((int)ch).ToString("x4", CultureInfo.InvariantCulture));
-                        }
-                        else
-                        {
-                            sb.Append(ch);
-                        }
-
-                        break;
-                }
-            }
-        }
-
-        sb.Append('\"');
     }
 
     private readonly record struct WmtsDimensionDefinition(

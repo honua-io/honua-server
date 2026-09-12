@@ -432,4 +432,18 @@ public sealed record MigrationRelationshipApplyOutcome
     /// that the apply step should record on its manifest manifest <c>TargetRelationshipRef</c>.
     /// </summary>
     public required string TargetRelationshipRef { get; init; }
+
+    /// <summary>
+    /// True when the relationship was discovered on the source but <em>not</em> persisted onto the
+    /// target — an unresolved layer mapping, missing key fields, or a cardinality/composite shape
+    /// this slice does not recreate. <see cref="Outcome"/> alone cannot express this, because a
+    /// deferred relationship and an idempotent re-apply both report
+    /// <see cref="MigrationCatalogWriteOutcome.AlreadyExists"/>.
+    /// </summary>
+    /// <remarks>
+    /// Issue #4600: a deferred relationship is a construct the source has and the target does not,
+    /// so it must be an explicit incomplete-migration signal rather than a silent omission. The
+    /// fidelity evaluator treats every deferred outcome as a blocking difference.
+    /// </remarks>
+    public bool Deferred { get; init; }
 }

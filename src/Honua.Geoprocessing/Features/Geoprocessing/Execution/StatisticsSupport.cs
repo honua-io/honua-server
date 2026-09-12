@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
@@ -40,6 +41,130 @@ internal static class StatisticsSupport
 
         /// <summary>Sample (n-1) standard deviation of numeric values.</summary>
         StdDev,
+
+        /// <summary>Sample (n-1) variance of numeric values (GeoServices <c>var</c>).</summary>
+        Variance,
+
+        /// <summary>
+        /// Count of non-null values of a field (GeoServices <c>count</c> on
+        /// <c>onStatisticField</c>, i.e. SQL <c>COUNT(field)</c>), as opposed to
+        /// <see cref="Count"/>, which counts contributing rows.
+        /// </summary>
+        CountValues,
+    }
+
+    /// <summary>
+    /// Parses a layer operation's <c>outStatistics</c> input (#4624). The catalog advertises it
+    /// as a GeoServices statistics payload and <c>ProcessPlanValidator</c> admits exactly that
+    /// JSON shape (an array of <c>{statisticType, onStatisticField, outStatisticFieldName}</c>,
+    /// or a single such object), so the executors must honor it, including the requested output
+    /// names; the legacy <c>field:stat</c> descriptor stays accepted for direct callers. Output
+    /// names must be distinct, otherwise one aggregate would silently overwrite another.
+    /// </summary>
+    public static List<StatSpec> ParseOutStatistics(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return [];
+        }
+
+        var trimmed = raw.TrimStart();
+        var specs = trimmed.StartsWith('[') || trimmed.StartsWith('{')
+            ? ParseGeoServicesStatistics(trimmed)
+            : ParseStatistics(raw);
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var spec in specs.Where(spec => !names.Add(spec.OutputName)))
+        {
+            throw new TransformInputException(
+                $"'outStatistics' requests output name '{spec.OutputName}' more than once; give each aggregate a distinct outStatisticFieldName.");
+        }
+
+        return specs;
+    }
+
+    /// <summary>
+    /// Rejects aggregates whose output name would overwrite a column the operation already
+    /// emits (group-by or carried fields, the operation's own count column).
+    /// </summary>
+    public static void EnsureNoOutputCollisions(IReadOnlyList<StatSpec> stats, IReadOnlyCollection<string> reservedNames)
+    {
+        var reserved = new HashSet<string>(reservedNames, StringComparer.OrdinalIgnoreCase);
+        foreach (var spec in stats.Where(spec => reserved.Contains(spec.OutputName)))
+        {
+            throw new TransformInputException(
+                $"'outStatistics' output name '{spec.OutputName}' collides with a column this operation already emits; choose a different outStatisticFieldName.");
+        }
+    }
+
+    private static List<StatSpec> ParseGeoServicesStatistics(string json)
+    {
+        // Same wrapping rule as the synchronous handler and ProcessPlanValidator: a single
+        // statistics object is treated as a one-element array.
+        var arrayJson = json.StartsWith('[') ? json : $"[{json}]";
+        const string shapeError =
+            "'outStatistics' must be a GeoServices statistics array whose entries each carry string " +
+            "statisticType, onStatisticField and outStatisticFieldName values.";
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(arrayJson);
+        }
+        catch (JsonException)
+        {
+            throw new TransformInputException(shapeError);
+        }
+
+        using (document)
+        {
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                throw new TransformInputException(shapeError);
+            }
+
+            var specs = new List<StatSpec>();
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                if (element.ValueKind != JsonValueKind.Object
+                    || !TryReadString(element, "statisticType", out var statisticType)
+                    || !TryReadString(element, "onStatisticField", out var field)
+                    || !TryReadString(element, "outStatisticFieldName", out var outputName))
+                {
+                    throw new TransformInputException(shapeError);
+                }
+
+                // Mirrors SpatialAnalyticsRequestHandlers.TryParseStatisticType.
+                var kind = statisticType.ToLowerInvariant() switch
+                {
+                    "count" => StatKind.CountValues,
+                    "sum" => StatKind.Sum,
+                    "min" => StatKind.Min,
+                    "max" => StatKind.Max,
+                    "avg" => StatKind.Mean,
+                    "stddev" => StatKind.StdDev,
+                    "var" => StatKind.Variance,
+                    _ => throw new TransformInputException(
+                        $"statisticType '{statisticType}' is not supported (allowed: count, sum, min, max, avg, stddev, var)"),
+                };
+
+                specs.Add(new StatSpec(kind, field.Trim(), outputName.Trim()));
+            }
+
+            return specs;
+        }
+    }
+
+    private static bool TryReadString(JsonElement element, string name, out string value)
+    {
+        value = string.Empty;
+        if (!element.TryGetProperty(name, out var property) || property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = property.GetString() ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(value);
     }
 
     /// <summary>
@@ -140,6 +265,45 @@ internal static class StatisticsSupport
         return value is null ? "\0NULL" : Convert.ToString(value, CultureInfo.InvariantCulture) ?? "\0NULL";
     }
 
+    /// <summary>
+    /// Accumulates one feature's numeric field values into <paramref name="accumulators"/>,
+    /// touching each DISTINCT field referenced by <paramref name="stats"/> exactly once even
+    /// when multiple stats target the same field (e.g. <c>"pop:sum;pop:mean"</c>) — adding
+    /// per-spec instead of per-field would add the sample once per stat sharing that field,
+    /// silently multiplying SUM/COUNT-derived aggregates by the number of co-requested stats
+    /// (#4624 — caught while adding <c>outStatistics</c> to <c>analytics.buffer-aggregate</c>,
+    /// which shares this accumulation shape with <c>generalization.dissolve</c>).
+    /// </summary>
+    public static void Accumulate(
+        IFeature feature,
+        IReadOnlyList<StatSpec> stats,
+        Dictionary<string, FieldAccumulator> accumulators)
+    {
+        foreach (var field in stats
+            .Where(spec => spec.Kind != StatKind.Count)
+            .Select(spec => spec.Field)
+            .Distinct(StringComparer.Ordinal))
+        {
+            if (!accumulators.TryGetValue(field, out var accumulator))
+            {
+                accumulator = new FieldAccumulator();
+                accumulators[field] = accumulator;
+            }
+
+            if (feature.Attributes is not null
+                && feature.Attributes.Exists(field)
+                && feature.Attributes.GetOptionalValue(field) is not null)
+            {
+                accumulator.AddPresent();
+            }
+
+            if (TryReadNumeric(feature, field, out var value))
+            {
+                accumulator.Add(value);
+            }
+        }
+    }
+
     /// <summary>Reads a numeric field value, returning false for null/non-numeric.</summary>
     public static bool TryReadNumeric(IFeature feature, string field, out double value)
     {
@@ -185,6 +349,7 @@ internal static class StatisticsSupport
     public sealed class FieldAccumulator
     {
         private long _count;
+        private long _presentCount;
         private double _sum;
         private double _sumSquares;
         private double _min = double.PositiveInfinity;
@@ -207,6 +372,9 @@ internal static class StatisticsSupport
             }
         }
 
+        /// <summary>Records a non-null value of any type (for <see cref="StatKind.CountValues"/>).</summary>
+        public void AddPresent() => _presentCount++;
+
         /// <summary>Resolves an aggregate value (null when undefined for the sample).</summary>
         public object? Resolve(StatKind kind)
         {
@@ -221,22 +389,28 @@ internal static class StatisticsSupport
                 case StatKind.Max:
                     return _count > 0 ? _max : null;
                 case StatKind.StdDev:
-                    if (_count < 2)
-                    {
-                        return null; // Sample standard deviation is undefined for n < 2.
-                    }
-
-                    var mean = _sum / _count;
-                    var variance = (_sumSquares - (_count * mean * mean)) / (_count - 1);
-                    if (variance < 0d)
-                    {
-                        variance = 0d; // Guard tiny negative from floating-point cancellation.
-                    }
-
-                    return Math.Sqrt(variance);
+                    // Sample standard deviation is undefined for n < 2.
+                    return SampleVariance() is { } variance ? Math.Sqrt(variance) : null;
+                case StatKind.Variance:
+                    return SampleVariance();
+                case StatKind.CountValues:
+                    return _presentCount;
                 default:
                     return _count;
             }
+        }
+
+        private double? SampleVariance()
+        {
+            if (_count < 2)
+            {
+                return null;
+            }
+
+            var mean = _sum / _count;
+            var variance = (_sumSquares - (_count * mean * mean)) / (_count - 1);
+            // Guard tiny negative from floating-point cancellation.
+            return variance < 0d ? 0d : variance;
         }
     }
 }

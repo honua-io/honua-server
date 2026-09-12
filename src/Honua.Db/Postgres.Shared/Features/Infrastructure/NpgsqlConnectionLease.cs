@@ -24,13 +24,23 @@ namespace Honua.Db.Postgres.Features.Infrastructure;
 /// </remarks>
 internal readonly struct NpgsqlConnectionLease : IAsyncDisposable
 {
-    private readonly DbConnection _owner;
+    private readonly DbConnection? _owner;
 
     public NpgsqlConnectionLease(DbConnection owner, NpgsqlConnection connection)
     {
         _owner = owner ?? throw new ArgumentNullException(nameof(owner));
         Connection = connection ?? throw new ArgumentNullException(nameof(connection));
     }
+
+    internal NpgsqlConnectionLease(NpgsqlConnection connection, NpgsqlTransaction transaction)
+    {
+        _owner = null;
+        Connection = connection;
+        Transaction = transaction;
+    }
+
+    /// <summary>The caller-owned transaction when this lease borrows an atomic mutation connection.</summary>
+    internal NpgsqlTransaction? Transaction { get; }
 
     /// <summary>
     /// The underlying <see cref="NpgsqlConnection"/> usable with Npgsql-specific APIs.
@@ -65,5 +75,5 @@ internal readonly struct NpgsqlConnectionLease : IAsyncDisposable
     /// query concurrency gate slot) run exactly once when the lease goes out
     /// of scope.
     /// </summary>
-    public ValueTask DisposeAsync() => _owner.DisposeAsync();
+    public ValueTask DisposeAsync() => _owner?.DisposeAsync() ?? ValueTask.CompletedTask;
 }

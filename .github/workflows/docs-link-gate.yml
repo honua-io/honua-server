@@ -41,7 +41,13 @@ on:
       - 'scripts/ci/doc-link-rot-allowlist.v1.json'
       - 'scripts/ci/check-doc-example-surfaces.py'
       - 'scripts/ci/check-doc-example-surfaces.test.py'
+      - 'scripts/ci/check-okf-bundle.py'
+      - 'scripts/ci/check-okf-bundle.test.py'
+      - 'scripts/ci/okf-bundle.v1.json'
+      - 'scripts/ci/generate-capability-concepts.py'
+      - 'scripts/ci/generate-llms-txt.py'
       - 'scripts/ci/doc-wire-reference-allowlist.v1.json'
+      - 'scripts/docs-validation/test_windows_package_verification.py'
       - '.github/workflows/docs-link-gate.yml'
   workflow_dispatch:
 
@@ -60,7 +66,7 @@ jobs:
     # cold run is seconds, not minutes. The ceiling is a bound, not a budget.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           # The additions-only example gate diffs the PR head against its base.
           fetch-depth: 0
@@ -76,8 +82,42 @@ jobs:
       - name: Test documentation example surface enforcement
         run: python3 scripts/ci/check-doc-example-surfaces.test.py
 
+      - name: Test the OKF bundle checker
+        run: python3 scripts/ci/check-okf-bundle.test.py
+
+      - name: Challenge Windows package readback verification under Python optimization
+        run: python3 scripts/docs-validation/test_windows_package_verification.py
+
       - name: Check documentation links, anchors, and code-referenced anchors
         run: python3 scripts/ci/check-doc-links.py
+
+      # Nodes, after the edges. Every page inside the bundle boundary carries
+      # OKF frontmatter with a declared type, and every page outside it is
+      # outside by a recorded decision rather than by being un-navigable.
+      - name: Check the OKF concept bundle
+        run: python3 scripts/ci/check-okf-bundle.py --summary
+
+      # One capability concept per registry entry, generated from
+      # docs/gis/data/capability-keys.v1.json and the capability matrix. They
+      # are the join between the capability registry and the documentation
+      # graph, so a capability added to the registry without regenerating them
+      # would leave an agent unable to find it - and a capability no page
+      # documents is stated as such rather than quietly absent.
+      - name: Check the capability concepts are current
+        run: python3 scripts/ci/generate-capability-concepts.py --check
+
+      # Not a gate: which prose pages name a capability is a property of the
+      # prose, so baking it into the concepts would make an unrelated edit
+      # stale all 117 of them. Printed here so the documentation backlog stays
+      # visible without being enforced.
+      - name: Report capability documentation coverage
+        run: python3 scripts/ci/generate-capability-concepts.py --report
+
+      # llms.txt is derived from SUMMARY.md plus each page's frontmatter, so it
+      # cannot drift from the docs on its own -- but it can go stale against
+      # them, which is what this catches.
+      - name: Check docs/llms.txt is current
+        run: python3 scripts/ci/generate-llms-txt.py --check
 
       - name: Reject raw curl additions in documentation
         run: python3 scripts/ci/check-doc-example-surfaces.py --base "${{ github.event.pull_request.base.sha || 'origin/trunk' }}"

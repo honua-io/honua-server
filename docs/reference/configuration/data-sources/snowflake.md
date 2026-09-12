@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Snowflake provider"
+resource: "honua://capability/provider.snowflake"
+---
 # Snowflake provider
 
 ## Protocol routing

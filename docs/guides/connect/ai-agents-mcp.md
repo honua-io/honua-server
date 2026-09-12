@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Connect AI agents to Honua over MCP"
+description: "Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol."
+resource: "honua://capability/ai.mcp-discovery"
+---
 # Connect AI agents to Honua over MCP
 
 Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol.
@@ -134,7 +140,7 @@ named "operator surface" ships in this repo.
    - `honua_studio_add_layer` / `honua_studio_remove_layer` / `honua_studio_set_layer_style` / `honua_studio_set_layer_visibility` / `honua_studio_set_view` / `honua_studio_add_widget` / `honua_studio_remove_widget` — bounded composition mutations for `map`/`app`-family drafts, taxonomy-aligned with the honua-sdk-js agent-tools vocabulary (`addLayer`, `setViewport`). Each patches the draft's composition body and pushes it through the same generation-checked update path. `honua_studio_set_layer_visibility` is the persisted counterpart of the ADR-0030 `setVisibility` action verb: `visible` is part of the stored composition wire shape, so a client-local table-of-contents toggle is overwritten by the next draft sync unless it is written through this tool.
    - `honua_studio_bind_interaction` / `honua_studio_remove_interaction` — declarative event→action wiring between the draft's components (geospatial-mcp ADR-0030, opt-in `composition` conformance profile; Honua is the reference implementation of the standard's `bind_interaction`/`remove_interaction`). A binding is `{ id, on: {ref, event}, do: {ref, verb, args} }` over closed sets: events `featureSelect`/`featureHover` (layers), `selection` (widgets), `change` (controls), `viewportChange` (map); verbs `setFilter`, `setViewport`, `selectFeature`, `runWidgetQuery`, `setVisibility`. Bindings are data, never code — `args` is static JSON plus `$event.` path substitution, with no expression language — and actions never emit events, so bindings cannot cascade. Binding an existing `id` replaces it; removing an unknown `id` is an error, not a no-op. The server rejects bindings whose `on.ref`/`do.ref` does not resolve to a component declared in the same document — including a `control:{id}` reference, which resolves against the draft's `controls` collection (add the control first with `honua_studio_add_control`) — and rejects a ninth binding on any one `(on.ref, on.event)` source.
    - `honua_studio_add_control` / `honua_studio_remove_control` — the draft's `controls` collection (geospatial-mcp ADR-0031, same opt-in `composition` profile; Honua is the reference implementation of the standard's `add_control`/`remove_control`). A control is `{ id, kind, title?, sourceId?, config? }` — an input affordance the user operates, and the thing a `control:{id}` interaction reference resolves against. Controls are a peer collection to layers and widgets rather than a widget kind, and they are chrome rather than `layout` grid items. `kind` is a closed set: `navigation`, `scale`, `fullscreen`, `geolocate`, `search`, `measure`, `timeSlider`, `filterSelect`, `filterSlider`, `filterDateRange`, `bookmarks`, `opacity`, `attribution`, `basemapSwitcher` — deliberately with no feature-editing draw kind, because source-record mutation stays behind the governed `edit_features` boundary (ADR-0028). Adding an existing `id` replaces that control; removing an unknown `id` is an error, not a no-op. Removing a control an interaction still references fails unless you pass `cascadeInteractions: true`, which removes those bindings with it — a document never silently retains a dangling `control:` binding.
-   - `honua_studio_propose_publication` — records publish/share/embed **intent only** on the draft for human review. There is no publish/share/embed execution tool on the agent surface, in any profile, by design: exposure-widening actions are always a human-confirmed step taken through the Studio UI or REST admin surface, never the agent tool surface.
+   - `honua_studio_propose_publication` — after saving the draft, pass its exact `itemId`, immutable `versionId`, and `contentHash` with the requested `route` and `visibility`. The tool creates a durable canonical publication proposal and returns proposal/operation/audit identities; it does not self-approve. A separate authorized principal must approve the proposal, and the agent can poll the returned `proposalUri` for the final status and active URL.
 
    These tools authorize against a distinct operator-grant family (`OperatorResourceType.StudioDraft`, informally "studio-compose") from the package-review/authoring tools above, so an operator can scope Studio composition access independently once end-user (non-admin) authorization lands (honua-server#3001). The default posture mirrors the REST Studio lifecycle surface: `admin` bypasses as usual; non-admin principals need an explicit grant. All seventeen tools are advertised unconditionally (like `honua_create_map_package`/`honua_publish_service`): each resolves the Studio persistence service per call rather than at registration time, so a host that never composed Studio persistence still lists the tools but fails calls with a structured, retryable `unavailable` error instead of silently omitting them from `tools/list`.
 
@@ -178,6 +184,25 @@ identical in the full catalog and the narrowed view, and remains discovery-only 
 it never widens call-time authorization.
 
 Membership is derived from the live catalog, so an eligible server operation that appears (or disappears) at runtime joins or leaves the view with no client or SDK source-list edit. Runtime-published members are appended after the static ones so a mid-conversation `notifications/tools/list_changed` refresh does not re-sort the `tools` array and invalidate a host's prompt cache.
+
+### Release qualification
+
+The descriptor budget and discovery tests establish the server contract. A
+release-certifying terminal-model run must additionally consume the entire
+`setup` view without forcing a specific tool choice, execute real calls in an
+isolated namespace, and verify saved and reopened map/dashboard state. Record
+the view revision, membership and descriptor digests, measured UTF-8 descriptor
+bytes, estimated tokens, candidate image digest, and installed client versions.
+These measurements describe the complete descriptor array, including its JSON
+brackets and separators; the token estimate is the byte count divided by four.
+
+Run the [terminal-model canary](https://github.com/honua-io/honua-release/blob/trunk/.github/workflows/terminal-model-canary.yml)
+with a green deterministic journey receipt for the same candidate and the
+configured candidate proxy, model, and trusted public signing manifest. Missing
+configuration, skipped calls, a direct provider call, or a receipt for another
+candidate cannot qualify this workflow. The exact-candidate canary remains
+outstanding until that immutable candidate exists and this run passes; local
+discovery tests do not establish model selection or saved-state execution.
 
 ## Pagination
 

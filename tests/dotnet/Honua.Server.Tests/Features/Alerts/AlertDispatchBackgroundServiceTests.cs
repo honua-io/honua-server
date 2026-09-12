@@ -23,6 +23,76 @@ namespace Honua.Server.Tests.Features.Alerts;
 public sealed class AlertDispatchBackgroundServiceTests
 {
     [UnitTest]
+    public async Task Dispatcher_FailedPollRetainsSuccessfulBacklogTime_RecoveryCollectsNewObservation()
+    {
+        var failing = 0;
+        var store = Substitute.For<IAlertDispatchStore>();
+        store.ClaimPendingAsync(Arg.Any<int>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Volatile.Read(ref failing) == 1
+                ? throw new InvalidOperationException("isolated telemetry outage")
+                : Array.Empty<AlertDispatchItem>());
+        store.GetBacklogAsync(Arg.Any<CancellationToken>()).Returns(new AlertDispatchBacklog
+        {
+            PendingCount = 0,
+            DeadLetteredCount = 7,
+        });
+        var options = Options.Create(new AlertOptions
+        {
+            Enabled = true,
+            Dispatch = new AlertDispatchOptions
+            {
+                IdleDelay = TimeSpan.FromMilliseconds(10),
+                InitialBackoff = TimeSpan.FromMilliseconds(10),
+                BacklogRefreshInterval = TimeSpan.Zero,
+                DeliveredRetention = TimeSpan.Zero,
+            },
+        });
+        var services = new ServiceCollection();
+        services.AddSingleton(store);
+        services.AddSingleton(Substitute.For<IAlertEventStore>());
+        services.AddSingleton(Substitute.For<IAlertLifecycleStore>());
+        await using var provider = services.BuildServiceProvider();
+        using var dispatcher = new AlertDispatchBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(), [], new AlertNotificationRateLimiter(),
+            new AlertChannelCircuitBreaker(options), options, TestTelemetry.CreateAlertPipelineMetrics(),
+            NullLogger<AlertDispatchBackgroundService>.Instance);
+        dispatcher.BacklogObservedAt.Should().BeNull("an uncollected source has no observation timestamp");
+        var startedAt = DateTimeOffset.UtcNow;
+        await dispatcher.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitUntilAsync(() => dispatcher.BacklogObservedAt is not null);
+            Volatile.Write(ref failing, 1);
+            await WaitUntilAsync(() => dispatcher.IsStoragePollFailing);
+            var successfulObservation = dispatcher.BacklogObservedAt;
+            successfulObservation.Should().BeOnOrAfter(startedAt);
+            dispatcher.LastBacklog!.DeadLetteredCount.Should().Be(7);
+            var failedAttempt = dispatcher.LastPollAt;
+            await WaitUntilAsync(() => dispatcher.LastPollAt > failedAttempt);
+            dispatcher.BacklogObservedAt.Should().Be(successfulObservation,
+                "another failed attempt cannot refresh the successfully collected data");
+            dispatcher.LastBacklog.DeadLetteredCount.Should().Be(7);
+
+            Volatile.Write(ref failing, 0);
+            await WaitUntilAsync(() => !dispatcher.IsStoragePollFailing && dispatcher.BacklogObservedAt > successfulObservation);
+            dispatcher.LastBacklog.DeadLetteredCount.Should().Be(7);
+        }
+        finally
+        {
+            await dispatcher.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
+    }
+
+    [UnitTest]
     public async Task Dispatcher_SuppressedEvent_IsDeferredNotDelivered_WhileUnsuppressedEventDelivers()
     {
         const long suppressedEventId = 100;

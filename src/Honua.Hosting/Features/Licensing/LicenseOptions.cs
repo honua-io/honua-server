@@ -1,11 +1,38 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Licensing.Domain;
+
 namespace Honua.Infrastructure.Licensing;
 
 internal sealed class LicenseOptions
 {
     public const string SectionName = "Licensing";
+
+    /// <summary>Supported deployment mode. Disabled is legal in Production and requires restart.</summary>
+    public LicenseMode Mode { get; set; } = LicenseMode.Enabled;
+
+    internal static LicenseMode ParseMode(string? value)
+    {
+        if (value is null || string.Equals(value.Trim(), nameof(LicenseMode.Enabled), StringComparison.OrdinalIgnoreCase))
+        {
+            return LicenseMode.Enabled;
+        }
+
+        if (string.Equals(value.Trim(), nameof(LicenseMode.Disabled), StringComparison.OrdinalIgnoreCase))
+        {
+            return LicenseMode.Disabled;
+        }
+
+        throw new InvalidOperationException("Licensing:Mode must be Enabled or Disabled. Set an explicit supported mode and restart.");
+    }
+
+    /// <summary>
+    /// Deployment edition. Declare Pro or Enterprise even when the license source is absent.
+    /// Null infers a paid deployment from a configured source; no source means Community.
+    /// Explicit Community ignores license sources.
+    /// </summary>
+    public Honua.Core.Features.Licensing.Domain.HonuaEdition? Edition { get; set; }
 
     /// <summary>
     /// Configured license file. Successful uploads also atomically persist the authoritative
@@ -28,9 +55,7 @@ internal sealed class LicenseOptions
     /// it at startup and the fetched envelope is validated exactly like <see cref="LicenseContent"/>.
     /// This is the delivery mechanism for serverless/Lambda hosts where the ~2KB envelope does not fit
     /// the platform environment-variable size limit and the filesystem is read-only. It takes precedence
-    /// over <see cref="LicenseContent"/> and <see cref="LicensePath"/>, unless an uploaded override exists. If no resolver is registered, the
-    /// reference is unsupported, or the secret cannot be fetched, the host degrades gracefully to Community
-    /// rather than failing to start.
+    /// over <see cref="LicenseContent"/> and <see cref="LicensePath"/>, unless an uploaded override exists. If the paid deployment cannot resolve a valid license, startup is refused.
     /// </summary>
     public string? LicenseContentSecretRef { get; set; }
 

@@ -106,6 +106,12 @@ public sealed class OperationsToolsetTests
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns("Test");
         services.AddSingleton(Substitute.For<Honua.Core.Features.Studio.Abstractions.IStudioPackageLifecycleService>());
+        // StudioCreatePublicationRequestExecutor rejects an invalid publication intent before the
+        // dispatcher routes the operation to approval, so it takes the Studio validator as a hard
+        // dependency rather than an optional one -- an optional default would silently drop that
+        // guard in any host that forgot to compose the Studio slice. This container stands in for
+        // such a host, so it supplies the validator the way AddStudioPackageLifecycle does.
+        services.AddSingleton(Substitute.For<Honua.Core.Features.Studio.Abstractions.IStudioPackageValidator>());
         services.AddSingleton(Substitute.For<IReadinessCheckService>());
 
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
@@ -386,6 +392,411 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task LaneC_AccessOperations_RoundTrip_FromOpenApiCatalog_ToEligiblePublishedTools()
+    {
+        var catalog = new OperationCatalog([new AdminAccessOperationDescriptorProvider()], TimeProvider.System);
+        var mappers = AdminAccessOperationCatalog.Definitions
+            .Where(static definition => definition.SideEffect != OperationSideEffectClass.ReadOnly)
+            .Select(static definition => new AdminOperateOperationApprovalRequestMapper(definition))
+            .ToArray();
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: mappers);
+
+        var descriptors = (await catalog.GetSnapshotAsync(CancellationToken.None)).Operations;
+        var tools = await source.GetToolsAsync(CancellationToken.None);
+        var expected = descriptors
+            .Where(descriptor => !AdminMcpOperationExclusions.ContainsOperation(descriptor.OperationId))
+            .Select(descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId));
+
+        descriptors.Should().HaveCount(AdminAccessOperationCatalog.Definitions.Count);
+        tools.Select(static tool => tool.Name).Should().BeEquivalentTo(expected);
+        tools.Select(static tool => tool.Name).Should().Contain(
+            "honua_admin_api_key_list", "honua_admin_api_key_effective_permissions");
+        tools.Select(static tool => tool.Name).Should().NotContain(
+            "honua_admin_api_key_create", "honua_admin_api_key_rotate", "honua_admin_oauth_client_register");
+    }
+
+    [UnitTest]
+    public void LaneC_DescriptorsAndExclusions_DiffAgainstCurrentAdminOpenApi()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+        var openApiIds = document.RootElement.GetProperty("paths").EnumerateObject()
+            .SelectMany(static path => path.Value.EnumerateObject())
+            .Where(static method => method.Value.ValueKind == JsonValueKind.Object &&
+                method.Value.TryGetProperty("operationId", out _))
+            .Select(static method => method.Value.GetProperty("operationId").GetString()!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var definition in AdminAccessOperationCatalog.Definitions)
+        {
+            openApiIds.Should().Contain(definition.OpenApiOperationId);
+            AdminAccessOperationCatalog.Descriptors.Should().ContainSingle(
+                descriptor => descriptor.OperationId == definition.OperationId);
+        }
+
+        AdminMcpOperationExclusions.All.Select(static exclusion => exclusion.OpenApiOperationId)
+            .Should().OnlyContain(openApiId => openApiIds.Contains(openApiId));
+        AdminMcpOperationExclusions.All.Should().ContainSingle(entry =>
+            entry.OperationId == "admin.api-key.create" &&
+            entry.ReasonCode == AdminMcpOperationExclusions.OneTimeSecretReasonCode);
+        AdminMcpOperationExclusions.All.Should().ContainSingle(entry =>
+            entry.OperationId == "admin.api-key.rotate" &&
+            entry.ReasonCode == AdminMcpOperationExclusions.OneTimeSecretReasonCode);
+        AdminMcpOperationExclusions.All.Should().ContainSingle(entry =>
+            entry.OperationId == "admin.oauth-client.register" &&
+            entry.ReasonCode == AdminMcpOperationExclusions.OneTimeSecretReasonCode);
+        AdminMcpOperationExclusions.All.Should().ContainSingle(entry =>
+            entry.OperationId == "admin.oidc-provider.create" &&
+            entry.ReasonCode == AdminMcpOperationExclusions.SecretInputReasonCode);
+        AdminMcpOperationExclusions.All.Should().ContainSingle(entry =>
+            entry.OperationId == "admin.oidc-provider.update" &&
+            entry.ReasonCode == AdminMcpOperationExclusions.SecretInputReasonCode);
+        AdminMcpOperationExclusions.Digest.Should().MatchRegex("^[0-9a-f]{64}$");
+    }
+
+    [UnitTest]
+    public void LaneC_EachDescriptorHasOneExecutor_AndEachMutationHasOneReplayMapper()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+        services.AddAdminAccessOperations().AddAdminAccessOperations();
+        using var provider = services.BuildServiceProvider();
+
+        using var scope = provider.CreateScope();
+        var eligible = AdminAccessOperationCatalog.Definitions.ToArray();
+        scope.ServiceProvider.GetServices<IOperationExecutor>()
+            .Select(static executor => executor.OperationId)
+            .Should().BeEquivalentTo(eligible.Select(static definition => definition.OperationId));
+        scope.ServiceProvider.GetServices<IOperationApprovalRequestMapper>()
+            .OfType<AdminOperateOperationApprovalRequestMapper>()
+            .Select(static mapper => mapper.OperationId)
+            .Should().BeEquivalentTo(eligible
+                .Where(static definition => definition.SideEffect != OperationSideEffectClass.ReadOnly)
+                .Select(static definition => definition.OperationId));
+    }
+
+    [UnitTest]
+    public async Task ScopeGovernedCaller_WithoutReadScope_CannotInvokeAccessReadOperations()
+    {
+        // admin.api-key.list executes directly, so it never reaches the approved-replay branch
+        // where scope authority used to be the only thing enforced.
+        var handler = new CapturingOperationHandler(_ => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"data\":[]}")
+            }));
+        using var client = new HttpClient(handler);
+        var executor = BuildAccessAdminExecutor("admin.api-key.list", client);
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new AdminAccessOperationDescriptorProvider()], TimeProvider.System),
+            [executor],
+            new StubPolicyDecisionPoint(new PolicyDecision { Kind = PolicyDecisionKind.Allow }),
+            TimeProvider.System);
+        var request = new OperationRequest { OperationId = "admin.api-key.list" };
+
+        var withoutRead = await dispatcher.SubmitAsync(
+            request,
+            new OperationPolicyContext
+            {
+                ScopeGoverned = true,
+                RecognizedScopes = [OperatorScopeCatalog.Discover, OperatorScopeCatalog.Create],
+            },
+            CancellationToken.None);
+
+        withoutRead.Status.Should().Be(OperationHandleStatus.Failed);
+        withoutRead.Reason.Should().Contain("OAuth scope authority");
+        handler.Requests.Should().BeEmpty("the guardrail seam must refuse before the Admin API is called");
+
+        var withRead = await dispatcher.SubmitAsync(
+            request,
+            new OperationPolicyContext
+            {
+                ScopeGoverned = true,
+                RecognizedScopes = [OperatorScopeCatalog.Discover, OperatorScopeCatalog.Read],
+            },
+            CancellationToken.None);
+
+        withRead.Status.Should().Be(OperationHandleStatus.Completed, "reason: {0}", withRead.Reason);
+    }
+
+    [UnitTest]
+    public async Task SecretBearingOperation_WithoutSecretAwareExecutor_NeverCreatesADurableRecord()
+    {
+        // admin.embed-key.create is on the one-time-secret roster but has no composed executor.
+        var instanceStore = new VolatileOperationInstanceStore();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [],
+            new StubPolicyDecisionPoint(new PolicyDecision { Kind = PolicyDecisionKind.Allow }),
+            TimeProvider.System,
+            approvalBridge: null,
+            instanceStore: instanceStore);
+
+        var submit = async () => await dispatcher.SubmitAsync(
+            new OperationRequest { OperationId = "admin.embed-key.create" },
+            new OperationPolicyContext(),
+            CancellationToken.None);
+
+        (await submit.Should().ThrowAsync<OperationUnavailableException>())
+            .Which.Message.Should().Contain("secret-aware executor");
+        (await instanceStore.ListActiveAsync()).Should().BeEmpty(
+            "a withheld secret actuator must not leave a durable handle behind");
+    }
+
+    [UnitTest]
+    public async Task NonSecretOperation_WithoutExecutor_StillFailsThroughADurableHandle()
+    {
+        // The secret gate above must not change the contract for any other missing executor.
+        var dispatcher = BuildDispatcher(
+            BuildExecutor(Substitute.For<ILayerPublishingService>()),
+            new StubPolicyDecisionPoint(new PolicyDecision { Kind = PolicyDecisionKind.Allow }));
+
+        var handle = await dispatcher.SubmitAsync(
+            new OperationRequest { OperationId = "service.unpublish" },
+            new OperationPolicyContext(),
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Reason.Should().Contain("No executor is registered");
+    }
+
+    [UnitTest]
+    public async Task LaneC_AccessOperations_RegisterAndExecute()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+        services.AddAdminAccessOperations();
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var eligible = AdminAccessOperationCatalog.Definitions.ToArray();
+        scope.ServiceProvider.GetServices<IOperationExecutor>()
+            .Select(static executor => executor.OperationId)
+            .Should().BeEquivalentTo(eligible.Select(static definition => definition.OperationId));
+
+        var handler = new CapturingOperationHandler(request =>
+        {
+            request.Method.Should().Be(HttpMethod.Get);
+            request.RequestUri!.AbsolutePath.Should().Be("/api/v1/admin/api-keys");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"keys\":[]}")
+            });
+        });
+        using var client = new HttpClient(handler);
+        var executor = BuildAccessAdminExecutor("admin.api-key.list", client);
+
+        var handle = await executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = executor.OperationId,
+                Parameters = new Dictionary<string, string?>()
+            },
+            new OperationPolicyContext());
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+    }
+
+    [UnitTest]
+    public void SecretAwareApprovalPayload_ExternalizesOidcClientSecrets_AndReplayConsumesOnce()
+    {
+        var store = new VolatileOperationSecretStore();
+        var secret = Guid.NewGuid().ToString("N");
+        foreach (var operationId in new[] { "admin.oidc-provider.create", "admin.oidc-provider.update" })
+        {
+            var definition = AdminAccessOperationCatalog.Definitions.Single(item => item.OperationId == operationId);
+            var descriptor = AdminAccessOperationCatalog.Descriptors.Single(item => item.OperationId == operationId);
+            var context = new OperationPolicyContext
+            {
+                OperationInstanceId = $"opinst-{Guid.NewGuid():N}",
+                CorrelationId = $"corr-{Guid.NewGuid():N}",
+                PrincipalId = "principal-4187",
+                TenantId = "tenant-4187",
+            };
+            var request = new OperationRequest
+            {
+                OperationId = operationId,
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["name"] = "issuer",
+                    ["clientSecret"] = secret,
+                },
+            };
+
+            var mapper = new AdminOperateOperationApprovalRequestMapper(definition, store);
+            var mapped = mapper.Map(
+                descriptor,
+                request,
+                context,
+                new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+            mapped.ExecutionPayload.Should().NotContain(secret);
+            mapped.Plan!.ExecutionPayload.Should().NotContain(secret);
+            mapped.ExecutionPayload.Should().Contain("referenceId");
+            var replay = mapper.MapReplay(mapped).Request;
+            replay.Parameters.Should().NotContainKey("clientSecret");
+
+            var resolved = OperationSecretParameters.Resolve(replay, context, store);
+            resolved.Parameters["clientSecret"].Should().Be(secret);
+            Action secondRead = () => OperationSecretParameters.Resolve(replay, context, store);
+            secondRead.Should().Throw<InvalidOperationException>();
+        }
+    }
+
+    [UnitTest]
+    public void SecretAwareApprovalPayload_RetainsInputSecretForProposalLifetime()
+    {
+        var store = new RecordingOperationSecretStore();
+        var definition = AdminAccessOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.oidc-provider.create");
+        var descriptor = AdminAccessOperationCatalog.Descriptors.Single(
+            item => item.OperationId == definition.OperationId);
+        var context = new OperationPolicyContext
+        {
+            OperationInstanceId = "opinst-approval-secret-ttl",
+            PrincipalId = "principal-4187",
+            TenantId = "tenant-4187",
+        };
+
+        new AdminOperateOperationApprovalRequestMapper(definition, store).Map(
+            descriptor,
+            new OperationRequest
+            {
+                OperationId = definition.OperationId,
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["clientSecret"] = "secret-value",
+                },
+            },
+            context,
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+        store.LastTtl.Should().Be(TimeSpan.FromDays(30));
+    }
+
+    [UnitTest]
+    public async Task SecretAwareAdminApiResult_ReportsIndeterminateWhenSecretPersistenceFailsAfterActuation()
+    {
+        var secretStore = new FailingOperationSecretStore();
+        var secret = Guid.NewGuid().ToString("N");
+        using var client = new HttpClient(new CapturingOperationHandler(_ => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new StringContent($"{{\"data\":{{\"key\":\"{secret}\"}}}}")
+            })));
+        var executor = BuildAccessAdminExecutor("admin.api-key.create", client, secretStore);
+
+        var handle = await executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = executor.OperationId,
+                Parameters = new Dictionary<string, string?> { ["name"] = "automation" },
+            },
+            new OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-secret-store-failure",
+                PrincipalId = "principal-4187",
+                TenantId = "tenant-4187",
+            });
+
+        handle.Status.Should().Be(OperationHandleStatus.Indeterminate);
+        handle.Reason.Should().Contain("one-time secret");
+        JsonSerializer.Serialize(handle).Should().NotContain(secret);
+        handle.Result!.Details["response"].Should().NotContain(secret);
+        secretStore.StoreCalled.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task SecretAwareAdminApiResult_PersistsOnlyOpaqueReference_AndConsumesOnce()
+    {
+        var store = new VolatileOperationSecretStore();
+        foreach (var operation in new[]
+                 {
+                     (Id: "admin.api-key.create", Output: "key", Parameter: (string?)null),
+                     (Id: "admin.api-key.rotate", Output: "key", Parameter: "key-id"),
+                     (Id: "admin.oauth-client.register", Output: "clientSecret", Parameter: (string?)null),
+                 })
+        {
+            var secret = Guid.NewGuid().ToString("N");
+            var handler = new CapturingOperationHandler(request =>
+            {
+                request.Method.Should().Be(HttpMethod.Post);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created)
+                {
+                    Content = new StringContent($"{{\"data\":{{\"apiKey\":\"id\",\"key\":\"{secret}\",\"clientSecret\":\"{secret}\"}}}}")
+                });
+            });
+            using var client = new HttpClient(handler);
+            var executor = BuildAccessAdminExecutor(operation.Id, client, store);
+            var context = new OperationPolicyContext
+            {
+                OperationInstanceId = $"opinst-{Guid.NewGuid():N}",
+                PrincipalId = "principal-4187",
+                TenantId = "tenant-4187",
+            };
+
+            var parameters = new Dictionary<string, string?> { ["name"] = "automation" };
+            if (operation.Parameter is not null)
+                parameters["id"] = operation.Parameter;
+            var handle = await executor.SubmitAsync(
+                new OperationRequest
+                {
+                    OperationId = executor.OperationId,
+                    Parameters = parameters,
+                },
+                context);
+
+            var durableEnvelope = JsonSerializer.Serialize(handle);
+            durableEnvelope.Should().NotContain(secret);
+            handle.Result!.Details["response"].Should().NotContain(secret);
+            var reference = handle.Result.SecretReferences.Should().ContainSingle().Subject;
+            reference.Name.Should().Be(operation.Output);
+            store.Consume(reference, handle.OperationInstanceId, handle.OperationId, context.PrincipalId, context.TenantId)
+                .Should().Be(secret);
+            store.Consume(reference, handle.OperationInstanceId, handle.OperationId, context.PrincipalId, context.TenantId)
+                .Should().BeNull();
+        }
+    }
+
+    [UnitTest]
+    public async Task LaneC_Validation_RejectsMissingRequiredBodyParametersBeforeApproval()
+    {
+        var definition = AdminAccessOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.api-key.create");
+        var descriptor = AdminAccessOperationCatalog.Descriptors.Single(
+            item => item.OperationId == definition.OperationId);
+        var executor = new AdminOperateOperationExecutor(
+            definition,
+            descriptor,
+            Substitute.For<IHttpClientFactory>(),
+            Substitute.For<IHttpContextAccessor>(),
+            null,
+            TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
+
+        var invalid = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?>()
+        });
+        var valid = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?> { ["name"] = "automation" }
+        });
+
+        invalid.IsValid.Should().BeFalse();
+        invalid.Messages.Should().Contain("Required parameter 'name' is missing.");
+        valid.IsValid.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void LaneD_DescriptorSchemas_DiffCleanlyAgainstAdminApiComponents()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(
@@ -563,10 +974,9 @@ public sealed class OperationsToolsetTests
         environment.EnvironmentName.Returns("Test");
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
         using var provider = services.BuildServiceProvider();
-        var mapperCounts = services
-            .Where(static descriptor => descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
-                descriptor.ImplementationInstance is AdminOperateOperationApprovalRequestMapper)
-            .Select(static descriptor => (IOperationApprovalRequestMapper)descriptor.ImplementationInstance!)
+        using var scope = provider.CreateScope();
+        var mapperCounts = scope.ServiceProvider.GetServices<IOperationApprovalRequestMapper>()
+            .OfType<AdminOperateOperationApprovalRequestMapper>()
             .GroupBy(static mapper => mapper.OperationId, StringComparer.Ordinal)
             .ToDictionary(static group => group.Key, static group => group.Count(), StringComparer.Ordinal);
 
@@ -1444,6 +1854,8 @@ public sealed class OperationsToolsetTests
     {
         var definition = AdminOperateOperationCatalog.Definitions.Should()
             .ContainSingle(item => item.OperationId == operationId).Subject;
+        var descriptor = AdminOperateOperationCatalog.Descriptors.Should()
+            .ContainSingle(item => item.OperationId == operationId).Subject;
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
         var context = new DefaultHttpContext();
@@ -1456,11 +1868,41 @@ public sealed class OperationsToolsetTests
         accessor.HttpContext.Returns(context);
         return new AdminOperateOperationExecutor(
             definition,
+            descriptor,
             factory,
             accessor,
             credentialStore ?? new InMemoryAdminApiKeyStore(TimeProvider.System),
             TimeProvider.System,
             new OperationLineageAttestationStore(TimeProvider.System));
+    }
+
+    private static AdminOperateOperationExecutor BuildAccessAdminExecutor(
+        string operationId,
+        HttpClient client,
+        IOperationSecretStore? secretStore = null)
+    {
+        var definition = AdminAccessOperationCatalog.Definitions.Should()
+            .ContainSingle(item => item.OperationId == operationId).Subject;
+        var descriptor = AdminAccessOperationCatalog.Descriptors.Should()
+            .ContainSingle(item => item.OperationId == operationId).Subject;
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
+        var context = new DefaultHttpContext();
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("public.example.test");
+        context.Connection.LocalPort = 8080;
+        context.Request.Headers["X-API-Key"] = "test-key";
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(context);
+        return new AdminOperateOperationExecutor(
+            definition,
+            descriptor,
+            factory,
+            accessor,
+            null,
+            TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System),
+            secretStore);
     }
 
     private static OperationDispatcher BuildDispatcher(
@@ -1709,8 +2151,48 @@ public sealed class OperationsToolsetTests
     private sealed class CapturingOperationHandler(
         Func<HttpRequestMessage, Task<HttpResponseMessage>> respond) : HttpMessageHandler
     {
+        public List<HttpRequestMessage> Requests { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
-            CancellationToken cancellationToken) => respond(request);
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return respond(request);
+        }
+    }
+
+    private sealed class RecordingOperationSecretStore : IOperationSecretStore
+    {
+        public TimeSpan? LastTtl { get; private set; }
+
+        public bool IsAvailable => true;
+
+        public OperationSecretReference Store(string operationInstanceId, string operationId, string? principalId,
+            string? tenantId, string name, string value, TimeSpan? ttl = null)
+        {
+            LastTtl = ttl;
+            return new OperationSecretReference { ReferenceId = "opsecret-recorded", Name = name };
+        }
+
+        public string? Consume(OperationSecretReference reference, string operationInstanceId, string operationId,
+            string? principalId, string? tenantId) => null;
+    }
+
+    private sealed class FailingOperationSecretStore : IOperationSecretStore
+    {
+        public bool StoreCalled { get; private set; }
+
+        public bool IsAvailable => true;
+
+        public OperationSecretReference Store(string operationInstanceId, string operationId, string? principalId,
+            string? tenantId, string name, string value, TimeSpan? ttl = null)
+        {
+            StoreCalled = true;
+            throw new InvalidOperationException("secret store unavailable after actuation");
+        }
+
+        public string? Consume(OperationSecretReference reference, string operationInstanceId, string operationId,
+            string? principalId, string? tenantId) => null;
     }
 }

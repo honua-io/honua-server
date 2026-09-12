@@ -1,4 +1,9 @@
-# Data enrichment API (#374)
+---
+type: guide
+title: "Data enrichment API"
+description: "The data-enrichment API enriches your own features with attributes drawn from a registered reference dataset (administrative boundary, points of interest, or demographic reference layer) using a spatial join."
+---
+# Data enrichment API
 
 The data-enrichment API enriches your own features with attributes drawn from a
 registered reference dataset (administrative boundary, points of interest, or

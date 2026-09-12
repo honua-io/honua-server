@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Capability deployment profiles"
+description: "Generate configuration from the same capability keys used by the evidence catalog and the ?caps= website view:"
+---
 # Capability deployment profiles
 
 Generate configuration from the same capability keys used by the evidence catalog and the

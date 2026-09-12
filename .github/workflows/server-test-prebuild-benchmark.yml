@@ -187,7 +187,7 @@ jobs:
             --github-output "${GITHUB_OUTPUT}"
 
       - name: Retain immutable benchmark plan
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: prebuild-benchmark-plan-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           path: prebuild-benchmark-plan.json
@@ -261,7 +261,7 @@ jobs:
             --identity '${{ matrix.identity }}' --filter "${FILTER}" \
             --job-start-epoch-ms '${{ steps.timing.outputs.job_start_ms }}'
 
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7
         with:
           name: prebuild-benchmark-metrics-baseline-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
           path: metrics/
@@ -385,7 +385,7 @@ jobs:
             metrics/candidate-${{ matrix.identity }}.json > metrics/candidate-updated.json
           mv metrics/candidate-updated.json metrics/candidate-${{ matrix.identity }}.json
 
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7
         with:
           name: prebuild-benchmark-metrics-candidate-${{ matrix.identity }}-attempt-${{ github.run_attempt }}
           path: metrics/
@@ -453,7 +453,7 @@ jobs:
             --output evidence/summary.json --markdown evidence/summary.md
           cat evidence/summary.md >> "${GITHUB_STEP_SUMMARY}"
 
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7
         with:
           name: server-test-prebuild-evidence-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           path: evidence/

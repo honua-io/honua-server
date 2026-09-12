@@ -150,6 +150,18 @@ internal sealed partial class RedisJobQueue(
                     continue;
                 }
 
+                // A queue delivery is only claimable while the durable record is
+                // Queued. A duplicate pending delivery for a live Provisioning or
+                // Running attempt must not create a second owner/attempt; remove the
+                // stale queue member and let the authoritative attempt finish.
+                if (job.Status != ExecutionJobStatus.Queued)
+                {
+                    await _database.SortedSetRemoveAsync(QueueKey, operationId).ConfigureAwait(false);
+                    removedFromSet++;
+                    totalScanned++;
+                    continue;
+                }
+
                 if (acceptedKinds != null && !acceptedKinds.Contains(job.Spec.Kind))
                 {
                     totalSkipped++;

@@ -155,6 +155,11 @@ public sealed class AlertDispatchHealthCheckTests
         public bool IsDispatcherRunning { get; init; }
         public bool IsDispatcherEnabled { get; init; }
         public DateTimeOffset? LastPollAt { get; init; }
+
+        public DateTimeOffset? BacklogObservedAt => LastPollAt;
+
+        public Honua.Alerts.AlertDispatchObservation? LastObservation =>
+            LastBacklog is { } backlog ? new(backlog, BacklogObservedAt) : null;
         public AlertDispatchBacklog? LastBacklog { get; init; }
         public bool IsStoragePollFailing { get; init; }
 

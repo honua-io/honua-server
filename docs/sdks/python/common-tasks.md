@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Python SDK: common tasks"
+description: "Two of the most common reads with the Honua Python SDK: querying a FeatureServer layer and searching a STAC catalog."
+resource: "https://pypi.org/project/honua-sdk/"
+---
 # Python SDK: common tasks
 
 Two of the most common reads with the Honua Python SDK: querying a FeatureServer layer and searching a STAC catalog. Both assume a constructed client — see [Get started with the Python SDK](getting-started.md). Examples use the synchronous `HonuaClient`; `AsyncHonuaClient` exposes the same calls with `await`.

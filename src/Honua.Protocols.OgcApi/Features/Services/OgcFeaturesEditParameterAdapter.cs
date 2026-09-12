@@ -49,6 +49,8 @@ internal readonly record struct OgcFeaturesEditRequest
 
     public string? IfMatch { get; init; }
 
+    public bool ClearAllProperties { get; init; }
+
     /// <summary>
     /// Canonical <see cref="FeatureStateToken"/> computed from the snapshot the handler
     /// validated the If-Match precondition against. When set (single-feature Replace,
@@ -94,7 +96,7 @@ internal sealed class OgcFeaturesEditParameterAdapter(
                 OgcFeaturesEditOperation.Replace => UnifiedEditRequest.WithUpdates(
                     ImmutableArray.Create(ToUpdateEditFeature(protocolRequest.ObjectId, protocolRequest.Feature))),
                 OgcFeaturesEditOperation.Patch => UnifiedEditRequest.WithUpdates(
-                    ImmutableArray.Create(ToUpdateEditFeature(protocolRequest.ObjectId, protocolRequest.Feature))),
+                    ImmutableArray.Create(ToUpdateEditFeature(protocolRequest.ObjectId, protocolRequest.Feature, preserveOmittedMaskedAttributes: !protocolRequest.ClearAllProperties))),
                 OgcFeaturesEditOperation.Delete => UnifiedEditRequest.WithDeletes(
                     ImmutableArray.Create(protocolRequest.ObjectId ?? throw new InvalidOperationException("Object ID is required for delete operations."))),
                 OgcFeaturesEditOperation.Batch => CreateBatchEditRequest(protocolRequest.BatchOperations),
@@ -174,7 +176,8 @@ internal sealed class OgcFeaturesEditParameterAdapter(
             {
                 OgcFeaturesEditOperation.Create => UnifiedEditOperation.Create(ToCreateEditFeature(operation.Feature)),
                 OgcFeaturesEditOperation.Replace or OgcFeaturesEditOperation.Patch =>
-                    UnifiedEditOperation.Update(ToUpdateEditFeature(operation.ObjectId, operation.Feature)),
+                    UnifiedEditOperation.Update(ToUpdateEditFeature(operation.ObjectId, operation.Feature,
+                        preserveOmittedMaskedAttributes: operation.Operation == OgcFeaturesEditOperation.Patch)),
                 OgcFeaturesEditOperation.Delete => UnifiedEditOperation.Delete(
                     operation.ObjectId ?? throw new InvalidOperationException("Batch delete operation is missing an object ID.")),
                 _ => throw new InvalidOperationException($"Unsupported OGC batch edit operation '{operation.Operation}'.")
@@ -190,13 +193,17 @@ internal sealed class OgcFeaturesEditParameterAdapter(
         return EditFeature.ForCreate(value.Geometry, value.Attributes);
     }
 
-    private static EditFeature ToUpdateEditFeature(long? objectId, Feature? feature)
+    private static EditFeature ToUpdateEditFeature(long? objectId, Feature? feature, bool preserveOmittedMaskedAttributes = false)
     {
         var value = feature ?? throw new InvalidOperationException("Feature payload is required.");
         return EditFeature.ForUpdate(
             objectId ?? value.Id,
             value.Geometry,
             value.Attributes,
-            EditUpdateMode.Replace);
+            EditUpdateMode.Replace) with
+        {
+            PreserveOmittedMaskedAttributes = preserveOmittedMaskedAttributes,
+            ExplicitAttributeRemovals = value.ExplicitAttributeRemovals
+        };
     }
 }

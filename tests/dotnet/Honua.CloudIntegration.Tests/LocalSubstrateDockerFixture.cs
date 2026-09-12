@@ -21,18 +21,30 @@ namespace Honua.CloudIntegration.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Image choice: a 3-line <c>busybox:1.36</c> Dockerfile running <c>httpd</c> over a one-file docroot
-/// whose <c>index.html</c> is the revision marker. This mirrors the existing kind lane's busybox worker
-/// images (no new base-image dependency), serves HTTP 200 on <c>/</c> (satisfying the backend's default
-/// <c>/healthz/ready</c> health probe once the probe path is pointed at <c>/</c>), and returns an
-/// identifiable version body so the zero-downtime request loop can prove the v1→v2 flip. The two images
-/// are built by the fixture itself (idempotent) so the lane is self-contained on any Docker host; the
-/// workflow additionally pre-pulls <c>busybox</c> to warm the cache.
+/// <b>Scope (honua-server#4415): this lane proves the YARP atomic-cutover primitive, not upgrade or
+/// rollback safety.</b> "Revision A" and "revision B" are both the same 3-line <c>busybox:1.36</c>
+/// Dockerfile running <c>httpd</c> over a one-file docroot whose <c>index.html</c> is the revision
+/// marker — no Honua process, no database, nothing written under one revision and read under the
+/// other. It proves the standby-launch/health-gate/proxy-swap/drain mechanics work against a real
+/// container runtime; it proves nothing about whether an actual Honua upgrade preserves data or
+/// behavior across revisions, and must not be cited as upgrade/rollback evidence. That obligation is
+/// carried by honua-release's <c>gate-upgrade.yml</c> <c>kind-upgrade</c> job, which upgrades a real
+/// Honua deployment.
+/// </para>
+/// <para>
+/// Image choice rationale (unrelated to the scope note above): the busybox image mirrors the existing
+/// kind lane's busybox worker images (no new base-image dependency), serves HTTP 200 on <c>/</c>
+/// (satisfying the backend's default <c>/healthz/ready</c> health probe once the probe path is pointed
+/// at <c>/</c>), and returns an identifiable version body so the zero-downtime request loop can prove
+/// the v1→v2 flip. The two images are built by the fixture itself (idempotent) so the lane is
+/// self-contained on any Docker host; the workflow additionally pre-pulls <c>busybox</c> to warm the
+/// cache.
 /// </para>
 /// <para>
 /// When Docker is unavailable the build fails, <see cref="Available"/> stays false, and the dependent
 /// <c>[SkippableFact]</c> tests skip (never fail) — mirroring <see cref="KindClusterFixture"/> and
-/// <see cref="LocalStackFixture"/>.
+/// <see cref="LocalStackFixture"/>. cloud-integration-harness.yml's TRX-based counts tripwire (#4415)
+/// fails the workflow if that ever happens on a CI runner, so a skip can only be silent locally.
 /// </para>
 /// </remarks>
 public sealed class LocalSubstrateDockerFixture : IAsyncLifetime

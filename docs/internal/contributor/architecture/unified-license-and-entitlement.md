@@ -90,7 +90,7 @@ The decoded payload uses camel-case JSON:
 | `entitlements` | string[] | no | Feature keys resolved against `FeatureCatalog`; unknown keys are ignored for activation. |
 | `metadata` | object \| null | no | Optional string-valued metadata map for source/support context. |
 
-Community-tier catalog entries are always active. Paid features are active only
+Community-tier catalog entries are active on Community and on valid paid deployments. Paid features are active only
 when their catalog key appears in the signed `entitlements` array. The
 operator-facing `edition` label does not activate every paid feature in that
 edition by itself.
@@ -174,9 +174,7 @@ admin/status compatibility surfaces.
 
 Per-request feature gates check the immutable in-memory `LicenseSnapshot`
 through `ILicenseEntitlementService`. They never re-run signature verification.
-Validation runs once on bootstrap and after successful admin upload. File-watch
-hot reload and adapter re-mint events are follow-on triggers that should reuse
-the same validation and snapshot-publication path.
+Validation runs on bootstrap, after successful admin upload, and every minute against the authoritative file/secret source. Runtime expiry retains the declared paid tier, denies all data operations (including Community-catalog reads/exports on that paid instance), and cancels in-flight jobs with failure reason `license expired`. File-watch events and adapter re-mint events remain separate follow-on triggers. Configuration/verification-key changes still require restart.
 
 ### 2.3 Validation result codes
 
@@ -184,7 +182,7 @@ The #338 runtime publishes these `LicenseValidationState` values:
 
 | Result | Meaning | Operator action |
 |--------|---------|-----------------|
-| `NoLicenseConfigured` | `Licensing:LicensePath` is empty/unset. Community mode is active and `isValid=true`. | None. |
+| `NoLicenseConfigured` | No license source is configured. Community remains available; a declared paid edition refuses startup. | None. |
 | `Valid` | Signature, payload, expiry, and trusted key are all OK. | None. |
 | `MissingFile` | A configured path does not exist. | Mount/provision the file or clear `LicensePath`. |
 | `Malformed` | Envelope JSON, payload JSON, Base64URL, configured public key, required payload fields, or file size failed validation. | Inspect the file and key config; reissue if needed. |
@@ -658,7 +656,7 @@ Licensing:AllowAdminUpload             = false
 Licensing:ExpiryWarningDays            = 30
 ```
 
-`Licensing:LicensePath` is optional; empty/unset means Community mode.
+`Licensing:LicensePath` is optional. Without a declared paid edition and without any license source, the deployment is Community. Declare `Licensing:Edition=Pro` or `Enterprise` on paid deployments; a missing, invalid or expired license refuses startup. See the [strict failure-mode operator contract](../../../guides/deploy/troubleshooting.md#license-failure-mode).
 `Licensing:AllowAdminUpload=false` is the default. Runtime configuration changes
 require restart except that admin upload can validate and replace the configured
 file path when upload is enabled.

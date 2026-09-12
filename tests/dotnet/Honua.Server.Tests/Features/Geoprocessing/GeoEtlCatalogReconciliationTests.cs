@@ -112,16 +112,23 @@ public sealed class GeoEtlCatalogReconciliationTests
         workflowOnly.SupportsProcessEndpoint.Should().BeFalse();
         workflowOnly.Executable.Should().BeTrue();
 
-        var protocolOnly = nodes["conversion.geometry-format"].CapabilityFlags;
-        protocolOnly.SupportsJob.Should().BeFalse();
-        protocolOnly.SupportsSchedule.Should().BeFalse();
-        protocolOnly.SupportsProcessEndpoint.Should().BeFalse();
-        protocolOnly.Executable.Should().BeFalse();
+        // Geometry-format now has a managed executor and declares job/workflow entry points.
+        var geometryFormat = nodes["conversion.geometry-format"].CapabilityFlags;
+        geometryFormat.SupportsJob.Should().BeTrue();
+        geometryFormat.SupportsSchedule.Should().BeTrue();
+        geometryFormat.SupportsProcessEndpoint.Should().BeTrue();
+        geometryFormat.Executable.Should().BeTrue();
+
+        // Protocol-only operations do not declare the workflow entry point.
+        nodes.Should().NotContainKey("analytics.cluster");
     }
 
     [UnitTest]
     public async Task NodeProvider_DoesNotAdvertiseWorkflowOnlyProcessWithoutAsyncMode()
     {
+        // The definition declares the workflow entry point but supports no asynchronous
+        // mode, so the node is published for inspection and marked non-executable rather
+        // than offered as a runnable step.
         var definition = new ProcessDefinition
         {
             ProcessId = "custom.sync-workflow",
@@ -131,7 +138,8 @@ public sealed class GeoEtlCatalogReconciliationTests
             Parameters = [],
             OutputArtifactKinds = [],
             ExecutionKind = ProcessExecutionKind.WorkflowOnly,
-            SupportedExecutionModes = ProcessExecutionModes.Sync
+            SupportedExecutionModes = ProcessExecutionModes.Sync,
+            SupportedEntryPoints = ProcessEntryPoints.Workflow
         };
         var catalog = Substitute.For<IProcessCatalog>();
         catalog.ListProcesses().Returns([definition]);
@@ -143,5 +151,27 @@ public sealed class GeoEtlCatalogReconciliationTests
         node.CapabilityFlags.SupportsSchedule.Should().BeFalse();
         node.CapabilityFlags.SupportsProcessEndpoint.Should().BeFalse();
         node.CapabilityFlags.Executable.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task NodeProvider_DoesNotAdvertiseAProcessThatDeclaresNoWorkflowEntryPoint()
+    {
+        // Fail-closed: a catalog that omits the entry-point declaration advertises nothing,
+        // rather than having the provider guess a surface on the operation's behalf.
+        var definition = new ProcessDefinition
+        {
+            ProcessId = "custom.undeclared",
+            Title = "Undeclared process",
+            Description = "Test-only process with no declared entry point.",
+            Category = "custom",
+            Parameters = [],
+            OutputArtifactKinds = []
+        };
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.ListProcesses().Returns([definition]);
+
+        var nodes = await new ProcessCatalogWorkflowNodeProvider(catalog).ListNodesAsync();
+
+        nodes.Should().BeEmpty();
     }
 }

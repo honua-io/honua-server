@@ -144,4 +144,18 @@ public interface IJobExecutionContext
     Task PublishArtifactAsync(
         string artifactReference,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Verifies that the worker still owns the active execution attempt before an
+    /// executor performs an external side effect. Lightweight contexts that do not
+    /// have a durable lease may keep the default no-op implementation.
+    /// </summary>
+    /// <remarks>
+    /// Publication is fenced independently, but publication fencing cannot undo a
+    /// row already committed to an external sink. Durable worker contexts therefore
+    /// re-read the job and throw when ownership or attempt identity has moved.
+    /// </remarks>
+    Task ThrowIfExecutionLeaseLostAsync(
+        CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
 }

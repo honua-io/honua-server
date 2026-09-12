@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Query features"
+description: "Filter, page, sort, and project features over whichever protocol your client speaks — OGC API Features with CQL2, ArcGIS-style FeatureServer queries, or OData v4 — against the same published layer."
+resource: "honua://capability/serve.ogc-api-features"
+---
 # Query features
 
 Filter, page, sort, and project features over whichever protocol your client speaks — OGC API Features with CQL2, ArcGIS-style FeatureServer queries, or OData v4 — against the same published layer.

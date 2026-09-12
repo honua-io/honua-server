@@ -18,6 +18,15 @@ internal sealed class McpProposalResource
     [JsonPropertyName("proposalId")]
     public string ProposalId { get; set; } = string.Empty;
 
+    [JsonPropertyName("operationInstanceId")]
+    public string? OperationInstanceId { get; set; }
+
+    [JsonPropertyName("auditId")]
+    public string? AuditId { get; set; }
+
+    [JsonPropertyName("correlationId")]
+    public string? CorrelationId { get; set; }
+
     [JsonPropertyName("kind")]
     public string Kind { get; set; } = string.Empty;
 
@@ -50,6 +59,12 @@ internal sealed class McpProposalResource
 
     [JsonPropertyName("executionOperationId")]
     public string? ExecutionOperationId { get; set; }
+
+    [JsonPropertyName("publicationId")]
+    public string? PublicationId { get; set; }
+
+    [JsonPropertyName("activeUrl")]
+    public string? ActiveUrl { get; set; }
 
     [JsonPropertyName("createdAt")]
     public DateTimeOffset CreatedAt { get; set; }
@@ -346,6 +361,15 @@ internal sealed class McpProcessEntry
 
     [JsonPropertyName("executionKind")]
     public string ExecutionKind { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Entry points this operation is callable through — any of <c>job</c>,
+    /// <c>protocol</c> and <c>workflow</c>. GA is defined per entry point, so an agent
+    /// reads this to know whether it may submit the operation as a process job, must
+    /// call its owning protocol endpoint instead, or may only compose it in a workflow.
+    /// </summary>
+    [JsonPropertyName("entryPoints")]
+    public IReadOnlyList<string> EntryPoints { get; set; } = [];
 
     [JsonPropertyName("supportedExecutionModes")]
     public IReadOnlyList<string> SupportedExecutionModes { get; set; } = [];

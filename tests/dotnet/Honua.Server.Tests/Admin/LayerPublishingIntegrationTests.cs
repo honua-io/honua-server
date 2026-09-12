@@ -1227,6 +1227,180 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         (await GetCanonicalSnapshotCountAsync(layerId)).Should().Be(2);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.OgcApiFeatures)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task OgcFeaturesInsert_OnLayerPublishedOverSourceTable_IsRefusedAndNeverPersisted()
+    {
+        // honua-server#4707. A published layer serves features from the live source table
+        // while the managed feature writer only ever writes the shared `features` table.
+        // An insert accepted on this collection therefore landed in the publish-time
+        // snapshot, answered 201 Created, and was never readable back through any protocol.
+        // The write surface now refuses it instead of acknowledging a lost write.
+        var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "OGC API Features insert routing regression test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Enabled = true
+        });
+        _layerId = publishedLayer.LayerId;
+
+        // Expected state computed from the fixture's own seed, not from a response snapshot:
+        // CreatePostGisTableAsync inserts exactly one row, ('Test Feature', 100, POINT(1 1)).
+        await AssertPublishedCollectionServesSeedRowOnlyAsync(_layerId.Value);
+        (await GetSourceRowCountAsync()).Should().Be(1);
+        (await GetCanonicalSnapshotCountAsync(_layerId.Value)).Should().Be(1);
+
+        const string insertBody = """
+            {
+              "type": "Feature",
+              "geometry": { "type": "Point", "coordinates": [2.5, 3.5] },
+              "properties": { "name": "Phantom Feature", "population": 999 }
+            }
+            """;
+        using var insertContent = new StringContent(insertBody, Encoding.UTF8, "application/geo+json");
+        var insertResponse = await _client.PostAsync(
+            $"/ogc/features/collections/{_layerId}/items",
+            insertContent);
+
+        var insertPayload = await insertResponse.Content.ReadAsStringAsync();
+        insertResponse.StatusCode.Should().NotBe(
+            HttpStatusCode.Created,
+            $"an insert this server cannot serve back must not be acknowledged; response: {insertPayload}");
+        insertResponse.StatusCode.Should().Be(
+            HttpStatusCode.MethodNotAllowed,
+            $"the publish path declares only [\"Query\",\"Extract\"] on the publication; response: {insertPayload}");
+
+        // Nothing was written anywhere: not to the live source table the protocols read, and
+        // not to the publish-time snapshot the tile path reads.
+        (await GetSourceRowCountAsync()).Should().Be(1);
+        (await GetSourceRowCountAsync("Phantom Feature")).Should().Be(0);
+        (await GetCanonicalSnapshotCountAsync(_layerId.Value)).Should().Be(1);
+
+        // And the collection still serves exactly the seeded row, unchanged.
+        await AssertPublishedCollectionServesSeedRowOnlyAsync(_layerId.Value);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Protocol(TestProtocols.Admin, TestProtocols.OgcApiFeatures)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    public async Task OgcFeaturesInsert_OnSourceBackedLayerDeclaringCreate_IsRefusedAsUnserviceable()
+    {
+        // honua-server#4707, the case the capability contract alone does not cover: a
+        // deployment that declares Create on a layer published over a source table. The
+        // managed writer still cannot write that table, so the storage-routing guard — not
+        // the capability guard — must refuse the insert.
+        var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "OGC API Features insert routing regression test (Create declared)",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Enabled = true
+        });
+        _layerId = publishedLayer.LayerId;
+
+        _fixture.EnableV2ServiceEditingCapabilities(
+            _serviceName,
+            ["Query", "Extract", "Create", "Update", "Delete"]);
+
+        await AssertPublishedCollectionServesSeedRowOnlyAsync(_layerId.Value);
+
+        const string insertBody = """
+            {
+              "type": "Feature",
+              "geometry": { "type": "Point", "coordinates": [2.5, 3.5] },
+              "properties": { "name": "Phantom Feature", "population": 999 }
+            }
+            """;
+        using var insertContent = new StringContent(insertBody, Encoding.UTF8, "application/geo+json");
+        var insertResponse = await _client.PostAsync(
+            $"/ogc/features/collections/{_layerId}/items",
+            insertContent);
+
+        var insertPayload = await insertResponse.Content.ReadAsStringAsync();
+        insertResponse.StatusCode.Should().Be(
+            HttpStatusCode.NotImplemented,
+            $"the declared capability is satisfied but the storage cannot be written through; response: {insertPayload}");
+
+        (await GetSourceRowCountAsync()).Should().Be(1);
+        (await GetSourceRowCountAsync("Phantom Feature")).Should().Be(0);
+        (await GetCanonicalSnapshotCountAsync(_layerId.Value)).Should().Be(1);
+        await AssertPublishedCollectionServesSeedRowOnlyAsync(_layerId.Value);
+    }
+
+    /// <summary>
+    /// Asserts the published collection serves exactly the single row
+    /// <see cref="CreatePostGisTableAsync()"/> seeds, including its attribute values and
+    /// ordinates. The expected values are the literals the fixture inserted, computed
+    /// independently of any server response.
+    /// </summary>
+    private async Task AssertPublishedCollectionServesSeedRowOnlyAsync(int layerId)
+    {
+        var itemsResponse = await _client.GetAsync(
+            $"/ogc/features/collections/{layerId}/items?f=json&limit=10");
+        var itemsPayload = await itemsResponse.Content.ReadAsStringAsync();
+        itemsResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {itemsPayload}");
+
+        using var document = JsonDocument.Parse(itemsPayload);
+        var features = document.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+
+        var feature = features[0];
+        var properties = feature.GetProperty("properties");
+        properties.GetProperty("name").GetString().Should().Be("Test Feature");
+        properties.GetProperty("population").GetInt32().Should().Be(100);
+
+        var geometry = feature.GetProperty("geometry");
+        geometry.GetProperty("type").GetString().Should().Be("Point");
+        var coordinates = geometry.GetProperty("coordinates");
+        coordinates.GetArrayLength().Should().Be(2);
+        coordinates[0].GetDouble().Should().Be(1d);
+        coordinates[1].GetDouble().Should().Be(1d);
+    }
+
+    /// <summary>
+    /// Counts rows in the live source table the published layer is served from, optionally
+    /// narrowed to a single feature name.
+    /// </summary>
+    private async Task<int> GetSourceRowCountAsync(string? name = null)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = name is null
+            ? $"SELECT COUNT(*)::int FROM public.{_tableName};"
+            : $"SELECT COUNT(*)::int FROM public.{_tableName} WHERE name = @name;";
+        if (name is not null)
+        {
+            command.Parameters.AddWithValue("name", name);
+        }
+
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private async Task<int> GetCanonicalSnapshotCountAsync(int layerId)
     {
         await using var connection = await _fixture.Postgres.GetConnectionAsync();

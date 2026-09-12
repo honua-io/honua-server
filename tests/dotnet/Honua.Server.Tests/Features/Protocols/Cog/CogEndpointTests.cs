@@ -5,10 +5,15 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Cog;
 
@@ -20,8 +25,36 @@ namespace Honua.Server.Tests.Features.Protocols.Cog;
 [Operation(Operations.CogAdmin)]
 public class CogEndpointTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
+
+    public CogEndpointTests()
+    {
+        // Registration indexes 1 and 2 each identify one publication. Index 3 is
+        // deliberately shared by two services to exercise the fail-closed boundary.
+        var builder = new TestMetadataV2GraphBuilder();
+        for (var storageLayerId = 1; storageLayerId <= 4; storageLayerId++)
+        {
+            var resourceId = $"cog-resource-{storageLayerId}";
+            var bindingId = $"cog-binding-{storageLayerId}";
+            var serviceId = $"cog-service-{storageLayerId}";
+            builder
+                .AddResource(resourceId, resourceId, MetadataV2ResourceType.RasterDataset)
+                .AddStorageBinding(bindingId, resourceId, $"rasters:{storageLayerId}", storageLayerId: storageLayerId)
+                .AddService(serviceId, serviceId, protocols: [ServiceProtocols.ImageServer])
+                .AddPublication($"cog-publication-{storageLayerId}", serviceId, resourceId,
+                    layerIndex: Math.Min(storageLayerId, 3), storageBindingId: bindingId,
+                    publicationType: MetadataV2PublicationType.EsriImageLayer);
+        }
+        var graph = builder.BuildProvider();
+        _fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IMetadataV2GraphProvider>();
+            services.RemoveAll<IMetadataV2GraphStore>();
+            services.AddSingleton<IMetadataV2GraphProvider>(graph);
+            services.AddSingleton<IMetadataV2GraphStore>(graph);
+        });
+    }
 
     public async Task InitializeAsync()
     {
@@ -110,6 +143,25 @@ public class CogEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/cloud-rasters")]
+    public async Task RegisterCog_WithAmbiguousPublicationIndex_Returns404WithoutRegistration()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", new
+        {
+            layerId = 3,
+            name = "ambiguous-cog",
+            provider = "AwsS3",
+            bucket = "test-bucket",
+            objectKey = "ambiguous.tif"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<Honua.Core.Features.Raster.Abstractions.ICogStore>();
+        (await store.ListByLayerAsync(3)).Should().BeEmpty();
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/cloud-rasters")]
     public async Task ListCogs_WithoutLayerId_Returns400()
     {
@@ -157,7 +209,7 @@ public class CogEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/cloud-rasters")]
     public async Task CogCrud_RegisterListGetDelete_Lifecycle()
     {
-        // Arrange — register a COG for layer 1 (seeded in server.yaml)
+        // Arrange — register a COG for the uniquely bound publication index 1.
         var request = new
         {
             layerId = 1,

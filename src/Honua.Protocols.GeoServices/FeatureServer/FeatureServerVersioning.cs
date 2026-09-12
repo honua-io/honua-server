@@ -18,7 +18,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 /// <list type="bullet">
 /// <item>absent / empty / <c>SDE.DEFAULT</c> resolves to <see cref="VersionContext.Default"/> with no
 /// entitlement check, preserving the byte-identical non-versioned DEFAULT path (CITE-protected);</item>
-/// <item>a named version is Enterprise-gated and Postgres-only, and must exist, otherwise an
+/// <item>a named version is Pro-gated and Postgres-only, and must exist, otherwise an
 /// Esri-style error result is returned.</item>
 /// </list>
 /// </summary>

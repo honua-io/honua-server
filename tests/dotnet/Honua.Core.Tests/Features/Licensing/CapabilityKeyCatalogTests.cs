@@ -72,13 +72,15 @@ public sealed class CapabilityKeyCatalogTests
     }
 
     [Fact]
-    public void All_IsUnionOfCommunityDescriptiveAndFeatureCatalogKeys()
+    public void All_IsUnionOfCommunityLifecycleDescriptiveAndFeatureCatalogKeys()
     {
         CapabilityKeyCatalog.All.Should().HaveCount(
             CapabilityKeyCatalog.CommunityKeys.Count
             + CapabilityKeyCatalog.RoutedExperimentalKeys.Count
+            + CapabilityKeyCatalog.RoutedPreviewKeys.Count
             + CapabilityKeyCatalog.DescriptiveKeys.Count
-            + FeatureCatalog.All.Count);
+            + FeatureCatalog.All.Count
+            - CapabilityKeyCatalog.RoutedPreviewKeys.Count);
     }
 
     [Fact]

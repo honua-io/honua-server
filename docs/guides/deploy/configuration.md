@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Configure Honua Server"
+description: "You'll understand how Honua's configuration model works so you can set any option in any deployment target."
+---
 # Configure Honua Server
 
 You'll understand how Honua's configuration model works so you can set any option in any deployment target. The full variable table lives in the [environment variable reference](../../reference/configuration/environment-variables.md).
@@ -49,6 +54,10 @@ A successful admin upload persists `<LicensePath>.uploaded`, which startup reads
 - **Kubernetes**: there is no `.env` file at runtime. Put secrets in a `Secret`, non-secrets in a `ConfigMap`, and mount both with `envFrom`; the keys are the same `Section__Key` names.
 
 ## Next steps
+
+- [Tenancy support](tenancy.md) — single-tenant GA defaults and the opt-in
+  multi-tenant Preview/trial configuration for non-production evaluation only,
+  with the unchanged full-severity tenant isolation security floor.
 
 - [Environment variable reference](../../reference/configuration/environment-variables.md)
 - [Deploy with Docker Compose](docker-compose.md)

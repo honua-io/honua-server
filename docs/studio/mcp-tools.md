@@ -1,6 +1,12 @@
+---
+type: guide
+title: "Studio MCP tools"
+description: "The server publishes 17 typed Studio tools through /mcp."
+resource: "honua://capability/ai.mcp-discovery"
+---
 # Studio MCP tools
 
-The pinned server candidate publishes 17 typed Studio tools through `/mcp`.
+The server publishes 17 typed Studio tools through `/mcp`.
 This tool plane is executable independently of the browser Studio preview.
 
 | Tool | Semantics |
@@ -21,10 +27,19 @@ This tool plane is executable independently of the browser Studio preview.
 | `honua_studio_remove_interaction` | Remove an interaction binding. |
 | `honua_studio_add_control` | Add a map control. |
 | `honua_studio_remove_control` | Remove a map control. |
-| `honua_studio_propose_publication` | Record publication intent for governance. |
+| `honua_studio_propose_publication` | Propose an exact saved version for governed publication. |
 
 Every mutation that accepts `generation` uses optimistic concurrency. A stale
-generation returns `failed_precondition`; fetch the draft, reconcile against
-its new generation, and retry once. Do not loop blindly. Publication is not a
-canvas mutation, and the end-to-end approval/public URL journey remains
-blocked by [#3304](https://github.com/honua-io/honua-server/issues/3304).
+generation returns `failed_precondition` with the owner-authorized snapshot's
+`currentGeneration`. Fetch the draft again and reconcile the intended mutation:
+retry only when it remains valid and non-conflicting. A conflict requires explicit
+resolution; the server never blindly replays a mutation. Dashboard drafts use
+the same composition editor, whole-document validation, and durable lifecycle
+as map/app drafts.
+
+Publication is not a canvas mutation. Save the draft as an immutable version, then pass that
+version's `itemId`, `versionId`, and `contentHash` together with the requested
+`route` and `visibility`. The tool creates a durable canonical proposal and
+returns its proposal, operation, and audit identities. A separate authorized
+principal must approve it; poll the returned `proposalUri` for the final status
+and active URL.

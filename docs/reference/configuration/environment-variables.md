@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Environment variables"
+description: "Honua is configured entirely through environment variables (or the equivalent appsettings.json keys)."
+---
 # Environment variables
 
 Honua is configured entirely through environment variables (or the equivalent `appsettings.json` keys). Nested configuration sections use the double-underscore convention: `Cache__Enabled` binds to `Cache:Enabled`. Defaults below are the compiled/shipped defaults; `.env.example`, `.env.docker.example`, and `.env.production.example` in the repository root are ready-to-copy templates. Runtime configuration metadata is also served at `GET /api/v1/admin/config`.
@@ -141,6 +146,7 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `TileOptions__CacheMaxAge` | see `.env.example` | `Cache-Control: max-age` for tile responses (seconds). |
 | `TileOptions__TileExtent` / `TileOptions__TileBuffer` | `4096` / `256` | MVT tile extent and buffer. |
 | `Limits__Analytics__MaxInputFeatures` | `100000` | Max input features for spatial analytics queries. |
+| `Limits__Analytics__MaxInputBytes` | `536870912` | Max cumulative serialized geometry and attribute bytes a layer-sourced geoprocessing job streams from one layer before computing; exceeding it fails the job with a resource-limit message. |
 | `Limits__Elevation__MaxSampleCount` | `500` | Max samples per elevation profile request. |
 
 The effective import limits are also served at `GET /api/v1/admin/import/limits`.
@@ -222,13 +228,6 @@ Geoprocessing job admission and executor guardrails:
 | `Geoprocessing__ImageryInference__DefaultModel` | *(unset)* | Fallback model reference when a job omits the `model` input. |
 | `Geoprocessing__ImageryInference__TimeoutSeconds` | `300` | Per-request delegation timeout (clamped to 1–3600). |
 
-## Related pages
-
-- [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
-- [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
-- [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
-
-
 ## Vector tile output budget
 
 `Limits__Tiles__MaxTileSize` defaults to `512000` bytes and accepts positive byte counts.
@@ -246,3 +245,10 @@ Previously this option had no effect and its model default was 512 with pixel
 units. Explicitly configured values now mean bytes; review any existing value
 that was chosen as a pixel dimension. The database still encodes the tile under
 its existing feature and statement limits before the output length is known.
+
+## Related pages
+
+- [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
+- [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
+- [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
+

@@ -3,8 +3,20 @@ set -euo pipefail
 
 # Standing limits (release#210, verbatim): plan summaries to the evidence thread BEFORE apply, STOP on any destroy beyond the lane's own teardown-of-what-it-created, no IAM trust widening, fingerprints only.
 
+# Invalidate any previous receipt before validating the remaining inputs.
+if [[ -n "${HONUA_LAMBDA_PREVIEW_RECEIPT:-}" ]]; then
+mkdir -p "$(dirname "$HONUA_LAMBDA_PREVIEW_RECEIPT")"
+printf '%s\n' '{"schema":"honua.lambda-preview-certification/v1","result":"fail","serving":{"result":"noProof"}}' > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
+fi
+
 required=(
   HONUA_LAMBDA_SOURCE_IMAGE
+  HONUA_LAMBDA_ARCHITECTURE
+  REALAWS_CERT_LAMBDA_FUNCTION
+  REALAWS_CERT_LAMBDA_ALIAS
+  HONUA_LAMBDA_WRITE_BASE_URL
+  HONUA_DEMO_BASE_URL
+  AWS_REGION
   HONUA_LAMBDA_SOURCE_DIGEST
   HONUA_LAMBDA_SERVER_REVISION
   HONUA_LAMBDA_PREVIEW_REPOSITORY
@@ -41,24 +53,102 @@ if [[ ! "$HONUA_LAMBDA_PREVIEW_REPOSITORY" =~ ^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.
   exit 2
 fi
 
+case "$HONUA_LAMBDA_ARCHITECTURE" in
+  arm64) docker_architecture=arm64 ;;
+  x86_64) docker_architecture=amd64 ;;
+  *) echo "candidate architecture must be arm64 or x86_64" >&2; exit 2 ;;
+esac
+if [[ ! "$GITHUB_RUN_ID" =~ ^[0-9]+$ || ! "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]; then
+  echo "run id and attempt must be numeric" >&2
+  exit 2
+fi
+if ! command -v crane >/dev/null 2>&1; then
+  echo "crane is required to mirror the exact source manifest without re-encoding it" >&2
+  exit 2
+fi
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+umask 077
+scratch="$(mktemp -d)"
+
 run_token="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 function_name="honua-certrun-lambda-${run_token}"
 log_group="/aws/lambda/${function_name}"
+source_repository="${HONUA_LAMBDA_SOURCE_IMAGE%%:*}"
 source_ref="${HONUA_LAMBDA_SOURCE_IMAGE}@${HONUA_LAMBDA_SOURCE_DIGEST}"
-target_tag="candidate-${HONUA_LAMBDA_SERVER_REVISION:0:12}-${HONUA_LAMBDA_SOURCE_DIGEST:7:12}"
+# The architecture is part of the tag because the supplied source digest may name a
+# multi-platform index: the same revision and pin certified for arm64 and for x86_64 mirror
+# different child manifests, and a shared tag would make each run read the other's artifact as a
+# stale mirror and delete it.
+target_tag="candidate-${HONUA_LAMBDA_SERVER_REVISION:0:12}-${HONUA_LAMBDA_SOURCE_DIGEST:7:12}-${HONUA_LAMBDA_ARCHITECTURE}"
 target_ref="${HONUA_LAMBDA_PREVIEW_REPOSITORY}:${target_tag}"
 repository_name="${HONUA_LAMBDA_PREVIEW_REPOSITORY#*/}"
 registry="${HONUA_LAMBDA_PREVIEW_REPOSITORY%%/*}"
 function_created=false
 log_group_created=false
 function_arn=""
+mirror_outcome=""
 
 fingerprint() {
   printf '%s' "$1" | sha256sum | awk '{print "sha256:" $1}'
 }
 
+# Echo enough of the create failure to diagnose it from the job log without echoing the inputs.
+# Redaction is by value, not by line shape: every value the lane put in the environment paramfile
+# plus the runtime-only cert keys is scrubbed out first, so a CLI or API message that quotes an
+# input cannot leak it, and account ids are reduced to a placeholder. Whatever survives that is the
+# AWS error code and message.
+report_create_error() {
+  local line secret
+  local -a secrets=()
+  if [[ -s "$scratch/environment.json" ]]; then
+    mapfile -t secrets < <(jq -r '.Variables // {} | .[] | select(type == "string" and length >= 4)' "$scratch/environment.json" 2>/dev/null)
+  fi
+  # Both credential overrides are optional; the loop below skips empty entries.
+  secrets+=("${HONUA_LAMBDA_CERT_ADMIN_KEY:-}" "${HONUA_LAMBDA_CERT_DENIED_KEY:-}")
+  if [[ ! -s "$scratch/create-error.log" ]]; then
+    echo "create-function error: the AWS CLI reported no diagnostics" >&2
+    return
+  fi
+  while IFS= read -r line; do
+    for secret in "${secrets[@]}"; do
+      if [[ -n "$secret" ]]; then
+        line="${line//"$secret"/[redacted]}"
+      fi
+    done
+    line="$(sed -E 's/[0-9]{12}/[account]/g' <<<"$line")"
+    printf 'create-function error: %.300s\n' "$line" >&2
+  done < <(grep -a '[^[:space:]]' "$scratch/create-error.log" | head -n 3)
+}
+
+# Deletion is only what GetFunction says is not there. The API distinguishes ResourceNotFoundException
+# from TooManyRequestsException, ServiceException, credential and network failures, but the CLI exits
+# nonzero for all of them alike; reading a bare nonzero as "gone" would let a throttle or an outage
+# during teardown publish a passing receipt while the run-namespaced function still exists.
+# Prints present, absent, or unknown; never treats unknown as absent.
+function_presence() {
+  local err rc=0
+  err="$(aws lambda get-function --function-name "$1" 2>&1 >/dev/null)" || rc=$?
+  if (( rc == 0 )); then
+    echo present
+  elif [[ "$err" == *ResourceNotFoundException* ]]; then
+    echo absent
+  else
+    printf 'get-function was indeterminate for the run function: %.200s\n' "${err//$'\n'/ }" >&2
+    echo unknown
+  fi
+}
+
+# Reads the stored manifest for one image id (imageTag=... or imageDigest=...) in the mirror.
+ecr_manifest_for() {
+  aws ecr batch-get-image --repository-name "$repository_name" \
+    --image-ids "$1" \
+    --accepted-media-types application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.v2+json \
+    --query 'images[0].imageManifest' --output text
+}
+
 cleanup() {
   local status=$?
+  local deleted
   set +e
   if $function_created; then
     if [[ "$function_name" != honua-certrun-lambda-* ]]; then
@@ -73,40 +163,152 @@ cleanup() {
       echo "STOP: refusing to delete a function without this run's ownership tag" >&2
       exit 91
     fi
-    aws lambda delete-function --function-name "$function_name"
-    aws lambda wait function-not-exists --function-name "$function_name"
+    aws lambda delete-function --function-name "$function_name" || status=11
+    # The CLI has no function-not-exists waiter (ninth live run failed its
+    # teardown on exactly that); poll get-function until it reports the function
+    # not found. An indeterminate answer keeps polling — throttling and service
+    # errors are what the retries are for — and, if it never resolves, fails the
+    # run rather than recording a deletion nobody observed.
+    deleted=false
+    for _i in $(seq 1 30); do
+      case "$(function_presence "$function_name")" in
+        absent) deleted=true; break ;;
+      esac
+      sleep 5
+    done
+    if ! $deleted; then
+      echo "teardown could not confirm the run function was deleted" >&2
+      status=11
+    fi
   fi
   if $log_group_created; then
     if [[ "$log_group" != /aws/lambda/honua-certrun-lambda-* ]]; then
       echo "STOP: refusing log-group destroy outside the lane run namespace: ${log_group}" >&2
       exit 92
     fi
-    aws logs delete-log-group --log-group-name "$log_group"
+    aws logs delete-log-group --log-group-name "$log_group" || status=12
   fi
+  if (( status != 0 )) && [[ -f "$scratch/serving.json" ]]; then
+    # Preserve observed version/cleanup facts for recovery, without claiming proof.
+    jq --slurpfile serving "$scratch/serving.json" '.serving = $serving[0] | .serving.result = "noProof" | .result = "fail"' \
+      "$HONUA_LAMBDA_PREVIEW_RECEIPT" > "$scratch/failed-receipt.json" &&
+      cp "$scratch/failed-receipt.json" "$HONUA_LAMBDA_PREVIEW_RECEIPT"
+  fi
+  rm -rf "$scratch"
   if (( status != 0 )); then
     exit "$status"
   fi
 }
 trap cleanup EXIT
 
+python3 "$script_dir/lambda-certification.py" prepare "$scratch"
+
 source_manifest="$(docker buildx imagetools inspect --raw "$source_ref")"
-source_config="$(jq -er '.config.digest' <<<"$source_manifest")"
-docker pull --platform linux/arm64 "$source_ref"
-source_revision="$(docker image inspect "$source_ref" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
-source_architecture="$(docker image inspect "$source_ref" --format '{{ .Architecture }}')"
-if [[ "$source_revision" != "$HONUA_LAMBDA_SERVER_REVISION" || "$source_architecture" != "arm64" ]]; then
-  echo "source image config does not match the declared server revision and arm64 architecture" >&2
+if [[ "$(jq -r 'has("manifests")' <<<"$source_manifest")" == "true" ]]; then
+  # Lambda takes a single-architecture artifact. When the pin names an index, the thing that must be
+  # mirrored and certified is the one child manifest for the candidate platform, never the index.
+  children="$(jq -ce --arg architecture "$docker_architecture" \
+    '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $architecture)]' <<<"$source_manifest")"
+  if [[ "$(jq -r 'length' <<<"$children")" != "1" ]]; then
+    echo "source index does not resolve to exactly one linux/${docker_architecture} manifest" >&2
+    exit 3
+  fi
+  source_platform_digest="$(jq -er '.[0].digest' <<<"$children")"
+  source_manifest="$(docker buildx imagetools inspect --raw "${source_repository}@${source_platform_digest}")"
+else
+  source_platform_digest="$HONUA_LAMBDA_SOURCE_DIGEST"
+fi
+if [[ ! "$source_platform_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || [[ "$(jq -r 'has("manifests")' <<<"$source_manifest")" == "true" ]]; then
+  echo "source did not resolve to an exact single-platform manifest digest" >&2
   exit 3
 fi
-docker run --rm --entrypoint /bin/sh "$source_ref" -c \
+source_platform_ref="${source_repository}@${source_platform_digest}"
+source_config="$(jq -er '.config.digest' <<<"$source_manifest")"
+source_layers="$(jq -ce '[.layers[].digest]' <<<"$source_manifest")"
+
+docker pull --platform "linux/$docker_architecture" "$source_platform_ref"
+source_revision="$(docker image inspect "$source_platform_ref" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+source_architecture="$(docker image inspect "$source_platform_ref" --format '{{ .Architecture }}')"
+source_rootfs="$(docker image inspect "$source_platform_ref" --format '{{ json .RootFS.Layers }}' | jq -ce '.')"
+if [[ "$source_revision" != "$HONUA_LAMBDA_SERVER_REVISION" || "$source_architecture" != "$docker_architecture" ]]; then
+  echo "source image config does not match the declared server revision and candidate architecture" >&2
+  exit 3
+fi
+docker run --rm --entrypoint /bin/sh "$source_platform_ref" -c \
   'test -x /opt/extensions/lambda-adapter && test -x /var/task/Honua.Server'
 
-existing="$(aws ecr describe-images --repository-name "$repository_name" \
-  --image-ids imageTag="$target_tag" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true)"
-if [[ -z "$existing" || "$existing" == "None" ]]; then
-  aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
-  docker tag "$source_ref" "$target_ref"
-  docker push "$target_ref"
+aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
+
+# The certification repository is tag-immutable, so a rerun for the same candidate cannot overwrite
+# the tag an earlier attempt wrote: the manifest PUT is rejected with TAG_INVALID. Decide what to do
+# with an existing tag before pushing. The ECR copy is a mirror whose source of truth is the GHCR
+# pin, never the other way round, so a tag holding anything other than the exact source artifact is
+# a stale mirror artifact and is replaced rather than trusted. Identity here is blob identity
+# (config blob + layer blobs), not envelope identity, for the same reason the checks below never
+# compare manifest digests: ECR may re-encode the OCI manifest into a Docker schema 2 envelope.
+describe_status=0
+existing_describe="$(aws ecr describe-images --repository-name "$repository_name" \
+  --image-ids imageTag="$target_tag" --output json 2>"$scratch/describe-existing.log")" || describe_status=$?
+if (( describe_status != 0 )) && ! grep -q 'ImageNotFoundException' "$scratch/describe-existing.log"; then
+  # Fail closed: an unreadable repository must never be mistaken for an absent tag.
+  echo "ECR describe-images failed for the candidate tag" >&2
+  exit 3
+fi
+
+if (( describe_status == 0 )); then
+  existing_digest="$(jq -r '.imageDetails[0].imageDigest // empty' <<<"$existing_describe")"
+  if [[ ! "$existing_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "ECR reported an existing candidate tag without an exact image digest" >&2
+    exit 3
+  fi
+  existing_config=""
+  existing_layers=""
+  if [[ "$existing_digest" != "$source_platform_digest" ]]; then
+    # Fail closed: a manifest lookup that failed is not evidence that the tag holds a stale
+    # artifact, and must never be the reason a prior run's release artifact is deleted.
+    manifest_status=0
+    existing_manifest="$(ecr_manifest_for "imageDigest=$existing_digest" 2>"$scratch/batch-get-existing.log")" || manifest_status=$?
+    if (( manifest_status != 0 )); then
+      echo "ECR batch-get-image failed for the existing candidate tag" >&2
+      exit 3
+    fi
+    existing_config="$(jq -er '.config.digest' <<<"$existing_manifest")" || {
+      echo "ECR returned the existing candidate manifest without an exact config digest" >&2
+      exit 3
+    }
+    existing_layers="$(jq -ce '[.layers[].digest]' <<<"$existing_manifest")" || {
+      echo "ECR returned the existing candidate manifest without exact layer digests" >&2
+      exit 3
+    }
+  fi
+  if [[ "$existing_digest" == "$source_platform_digest" ]] ||
+     [[ "$existing_config" == "$source_config" && "$existing_layers" == "$source_layers" ]]; then
+    # Already the exact source artifact. Pushing it again would only fail on the immutable tag; the
+    # verification below still runs against what ECR actually holds, so nothing is taken on trust.
+    mirror_outcome=skipped-existing
+  else
+    if [[ "$repository_name" != honua-cert-cert-lambda-preview || "$target_tag" != candidate-* ]]; then
+      echo "STOP: refusing image delete outside the lane's certification namespace" >&2
+      exit 95
+    fi
+    delete_json="$(aws ecr batch-delete-image --repository-name "$repository_name" \
+      --image-ids imageTag="$target_tag" --output json)"
+    if [[ "$(jq -r '(.failures // []) | length' <<<"$delete_json")" != "0" ]]; then
+      echo "ECR refused to remove the stale candidate tag" >&2
+      exit 4
+    fi
+    mirror_outcome=replaced-stale
+  fi
+else
+  mirror_outcome=pushed
+fi
+
+if [[ "$mirror_outcome" != "skipped-existing" ]]; then
+  # Mirror the exact source manifest by digest. A docker pull/tag/push round trip re-serialises the
+  # image config through the daemon's own representation, which changes the config blob digest and
+  # makes the artifact ECR stores a different artifact from the one the pin certifies. crane uploads
+  # the manifest and its blobs verbatim, so the config blob and rootfs survive the copy.
+  crane copy "$source_platform_ref" "$target_ref"
 fi
 
 ecr_digest="$(aws ecr describe-images --repository-name "$repository_name" \
@@ -115,13 +317,26 @@ if [[ ! "$ecr_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "ECR did not return an exact image digest" >&2
   exit 3
 fi
-ecr_manifest="$(aws ecr batch-get-image --repository-name "$repository_name" \
-  --image-ids imageDigest="$ecr_digest" \
-  --accepted-media-types application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.v2+json \
-  --query 'images[0].imageManifest' --output text)"
+ecr_manifest="$(ecr_manifest_for "imageDigest=$ecr_digest")"
 ecr_config="$(jq -er '.config.digest' <<<"$ecr_manifest")"
 if [[ "$ecr_config" != "$source_config" ]]; then
   echo "ECR mirror config digest does not match the exact source artifact" >&2
+  exit 4
+fi
+if [[ "$(jq -ce '[.layers[].digest]' <<<"$ecr_manifest")" != "$source_layers" ]]; then
+  echo "ECR mirror layer digests do not match the exact source artifact" >&2
+  exit 4
+fi
+
+docker pull --platform "linux/$docker_architecture" "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}"
+if [[ "$(docker image inspect "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" --format '{{ .Architecture }}')" != "$docker_architecture" ]]; then
+  echo "ECR mirror platform does not match candidate architecture" >&2
+  exit 4
+fi
+# The manifest only advertises the config digest; this reads the rootfs the config blob actually
+# declares, on both sides, so a mirror that served a different filesystem cannot pass.
+if [[ "$(docker image inspect "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" --format '{{ json .RootFS.Layers }}' | jq -ce '.')" != "$source_rootfs" ]]; then
+  echo "ECR mirror rootfs diff ids do not match the exact source artifact" >&2
   exit 4
 fi
 
@@ -135,30 +350,45 @@ if [[ "$(aws logs describe-log-groups --log-group-name-prefix "$log_group" \
   exit 94
 fi
 
+# Everything this group will ever hold belongs to this run: the group is created here, is named
+# for the run, and is deleted at teardown. Anchoring the evidence queries to its creation (with
+# slack for clock skew) is therefore both bounded and complete — unlike a window measured back
+# from the invoke, which loses any initialization that happened while the function was activating.
+log_group_started_ms=$(( $(date +%s) * 1000 - 120000 ))
 aws logs create-log-group --log-group-name "$log_group"
 log_group_created=true
 aws logs put-retention-policy --log-group-name "$log_group" --retention-in-days 1
 
-cert_environment="$(jq -cn \
-  --arg admin_password "honua-cert-${run_token}" \
-  --arg master_key "honua-cert-master-key-${run_token}-isolated" \
-  '{Variables:{
-    ConnectionStrings__DefaultConnection:"Host=127.0.0.1;Database=honua_cert;Username=honua_cert;Password=not-used",
-    HONUA_ADMIN_PASSWORD:$admin_password,
-    HONUA_SKIP_MIGRATIONS:"true",
-    Security__ConnectionEncryption__MasterKey:$master_key
-  }}')"
+# The preparation step clones the standing certification function's configuration into these two
+# paramfiles. Assert them here rather than letting a missing or empty one surface as an opaque
+# client-side CLI error: the ephemeral function must reach the cert PostGIS over the same private
+# subnets and security group as the standing function, so an absent VPC config is never a default.
+for paramfile in environment.json vpc.json; do
+  if [[ ! -s "$scratch/$paramfile" ]]; then
+    echo "certification preparation did not produce ${paramfile}" >&2
+    exit 5
+  fi
+done
+if [[ "$(jq -r '((.SubnetIds // []) | length) > 0 and ((.SecurityGroupIds // []) | length) > 0' "$scratch/vpc.json")" != "true" ]]; then
+  echo "prepared VPC configuration has no subnets or security groups" >&2
+  exit 5
+fi
 
 create_json="$(aws lambda create-function \
   --function-name "$function_name" \
   --package-type Image \
   --code "ImageUri=${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" \
   --role "$HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN" \
-  --architectures arm64 \
-  --environment "$cert_environment" \
+  --architectures "$HONUA_LAMBDA_ARCHITECTURE" \
+  --environment "file://$scratch/environment.json" \
+  --vpc-config "file://$scratch/vpc.json" \
   --memory-size 1024 \
   --timeout 60 \
-  --tags "honua-cert-run=${run_token}" "honua-purpose=lambda-preview-certification")"
+  --tags "honua-cert-run=${run_token},honua-purpose=lambda-preview-certification" 2>"$scratch/create-error.log")" || {
+  echo "Lambda create failed" >&2
+  report_create_error
+  exit 5
+}
 function_created=true
 function_arn="$(jq -er '.FunctionArn' <<<"$create_json")"
 aws lambda wait function-active-v2 --function-name "$function_name"
@@ -170,42 +400,196 @@ if [[ "$resolved_image" != "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" ]]
 fi
 
 payload='{"version":"2.0","routeKey":"GET /healthz/live","rawPath":"/healthz/live","rawQueryString":"","headers":{"accept":"application/json","host":"lambda-cert.invalid"},"requestContext":{"http":{"method":"GET","path":"/healthz/live","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"honua-lambda-preview-cert"}},"isBase64Encoded":false}'
-invoke_meta="$(aws lambda invoke --function-name "$function_name" --cli-binary-format raw-in-base64-out \
-  --log-type Tail --payload "$payload" /tmp/honua-lambda-preview-response.json)"
-if [[ "$(jq -r '.StatusCode' <<<"$invoke_meta")" != "200" || "$(jq -r '.FunctionError // empty' <<<"$invoke_meta")" != "" ]]; then
-  echo "Lambda invocation failed" >&2
-  exit 6
-fi
-if [[ "$(jq -r '.statusCode' /tmp/honua-lambda-preview-response.json)" != "200" ]]; then
-  echo "representative HTTP operation did not return status 200" >&2
-  exit 7
-fi
-response_body="$(jq -r '.body' /tmp/honua-lambda-preview-response.json)"
-if [[ "$response_body" != *Healthy* && "$response_body" != *healthy* ]]; then
-  echo "representative HTTP operation did not return a healthy response" >&2
-  exit 8
-fi
 
-tail_log="$(jq -er '.LogResult' <<<"$invoke_meta" | base64 -d)"
-request_id="$(sed -nE 's/^REPORT RequestId: ([^[:space:]]+).*/\1/p' <<<"$tail_log" | tail -n 1)"
-if [[ -z "$request_id" ]]; then
-  echo "Lambda invoke tail did not contain a REPORT request id" >&2
-  exit 9
-fi
+# Lambda proactively initializes an execution environment while a newly created function
+# transitions to Active, so "the first invoke of a freshly created function" is not the same thing
+# as a cold invoke. The eighteenth live run (34203568834) was the first Lambda deployment of its
+# source digest, so the platform had to download and optimize the image before the function became
+# Active; the roughly 21 s initialization finished inside that transition and the certified invoke
+# landed on an already-initialized environment. Its REPORT carried no Init Duration, no INIT_REPORT
+# was emitted at all, and there was nothing for the tail or for CloudWatch to find. Runs that
+# activated in seconds, on a digest the platform had already optimized, invoked before the
+# proactive initialization completed and did observe it: the flakiness is that race, not the query.
+#
+# A configuration change discards every execution environment a function holds, so bumping an inert
+# nonce and invoking as soon as the update settles puts the initialization ahead of the invoke
+# rather than behind it. This never stands in for the artifact — the resolved image digest is
+# re-read after every update — and it never weakens the assertion: a pass still requires a positive
+# Init Duration this run actually observed.
+cold_start_nonce=0
+force_cold_environment() {
+  cold_start_nonce=$(( cold_start_nonce + 1 ))
+  jq --arg nonce "${run_token}-${cold_start_nonce}" \
+    '.Variables["HONUA_LAMBDA_CERT_COLD_START"] = $nonce' \
+    "$scratch/environment.json" > "$scratch/environment-cold-start.json"
+  aws lambda update-function-configuration --function-name "$function_name" \
+    --environment "file://$scratch/environment-cold-start.json" >/dev/null
+  aws lambda wait function-updated-v2 --function-name "$function_name"
+  if [[ "$(aws lambda get-function --function-name "$function_name" \
+    --query 'Code.ResolvedImageUri' --output text)" != "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" ]]; then
+    echo "Lambda stopped resolving the expected ECR artifact digest after the cold-start nonce update" >&2
+    exit 5
+  fi
+}
 
-cloudwatch_verified=false
-for _ in {1..12}; do
-  if [[ "$(aws logs filter-log-events --log-group-name "$log_group" \
-    --filter-pattern "\"${request_id}\"" --query 'length(events)' --output text)" != "0" ]]; then
-    cloudwatch_verified=true
+# CloudWatch delivery for a fresh function's first invoke lags: the thirteenth
+# live run (34084763377) created its log stream at +0s, the first query ran at
+# +49s and eleven more over the next minute found nothing, then teardown
+# removed the group. The runtime ships logs asynchronously after a ~21 s
+# init-in-invoke; give delivery three minutes, bounded, and on timeout say what
+# the group held (stream and event counts only, never log content) so the next
+# failure is diagnosable from the job log.
+# The CLI paginates filter-log-events and prints one `length(events)` per page,
+# so an unbounded query answers "0\n0\n3\n0" and never matches a single number:
+# the fourteenth live run (34088093441) held 220 events and still exited 10.
+# Bound the query to this invoke and sum the pages.
+count_events() {
+  aws logs filter-log-events --log-group-name "$log_group" --start-time "$invoke_started_ms" "$@" \
+    --query 'length(events)' --output text | awk '{ total += $1 } END { print total + 0 }'
+}
+
+# A cold start reports its Init Duration on the REPORT line when the runtime
+# initialized inside Lambda's init window. When initialization exceeds that
+# window (~21 s here to resolve secrets and open the database over the VPC),
+# the runtime re-runs it during the first invoke and the only Init Duration is
+# on an INIT_REPORT line with "Phase: invoke". The invoke's 4 KB log tail does
+# not always reach back to that line (the fifteenth live run, 34090714626), so
+# read the same evidence from CloudWatch Logs once delivery is verified, and
+# keep the tail as the fast path. An INIT_REPORT whose Status is error or
+# timeout is not evidence of a served cold start.
+cold_start_from_lines() {
+  local lines="$1" ms phase init_report
+  ms="$(sed -nE 's/^REPORT .*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$lines" | tail -n 1)"
+  phase="init"
+  if [[ -z "$ms" ]]; then
+    init_report="$(grep -E '^INIT_REPORT[[:space:]].*Init Duration: ' <<<"$lines" | grep -vE 'Status: (error|timeout)' | tail -n 1 || true)"
+    ms="$(sed -nE 's/^INIT_REPORT[[:space:]].*Init Duration: ([0-9]+([.][0-9]+)?) ms.*/\1/p' <<<"$init_report")"
+    phase="$(sed -nE 's/.*Phase: ([a-z]+).*/\1/p' <<<"$init_report")"
+    phase="${phase:-invoke}"
+  fi
+  [[ -n "$ms" ]] && printf '%s %s\n' "$ms" "$phase"
+}
+# One log stream is one execution environment, so the stream the certified invoke ran in is where
+# that environment's initialization was reported — whenever it happened. Searching it from the log
+# group's own creation covers the whole life of the environment, including any initialization that
+# preceded the invoke; a window measured back from the invoke does not, and a slow image
+# optimization pushes activation past it. The search is scoped to that one stream and never widened
+# to the group: the group also holds the earlier forced environments, and a late-delivered
+# INIT_REPORT from one of those is another invoke's cold start, not this receipt's.
+invoke_stream=""
+platform_lines() {
+  # JSON output aggregates every page; text output would split them.
+  aws logs filter-log-events --log-group-name "$log_group" --start-time "$log_group_started_ms" \
+    --log-stream-names "$invoke_stream" --filter-pattern "$1" --query 'events[].message' \
+    --output json | jq -r '.[]?'
+}
+resolve_invoke_stream() {
+  local stream
+  stream="$(aws logs filter-log-events --log-group-name "$log_group" --start-time "$log_group_started_ms" \
+    --filter-pattern "\"${request_id}\"" --query 'events[0].logStreamName' --output text 2>/dev/null |
+    awk '$1 != "None" && NF { print $1; exit }')"
+  if [[ -n "$stream" ]]; then
+    invoke_stream="$stream"
+  fi
+}
+
+cold_start_attempts=3
+cold_start_ms=""
+cold_start_phase=""
+cold_start_source=""
+for cold_start_attempt in $(seq 1 "$cold_start_attempts"); do
+  force_cold_environment
+  # Bound the CloudWatch delivery query to this invoke (milliseconds, with slack
+  # for clock skew between the runner and the service).
+  invoke_started_ms=$(( $(date +%s) * 1000 - 120000 ))
+  invoke_meta="$(aws lambda invoke --function-name "$function_name" --cli-binary-format raw-in-base64-out \
+    --invocation-type RequestResponse --log-type Tail --payload "$payload" "$scratch/response.json")"
+  if [[ "$(jq -r '.StatusCode' <<<"$invoke_meta")" != "200" || "$(jq -r '.FunctionError // empty' <<<"$invoke_meta")" != "" ]]; then
+    # Ninth live run: StatusCode 204 with no ExecutedVersion, i.e. the API treated
+    # the call as a dry run. Say exactly what came back so the next failure is
+    # diagnosable from the job log (Lambda's own log tail, never the env). The
+    # driver owns the classifier and the redaction for both stages' invokes, so
+    # this reports through it rather than keeping a second copy of both in bash.
+    echo "Lambda invocation failed" >&2
+    printf '%s' "$invoke_meta" > "$scratch/invoke-meta.json"
+    python3 "$script_dir/lambda-certification.py" invoke-failure "$scratch" candidate /healthz/live \
+      "$scratch/invoke-meta.json" "$scratch/response.json" || true
+    exit 6
+  fi
+  if [[ "$(jq -r '.statusCode' "$scratch/response.json")" != "200" ]]; then
+    echo "representative HTTP operation did not return status 200" >&2
+    exit 7
+  fi
+  response_body="$(jq -r '.body' "$scratch/response.json")"
+  if [[ "$response_body" != *Healthy* && "$response_body" != *healthy* ]]; then
+    echo "representative HTTP operation did not return a healthy response" >&2
+    exit 8
+  fi
+
+  tail_log="$(jq -er '.LogResult' <<<"$invoke_meta" | base64 -d)"
+  request_id="$(sed -nE 's/^REPORT RequestId: ([^[:space:]]+).*/\1/p' <<<"$tail_log" | tail -n 1)"
+  if [[ -z "$request_id" ]]; then
+    echo "Lambda invoke tail did not contain a REPORT request id" >&2
+    exit 9
+  fi
+
+  # Every attempt proves delivery of its own request id, not just the first: the receipt records
+  # the last attempt's request fingerprint, and cloudWatchLogsVerified has to be about that invoke.
+  # Delivery of the id is also what names the stream the invoke ran in, which is the only place the
+  # cold-start evidence below is read from.
+  cloudwatch_verified=false
+  invoke_stream=""
+  for _ in {1..36}; do
+    event_count="$(count_events --filter-pattern "\"${request_id}\"")"
+    if [[ "$event_count" =~ ^[1-9][0-9]*$ ]]; then
+      resolve_invoke_stream
+      if [[ -n "$invoke_stream" ]]; then
+        cloudwatch_verified=true
+        break
+      fi
+    fi
+    sleep 5
+  done
+  if ! $cloudwatch_verified; then
+    echo "matching invocation evidence did not arrive in CloudWatch Logs" >&2
+    stream_count="$(aws logs describe-log-streams --log-group-name "$log_group" \
+      --query 'length(logStreams)' --output text 2>/dev/null)" || stream_count="unknown"
+    any_events="$(count_events 2>/dev/null)" || any_events="unknown"
+    echo "cloudwatch-evidence: log-streams=${stream_count} events-in-group=${any_events} request-id-fingerprint=$(fingerprint "$request_id")" >&2
+    exit 10
+  fi
+
+  cold_start_ms=""
+  cold_start_phase=""
+  cold_start_source="tail"
+  read -r cold_start_ms cold_start_phase < <(cold_start_from_lines "$tail_log") || true
+  if [[ -z "${cold_start_ms:-}" ]]; then
+    # The request-id evidence above proves delivery has started, not that the
+    # platform lines are in yet: INIT_REPORT carries no request id and ships on
+    # its own schedule. Poll the invoke's own stream for the cold-start line
+    # itself, bounded.
+    cold_start_source="cloudwatch"
+    for _ in {1..24}; do
+      read -r cold_start_ms cold_start_phase < <(cold_start_from_lines "$(platform_lines REPORT; platform_lines INIT_REPORT)") || true
+      [[ -n "${cold_start_ms:-}" ]] && break
+      sleep 5
+    done
+  fi
+  if [[ -n "${cold_start_ms:-}" ]] && awk -v value="$cold_start_ms" 'BEGIN { exit !(value > 0) }'; then
     break
   fi
-  sleep 5
+  if (( cold_start_attempt < cold_start_attempts )); then
+    echo "certified invoke ${cold_start_attempt} of ${cold_start_attempts} reported no cold start; forcing a new execution environment" >&2
+  fi
 done
-if ! $cloudwatch_verified; then
-  echo "matching invocation evidence did not arrive in CloudWatch Logs" >&2
-  exit 10
+if [[ -z "${cold_start_ms:-}" ]] || ! awk -v value="$cold_start_ms" 'BEGIN { exit !(value > 0) }'; then
+  echo "no forced execution environment produced a positive cold-start Init Duration in its REPORT/INIT_REPORT (tail and CloudWatch)" >&2
+  echo "cold-start-evidence: attempts=${cold_start_attempts} tail-bytes=${#tail_log} tail-has-init-report=$(grep -cE '^INIT_REPORT' <<<"$tail_log" || true) tail-has-report=$(grep -cE '^REPORT ' <<<"$tail_log" || true)" >&2
+  exit 14
 fi
+
+python3 "$script_dir/lambda-certification.py" certify "$scratch" "$function_name" "${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}"
+serving_proof="$(cat "$scratch/serving.json")"
 
 # Teardown is explicit here so the receipt can assert and record its result.
 cleanup
@@ -213,8 +597,8 @@ trap - EXIT
 function_created=false
 log_group_created=false
 
-if aws lambda get-function --function-name "$function_name" >/dev/null 2>&1; then
-  echo "function still exists after teardown" >&2
+if [[ "$(function_presence "$function_name")" != "absent" ]]; then
+  echo "function still exists after teardown, or its absence could not be confirmed" >&2
   exit 11
 fi
 if [[ "$(aws logs describe-log-groups --log-group-name-prefix "$log_group" \
@@ -225,20 +609,29 @@ fi
 
 mkdir -p "$(dirname "$HONUA_LAMBDA_PREVIEW_RECEIPT")"
 jq -n \
+  --arg architecture "$HONUA_LAMBDA_ARCHITECTURE" \
+  --argjson cold_start_ms "$cold_start_ms" \
+  --arg cold_start_phase "$cold_start_phase" \
+  --arg cold_start_source "$cold_start_source" \
+  --argjson cold_start_attempt "$cold_start_attempt" \
+  --argjson serving "$serving_proof" \
   --arg schema "honua.lambda-preview-certification/v1" \
   --arg server_revision "$HONUA_LAMBDA_SERVER_REVISION" \
   --arg source_digest "$HONUA_LAMBDA_SOURCE_DIGEST" \
   --arg source_config_digest "$source_config" \
+  --arg source_platform_digest "$source_platform_digest" \
+  --arg source_rootfs_fingerprint "$(fingerprint "$source_rootfs")" \
   --arg ecr_digest "$ecr_digest" \
+  --arg mirror_outcome "$mirror_outcome" \
   --arg region_fingerprint "$(fingerprint "${AWS_REGION:-${AWS_DEFAULT_REGION:-}}")" \
   --arg account_fingerprint "$(fingerprint "$(aws sts get-caller-identity --query Account --output text)")" \
   --arg repository_fingerprint "$(fingerprint "$HONUA_LAMBDA_PREVIEW_REPOSITORY")" \
   --arg function_fingerprint "$(fingerprint "$function_name")" \
   --arg request_fingerprint "$(fingerprint "$request_id")" \
   --arg run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${GITHUB_RUN_ID}" \
-  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourceConfigDigest:$source_config_digest,ecrDigest:$ecr_digest,repositoryFingerprint:$repository_fingerprint,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:"arm64"},verification:{operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
+  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourcePlatformDigest:$source_platform_digest,sourceConfigDigest:$source_config_digest,sourceRootfsFingerprint:$source_rootfs_fingerprint,ecrDigest:$ecr_digest,mirrorOutcome:$mirror_outcome,repositoryFingerprint:$repository_fingerprint,mirrorTool:"crane",configDigestPreserved:true,rootfsPreserved:true,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:$architecture},serving:$serving,verification:{coldStartInitDurationMs:$cold_start_ms,coldStartInitPhase:$cold_start_phase,coldStartEvidenceSource:$cold_start_source,coldStartEnvironmentForced:true,coldStartInvokeAttempts:$cold_start_attempt,operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
   > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
 
-jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted' \
+jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourcePlatformDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.sourceConfigDigest | test("^sha256:[0-9a-f]{64}$")) and (.artifact.mirrorOutcome | test("^(pushed|skipped-existing|replaced-stale)$")) and .artifact.configDigestPreserved and .artifact.rootfsPreserved and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted and .serving.result == "pass" and (.serving.deniedKey.source == "override" or (.serving.deniedKey.created and .serving.deniedKey.revoked and .serving.deniedKey.activeAfterTeardown == 0)) and .verification.coldStartInitDurationMs > 0 and .verification.coldStartEnvironmentForced and .verification.coldStartInvokeAttempts >= 1' \
   "$HONUA_LAMBDA_PREVIEW_RECEIPT" >/dev/null
 echo "Lambda Preview certification passed; ECR digest: ${ecr_digest}"

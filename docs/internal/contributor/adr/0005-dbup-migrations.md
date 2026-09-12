@@ -40,6 +40,7 @@ Use DbUp for database migrations.
 - No diff-based migration generation
 
 ### Mitigation
-- Maintain `xxx_rollback.sql` files for emergencies
+- Migrations are forward-only. No per-migration rollback scripts or schema downgrade command are shipped.
+- Before applying destructive migrations, retain a pre-migration database backup and migration journal. Recover by [restoring that backup](../../../guides/deploy/backup-and-restore.md), then start a compatible application revision; reverting the application image alone does not undo schema or data changes.
 - Prefer additive changes (new columns, tables)
 - Use blue-green deployments for major changes

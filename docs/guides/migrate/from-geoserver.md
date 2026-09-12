@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Migrate from GeoServer"
+description: "Use honua-migrate to scan a GeoServer catalog, complete a server-validated dry-run plan, apply the reviewed catalog with explicit acknowledgement, and monitor the resulting Honua job."
+resource: "honua://capability/import.geoserver"
+---
 # Migrate from GeoServer
 
 Use `honua-migrate` to scan a GeoServer catalog, complete a server-validated dry-run plan, apply the reviewed catalog with explicit acknowledgement, and monitor the resulting Honua job.

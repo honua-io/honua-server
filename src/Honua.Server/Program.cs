@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Reflection;
+using Microsoft.AspNetCore.DataProtection;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
@@ -118,6 +119,11 @@ StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, buil
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
+// Validate the declared paid deployment before registering or starting any data workers,
+// including deployments without Redis (whose cache probe otherwise skips license bootstrap).
+await StartupConfigurationHelpers.LoadBootstrapLicenseSnapshotAsync(builder.Configuration, builder.Environment);
+// Start the license hosted service before any workload execution or reconciliation service.
+builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
 // Resolve aws:secretsmanager: Redis connection-string references before anything below reads
 // ConnectionStrings:redis — the multiplexer wiring a few lines down runs ahead of
 // WebApplicationBuilder.Build(), so it cannot use the DI-registered IConnectionSecretResolver
@@ -204,7 +210,11 @@ if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
         });
     });
 }
-builder.Services.AddDataProtection();
+// Keep the protector purpose stable across replay nodes. Production deployments must also
+// persist/share the ASP.NET data-protection key ring; otherwise an approved operation whose
+// envelope was created on another node fails closed instead of being replayed with plaintext.
+builder.Services.AddDataProtection()
+    .SetApplicationName("Honua.Server");
 
 // Enable Aspire integrations only when Aspire configuration is present.
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
@@ -217,6 +227,17 @@ var redisOutputCacheConfigured = ObservabilityServiceCollectionExtensions.Should
     redisCacheEntitled,
     redisConnectionString);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
+RedisDurabilityAttestation? redisDurabilityAttestation = null;
+DurableJobSubstrateCause? redisDurabilityFailure = null;
+string? redisDurabilityDetail = null;
+// honua-server#4502: an unattested durable substrate DEGRADES by default. Operators who would
+// rather not serve at all without a durable job store opt in here, and get a typed startup
+// refusal naming the cause instead of a wall of unresolved-service descriptor failures.
+var requireDurableJobStore = builder.Configuration
+    .GetSection(JobDurabilityOptions.SectionName)
+    .GetValue<bool>(nameof(JobDurabilityOptions.RequireDurableStore));
+builder.Services.Configure<JobDurabilityOptions>(
+    builder.Configuration.GetSection(JobDurabilityOptions.SectionName));
 
 // honua-release#202: record WHY the durable job substrate is or is not composed, so the typed
 // refusal and the capability manifest can give remediation that actually works. "Redis is
@@ -226,6 +247,8 @@ builder.Services.Configure<DurableJobSubstrateOptions>(options =>
 {
     options.RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString);
     options.RedisEntitled = redisCacheEntitled;
+    options.RedisDurabilityAttestation = redisDurabilityAttestation;
+    options.RedisDurabilityFailure = redisDurabilityFailure;
 });
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
@@ -282,12 +305,25 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
     try
     {
         var redisOptions = ConfigurationOptions.Parse(redisInfrastructureConnectionString, ignoreUnknown: true);
+        redisOptions.AllowAdmin = true;
         redisOptions.AbortOnConnectFail = false;
         redisOptions.ConnectRetry = Math.Max(redisOptions.ConnectRetry, 3);
         redisOptions.ReconnectRetryPolicy ??= new ExponentialRetry(5_000);
 
         connectedRedis = ConnectionMultiplexer.Connect(redisOptions);
         builder.Services.TryAddSingleton<IConnectionMultiplexer>(connectedRedis);
+
+        // The durable job substrate is composed only when it is ENTITLED (honua-server#4502).
+        // The multiplexer above is registered regardless, because requiresDurableDistributedEvents
+        // connects infrastructure Redis for distributed events in every non-Development/Test
+        // deployment — so it is not evidence of a jobs entitlement, and AddGeoprocessing keys the
+        // IExecutionJobStore registration on THIS marker instead. Deliberately independent of the
+        // durability attestation registered below: durability decides what is advertised,
+        // entitlement decides what exists.
+        if (redisCacheEntitled)
+        {
+            builder.Services.TryAddSingleton(new DurableJobSubstrateEntitlement());
+        }
 
         if (!connectedRedis.IsConnected)
         {
@@ -299,6 +335,43 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
 
             var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
             ProgramLog.RedisStartupConnectionInactive(startupLogger);
+        }
+
+        if (connectedRedis.IsConnected)
+        {
+            var durability = await RedisDurabilityAttestor.InspectAsync(connectedRedis);
+            redisDurabilityAttestation = durability.Attestation;
+            redisDurabilityFailure = durability.FailureCause;
+            redisDurabilityDetail = durability.FailureDetail;
+
+            // An accepted attestation publishes the machine-observed durability facts as a
+            // resolvable evidence object. A REJECTED one does not compose the durable job
+            // substrate out — that was honua-server#4502, where every consumer of
+            // IExecutionJobStore stayed registered while the store did not, and the process
+            // died in ServiceProvider validation before binding a port. The store is composed
+            // either way; what an unattested Redis changes is what the server ADVERTISES
+            // (DurableJobSubstrateOptions.Classify keeps returning the typed failure cause, so
+            // the capability manifest never claims 'jobs.runner') plus this one warning.
+            if (redisCacheEntitled && durability.Attestation is not null)
+            {
+                builder.Services.TryAddSingleton(durability.Attestation);
+            }
+            else if (redisCacheEntitled && durability.FailureCause is { } rejectedCause)
+            {
+                var rejectionDetail = durability.FailureDetail ?? "no detail reported";
+                var rejectionRemediation = DurableJobSubstrateRemediation.For(rejectedCause);
+                var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
+                ProgramLog.RedisDurabilityNotAttested(
+                    startupLogger,
+                    rejectedCause,
+                    rejectionDetail,
+                    DurableJobSubstrateRemediation.NonDurableConsequence,
+                    rejectionRemediation);
+            }
+        }
+        else if (redisCacheEntitled)
+        {
+            redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
         }
     }
     catch (Exception ex)
@@ -313,8 +386,43 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         var startupLogger = LoggerFactory.Create(b => b.AddConsole()).CreateLogger<Program>();
         ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
+        redisDurabilityFailure = DurableJobSubstrateCause.RedisAttestationUnavailable;
+        redisDurabilityDetail = ex.Message;
     }
 }
+
+if (connectedRedis is not null)
+{
+    // The operation-secret protector is intentionally backed by the same Redis authority
+    // as the proposal/instance stores so every replay node shares a rotation-capable key ring.
+    var keyRing = builder.Services.AddDataProtection()
+        .SetApplicationName("Honua.Server")
+        .AddKeyManagementOptions(options =>
+            options.XmlRepository = new RedisDataProtectionKeyRepository(connectedRedis));
+
+    // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own.
+    // When the operator supplies a certificate the decryption material lives outside Redis,
+    // so a Redis reader or snapshot no longer carries both halves.
+    var keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
+    if (keyRingCertificate is not null)
+    {
+        keyRing.ProtectKeysWithCertificate(keyRingCertificate);
+    }
+}
+
+// The ONE sanctioned way an unattested durable job substrate may stop this process
+// (honua-server#4502). Nothing else is allowed to: a rejected attestation otherwise degrades to
+// a composed-but-non-durable store, which is why the DI graph can no longer abort startup.
+DurableJobSubstrateStartupGate.EnsureSatisfied(
+    new DurableJobSubstrateOptions
+    {
+        RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString),
+        RedisEntitled = redisCacheEntitled,
+        RedisDurabilityAttestation = redisDurabilityAttestation,
+        RedisDurabilityFailure = redisDurabilityFailure,
+    },
+    requireDurableJobStore,
+    redisDurabilityDetail);
 
 // Configure Serilog for structured logging with AOT compatibility
 builder.Host.UseSerilog((context, services, config) =>
@@ -499,7 +607,13 @@ builder.Services.AddHonuaBatchAndDeployBackends();
 builder.Services.AddHonuaSelfHostedRollingProxy(builder.Configuration);
 // ---- End extracted block
 
-if (connectedRedis != null)
+// Gated on the ENTITLED substrate, not merely a connected multiplexer (honua-server#4502): the
+// members of this block take IExecutionJobStore as a required dependency, and AddGeoprocessing
+// composes that store only when the entitlement marker is present. Keying the two on different
+// facts is precisely what made a non-AOF Redis abort ServiceProvider validation with 31
+// unresolved-service failures; an unentitled deployment with connected infrastructure Redis was
+// the second trigger of the same defect.
+if (connectedRedis != null && redisCacheEntitled)
 {
     // Control-plane reconcile graph (stores, four typed reconcilers, dispatcher seam, event handler,
     // trigger options). Shared with the cloud event entrypoint (Honua.ControlPlane.Lambda) via
@@ -562,6 +676,8 @@ if (connectedRedis != null)
         Honua.ControlPlane.RedisOperationProposalStore>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationGateway,
         Honua.ControlPlane.OperationGateway>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalEvidenceValidator,
+        Honua.ControlPlane.OperationProposalEvidenceValidator>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.DeployOperationExecutor>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
@@ -660,10 +776,6 @@ builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
-// ---- Extracted: licensing + identity-provider HTTP clients (Startup/LicensingRegistration.cs)
-builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
-// ---- End extracted block
-
 // Edition guardrail ladder (#1691): resolves DirectExecute/RequiresApproval/Blocked
 // per (operation class x edition). Fails closed for unknown classes outside dev.
 builder.Services.Configure<Honua.Core.Features.Guardrails.GuardrailLadderOptions>(
@@ -678,6 +790,10 @@ builder.Services.AddSingleton<Honua.Core.Features.Guardrails.Abstractions.IGuard
     Honua.Core.Features.Guardrails.DefaultGuardrailLadder>();
 
 // Register configuration documentation service for self-documenting admin endpoint
+// Admin startup connectivity diagnostics require the shared secret provider even when
+// offline sync and other experimental surfaces are disabled (#4008).
+Honua.Infrastructure.Configuration.ConfigurationServiceExtensions.AddSecretManagement(
+    builder.Services, builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.TryAddScoped<IConsoleJobService, ConsoleJobService>();
@@ -802,6 +918,7 @@ builder.Services.AddServerFeatures(
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
 builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
+builder.Services.AddAdminAccessOperations();
 // #2483 (ADR-0056 Increment 4): publish validated operations-toolset descriptors as
 // first-class MCP tools. Off unless Mcp:PublishOperations:Enabled=true; wired after the
 // operations toolset so the tool source can resolve the canonical IOperationCatalog.
@@ -842,6 +959,9 @@ if (replicaProvider != DataProviderNames.DuckDb &&
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IQuerySnapshotStore>(sp =>
+        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresQuerySnapshotStore(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
     // Temporal history store (#1166 slices 2-5): reads the uncollapsed change log with attribution.
     // Overrides the Core no-op fallback registered by AddTemporalHistory. Read-only/non-Postgres
@@ -1340,6 +1460,16 @@ app.UseGlobalExceptionHandling();
 // existing protocol shaping and only status-only responses are re-shaped here.
 app.UseRestErrorEnvelope();
 
+// Authentication decisions and authenticated data must not survive credential changes
+// in client caches, including clients using non-standard credential headers. Registered
+// before every middleware below that can terminate a credential route (license expiry,
+// a disabled deployment capability, invalid input) so a short-circuited denial still
+// registers the OnStarting callback that applies the final cache policy (#4609 review).
+app.UseMiddleware<AuthenticationResponseCacheMiddleware>();
+
+// Paid deployments stop every data surface at expiry, including cached reads and exports.
+app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();
+
 // A configured deployment profile is a fail-closed HTTP surface allowlist backed by the
 // drift-gated feature catalog. With no profile configured this middleware is inert.
 Honua.Server.Features.Capabilities.DeploymentCapabilityProfileApplicationBuilderExtensions
@@ -1352,15 +1482,19 @@ app.UseInputValidation();
 // required mTLS surfaces can return machine-readable errors instead of TLS handshakes.
 app.UseHonuaClientCertificateAuthentication();
 
-// Add authentication and authorization middleware early to short-circuit unauthorized requests
-app.UseApiKeyAuthentication();
+// Authenticate the default scheme before hydrating additional credential types.
+app.UseAuthentication();
 
 // Bridge ArcGIS-style portal tokens (?token=, form POST token, X-Esri-Authorization,
 // Authorization: Bearer)
 // for requests that the default scheme did not authenticate. Must run after
-// UseAuthentication (inside UseApiKeyAuthentication) and before tenant resolution
+// UseAuthentication and before authorization and tenant resolution
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
+
+// Required-authentication routes must see every validated credential type. Running
+// this before the portal bridge rejects valid SensorThings subscription tokens.
+app.UseAuthorization();
 
 // Canonical governed-lineage headers are accepted only when accompanied by a
 // one-use, process-local attestation issued by an operation loopback executor.

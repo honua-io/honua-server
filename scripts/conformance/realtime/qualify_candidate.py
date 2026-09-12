@@ -26,17 +26,139 @@ PREVIEW_ROWS = tuple(
         "resume-gap-detection",
         "reconnect-under-partition",
         "token-expiry",
+        "token-revocation",
         "tenant-isolation",
+        "tenant-scope-change",
     )
 ) + (
     ("feature-stream", "odata", "lossless-state-convergence"),
     ("sensorthings", "sse", "explicit-loss-recovery"),
     ("sensorthings", "sse", "token-expiry"),
+    ("sensorthings", "sse", "token-revocation"),
     ("sensorthings", "sse", "tenant-isolation"),
+    ("sensorthings", "sse", "tenant-scope-change"),
     ("sensorthings", "websocket", "explicit-loss-recovery"),
     ("sensorthings", "websocket", "token-expiry"),
+    ("sensorthings", "websocket", "token-revocation"),
     ("sensorthings", "websocket", "tenant-isolation"),
+    ("sensorthings", "websocket", "tenant-scope-change"),
 )
+
+AUTH_SCENARIOS = {"token-expiry", "token-revocation", "tenant-isolation", "tenant-scope-change"}
+
+
+def _is_authorization_termination(raw: str, transport: str) -> bool:
+    """Decode the transport outcome; a reason string inside a data payload is not termination."""
+    if transport == "odata" and re.match(r"^HTTP/(?:1\.[01]|[23](?:\.0)?) 401(?:[ \r\n]|$)", raw):
+        return True
+    if transport == "sse":
+        lines = raw.splitlines()
+        if [line[6:].strip() for line in lines if line.startswith("event:")] != ["status"]:
+            return False
+        raw = "\n".join(line[5:].lstrip(" ") for line in lines if line.startswith("data:"))
+    try:
+        frame = json.loads(raw)
+    except ValueError:
+        return False
+    if not isinstance(frame, dict):
+        return False
+    if transport == "sse":
+        return frame.get("status") == "error" and frame.get("code") == "authorization-ended"
+    if transport == "websocket":
+        return (frame.get("type") == "close" and frame.get("code") == 1008
+                and frame.get("reason") == "authorization-ended")
+    return transport == "odata" and frame.get("status") == 401
+
+
+def _authorization_diagnostics(row: dict, workflow: dict) -> list[str]:
+    """Require the live authorization transcript, not just a projected green cell."""
+    reasons: list[str] = []
+    proof = row.get("authorization")
+    if not isinstance(proof, dict):
+        return ["authorization transcript is missing"]
+    if not DIGEST.fullmatch(str(proof.get("issuerFingerprint", ""))):
+        reasons.append("authorization issuer/configuration fingerprint is missing")
+    tenants = proof.get("tenantIds")
+    if (not isinstance(tenants, list) or len(tenants) != 2
+            or any(not isinstance(tenant, str) or not tenant.strip() for tenant in tenants)
+            or tenants[0] == tenants[1]):
+        reasons.append("authorization proof must name two distinct isolated tenants")
+    resources = proof.get("resourceIds")
+    if (not isinstance(resources, list) or len(resources) < 2
+            or any(not isinstance(item, str) or not item.strip() for item in resources)
+            or len(set(resources)) != len(resources)):
+        reasons.append("authorization proof must name distinct tenant-qualified protected resources")
+    mutations = proof.get("mutationIds")
+    if (not isinstance(mutations, list) or len(mutations) < 2
+            or any(not isinstance(item, str) or not item.strip() for item in mutations)
+            or len(set(mutations)) != len(mutations)):
+        reasons.append("authorization proof must retain distinct injected mutation identifiers")
+
+    issued = _timestamp(proof.get("issuedAt"), "authorization.issuedAt", reasons)
+    expires = _timestamp(proof.get("expiresAt"), "authorization.expiresAt", reasons)
+    if issued is not None and expires is not None and issued >= expires:
+        reasons.append("authorization token lifetime is invalid")
+
+    observations = proof.get("observations")
+    observation_times = []
+    termination_times = []
+    started = _timestamp(workflow.get("startedAt"), "workflow.startedAt", reasons)
+    completed = _timestamp(workflow.get("completedAt"), "workflow.completedAt", reasons)
+    if not isinstance(observations, list) or len(observations) < 2:
+        reasons.append("authorization raw transport observations are missing")
+    else:
+        for observation in observations:
+            if not isinstance(observation, dict) or not isinstance(observation.get("raw"), str) or not observation["raw"].strip():
+                reasons.append("authorization observation lacks raw frame/HTTP response bytes")
+                continue
+            at = _timestamp(observation.get("at"), "authorization.observation.at", reasons)
+            if at is not None:
+                observation_times.append(at)
+                if _is_authorization_termination(observation["raw"], row["transport"]):
+                    termination_times.append(at)
+                if started is not None and completed is not None and not started <= at <= completed:
+                    reasons.append("authorization observation falls outside its claimed live workflow")
+
+    assertions = row.get("assertions")
+    assertion_ids = {
+        assertion.get("id") for assertion in (assertions if isinstance(assertions, list) else [])
+        if isinstance(assertion, dict) and assertion.get("passed") is True
+    }
+    required_assertions = {"no-cross-tenant-payload", "invalid-credentials-rejected"}
+    if row["scenario"] in {"token-expiry", "token-revocation"}:
+        required_assertions |= {"old-credential-terminated", "replacement-resume"}
+        boundary = expires
+        if row["scenario"] == "token-revocation":
+            boundary = _timestamp(proof.get("revokedAt"), "authorization.revokedAt", reasons)
+        terminated = _timestamp(proof.get("terminatedAt"), "authorization.terminatedAt", reasons)
+        if row["scenario"] == "token-revocation":
+            if (issued is not None and boundary is not None and expires is not None
+                    and not issued < boundary < expires):
+                reasons.append("authorization revocation must occur during the token lifetime")
+            if terminated is not None and expires is not None and terminated >= expires:
+                reasons.append("authorization revocation termination must precede token expiry")
+        for timestamp, label in ((boundary, "boundary"), (terminated, "termination")):
+            if (timestamp is not None and started is not None and completed is not None
+                    and not started <= timestamp <= completed):
+                reasons.append(f"authorization {label} falls outside its claimed live workflow")
+        if terminated is not None and terminated not in termination_times:
+            reasons.append("authorization termination timestamp must match a raw authorization outcome")
+        bound = proof.get("enforcementBoundMilliseconds")
+        if isinstance(bound, bool) or not isinstance(bound, int) or not 0 < bound <= 5000:
+            reasons.append("authorization enforcement bound must be positive and at most 5000 ms")
+        elif boundary is not None and terminated is not None and not boundary <= terminated <= boundary + timedelta(milliseconds=bound):
+            reasons.append("authorization termination exceeded the declared enforcement bound")
+        if boundary is not None and (not any(issued is not None and issued <= at < boundary for at in observation_times)
+                                     or not any(at >= boundary for at in observation_times)):
+            reasons.append("authorization transcript must observe both sides of expiry/revocation")
+        expected_reason = "unauthorized" if row["transport"] == "odata" else "authorization-ended"
+        if proof.get("terminationReason") != expected_reason:
+            reasons.append("authorization termination reason is missing or not machine-detectable")
+    if row["scenario"] == "tenant-scope-change":
+        required_assertions.add("changed-scope-rejected")
+    if required_assertions - assertion_ids:
+        reasons.append("authorization assertion receipts missing: " + ", ".join(sorted(required_assertions - assertion_ids)))
+    return reasons
 
 
 def _timestamp(value: object, field: str, diagnostics: list[str]) -> datetime | None:
@@ -162,6 +284,9 @@ def qualify(evidence: dict, expected: dict, *, now: datetime, max_age: timedelta
                 reasons.append("row has no executed assertion receipts")
             elif any(not isinstance(assertion, dict) or assertion.get("passed") is not True for assertion in assertions):
                 reasons.append("one or more executed assertions did not pass")
+            if scenario in AUTH_SCENARIOS:
+                workflow = evidence.get("workflow")
+                reasons.extend(_authorization_diagnostics(row, workflow if isinstance(workflow, dict) else {}))
             if row.get("serverRevision") != expected["serverRevision"]:
                 reasons.append("row is not bound to the exact server revision")
             if expected["serverImage"]:
@@ -183,6 +308,12 @@ def qualify(evidence: dict, expected: dict, *, now: datetime, max_age: timedelta
             "surface": surface,
             "transport": transport,
             "scenario": scenario,
+            "evidenceOrigin": {
+                "kind": "external-self-reported-receipt",
+                "repository": expected["workflowRepository"],
+                "artifactUrl": expected["sourceArtifactUrl"],
+                "serverSuiteExecutedByQualifier": False,
+            },
             "state": "qualified" if not reasons and not diagnostics else "rejected",
             "reasons": reasons + (["receipt identity/admissibility validation failed"] if diagnostics else []),
         })

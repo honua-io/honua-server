@@ -45,7 +45,7 @@ internal static partial class FeatureServerEndpoints
     /// <param name="queryLimits">Query limits for the service.</param>
     /// <param name="supportsGeobufOutput">Whether the runtime supports geobuf output.</param>
     /// <param name="supportsAttachmentUploads">Whether attachment uploads are wired up.</param>
-    /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Enterprise entitlement).</param>
+    /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Pro entitlement).</param>
     /// <param name="offlineSyncEnabled">Whether disconnected-sync routes are enabled by lifecycle configuration.</param>
     private static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
@@ -822,7 +822,7 @@ internal static partial class FeatureServerEndpoints
         {
             MetadataV2FieldType.String => "esriFieldTypeString",
             MetadataV2FieldType.Integer => "esriFieldTypeInteger",
-            MetadataV2FieldType.BigInteger => "esriFieldTypeInteger64",
+            MetadataV2FieldType.BigInteger => "esriFieldTypeBigInteger",
             MetadataV2FieldType.Double => "esriFieldTypeDouble",
             MetadataV2FieldType.Float => "esriFieldTypeSingle",
             MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
@@ -927,21 +927,13 @@ internal static partial class FeatureServerEndpoints
     internal static bool ServiceSupportsOperationV2(MetadataV2Service service, string operation)
         => ServiceSupportsOperationV2(service, operation, publication: null);
 
+    // Delegates to the shared resolver so the Esri edits surface and the OGC API Features
+    // write surface answer the same question the same way (#4073, #4707).
     internal static bool ServiceSupportsOperationV2(
         MetadataV2Service service,
         string operation,
         MetadataV2Publication? publication)
-    {
-        ArgumentNullException.ThrowIfNull(service);
-        ArgumentException.ThrowIfNullOrWhiteSpace(operation);
-
-        var capabilities = publication?.Capabilities is { Count: > 0 }
-            ? publication.Capabilities
-            : ReadServiceCapabilitiesV2(service);
-        return capabilities.Any(capability =>
-            capability.Equals(operation, StringComparison.OrdinalIgnoreCase) ||
-            capability.Equals("Editing", StringComparison.OrdinalIgnoreCase));
-    }
+        => MetadataV2EditCapabilities.Supports(service, publication, operation);
 
     private static void AddDeclaredEditCapabilities(
         List<string> capabilities,

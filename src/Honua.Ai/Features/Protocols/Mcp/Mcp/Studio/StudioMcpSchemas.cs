@@ -150,7 +150,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "interaction"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "interaction": {{InteractionInputSchemaJson}}
           }
@@ -163,7 +163,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "interactionId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "interactionId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S", "description": "Id of the interaction to remove. Removing an unknown id is an error, not a no-op." }
           }
@@ -195,7 +195,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "control"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "control": {{ControlInputSchemaJson}}
           }
@@ -208,7 +208,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "controlId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "controlId": { "type": "string", "minLength": 1, "maxLength": {{StudioInteractionVocabulary.MaxControlIdLength}}, "pattern": "\\S", "description": "Id of the control to remove. Removing an unknown id is an error, not a no-op." },
             "cascadeInteractions": { "type": "boolean", "default": false, "description": "When true, interactions whose on.ref or do.ref is 'control:{controlId}' are removed with the control. When false (default), the call fails while any interaction still references it, so the document never retains a dangling binding." }
@@ -273,7 +273,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layer"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "layer": {{LayerInputSchemaJson}},
             "beforeId": { "type": "string", "maxLength": 200, "description": "Optional layer id before which to insert the new layer; appended when omitted or unmatched." }
@@ -287,7 +287,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to remove." }
           }
@@ -300,7 +300,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to style." },
             "styleRef": { "type": ["string", "null"], "maxLength": 200, "description": "Style reference (catalog styleId or inline style key). Omit or set null to clear the binding." }
@@ -314,7 +314,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "layerId", "visible"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "layerId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the layer to show or hide." },
             "visible": { "type": "boolean", "description": "Whether the layer is visible in the composition." }
@@ -328,7 +328,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "view"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app family)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "view": {{ViewInputSchemaJson}}
           }
@@ -341,7 +341,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "widget"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (app family)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "widget": {{WidgetInputSchemaJson}}
           }
@@ -354,7 +354,7 @@ internal static class StudioMcpSchemas
           "required": ["draftId", "generation", "widgetId"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (app family)." },
+            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id (map/app/dashboard family)." },
             "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
             "widgetId": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Id of the widget to remove." }
           }
@@ -364,17 +364,14 @@ internal static class StudioMcpSchemas
     private const string ProposePublicationArgumentSchemaJson = """
         {
           "type": "object",
-          "required": ["draftId", "generation"],
+          "required": ["itemId", "versionId", "contentHash", "route", "visibility"],
           "additionalProperties": false,
           "properties": {
-            "draftId": { "type": "string", "format": "uuid", "description": "Studio package draft id." },
-            "generation": { "type": "integer", "minimum": 1, "description": "Expected current draft generation (optimistic concurrency)." },
-            "route": { "type": "string", "maxLength": 200, "description": "Proposed target route key." },
-            "visibility": { "type": "string", "maxLength": 100, "description": "Proposed visibility target." },
-            "embed": { "type": "boolean", "description": "Whether embedding should be enabled if published." },
-            "service": { "type": "string", "maxLength": 200, "description": "Proposed service publication hint." },
-            "schedule": { "type": "string", "maxLength": 200, "description": "Proposed schedule expression or key." },
-            "job": { "type": "string", "maxLength": 200, "description": "Proposed job publication hint." },
+            "itemId": { "type": "string", "format": "uuid", "description": "Studio content item id." },
+            "versionId": { "type": "string", "format": "uuid", "description": "Exact immutable saved version id." },
+            "contentHash": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Exact content hash returned when the version was saved." },
+            "route": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Requested target route key." },
+            "visibility": { "type": "string", "minLength": 1, "maxLength": 100, "description": "Requested visibility target." },
             "note": { "type": "string", "maxLength": 2000, "description": "Human-readable rationale recorded for reviewer context." }
           }
         }

@@ -15,6 +15,7 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.AutoDocs;
 using Honua.Core.Features.Import;
 using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.Attachments.Services;
 using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
@@ -164,6 +165,8 @@ internal static class ServiceCollectionExtensions
         // Postgres provider, so the sink.honua-layer executor can load into a named catalog
         // layer via the catalog NpgsqlDataSource. Absent in lean deployments, where the
         // executor fails the node closed with a clear message.
+        services.TryAddScoped<Honua.Core.Features.Geoprocessing.Abstractions.IFeatureLayerCopyService,
+            Features.Geoprocessing.PostgresFeatureLayerCopyService>();
         services.TryAddSingleton<Honua.Core.Features.Geoprocessing.Abstractions.IHonuaLayerSink>(
             serviceProvider => new Features.Geoprocessing.PostgresHonuaLayerSink(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>()));
@@ -190,8 +193,10 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAlertOutboxWriter, PostgresAlertOutboxWriter>();
         services.AddScoped<IAlertCheckpointStore, PostgresAlertCheckpointStore>();
         services.AddScoped<IAlertAdminStore, PostgresAlertAdminStore>();
+        services.AddScoped<IAlertMutationExecutor, PostgresAlertMutationExecutor>();
         services.AddScoped<IAlertEventQuery, PostgresAlertEventQuery>();
         services.AddScoped<IAlertLifecycleStore, PostgresAlertLifecycleStore>();
+        services.AddScoped<IAlertAuditOutbox, PostgresAlertAuditOutbox>();
 
         // OGC SensorThings API observations store (#1747)
         services.AddScoped<Honua.Core.Features.SensorThings.Abstractions.IObservationStore>(
@@ -236,6 +241,11 @@ internal static class ServiceCollectionExtensions
         // the result is cached statically after the first successful check, assuming single-database deployment)
         services.AddScoped<IH3CapabilityChecker, PostgresH3CapabilityChecker>();
 
+        // Attachment writes span object storage and the metadata table with no shared
+        // transaction, so the compensating paths need somewhere to report an object that
+        // outlived its row. TryAdd so a host can substitute a durable ledger.
+        services.TryAddSingleton<IAttachmentOrphanLedger, LoggingAttachmentOrphanLedger>();
+
         // Register attachment store implementation (metadata tables live in the honua schema)
         services.AddScoped<IAttachmentStore>(serviceProvider =>
             new PostgresAttachmentStore(
@@ -244,7 +254,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILogger<PostgresAttachmentStore>>(),
                 schemaName: string.IsNullOrWhiteSpace(configuration["Attachments:Schema"])
                     ? "honua"
-                    : configuration["Attachments:Schema"]));
+                    : configuration["Attachments:Schema"],
+                orphanLedger: serviceProvider.GetRequiredService<IAttachmentOrphanLedger>()));
 
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
 
@@ -630,7 +641,8 @@ internal static class ServiceCollectionExtensions
             var progressStore = serviceProvider.GetRequiredService<IUniversalProgressStore>();
             var performanceMonitor = serviceProvider.GetRequiredService<IPerformanceMonitor>();
             var logger = serviceProvider.GetRequiredService<ILogger<UniversalImportJobService>>();
-            return new UniversalImportJobService(scopeFactory, progressStore, performanceMonitor, logger);
+            return new UniversalImportJobService(scopeFactory, progressStore, performanceMonitor, logger,
+                serviceProvider.GetService<Honua.Core.Features.Licensing.Abstractions.ILicenseOperationPolicy>());
         });
 
         // Register ArcGIS REST client for Geoservices service imports with resilience
@@ -794,7 +806,9 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILogger<EsriFeatureServerDagSource>>()));
         services.AddScoped<IDagFeatureSource, HonuaLayerDagSource>(serviceProvider =>
             new HonuaLayerDagSource(
-                serviceProvider.GetRequiredService<IStreamingFeatureStore>()));
+                serviceProvider.GetRequiredService<IStreamingFeatureStore>(),
+                serviceProvider.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
+                serviceProvider.GetService<ILayerSelectionFilterTranslator>()));
         services.AddScoped<IDagFeatureSource, ExternalPostgisDagSource>(_ =>
             new ExternalPostgisDagSource());
 

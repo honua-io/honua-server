@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Check compliance posture"
+description: "Pull a live SOC 2 / FedRAMP readiness snapshot, export auditor-facing reports, and dry-run your data-residency policy from the admin compliance endpoints."
+---
 # Check compliance posture
 
 Pull a live SOC 2 / FedRAMP readiness snapshot, export auditor-facing reports, and dry-run your data-residency policy from the admin compliance endpoints.

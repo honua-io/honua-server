@@ -66,15 +66,7 @@ public sealed class GeometryBufferJobExecutorIntegrationTests(RedisFixture redis
             resultsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             using var resultsDoc = JsonDocument.Parse(await resultsResponse.Content.ReadAsStringAsync());
 
-            var output = resultsDoc.RootElement.GetProperty("outputFeatureLayer");
-            output.GetProperty("id").GetString().Should().Be($"{jobId}:artifact:1");
-            output.GetProperty("kind").GetString().Should().Be("FeatureLayer");
-            output.GetProperty("type").GetString().Should().Be("application/geo+json");
-
-            var href = output.GetProperty("href").GetString()!;
-            href.Should().StartWith("data:application/geo+json;base64,");
-
-            var feature = DecodeFeatureFromDataUri(href);
+            var feature = resultsDoc.RootElement.GetProperty("outputFeatureLayer").GetProperty("value");
             feature.GetProperty("type").GetString().Should().Be("Feature");
             feature.GetProperty("properties").GetProperty("processId").GetString().Should().Be("geometry.buffer");
             feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(Srid);
@@ -99,12 +91,7 @@ public sealed class GeometryBufferJobExecutorIntegrationTests(RedisFixture redis
             package.Artifacts[0].Uri.Should().StartWith("data:application/geo+json;base64,");
             package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
 
-            // Per-parameter GPServer-style retrieval (the OGC document mode does
-            // not expose a per-parameter route, but the artifact must be the same
-            // shape the GeoServices GPServer route surfaces.) The result document
-            // routes back the same artifact id used by GPServer's results
-            // dictionary, which exercises the protocol-neutral artifact projection.
-            output.GetProperty("id").GetString().Should().Be(package.Artifacts[0].ArtifactId);
+            GeoprocessingResultAssertions.AssertInlineValueMatchesArtifact(resultsDoc, package, jobId);
         }
         finally
         {
@@ -214,15 +201,6 @@ public sealed class GeometryBufferJobExecutorIntegrationTests(RedisFixture redis
         }
 
         throw new TimeoutException($"Timed out waiting for job '{jobId}' to reach a terminal status.");
-    }
-
-    private static JsonElement DecodeFeatureFromDataUri(string dataUri)
-    {
-        const string prefix = "data:application/geo+json;base64,";
-        var base64 = dataUri[prefix.Length..];
-        var bytes = Convert.FromBase64String(base64);
-        var doc = JsonDocument.Parse(bytes);
-        return doc.RootElement.Clone();
     }
 
     private static Geometry ReadGeometry(JsonElement geometryElement)

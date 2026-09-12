@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <ItemGroup>
+    <None Include="..\Honua.Core.Tests\Raster\CogParser\Fixtures\*" Link="CogFixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
@@ -40,6 +44,7 @@
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Db\Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
+    <ProjectReference Include="..\Honua.StaleAttemptWorker\Honua.StaleAttemptWorker.csproj" />
     <!-- Sample plugins exercised by the plugin custom-endpoint integration tests (#1562).
          The default host does not compile in plugins, so the contributed routes are only
          present in a test host that explicitly registers a sample plugin. -->
@@ -68,10 +73,24 @@
     <None Update="TestData/FileGdb/sparse.gdb.zip">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="TestData/FileGdb/domain-coded.gdb.zip">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="TestData/FileGdb/domain-range.gdb.zip">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="TestData/FileGdb/relationship-class.gdb.zip">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="TestData/Sld/*.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Features/Geoprocessing/customcode-harness-jobspec-contract.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- imagery.classify execution proof (#3935): the committed scene, the two
+         committed models, the model server's inference program, and the decoder. -->
+    <None Update="TestData/ImageryClassify/*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

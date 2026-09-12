@@ -12,6 +12,24 @@ namespace Honua.Core.Features.FeatureStore.Abstractions;
 public interface IChangeTracker
 {
     /// <summary>
+    /// Gets changes not already known through this replica's own uploads. Providers with
+    /// origin tracking exclude this replica's upload rows before collapsing foreign history.
+    /// </summary>
+    /// <param name="sinceGeneration">Exclusive download watermark.</param>
+    /// <param name="layerIds">Storage layers to read.</param>
+    /// <param name="objectIds">Optional storage or public object IDs.</param>
+    /// <param name="excludeOriginReplicaId">Recipient replica whose own edits are already known.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Changes the recipient has not received.</returns>
+    async Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
+        long sinceGeneration, int[] layerIds, IReadOnlySet<long>? objectIds,
+        string excludeOriginReplicaId, CancellationToken cancellationToken = default)
+    {
+        var changes = await GetChangesSinceAsync(sinceGeneration, layerIds, objectIds, cancellationToken).ConfigureAwait(false);
+        return changes.Where(change => !string.Equals(change.OriginReplicaId, excludeOriginReplicaId, StringComparison.Ordinal)).ToList();
+    }
+
+    /// <summary>
     /// Gets the current value of the monotonic sync generation sequence
     /// </summary>
     /// <param name="cancellationToken">Cancellation token</param>

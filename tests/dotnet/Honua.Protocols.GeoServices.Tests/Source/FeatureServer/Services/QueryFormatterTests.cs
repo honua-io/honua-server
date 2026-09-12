@@ -19,6 +19,30 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class QueryFormatterTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FormatQueryResultAsync_RuntimeBigInteger_UsesEsriTypeAndPreservesValue(bool nonNegative)
+    {
+        var limitsOptions = Options.Create(new LimitsOptions());
+        var formatter = new QueryFormatter(limitsOptions, new PbfQueryFormatter(limitsOptions),
+            NullLogger<QueryFormatter>.Instance);
+        object value = nonNegative ? (object)9007199254740991UL : -9007199254740991L;
+        var feature = Feature.Create(42, geometry: null,
+            ImmutableDictionary<string, object?>.Empty.Add("large_int", value));
+
+        var (response, contentType) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]), CreatePointLayer(),
+            format: "json", returnGeometry: false, outputSrid: null, returnZ: false, returnM: false,
+            geometryPrecision: null, maxAllowableOffset: null);
+
+        contentType.Should().Be("application/json");
+        var result = response.Should().BeOfType<QueryResponse>().Subject;
+        result.Fields.Should().Contain(field => field.Name == "large_int" && field.Type == "esriFieldTypeBigInteger");
+        result.Fields.Should().Contain(field => field.Name == "objectid" && field.Type == "esriFieldTypeOID");
+        result.Features.Should().ContainSingle().Subject.Attributes.Should().Contain("large_int", value);
+    }
+
     [Fact]
     public async Task FormatQueryResultAsync_WithOutputSrid_SetsTopLevelSpatialReferenceOnly()
     {

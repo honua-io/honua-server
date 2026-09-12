@@ -140,7 +140,11 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                     throw new InvalidOperationException("The child operation unexpectedly remained in the store.");
                 }
                 afterRestartPoll.ErrorMessage.Should().Contain("could not be read back");
-                runtime.RunRequests.Should().HaveCount(2, "the missing child must not trigger a second provider rollback");
+                // honua-server#4618: the previous replica is retained (not stopped) through cutover, so
+                // the initial rollback settled by repointing the proxy directly rather than relaunching
+                // from image — only the initial standby ever ran. The missing child after restart must
+                // not add a second provider start either.
+                runtime.RunRequests.Should().HaveCount(1, "the retained previous replica let rollback repoint the proxy without a relaunch, and the missing child after restart must not trigger a provider start either");
                 ledger.FinalSplitStateReason = afterRestartPoll.ErrorMessage;
             }
             else if (priorRevisionAvailable)
@@ -161,7 +165,10 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                     .Should().Be(CoordinatedReleaseStepStatus.RolledBack);
                 childAfterSettlement.Status.Should().Be(WorkflowOperationStatus.RolledBack);
                 childAfterSettlement.ObservedState.Should().Be(CurrentRevision);
-                runtime.RunRequests.Should().HaveCount(2, "the initial standby and one prior-revision relaunch are the only provider starts");
+                // honua-server#4618: the previous replica is retained (not stopped) through cutover, so
+                // rollback recovers by repointing the proxy directly at the still-running prior revision
+                // instead of relaunching it from image — the initial standby is the only provider start.
+                runtime.RunRequests.Should().HaveCount(1, "the retained previous replica made a relaunch unnecessary");
                 restartedBackend.RollbackRequestCalls.Should().Be(0, "restart observes settlement and must not issue a second provider rollback");
 
                 var bodyObservedAt = DateTimeOffset.UtcNow;

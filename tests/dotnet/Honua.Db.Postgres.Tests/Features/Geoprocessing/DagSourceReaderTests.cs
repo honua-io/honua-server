@@ -13,7 +13,11 @@ using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Db.Postgres.Features.Geoprocessing;
@@ -255,6 +259,173 @@ public sealed class DagSourceReaderTests
         query.Where.Should().Be("name = 'x'");
         query.SpatialFilter.Should().NotBeNull();
         query.SpatialFilter!.Value.IsSimpleEnvelope.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_ObjectIdsRequest_BuildsExactObjectIdSet()
+    {
+        // #4624: analytics.buffer-aggregate (and its layer-sourced siblings) advertise
+        // 'objectIds' but source.honua-layer previously never propagated it into the
+        // FeatureQuery the streaming store filters by, so it was silently accepted and
+        // ignored. Assert the built FeatureQuery.ObjectIds is EXACTLY the requested set
+        // (order preserved, no extras, no drops) — an independent value check, not a
+        // snapshot of whatever the reader happened to produce before this fix.
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsync());
+
+        FeatureQuery? capturedQuery = null;
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Do<FeatureQuery>(q => capturedQuery = q), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsync());
+
+        var reader = new HonuaLayerDagSource(store);
+        var request = new DagSourceRequest { LayerId = 42, ObjectIds = "5, 10, 15" };
+
+        await CollectAsync(reader.ReadAsync(request));
+
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.ObjectIds.Should().NotBeNull();
+        capturedQuery.Value.ObjectIds!.Value.Should().Equal(5L, 10L, 15L);
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_GeometryOrTimeSelector_WithoutCanonicalTranslator_FailsClosedBeforeReading()
+    {
+        // #4624: a geometry/time selector the connector cannot interpret canonically must never be
+        // dropped — reading without it would hand back a broader feature set than requested.
+        var store = Substitute.For<IStreamingFeatureStore>();
+        var reader = new HonuaLayerDagSource(store, SingleLayerMetadata(42));
+
+        foreach (var request in new[]
+        {
+            new DagSourceRequest { LayerId = 42, Geometry = """{"xmin":0,"ymin":0,"xmax":1,"ymax":1}""", GeometryType = "esriGeometryEnvelope" },
+            new DagSourceRequest { LayerId = 42, Time = "1700000000000" },
+        })
+        {
+            var act = async () => await CollectAsync(reader.ReadAsync(request));
+            await act.Should().ThrowAsync<DagSourceSelectionException>();
+        }
+
+        store.DidNotReceive().StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_CanonicalSelectors_AreTranslatedOnceAndLeaveAuthorizationToTheStore()
+    {
+        var translated = new FeatureQuery
+        {
+            Where = "pop < 500",
+            SqlFilter = new SqlFragment("(pop < @p0) AND (observed >= @p1)", [500, DateTimeOffset.UnixEpoch]),
+            ObjectIds = ImmutableArray.Create(1L, 2L),
+            SpatialFilter = SpatialFilter.Create([1, 2, 3], SpatialRelationship.Within, 3857, isSimpleEnvelope: false),
+        };
+        LayerSelectionFilter? seen = null;
+        var translator = Substitute.For<ILayerSelectionFilterTranslator>();
+        translator.TranslateAsync(Arg.Do<LayerSelectionFilter>(s => seen = s), Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(LayerSelectionTranslation.Success(translated));
+
+        FeatureQuery? captured = null;
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Do<FeatureQuery>(q => captured = q), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsync());
+
+        var reader = new HonuaLayerDagSource(store, SingleLayerMetadata(42), translator);
+        await CollectAsync(reader.ReadAsync(new DagSourceRequest
+        {
+            LayerId = 42,
+            Where = "pop < 500",
+            ObjectIds = "1,2",
+            Geometry = """{"rings":[[[0,0],[0,1],[1,1],[0,0]]]}""",
+            GeometryType = "esriGeometryPolygon",
+            InSr = "3857",
+            SpatialRel = "esriSpatialRelWithin",
+            Time = "2026-01-01T00:00:00Z,2026-01-31T00:00:00Z",
+            TimeRelation = "esriTimeRelationOverlaps",
+        }));
+
+        seen.Should().BeEquivalentTo(new LayerSelectionFilter
+        {
+            Where = "pop < 500",
+            ObjectIds = "1,2",
+            Geometry = """{"rings":[[[0,0],[0,1],[1,1],[0,0]]]}""",
+            GeometryType = "esriGeometryPolygon",
+            InSr = "3857",
+            SpatialRel = "esriSpatialRelWithin",
+            Time = "2026-01-01T00:00:00Z,2026-01-31T00:00:00Z",
+            TimeRelation = "esriTimeRelationOverlaps",
+        });
+        captured.Should().NotBeNull();
+        var query = captured!.Value;
+        query.SqlFilter.Should().BeSameAs(translated.SqlFilter, "the translated where+time predicate is what the store filters by");
+        query.SpatialFilter.Should().Be(translated.SpatialFilter);
+        query.ObjectIds!.Value.Should().Equal(1L, 2L);
+        query.EnforcedSqlFilter.Should().BeNull(
+            "permanent filters and row-level security are resolved and ANDed by the store itself, never replaced by caller selectors");
+        query.EnforcedMaskedFields.Should().BeNull();
+        query.SpatialReferenceSrid.Should().Be(4326, "the connector keeps the canonical storage SRID");
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_TranslatorRejectsSelector_SurfacesCallerFacingErrorWithoutReading()
+    {
+        var translator = Substitute.For<ILayerSelectionFilterTranslator>();
+        translator.TranslateAsync(Arg.Any<LayerSelectionFilter>(), Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(LayerSelectionTranslation.Failure(
+                "Invalid parameter",
+                "The time parameter is not supported: this layer is not time-aware (no timeInfo / temporal fields)."));
+        var store = Substitute.For<IStreamingFeatureStore>();
+        var reader = new HonuaLayerDagSource(store, SingleLayerMetadata(42), translator);
+
+        var act = async () => await CollectAsync(reader.ReadAsync(new DagSourceRequest { LayerId = 42, Time = "1700000000000" }));
+
+        await act.Should().ThrowAsync<DagSourceSelectionException>().WithMessage("Invalid parameter: *not time-aware*");
+        store.DidNotReceive().StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    private static FixedMetadataV2GraphProvider SingleLayerMetadata(int layerId)
+    {
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = $"res-{layerId}", Name = $"layer-{layerId}" },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+            Spatial = new MetadataV2ResourceSpatial { StorageCrs = new MetadataV2SpatialReference { Srid = 4326 } },
+        };
+        var binding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = $"binding-{layerId}", Name = $"binding-{layerId}" },
+            ResourceId = resource.Metadata.Id,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = $"public.layer_{layerId}",
+            StorageLayerId = layerId,
+        };
+        return new FixedMetadataV2GraphProvider(new MetadataV2GraphSnapshot(
+            new MetadataV2Graph { Revision = 1, Resources = [resource], StorageBindings = [binding] },
+            "\"selection-tests\"",
+            DateTimeOffset.UnixEpoch));
+    }
+
+    private sealed class FixedMetadataV2GraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(snapshot);
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(revision == snapshot.Revision ? snapshot : null);
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_NoObjectIdsRequest_LeavesObjectIdsUnset()
+    {
+        var store = Substitute.For<IStreamingFeatureStore>();
+        FeatureQuery? capturedQuery = null;
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Do<FeatureQuery>(q => capturedQuery = q), Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsync());
+
+        var reader = new HonuaLayerDagSource(store);
+        await CollectAsync(reader.ReadAsync(new DagSourceRequest { LayerId = 42 }));
+
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.ObjectIds.Should().BeNull("no objectIds filter was requested");
     }
 
     [UnitTest]

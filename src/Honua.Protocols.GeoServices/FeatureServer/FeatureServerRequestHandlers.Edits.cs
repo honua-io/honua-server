@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -16,6 +17,7 @@ using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
@@ -32,9 +34,14 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken);
         if (authorizationError != null)
@@ -59,7 +66,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request,
             "applyEdits");
@@ -69,9 +75,14 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         // addFeatures authorizes as Insert (BH3-001/BH3-014).
         var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken, AuthorizationOperation.Insert);
@@ -112,7 +123,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request,
             "addFeatures");
@@ -122,9 +132,14 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         // updateFeatures authorizes as Update (BH3-001/BH3-014).
         var authorizationError = await RequireLayerWriteAccessBeforeBodyAsync(serviceId, layerId, context, cancellationToken, AuthorizationOperation.Update);
@@ -165,7 +180,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request,
             "updateFeatures");
@@ -175,9 +189,14 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
         if (!TryValidateAllowedParameters(context.Request.Query, queryValidator, AllowedQueryParameters.DeleteFeatures, out var parameterError))
         {
@@ -271,7 +290,6 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             layerId,
             context,
-            editsHandler,
             limitsOptions.Value.Edits,
             request);
     }
@@ -456,7 +474,6 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerEditsHandler editsHandler,
         Honua.Core.Configuration.EditLimits editLimits,
         ApplyEditsRequest request)
     {
@@ -484,8 +501,9 @@ internal static partial class FeatureServerEndpoints
 
         // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
         // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path; a named version is
-        // Enterprise-gated and Postgres-only.
+        // Pro-gated and Postgres-only.
 
+        var editsHandler = ResolveEditsHandler(context);
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         return await editsHandler.HandleApplyEditsAsync(
             serviceId,
@@ -495,12 +513,37 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
     }
 
+    /// <summary>
+    /// Checks the FeatureServer editing entitlement (#4640) using only <paramref name="context"/> —
+    /// no dependency on <see cref="FeatureServerEditsHandler"/> or any of the services its
+    /// constructor pulls in (<c>IResourceValidator</c>, and therefore
+    /// <c>IMetadataV2GraphProvider</c>, plus a dozen others). Every write entrypoint calls this
+    /// FIRST, before any resource validation/authorization or the handler resolve below, so a
+    /// license-denied request never constructs that dependency graph — and a transient DI hiccup
+    /// inside it can never leak a raw 500 through the graceful 402 GeoServices refusal.
+    /// </summary>
+    private static IResult? RequireFeatureServerEditsEntitlement(HttpContext context)
+        => LicenseGate.RequireEntitlement(context, FeatureCatalog.FeatureServerEditsKey, "FeatureServer editing");
+
+    /// <summary>
+    /// Resolves the shared edits handler. Callers must confirm
+    /// <see cref="RequireFeatureServerEditsEntitlement"/> first (#4640) — every entrypoint in this
+    /// file does, at its top, before any other work.
+    /// </summary>
+    private static FeatureServerEditsHandler ResolveEditsHandler(HttpContext context)
+        => context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
+
     private static async Task<IResult> HandleServiceApplyEdits(
         string serviceId,
         HttpContext context,
-        [FromServices] FeatureServerEditsHandler editsHandler,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        var entitlementGate = RequireFeatureServerEditsEntitlement(context);
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
 
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
@@ -687,6 +730,8 @@ internal static partial class FeatureServerEndpoints
                  "Multi-layer service-level edits cannot be rolled back atomically across layers. " +
                  "Set rollbackOnFailure=false to allow partial commits, or submit each layer separately."]);
         }
+
+        var editsHandler = ResolveEditsHandler(context);
 
         var results = new ServiceLayerEditResult[orderedLayerIds.Count];
 
@@ -1044,7 +1089,6 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         int layerId,
         HttpContext context,
-        FeatureServerEditsHandler editsHandler,
         Honua.Core.Configuration.EditLimits editLimits,
         ApplyEditsRequest request,
         string operationName)
@@ -1095,6 +1139,7 @@ internal static partial class FeatureServerEndpoints
                 "attachments edits are not supported");
         }
 
+        var editsHandler = ResolveEditsHandler(context);
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         return await editsHandler.HandleApplyEditsAsync(
             serviceId,

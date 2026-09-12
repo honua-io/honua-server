@@ -1,3 +1,8 @@
+---
+type: reference
+title: "PostGIS provider"
+description: "PostgreSQL with PostGIS is Honua's default and only full read/write provider."
+---
 # PostGIS provider
 
 PostgreSQL with PostGIS is Honua's default and only full read/write provider. This page covers the connection string, required extensions, managed-Postgres (Aurora / Azure Flexible Server) setup, and the pooling/admission variables that govern database load.

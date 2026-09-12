@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -154,6 +155,189 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
             invalidDelete);
         await deleteResponse.AssertGeoServicesErrorAsync(400);
         await AssertFeatureNameAsync(originalId, "mutation-original");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ApplyEdits_ConcurrentAttributeOnlyUpdates_PreserveGeometryAndReportSuccess()
+    {
+        const string path = "/rest/services/test/FeatureServer/0/applyEdits";
+        using var add = await PostJsonAsync(path,
+            """{"adds":[{"attributes":{"name":"before"},"geometry":{"x":-122.25,"y":37.75,"spatialReference":{"wkid":4326}}}]}""");
+        var added = await DeserializeEditsAsync(add);
+        var objectId = added.AddResults.Should().ContainSingle(result => result.Success).Subject.ObjectId!.Value;
+
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
+        {
+            using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["updates"] = $$$"""[{"attributes":{"objectid":{{{objectId}}},"name":"after"}}]"""
+            });
+            using var response = await _fixture.Client.PostAsync(path, form);
+            var result = await DeserializeEditsAsync(response);
+            result.UpdateResults.Should().ContainSingle(edit => edit.Success && edit.ObjectId == objectId,
+                await response.Content.ReadAsStringAsync());
+            result.UpdateResults![0].Error.Should().BeNull();
+        }));
+
+        using var query = await _fixture.Client.GetAsync(
+            $"/rest/services/test/FeatureServer/0/query?f=json&objectIds={objectId}&outFields=*&returnGeometry=true&outSR=4326");
+        query.Be200Ok();
+        using var document = JsonDocument.Parse(await query.Content.ReadAsStringAsync());
+        var feature = document.RootElement.GetProperty("features").EnumerateArray().Single();
+        feature.GetProperty("attributes").GetProperty("name").GetString().Should().Be("after");
+        feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-122.25);
+        feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(37.75);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ApplyEdits_ConcurrentDistinctPartialUpdates_RereadAfterLockedSnapshotChanges()
+    {
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field { Name = "score", Type = MetadataV2FieldType.Integer });
+        const string path = "/rest/services/test/FeatureServer/0/applyEdits";
+        using var add = await PostJsonAsync(path,
+            """{"adds":[{"attributes":{"name":"before","score":0},"geometry":{"x":-122.25,"y":37.75,"spatialReference":{"wkid":4326}}}]}""");
+        var added = await DeserializeEditsAsync(add);
+        var objectId = added.AddResults.Should().ContainSingle(result => result.Success).Subject.ObjectId!.Value;
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        using var builder = new Npgsql.NpgsqlCommandBuilder();
+        var schema = builder.QuoteIdentifier(_fixture.CurrentSchema!);
+        await using (var rowLock = new Npgsql.NpgsqlCommand($"SELECT objectid FROM {schema}.features WHERE layer_id=0 AND objectid=@id FOR UPDATE", connection, transaction))
+        {
+            rowLock.Parameters.AddWithValue("id", objectId);
+            await rowLock.ExecuteScalarAsync();
+        }
+
+        // Hold the stored row while all three HTTP requests read and assemble their
+        // partial updates. Their write transactions must then wait on this lock.
+        var requests = new[]
+        {
+            $$$"""{"updates":[{"attributes":{"objectid":{{{objectId}}},"name":"after"}}]}""",
+            $$$"""{"updates":[{"attributes":{"objectid":{{{objectId}}},"score":29}}]}""",
+            $$$$"""{"updates":[{"attributes":{"objectid":{{{{objectId}}}}},"geometry":{"x":-120.5,"y":36.5,"spatialReference":{"wkid":4326}}}]}"""
+        };
+        var pending = requests.Select(payload => PostJsonAsync(path, payload)).ToArray();
+        var waiting = 0L;
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(15);
+            while (waiting < 3 && DateTime.UtcNow < deadline)
+            {
+                await using (var refresh = new Npgsql.NpgsqlCommand("SELECT pg_stat_clear_snapshot()", connection, transaction))
+                {
+                    await refresh.ExecuteNonQueryAsync();
+                }
+                await using var command = new Npgsql.NpgsqlCommand(
+                    """
+                    WITH RECURSIVE blocked(pid) AS (
+                        SELECT pid FROM pg_stat_activity WHERE @lockPid = ANY(pg_blocking_pids(pid))
+                        UNION
+                        SELECT activity.pid FROM pg_stat_activity activity
+                        JOIN blocked ON blocked.pid = ANY(pg_blocking_pids(activity.pid))
+                    ) SELECT count(*) FROM blocked
+                    """, connection, transaction);
+                command.Parameters.AddWithValue("lockPid", connection.ProcessID);
+                waiting = (long)(await command.ExecuteScalarAsync())!;
+                if (waiting < 3)
+                {
+                    await Task.Delay(25);
+                }
+            }
+        }
+        finally
+        {
+            await transaction.RollbackAsync();
+        }
+
+        foreach (var response in await Task.WhenAll(pending))
+        {
+            using (response)
+            {
+                var result = await DeserializeEditsAsync(response);
+                result.UpdateResults.Should().ContainSingle(edit => edit.Success && edit.ObjectId == objectId,
+                    await response.Content.ReadAsStringAsync());
+            }
+        }
+        waiting.Should().BeGreaterThanOrEqualTo(3, "all partial requests must assemble against the same blocked row");
+        using var query = await _fixture.Client.GetAsync(
+            $"/rest/services/test/FeatureServer/0/query?f=json&objectIds={objectId}&outFields=*&returnGeometry=true&outSR=4326");
+        query.Be200Ok();
+        using var document = JsonDocument.Parse(await query.Content.ReadAsStringAsync());
+        var feature = document.RootElement.GetProperty("features").EnumerateArray().Single();
+        feature.GetProperty("attributes").GetProperty("name").GetString().Should().Be("after");
+        feature.GetProperty("attributes").GetProperty("score").GetInt32().Should().Be(29);
+        feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-120.5);
+        feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(36.5);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.Query, Operations.Metadata)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task ApplyEdits_NumericPrimaryKeyAndDuplicateIdAttribute_TargetsOnlyPrimaryKey()
+    {
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "objectid",
+            Type = MetadataV2FieldType.BigInteger,
+            Nullable = false
+        });
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "gid",
+            Type = MetadataV2FieldType.BigInteger,
+            SemanticRoles = ["id.primary"]
+        });
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "id",
+            Type = MetadataV2FieldType.Integer
+        });
+        const string path = "/rest/services/test/FeatureServer/0/applyEdits";
+        // Represent a published source whose physical primary keys are 701/702 and
+        // whose unrelated id attribute is duplicated. Canonical storage names the
+        // physical key objectid; the resource publishes that key as gid. applyEdits
+        // inserts allocate keys and cannot create this pre-existing-key fixture.
+        await using (var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync())
+        await using (var seed = connection.CreateCommand())
+        {
+            using var identifierBuilder = new Npgsql.NpgsqlCommandBuilder();
+            var schema = identifierBuilder.QuoteIdentifier(_fixture.CurrentSchema!);
+            seed.CommandText = $$"""
+                INSERT INTO {{schema}}.features (layer_id, objectid, geometry, attributes)
+                VALUES (0,701,ST_SetSRID(ST_Point(-122.25,37.75),4326),'{"gid":701,"id":0,"name":"first"}'::jsonb),
+                       (0,702,ST_SetSRID(ST_Point(-121.25,38.75),4326),'{"gid":702,"id":0,"name":"second"}'::jsonb)
+                """;
+            await seed.ExecuteNonQueryAsync();
+        }
+
+        using var metadataResponse = await _fixture.Client.GetAsync("/rest/services/test/FeatureServer/0?f=json");
+        metadataResponse.Be200Ok();
+        using var metadata = JsonDocument.Parse(await metadataResponse.Content.ReadAsStringAsync());
+        metadata.RootElement.GetProperty("objectIdField").GetString().Should().Be("gid");
+
+        using var update = await PostJsonAsync(path,
+            """{"updates":[{"attributes":{"gid":701,"name":"changed"}}]}""");
+        var updated = await DeserializeEditsAsync(update);
+        updated.UpdateResults.Should().ContainSingle(result => result.Success && result.ObjectId == 701,
+            await update.Content.ReadAsStringAsync());
+        await AssertFeatureNameAsync(701, "changed");
+        await AssertFeatureNameAsync(702, "second");
+        (await ReadFeatureCountAsync(0)).Should().Be(0);
+
+        using var remove = await PostJsonAsync(path, """{"deletes":[701]}""");
+        var removed = await DeserializeEditsAsync(remove);
+        removed.DeleteResults.Should().ContainSingle(result => result.Success && result.ObjectId == 701);
+        (await ReadFeatureCountAsync(701)).Should().Be(0);
+        await AssertFeatureNameAsync(702, "second");
     }
 
     private async Task<HttpResponseMessage> PostJsonAsync(string path, string json)

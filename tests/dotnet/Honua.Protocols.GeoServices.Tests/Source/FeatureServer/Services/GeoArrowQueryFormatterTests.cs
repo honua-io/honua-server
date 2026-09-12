@@ -664,6 +664,88 @@ public sealed class GeoArrowQueryFormatterTests
         return $@"{{""crs"":{projJson},""crs_type"":""projjson""}}";
     }
 
+    /// <summary>
+    /// honua-server#4666: the GeoArrow writer shared the GeoParquet writer's one-sided spatial
+    /// predicate, so a resource declaring geometry only through its schema fields (no
+    /// <see cref="MetadataV2Resource.Spatial"/> slot) was streamed as attribute-only Arrow.
+    /// </summary>
+    [Fact]
+    public async Task FormatAsGeoArrowAsync_WhenSpatialSlotIsAbsentButSchemaDeclaresGeometry_StillWritesGeometryColumn()
+    {
+        // Independently chosen ordinates: written as WKB by NetTopologySuite, read back by a
+        // fresh WKBReader over the Arrow stream. No captured payload is involved.
+        const double ExpectedX = -157.8583;
+        const double ExpectedY = 21.3069;
+
+        var resource = CreateResourceWithoutSpatialSlot(
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255 });
+        resource.Spatial.Should().BeNull("this fixture is the no-spatial-slot shape under test");
+        resource.ReadGeometryType().Should().Be(MetadataV2GeometryType.None,
+            "the geometry type is unresolvable without the spatial slot - that is the trigger condition");
+
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(ExpectedX, ExpectedY),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["name"] = "Honolulu Harbor"
+            }.ToImmutableDictionary());
+
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            resource,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            geometryLimits: new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ArrowStreamReader(stream);
+        var batch = await reader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        reader.Schema.FieldsList.Select(f => f.Name)
+            .Should().Contain("geometry", "a GeoArrow stream without a geometry column is data loss");
+
+        var geometryField = reader.Schema.GetFieldByName("geometry");
+        geometryField.Metadata["ARROW:extension:name"].Should().Be("geoarrow.wkb");
+
+        var geometryArray = batch!.Column("geometry").Should().BeOfType<BinaryArray>().Which;
+        geometryArray.IsNull(0).Should().BeFalse();
+        var decoded = new WKBReader().Read(geometryArray.GetBytes(0).ToArray());
+        decoded.Should().BeOfType<Point>();
+        ((Point)decoded).X.Should().BeApproximately(ExpectedX, 1e-9);
+        ((Point)decoded).Y.Should().BeApproximately(ExpectedY, 1e-9);
+    }
+
+    /// <summary>
+    /// A resource whose geometry is declared only by a <see cref="MetadataV2FieldType.Geometry"/>
+    /// schema field, with no <see cref="MetadataV2Resource.Spatial"/> slot at all.
+    /// </summary>
+    private static MetadataV2Resource CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "harbors",
+                Name = "harbors",
+                Description = "Harbors"
+            },
+            SchemaFields =
+            [
+                .. fields,
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = true
+                }
+            ]
+        };
+
     private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)
         => CreateResource(fields);
 

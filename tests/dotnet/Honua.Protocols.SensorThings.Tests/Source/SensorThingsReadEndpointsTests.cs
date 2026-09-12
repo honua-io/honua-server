@@ -25,6 +25,48 @@ public sealed class SensorThingsReadEndpointsTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /sta/v1.1")]
+    public async Task ServiceRoot_ReturnsDiscoverableEntitySets()
+    {
+        await AssertDiscoverableServiceRootAsync("/sta/v1.1");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /sta/v1.1")]
+    public async Task ServiceRoot_WithTrailingSlash_ReturnsDiscoverableEntitySets()
+    {
+        await AssertDiscoverableServiceRootAsync("/sta/v1.1/");
+    }
+
+    private async Task AssertDiscoverableServiceRootAsync(string path)
+    {
+        using var response = await _fixture.Client.GetAsync(path);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("serverSettings").ValueKind.Should().Be(JsonValueKind.Object);
+        document.RootElement.GetProperty("serverSettings").GetProperty("conformance").ValueKind.Should().Be(JsonValueKind.Array);
+        var entitySets = document.RootElement.GetProperty("value").EnumerateArray().ToArray();
+        entitySets.Select(entitySet => entitySet.GetProperty("name").GetString()).Should()
+            .BeEquivalentTo("Things", "Sensors", "ObservedProperties", "Datastreams", "Observations");
+
+        foreach (var entitySet in entitySets)
+        {
+            var name = entitySet.GetProperty("name").GetString();
+            var url = entitySet.GetProperty("url").GetString();
+            url.Should().NotBeNullOrWhiteSpace();
+            var uri = new Uri(_fixture.Client.BaseAddress!, url!);
+            uri.AbsolutePath.Should().Be($"/sta/v1.1/{name}");
+            using var collectionResponse = await _fixture.Client.GetAsync(uri);
+            collectionResponse.StatusCode.Should().Be(HttpStatusCode.OK, "the advertised {0} link must resolve", name);
+            using var collection = JsonDocument.Parse(await collectionResponse.Content.ReadAsStringAsync());
+            collection.RootElement.GetProperty("value").ValueKind.Should().Be(JsonValueKind.Array);
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /sta/v1.1/Things")]
     public async Task Things_ReturnsConformanceShapedCollection()

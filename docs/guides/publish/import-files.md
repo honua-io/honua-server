@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Import data from files"
+description: "You'll have a geospatial file loaded into a PostGIS table, ready to publish, in about 5 minutes."
+resource: "honua://capability/import.file"
+---
 # Import data from files
 
 You'll have a geospatial file loaded into a PostGIS table, ready to publish, in about 5 minutes.

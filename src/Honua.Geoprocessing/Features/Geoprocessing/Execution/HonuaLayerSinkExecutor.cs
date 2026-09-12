@@ -3,9 +3,17 @@
 
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Validation;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
 
@@ -31,15 +39,18 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly IHonuaLayerSink? _sink;
+    private readonly IServiceScopeFactory? _serviceScopeFactory;
     private readonly ILogger<HonuaLayerSinkExecutor> _logger;
 
     public HonuaLayerSinkExecutor(
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
         ILogger<HonuaLayerSinkExecutor> logger,
-        IHonuaLayerSink? sink = null)
+        IHonuaLayerSink? sink = null,
+        IServiceScopeFactory? serviceScopeFactory = null)
     {
         _options = options;
         _logger = logger;
+        _serviceScopeFactory = serviceScopeFactory;
         _sink = sink;
     }
 
@@ -86,7 +97,15 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {inputError}");
         }
 
-        if (!FeatureCollectionArtifact.TryParseDataUri(inputUri, out var source, out var parseError, _options.CurrentValue.MaxArtifactBytes))
+        // Accept both the inline back-compat data URI and a spilled honua-feature-stream
+        // reference (server#4628): FeatureCollectionArtifact.TryParseDataUri alone rejected
+        // any transform output that crossed FeatureStreamPublisher's inline threshold, so a
+        // workflow's success depended on its dataset size relative to that threshold rather
+        // than on its content. OutputRootDirectory rejects a stream reference whose backing
+        // path was injected outside the geoprocessing sandbox.
+        if (!FeatureStreamArtifact.TryOpenRead(
+                inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
+                _options.CurrentValue.OutputRootDirectory))
         {
             return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
@@ -119,12 +138,39 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         var batchId = inputs.GetOrDefault("batchId", job.OperationId);
 
         cancellationToken.ThrowIfCancellationRequested();
+        await context.ReportProgressAsync(20, "Authorizing sink destination", cancellationToken).ConfigureAwait(false);
+
+        string? denial;
+        try
+        {
+            denial = await AuthorizeDestinationAsync(schema, table, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Fail closed on an unexpected authorization-pipeline failure rather than let it
+            // propagate as a crashed worker or (worse) fall through to an unauthorized load.
+            Log.DestinationAuthorizationFailed(_logger, job.OperationId, ex);
+            return JobExecutionResult.Failed($"{HandledProcessId} destination authorization failed: {ex.GetType().Name}.");
+        }
+
+        if (denial is not null)
+        {
+            Log.DestinationAuthorizationDenied(_logger, job.OperationId, schema, table);
+            return JobExecutionResult.Failed($"{HandledProcessId} destination denied: {denial}");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(40, "Encoding features", cancellationToken).ConfigureAwait(false);
 
         var wkbWriter = new WKBWriter();
         var rows = new List<HonuaLayerSinkRow>();
         long rejected = 0;
-        foreach (var feature in source)
+        var maxFeatures = _options.CurrentValue.MaxSinkFeatureCount;
+        await foreach (var feature in source.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (feature.Geometry is null)
@@ -133,12 +179,28 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
                 continue;
             }
 
+            if (rows.Count >= maxFeatures)
+            {
+                // A spilled stream is deliberately unbounded end-to-end, but this sink still
+                // loads through a single transactional batch (server#4628 non-goal: not a
+                // distributed data engine). Fail closed with a clear, actionable message
+                // instead of growing the in-memory row buffer without limit.
+                return JobExecutionResult.Failed(
+                    $"Invalid {HandledProcessId} inputs: 'input' exceeds the configured limit of " +
+                    $"{maxFeatures} features for a single honua-layer sink load.");
+            }
+
             rows.Add(new HonuaLayerSinkRow(
                 wkbWriter.Write(feature.Geometry),
                 SinkFeatureEncoder.BuildAttributesJson(feature, batchId)));
         }
 
         await context.ReportProgressAsync(70, "Loading into catalog layer", cancellationToken).ConfigureAwait(false);
+
+        // Fence stale attempts at the write boundary (server#4626): a queue lease or
+        // artifact-publication fence alone cannot undo a row already committed to the
+        // catalog, so re-check ownership immediately before the transactional write.
+        await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
 
         HonuaLayerSinkOutcome outcome;
         try
@@ -162,7 +224,13 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
             return JobExecutionResult.Failed($"{HandledProcessId} load failed: {ex.GetType().Name}.");
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        // The sink's transaction (including its commit receipt) has already committed by the
+        // time LoadAsync returns successfully — the effect is real and durable regardless of
+        // what the cancellation token does next. Publish/report with CancellationToken.None
+        // from here so a cancellation racing in during this narrow window cannot make the job
+        // falsely report Cancelled (implying no effect / safe to discard) over data that was
+        // actually written (server#4626: "cancellation does not claim rollback of committed
+        // data").
         await context.PublishArtifactAsync(
             SinkResultArtifact.Build(
                 HandledProcessId,
@@ -172,10 +240,122 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
                 ("batchId", outcome.BatchId),
                 ("featuresWritten", outcome.FeaturesWritten),
                 ("featuresRejected", rejected)),
-            cancellationToken).ConfigureAwait(false);
-        await context.ReportProgressAsync(100, $"{HandledProcessId} completed", cancellationToken).ConfigureAwait(false);
+            CancellationToken.None).ConfigureAwait(false);
+        await context.ReportProgressAsync(100, $"{HandledProcessId} completed", CancellationToken.None).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
+    }
+
+    /// <summary>
+    /// Authorizes the resolved <c>schema.table</c> destination before any DDL/DML runs
+    /// (#4625). Generic <c>Process.Execute</c> permission (the only gate this node had) says
+    /// nothing about whether the submitter may write to THIS destination — <c>sink.honua-layer</c>
+    /// accepted arbitrary caller-supplied schema/table text and PostgresHonuaLayerSink wrote
+    /// through it with only SQL-injection-shaped identifier validation, no target authorization.
+    /// </summary>
+    /// <returns>
+    /// <see langword="null"/> when the destination is authorized; otherwise a safe,
+    /// no-provider-detail denial reason for the job-failure message.
+    /// </returns>
+    private async Task<string?> AuthorizeDestinationAsync(
+        string schema, string table, CancellationToken cancellationToken)
+    {
+        if (_serviceScopeFactory is null)
+        {
+            return "the destination could not be authorized: no authorization scope is available in this deployment.";
+        }
+
+        // Mirrors source.honua-layer's fail-closed contract (honua-server#3068): a job with no
+        // captured submitter cannot be constrained to anyone, so it must be refused rather than
+        // writing under an unconstrained identity.
+        var submitter = JobSecurityScope.Current?.Submitter;
+        if (submitter is null)
+        {
+            return "this job carries no submitter security context, so its sink destination cannot be authorized.";
+        }
+
+        using var scope = _serviceScopeFactory.CreateScope();
+        var services = scope.ServiceProvider;
+        var metadataProvider = services.GetService<IMetadataV2GraphProvider>();
+        if (metadataProvider is null)
+        {
+            return $"{HandledProcessId} requires the catalog metadata provider, which is not configured in this deployment.";
+        }
+
+        var principal = JobSecurityContextCapture.Restore(submitter);
+        var snapshot = await metadataProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+        // Resolve existing destinations to a stable catalog resource and authorize against IT,
+        // rather than trusting the caller-supplied text: two different (schema, table) pairs can
+        // never be treated as the same target, and the SAME pair always resolves to the SAME
+        // layer for the lifetime of this check.
+        if (FindExistingLayerId(snapshot, schema, table) is { } existingLayerId)
+        {
+            var evaluationContext = new DefaultHttpContext { RequestServices = services, User = principal };
+            var validation = await LayerValidationHelpers.ValidateLayerWriteAccessV2Async(
+                    evaluationContext,
+                    existingLayerId,
+                    LayerValidationHelpers.ValidationProtocol.OgcFeatures,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            return validation.IsValid
+                ? null
+                : "you do not have write permission on the catalog layer bound to this destination.";
+        }
+
+        // No existing catalog layer resolves to this destination: this is a request to CREATE a
+        // brand-new table. Ordinary per-layer write grants say nothing about that authority — an
+        // editor of layer A must not be able to conjure layer B into existence in any schema the
+        // Postgres role can reach — so creation is governed separately and requires an
+        // administrative role (#4625 AC: "Govern creation of new destinations separately").
+        var rbacOptions = services.GetService<IOptions<RbacOptions>>()?.Value ?? new RbacOptions();
+        return RbacRoleClaims.IsAdmin(principal, rbacOptions, services)
+            ? null
+            : $"creating a new {HandledProcessId} destination requires an administrative role; target an " +
+              "existing authorized catalog layer instead, or have an administrator create it first.";
+    }
+
+    /// <summary>
+    /// Finds the storage-layer id of the relational catalog layer whose resolved schema/table
+    /// matches the requested destination, or <see langword="null"/> when no existing layer
+    /// resolves there (a brand-new destination).
+    /// </summary>
+    internal static int? FindExistingLayerId(MetadataV2GraphSnapshot snapshot, string schema, string table)
+    {
+        foreach (var binding in snapshot.Graph.StorageBindings)
+        {
+            if (binding.StorageType != MetadataV2StorageType.RelationalTable || binding.StorageLayerId is not { } layerId)
+            {
+                continue;
+            }
+
+            if (!snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var resource))
+            {
+                continue;
+            }
+
+            FeatureStorageMapping mapping;
+            try
+            {
+                mapping = FeatureStorageMapping.FromMetadata(resource, binding);
+            }
+            catch (InvalidOperationException)
+            {
+                // Not usable as relational feature storage (validation failure inside
+                // FromMetadata) — cannot be the destination's existing layer.
+                continue;
+            }
+
+            var mappedSchema = string.IsNullOrEmpty(mapping.SchemaName) ? "public" : mapping.SchemaName;
+            if (string.Equals(mappedSchema, schema, StringComparison.Ordinal)
+                && string.Equals(mapping.TableName, table, StringComparison.Ordinal))
+            {
+                return layerId;
+            }
+        }
+
+        return null;
     }
 
     private static HonuaLayerLoadMode ParseLoadMode(string raw) => raw.Trim().ToLowerInvariant() switch
@@ -240,5 +420,13 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         [LoggerMessage(9271, LogLevel.Error,
             "honua-layer sink failed job {OperationId} during catalog load")]
         public static partial void SinkLoadFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9272, LogLevel.Warning,
+            "honua-layer sink refused job {OperationId}: destination '{Schema}.{Table}' was not authorized for the submitting principal")]
+        public static partial void DestinationAuthorizationDenied(ILogger logger, string operationId, string schema, string table);
+
+        [LoggerMessage(9273, LogLevel.Error,
+            "honua-layer sink failed job {OperationId} while authorizing the sink destination")]
+        public static partial void DestinationAuthorizationFailed(ILogger logger, string operationId, Exception exception);
     }
 }

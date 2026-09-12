@@ -50,11 +50,21 @@ internal sealed class PostgresChangeTracker : IChangeTracker
         CancellationToken cancellationToken = default)
         => GetChangesSinceAsync(sinceGeneration, layerIds, objectIds: null, cancellationToken);
 
-    public async Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
+    public Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
         long sinceGeneration,
         int[] layerIds,
         IReadOnlySet<long>? objectIds,
         CancellationToken cancellationToken = default)
+        => GetChangesCoreAsync(sinceGeneration, layerIds, objectIds, null, cancellationToken);
+
+    public Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
+        long sinceGeneration, int[] layerIds, IReadOnlySet<long>? objectIds,
+        string excludeOriginReplicaId, CancellationToken cancellationToken = default)
+        => GetChangesCoreAsync(sinceGeneration, layerIds, objectIds, excludeOriginReplicaId, cancellationToken);
+
+    private async Task<IReadOnlyList<FeatureChange>> GetChangesCoreAsync(
+        long sinceGeneration, int[] layerIds, IReadOnlySet<long>? objectIds,
+        string? excludeOriginReplicaId, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(layerIds);
 
@@ -82,7 +92,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
             ),
             ranked AS (
                 SELECT changes.change_id, changes.generation, changes.layer_id, changes.objectid,
-                       changes.public_objectid, changes.operation, changes.changed_at,
+                       changes.public_objectid, changes.operation, changes.changed_at, changes.origin_replica_id,
                        FIRST_VALUE(changes.operation) OVER (
                            PARTITION BY changes.layer_id, changes.objectid ORDER BY changes.generation) AS first_op,
                        LAST_VALUE(changes.operation) OVER (
@@ -97,6 +107,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                     ON matched_objects.layer_id = changes.layer_id
                    AND matched_objects.objectid = changes.objectid
                 WHERE changes.generation > $1
+                  AND ($4::text IS NULL OR changes.origin_replica_id IS DISTINCT FROM $4)
             )
             SELECT change_id, max_gen AS generation, layer_id, objectid, public_objectid,
                    CASE
@@ -105,7 +116,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                        WHEN last_op = 3 THEN 3
                        ELSE 2
                    END AS net_operation,
-                   changed_at
+                   changed_at, origin_replica_id
             FROM ranked
             WHERE rn = 1
               AND CASE
@@ -127,6 +138,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
             Value = objectIds is null ? DBNull.Value : (object)objectIds.ToArray(),
             NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Bigint
         });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)excludeOriginReplicaId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
 
         var changes = new List<FeatureChange>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -147,7 +159,8 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                 ObjectId = reader.GetInt64(3),
                 PublicObjectId = reader.IsDBNull(4) ? null : reader.GetInt64(4),
                 Operation = (FeatureChangeOperation)netOp,
-                ChangedAt = reader.GetFieldValue<DateTimeOffset>(6)
+                ChangedAt = reader.GetFieldValue<DateTimeOffset>(6),
+                OriginReplicaId = reader.IsDBNull(7) ? null : reader.GetString(7)
             });
         }
 

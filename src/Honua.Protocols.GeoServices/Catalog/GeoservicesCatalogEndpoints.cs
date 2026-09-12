@@ -315,7 +315,7 @@ internal static class GeoservicesCatalogEndpoints
         catch (Exception exception) when (exception is InvalidOperationException or XmlException or XmlSchemaValidationException)
         {
             return CreateSoapFault(
-                "Malformed SOAP request.",
+                SoapRequestXml.GetSafeErrorMessage(exception),
                 StatusCodes.Status400BadRequest,
                 RequestedSoapNamespace(context.Request));
         }
@@ -576,8 +576,8 @@ internal static class GeoservicesCatalogEndpoints
             .Select(entry =>
         {
             var escapedName = Uri.EscapeDataString(entry.Name);
-            var soapUrl = string.Equals(entry.Type, ImageServerProtocolName, StringComparison.Ordinal)
-                ? $"{baseUrl}/services/{escapedName}/{ImageServerProtocolName}"
+            var soapUrl = entry.Type is ImageServerProtocolName or "GPServer"
+                ? $"{baseUrl}/services/{escapedName}/{entry.Type}"
                 : entry.Url;
             return new XElement(
                 "ServiceDescription",

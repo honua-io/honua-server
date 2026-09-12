@@ -2,10 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -46,6 +49,12 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     /// <summary>The <see cref="IDagFeatureSource.SourceId"/> this base reads from.</summary>
     private protected const string HonuaLayerSourceId = "source.honua-layer";
 
+    /// <summary>
+    /// A provable lower bound on the GeoJSON bytes one coordinate occupies: <c>[x,y]</c> is at
+    /// least five characters even with single-digit ordinates, before any separator (#4629).
+    /// </summary>
+    private protected const long MinSerializedBytesPerVertex = 5;
+
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger _logger;
     private IReadOnlySet<string>? _processIds;
@@ -53,11 +62,20 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     private protected LayerSourcedFeatureExecutor(
         IServiceScopeFactory serviceScopeFactory,
         IOptionsMonitor<GeoprocessingExecutorOptions> options,
-        ILogger logger)
+        ILogger logger,
+        IOptions<LimitsOptions>? limitsOptions = null)
     {
         _serviceScopeFactory = serviceScopeFactory;
         Options = options;
         _logger = logger;
+        // Reuse the SAME canonical admission limits the synchronous SpatialAnalytics/
+        // DataEnrichment request handlers already enforce (AnalyticsLimits.MaxInputFeatures)
+        // and the same per-geometry vertex ceiling FeatureServer edits enforce
+        // (GeometryLimits.MaxVerticesPerGeometry), rather than inventing a GP-local budget
+        // (#4629): a dispatched layer-sourced job and its synchronous sibling now fail at
+        // the same admission point instead of the job path materializing what the
+        // synchronous path would have already refused.
+        Limits = limitsOptions?.Value ?? new LimitsOptions();
     }
 
     /// <summary>The single dotted process id this executor handles (e.g. <c>analytics.buffer-aggregate</c>).</summary>
@@ -65,6 +83,14 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
     /// <summary>Shared executor options (artifact caps, output roots).</summary>
     private protected IOptionsMonitor<GeoprocessingExecutorOptions> Options { get; }
+
+    /// <summary>
+    /// Canonical system limits (input feature counts, per-geometry vertex ceilings) shared
+    /// with the synchronous SpatialAnalytics/DataEnrichment request handlers and FeatureServer
+    /// edit validation, so a dispatched GP job admits input under the same budget its
+    /// synchronous sibling would (#4629).
+    /// </summary>
+    private protected LimitsOptions Limits { get; }
 
     /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds =>
@@ -114,13 +140,49 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                 $"through the {HonuaLayerSourceId} connector, which is not configured here.");
         }
 
+        try
+        {
+            await ValidateStatisticsAsync(scope.ServiceProvider, inputs, request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TransformInputException ex)
+        {
+            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(20, $"Streaming layer features for {ProcessId}", cancellationToken).ConfigureAwait(false);
 
         List<IFeature> features;
         try
         {
-            features = await ReadLayerAsync(source, request, cancellationToken).ConfigureAwait(false);
+            // Bound the target layer read by the same canonical admission limits the
+            // synchronous analytics/enrichment handlers already enforce (#4629): the read
+            // fails closed WHILE STREAMING on the first oversized feature count or
+            // oversized single geometry, instead of materializing, computing, and
+            // serializing an unbounded input before MaxArtifactBytes is ever checked.
+            features = await ReadLayerAsync(
+                    source,
+                    request,
+                    cancellationToken,
+                    Limits.Analytics.MaxInputFeatures,
+                    $"layer {request.LayerId}",
+                    Limits.Geometry.MaxVerticesPerGeometry,
+                    Limits.Geometry.MaxGeometrySize,
+                    Limits.Analytics.MaxInputBytes)
+                .ConfigureAwait(false);
+        }
+        catch (TransformInputException ex)
+        {
+            // The feature/vertex-count budgets surface here with concrete remedies (narrow
+            // where/bbox, raise the configured limit), so the message must reach the caller
+            // verbatim rather than collapsing to a bare exception type name.
+            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
+        }
+        catch (DagSourceSelectionException ex)
+        {
+            // A geometry/time selector the canonical translator rejected (or could not
+            // evaluate in this deployment): caller-facing, so surface it verbatim (#4624).
+            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.Message}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -141,7 +203,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         List<IFeature> output;
         try
         {
-            output = await ApplyCoreAsync(new LayerOpContext(features, source), inputs, cancellationToken)
+            output = await ApplyCoreAsync(new LayerOpContext(features, source, scope.ServiceProvider), inputs, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
@@ -155,10 +217,29 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+
+        // #4629: serialization allocates the GeoJSON text, a parsed copy and the re-emitted
+        // payload, so checking MaxArtifactBytes only afterwards let an oversized output cost
+        // several times its size before failing. Refuse up front when even the smallest possible
+        // encoding of the output's coordinates cannot fit; the post-serialization check below
+        // still covers attributes and real ordinate widths.
+        var maxBytes = Options.CurrentValue.MaxArtifactBytes;
+        var outputVertices = output.Sum(feature => (long)(feature.Geometry?.NumPoints ?? 0));
+        if (outputVertices * MinSerializedBytesPerVertex > maxBytes)
+        {
+            await context.ReportProgressAsync(80, $"{ProcessId} stopped: output exceeds the artifact budget", cancellationToken)
+                .ConfigureAwait(false);
+            return JobExecutionResult.Failed(
+                $"{ProcessId} output has {outputVertices} vertices across {output.Count} features, which needs at least " +
+                $"{outputVertices * MinSerializedBytesPerVertex} bytes once serialized and exceeds the configured " +
+                $"MaxArtifactBytes={maxBytes}; stopped before serialization. Narrow the selection (where/objectIds/geometry/time), " +
+                "simplify the input, or raise Geoprocessing:Executor:MaxArtifactBytes, then resubmit.");
+        }
+
         await context.ReportProgressAsync(80, $"Encoding {ProcessId} artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = FeatureCollectionArtifact.WriteFeatureCollection(output, ProcessId);
-        var maxBytes = Options.CurrentValue.MaxArtifactBytes;
+        var payload = FeatureCollectionArtifact.WriteFeatureCollection(output, ProcessId,
+            request.OutputSrid is { } outputSrid ? [("srid", outputSrid)] : null);
         if (payload.Length > maxBytes)
         {
             return JobExecutionResult.Failed(
@@ -212,17 +293,21 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
     /// <summary>
     /// The resolved inputs a concrete layer-aware op computes over: the streamed
-    /// target-layer <see cref="Features"/> and the resolved <see cref="LayerSource"/>
-    /// connector, so a two-layer op can read a second catalog layer through the same
-    /// connector within the executor's service scope.
+    /// target-layer <see cref="Features"/>, the resolved <see cref="LayerSource"/>
+    /// connector (so a two-layer op can read a second catalog layer through the same
+    /// connector), and the executor's request-scoped <see cref="Services"/> provider (so
+    /// an op can resolve additional shared services — for example the CRS-aware
+    /// <c>IGeometryOperationService</c> or catalog metadata provider — within the same
+    /// scope <see cref="LayerSource"/> was resolved from).
     /// </summary>
     private protected readonly struct LayerOpContext
     {
-        /// <summary>Creates a context over the streamed target features and connector.</summary>
-        public LayerOpContext(List<IFeature> features, IDagFeatureSource layerSource)
+        /// <summary>Creates a context over the streamed target features, connector, and scope.</summary>
+        public LayerOpContext(List<IFeature> features, IDagFeatureSource layerSource, IServiceProvider services)
         {
             Features = features;
             LayerSource = layerSource;
+            Services = services;
         }
 
         /// <summary>The streamed features of the primary (target) layer.</summary>
@@ -230,6 +315,9 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
         /// <summary>The resolved <c>source.honua-layer</c> connector for further layer reads.</summary>
         public IDagFeatureSource LayerSource { get; }
+
+        /// <summary>The executor's request-scoped service provider.</summary>
+        public IServiceProvider Services { get; }
     }
 
     /// <summary>
@@ -238,16 +326,34 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     /// Shared by the base's primary layer read, by two-layer ops that resolve a
     /// second catalog layer through the same connector, and by the standalone
     /// <c>enrichment.enrich</c> executor (#2283).
+    ///
+    /// <para>
+    /// The optional <paramref name="maxVerticesPerGeometry"/> charges a per-geometry vertex
+    /// ceiling independently of <paramref name="maxFeatures"/> (#4629): a feature-count cap
+    /// alone does not bound a single deliberately oversized geometry (one feature, millions of
+    /// vertices), so this fails closed as soon as the oversized geometry streams in.
+    /// </para>
+    ///
+    /// <para>
+    /// <paramref name="maxGeometryBytes"/> and <paramref name="maxInputBytes"/> charge the
+    /// serialized size of each geometry and the cumulative geometry+attribute payload (#4629)
+    /// BEFORE the geometry is parsed into NetTopologySuite objects, so neither a single huge
+    /// geometry nor a moderate count of large features is materialized past its budget.
+    /// </para>
     /// </summary>
     internal static async Task<List<IFeature>> ReadLayerAsync(
         IDagFeatureSource source,
         DagSourceRequest request,
         CancellationToken cancellationToken,
         int? maxFeatures = null,
-        string? limitLabel = null)
+        string? limitLabel = null,
+        int? maxVerticesPerGeometry = null,
+        long? maxGeometryBytes = null,
+        long? maxInputBytes = null)
     {
         var geoJsonReader = new GeoJsonReader();
         var features = new List<IFeature>();
+        long inputBytes = 0;
         await foreach (var sourceFeature in source.ReadAsync(request, cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -262,10 +368,61 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     + "narrow the selection (where/bbox) or raise the limit.");
             }
 
-            features.Add(ToNtsFeature(sourceFeature, geoJsonReader));
+            long geometryBytes = sourceFeature.GeometryGeoJson?.Length ?? 0;
+            if (maxGeometryBytes is { } geometryCap && geometryBytes > geometryCap)
+            {
+                throw new TransformInputException(
+                    $"{limitLabel ?? "layer"} contains a geometry of {geometryBytes} serialized bytes, exceeding the "
+                    + $"configured limit of {geometryCap} bytes (Limits:Geometry:MaxGeometrySize); simplify the source "
+                    + "geometry or raise the limit.");
+            }
+
+            inputBytes += geometryBytes + EstimateAttributeBytes(sourceFeature.Attributes);
+            if (maxInputBytes is { } inputCap && inputBytes > inputCap)
+            {
+                throw new TransformInputException(
+                    $"{limitLabel ?? "layer"} exceeds the configured input budget of {inputCap} bytes "
+                    + $"(Limits:Analytics:MaxInputBytes) at feature {features.Count + 1}; narrow the selection "
+                    + "(where/objectIds/geometry/time) or raise the limit.");
+            }
+
+            var feature = ToNtsFeature(sourceFeature, geoJsonReader);
+
+            if (maxVerticesPerGeometry is { } vertexCap
+                && feature.Geometry is { } geometry
+                && geometry.NumPoints > vertexCap)
+            {
+                throw new TransformInputException(
+                    $"{limitLabel ?? "layer"} contains a geometry with {geometry.NumPoints} vertices, "
+                    + $"exceeding the configured limit of {vertexCap}; simplify the source geometry or "
+                    + "raise the limit.");
+            }
+
+            features.Add(feature);
         }
 
         return features;
+    }
+
+    /// <summary>
+    /// Serialized-size estimate of a streamed feature's attributes for the input byte budget:
+    /// key and string lengths as written, a fixed width for scalars.
+    /// </summary>
+    private static long EstimateAttributeBytes(IEnumerable<KeyValuePair<string, object?>> attributes)
+    {
+        long bytes = 0;
+        foreach (var (key, value) in attributes)
+        {
+            bytes += key.Length + value switch
+            {
+                null => 4,
+                string text => text.Length + 2,
+                byte[] blob => blob.Length,
+                _ => 8,
+            };
+        }
+
+        return bytes;
     }
 
     /// <summary>
@@ -296,13 +453,68 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     protected virtual DagSourceRequest CustomizeRequest(DagSourceRequest request, StepInputReader inputs)
         => request;
 
+    // The esriGeometryType vocabulary the canonical GeoServices geometry parser accepts, and
+    // the distance-based relationships the analytics surface rejects (ProcessPlanValidator and
+    // AnalyticsFeatureQueryFactory apply the same rules). Checked here only so a malformed
+    // selector fails before any layer read; the canonical translator stays authoritative.
+    private static readonly HashSet<string> KnownGeometryTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "esriGeometryPoint", "esriGeometryMultipoint", "esriGeometryPolyline", "esriGeometryPolygon", "esriGeometryEnvelope",
+    };
+
+    private static readonly HashSet<string> DistanceSpatialRelationships = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "esriSpatialRelWithinDistance", "esriSpatialRelBeyondDistance",
+    };
+
     private DagSourceRequest BuildSourceRequest(StepInputReader inputs)
     {
+        // #4624: the catalog advertises objectIds / geometry+geometryType+inSR+spatialRel /
+        // time+timeRelation on every op that includes SharedAnalyticsFilterParameters
+        // (analytics.buffer-aggregate, analytics.spatial-join, generalization.dissolve,
+        // generalization.simplify-layer). Every selector is propagated verbatim to
+        // source.honua-layer, which interprets geometry/time through the SAME canonical
+        // translation the synchronous analytics endpoints use (ILayerSelectionFilterTranslator)
+        // and fails closed when it cannot — never a connector-local approximation.
+        var bbox = ReadNonBlank(inputs, "bbox");
+        var geometry = ReadNonBlank(inputs, "geometry");
+        if (bbox is not null && geometry is not null)
+        {
+            throw new TransformInputException("supply either 'bbox' or 'geometry', not both.");
+        }
+
+        var geometryType = ReadNonBlank(inputs, "geometryType");
+        var spatialRel = ReadNonBlank(inputs, "spatialRel");
+        if (geometry is not null)
+        {
+            if (geometryType is not null && !KnownGeometryTypes.Contains(geometryType.Trim()))
+            {
+                throw new TransformInputException(
+                    $"'geometryType' '{geometryType}' is not supported (supported: esriGeometryPoint, " +
+                    "esriGeometryMultipoint, esriGeometryPolyline, esriGeometryPolygon, esriGeometryEnvelope).");
+            }
+
+            if (spatialRel is not null && DistanceSpatialRelationships.Contains(spatialRel.Trim()))
+            {
+                throw new TransformInputException(
+                    $"'spatialRel' '{spatialRel}' is distance-based, which the analytics operations do not support; " +
+                    "use the operation-specific 'distance' parameter or apply the predicate through 'where' instead.");
+            }
+        }
+
+        var time = ReadNonBlank(inputs, "time");
         var request = new DagSourceRequest
         {
             LayerId = RequireLayerId(inputs, "layerId"),
             Where = inputs.TryGet("where", out var where) ? where : null,
-            Bbox = inputs.TryGet("bbox", out var bbox) ? bbox : null,
+            Bbox = bbox,
+            ObjectIds = ResolveObjectIds(inputs),
+            Geometry = geometry,
+            GeometryType = geometry is null ? null : geometryType,
+            InSr = geometry is null ? null : ReadNonBlank(inputs, "inSR"),
+            SpatialRel = geometry is null ? null : spatialRel,
+            Time = time,
+            TimeRelation = time is null ? null : ReadNonBlank(inputs, "timeRelation"),
             OutFields = inputs.TryGet("outFields", out var outFields) ? outFields : null,
             OutputSrid = TryGetPositiveInt(inputs, "outSrid"),
             Since = inputs.TryGet("since", out var since) ? since : null,
@@ -310,6 +522,86 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         };
 
         return CustomizeRequest(request, inputs);
+    }
+
+    private static string? ReadNonBlank(StepInputReader inputs, string key)
+        => inputs.TryGet(key, out var raw) && !string.IsNullOrWhiteSpace(raw) ? raw : null;
+
+    /// <summary>
+    /// The catalog layer whose schema an <c>outStatistics</c> request aggregates over. The
+    /// target layer by default; a two-layer op that aggregates matched rows of a second layer
+    /// (<c>analytics.spatial-join</c>) overrides this.
+    /// </summary>
+    private protected virtual int? ResolveStatisticsLayerId(StepInputReader inputs, DagSourceRequest request)
+        => request.LayerId;
+
+    /// <summary>
+    /// Rejects, BEFORE any layer read, an <c>outStatistics</c> request that is malformed or that
+    /// names a field the aggregated layer does not have (#4624). Without this a misspelled field
+    /// produced a well-formed artifact with a null aggregate column — an ignored statistic
+    /// indistinguishable from "no values". Skipped when catalog metadata (or the layer's schema)
+    /// is unavailable; the parse itself always runs.
+    /// </summary>
+    private async Task ValidateStatisticsAsync(
+        IServiceProvider services,
+        StepInputReader inputs,
+        DagSourceRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!inputs.TryGet("outStatistics", out var raw) || string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
+
+        var stats = StatisticsSupport.ParseOutStatistics(raw);
+        var metadata = services.GetService<IMetadataV2GraphProvider>();
+        if (metadata is null || ResolveStatisticsLayerId(inputs, request) is not { } layerId)
+        {
+            return;
+        }
+
+        var snapshot = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource)
+            || resource.SchemaFields.Count == 0)
+        {
+            return;
+        }
+
+        var primaryId = resource.FindPrimaryIdField()?.Name;
+        foreach (var field in stats.Select(spec => spec.Field).Where(field => field.Length > 0).Distinct(StringComparer.Ordinal))
+        {
+            if (string.Equals(field, primaryId, StringComparison.Ordinal)
+                || resource.SchemaFields.Any(schemaField => string.Equals(schemaField.Name, field, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            var caseMatch = resource.SchemaFields
+                .FirstOrDefault(schemaField => string.Equals(schemaField.Name, field, StringComparison.OrdinalIgnoreCase));
+            throw new TransformInputException(
+                $"'outStatistics' references field '{field}', which is not a field of layer {layerId}"
+                + (caseMatch is null ? "." : $"; did you mean '{caseMatch.Name}'?"));
+        }
+    }
+
+    private static string? ResolveObjectIds(StepInputReader inputs)
+    {
+        if (!inputs.TryGet("objectIds", out var raw) || string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        foreach (var token in raw!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            {
+                throw new TransformInputException(
+                    $"'objectIds' must be a comma-separated list of integer feature identifiers; " +
+                    $"'{token}' is not valid.");
+            }
+        }
+
+        return raw;
     }
 
     private static IDagFeatureSource? ResolveHonuaLayerSource(IServiceProvider services) =>

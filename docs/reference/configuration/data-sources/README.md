@@ -1,3 +1,8 @@
+---
+type: index
+title: "Data sources"
+description: "Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus optional read-only providers that plug in alongside it through the shared feature-provider router."
+---
 # Data sources
 
 Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus optional read-only providers that plug in alongside it through the shared feature-provider router. PostGIS is the only full read/write backend; the others are read/query slices for serving data in place.

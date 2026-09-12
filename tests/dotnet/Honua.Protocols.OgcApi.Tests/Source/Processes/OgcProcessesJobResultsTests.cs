@@ -592,7 +592,7 @@ public sealed class OgcProcessesJobStatusOwnershipTestsFixture : IAsyncLifetime
             Status = ExecutionJobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
             UpdatedAt = DateTimeOffset.UtcNow,
-            Audit = new OperationAuditInfo { RequestedBy = "some-other-owner" },
+            Audit = new OperationAuditInfo { RequestedBy = "some-other-owner", SubmitterSecurityContext = new(null, "public", []) },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
@@ -730,7 +730,7 @@ public sealed class OgcProcessesFailedJobResultsTestsFixture : IAsyncLifetime
             UpdatedAt = DateTimeOffset.UtcNow,
             CompletedAt = DateTimeOffset.UtcNow,
             ErrorMessage = "Process execution failed due to invalid input geometry.",
-            Audit = new OperationAuditInfo { RequestedBy = "admin" },
+            Audit = new OperationAuditInfo { RequestedBy = "admin", SubmitterSecurityContext = new(null, "public", []) },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,

@@ -21,6 +21,9 @@ namespace Honua.Core.Features.Raster.Domain;
 /// <param name="BitsPerSample">Bits per sample (TIFF tag 258), needed to reverse a predictor.</param>
 /// <param name="Predictor">TIFF predictor (tag 317): 1 = none, 2 = horizontal differencing.</param>
 /// <param name="IsLittleEndian">Byte order of the source TIFF, which multi-byte samples are stored in.</param>
+/// <param name="PhotometricInterpretation">TIFF color interpretation: 0 white-is-zero, 1 black-is-zero, 2 RGB.</param>
+/// <param name="PlanarConfiguration">TIFF sample organization: 1 chunky, 2 separate planes.</param>
+/// <param name="NoData">GDAL nodata sample text, or null when the source does not declare one.</param>
 public sealed record CogMetadata(
     int Width,
     int Height,
@@ -34,18 +37,32 @@ public sealed record CogMetadata(
     RasterExtent Extent,
     int BitsPerSample = 8,
     int Predictor = 1,
-    bool IsLittleEndian = true);
+    bool IsLittleEndian = true,
+    int PhotometricInterpretation = 1,
+    int PlanarConfiguration = 1,
+    string? NoData = null);
 
 /// <summary>
 /// One IFD resolution level within a COG.
 /// </summary>
+/// <param name="Level">IFD index, base level first.</param>
+/// <param name="Width">Level width in pixels.</param>
+/// <param name="Height">Level height in pixels.</param>
+/// <param name="IfdOffset">File offset of the level's IFD.</param>
+/// <param name="TileOffsets">File offset of each tile, row-major.</param>
+/// <param name="TileByteCounts">Stored byte length of each tile, row-major.</param>
+/// <param name="JpegTables">
+/// Shared JPEGTables (TIFF tag 347) of this level, or null. TIFF-JPEG tiles referencing them
+/// are abbreviated streams that must be assembled before they can be served.
+/// </param>
 public sealed record CogOverviewLevel(
     int Level,
     int Width,
     int Height,
     long IfdOffset,
     long[] TileOffsets,
-    int[] TileByteCounts);
+    int[] TileByteCounts,
+    byte[]? JpegTables = null);
 
 /// <summary>
 /// Lightweight overview level summary for JSONB persistence (no tile offset arrays).

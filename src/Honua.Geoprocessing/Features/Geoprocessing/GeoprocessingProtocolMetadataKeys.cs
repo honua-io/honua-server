@@ -47,6 +47,9 @@ internal static class GeoprocessingProtocolMetadataKeys
     /// </summary>
     public const string GPServerWorkingSr = "gpserver.env.workingSR";
 
+    /// <summary>Input-derived FeatureSet schema retained for empty GP results.</summary>
+    public const string GPServerFeatureSchema = "gpserver.featureSchema";
+
     /// <summary>
     /// Job spec parameter key storing the GP <c>env:workspace</c> workspace
     /// identifier requested by the caller. Maps onto the existing workspace

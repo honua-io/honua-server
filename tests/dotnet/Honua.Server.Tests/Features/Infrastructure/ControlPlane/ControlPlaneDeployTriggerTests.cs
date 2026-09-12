@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -63,9 +64,12 @@ public sealed class ControlPlaneDeployTriggerTests
     [Fact]
     public async Task HandleDeployEvent_DuplicateAndOutOfOrderInvocation_AdvancesDeployOnce()
     {
-        // Real deploy reconciler behind the real dispatcher: prove the lease + terminal-status guard
-        // make a duplicate / out-of-order event a no-op. The backend reports a terminal Succeeded; the
-        // first event advances the durable record, the duplicates re-read a terminal record and bail.
+        // Real deploy reconciler behind the real dispatcher. The backend reports a terminal Succeeded
+        // observation, which honua-server#4618 turns into an open post-activation observation window
+        // rather than an immediate terminal state — so duplicate/out-of-order events during that window
+        // legitimately keep re-observing (safe: ObserveAsync is read-only and the window guard prevents
+        // a second promotion). The invariant that must hold is idempotency of MUTATING actions, not a
+        // frozen write count.
         var deploy = CreateDeploy("op-dup", WorkflowOperationStatus.Reconciling, providerOperationId: "ecs-dep-dup");
         var store = new FakeWorkflowStore(deploy);
         var backend = new FakeDeployBackend(WorkflowOperationStatus.Succeeded);
@@ -77,9 +81,10 @@ public sealed class ControlPlaneDeployTriggerTests
         await sut.HandleDeployOperationAsync("op-dup");
 
         var stored = await store.GetAsync("op-dup");
-        stored!.Status.Should().Be(WorkflowOperationStatus.Succeeded);
-        store.WriteCount.Should().Be(1, "the terminal guard makes duplicate/out-of-order deploy events a no-op");
-        backend.ObserveCount.Should().Be(1, "only the first event observes the backend; the terminal guard short-circuits the rest");
+        stored!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        stored.Deploy!.Protection.Should().NotBeNull();
+        stored.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Observing);
+        backend.ObserveCount.Should().Be(3, "the operation stays non-terminal through the observation window, so every event re-observes; none of them re-promote or roll back");
     }
 
     // ---- Staged self-continue handler --------------------------------------
@@ -183,13 +188,23 @@ public sealed class ControlPlaneDeployTriggerTests
         // sweep walks it forward again — proving the backstop covers staged ops and is the safety net
         // when a self-continue signal is dropped.
         var stale = DateTimeOffset.UtcNow.AddMinutes(-10);
+        // ScriptMigration stages an immutable candidate from the prior revision captured at Backup, so
+        // the operation carries that identity and the activator serves the prior and staged snapshots.
         var release = CreateMetadata("op-staged", WorkflowOperationStatus.Reconciling, updatedAt: stale)
             with
         {
-            MetadataRelease = MetadataContextAt(MetadataReleaseStage.ScriptMigration)
+            MetadataRelease = MetadataContextAt(MetadataReleaseStage.ScriptMigration) with { PriorRevision = 1, PriorEtag = "\"prior\"" }
         };
         var store = new FakeWorkflowStore(release);
-        var reconciler = BuildMetadataReconciler(store);
+        var prior = new MetadataV2GraphSnapshot(new MetadataV2Graph { Environment = "prod", Revision = 1 }, "\"prior\"", DateTimeOffset.UtcNow);
+        var activator = Substitute.For<IMetadataReleaseActivator>();
+        activator.GetRevisionAsync(1, Arg.Any<CancellationToken>()).Returns(Task.FromResult<MetadataV2GraphSnapshot?>(prior));
+        activator.StageAsync(Arg.Any<MetadataV2Graph>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new MetadataV2GraphSnapshot(prior.Graph with { Revision = 2 }, "\"candidate\"", DateTimeOffset.UtcNow)));
+        var scriptExecutor = Substitute.For<IMetadataReleaseScriptExecutor>();
+        scriptExecutor.PrepareForward(Arg.Any<MetadataReleaseExecutionPlan>(), Arg.Any<MetadataV2Graph>())
+            .Returns(new MetadataReleaseScriptResult { Graph = prior.Graph });
+        var reconciler = BuildMetadataReconciler(store, activator, scriptExecutor);
         var dispatcher = new OperationReconcileDispatcher(
             Substitute.For<IWorkflowOperationReconciler>(),
             Substitute.For<IExecutionJobReconciler>(),
@@ -249,18 +264,17 @@ public sealed class ControlPlaneDeployTriggerTests
             Substitute.For<ICoordinatedReleaseReconciler>());
     }
 
-    private static MetadataReleaseReconciler BuildMetadataReconciler(IWorkflowOperationStore store)
+    private static MetadataReleaseReconciler BuildMetadataReconciler(
+        IWorkflowOperationStore store,
+        IMetadataReleaseActivator activator,
+        IMetadataReleaseScriptExecutor scriptExecutor)
     {
-        var scriptExecutor = Substitute.For<IMetadataReleaseScriptExecutor>();
-        scriptExecutor.ApplyForwardAsync(Arg.Any<MetadataReleaseExecutionPlan>(), Arg.Any<CancellationToken>())
-            .Returns(Task.CompletedTask);
-
         return new MetadataReleaseReconciler(
             store,
             Substitute.For<IMetadataReleasePreflightGate>(),
             scriptExecutor,
             Substitute.For<IMetadataReleaseDataJobDispatcher>(),
-            Substitute.For<IMetadataReleaseActivator>(),
+            activator,
             Substitute.For<IMetadataReleaseSmokeChecker>(),
             NullLogger<MetadataReleaseReconciler>.Instance);
     }

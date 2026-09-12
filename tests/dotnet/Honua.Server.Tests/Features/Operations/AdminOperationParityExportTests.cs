@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Core.Features.Operations.Services;
 using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -53,7 +54,11 @@ public sealed class AdminOperationParityExportTests
     {
         using var document = JsonDocument.Parse(File.ReadAllText(
             RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
-        var catalogIds = AdminApiOperationCatalog.Definitions.ToDictionary(
+        var catalogIds = AdminApiOperationCatalog.Definitions
+            .Select(definition => (definition.OpenApiOperationId, definition.OperationId))
+            .Concat(AdminAccessOperationCatalog.Definitions.Select(
+                definition => (definition.OpenApiOperationId, definition.OperationId)))
+            .ToDictionary(
             definition => definition.OpenApiOperationId,
             definition => definition.OperationId,
             StringComparer.Ordinal);
@@ -85,6 +90,8 @@ public sealed class AdminOperationParityExportTests
     private static string GenerateMcpExport()
     {
         var operations = AdminApiOperationCatalog.Descriptors
+            .Concat(AdminAccessOperationCatalog.Descriptors)
+            .Where(descriptor => !AdminMcpOperationExclusions.ContainsOperation(descriptor.OperationId))
             .OrderBy(descriptor => descriptor.OperationId, StringComparer.Ordinal)
             .Select(descriptor =>
             {
@@ -125,6 +132,11 @@ public sealed class AdminOperationParityExportTests
             catalogFields = CanonicalEnvelopeFields,
             generatedCliFields = CanonicalEnvelopeFields,
             generatedConsoleFields = CanonicalEnvelopeFields,
+            exclusions = new
+            {
+                digest = AdminMcpOperationExclusions.Digest,
+                operations = AdminMcpOperationExclusions.All,
+            },
             operations,
         });
     }
@@ -142,5 +154,5 @@ public sealed class AdminOperationParityExportTests
         File.ReadAllText(RepositoryPaths.Resolve("docs", "gis", "data", fileName));
 
     private static string Serialize<T>(T value) =>
-        JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }) + "\n";
+        JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true, NewLine = "\n" }) + "\n";
 }

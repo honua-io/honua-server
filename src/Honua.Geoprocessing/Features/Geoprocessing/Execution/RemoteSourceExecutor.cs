@@ -145,7 +145,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(20, $"Streaming features from {_processId}", cancellationToken).ConfigureAwait(false);
 
-        var geoJsonReader = new GeoJsonReader();
+        var geoJsonReader = GeoJsonArtifactCodec.CreateReader();
         var features = new List<IFeature>();
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
 
@@ -194,7 +194,9 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(80, "Encoding source artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = FeatureCollectionArtifact.WriteFeatureCollection(features, _processId);
+        var payload = FeatureCollectionArtifact.WriteFeatureCollection(features, _processId,
+            (_processId is "source.honua-layer" or "source.esri-featureserver")
+                && request.OutputSrid is { } outputSrid ? [("srid", outputSrid)] : null);
         if (payload.Length > maxBytes)
         {
             return JobExecutionResult.Failed(

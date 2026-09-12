@@ -21,7 +21,7 @@
 #
 # Pin the base to the same tag the Testcontainer fixture uses
 # (tests/dotnet/Honua.TestKit/PostgresFixture.cs) so PROJ behavior matches.
-ARG BASE_IMAGE=postgis/postgis:18-3.6
+ARG BASE_IMAGE=postgis/postgis:18-3.6@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677
 FROM ${BASE_IMAGE}
 
 # The PROJ data directory inside the postgis/postgis image. PROJ searches this

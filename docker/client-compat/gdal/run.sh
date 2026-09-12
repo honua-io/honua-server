@@ -27,20 +27,36 @@ mkdir -p /output
 # tests/ bind mount.
 export HONUA_BASE_URL HONUA_GDAL_SERVICE_ID HONUA_GDAL_COLLECTION_ID
 export HONUA_GDAL_RESULTS_PATH=/output/gdal-ogr-results.json
+# CERT failures are evidence, not infrastructure faults: the envelope is the
+# gate, so a red case must still produce output and a zero exit here. `|| true`
+# is scoped to the test runner only - the envelope-presence checks below are
+# what actually distinguish "lane ran and reported" from "lane broke"
+# (honua-server#4420; this lane previously had neither check, unlike the
+# geopandas and duckdb lanes).
 pytest tests/python/gdal_ogr \
     --tb=short \
     -v \
     --override-ini="addopts=" \
     || true
 
+if [[ ! -f /output/gdal-ogr-results.json ]]; then
+    echo "GDAL/OGR lane FAILED: no gdal-ogr-results.json was written to /output." >&2
+    exit 1
+fi
+
 # Convert the GDAL custom JSON into per-protocol .cert.json envelopes so the
 # baseline-diff step in client-interop-nightly can compare GDAL results
 # against tests/baselines/client-compat/gdal/. The converter is mounted at
 # /workspace/scripts/client-compat by docker/client-compat/compose.yml.
-if [[ -f /output/gdal-ogr-results.json ]]; then
-    python3 /workspace/scripts/client-compat/convert-gdal-results.py \
-        --input /output/gdal-ogr-results.json \
-        --output-dir /output
+python3 /workspace/scripts/client-compat/convert-gdal-results.py \
+    --input /output/gdal-ogr-results.json \
+    --output-dir /output
+
+shopt -s nullglob
+envelopes=(/output/*-cli-gdal-*.cert.json)
+if [[ ${#envelopes[@]} -eq 0 ]]; then
+    echo "GDAL/OGR lane FAILED: no .cert.json envelope was written to /output." >&2
+    exit 1
 fi
 
-echo "GDAL/OGR lane complete; output written to /output."
+echo "GDAL/OGR lane complete; ${#envelopes[@]} envelope(s) written to /output."

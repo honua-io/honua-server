@@ -56,6 +56,19 @@ sql:
   - |
       CREATE TABLE IF NOT EXISTS sta_observation_default
           PARTITION OF sta_observation DEFAULT;
+  # Identifier sequences from migration 116_AddSensorThingsIdSequences.sql: ingest allocates
+  # @iot.ids from these instead of MAX(id) + 1, so the fixture needs them to exercise the
+  # concurrent-ingest path (#4199). Unqualified names land in the test's isolated schema.
+  - "CREATE SEQUENCE IF NOT EXISTS sta_thing_id_seq AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE OWNED BY sta_thing.id;"
+  - "CREATE SEQUENCE IF NOT EXISTS sta_sensor_id_seq AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE OWNED BY sta_sensor.id;"
+  - "CREATE SEQUENCE IF NOT EXISTS sta_observed_property_id_seq AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE OWNED BY sta_observed_property.id;"
+  - "CREATE SEQUENCE IF NOT EXISTS sta_datastream_id_seq AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE OWNED BY sta_datastream.id;"
+  - "CREATE SEQUENCE IF NOT EXISTS sta_observation_id_seq AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE OWNED BY sta_observation.id;"
+  - "ALTER TABLE sta_thing ALTER COLUMN id SET DEFAULT nextval('sta_thing_id_seq');"
+  - "ALTER TABLE sta_sensor ALTER COLUMN id SET DEFAULT nextval('sta_sensor_id_seq');"
+  - "ALTER TABLE sta_observed_property ALTER COLUMN id SET DEFAULT nextval('sta_observed_property_id_seq');"
+  - "ALTER TABLE sta_datastream ALTER COLUMN id SET DEFAULT nextval('sta_datastream_id_seq');"
+  - "ALTER TABLE sta_observation ALTER COLUMN id SET DEFAULT nextval('sta_observation_id_seq');"
   - "CREATE INDEX IF NOT EXISTS ix_sta_observation_time ON sta_observation USING BRIN (phenomenon_time);"
   - "CREATE INDEX IF NOT EXISTS ix_sta_observation_datastream_time ON sta_observation (datastream_id, phenomenon_time);"
   - |
@@ -90,6 +103,13 @@ sql:
           NULL::bigint
       FROM generate_series(1, 48) AS gs
       ON CONFLICT (id, phenomenon_time) DO NOTHING;
+  # The seeded catalog and observation rows carry explicit ids, so move each sequence past
+  # them exactly as the migration's setval block does.
+  - "SELECT setval('sta_thing_id_seq', GREATEST(COALESCE(MAX(id), 0), 1), COALESCE(MAX(id), 0) > 0) FROM sta_thing;"
+  - "SELECT setval('sta_sensor_id_seq', GREATEST(COALESCE(MAX(id), 0), 1), COALESCE(MAX(id), 0) > 0) FROM sta_sensor;"
+  - "SELECT setval('sta_observed_property_id_seq', GREATEST(COALESCE(MAX(id), 0), 1), COALESCE(MAX(id), 0) > 0) FROM sta_observed_property;"
+  - "SELECT setval('sta_datastream_id_seq', GREATEST(COALESCE(MAX(id), 0), 1), COALESCE(MAX(id), 0) > 0) FROM sta_datastream;"
+  - "SELECT setval('sta_observation_id_seq', GREATEST(COALESCE(MAX(id), 0), 1), COALESCE(MAX(id), 0) > 0) FROM sta_observation;"
   - |
       CREATE TABLE IF NOT EXISTS honua.services (
           service_name VARCHAR(64) PRIMARY KEY,
@@ -823,6 +843,11 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_gitops_change_records_status ON honua.gitops_change_records(status);"
   - "CREATE INDEX IF NOT EXISTS idx_gitops_change_records_approval ON honua.gitops_change_records(pending_approval_id) WHERE pending_approval_id IS NOT NULL;"
   - |
+      -- Import-table DDL below mirrors src/Honua.Server/Migrations/111_PreserveImportOrdinateDimensions.sql:
+      -- a GEOMETRY(Geometry, srid) typmod is XY-only and rejects every XYZ/XYM row (KML altitudes,
+      -- GPX elevations) with "Geometry has Z dimension but column does not". Integration tests seed
+      -- this file instead of running migrations, so a typmod here silently empties those imports
+      -- while production keeps them (honua-server#4419).
       CREATE OR REPLACE FUNCTION honua.create_import_table(schema_name text, table_name text, target_srid integer DEFAULT 4326)
       RETURNS void
       LANGUAGE plpgsql
@@ -855,7 +880,7 @@ sql:
           EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
           EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, table_name);
           EXECUTE format(
-              'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+              'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
               schema_name, table_name, target_srid);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || table_name || '_properties', schema_name, table_name);
@@ -944,7 +969,7 @@ sql:
 
           EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
           EXECUTE format(
-              'CREATE TABLE IF NOT EXISTS %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+              'CREATE TABLE IF NOT EXISTS %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
               schema_name, table_name, target_srid);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || table_name || '_properties', schema_name, table_name);
@@ -998,7 +1023,7 @@ sql:
           EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
           EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
           EXECUTE format(
-              'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+              'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY CHECK (ST_SRID(geometry) = %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
               schema_name, staging_name, target_srid);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || staging_name || '_geometry', schema_name, staging_name);
           EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || staging_name || '_properties', schema_name, staging_name);
@@ -1028,6 +1053,28 @@ sql:
               schema_name, 'idx_' || staging_name || '_geometry', 'idx_' || table_name || '_geometry');
           EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
               schema_name, 'idx_' || staging_name || '_properties', 'idx_' || table_name || '_properties');
+      END;
+      $$;
+  - |
+      -- Mirrors migration 115_AddDropImportStagingTable.sql. A Replace whose load dropped
+      -- rows against an already-populated target never promotes its staging sibling (#4006)
+      -- and drops it instead, so this migration-skipping fixture must declare the helper or
+      -- that path fails with 42883 on "honua.drop_import_staging_table".
+      CREATE OR REPLACE FUNCTION honua.drop_import_staging_table(
+          schema_name text,
+          table_name text)
+      RETURNS void
+      LANGUAGE plpgsql
+      AS $$
+      DECLARE
+          staging_name text;
+      BEGIN
+          PERFORM honua.assert_import_identifier(schema_name, 'Schema name');
+          PERFORM honua.assert_import_identifier(table_name, 'Table name');
+
+          staging_name := honua.import_staging_table_name(table_name);
+
+          EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, staging_name);
       END;
       $$;
   - |
@@ -1321,6 +1368,35 @@ sql:
       );
   - "CREATE INDEX IF NOT EXISTS idx_alert_event_lifecycle_status_updated ON honua.alert_event_lifecycle(lifecycle_status, updated_at DESC);"
   - "CREATE INDEX IF NOT EXISTS idx_alert_events_occurred_event ON honua.alert_events(occurred_at DESC, event_id DESC);"
+  - |
+      -- Durable audit intents written in the same transaction as the alert lifecycle
+      -- mutation they describe, mirroring 114_AddAlertAuditOutbox.sql (#3865). The alert
+      -- lifecycle stores and AlertAuditOutboxReconciler read and write this table on every
+      -- host, so this migration-skipping integration fixture must declare it or the
+      -- reconciler's first pass fails with 42P01 on "honua.alert_audit_outbox".
+      CREATE TABLE IF NOT EXISTS honua.alert_audit_outbox (
+          outbox_id        BIGSERIAL PRIMARY KEY,
+          event_id         BIGINT      NOT NULL REFERENCES honua.alert_events(event_id) ON DELETE CASCADE,
+          action           TEXT        NOT NULL,
+          actor            TEXT        NOT NULL,
+          note             TEXT        NULL,
+          details          TEXT        NOT NULL DEFAULT '',
+          correlation_id   TEXT        NOT NULL,
+          idempotency_key  TEXT        NOT NULL,
+          occurred_at      TIMESTAMPTZ NOT NULL,
+          audit_id         TEXT        NULL,
+          completed_at     TIMESTAMPTZ NULL,
+          attempts         INTEGER     NOT NULL DEFAULT 0,
+          last_error       TEXT        NULL,
+          next_attempt_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+          claimed_until    TIMESTAMPTZ NULL,
+          claim_token      UUID        NULL
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS ux_alert_audit_outbox_idempotency ON honua.alert_audit_outbox (idempotency_key);"
+  - |
+      CREATE INDEX IF NOT EXISTS ix_alert_audit_outbox_pending
+          ON honua.alert_audit_outbox (next_attempt_at, outbox_id)
+          WHERE completed_at IS NULL;
   - |
       CREATE TABLE IF NOT EXISTS honua.audit_log (
           audit_id         BIGSERIAL    PRIMARY KEY,
@@ -1663,6 +1739,8 @@ sql:
           CONSTRAINT feature_changes_valid_operation CHECK(operation IN (1, 2, 3))
       );
   - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS public_objectid BIGINT;"
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS origin_replica_id TEXT;"
+  - "ALTER TABLE honua.feature_changes ALTER COLUMN origin_replica_id SET DEFAULT NULLIF(current_setting('honua.origin_replica_id', true), '');"
   - |
       ALTER TABLE IF EXISTS honua.feature_changes
           ADD COLUMN IF NOT EXISTS event_id TEXT,
@@ -2103,7 +2181,17 @@ sql:
   # The mobile seed owns and self-cleans its own IDs, so exclude that fixture's footprint here —
   # this keeps the deterministic server-catalog reset while leaving the mobile fixture intact and
   # does not touch the advisory-lock serialization that fixes the 40P01 deadlock.
-  - "DELETE FROM honua.scene_datasets WHERE id <> 'downtown-honolulu';"
+  #
+  # Same mechanism, same fix, second victim (Operator Eval Harness flaky-shard investigation):
+  # this seed runs on EVERY isolated WebAppFixture host that does not opt into a custom seed —
+  # i.e. once per test method across the whole parallel matrix, not once per run. Any other
+  # concurrently-initializing isolated host applying this seed WHILE SceneGrpcIntegrationTests
+  # (tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/SceneGrpcIntegrationTests.cs) has
+  # already registered its own 'extent-scene' / 'inactive-grpc-scene' rows but has not yet read
+  # them back deletes those rows out from under it, intermittently dropping exactly one scene
+  # from ListScenes (honua-server flaky "Server Tests (Operator Eval Harness)" shard). Exclude
+  # that fixture's own IDs too, for the same reason 'downtown-honolulu' is excluded above.
+  - "DELETE FROM honua.scene_datasets WHERE id NOT IN ('downtown-honolulu', 'extent-scene', 'inactive-grpc-scene');"
   # v1 metadata-graph tables dropped by migration 038_DropV1MetadataGraphTables.sql.
   - "DELETE FROM honua.relationships WHERE layer_id NOT IN (68910, 68920) AND related_layer_id NOT IN (68910, 68920);"
   - "DELETE FROM honua.service_layers WHERE service_name <> 'mobile_offline_demo' AND layer_id NOT IN (68910, 68920);"

@@ -197,7 +197,7 @@ public sealed class OgcProcessesJobOwnershipTestsFixture : IAsyncLifetime
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
             ErrorMessage = errorMessage,
-            Audit = new OperationAuditInfo { RequestedBy = owner },
+            Audit = new OperationAuditInfo { RequestedBy = owner, SubmitterSecurityContext = new(null, "public", []) },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,

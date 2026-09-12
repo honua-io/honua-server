@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
 using Honua.ControlPlane;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -19,6 +20,57 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Collection("ControlPlaneTransitionTelemetry")]
 public sealed class ExecutionJobReconcilerTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    public async Task ReconcileExecutionJob_LicenseExpiry_CancelsRemoteJobAndClearsPartialOutputs(bool expiredBeforePoll)
+    {
+        using var expiry = new CancellationTokenSource();
+        var policy = Substitute.For<ILicenseOperationPolicy>();
+        policy.OperationCancellation.Returns(expiry.Token);
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        CancellationToken observationToken = default;
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                observationToken = call.Arg<CancellationToken>();
+                expiry.Cancel();
+                return new BatchComputeObservation { Status = ExecutionJobStatus.Succeeded, PercentComplete = 100 };
+            });
+        backend.CancelAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(new BatchComputeObservation { Status = ExecutionJobStatus.Cancelled });
+        var job = CreateJobRecord("synthetic-expired-remote", ExecutionJobStatus.Running,
+            "aws-batch", BatchComputeTargetKind.AwsBatch) with
+        {
+            ProviderOperationId = "synthetic-provider-job",
+            ArtifactReferences = ["synthetic-partial-output"]
+        };
+        var store = new InMemoryExecutionJobStore(job);
+        var sut = new ExecutionJobReconciler(store, [backend], new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance, policy);
+        if (expiredBeforePoll)
+        {
+            expiry.Cancel();
+        }
+
+        await sut.ReconcileExecutionJobAsync(job.OperationId);
+
+        var failed = (await store.GetAsync(job.OperationId))!;
+        failed.Status.Should().Be(ExecutionJobStatus.Failed);
+        failed.ErrorMessage.Should().Be("license expired");
+        failed.ArtifactReferences.Should().BeEmpty();
+        failed.PercentComplete.Should().NotBe(100);
+        await backend.Received(1).CancelAsync(Arg.Any<ExecutionJobRecord>(),
+            Arg.Is<CancellationToken>(token => !token.IsCancellationRequested));
+        if (!expiredBeforePoll)
+        {
+            observationToken.IsCancellationRequested.Should().BeTrue();
+        }
+    }
+
     [Fact]
     public async Task ReconcileExecutionJob_BackendMissing_FailsJobRecordAndBridgesProgress()
     {

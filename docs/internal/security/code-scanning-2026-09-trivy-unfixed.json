@@ -1,0 +1,250 @@
+{
+  "scanner": "Trivy 0.70.0",
+  "image": "honua-security-jit:20260905",
+  "localImageId": "sha256:031400076c54ed15fae959acbfad774265d9d7dba2b04607ca8e123c8a116b73",
+  "actionCommit": "ed142fd0673e97e23eac54620cfb913e5ce36c25",
+  "format": "sarif",
+  "severity": "all (the pinned action unsets TRIVY_SEVERITY for SARIF by default)",
+  "ignoreFile": ".trivyignore (unchanged)",
+  "resultCount": 34,
+  "findings": [
+    {
+      "id": "CVE-2026-18374",
+      "package": "libc-bin",
+      "installedVersion": "2.39-0ubuntu8.8",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-18374",
+      "package": "libc6",
+      "installedVersion": "2.39-0ubuntu8.8",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2025-59375",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2025-66382",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-32776",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-32777",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-32778",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-41080",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-45186",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-50219",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56131",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56132",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56403",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56404",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56405",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56406",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56407",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56408",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56409",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56410",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56411",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-56412",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-66046",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-72522",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-76641",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-76957",
+      "package": "libexpat1",
+      "installedVersion": "2.6.1-2ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2025-5222",
+      "package": "libicu74",
+      "installedVersion": "74.2-1ubuntu3.1",
+      "severity": "LOW",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-40228",
+      "package": "libsystemd0",
+      "installedVersion": "255.4-1ubuntu8.17",
+      "severity": "LOW",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-40228",
+      "package": "libudev1",
+      "installedVersion": "255.4-1ubuntu8.17",
+      "severity": "LOW",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2024-56433",
+      "package": "login",
+      "installedVersion": "1:4.13+dfsg1-4ubuntu3.2",
+      "severity": "LOW",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2024-56433",
+      "package": "passwd",
+      "installedVersion": "1:4.13+dfsg1-4ubuntu3.2",
+      "severity": "LOW",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-18477",
+      "package": "tar",
+      "installedVersion": "1.35+dfsg-3ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2026-18508",
+      "package": "tar",
+      "installedVersion": "1.35+dfsg-3ubuntu0.4",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    },
+    {
+      "id": "CVE-2021-31879",
+      "package": "wget",
+      "installedVersion": "1.21.4-1ubuntu4.5",
+      "severity": "MEDIUM",
+      "fixedVersion": ""
+    }
+  ]
+}

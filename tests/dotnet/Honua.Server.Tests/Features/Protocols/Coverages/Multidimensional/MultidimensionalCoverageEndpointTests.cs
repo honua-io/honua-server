@@ -284,9 +284,20 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    /// <summary>
+    /// Validates the materializer against a HAND-WRITTEN worker envelope (honua-server#4395).
+    /// </summary>
+    /// <remarks>
+    /// No GDAL multidimensional scan runs here: the worker envelope is a string literal built
+    /// from <c>GdalMdimInfoJson</c> and the job record is seeded as already <c>Succeeded</c>. What
+    /// this proves is that the materializer turns a well-formed <c>mdiminfo</c> document into the
+    /// expected coverage metadata — a real and useful contract, but not evidence that the scan
+    /// chain produces such a document. The real-worker chain runs in
+    /// <c>docker/client-compat/multidim-fixture/verify.py</c>.
+    /// </remarks>
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/multidim-coverages/jobs/{jobId}")]
-    public async Task ScanJobStatus_SucceededJob_MaterializesMetadata()
+    public async Task ScanJobStatus_SucceededJob_MaterializesMetadataFromAHandWrittenEnvelope()
     {
         var id = await RegisterAsync("scan-materialize", "ghrsst/scan-materialize.nc4");
         try

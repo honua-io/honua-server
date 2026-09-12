@@ -1,3 +1,9 @@
+---
+type: reference
+title: "WMS, WFS, WCS, WMTS (classic OGC)"
+description: "Honua serves the classic OGC KVP/XML web services for clients that have not moved to the OGC API family: desktop GIS, legacy integrations, and CITE-certified workflows."
+resource: "honua://capability/serve.wms"
+---
 # WMS, WFS, WCS, WMTS (classic OGC)
 
 Honua serves the classic OGC KVP/XML web services for clients that have not moved to the OGC API family: desktop GIS, legacy integrations, and CITE-certified workflows.
@@ -7,7 +13,7 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | Service | Versions | Notes |
 | --- | --- | --- |
 | WMS | 1.3.0, 1.1.1 | Version negotiated per request; 1.3.0 is default. |
-| WFS | 2.0.0, 1.1.0, 1.0.0 | Single dispatcher endpoint; version negotiated via `VERSION`/`ACCEPTVERSIONS`. |
+| WFS | 2.0.0, 1.1.0, 1.0.0 | Single dispatcher endpoint; version negotiated via `VERSION`/`ACCEPTVERSIONS`. Legacy versions serve GML rather than the 2.0 encodings: **1.1.0 → GML 3.1.1**, **1.0.0 → GML 2.1.2**. |
 | WCS | 2.0.1 | KVP only. |
 | WMTS | 1.0.0 | KVP and RESTful tile paths. |
 
@@ -23,6 +29,38 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | GET | `/ogc/services/{serviceId}/wcs` | WCS 2.0.1, scoped to one service. |
 | GET | `/rest/services/{serviceId}/ImageServer/WCS` | WCS 2.0.1, layer-scoped (`COVERAGEID` is the bare integer layer id). |
 
+### Why WFS has no `/ogc/services/{serviceId}/wfs`
+
+The asymmetry above is deliberate, and it is the one thing about these routes
+worth knowing before you construct a URL by pattern. The rule is recorded as
+[ADR-0079](../../internal/contributor/adr/0079-protocol-route-scoping.md).
+
+**A protocol is scoped by whatever its own specification makes the addressable
+unit.** WMS, WMTS and WCS render a *composition* — which layers, in what order,
+over what extent — and a service is the name for that composition, so the path
+has to carry it. There is no useful `GetMap` without knowing which map.
+
+WFS does not render anything. It returns features, and the request already
+names what it wants in `typeName` (`GetFeature&TYPENAMES=...`), which resolves
+globally. A service segment in front of that would be redundant, and it would
+make the same feature addressable by more than one URL.
+
+So WFS is served **only** at the root `/wfs`. There is no service-scoped form
+and no GeoServices alias — `FeatureServer` has no `WFS` endpoint here for the
+same reason Esri's own `FeatureServer` does not expose one.
+
+Asking for `/ogc/services/{serviceId}/wfs` returns **404**. A client configured to
+fail hard on HTTP errors and stay quiet reports that as a transport-style failure
+with an empty body, which reads as though the server is broken rather than as a
+route that does not exist. Rule the URL out first when a WFS request fails with
+nothing in the response.
+
+The same rule explains the rest of the surface: OData (`/odata`), STAC
+(`/stac`) and SensorThings (`/sta/v1.1`) are all single-rooted because each
+addresses its records through the request rather than the path, while vector
+tiles (`/tiles/{layerId}`) and scenes (`/api/scenes/{sceneId}`) are scoped by
+the unit their clients actually fetch.
+
 ## WMS operations
 
 | Operation | Key parameters |
@@ -35,6 +73,21 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 Axis-order quirk: WMS 1.3.0 `BBOX` follows the CRS-defined axis order (lat,lon for EPSG:4326); WMS 1.1.1 always uses lon,lat. Honua applies the correct order per negotiated version.
 
 > Open `https://server.example.com/ogc/services/roads/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&CRS=EPSG:4326&BBOX=37.7,-122.5,37.9,-122.3&WIDTH=800&HEIGHT=600&FORMAT=image/png` in a browser.
+
+### GetFeatureInfo JSON
+
+`INFO_FORMAT=application/json` returns a GeoJSON `FeatureCollection`. Each result
+has `type: "Feature"`, a `properties` object containing visible attributes, and
+`geometry: null`: this identify response supplies attributes only. Null attribute
+values remain JSON null, booleans remain JSON booleans, and internal attributes are excluded. An empty result
+is a FeatureCollection with an empty features array.
+
+The `layer` and `attributes` members remain available as foreign members for
+existing consumers. The top-level type replaces the earlier `FeatureInfoResponse`
+value so native GeoJSON identify readers, including QGIS, can read the response.
+Consumers that explicitly match the old type must accept `FeatureCollection`.
+JSON boolean attributes previously normalized to `0`/`1` now retain `false`/`true`;
+text and GML feature-info retain their existing `0`/`1` representation.
 
 ### GetLegendGraphic
 
@@ -97,7 +150,7 @@ All WFS versions share `GET/POST /wfs`. WFS 2.0 operations:
 
 Temporal subsetting selects the coverage only when its acquisition instant falls inside the requested window; a non-intersecting window yields an `InvalidSubsetting` exception. Unsupported `GetCoverage` parameters (`SIZE`/`WIDTH`/`HEIGHT`/`RESOLUTION`, `MEDIATYPE`, XML POST) return a 501 OWS `ExceptionReport` rather than being silently ignored; an unsupported `INTERPOLATION` method returns an `InterpolationMethodNotSupported` exception. The additive read parameters are CITE-neutral (no new conformance class is advertised). Errors use OWS 2.0 `ExceptionReport` XML with stable exception codes.
 
-`GetCapabilities` advertises the transformable output/subsetting CRS values in the `wcs:ServiceMetadata` `wcs:Extension` slot (`crs:crsSupported` per value), covering each visible coverage's native CRS plus the default WGS84 (`EPSG:4326`) and WebMercator (`EPSG:3857`) identifiers, filtered to what the CRS registry can resolve. Because `wcs:Extension` is an `xs:any` slot in `wcsAll.xsd`, this is purely additive and keeps the document valid for the WCS core ETS — the WCS CRS-extension conformance class (OGC 11-053r1) is deliberately **not** declared in `ows:Profile` or OperationsMetadata; only the advertisement values are emitted. `GetCoverage` validates a client-supplied `OUTPUTCRS`/`SUBSETTINGCRS`/`BBOXCRS` against that same bounded set: a malformed identifier returns `InvalidParameterValue`, and a well-formed but non-transformable value returns `OutputCrs-NotSupported` or `SubsettingCrs-NotSupported` (both HTTP 400) instead of failing downstream in the reprojection path. The coverage native CRS is always accepted.
+`GetCapabilities` advertises the transformable output/subsetting CRS values in the `wcs:ServiceMetadata` `wcs:Extension` slot (`crs:crsSupported` per value), covering each visible coverage's native CRS plus the default WGS84 and WebMercator identifiers, filtered to what the CRS registry can resolve. Longitude/latitude is advertised as CRS84 (`http://www.opengis.net/def/crs/OGC/1.3/CRS84`), not `EPSG:4326`: spatial subsets and bounding boxes are always read in longitude/latitude order, which is the axis order CRS84 declares and the reverse of EPSG:4326's, and `DescribeCoverage` declares its geographic envelopes and grid origins with the same CRS84 identifier. WebMercator is advertised as `EPSG:3857`. Because `wcs:Extension` is an `xs:any` slot in `wcsAll.xsd`, this is purely additive and keeps the document valid for the WCS core ETS — the WCS CRS-extension conformance class (OGC 11-053r1) is deliberately **not** declared in `ows:Profile` or OperationsMetadata; only the advertisement values are emitted. `GetCoverage` validates a client-supplied `OUTPUTCRS`/`SUBSETTINGCRS`/`BBOXCRS` against that same bounded set of SRIDs — every spelling that resolves to a supported SRID is accepted, so `EPSG:4326` and its URN/URI forms still work even though CRS84 is the advertised identifier: a malformed identifier returns `InvalidParameterValue`, and a well-formed but non-transformable value returns `OutputCrs-NotSupported` or `SubsettingCrs-NotSupported` (both HTTP 400) instead of failing downstream in the reprojection path. The coverage native CRS is always accepted.
 
 `SUBSET` axis labels resolve in three tiers: the spatial axes (`x`/`E`/`Long`/`Lon` and `y`/`N`/`Lat`) trim the grid; `phenomenonTime` slices against the coverage acquisition time; and any further named axis is treated as an additional dimension subset. When the layer has a readable registered multidimensional (Zarr) store, a single coordinate selection on a declared additional axis is served through the shared bounded slice reader as a native-CRS, nearest-neighbor grayscale PNG. Out-of-range coordinates return `InvalidSubsetting`; an undeclared axis returns `InvalidAxisLabel`; and malformed values return `InvalidSubsetting`. Multi-coordinate trims, TIFF/JPEG output, reprojection, and advanced interpolation are rejected explicitly rather than falling back to the dimension-collapsed primary raster.
 
@@ -123,6 +176,28 @@ operator ruling keeps non-security parity work deferred to release/2026.2.
 | `GetFeatureInfo` | Tile-coordinate identify with `I`/`J` and `INFOFORMAT`; resolves the requested gridset through the same `ITileMatrixSetRegistry` as `GetTile`, so the built-in `WebMercatorQuad`/`WorldCRS84Quad` gridsets and operator-defined custom gridsets are supported. The clicked pixel is mapped to a world coordinate using the gridset's own origin, cell size and matrix dimensions (WebMercatorQuad stays byte-identical to before); unsupported gridsets are rejected with `InvalidParameterValue`. |
 
 > Open `https://server.example.com/ogc/services/roads/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=0&STYLE=default&TILEMATRIXSET=EPSG:3857&TILEMATRIX=12&TILEROW=1586&TILECOL=655&FORMAT=image/png` in a browser.
+
+WMTS GetTile and GetFeatureInfo ignore unknown KVP parameters, including
+unadvertised `TIME` and `ELEVATION` dimensions. Known parameters and advertised
+dimension values remain validated. This permits client extras such as QGIS's
+`SLD_VERSION` and `TRANSPARENT` on a legend tile request without rejecting the
+tile. See [WMTS 1.0 sections 7.2.2.2 and 7.3.2.2](https://docs.ogc.org/is/07-057r7/07-057r7.pdf).
+
+### WMTS GetFeatureInfo JSON
+
+`INFOFORMAT=application/json` and the advertised RESTful `.json` feature-info
+template return the same GeoJSON representation described for WMS above:
+`FeatureCollection`, `Feature`, `properties` and `geometry: null`. Visible
+attribute values preserve JSON numbers, booleans, strings and nulls. Empty
+results have an empty `features` array; internal attributes are excluded.
+The `layer` and `attributes` foreign members remain available.
+
+This corrects the earlier WMTS `FeatureInfoResponse` envelope and string-only
+attribute values, which stock QGIS could not read in its Feature identify
+format. Consumers of the earlier envelope must accept `FeatureCollection` and
+typed values. The `text/plain` / `.txt` representation is unchanged, including
+an empty value after `=` for NULL. This JSON compatibility behavior is separate
+from the WMTS core conformance results and Preview release status.
 
 ## Conformance
 

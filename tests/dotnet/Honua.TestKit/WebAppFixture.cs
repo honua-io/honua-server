@@ -55,6 +55,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     private string? _currentSchema;
     private string _environmentName = "Test";
     private bool _useSharedServer;
+    private bool _useKestrel;
     private string? _seedPath;
     private string? _seedProfile;
     private IServiceScope? _serviceScope;
@@ -128,7 +129,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public IServiceProvider Services => ActiveFactory.Services;
 
-    private bool HasCustomConfiguration => _serviceConfigurations.Count > 0
+    private bool HasCustomConfiguration => _useKestrel || _serviceConfigurations.Count > 0
         || _configureWebHost != null
         || !string.Equals(_environmentName, "Test", StringComparison.OrdinalIgnoreCase);
 
@@ -154,6 +155,30 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         _postgres = new PostgresFixture();
         await _postgres.InitializeAsync();
+        await InitializeIsolatedHostAsync();
+    }
+
+    /// <summary>
+    /// Stops and recreates an isolated host while retaining its real database and
+    /// schema. Restart proofs must use custom configuration so they own the host.
+    /// </summary>
+    public async Task RestartHostAsync()
+    {
+        if (_useSharedServer || _factory is null || _postgres is null)
+        {
+            throw new InvalidOperationException("Restart requires an initialized, isolated host.");
+        }
+        _serviceScope?.Dispose();
+        _serviceScope = null;
+        Client.Dispose();
+        await _factory.DisposeAsync();
+        _factory = null;
+        await InitializeIsolatedHostAsync();
+    }
+
+    private async Task InitializeIsolatedHostAsync()
+    {
+        var postgres = _postgres ?? throw new InvalidOperationException("Postgres fixture is not initialized.");
 
         // Not disposed here by design: this factory is stored in the instance field
         // _factory and disposed once in DisposeAsync (see below), which owns its lifetime
@@ -172,14 +197,14 @@ public sealed class WebAppFixture : IAsyncLifetime
                 {
                     configBuilder.AddInMemoryCollection(
                         Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin
-                            .BuildAppConfigurationDictionary(_postgres.ConnectionString));
+                            .BuildAppConfigurationDictionary(postgres.ConnectionString));
                 });
 
                 builder.ConfigureTestServices(services =>
                 {
                     Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin.ConfigureIsolatedTestServices(
                         services,
-                        _postgres.ConnectionString,
+                        postgres.ConnectionString,
                         () => _currentSchema,
                         _serviceConfigurations);
 
@@ -194,12 +219,17 @@ public sealed class WebAppFixture : IAsyncLifetime
             },
             _environmentName);
 
+        if (_useKestrel)
+        {
+            _factory.UseKestrel(0);
+        }
+
         Client = CreateClient();
         _serviceScope = _factory.Services.CreateScope();
 
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
-            _currentSchema = await _postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
+            _currentSchema = await postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
             await SeedSchemaAsync(_currentSchema);
         }
         ApplyCurrentSchemaHeader(Client);
@@ -478,6 +508,20 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Uses a real loopback Kestrel server for HTTP transport tests. Call before initialization.
+    /// </summary>
+    public WebAppFixture UseKestrel()
+    {
+        if (_factory is not null || _useSharedServer)
+        {
+            throw new InvalidOperationException("Configure Kestrel before initializing the fixture.");
+        }
+
+        _useKestrel = true;
+        return this;
+    }
+
+    /// <summary>
     /// Configures the environment that both early <c>Program.cs</c> startup and the final
     /// web host observe. Must be called before <see cref="InitializeAsync"/>.
     /// </summary>
@@ -530,6 +574,54 @@ public sealed class WebAppFixture : IAsyncLifetime
             services.AddSingleton(instance);
         });
         return this;
+    }
+
+    /// <summary>
+    /// Wraps the registered <typeparamref name="TService"/> in a decorator instead of replacing it,
+    /// so a test can observe or perturb one method while every other call still reaches the real
+    /// production implementation (for example a real PostGIS feature writer). The original
+    /// registration's lifetime is preserved.
+    /// </summary>
+    /// <param name="decorate">Builds the decorator from the resolved inner service.</param>
+    public WebAppFixture DecorateService<TService>(Func<TService, TService> decorate)
+        where TService : class
+    {
+        ArgumentNullException.ThrowIfNull(decorate);
+        _serviceConfigurations.Add(services =>
+        {
+            var original = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(TService))
+                ?? throw new InvalidOperationException(
+                    $"No registration for {typeof(TService).Name} to decorate.");
+            services.Remove(original);
+            services.Add(ServiceDescriptor.Describe(
+                typeof(TService),
+                provider => decorate((TService)ResolveOriginal(provider, original)),
+                original.Lifetime));
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Materializes the service a <see cref="DecorateService{TService}"/> call displaced, covering
+    /// all three descriptor shapes (instance, factory, implementation type).
+    /// </summary>
+    private static object ResolveOriginal(IServiceProvider provider, ServiceDescriptor original)
+    {
+        if (original.ImplementationInstance is { } instance)
+        {
+            return instance;
+        }
+
+        if (original.ImplementationFactory is { } factory)
+        {
+            return factory(provider);
+        }
+
+        return ActivatorUtilities.CreateInstance(
+            provider,
+            original.ImplementationType
+                ?? throw new InvalidOperationException(
+                    $"Cannot decorate {original.ServiceType.Name}: the registration has no implementation."));
     }
 
     /// <summary>

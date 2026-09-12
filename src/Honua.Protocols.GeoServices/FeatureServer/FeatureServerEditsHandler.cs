@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.AttributeRules;
+using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -21,6 +22,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
@@ -54,6 +56,8 @@ internal sealed class FeatureServerEditsHandler(
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly IPluginEditPipeline _pluginPipeline = dependencies.PluginPipeline;
     private readonly IApplyEditsIdempotencyStore _idempotencyStore = dependencies.IdempotencyStore;
+    private readonly IFeatureEditGuard _editGuard = dependencies.EditGuard;
+    private readonly IFeatureLockService _featureLocks = dependencies.FeatureLocks;
     private readonly ILogger<FeatureServerEditsHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
@@ -174,7 +178,7 @@ internal sealed class FeatureServerEditsHandler(
 
             // Resolve the target branch version (#1272, ADR-0051). Absent / SDE.DEFAULT resolves to
             // VersionContext.Default — the byte-identical non-versioned write path. A named version
-            // is Enterprise-gated and Postgres-only.
+            // is Pro-gated and Postgres-only.
             var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
                 httpContext, request.GdbVersion, cancellationToken).ConfigureAwait(false);
             if (versionError != null)
@@ -304,24 +308,46 @@ internal sealed class FeatureServerEditsHandler(
                 heldReservationToken = reservationToken;
             }
 
-            // Process edit operations
-            var editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, editPrincipal, cancellationToken);
+            // Partial updates are assembled from a read snapshot. Guard ordinary single-row
+            // updates with that snapshot's token, then re-read, merge and validate again only
+            // after a confirmed precondition failure. Never retry an ambiguous commit or a
+            // caller-supplied precondition, and never replay a multi-operation request.
+            // Collaborative-editing lock enforcement (#4402). A lease handed out by
+            // /collaboration/feature-locks is binding on this write path: an update or
+            // delete of a feature another editor currently holds is rejected with the
+            // stable per-feature FeatureLocked code instead of silently overwriting the
+            // holder. The scope is null — and every per-feature check is skipped — when
+            // no lease is held anywhere, which is the uncontended default.
+            var lockScope = await ResolveEditLockScopeAsync(
+                httpContext, service, publication, layerId, cancellationToken).ConfigureAwait(false);
 
-            // Run Enterprise plugin validators + before-edit hooks over the resolved features (#347).
-            // Rejected features are removed from the write set and marked failed in their response
-            // slots; with rollbackOnFailure this fails the whole request below. No-op (and skipped
-            // entirely) when no plugins are licensed/registered.
-            await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
-                .ConfigureAwait(false);
-
-            // Handle validation errors with rollback if needed
-            if (editContext.HasValidationErrors && request.RollbackOnFailure)
+            var retryStaleUpdate = request.Updates is { Length: 1 } &&
+                request.Adds is not { Length: > 0 } && request.Deletes is not { Length: > 0 } &&
+                request.Preconditions.IsDefaultOrEmpty && versionContext is not { IsDefault: false };
+            EditOperationContext editContext;
+            FeatureEditResult editResult;
+            for (var attempt = 0; ; attempt++)
             {
-                return CreateRollbackResponse(editContext, serviceId, layerId);
-            }
+                editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, editPrincipal, lockScope, cancellationToken);
+                editContext.GuardUpdateSnapshot = retryStaleUpdate;
+                await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
+                    .ConfigureAwait(false);
+                if (editContext.HasValidationErrors && request.RollbackOnFailure)
+                {
+                    return CreateRollbackResponse(editContext, serviceId, layerId);
+                }
 
-            // Execute edits in the database
-            var editResult = await ExecuteEdits(storageLayerId.Value, resource, editContext, request, serviceId, versionContext, writeOutcome, cancellationToken);
+                editResult = await ExecuteEdits(storageLayerId.Value, resource, editContext, request, serviceId, versionContext, writeOutcome, cancellationToken);
+                writeOutcome.MayHaveCommitted = editResult.MayHaveCommitted;
+                if (!retryStaleUpdate || attempt >= 15 || editResult.MayHaveCommitted ||
+                    editResult.UpdateResults is not { Length: 1 } ||
+                    editResult.UpdateResults[0].ErrorCode != EditOperationResult.PreconditionFailedErrorCode)
+                {
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(5 * (attempt + 1)), cancellationToken).ConfigureAwait(false);
+            }
             var editCommittedRows = !editResult.WasRolledBack &&
                 (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0;
 
@@ -464,13 +490,15 @@ internal sealed class FeatureServerEditsHandler(
         MetadataV2Resource resource,
         int storageLayerId,
         EditPrincipal principal,
+        EditLockScope? lockScope,
         CancellationToken cancellationToken)
     {
         var context = new EditOperationContext
         {
             AddResults = request.Adds is { Length: > 0 } ? new EditResult?[request.Adds.Length] : null,
             UpdateResults = request.Updates is { Length: > 0 } ? new EditResult?[request.Updates.Length] : null,
-            DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null
+            DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null,
+            LockScope = lockScope
         };
 
         await ProcessAddOperationsAsync(request, context, resource, principal, cancellationToken);
@@ -646,8 +674,29 @@ internal sealed class FeatureServerEditsHandler(
                 // existingFeature is guaranteed to have a value here (the null case returns above),
                 // so the previous `existingFeature?.Id ?? objectId` had a dead `?? objectId` branch
                 // that could never execute; access .Value.Id directly instead.
+                // Collaborative-editing lease enforcement (#4402): reject the slot when
+                // another editor holds an active lock on this feature. Emitted as the stable
+                // per-feature FeatureLocked code so an Esri client can branch on it, and
+                // recorded as a validation error so rollbackOnFailure=true fails the whole
+                // batch. Either way the stored row is left exactly as the holder left it.
+                if (await EvaluateEditLockAsync(context.LockScope, objectId, "update", cancellationToken)
+                        .ConfigureAwait(false) is { } updateLockConflict)
+                {
+                    context.HasValidationErrors = true;
+                    context.UpdateResults![i] = CreateFailureResult(
+                        code: GeoServicesEditErrorCodes.FeatureLocked,
+                        description: updateLockConflict,
+                        objectId: objectId);
+                    continue;
+                }
+
                 var internalObjectId = existingFeature.Value.Id;
                 context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
+                context.UpdateSnapshotPreconditions[internalObjectId] = new FeatureEditPrecondition
+                {
+                    ObjectId = internalObjectId,
+                    ExpectedStateToken = FeatureStateToken.Compute(existingFeature.Value)
+                };
                 // Capture request intent BEFORE BuildFeatureFromGeoServicesAsync runs;
                 // that helper preserves existingFeature.Geometry when update.Geometry is
                 // null, so the post-merge feature's WKB cannot distinguish an attribute-
@@ -827,6 +876,19 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
+            // Collaborative-editing lease enforcement (#4402), same contract as the update
+            // path: a feature another editor holds cannot be deleted out from under them.
+            if (await EvaluateEditLockAsync(context.LockScope, objectId, "delete", cancellationToken)
+                    .ConfigureAwait(false) is { } deleteLockConflict)
+            {
+                context.HasValidationErrors = true;
+                context.DeleteResults![i] = CreateFailureResult(
+                    code: GeoServicesEditErrorCodes.FeatureLocked,
+                    description: deleteLockConflict,
+                    objectId: objectId);
+                continue;
+            }
+
             var internalObjectId = existingFeature.Value.Id;
             context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
             context.DeleteIds.Add(internalObjectId);
@@ -881,6 +943,14 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
+
+        if (context.GuardUpdateSnapshot)
+        {
+            editBatch = editBatch with
+            {
+                Preconditions = editBatch.Updates.Select(feature => context.UpdateSnapshotPreconditions[feature.Id]).ToImmutableArray()
+            };
+        }
 
         // Server-side optimistic-concurrency preconditions, when the caller supplied them. The writer
         // re-checks each token against the locked row inside the write transaction, so a concurrent
@@ -1398,6 +1468,8 @@ internal sealed class FeatureServerEditsHandler(
         /// </summary>
         public List<bool> CreateGeometryChanged { get; } = new();
         public List<Feature> UpdateFeatures { get; } = new();
+        public bool GuardUpdateSnapshot { get; set; }
+        public Dictionary<long, FeatureEditPrecondition> UpdateSnapshotPreconditions { get; } = new();
         public List<int> UpdateIndexes { get; } = new();
         public List<long> UpdateObjectIds { get; } = new();
         /// <summary>
@@ -1414,6 +1486,74 @@ internal sealed class FeatureServerEditsHandler(
         public List<Feature?> DeleteFeatures { get; } = new();
         public List<int> DeleteIndexes { get; } = new();
         public bool HasValidationErrors { get; set; }
+
+        /// <summary>
+        /// Collaborative-editing lock scope for this request, or <see langword="null"/>
+        /// when no lease is held anywhere and per-feature evaluation is unnecessary (#4402).
+        /// </summary>
+        public EditLockScope? LockScope { get; init; }
+    }
+
+    /// <summary>
+    /// The collaborative-editing lock context for one applyEdits request: which
+    /// service/layer the targeted features belong to in the lease namespace, and the
+    /// holder identity the caller is editing under (#4402).
+    /// </summary>
+    private sealed record EditLockScope(string ServiceName, int LayerId, LockHolder? Holder);
+
+    /// <summary>
+    /// Builds the lock scope for a request, or returns <see langword="null"/> when the
+    /// lease store holds nothing at all so the batch can skip guard evaluation entirely.
+    /// </summary>
+    private async Task<EditLockScope?> ResolveEditLockScopeAsync(
+        HttpContext httpContext,
+        MetadataV2Service service,
+        MetadataV2Publication publication,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        if (!await FeatureEditLockEnforcement.IsEvaluationRequiredAsync(_featureLocks, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        // The lease namespace is (service name, protocol layer id, protocol object id):
+        // exactly the triple a GeoServices client used to claim the lease, and the same
+        // triple the OGC API Features and OData write paths resolve to for the same row.
+        var serviceName = FeatureEditLockEnforcement.ResolveServiceName(service, publication);
+        return string.IsNullOrWhiteSpace(serviceName)
+            ? null
+            : new EditLockScope(
+                serviceName,
+                FeatureEditLockEnforcement.ResolveLayerId(publication, layerId),
+                FeatureEditLockEnforcement.ResolveHolder(httpContext));
+    }
+
+    /// <summary>
+    /// Evaluates one feature mutation against the active leases, returning the
+    /// client-facing description when the edit is blocked by another editor's lease.
+    /// </summary>
+    private async Task<string?> EvaluateEditLockAsync(
+        EditLockScope? scope,
+        long objectId,
+        string operation,
+        CancellationToken cancellationToken)
+    {
+        if (scope is null)
+        {
+            return null;
+        }
+
+        var conflict = await FeatureEditLockEnforcement.EvaluateAsync(
+            _editGuard,
+            scope.ServiceName,
+            scope.LayerId,
+            objectId,
+            operation,
+            scope.Holder,
+            cancellationToken).ConfigureAwait(false);
+
+        return conflict is null ? null : FeatureEditLockEnforcement.Describe(conflict);
     }
 
     /// <summary>

@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Repoint ArcGIS apps and SDKs at Honua"
+description: "You'll move existing ArcGIS client applications — web apps, ArcGIS Pro, and the ArcGIS Maps SDKs — onto Honua-served endpoints without rewriting them."
+---
 # Repoint ArcGIS apps and SDKs at Honua
 
 You'll move existing ArcGIS client applications — web apps, ArcGIS Pro, and the ArcGIS Maps SDKs — onto Honua-served endpoints without rewriting them.
@@ -39,7 +44,7 @@ const layer = new FeatureLayerCompat({
 const result = await layer.queryFeatures({ where: "1=1" });
 ```
 
-`FeatureLayerCompat` supports the common constructor options (`id`, `title`, `outFields`, `definitionExpression`, `renderer`, `popupTemplate`, `labelingInfo`, `opacity`, `visible`, `minScale`, `maxScale`) plus paged helpers like `queryFeaturesAll()` and `queryFeaturesStream()`; `MapImageLayerCompat` covers `exportImage`, `identify`, `find`, `getLegend`, and sublayer queries. The full supported-option list per class is in the [SDK guide](https://github.com/honua-io/honua-sdk-js/blob/main/docs/guide.md).
+`FeatureLayerCompat` supports the common constructor options (`id`, `title`, `outFields`, `definitionExpression`, `renderer`, `popupTemplate`, `labelingInfo`, `opacity`, `visible`, `minScale`, `maxScale`) plus paged helpers like `queryFeaturesAll()` and `queryFeaturesStream()`; `MapImageLayerCompat` covers `exportImage`, `identify`, `find`, `getLegend`, and sublayer queries. The full supported-option list per class is in the [SDK guide](https://github.com/honua-io/honua-sdk-js/blob/trunk/docs/guide.md).
 
 ### 3. Run the JavaScript migration engine
 

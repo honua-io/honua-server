@@ -31,11 +31,12 @@ internal sealed partial class ODataBatchHandler
         var createRequests = new Dictionary<int, List<(string requestId, Feature feature, bool geometryChanged)>>();
         var updateRequests = new Dictionary<int, List<(string requestId, long objectId, Feature feature, bool geometryChanged)>>();
         var deleteRequests = new Dictionary<int, List<(string requestId, long objectId, Feature existingFeature)>>();
-        // If-Match preconditions re-validated by the writer inside the deferred
+        // PATCH snapshot and If-Match preconditions re-validated inside the deferred
         // ApplyEditsAsync transaction: the parse-time ValidatePreconditionsAsync check
         // above runs against a read snapshot, so a concurrent commit between that check
         // and the batch write would otherwise be silently overwritten (TOCTOU).
         var preconditionsByLayer = new Dictionary<int, List<FeatureEditPrecondition>>();
+        var preparedFeatures = new Dictionary<(int LayerId, long ObjectId), Feature?>();
         var writeLayerIds = new HashSet<int>();
         // BH7-012: key by (layerId, normalizedMethod) so each distinct operation on the
         // same layer triggers its own per-operation RBAC check via ResolveBatchLayerContextAsync.
@@ -249,7 +250,12 @@ internal sealed partial class ODataBatchHandler
                                 break;
                             }
 
-                            var existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
+                            var target = (layerId.Value, objectId.Value);
+                            var isFirstMutation = !preparedFeatures.TryGetValue(target, out var existing);
+                            if (isFirstMutation)
+                            {
+                                existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
+                            }
                             if (!existing.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(
@@ -334,7 +340,14 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             updateList.Add((request.Id, objectId.Value, feature, requestGeometryChanged));
-                            RegisterPrecondition(preconditionsByLayer, layerId.Value, objectId.Value, request.Headers, existing.Value);
+                            preparedFeatures[target] = feature;
+                            // Only the first mutation depends on the external read snapshot.
+                            // Earlier writes hold the row lock until this atomic group commits;
+                            // later conditions were validated against their prepared results.
+                            if (isFirstMutation)
+                            {
+                                RegisterPrecondition(preconditionsByLayer, layerId.Value, objectId.Value, request.Headers, existing.Value, requireSnapshot: isPatch);
+                            }
                             writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }
@@ -352,7 +365,12 @@ internal sealed partial class ODataBatchHandler
                                 break;
                             }
 
-                            var existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
+                            var target = (layerId.Value, objectId.Value);
+                            var isFirstMutation = !preparedFeatures.TryGetValue(target, out var existing);
+                            if (isFirstMutation)
+                            {
+                                existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
+                            }
                             if (!existing.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(
@@ -408,7 +426,11 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             deleteList.Add((request.Id, deleteValidation.Batch.Value.Deletes[0], existing.Value));
-                            RegisterPrecondition(preconditionsByLayer, layerId.Value, deleteValidation.Batch.Value.Deletes[0], request.Headers, existing.Value);
+                            preparedFeatures[target] = null;
+                            if (isFirstMutation)
+                            {
+                                RegisterPrecondition(preconditionsByLayer, layerId.Value, deleteValidation.Batch.Value.Deletes[0], request.Headers, existing.Value);
+                            }
                             writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }
@@ -650,6 +672,13 @@ internal sealed partial class ODataBatchHandler
                         if (updateResult.IsSuccess)
                         {
                             var persistedObjectId = updateResult.ObjectId ?? updatedFeature.Id;
+                            if (result.DeleteResults.Any(deleted => deleted.IsSuccess && deleted.ObjectId == persistedObjectId))
+                            {
+                                // A later delete in this atomic group intentionally removed
+                                // the row. The earlier update succeeded without a final body.
+                                responses.Add(CreateSuccessResponse(requestId, StatusCodes.Status204NoContent, null));
+                                continue;
+                            }
                             var persistedFeature = await _featureReader.GetAsync(layer.StorageLayerId, persistedObjectId, cancellationToken).ConfigureAwait(false);
                             if (!persistedFeature.HasValue)
                             {
@@ -672,11 +701,28 @@ internal sealed partial class ODataBatchHandler
                         }
                         else if (updateResult.IsPreconditionFailure)
                         {
+                            var requestHeaders = requests.First(request => request.Id == requestId).Headers;
+                            var ifMatch = GetHeaderValue(requestHeaders, "If-Match");
+                            var ifNoneMatch = GetHeaderValue(requestHeaders, "If-None-Match");
+                            var failedCondition = false;
+                            if (!string.IsNullOrWhiteSpace(ifMatch) || !string.IsNullOrWhiteSpace(ifNoneMatch))
+                            {
+                                var current = updateResult.PreconditionFailureFeature;
+                                failedCondition = !current.HasValue && !string.IsNullOrWhiteSpace(ifMatch);
+                                if (current.HasValue)
+                                {
+                                    _ = FeatureToBody(current.Value, layer, axisOrder, baseUrl, out var currentEtag);
+                                    failedCondition = (!string.IsNullOrWhiteSpace(ifMatch) && !_etagService.MatchesPrecondition(ifMatch, currentEtag)) ||
+                                        (!string.IsNullOrWhiteSpace(ifNoneMatch) && !_etagService.IsModified(ifNoneMatch, currentEtag));
+                                }
+                            }
                             responses.Add(CreateErrorResponse(
                                 requestId,
-                                412,
-                                "PreconditionFailed",
-                                "ETag does not match the current resource."));
+                                failedCondition ? StatusCodes.Status412PreconditionFailed : StatusCodes.Status409Conflict,
+                                failedCondition ? "PreconditionFailed" : "Conflict",
+                                failedCondition
+                                    ? "The conditional request does not match the current resource."
+                                    : "The feature changed during the update. Read the current resource and retry the update."));
                         }
                         else
                         {

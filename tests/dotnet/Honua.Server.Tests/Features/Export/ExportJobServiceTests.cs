@@ -7,6 +7,9 @@ using System.Reflection;
 using System.Text.Json;
 using System.Threading.Channels;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Server.Startup;
+using Microsoft.Extensions.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -335,6 +338,82 @@ public sealed class ExportJobServiceTests
         using var warningReader = new StreamReader(warningEntry!.Open());
         var warnings = await warningReader.ReadToEndAsync();
         warnings.Should().Contain("descriptive_name");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ProcessQueuedJobAsync_RegisteredLicenseExpiresDuringUpload_FailsAndRemovesDownload()
+    {
+        using var expiry = new CancellationTokenSource();
+        var policy = Substitute.For<ILicenseOperationPolicy>();
+        policy.OperationCancellation.Returns(expiry.Token);
+        CancellationToken uploadToken = default;
+        var progressStore = new InMemoryUniversalProgressStore();
+        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        streamingStore
+            .StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(CreateWarningFeatures());
+
+        var crsRegistry = new NullCrsRegistry();
+
+        await using var uploaded = new MemoryStream();
+        var cloudStorage = Substitute.For<ICloudFileStorage>();
+        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                uploadToken = call.Arg<CancellationToken>();
+                await call.Arg<FileUploadRequest>().Content.CopyToAsync(uploaded);
+                expiry.Cancel();
+                return UploadResult.CreateSuccess(new CloudFile
+                {
+                    FileId = "file-1",
+                    FileName = "export.zip",
+                    StoragePath = "exports/export.zip",
+                    ContentType = "application/zip",
+                    SizeBytes = 32,
+                    UploadedAt = DateTimeOffset.UtcNow,
+                    Provider = CloudStorageProvider.AwsS3
+                });
+            });
+        cloudStorage.GetPresignedUrlAsync("file-1", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns("https://example.test/export.zip");
+
+        var registrations = new ServiceCollection();
+        registrations.AddLogging();
+        registrations.AddHonuaImportExportAndTileOperations(new ConfigurationBuilder().Build());
+        registrations.AddSingleton<IUniversalProgressStore>(progressStore);
+        registrations.AddSingleton<IDistributedCache>(requestCache);
+        registrations.AddSingleton<ILicenseOperationPolicy>(policy);
+        registrations.AddSingleton<IStreamingFeatureStore>(streamingStore);
+        registrations.AddSingleton<ICrsRegistry>(crsRegistry);
+        registrations.AddSingleton<ICloudFileStorage>(cloudStorage);
+        using var services = registrations.BuildServiceProvider();
+        var sut = services.GetRequiredService<IExportJobService>();
+
+        var job = CreateJob("complete-export") with
+        {
+            Format = "shapefile",
+            GeometryType = ExportGeometryType.Point,
+            Fields = [new ExportField("name", ExportFieldType.String, true), new ExportField("descriptive_name", ExportFieldType.String, true)],
+            TotalFeatures = 99
+        };
+        await sut.StartAsync(job);
+
+        await sut.ProcessQueuedJobAsync(job.JobId);
+
+        var persistedRequest = await requestCache.GetStringAsync("export:request:complete-export");
+        persistedRequest.Should().BeNull();
+
+        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Failed);
+        progress.ErrorMessage.Should().Be("license expired");
+        progress.DownloadUrl.Should().BeNull();
+        progress.OutputSizeBytes.Should().Be(0);
+        uploadToken.IsCancellationRequested.Should().BeTrue();
+        await cloudStorage.Received(1).DeleteAsync("file-1", CancellationToken.None);
     }
 
     [UnitTest]

@@ -14,6 +14,11 @@ internal static class SoapRequestXml
 {
     private static readonly XmlSchemaSet _envelopeSchemas = CreateEnvelopeSchemas();
 
+    internal static string GetSafeErrorMessage(Exception exception) =>
+        exception is XmlSchemaValidationException
+            ? "Malformed SOAP request. The envelope must contain exactly one Body element with exactly one operation, after any Header."
+            : "Malformed SOAP request.";
+
     public static XmlReader CreateReader(Stream body, long maxCharacters)
     {
         var settings = new XmlReaderSettings

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Honua.Core/Honua.Core.csproj" />
+    <PackageReference Include="AWSSDK.Lambda" />
+    <!-- Compile the actual deploy path: no copy, CLI reimplementation, or production change. -->
+    <Compile Include="../../../src/Honua.Cloud/Aws/Features/ControlPlane/AwsLambdaGitOpsDeployBackend.cs" Link="AwsLambdaGitOpsDeployBackend.cs" />
+    <Compile Include="../../../src/Honua.Cloud/Aws/Features/ControlPlane/AwsLambdaAliasClient.cs" Link="AwsLambdaAliasClient.cs" />
+  </ItemGroup>
+</Project>

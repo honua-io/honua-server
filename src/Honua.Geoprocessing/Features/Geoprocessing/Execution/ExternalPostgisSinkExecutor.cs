@@ -116,6 +116,9 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         string geometryColumn;
         int targetSrid;
         int batchSize;
+        string? idempotencyColumn = null;
+        string? idempotencyConstraint = null;
+        string? idempotencyKey = null;
         try
         {
             schema = Identifier(inputs.GetOrDefault("schema", "public"));
@@ -127,6 +130,21 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                 && parsed > 0
                 ? Math.Clamp(parsed, 1, 50_000)
                 : DefaultBatchSize;
+
+            var hasIdempotencyColumn = inputs.TryGet("idempotencyColumn", out var rawIdempotencyColumn);
+            var hasIdempotencyConstraint = inputs.TryGet("idempotencyConstraint", out var rawIdempotencyConstraint);
+            if (hasIdempotencyColumn != hasIdempotencyConstraint)
+            {
+                return JobExecutionResult.Failed(
+                    $"Invalid {HandledProcessId} inputs: idempotencyColumn and idempotencyConstraint must be supplied together.");
+            }
+
+            if (hasIdempotencyColumn)
+            {
+                idempotencyColumn = Identifier(rawIdempotencyColumn!);
+                idempotencyConstraint = Identifier(rawIdempotencyConstraint!);
+                idempotencyKey = Require(inputs, "idempotencyKey");
+            }
         }
         catch (TransformInputException ex)
         {
@@ -147,6 +165,12 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         long rejected = 0;
         try
         {
+            // The artifact publication fence cannot roll back rows already committed
+            // to an external database. Re-check the durable worker lease before DDL,
+            // and again immediately before each transactional batch below, so a
+            // resurrected stale attempt cannot create or mutate external output.
+            await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
+
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
@@ -175,8 +199,10 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                     buffer.Add(feature);
                     if (buffer.Count >= batchSize)
                     {
+                        await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
                         written += await InsertBatchAsync(
-                            connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId, wkbWriter, cancellationToken)
+                            connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId,
+                            idempotencyColumn, idempotencyConstraint, idempotencyKey, wkbWriter, cancellationToken)
                             .ConfigureAwait(false);
                         buffer.Clear();
                     }
@@ -184,12 +210,15 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
 
                 if (buffer.Count > 0)
                 {
+                    await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
                     written += await InsertBatchAsync(
-                        connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId, wkbWriter, cancellationToken)
+                        connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId,
+                        idempotencyColumn, idempotencyConstraint, idempotencyKey, wkbWriter, cancellationToken)
                         .ConfigureAwait(false);
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
+                await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
                 await tx.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             }
             catch
@@ -366,11 +395,15 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         int targetSrid,
         List<IFeature> features,
         string batchId,
+        string? idempotencyColumn,
+        string? idempotencyConstraint,
+        string? idempotencyKey,
         WKBWriter wkbWriter,
         CancellationToken cancellationToken)
     {
         var wkbs = new byte[features.Count][];
         var attributes = new string[features.Count];
+        var idempotencyKeys = idempotencyColumn is null ? null : new string[features.Count];
 
         // Reuse a single buffer + Utf8JsonWriter across the whole batch instead of
         // allocating a fresh MemoryStream/Utf8JsonWriter per feature: Reset()/Clear()
@@ -383,18 +416,33 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             cancellationToken.ThrowIfCancellationRequested();
             wkbs[i] = wkbWriter.Write(features[i].Geometry!);
             attributes[i] = BuildAttributesJson(jsonWriter, bufferWriter, features[i], batchId);
+            if (idempotencyKeys is not null)
+            {
+                idempotencyKeys[i] = $"{idempotencyKey}:{i}";
+            }
         }
 
+        var idempotencyInsertColumn = idempotencyColumn is null ? string.Empty : $", \"{idempotencyColumn}\"";
+        var idempotencySelectColumn = idempotencyColumn is null ? string.Empty : ", payload.idempotencyKey";
+        var idempotencyConflict = idempotencyConstraint is null
+            ? string.Empty
+            : $"ON CONFLICT ON CONSTRAINT \"{idempotencyConstraint}\" DO NOTHING";
         var sql = $"""
-            INSERT INTO "{schema}"."{table}" ("{geometryColumn}", attributes)
+            INSERT INTO "{schema}"."{table}" ("{geometryColumn}", attributes{idempotencyInsertColumn})
             SELECT ST_SetSRID(ST_GeomFromWKB(payload.wkb), {targetSrid.ToString(CultureInfo.InvariantCulture)}),
-                   payload.attributes
-            FROM unnest(@wkbs, @attributes) AS payload(wkb, attributes)
+                   payload.attributes{idempotencySelectColumn}
+            FROM unnest(@wkbs, @attributes{(idempotencyKeys is null ? string.Empty : ", @idempotencyKeys")})
+                AS payload(wkb, attributes{(idempotencyKeys is null ? string.Empty : ", idempotencyKey")})
+            {idempotencyConflict}
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.Add("wkbs", NpgsqlDbType.Array | NpgsqlDbType.Bytea).Value = wkbs;
         command.Parameters.Add("attributes", NpgsqlDbType.Array | NpgsqlDbType.Jsonb).Value = attributes;
+        if (idempotencyKeys is not null)
+        {
+            command.Parameters.Add("idempotencyKeys", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = idempotencyKeys;
+        }
 
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }

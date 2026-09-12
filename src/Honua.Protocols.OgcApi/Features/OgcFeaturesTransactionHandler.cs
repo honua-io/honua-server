@@ -131,15 +131,17 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             // DELETE requires Delete — so an insert-only grantee cannot slip an update or delete
             // through the batch surface. Each distinct kind is checked once.
             var batchOperationError = await AuthorizeBatchOperationKindsAsync(
-                context, resource, layerValidation.Service, batchRequest, cancellationToken).ConfigureAwait(false);
+                context, resource, layerValidation.Service, publication, batchRequest, cancellationToken).ConfigureAwait(false);
             if (batchOperationError is not null)
             {
                 return batchOperationError;
             }
 
             var preparedBatch = await PrepareBatchOperationsAsync(
+                context,
                 layerId,
                 snapshot,
+                layerValidation.Service,
                 publication,
                 resource,
                 batchRequest,
@@ -326,6 +328,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         HttpContext context,
         MetadataV2Resource resource,
         MetadataV2Service? service,
+        MetadataV2Publication publication,
         BatchRequest batchRequest,
         CancellationToken cancellationToken)
     {
@@ -355,6 +358,27 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             if (error is not null)
             {
                 return error;
+            }
+
+            // The single-feature surfaces get this from ValidateCollectionWriteAccessV2Async,
+            // which is called here without a specific operation because a batch body may mix
+            // kinds. Each distinct kind present must still be declared by the publication,
+            // otherwise the batch surface accepts edits the collection never advertised
+            // (#4707).
+            if (service is not null)
+            {
+                var capability = op switch
+                {
+                    AuthorizationOperation.Insert => MetadataV2EditCapabilities.Create,
+                    AuthorizationOperation.Update => MetadataV2EditCapabilities.Update,
+                    _ => MetadataV2EditCapabilities.Delete
+                };
+                var capabilityError = LayerValidationHelpers.ValidateDeclaredEditCapability(
+                    context, service, publication, capability);
+                if (capabilityError is not null)
+                {
+                    return capabilityError;
+                }
             }
         }
 
@@ -407,6 +431,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 publication,
                 resource,
                 featureId,
+                requireEditSnapshot: true,
                 cancellationToken).ConfigureAwait(false);
             if (!resolvedFeature.HasValue)
             {
@@ -416,6 +441,16 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var objectId = resolvedFeature.Value.ObjectId;
             var existing = resolvedFeature.Value.Feature;
             var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, resource);
+
+            // Collaborative-editing lease enforcement (#4402): a feature another editor
+            // holds a lease on cannot be replaced or merged out from under them, on this
+            // surface as much as on GeoServices applyEdits.
+            if (await OgcFeatureLockGuard.RejectIfLockedAsync(
+                    context, layerValidation.Service, publication, layerId, objectId, "replace", cancellationToken)
+                    .ConfigureAwait(false) is { } lockedResult)
+            {
+                return lockedResult;
+            }
 
             var contentTypeError = OgcFeaturePayloadReader.ValidateFeatureContentType(context);
             if (contentTypeError is not null)
@@ -471,7 +506,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         detail: "The resource has been modified since the provided ETag.");
                 }
 
-                expectedStateToken = FeatureStateToken.Compute(existing);
+                expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
             }
 
             var buildResult = await OgcFeatureMutationHelpers.TryBuildFeatureAsync(
@@ -522,10 +557,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 {
                     if (updateResult.IsPreconditionFailure)
                     {
-                        return Results.Problem(
-                            statusCode: 412,
-                            title: "Precondition Failed",
-                            detail: "The resource has been modified since the provided ETag.");
+                        return CreateConcurrentUpdateResult(updateResult.PreconditionFailureFeature, ifMatch);
                     }
 
                     if (IsNotFound(updateResult))
@@ -640,6 +672,25 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         }
     }
 
+    private IResult CreateConcurrentUpdateResult(Feature? current, string? ifMatch)
+    {
+        var conditionFailed = false;
+        if (!string.IsNullOrWhiteSpace(ifMatch))
+        {
+            conditionFailed = !current.HasValue || !OgcFeatureEntityTag.MatchesEntityOrRepresentation(
+                ifMatch, OgcFeatureEntityTag.Compute(current.Value, _etagService), _etagService);
+        }
+        return !conditionFailed
+            ? Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Conflict",
+                detail: "The feature changed during the update. Read the current resource and retry the update.")
+            : Results.Problem(
+                statusCode: StatusCodes.Status412PreconditionFailed,
+                title: "Precondition Failed",
+                detail: "The resource has been modified since the provided ETag.");
+    }
+
     /// <summary>
     /// Handles partial feature updates with merge semantics and optimistic concurrency control.
     /// </summary>
@@ -686,6 +737,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 publication,
                 resource,
                 featureId,
+                requireEditSnapshot: true,
                 cancellationToken).ConfigureAwait(false);
             if (!resolvedFeature.HasValue)
             {
@@ -697,11 +749,21 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var existing = resolvedFeature.Value.Feature;
             var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, resource);
 
-            // Fast-path 412 against the read snapshot; the canonical state token from the
-            // same snapshot is re-validated by the feature writer inside the write
-            // transaction so a concurrent commit between this check and the write cannot
-            // be silently overwritten (TOCTOU).
-            string? expectedStateToken = null;
+            // Collaborative-editing lease enforcement (#4402): a feature another editor
+            // holds a lease on cannot be replaced or merged out from under them, on this
+            // surface as much as on GeoServices applyEdits.
+            if (await OgcFeatureLockGuard.RejectIfLockedAsync(
+                    context, layerValidation.Service, publication, layerId, objectId, "update", cancellationToken)
+                    .ConfigureAwait(false) is { } lockedResult)
+            {
+                return lockedResult;
+            }
+
+
+            // PATCH merges a read snapshot. Always revalidate it inside the write
+            // transaction so omitted properties and geometry cannot overwrite concurrent
+            // changes, including requests without an explicit If-Match precondition.
+            var expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
             if (!string.IsNullOrWhiteSpace(ifMatch))
             {
                 var etag = OgcFeatureEntityTag.Compute(existing, _etagService);
@@ -712,8 +774,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         title: "Precondition Failed",
                         detail: "The resource has been modified since the provided ETag.");
                 }
-
-                expectedStateToken = FeatureStateToken.Compute(existing);
             }
 
             var contentTypeError = OgcFeaturePayloadReader.ValidatePatchContentType(context);
@@ -837,7 +897,13 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var feature = Feature.Create(
                 objectId,
                 geometryValidation.Geometry,
-                attributesResult.Value!);
+                attributesResult.Value!) with
+            {
+                ExplicitAttributeRemovals = patchRequest.Properties?
+                    .Where(property => property.Value is null)
+                    .Select(property => property.Key)
+                    .ToImmutableArray() ?? ImmutableArray<string>.Empty
+            };
 
             try
             {
@@ -855,6 +921,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         Feature = feature,
                         ObjectId = objectId,
                         IfMatch = ifMatch,
+                        ClearAllProperties = patchRequest.HasProperties && patchRequest.Properties is null,
                         ExpectedStateToken = expectedStateToken
                     },
                     cancellationToken,
@@ -864,10 +931,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 {
                     if (updateResult.IsPreconditionFailure)
                     {
-                        return Results.Problem(
-                            statusCode: 412,
-                            title: "Precondition Failed",
-                            detail: "The resource has been modified since the provided ETag.");
+                        return CreateConcurrentUpdateResult(updateResult.PreconditionFailureFeature, ifMatch);
                     }
 
                     if (IsNotFound(updateResult))
@@ -1423,8 +1487,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private async Task<PreparedBatchPlan> PrepareBatchOperationsAsync(
+        HttpContext context,
         int layerId,
         MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service? service,
         MetadataV2Publication publication,
         MetadataV2Resource resource,
         BatchRequest batchRequest,
@@ -1486,6 +1552,40 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             }
 
             var preparedOperation = prepared.Operation! with { Index = index };
+
+            // Collaborative-editing lease enforcement (#4402). Evaluated here, after the
+            // operation resolved to a concrete OBJECTID and before anything is written, so
+            // a locked target fails validation and the whole batch — which always runs with
+            // RollbackOnFailure — leaves every stored row untouched.
+            var lockConflict = preparedOperation.OperationKind == BatchOperationKind.Create
+                ? null
+                : await OgcFeatureLockGuard.DescribeConflictAsync(
+                    context,
+                    service,
+                    publication,
+                    layerId,
+                    preparedOperation.ObjectId ?? 0,
+                    preparedOperation.OperationKind == BatchOperationKind.Delete ? "delete" : "update",
+                    cancellationToken).ConfigureAwait(false);
+            if (lockConflict is not null)
+            {
+                validationFailed = true;
+                validationResults[index] = CreateBatchFailure(operation.Id, lockConflict, 423);
+
+                foreach (var priorOperation in preparedOperations)
+                {
+                    validationResults[priorOperation.Index] = CreateRolledBackBatchFailure(priorOperation.Operation.Id);
+                }
+
+                if (batchRequest.FailFast)
+                {
+                    processedCount = index + 1;
+                    break;
+                }
+
+                continue;
+            }
+
             preparedOperations.Add(preparedOperation);
             ApplyPreparationState(validationState, preparedOperation);
         }

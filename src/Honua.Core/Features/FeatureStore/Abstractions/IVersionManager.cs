@@ -13,7 +13,7 @@ namespace Honua.Core.Features.FeatureStore.Abstractions;
 /// non-versioned base path so existing reads/writes and CITE conformance stay byte-identical.
 /// </summary>
 /// <remarks>
-/// Branch versioning is Postgres-only and gated behind the Enterprise entitlement; other providers
+/// Branch versioning is Postgres-only and gated behind the Pro entitlement; other providers
 /// return not-supported. Reconcile detects conflicts between the version and DEFAULT since the merge
 /// base (reusing the disconnected-sync conflict classification), applies #371's auto-policies, and
 /// blocks <see cref="PostAsync"/> while unresolved conflicts remain. Post replays the version's net

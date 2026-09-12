@@ -13,7 +13,7 @@
 # (/Dockerfile) and Honua.Server.csproj stay GDAL-free; this Dockerfile does not
 # build or modify them.
 
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c
 # GDAL base ships gdalwarp / ogr2ogr / gdal_translate / gdalmdiminfo etc.
 # NOTE: must be the `ubuntu-full` variant, not `ubuntu-small` — the small image
 # omits the NetCDF/HDF5 drivers required by the multidimensional coverage
@@ -51,6 +51,8 @@ COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Geometry/*.csproj src/Honua.Geometry/
 COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
 COPY src/Honua.Jobs/*.csproj src/Honua.Jobs/
+COPY src/Honua.Cloud/Aws/*.csproj src/Honua.Cloud/Aws/
+COPY src/Honua.Cloud/Azure/*.csproj src/Honua.Cloud/Azure/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
 COPY src/Honua.Worker.Gdal/*.csproj src/Honua.Worker.Gdal/
 COPY eng/ eng/
@@ -139,7 +141,11 @@ FROM ${GDAL_BASE_IMAGE} AS native-tools
 ARG GDAL_VERSION
 ARG DOTNET_RUNTIME_VERSION
 ARG PDAL_VERSION
-ARG HONUA_GIT_SHA=
+# HONUA_GIT_SHA is deliberately NOT declared here: a declared ARG is part of
+# the cache key of every later RUN in the stage, so a per-commit SHA would
+# rebuild these apt layers on every build and defeat the shared registry cache
+# (the PDAL proof steps in ci.yml and pr-gate.yml read it). It is declared in
+# the runtime stage, after every expensive layer, as in ./Dockerfile.
 
 # Install the .NET runtime onto the GDAL (Ubuntu) base via the dotnet-install
 # script. The GDAL base already provides gdalwarp / ogr2ogr on PATH.
@@ -204,6 +210,11 @@ RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo && comm
  # surface.contour / surface.viewshed / conversion.rasterize.
  && command -v gdal_calc.py \
  && command -v gdal_proximity.py \
+ # gdal_merge.py -separate stacks the prediction and kriging-standard-error bands
+ # produced by raster.interpolate-kriging's bundled OrdinaryKriging solver (#3932)
+ # into one multi-band GeoTIFF; ships in the same GDAL Python utilities as
+ # gdal_calc.py / gdal_proximity.py above.
+ && command -v gdal_merge.py \
  # The Euclidean allocation custom step (proximity.euclidean-allocation, #2255)
  # imports the GDAL Python bindings + NumPy + SciPy at runtime; fail the build
  # early if any are missing from the image.
@@ -238,6 +249,7 @@ FROM native-tools AS runtime
 ARG GDAL_VERSION
 ARG DOTNET_RUNTIME_VERSION
 ARG PDAL_VERSION
+ARG HONUA_GIT_SHA=
 
 # Non-root runtime user.
 RUN groupadd --gid 1001 --system honua \

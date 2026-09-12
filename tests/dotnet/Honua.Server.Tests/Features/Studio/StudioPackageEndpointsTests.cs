@@ -1803,6 +1803,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     /// during that stricter deserialization, producing a Rejected (not Accepted) publication
     /// request. Needed by the honua-server#3001 end-user export-authorization tests, which
     /// (unlike the plain export round-trip tests above) must publish the item.
+    /// Each layer also needs a stable composition id so publication validation accepts it.
     /// </summary>
     private static StudioPackageEnvelope BuildExportableMapEnvelope()
     {
@@ -1814,7 +1815,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
               "createdAt": "2026-01-01T00:00:00Z",
               "title": "Parcels Overview",
               "description": "Parcel coverage map.",
-              "layers": [{"title":"Parcels"},{"title":"Roads"}],
+              "layers": [{"id":"parcels","title":"Parcels"},{"id":"roads","title":"Roads"}],
               "basemap": "streets"
             }
             """;

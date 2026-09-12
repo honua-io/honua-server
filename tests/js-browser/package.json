@@ -22,7 +22,7 @@
     "esri-leaflet": "^3.0.14",
     "esri-leaflet-renderers": "^3.0.1",
     "leaflet": "^1.9.4",
-    "maplibre-gl": "^5.0.0"
+    "maplibre-gl": "^6.4.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

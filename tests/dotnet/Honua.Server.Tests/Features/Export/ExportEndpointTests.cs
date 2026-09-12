@@ -4,8 +4,10 @@
 using System.IO.Compression;
 using System.Net;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Threading.Channels;
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -44,6 +46,33 @@ public sealed class ExportEndpointTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData("geojson")]
+    [InlineData("gpx")]
+    [InlineData("kml")]
+    [InlineData("gml")]
+    [InlineData("wkt")]
+    [InlineData("filegdb")]
+    [InlineData("flatgeobuf")]
+    [InlineData("geoparquet")]
+    [InlineData("esrijson")]
+    [InlineData("wkb")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    public async Task Export_DeclaredWriterGap_RejectsBeforeLayerLookup(string format)
+    {
+        var registry = new CapabilityRegistry();
+        var descriptor = registry.Find($"format.write.{format}");
+        descriptor.Should().NotBeNull();
+        descriptor!.ImplementationStatus.Should().Be(CapabilityImplementationStatus.KnownGap);
+        registry.Resolve(descriptor.Id, CapabilityGateContext.Default).Enabled.Should().BeFalse();
+        var response = await _client.GetAsync($"/api/v1/admin/services/nonexistent/layers/0/export?format={format}");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("detail").GetString().Should()
+            .Be($"Invalid export format '{format}'. Valid formats: csv, shapefile, gpkg");
     }
 
     [IntegrationTest]
@@ -91,6 +120,19 @@ public sealed class ExportEndpointTests : IAsyncLifetime
         entryNames.Should().Contain(".shp");
         entryNames.Should().Contain(".shx");
         entryNames.Should().Contain(".dbf");
+
+        // honua-server#4419: this assertion pointedly stopped before .prj, and the endpoint DOES
+        // resolve the CRS WKT from the registry before writing (ExportEndpoints.WriteShapefile-
+        // ResponseAsync). A shapefile shipped without its .prj is a CRS-less file, so a regression
+        // that dropped the sidecar — or a registry lookup that started returning null — would have
+        // been invisible.
+        entryNames.Should().Contain(".prj", "an exported shapefile must carry its CRS sidecar");
+        var prj = zip.Entries.Single(entry => entry.Name.EndsWith(".prj", StringComparison.OrdinalIgnoreCase));
+        using var prjReader = new StreamReader(prj.Open());
+        var prjWkt = await prjReader.ReadToEndAsync();
+        prjWkt.Should().NotBeNullOrWhiteSpace("an empty .prj declares no CRS at all");
+        prjWkt.Should().StartWith("GEOGCS", "the seeded layer is geographic WGS 84");
+        prjWkt.Should().Contain("4326");
     }
 
     [IntegrationTest]
@@ -116,7 +158,8 @@ public sealed class ExportEndpointTests : IAsyncLifetime
             var connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = tempPath,
-                Mode = SqliteOpenMode.ReadOnly
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
             }.ToString();
 
             await using var connection = new SqliteConnection(connectionString);
@@ -132,6 +175,27 @@ public sealed class ExportEndpointTests : IAsyncLifetime
             cmd.CommandText = "SELECT COUNT(*) FROM features";
             var featureCount = await cmd.ExecuteScalarAsync();
             Convert.ToInt64(featureCount, System.Globalization.CultureInfo.InvariantCulture).Should().BeGreaterOrEqualTo(1);
+
+            // honua-server#4419: two COUNT(*) queries passed on a file whose every geometry blob
+            // was garbage and whose CRS was unrecorded. Assert the CRS the GeoPackage
+            // specification requires in each of its three places, and decode one geometry.
+            cmd.CommandText = "SELECT srs_id FROM gpkg_contents WHERE table_name = 'features'";
+            Convert.ToInt64(await cmd.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture)
+                .Should().Be(4326);
+            cmd.CommandText = "SELECT srs_id FROM gpkg_geometry_columns WHERE table_name = 'features'";
+            Convert.ToInt64(await cmd.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture)
+                .Should().Be(4326);
+            cmd.CommandText = "SELECT COUNT(*) FROM gpkg_spatial_ref_sys WHERE srs_id = 4326";
+            Convert.ToInt64(await cmd.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture)
+                .Should().Be(1, "the layer's CRS must be declared in gpkg_spatial_ref_sys");
+
+            cmd.CommandText = "SELECT geom FROM features WHERE geom IS NOT NULL LIMIT 1";
+            var blob = (byte[])(await cmd.ExecuteScalarAsync())!;
+            blob.Length.Should().BeGreaterThan(8);
+            blob[0].Should().Be((byte)'G', "a GeoPackage geometry blob starts with the GP magic");
+            blob[1].Should().Be((byte)'P');
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(blob.AsSpan(4))
+                .Should().Be(4326, "the blob header carries the geometry's SRID");
         }
         finally
         {

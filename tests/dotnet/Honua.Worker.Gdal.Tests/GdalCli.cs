@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit.Constants;
 using Honua.Worker.Gdal.Execution;
@@ -85,23 +87,47 @@ internal static class GdalCli
     }
 
     /// <summary>
-    /// Synthesizes a 16×16 single-band Float32 GeoTIFF DEM at the given scratch
-    /// path using <c>gdal_create</c> (when present) or <c>gdal_translate</c>
-    /// as a fallback. Returns the raw GeoTIFF bytes ready to be base64-encoded
-    /// onto the durable spec.
+    /// Edge length of <see cref="GenerateSampleDemAsync"/>'s square sample DEM, in cells.
+    /// </summary>
+    public const int SampleDemSize = 16;
+
+    /// <summary>
+    /// Elevation burned into <see cref="GenerateSampleDemAsync"/>'s Float32 raster. The
+    /// surface is constant, which is what makes an analytical slope/aspect oracle possible
+    /// (honua-server#4400).
+    /// </summary>
+    public const double SampleDemConstantElevation = 100.0;
+
+    /// <summary>
+    /// NoData value stamped on the sample DEM. It deliberately differs from
+    /// <see cref="SampleDemConstantElevation"/> so every cell of the raster is valid, and it
+    /// matches <c>gdaldem</c>'s own default output NoData.
+    /// </summary>
+    public const double SampleDemNoData = -9999.0;
+
+    /// <summary>
+    /// Synthesizes a <see cref="SampleDemSize"/>-square single-band Float32 GeoTIFF DEM at the
+    /// given scratch path using <c>gdal_create</c> (when present) or <c>gdal_translate</c>
+    /// as a fallback. Every cell carries <see cref="SampleDemConstantElevation"/> and none of
+    /// them are NoData. Returns the raw GeoTIFF bytes ready to be base64-encoded onto the
+    /// durable spec.
     /// </summary>
     public static async Task<byte[]> GenerateSampleDemAsync(string scratch)
     {
         Directory.CreateDirectory(scratch);
         var demPath = Path.Join(scratch, "sample-dem.tif");
+        var size = SampleDemSize.ToString(CultureInfo.InvariantCulture);
+        var elevation = SampleDemConstantElevation.ToString(CultureInfo.InvariantCulture);
+        var noData = SampleDemNoData.ToString(CultureInfo.InvariantCulture);
         if (Available("gdal_create"))
         {
             var args = new[]
             {
-                "-outsize", "16", "16",
+                "-outsize", size, size,
                 "-bands", "1",
                 "-ot", "Float32",
-                "-burn", "100",
+                "-burn", elevation,
+                "-a_nodata", noData,
                 "-of", "GTiff",
                 demPath,
             };
@@ -109,35 +135,202 @@ internal static class GdalCli
         }
         else
         {
-            // Fallback: gdal_translate over a tiny VRT. The VRT holds a 16×16
-            // constant-value Float32 dataset so gdaldem has finite slope inputs.
+            // Fallback: gdal_translate over a tiny source-less VRT. Such a band reads as all
+            // zeroes, so -scale rewrites that constant onto the declared elevation and -a_nodata
+            // parks NoData on a value the raster never takes. Emitting the zeroes verbatim under
+            // NoData=0 -- as this fallback first did -- would hand gdaldem a DEM with no valid
+            // cells at all, leaving the statistics oracle downstream nothing to compute
+            // (honua-server#4400).
             var vrtPath = Path.Join(scratch, "sample.vrt");
-            File.WriteAllText(vrtPath, """
-                <VRTDataset rasterXSize="16" rasterYSize="16">
+            File.WriteAllText(vrtPath, $$"""
+                <VRTDataset rasterXSize="{{size}}" rasterYSize="{{size}}">
                   <VRTRasterBand dataType="Float32" band="1">
                     <ColorInterp>Gray</ColorInterp>
-                    <NoDataValue>0</NoDataValue>
                   </VRTRasterBand>
                 </VRTDataset>
                 """);
-            await RunOrThrowAsync("gdal_translate", new[] { "-of", "GTiff", "-a_nodata", "0", vrtPath, demPath }, scratch)
-                .ConfigureAwait(false);
+            var args = new[]
+            {
+                "-of", "GTiff",
+                "-ot", "Float32",
+                "-scale", "0", "1", elevation, elevation,
+                "-a_nodata", noData,
+                vrtPath,
+                demPath,
+            };
+            await RunOrThrowAsync("gdal_translate", args, scratch).ConfigureAwait(false);
         }
         return File.ReadAllBytes(demPath);
     }
 
-    private static async Task RunOrThrowAsync(string tool, IReadOnlyList<string> args, string scratch)
+    /// <summary>
+    /// Band-1 extrema together with the coverage they were computed over, so a value oracle can
+    /// show the extrema describe the whole raster rather than a handful of surviving cells.
+    /// </summary>
+    /// <param name="Width">Raster width, in cells.</param>
+    /// <param name="Height">Raster height, in cells.</param>
+    /// <param name="Minimum">Smallest valid (non-NoData) cell value.</param>
+    /// <param name="Maximum">Largest valid (non-NoData) cell value.</param>
+    /// <param name="ValidPercent">Percentage of cells that are not NoData.</param>
+    public readonly record struct BandStatistics(
+        int Width,
+        int Height,
+        double Minimum,
+        double Maximum,
+        double ValidPercent);
+
+    /// <summary>
+    /// Reads band-1 statistics and raster shape from a GeoTIFF with <c>gdalinfo -json -stats</c>,
+    /// so a test can assert produced cell values instead of magic bytes. Throws when
+    /// <c>gdalinfo</c> cannot produce them; callers gate on <c>gdalinfo</c> through
+    /// <see cref="GdalCliFactAttribute"/> so an absent tool skips the case rather than reaching
+    /// here.
+    /// </summary>
+    public static async Task<BandStatistics> ReadBandStatisticsAsync(byte[] geoTiff, string scratch)
     {
-        var runner = new ProcessGdalCommandRunner(
+        Directory.CreateDirectory(scratch);
+        var path = Path.Join(scratch, $"stats-{Guid.NewGuid():N}.tif");
+        await File.WriteAllBytesAsync(path, geoTiff).ConfigureAwait(false);
+
+        var stdout = await RunCapturingAsync("gdalinfo", ["-json", "-stats", path], scratch).ConfigureAwait(false);
+        using var document = JsonDocument.Parse(stdout);
+        var size = document.RootElement.GetProperty("size");
+        var band = document.RootElement.GetProperty("bands").EnumerateArray().First();
+
+        // gdalinfo drops the default metadata domain entirely when it has nothing to put in it,
+        // which is exactly what an all-NoData raster produces. Treat that as a missing oracle
+        // rather than letting GetProperty throw a bare KeyNotFoundException.
+        if (!band.GetProperty("metadata").TryGetProperty(string.Empty, out var metadata))
+        {
+            throw new InvalidOperationException(
+                "gdalinfo -stats reported no band metadata; the raster has no valid cells to reconcile against.");
+        }
+
+        return new BandStatistics(
+            size[0].GetInt32(),
+            size[1].GetInt32(),
+            ReadStatistic(metadata, "STATISTICS_MINIMUM"),
+            ReadStatistic(metadata, "STATISTICS_MAXIMUM"),
+            ReadStatistic(metadata, "STATISTICS_VALID_PERCENT"));
+    }
+
+    private static double ReadStatistic(JsonElement metadata, string key)
+    {
+        if (!metadata.TryGetProperty(key, out var raw))
+        {
+            throw new InvalidOperationException(
+                $"gdalinfo -stats reported no {key}; the raster has no valid cells to reconcile against.");
+        }
+
+        return raw.ValueKind == JsonValueKind.Number
+            ? raw.GetDouble()
+            : double.Parse(raw.GetString()!, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<string> RunCapturingAsync(string tool, IReadOnlyList<string> args, string scratch)
+    {
+        var startInfo = new System.Diagnostics.ProcessStartInfo(tool)
+        {
+            WorkingDirectory = scratch,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+
+        foreach (var arg in args)
+        {
+            startInfo.ArgumentList.Add(arg);
+        }
+
+        using var process = System.Diagnostics.Process.Start(startInfo)
+            ?? throw new InvalidOperationException($"Failed to start '{tool}'.");
+        var stdout = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+        var stderr = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
+        await process.WaitForExitAsync().ConfigureAwait(false);
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"'{tool}' exited {process.ExitCode}: {stderr}");
+        }
+
+        return stdout;
+    }
+
+    /// <summary>
+    /// Gets the production worker image the GDAL image lane builds and names through
+    /// <c>HONUA_WORKER_IMAGE</c>, or <see langword="null"/> when this host is not that lane.
+    /// </summary>
+    public static string? WorkerImage
+    {
+        get
+        {
+            var image = Environment.GetEnvironmentVariable("HONUA_WORKER_IMAGE");
+            return string.IsNullOrWhiteSpace(image) ? null : image;
+        }
+    }
+
+    /// <summary>
+    /// Builds the command runner the real-PDAL proof executes through.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// PDAL cannot be provisioned on the runner with <c>apt-get install pdal</c>: no Ubuntu
+    /// release publishes a <c>pdal</c> package, which is precisely why
+    /// <c>docker/worker-gdal/Dockerfile</c> compiles the pinned upstream 2.10.2 source into
+    /// the image. A host <c>dotnet test</c> would therefore find no <c>pdal</c> on PATH and,
+    /// with <c>HONUA_REQUIRE_PDAL_CLI=true</c> refusing to skip, fail on every run.
+    /// </para>
+    /// <para>
+    /// So when the lane names the built worker image, dispatch the tool INTO that image with
+    /// the production <see cref="DockerGdalCommandRunner"/> — the same construction
+    /// <c>RasterExecutionProofTests</c> uses for the raster proofs. Its identical-path bind
+    /// mount (<c>-v ws:ws -w ws</c>) makes the executor's absolute workspace paths resolve to
+    /// the same files inside the container, so the executor's code path is unchanged and the
+    /// PDAL binary under test is the one the production worker actually ships. Falls back to
+    /// the host CLI on a dev box that has PDAL installed.
+    /// </para>
+    /// </remarks>
+    public static IGdalCommandRunner CreatePdalRunner()
+        => WorkerImage is { } image
+            ? new DockerGdalCommandRunner(
+                new ProcessDockerCommandInvoker(NullLogger<ProcessDockerCommandInvoker>.Instance),
+                Microsoft.Extensions.Options.Options.Create(new GdalContainerExecutionOptions
+                {
+                    Image = image,
+                    User = Environment.GetEnvironmentVariable("HONUA_GDAL_PROOF_USER") ?? "1001:1001",
+                }),
+                Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
+                Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
+                Microsoft.Extensions.Options.Options.Create(new AzureBlobOptions()),
+                NullLogger<DockerGdalCommandRunner>.Instance)
+            : CreateHostRunner();
+
+    /// <summary>
+    /// Runs the real <c>pdal</c> CLI, throwing on a non-zero exit. Used to author genuinely
+    /// compressed point-cloud inputs for the real-PDAL execution proof (honua-server#4401).
+    /// </summary>
+    public static Task RunPdalAsync(IReadOnlyList<string> args, string scratch)
+        => RunOrThrowAsync("pdal", args, scratch, CreatePdalRunner());
+
+    private static ProcessGdalCommandRunner CreateHostRunner()
+        => new(
             Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
             Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
             Microsoft.Extensions.Options.Options.Create(new AzureBlobOptions()),
             NullLogger<ProcessGdalCommandRunner>.Instance);
+
+    private static async Task RunOrThrowAsync(
+        string tool,
+        IReadOnlyList<string> args,
+        string scratch,
+        IGdalCommandRunner? runner = null)
+    {
+        runner ??= CreateHostRunner();
         var result = await runner.RunAsync(tool, args, scratch, CancellationToken.None).ConfigureAwait(false);
         if (!result.Succeeded)
         {
             throw new InvalidOperationException(
-                $"Failed to synthesize sample DEM via {tool}: exit={result.ExitCode}; stderr={result.StandardError}");
+                $"Failed to run {tool}: exit={result.ExitCode}; stderr={result.StandardError}");
         }
     }
 }
@@ -170,17 +363,98 @@ public sealed class GdalCliFactAttribute : FactAttribute, ITraitAttribute
     /// Initializes a new instance of the <see cref="GdalCliFactAttribute"/> class.
     /// </summary>
     /// <param name="tool">The GDAL CLI tool required by the test.</param>
-    public GdalCliFactAttribute(string tool)
+    /// <param name="additionalTools">
+    /// Any further CLI tools the case needs, including the auxiliary ones it only uses to build
+    /// its oracle. A test that reads its assertion inputs back through <c>gdalinfo</c> has to
+    /// declare it here: otherwise a host carrying the primary tool but not the auxiliary one runs
+    /// the case and reports a missing package as a bogus regression, instead of skipping cleanly
+    /// the way this attribute promises (honua-server#4400).
+    /// </param>
+    public GdalCliFactAttribute(string tool, params string[] additionalTools)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tool);
+        ArgumentNullException.ThrowIfNull(additionalTools);
 
-        if (GdalCli.Available(tool) || GdalCli.RequireCli)
+        var required = additionalTools.Prepend(tool).ToArray();
+        if (Array.Exists(required, string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("GDAL CLI tool names must be non-empty.", nameof(additionalTools));
+        }
+
+        // HONUA_REQUIRE_GDAL_CLI still wins: the CI job that owns this coverage must fail on a
+        // missing tool -- primary or auxiliary -- rather than quietly skip.
+        if (GdalCli.RequireCli)
         {
             return;
         }
 
-        Skip = $"GDAL CLI tool '{tool}' is not available on PATH. "
+        var missing = Array.Find(required, candidate => !GdalCli.Available(candidate));
+        if (missing is not null)
+        {
+            Skip = $"GDAL CLI tool '{missing}' is not available on PATH. "
+                + $"Set {RequireEnvironmentVariable}=true to fail instead of skipping.";
+        }
+    }
+}
+
+/// <summary>
+/// Marks a test that shells out to the real PDAL CLI (honua-server#4401).
+/// </summary>
+/// <remarks>
+/// PDAL had never been executed by any test in this repository: a repo-wide grep for
+/// <c>PdalCliFact</c> / <c>HONUA_REQUIRE_PDAL</c> returned nothing, no workflow installed PDAL on
+/// a runner, and the only invocation anywhere was <c>pdal --version</c> inside the container
+/// handoff test. <c>pcloud.translate</c>'s GA claim therefore rested entirely on argument
+/// assertions against <c>FakeGdalCommandRunner</c>. This mirrors
+/// <see cref="GdalCliFactAttribute"/>: it skips on a dev box without PDAL, and
+/// <c>HONUA_REQUIRE_PDAL_CLI=true</c> — which the worker-image lane sets — turns a missing PDAL
+/// into a failure so the coverage cannot silently disappear.
+/// </remarks>
+[TraitDiscoverer("Honua.Worker.Gdal.Tests.PdalCliFactDiscoverer", "Honua.Worker.Gdal.Tests")]
+public sealed class PdalCliFactAttribute : FactAttribute, ITraitAttribute
+{
+    /// <summary>
+    /// Environment variable that turns "PDAL CLI missing" from a skip into a failure.
+    /// </summary>
+    public const string RequireEnvironmentVariable = "HONUA_REQUIRE_PDAL_CLI";
+
+    /// <summary>Whether the lane demands real PDAL rather than tolerating a skip.</summary>
+    public static bool RequireCli => string.Equals(
+        Environment.GetEnvironmentVariable(RequireEnvironmentVariable),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PdalCliFactAttribute"/> class.
+    /// </summary>
+    public PdalCliFactAttribute()
+    {
+        // The image lane has no host PDAL — no Ubuntu release packages one — so the proof
+        // runs the tool inside the named worker image. Treat that image as availability.
+        if (GdalCli.Available("pdal") || GdalCli.WorkerImage is not null || RequireCli)
+        {
+            return;
+        }
+
+        Skip = "PDAL is available neither on PATH nor through a HONUA_WORKER_IMAGE container. "
             + $"Set {RequireEnvironmentVariable}=true to fail instead of skipping.";
+    }
+}
+
+/// <summary>
+/// Emits integration-test traits for <see cref="PdalCliFactAttribute"/>.
+/// </summary>
+public sealed class PdalCliFactDiscoverer : ITraitDiscoverer
+{
+    /// <inheritdoc />
+    public IEnumerable<KeyValuePair<string, string>> GetTraits(IAttributeInfo traitAttribute)
+    {
+        return
+        [
+            new KeyValuePair<string, string>("Category", "Integration"),
+            new KeyValuePair<string, string>("Category", "PDAL"),
+            new KeyValuePair<string, string>("Tier", Tiers.Integration)
+        ];
     }
 }
 

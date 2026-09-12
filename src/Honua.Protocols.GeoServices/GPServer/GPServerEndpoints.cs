@@ -39,6 +39,8 @@ internal static class GPServerEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapGPServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGPServerSoapEndpoints();
+
         // Service info
         endpoints.MapGet(RouteBase,
                 static (HttpContext context, CancellationToken ct) => HandleServiceInfo(context, ct))
@@ -256,12 +258,10 @@ internal static class GPServerEndpoints
 
         var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
         var definition = ResolveTaskDefinition(processCatalog, taskName);
-        // Keep metadata consistent with the service task list: explicitly unavailable
-        // processes are discoverable so clients can inspect the published limitation.
-        // Execution routes retain their independent IsJobCallable guards.
-        if (definition == null ||
-            (!GPServerExecutionPolicy.IsJobCallable(definition) &&
-             definition.ExecutionKind != ProcessExecutionKind.Unavailable))
+        // Keep metadata consistent with the service task list: GPServer is a JOB entry
+        // point, so it describes exactly the operations that declare that entry point
+        // (#4409). Execution routes retain their independent IsJobCallable guards.
+        if (definition == null || !GPServerExecutionPolicy.IsJobCallable(definition))
         {
             GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
             return SetSpanErrorAndReturn(
@@ -350,10 +350,10 @@ internal static class GPServerEndpoints
             var plan = planResult.Plan!;
             var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
             var protocolMetadata = BuildProtocolMetadata(
-                serviceId, taskName, definition, parameters, envControls, workingSrid);
+                serviceId, taskName, definition, parameters, envControls, workingSrid, planResult.FeatureSchema);
             var job = await jobService.SubmitJobAsync(
                 plan,
-                idempotencyKey: null,
+                ResolveIdempotencyKey(parameters),
                 context.User,
                 protocolMetadata,
                 ct);
@@ -481,10 +481,10 @@ internal static class GPServerEndpoints
 
             var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
             var protocolMetadata = BuildProtocolMetadata(
-                serviceId, taskName, definition, parameters, envControls, workingSrid);
+                serviceId, taskName, definition, parameters, envControls, workingSrid, planResult.FeatureSchema);
             var job = await jobService.SubmitJobAsync(
                 planResult.Plan!,
-                idempotencyKey: null,
+                ResolveIdempotencyKey(parameters),
                 context.User,
                 protocolMetadata,
                 ct);
@@ -502,12 +502,12 @@ internal static class GPServerEndpoints
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Failed)
             {
-                return BuildExecuteFailureResponse(terminal.Job!, "esriJobFailed");
+                return BuildExecuteFailureResponse(context, terminal.Job!, "esriJobFailed");
             }
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Cancelled)
             {
-                return BuildExecuteFailureResponse(terminal.Job!, "esriJobCancelled");
+                return BuildExecuteFailureResponse(context, terminal.Job!, "esriJobCancelled");
             }
 
             if (terminal.Outcome == GeoprocessingTerminalResultOutcome.Timeout)
@@ -631,27 +631,35 @@ internal static class GPServerEndpoints
         return artifact.Label;
     }
 
-    private static IResult BuildExecuteFailureResponse(ExecutionJobRecord job, string esriStatus)
+    /// <summary>
+    /// A failed or cancelled synchronous <c>execute</c> is an error, not a result (#4034).
+    /// Esri clients (ArcGIS Maps SDK, ArcGIS API for Python, Pro) decide success by the
+    /// absence of an <c>error</c> object, so the former <c>{ results: [], jobStatus }</c>
+    /// envelope read as an empty successful run. Emit the GeoServices error envelope
+    /// (<c>{ "error": { "code": 500, ... } }</c>, the same shape ArcGIS Server returns for
+    /// "Error executing tool") and keep the job id, terminal status, and the job's own
+    /// error message in <c>details</c> so the failed job stays traceable.
+    /// </summary>
+    private static IResult BuildExecuteFailureResponse(HttpContext context, ExecutionJobRecord job, string esriStatus)
     {
-        var messages = new List<GPJobMessage>();
-        if (job.ErrorMessage != null)
+        var cancelled = string.Equals(esriStatus, "esriJobCancelled", StringComparison.Ordinal);
+        var details = new List<string>
         {
-            messages.Add(new GPJobMessage
-            {
-                Type = "esriJobMessageTypeError",
-                Description = job.ErrorMessage
-            });
+            $"jobId: {job.OperationId}",
+            $"jobStatus: {esriStatus}"
+        };
+        if (!string.IsNullOrWhiteSpace(job.ErrorMessage))
+        {
+            details.Add(job.ErrorMessage);
         }
 
-        var response = new GPExecuteResponse
-        {
-            Results = [],
-            Messages = [.. messages],
-            JobStatus = esriStatus
-        };
-
         return SetSpanErrorAndReturn(
-            Results.Json(response, GPServerJsonContext.Default.GPExecuteResponse, contentType: "application/json"),
+            StandardErrorHelpers.CreateInternalServerError(
+                context,
+                cancelled
+                    ? $"Error executing tool: synchronous GP job '{job.OperationId}' was cancelled."
+                    : $"Error executing tool: synchronous GP job '{job.OperationId}' failed.",
+                details),
             $"Synchronous execution {esriStatus}");
     }
 
@@ -680,13 +688,15 @@ internal static class GPServerEndpoints
                 var paramName = ResolvePublishedOutputParameterName(job, artifact, index, allKinds);
                 var dataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind);
                 var value = ResolveArtifactValue(artifact, job.OperationId, index, baseUrl, outputStore);
+                var resultSrid = workingSrid;
 
                 if (envControls.OutSr is { } outSr && artifact.Kind == ArtifactKind.FeatureLayer)
                 {
                     var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(value, workingSrid, outSr);
-                    if (outcome.Reprojected)
+                    if (outcome.Reprojected && outcome.Value is { } reprojectedValue)
                     {
-                        value = outcome.Value;
+                        value = reprojectedValue;
+                        resultSrid = outSr;
                     }
                     else if (outcome.CapabilityMessage is not null)
                     {
@@ -721,7 +731,8 @@ internal static class GPServerEndpoints
                 {
                     ParamName = paramName,
                     DataType = dataType,
-                    Value = value
+                    Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, resultSrid,
+                        job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
                 });
             }
         }
@@ -1087,7 +1098,8 @@ internal static class GPServerEndpoints
             {
                 ParamName = publishedName,
                 DataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
-                Value = value
+                Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job, artifact.Kind),
+                    job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema))
             };
 
             return Results.Json(response, GPServerJsonContext.Default.GPResultResponse,
@@ -1234,7 +1246,7 @@ internal static class GPServerEndpoints
     // Shared helpers
     // -----------------------------------------------------------------------
 
-    private static Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
+    internal static Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
         HttpContext context,
         string serviceId,
         ILogger logger,
@@ -1296,7 +1308,9 @@ internal static class GPServerEndpoints
     /// other <c>env:*</c> control is unsupported and surfaced for a 400 response.
     /// <c>env:workspace</c> mirrors arcpy's <c>arcpy.env.workspace</c> (default
     /// output location for tool results) and <c>env:overwriteOutput</c> mirrors
-    /// <c>arcpy.env.overwriteOutput</c> (default <c>False</c>).
+    /// <c>arcpy.env.overwriteOutput</c> (default <c>False</c>). The Esri 10.6.1+
+    /// <c>context</c> JSON parameter feeds the same <c>OutSr</c>/<c>ProcessSr</c> slots
+    /// (see <see cref="TryApplyContextControls"/>).
     /// </summary>
     private readonly record struct EnvControls(int? OutSr, int? ProcessSr, string? Workspace, bool? OverwriteOutput);
 
@@ -1392,9 +1406,145 @@ internal static class GPServerEndpoints
                 $"Unsupported GP env controls: {names}");
         }
 
+        var contextError = TryApplyContextControls(context, logger, allParams, ref outSr, ref processSr);
+        if (contextError != null)
+        {
+            return contextError;
+        }
+
         controls = new EnvControls(outSr, processSr, workspace, overwriteOutput);
         return null;
     }
+
+    /// <summary>
+    /// Applies the Esri 10.6.1+ <c>context</c> parameter, the JSON successor to the
+    /// <c>env:*</c> controls (#4030). <c>context.outSR</c> and <c>context.processSR</c>
+    /// resolve to the same controls as <c>env:outSR</c> / <c>env:processSR</c>, so both
+    /// execution routes treat them exactly like the env form. An absent, <c>null</c>, or
+    /// empty <c>extent</c> constrains nothing and is accepted; every other property —
+    /// including a non-empty <c>extent</c> — is rejected with a 400 rather than silently
+    /// ignored, the same accept-and-honor-or-reject convention as <c>env:*</c>. A context
+    /// spatial reference that disagrees with the corresponding <c>env:*</c> control is
+    /// ambiguous and rejected.
+    /// </summary>
+    private static IResult? TryApplyContextControls(
+        HttpContext context,
+        ILogger logger,
+        IReadOnlyDictionary<string, string> allParams,
+        ref int? outSr,
+        ref int? processSr)
+    {
+        if (!allParams.TryGetValue("context", out var rawContext) || string.IsNullOrWhiteSpace(rawContext))
+        {
+            return null;
+        }
+
+        System.Text.Json.JsonDocument document;
+        try
+        {
+            document = System.Text.Json.JsonDocument.Parse(rawContext);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, "context must be a JSON object."),
+                "Invalid GP context");
+        }
+
+        using (document)
+        {
+            var root = document.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context, "context must be a JSON object."),
+                    "Invalid GP context");
+            }
+
+            int? contextOutSr = null;
+            int? contextProcessSr = null;
+            List<string>? unsupported = null;
+            foreach (var property in root.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "outSR", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!TryParseContextSpatialReference(property.Value, out contextOutSr))
+                    {
+                        return SetSpanErrorAndReturn(
+                            StandardErrorHelpers.CreateBadRequest(context,
+                                $"context.outSR value '{property.Value.GetRawText()}' is not a valid WKID or spatial-reference object."),
+                            "Invalid context.outSR");
+                    }
+                }
+                else if (string.Equals(property.Name, "processSR", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!TryParseContextSpatialReference(property.Value, out contextProcessSr))
+                    {
+                        return SetSpanErrorAndReturn(
+                            StandardErrorHelpers.CreateBadRequest(context,
+                                $"context.processSR value '{property.Value.GetRawText()}' is not a valid WKID or spatial-reference object."),
+                            "Invalid context.processSR");
+                    }
+                }
+                else if (string.Equals(property.Name, "extent", StringComparison.OrdinalIgnoreCase)
+                    && IsEmptyContextValue(property.Value))
+                {
+                    continue;
+                }
+                else
+                {
+                    unsupported ??= [];
+                    unsupported.Add($"context.{property.Name}");
+                }
+            }
+
+            if (unsupported != null)
+            {
+                var names = string.Join(", ", unsupported);
+                GPServerLog.UnsupportedEnvControlsRejected(logger, names);
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context,
+                        $"GP context properties are not yet supported: {names}. " +
+                        "Remove these properties or wait for engine support."),
+                    $"Unsupported GP context properties: {names}");
+            }
+
+            var conflict = DescribeContextConflict("outSR", outSr, contextOutSr)
+                ?? DescribeContextConflict("processSR", processSr, contextProcessSr);
+            if (conflict != null)
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context, conflict),
+                    "Conflicting GP env and context controls");
+            }
+
+            outSr ??= contextOutSr;
+            processSr ??= contextProcessSr;
+            return null;
+        }
+    }
+
+    private static bool TryParseContextSpatialReference(System.Text.Json.JsonElement value, out int? srid)
+    {
+        srid = null;
+        return value.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.Null => true,
+            System.Text.Json.JsonValueKind.Number or System.Text.Json.JsonValueKind.Object =>
+                TryParseSpatialReferenceValue(value.GetRawText(), out srid),
+            System.Text.Json.JsonValueKind.String => TryParseSpatialReferenceValue(value.GetString(), out srid),
+            _ => false
+        };
+    }
+
+    private static bool IsEmptyContextValue(System.Text.Json.JsonElement value)
+        => value.ValueKind == System.Text.Json.JsonValueKind.Null
+            || (value.ValueKind == System.Text.Json.JsonValueKind.Object && !value.EnumerateObject().Any());
+
+    private static string? DescribeContextConflict(string name, int? envValue, int? contextValue)
+        => envValue is { } fromEnv && contextValue is { } fromContext && fromEnv != fromContext
+            ? $"env:{name}={fromEnv} conflicts with context.{name}={fromContext}; send one spatial reference."
+            : null;
 
     /// <summary>
     /// Parses an Esri-style boolean parameter value: <c>bool.TryParse</c> first
@@ -1509,19 +1659,20 @@ internal static class GPServerEndpoints
 
     /// <summary>
     /// Builds the published task-name list for the service-info response: every
-    /// process's internal ID, plus its Esri-conventional alias when one exists. Both
+    /// process's Python-safe encoded ID, plus its Esri-conventional alias when one exists. Both
     /// forms resolve to the same process via <see cref="ResolveTaskDefinition"/>.
     /// <para>
     /// Collision policy (deterministic): a real catalog process ID always wins over an
     /// alias. When any catalog process ID matches an alias (compared case-insensitively,
     /// mirroring the alias lookup), the alias is suppressed and only the real process ID
-    /// is published, so the task list never contains the same name with two meanings and
+    /// is published under its encoded name, so the task list never contains the same name with two meanings and
     /// never publishes duplicates.
     /// </para>
     /// </summary>
-    private static IEnumerable<string> BuildPublishedTaskNames(IProcessCatalog processCatalog)
+    internal static IEnumerable<string> BuildPublishedTaskNames(IProcessCatalog processCatalog)
     {
         var processes = processCatalog.ListProcesses();
+        var encodingPrefix = GPServerTaskNames.GetEncodingPrefix(processes);
         var processIds = new HashSet<string>(processes.Count, StringComparer.OrdinalIgnoreCase);
         foreach (var process in processes)
         {
@@ -1530,18 +1681,17 @@ internal static class GPServerEndpoints
 
         foreach (var process in processes)
         {
-            // Unavailable processes remain discoverable so the GPServer catalog can
-            // truthfully describe a known tool and its limitation. Invocation still
-            // fails closed at the shared submit boundary because the process is not
-            // job-callable. Other non-job surfaces (protocol/workflow-only) stay out
-            // of the GP task list because they have a different owning execution path.
-            if (!GPServerExecutionPolicy.IsJobCallable(process)
-                && process.ExecutionKind != ProcessExecutionKind.Unavailable)
+            // GPServer is a JOB entry point: it lists exactly the operations whose
+            // catalog declaration includes that entry point. Protocol-only and
+            // workflow-only operations stay out because they are reached through a
+            // different entry point, and nothing is advertised here that cannot be
+            // submitted here (#4409).
+            if (!GPServerExecutionPolicy.IsJobCallable(process))
             {
                 continue;
             }
 
-            yield return process.ProcessId;
+            yield return GPServerTaskNames.Encode(process.ProcessId, encodingPrefix);
 
             var alias = GPServerEsriTaskAliases.GetAlias(process.ProcessId);
             if (alias != null && !processIds.Contains(alias))
@@ -1554,7 +1704,7 @@ internal static class GPServerEndpoints
     /// <summary>
     /// Resolves a task name to its <see cref="ProcessDefinition"/>. Tries the internal
     /// process ID first (the existing, ESTABLISHED contract — e.g. <c>geometry.buffer</c>),
-    /// then falls back to the Esri-conventional alias overlay (e.g. <c>Buffer</c>) so
+    /// then tries the published encoded name and the Esri-conventional alias overlay (e.g. <c>Buffer</c>) so
     /// unmodified ArcGIS clients addressing tasks by their familiar Esri name resolve to
     /// the same canonical process. See <see cref="GPServerEsriTaskAliases"/>.
     /// <para>
@@ -1568,7 +1718,7 @@ internal static class GPServerEndpoints
     /// table. See <see cref="BuildPublishedTaskNames"/> for the matching publication rule.
     /// </para>
     /// </summary>
-    private static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
+    internal static ProcessDefinition? ResolveTaskDefinition(IProcessCatalog processCatalog, string? taskName)
     {
         if (string.IsNullOrWhiteSpace(taskName))
         {
@@ -1579,6 +1729,14 @@ internal static class GPServerEndpoints
         if (byProcessId != null)
         {
             return byProcessId;
+        }
+
+        var processes = processCatalog.ListProcesses();
+        var encodingPrefix = GPServerTaskNames.GetEncodingPrefix(processes);
+        if (taskName.StartsWith(encodingPrefix, StringComparison.Ordinal))
+        {
+            return processes.FirstOrDefault(process => GPServerExecutionPolicy.IsJobCallable(process) &&
+                string.Equals(GPServerTaskNames.Encode(process.ProcessId, encodingPrefix), taskName, StringComparison.Ordinal));
         }
 
         if (!GPServerEsriTaskAliases.TryResolveProcessId(taskName, out var processId))
@@ -1604,19 +1762,22 @@ internal static class GPServerEndpoints
             .Any(process => string.Equals(process.ProcessId, taskName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
+    internal static GPTaskInfoResponse BuildTaskInfo(string taskName, ProcessDefinition definition)
     {
         var parameters = new List<GPParameterInfo>(definition.Parameters.Count + definition.OutputArtifactKinds.Count);
+        var parameterPrefix = GPServerParameterNames.GetEncodingPrefix(definition);
         foreach (var parameter in definition.Parameters)
         {
             parameters.Add(new GPParameterInfo
             {
-                Name = parameter.Name,
+                Name = GPServerParameterNames.Publish(parameter.Name, parameterPrefix),
                 DisplayName = parameter.DisplayName,
                 Description = parameter.Description,
-                DataType = GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
+                DataType = parameter.AcceptsGeoJsonDataUri
+                    ? "GPFeatureRecordSetLayer"
+                    : GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
                 Direction = "esriGPParameterDirectionInput",
-                DefaultValue = parameter.DefaultValue,
+                DefaultValue = GPServerParameterTranslation.TranslateDefaultValue(parameter),
                 ParameterType = parameter.Required
                     ? "esriGPParameterTypeRequired"
                     : "esriGPParameterTypeOptional",
@@ -1678,7 +1839,8 @@ internal static class GPServerEndpoints
     private readonly record struct SubmissionPlanResult(
         AnalysisPlan? Plan,
         string? CapabilityError,
-        int? InputSpatialReference);
+        int? InputSpatialReference,
+        string? FeatureSchema = null);
 
     private static SubmissionPlanResult BuildSubmissionPlan(
         ProcessDefinition definition,
@@ -1686,6 +1848,7 @@ internal static class GPServerEndpoints
         IReadOnlyDictionary<string, string> rawParameters)
     {
         var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var parameterPrefix = GPServerParameterNames.GetEncodingPrefix(definition);
         foreach (var (key, value) in rawParameters)
         {
             if (IsProtocolControlParameter(key))
@@ -1693,17 +1856,65 @@ internal static class GPServerEndpoints
                 continue;
             }
 
-            inputs[key] = value;
+            var canonicalName = GPServerParameterNames.Resolve(key, definition, parameterPrefix);
+            if (inputs.TryGetValue(canonicalName, out var previous) && !string.Equals(previous, value, StringComparison.Ordinal))
+            {
+                return new SubmissionPlanResult(null, "Conflicting values were supplied for a GPServer input parameter.", null);
+            }
+            inputs[canonicalName] = value;
         }
 
         // Additive ArcGIS-compatible input translation: rewrite esriGeometry JSON
-        // and single-feature FeatureSet payloads into canonical base64-WKB + srid.
-        // Native string / base64-WKB inputs pass through untouched. Multi-feature
-        // FeatureSets surface a capability error rather than dropping features.
-        var esriResult = GPServerEsriInputTranslation.Translate(inputs);
+        // and FeatureSets into the process-declared WKB or FeatureCollection shape.
+        // Collection parameters retain every feature and its attribute row.
+        var collectionParameters = definition.Parameters
+            .Where(parameter => parameter.AcceptsGeoJsonDataUri)
+            .Select(parameter => parameter.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var esriResult = GPServerEsriInputTranslation.Translate(inputs, collectionParameters,
+            includeDerivedSrid: definition.Parameters.Any(parameter => parameter.Name.Equals("srid", StringComparison.OrdinalIgnoreCase)));
         if (esriResult.CapabilityMessage is not null)
         {
             return new SubmissionPlanResult(Plan: null, esriResult.CapabilityMessage, esriResult.InputSpatialReference);
+        }
+
+        string? featureSchema = null;
+        string? mergeGeometryType = null;
+        var derivedSrid = esriResult.InputSpatialReference;
+        foreach (var (key, input) in esriResult.Inputs)
+        {
+            var canonical = input;
+            if (definition.ProcessId == "source.geojson" && key.Equals("inline", StringComparison.OrdinalIgnoreCase))
+            {
+                canonical = "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(input));
+            }
+            if (!canonical.StartsWith("data:application/geo+json;base64,", StringComparison.Ordinal))
+            {
+                continue;
+            }
+            try
+            {
+                var schema = GPServerEsriOutputTranslation.DescribeInput(canonical, inputs.GetValueOrDefault(key));
+                var geometryType = schema.TryGetProperty("geometryType", out var shape) ? shape.GetString() : null;
+                if (definition.ProcessId == "overlay.merge" && mergeGeometryType is not null &&
+                    geometryType is not null && mergeGeometryType != geometryType)
+                {
+                    return new SubmissionPlanResult(null,
+                        "GPServer Merge inputs must have compatible geometry types to produce an Esri FeatureSet.", derivedSrid);
+                }
+                mergeGeometryType ??= geometryType;
+                derivedSrid ??= 4326;
+                if (featureSchema is null || key.Equals("input", StringComparison.OrdinalIgnoreCase))
+                {
+                    featureSchema = schema.GetRawText();
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or FormatException or System.Text.Json.JsonException or Newtonsoft.Json.JsonException
+                or InvalidOperationException or KeyNotFoundException or GeoprocessingValidationException)
+            {
+                return new SubmissionPlanResult(null,
+                    "GPServer feature inputs must be valid homogeneous FeatureCollections with a supported geometry type.", derivedSrid);
+            }
         }
 
         var translatedInputs = GPServerParameterTranslation.TranslateInbound(esriResult.Inputs, definition);
@@ -1726,7 +1937,7 @@ internal static class GPServerEndpoints
             Outputs = definition.OutputArtifactKinds
         };
 
-        return new SubmissionPlanResult(plan, CapabilityError: null, esriResult.InputSpatialReference);
+        return new SubmissionPlanResult(plan, CapabilityError: null, derivedSrid, featureSchema);
     }
 
     /// <summary>
@@ -1756,6 +1967,15 @@ internal static class GPServerEndpoints
         }
 
         return derivedSrid ?? 0;
+    }
+
+    private static int ResolveResultSrid(ExecutionJobRecord job, ArtifactKind kind)
+    {
+        var parameters = job.Spec.Parameters;
+        var raw = (kind == ArtifactKind.FeatureLayer
+            ? parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerOutSr) : null)
+            ?? parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkingSr);
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) ? srid : 0;
     }
 
     /// <summary>
@@ -1818,7 +2038,8 @@ internal static class GPServerEndpoints
         ProcessDefinition definition,
         IReadOnlyDictionary<string, string> rawParameters,
         EnvControls envControls,
-        int workingSrid)
+        int workingSrid,
+        string? featureSchema)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -1826,6 +2047,11 @@ internal static class GPServerEndpoints
             [GeoprocessingProtocolMetadataKeys.GPServerServiceId] = serviceId,
             [GeoprocessingProtocolMetadataKeys.GPServerTaskName] = taskName
         };
+
+        if (featureSchema is not null)
+        {
+            metadata[GeoprocessingProtocolMetadataKeys.GPServerFeatureSchema] = featureSchema;
+        }
 
         // Persist the working (input-derived) SRID so the asynchronous
         // results/{param} handler can apply the same env:outSR reprojection the
@@ -1893,8 +2119,25 @@ internal static class GPServerEndpoints
             || string.Equals(key, "returnFeatureCollection", StringComparison.OrdinalIgnoreCase)
             || string.Equals(key, "returnColumnName", StringComparison.OrdinalIgnoreCase)
             || string.Equals(key, "returnTrueCurves", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, IdempotencyKeyParameterName, StringComparison.OrdinalIgnoreCase)
             || key.StartsWith("env:", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Optional GeoServices-style request parameter carrying a client-supplied idempotency
+    /// key (server#4627). GPServer's wire convention is form/query parameters (mirrors
+    /// <c>idempotencyKey</c> on the ImageServer/MapServer durable export routes), not the
+    /// <c>Idempotency-Key</c> header used by JSON-native adapters (MCP, admin/webhook
+    /// endpoints). Registered in <see cref="IsProtocolControlParameter"/> so it is never
+    /// bound as a task input parameter. Absent ⇒ unchanged legacy behavior (a fresh job id
+    /// every submission).
+    /// </summary>
+    private const string IdempotencyKeyParameterName = "idempotencyKey";
+
+    private static string? ResolveIdempotencyKey(IReadOnlyDictionary<string, string> parameters)
+        => parameters.TryGetValue(IdempotencyKeyParameterName, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
+            : null;
 
     private static IResult? ValidateJsonFormat(
         HttpContext context,

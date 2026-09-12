@@ -1,18 +1,23 @@
+---
+type: index
+title: "Operating Honua"
+description: "Honua's day-2 operating model is one loop shared by humans, Console, and MCP agents: observe, diagnose, remediate, learn, and graduate."
+---
 # Operating Honua
 
 Honua's day-2 operating model is one loop shared by humans, Console, and MCP
 agents: observe, diagnose, remediate, learn, and graduate. The server stays the
 source of truth for health, findings, proposals, approvals, and execution. Tools
 may explain or propose, but the control plane applies only deterministic,
-authorized operations. Start with the execution-verified [Operate
+authorized operations. Start with the pre-cut [Operate
 scenario](scenario.md), then use the [metric inventory](metrics.md) and [evidence
 posture contract](evidence-posture.md) to decide whether a successful read is
 actually actionable.
 
-This guide describes the shipped surfaces; the scenario pins its exact candidate
-and marks its unexecutable proposal/approval/actuation stages with #3411, #3430,
-#3431, and #3475. The remaining limits are called out explicitly so “runs
-itself” never means “may mutate anything unattended.”
+This guide describes source contracts, separate from the remaining exact-candidate
+execution receipt. The infrastructure control plane provisions the placement;
+the server control plane configures resources and owns governed operations.
+The terminal client is the model seat, with a separate human approval principal.
 
 > **Customer alerting is Preview in 2026.1.** Alert zones, rules, evaluation,
 > delivery channels, and their Console Operate views require an explicit
@@ -28,7 +33,8 @@ guess:
 
 `GET /api/v1/operate/status` returns one `healthy`, `degraded`, or `unhealthy`
 verdict plus rollups for deploys, jobs, alerts, migrations, findings, telemetry
-backends, and the availability SLO when configured. An `ops:read` key can read
+backends, an explicitly sourced platform-SLO posture, and a separately named node-local retained-tail
+diagnostic. An `ops:read` key can read
 this and the read-only observability surfaces without gaining rollback or
 proposal authority.
 
@@ -42,7 +48,9 @@ proposal authority.
    include evidence references. No server-side model call is involved.
 3. Remediate: when a finding has a real executor, propose its action with
    `POST /api/v1/admin/observability/findings/{findingId}/propose` or call
-   `honua_propose_finding`. The governed path creates an approval proposal.
+   `honua_propose_finding`. The MCP tool creates an approval proposal only;
+   the operator REST route follows gateway policy and can directly execute an
+   auto-safe action. Keep the model workflow on the proposal-only MCP path.
 4. Learn: use the persisted ops-health history and fused operate timeline to
    understand whether the action improved health. This is operational memory,
    not model training.
@@ -53,13 +61,14 @@ proposal authority.
 
 The Console `/operate` seat is the human seat. It reads the same status,
 history, events, alerts, and findings as the REST APIs, and it is where an
-operator reviews approval proposals. It should be the only place a human has to
-decide whether a proposed mutating action runs.
+operator reviews approval proposals. An independently authenticated Admin CLI
+approver can make the same decision; Console is optional and observes the same
+durable proposal and operation IDs.
 
 The MCP seat is the agent seat. It can observe through read-only tools and
 resources, diagnose findings, and propose in-scope control-plane operations. It
 does not get a second approval path. If the gateway returns a `proposalId`, the
-agent waits for the Console approval lane to resolve it.
+agent waits for a separate authorized terminal or Console principal to resolve it.
 
 The useful split is:
 
@@ -191,6 +200,16 @@ is endpoint- or cockpit-driven against an existing metadata release operation
 and its rollback plan. The gateway executor for `MetadataRelease` is create-only
 by design; it does not invent a new rollback payload for an already-submitted
 release operation.
+
+A metadata release stages its change as a separate revision and keeps every
+reader on the current revision until the change passes its smoke check. It then
+switches over in one step, and only if nobody else published in the meantime.
+A concurrent publish is rebased onto, not overwritten. Rolling back removes only
+what that release added, keeps later changes to other services, and never
+restores or rewrites feature data. The operation reports `RolledBack` only after
+the recovered service passes the same checks. Releases that drop or retype
+fields, or run a data job that writes anything other than the new optional
+fields, are refused before anything changes.
 
 Telemetry-gated deploy backends can trigger rollback during a configured rollout
 when their error-rate, latency, or synthetic health-probe gates breach. That is

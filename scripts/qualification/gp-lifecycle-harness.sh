@@ -15,10 +15,24 @@ payload='{"inputs":{"wkb":"AQEAAABQ/Bhz15pewNDVVuwv40JA","srid":4326,"distance":
 native_source="$(jq -cn '{type:"FeatureCollection",features:[range(0;500) as $id|{type:"Feature",properties:{id:$id},geometry:{type:"Point",coordinates:[(-157.8583 + ($id % 100) / 10000), (21.3069 + ($id % 50) / 10000)]}}]}' | base64 -w0)"
 native_payload="$(jq -cn --arg source "${native_source}" '{inputs:{source:$source,targetFormat:"GeoJSON",sourceFormat:"GeoJSON"}}')"
 mkdir -p "${receipt_root}"
+# #4401: which process a job ran is recorded per job id, never inferred from the
+# scenario name. Most scenarios submit gdal.ogr2ogr with ${native_payload} under
+# names that carry no "native" marker (duplicate-delivery, retry, stale-lease,
+# queue-backlog, restart-*-results-read, ...), so a name-based guess would apply
+# the geometry.buffer output check to an ogr2ogr point collection and fail every
+# one of them. A FILE, not a shell variable: submit_async runs inside a command
+# substitution subshell, so an assignment there would not survive.
+job_process_root="${receipt_root}/.job-process"
+mkdir -p "${job_process_root}"
 
 case "${lane}" in
+  output-store)
+    declared_scenarios=(topology output-store-attestation cleanup)
+    ;;
   lifecycle)
-    declared_scenarios=(topology sync async cancel idempotency retry timeout \
+    declared_scenarios=(topology output-store-attestation sync async cancel-claimed cancel-native-process-started \
+      cancel-output-bytes-written-unpublished cancel-artifact-reference-published-terminal-cas-pending \
+      idempotency retry timeout-cooperative timeout-ignoring \
       restart-worker-accepted restart-worker-running restart-worker-terminal restart-worker-results-read \
       restart-server-accepted restart-server-running restart-server-terminal restart-server-results-read \
       restart-redis-accepted restart-redis-running restart-redis-terminal restart-redis-results-read \
@@ -33,18 +47,27 @@ case "${lane}" in
     declared_scenarios=(assertion-failure follow-up cleanup)
     ;;
   *)
-    echo "HONUA_GP_LANE must be lifecycle, resilience, or self-test" >&2
+    echo "HONUA_GP_LANE must be output-store, lifecycle, resilience, or self-test" >&2
     exit 2
     ;;
 esac
 
 declare -A receipt_written=()
 scenario_name=""
+peer_url="http://127.0.0.1:${HONUA_GP_PEER_PORT:-18081}"
+barrier_root="${HONUA_GP_BARRIER_ROOT-}"
+[[ -n "$barrier_root" ]] || barrier_root="$receipt_root/barriers"
+object_root="${HONUA_GP_OBJECT_ROOT-}"
+[[ -n "$object_root" ]] || object_root="$receipt_root/objects"
+export HONUA_GP_BARRIER_ROOT="$barrier_root" HONUA_GP_OBJECT_ROOT="$object_root"
+mkdir -p "$barrier_root" "$object_root"
+chmod 777 "$barrier_root" "$object_root"
 scenario_started_at=""
 scenario_state_file=""
 scenario_transition_file=""
 scenario_disruption_file=""
 scenario_attempt_file=""
+scenario_evidence_file=""
 scenario_finding=""
 scenario_cleanup_failure=""
 preflight_failure=""
@@ -61,6 +84,8 @@ scenario_fail() {
 
 scenario_state_reset() {
   scenario_name="$1"
+  scenario_evidence_file="$receipt_root/.$scenario_name.evidence.json"
+  jq -n '{}' > "$scenario_evidence_file"
   scenario_started_at="$(now)"
   scenario_state_file="${receipt_root}/.${scenario_name}.state.json"
   scenario_transition_file="${receipt_root}/.${scenario_name}.transitions.ndjson"
@@ -95,6 +120,11 @@ record_attempt() {
   (( attempts > current )) && printf '%s\n' "${attempts}" > "${scenario_attempt_file}"
 }
 
+set_scenario_evidence() {
+  local value="$1"
+  jq -e . <<<"$value" > "$scenario_evidence_file"
+}
+
 require_digest() {
   local name="$1" value="${!1:-}"
   if [[ ! "${value}" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; then
@@ -104,6 +134,57 @@ require_digest() {
 }
 
 compose() { docker compose --project-name "${project_name}" -f "${compose_file}" "$@"; }
+
+# The topology file is the single source of truth for the store contract: the
+# provisioner is driven from the same declarations the containers bind, so a
+# marker can never be written for a contract no host actually resolves.
+compose_staging_value() {
+  # Staging settings are scalars: the first colon separates the key from values
+  # such as durations that carry their own colons, and quoting is incidental.
+  grep -m1 -E "^[[:space:]]*Geoprocessing__OutputStaging__$1:" "${compose_file}" | cut -d: -f2- | tr -d '" '
+}
+
+provision_output_store() {
+  local declared computed marker
+  local -a arguments
+  declared="$(compose_staging_value ConfigurationDigest)"
+  [[ -n "${declared}" ]] || {
+    preflight_failure="the topology does not declare an output store configuration digest"
+    return 1
+  }
+  marker="${object_root}/.honua-gp-store.json"
+  if [[ -e "${marker}" ]]; then
+    # Re-run against a retained volume: read the contract already attested there
+    # rather than declaring a second one over durable bytes.
+    computed="$(jq -r '.ConfigurationDigest // empty' "${marker}" 2>/dev/null)"
+  else
+    arguments=(
+      --root-path "${object_root}"
+      --store-reference "$(compose_staging_value StoreReference)"
+      --persistence-class "$(compose_staging_value PersistenceClass)"
+      --backup-identity "$(compose_staging_value BackupIdentity)"
+      --backup-store-references "$(compose_staging_value BackupStoreReferences__0)"
+      --key-prefix "$(compose_staging_value KeyPrefix)"
+      --max-inline-artifact-bytes "$(compose_staging_value MaxInlineArtifactBytes)"
+      --read-lease-duration "$(compose_staging_value ReadLeaseDuration)"
+      --sweep-interval "$(compose_staging_value SweepInterval)"
+      --sweep-grace "$(compose_staging_value SweepGrace)"
+      --orphan-retention "$(compose_staging_value OrphanRetention)"
+    )
+    computed="$("${repo_root}/scripts/operations/initialize-gp-output-store.sh" "${arguments[@]}")" || {
+      preflight_failure="the shared output volume could not be provisioned from the declared store contract"
+      return 1
+    }
+    chmod 644 "${marker}"
+  fi
+  # An independent SHA-256 of the same canonical form the runtime recomputes:
+  # a mismatch here is a topology defect, not a container that failed to boot.
+  [[ "${computed}" == "${declared}" ]] || {
+    preflight_failure="provisioned store digest ${computed} does not match the topology's declared ${declared}"
+    return 1
+  }
+}
+
 auth_curl() { curl --fail-with-body --silent --show-error -H "X-API-Key: ${api_key}" "$@"; }
 tenant_curl() { local token="$1"; shift; curl --silent --show-error -H "Authorization: Bearer ${token}" "$@"; }
 
@@ -122,7 +203,7 @@ verify_image_revision() {
 
 write_receipt() {
   local scenario="$1" outcome="$2" finding="${3:-}" job_id="${4:-}" terminal="${5:-}" output_sha="${6:-}"
-  local path="${receipt_root}/${scenario}.json" completed_at attempts transitions disruptions state candidate
+  local path="${receipt_root}/${scenario}.json" completed_at attempts candidate_file
   if [[ -e "${path}" ]]; then
     receipt_written["${scenario}"]=$(( ${receipt_written["${scenario}"]:-0} + 1 ))
     return 1
@@ -130,20 +211,24 @@ write_receipt() {
   [[ -n "${output_sha}" ]] && jq --arg sha "${output_sha}" '.sha256=$sha' "${scenario_state_file}" > "${scenario_state_file}.tmp" && mv "${scenario_state_file}.tmp" "${scenario_state_file}"
   completed_at="$(now)"
   attempts=1; [[ -f "${scenario_attempt_file}" ]] && attempts="$(<"${scenario_attempt_file}")"
-  transitions='[]'; [[ -f "${scenario_transition_file}" ]] && transitions="$(jq -s '.' "${scenario_transition_file}")"
-  disruptions='[]'; [[ -f "${scenario_disruption_file}" ]] && disruptions="$(jq -s '.' "${scenario_disruption_file}")"
-  state='{"sha256":null,"bytes":0}'; [[ -f "${scenario_state_file}" ]] && state="$(<"${scenario_state_file}")"
-  candidate='{"requested":{"server_image":"","worker_image":"","source_sha":""},"observed":null}'
-  [[ -f "${observed_candidate_file}" ]] && candidate="$(<"${observed_candidate_file}")"
+  candidate_file="${observed_candidate_file}"
+  if [[ ! -f "${candidate_file}" ]]; then
+    candidate_file="${receipt_root}/.empty-candidate.json"
+    printf '%s\n' '{"requested":{"server_image":"","worker_image":"","source_sha":""},"observed":null}' > "${candidate_file}"
+  fi
+  # Evidence and transition histories can exceed the OS argument-size limit.
+  # Read their files directly, then atomically publish only a complete receipt.
   jq -n \
+    --slurpfile evidence "${scenario_evidence_file}" \
     --arg schema "honua.gp-lifecycle-receipt.v2" \
     --arg lane "${lane}" --arg scenario "${scenario}" --arg outcome "${outcome}" --arg finding "${finding}" \
     --arg job_id "${job_id}" --arg terminal "${terminal}" --arg source_sha "${candidate_source_sha}" \
     --arg started_at "${scenario_started_at:-${completed_at}}" --arg completed_at "${completed_at}" \
-    --arg run_url "${run_url}" --argjson attempts "${attempts}" --argjson transitions "${transitions}" \
-    --argjson disruptions "${disruptions}" --argjson output "${state}" --argjson candidate "${candidate}" \
-    '{schema:$schema,lane:$lane,scenario:$scenario,outcome:$outcome,finding:(if $finding=="" then null else $finding end),started_at:$started_at,completed_at:$completed_at,attempt_count:$attempts,state_transitions:$transitions,disruptions:$disruptions,output:{bytes:$output.bytes,sha256:(if $output.sha256==null then null else $output.sha256 end)},job:{id:(if $job_id=="" then null else $job_id end),terminal_state:(if $terminal=="" then null else $terminal end)},candidate:$candidate,source_sha:$source_sha,github:{run_url:$run_url,run_id:(env.GITHUB_RUN_ID // "local"),run_attempt:(env.GITHUB_RUN_ATTEMPT // "1")}}' \
-    > "${path}"
+    --arg run_url "${run_url}" --argjson attempts "${attempts}" --slurpfile transitions "${scenario_transition_file}" \
+    --slurpfile disruptions "${scenario_disruption_file}" --slurpfile output "${scenario_state_file}" --slurpfile candidate "${candidate_file}" \
+    '{schema:$schema,lane:$lane,scenario:$scenario,outcome:$outcome,finding:(if $finding=="" then null else $finding end),started_at:$started_at,completed_at:$completed_at,attempt_count:$attempts,state_transitions:$transitions,disruptions:$disruptions,output:$output[0],job:{id:(if $job_id=="" then null else $job_id end),terminal_state:(if $terminal=="" then null else $terminal end)},evidence:$evidence[0],candidate:$candidate[0],source_sha:$source_sha,github:{run_url:$run_url,run_id:(env.GITHUB_RUN_ID // "local"),run_attempt:(env.GITHUB_RUN_ATTEMPT // "1")}}' \
+    > "${path}.tmp" || { rm -f "${path}.tmp"; return 1; }
+  mv "${path}.tmp" "${path}" || return 1
   receipt_written["${scenario}"]=1
 }
 
@@ -155,11 +240,34 @@ wait_ready() {
   done
 }
 
+wait_peer_ready() {
+  local deadline=$((SECONDS + 180))
+  until curl --fail --silent "$peer_url/healthz/ready" >/dev/null; do
+    (( SECONDS < deadline )) || return 1
+    sleep 2
+  done
+}
+
+# Records/reads the process a job was submitted with. See ${job_process_root} above.
+record_job_process() {
+  local job="$1" process="$2"
+  [[ -n "${job}" ]] || return 0
+  printf '%s' "${process}" > "${job_process_root}/${job//[^A-Za-z0-9._-]/_}"
+}
+
+job_process_of() {
+  local job="$1" path="${job_process_root}/${1//[^A-Za-z0-9._-]/_}"
+  [[ -n "${job}" && -s "${path}" ]] || return 0
+  cat "${path}"
+}
+
 submit_async() {
-  local process="${1:-geometry.buffer}" body="${2:-${payload}}" response
+  local process="${1:-geometry.buffer}" body="${2:-${payload}}" response job
   response="$(auth_curl -H 'Content-Type: application/json' -H 'Prefer: respond-async' \
     -d "${body}" "${base_url}/ogc/processes/processes/${process}/execution")"
-  jq -er '.jobID // .jobId' <<<"${response}"
+  job="$(jq -er '.jobID // .jobId' <<<"${response}")" || return 1
+  record_job_process "${job}" "${process}"
+  printf '%s' "${job}"
 }
 
 status_json() {
@@ -196,8 +304,255 @@ wait_running() {
   return 1
 }
 
+barrier_directory() {
+  printf '%s/%s' "$barrier_root" "$1"
+}
+
+wait_barrier() {
+  local job="$1" barrier="$2" deadline=$((SECONDS + 60)) ready
+  ready="$(barrier_directory "$job")/$barrier.ready.json"
+  while (( SECONDS < deadline )); do
+    [[ -s "$ready" ]] && { jq -e . "$ready" >/dev/null || return 1; return 0; }
+    sleep 0.05
+  done
+  return 1
+}
+
+release_barrier() {
+  local job="$1" barrier="$2"
+  : > "$(barrier_directory "$job")/$barrier.release"
+}
+
+barrier_record() {
+  local job="$1" barrier="$2" suffix="${3:-}" path
+  [[ -n "$suffix" ]] || suffix=ready
+  path="$(barrier_directory "$job")/$barrier.$suffix.json"
+  [[ -s "$path" ]] && jq -c . "$path" || printf 'null'
+}
+
+object_file_count() {
+  local job="$1"
+  find "$object_root/gp/outputs/$job" -type f ! -name '*.hold' ! -name '*.readlease' ! -name '*.pending' -print 2>/dev/null | wc -l | tr -d ' '
+}
+
+result_status_code() {
+  local job="$1" url="$2" body
+  body="$(mktemp)"
+  curl --silent --show-error -H "X-API-Key: $api_key" -o "$body" -w '%{http_code}' \
+    "$url/ogc/processes/jobs/$job/results"
+  rm -f "$body"
+}
+
+delete_capture() {
+  local url="$1" job="$2" slot="$3" headers body code
+  headers="$(mktemp)"; body="$(mktemp)"
+  code="$(curl --silent --show-error -H "X-API-Key: $api_key" -X DELETE \
+    -D "$headers" -o "$body" -w '%{http_code}' "$url/ogc/processes/jobs/$job")"
+  printf '%s' "$code" > "$receipt_root/.$scenario_name.$slot.cancel-code"
+  jq -c . "$body" > "$receipt_root/.$scenario_name.$slot.cancel.json" 2>/dev/null || printf '{}' > "$receipt_root/.$scenario_name.$slot.cancel.json"
+  rm -f "$headers" "$body"
+  printf '%s' "$code"
+}
+
+cancel_barrier_job() {
+  local target="$1" job cancel_url="$base_url" request_at
+  local process_ready output_ready terminal_ready signal_observed result_code_after result_code_late
+  local child_pid child_alive worker_container
+  request_at="$(now)"
+  job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
+
+  wait_barrier "$job" claimed || return 1
+  if [[ "$target" != claimed ]]; then
+    release_barrier "$job" claimed
+    wait_barrier "$job" native-process-started || return 1
+    process_ready="$(barrier_record "$job" native-process-started)"
+    child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
+    worker_container="$(compose ps -q worker)"
+    if [[ "$target" == native-process-started ]]; then
+      [[ -n "$child_pid" && -n "$worker_container" ]] || {
+        scenario_fail "native-process-started barrier did not report a child PID"
+        return 1
+      }
+      docker exec "$worker_container" kill -0 "$child_pid" >/dev/null 2>&1 || {
+        scenario_fail "native child was not alive at the cancellation barrier"
+        return 1
+      }
+    fi
+  fi
+  if [[ "$target" == output-bytes-written-unpublished || "$target" == artifact-reference-published-terminal-cas-pending ]]; then
+    release_barrier "$job" native-process-started
+    wait_barrier "$job" output-bytes-written-unpublished || return 1
+  fi
+  if [[ "$target" == artifact-reference-published-terminal-cas-pending ]]; then
+    release_barrier "$job" output-bytes-written-unpublished
+    wait_barrier "$job" artifact-reference-published-terminal-cas-pending || return 1
+  fi
+
+  if [[ "$target" == artifact-reference-published-terminal-cas-pending ]]; then
+    compose restart server >/dev/null || return 1
+    wait_ready || return 1
+    cancel_url="$peer_url"
+  elif [[ "$target" == claimed || "$target" == output-bytes-written-unpublished ]]; then
+    cancel_url="$peer_url"
+  fi
+
+  response_one="$(delete_capture "$cancel_url" "$job" first)"
+  response_two="$(delete_capture "$cancel_url" "$job" second)"
+  [[ "$response_one" =~ ^2[0-9][0-9]$ && "$response_two" == "$response_one" ]] || {
+    scenario_fail "repeat cancellation did not preserve HTTP idempotency semantics"
+    return 1
+  }
+  first_semantics="$(jq -c '{status,jobID,jobId}' "$receipt_root/.$scenario_name.first.cancel.json")"
+  second_semantics="$(jq -c '{status,jobID,jobId}' "$receipt_root/.$scenario_name.second.cancel.json")"
+  [[ "$first_semantics" == "$second_semantics" && "$first_semantics" != '{"status":null,"jobID":null,"jobId":null}' ]] || {
+    scenario_fail "repeat cancellation changed the OGC response semantics"
+    return 1
+  }
+
+  terminal="$(wait_terminal "$job")" || return 1
+  state="$(jq -r '.status' <<<"$terminal")"
+  [[ "$state" == dismissed ]] || {
+    scenario_fail "in-flight cancellation did not converge to Dismissed"
+    return 1
+  }
+  jq -e 'all(.[]; .state != "successful")' <(jq -s '.' "$scenario_transition_file") >/dev/null || {
+    scenario_fail "cancelled job was observed as Success after cancellation"
+    return 1
+  }
+  result_code_after="$(result_status_code "$job" "$cancel_url")"
+  [[ "$result_code_after" == 410 || "$result_code_after" == 404 ]] || {
+    scenario_fail "cancelled job retained a readable result"
+    return 1
+  }
+  sleep 2
+  result_code_late="$(result_status_code "$job" "$cancel_url")"
+  [[ "$result_code_late" == "$result_code_after" ]] || {
+    scenario_fail "cancelled job later changed result visibility"
+    return 1
+  }
+
+  process_ready="$(barrier_record "$job" native-process-started)"
+  output_ready="$(barrier_record "$job" output-bytes-written-unpublished)"
+  terminal_ready="$(barrier_record "$job" artifact-reference-published-terminal-cas-pending)"
+  signal_observed='null'
+  for barrier in claimed native-process-started output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending; do
+    candidate_signal="$(barrier_record "$job" "$barrier" signal-observed)"
+    if [[ "$candidate_signal" != null ]]; then
+      signal_observed="$candidate_signal"
+      break
+    fi
+  done
+  child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
+  child_alive=false
+  if [[ -n "$child_pid" ]]; then
+    worker_container="$(compose ps -q worker)"
+    if docker exec "$worker_container" kill -0 "$child_pid" >/dev/null 2>&1; then
+      child_alive=true
+    fi
+    [[ "$child_alive" == false ]] || {
+      scenario_fail "native child process remained alive after cancellation"
+      return 1
+    }
+  fi
+  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
+  pending="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:pending "$job" || true)"
+  claimed_score="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:claimed "$job" || true)"
+  after_objects="$(object_file_count "$job")"
+  [[ "$after_objects" == 0 ]] || {
+    scenario_fail "cancelled job retained staged objects after retention cleanup"
+    return 1
+  }
+  set_scenario_evidence "$(jq -n \
+    --arg request_at "$request_at" \
+    --arg cancel_source "OGC DELETE via $cancel_url" \
+    --arg response_one "$response_one" --arg response_two "$response_two" \
+    --arg result_code_after "$result_code_after" --arg result_code_late "$result_code_late" \
+    --argjson process "$process_ready" --argjson output "$output_ready" --argjson terminal "$terminal_ready" \
+    --argjson signal "$signal_observed" \
+    --argjson child_alive "$child_alive" \
+    --argjson record "$record" --arg pending "$pending" --arg claimed "$claimed_score" \
+    --argjson objects_after "$after_objects" \
+    --argjson transitions "$(jq -s '.' "$scenario_transition_file")" \
+    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,output:$output,terminal_fence:$terminal,artifact_references:($record.artifactReferences // []),timeout_source:null,cancellation_source:$cancel_source,cancellation_responses:{first_http:$response_one,second_http:$response_two},signal_observed_at:($signal.observedAt // null),child_process:{pid:($process.childProcessId // null),exit_observed:($child_alive|not)},terminal_history:$transitions,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},result_visibility:{after_terminal:$result_code_after,late:$result_code_late},object_inventory:{after_retention_cleanup:$objects_after}}')"
+  write_receipt "$scenario_name" pass "" "$job" "$state"
+}
+
+# honua-server#4401: the digest below proves the results document is non-empty and stable,
+# not that it is CORRECT — a numerically wrong buffer had the same sha shape as a right one.
+# verify_buffer_semantics adds the missing half: it decodes the produced GeoJSON and checks
+# the properties a buffer of the harness's fixed input point must have.
+#
+# The input is a Point at (-122.4194, 37.7749) buffered by 500 (see $payload). The checks are
+# deliberately unit-agnostic — the harness runs against digest-pinned images whose CRS handling
+# is what is under test — so they assert shape rather than an absolute radius:
+#   * the output geometry is a Polygon, i.e. the operation transformed the input rather than
+#     echoing it back;
+#   * its ring is closed and has enough vertices to be a real buffer, not a degenerate box;
+#   * its bounding box is non-degenerate and CONTAINS the input point, so the buffer is
+#     centred on what was submitted rather than on the origin or on a stale fixture;
+#   * the bbox is near-square, which a point buffer must be and a passthrough or a
+#     wrong-CRS result is not.
+verify_buffer_semantics() {
+  local results_file="$1" geometry ring_count closed minx miny maxx maxy width height ratio
+  local input_x=-122.4194 input_y=37.7749
+
+  geometry="$(jq -c '
+    [.. | objects | select(has("type") and has("coordinates")) | select(.type=="Polygon" or .type=="MultiPolygon")] | first // empty
+  ' "${results_file}")" || return 1
+
+  if [[ -z "${geometry}" || "${geometry}" == "null" ]]; then
+    printf 'FINDING: buffer output contains no Polygon geometry'
+    return 1
+  fi
+
+  ring_count="$(jq -r '[.. | arrays | select(length==2) | select(.[0]|type=="number")] | length' <<<"${geometry}")"
+  if (( ring_count < 8 )); then
+    printf 'FINDING: buffer output has only %s vertices; not a buffered polygon' "${ring_count}"
+    return 1
+  fi
+
+  closed="$(jq -r '
+    (if .type=="Polygon" then .coordinates[0] else .coordinates[0][0] end) as $r
+    | if ($r[0] == $r[-1]) then "yes" else "no" end
+  ' <<<"${geometry}")"
+  if [[ "${closed}" != "yes" ]]; then
+    printf 'FINDING: buffer output ring is not closed'
+    return 1
+  fi
+
+  read -r minx miny maxx maxy <<<"$(jq -r '
+    [.. | arrays | select(length==2) | select(.[0]|type=="number")] as $pts
+    | [($pts | map(.[0]) | min), ($pts | map(.[1]) | min),
+       ($pts | map(.[0]) | max), ($pts | map(.[1]) | max)] | @tsv
+  ' <<<"${geometry}")"
+
+  width="$(awk -v a="${maxx}" -v b="${minx}" 'BEGIN{printf "%.12f", a-b}')"
+  height="$(awk -v a="${maxy}" -v b="${miny}" 'BEGIN{printf "%.12f", a-b}')"
+  if awk -v w="${width}" -v h="${height}" 'BEGIN{exit !(w<=0 || h<=0)}'; then
+    printf 'FINDING: buffer output bounding box is degenerate (%s x %s)' "${width}" "${height}"
+    return 1
+  fi
+
+  if awk -v x="${input_x}" -v lo="${minx}" -v hi="${maxx}" 'BEGIN{exit !(x<lo || x>hi)}'; then
+    printf 'FINDING: buffer output does not contain the input X %s (bbox %s..%s)' "${input_x}" "${minx}" "${maxx}"
+    return 1
+  fi
+  if awk -v y="${input_y}" -v lo="${miny}" -v hi="${maxy}" 'BEGIN{exit !(y<lo || y>hi)}'; then
+    printf 'FINDING: buffer output does not contain the input Y %s (bbox %s..%s)' "${input_y}" "${miny}" "${maxy}"
+    return 1
+  fi
+
+  ratio="$(awk -v w="${width}" -v h="${height}" 'BEGIN{printf "%.6f", (w>h ? w/h : h/w)}')"
+  if awk -v r="${ratio}" 'BEGIN{exit !(r > 2.0)}'; then
+    printf 'FINDING: buffer of a point produced a %sx-elongated bbox; not a point buffer' "${ratio}"
+    return 1
+  fi
+
+  return 0
+}
+
 result_digest() {
-  local tmp digest bytes
+  local tmp digest bytes semantics process
   tmp="$(mktemp)"
   if ! auth_curl "${base_url}/ogc/processes/jobs/$1/results" > "${tmp}"; then
     rm -f "${tmp}"
@@ -205,9 +560,226 @@ result_digest() {
   fi
   digest="$(sha256sum "${tmp}" | cut -d' ' -f1)"
   bytes="$(wc -c < "${tmp}")"
-  jq -n --arg sha "${digest}" --argjson bytes "${bytes}" '{sha256:$sha,bytes:$bytes}' > "${scenario_state_file}"
+
+  # #4401: a sha over a non-empty document passed for a numerically wrong output. The
+  # semantic oracle below only describes the fixed geometry.buffer payload, so it applies
+  # to jobs that actually submitted geometry.buffer — read back from the recorded process,
+  # not guessed from the scenario name.
+  process="$(job_process_of "$1")"
+  if [[ "${HONUA_GP_VERIFY_BUFFER_SEMANTICS:-1}" == "1" && "${process}" == "geometry.buffer" ]]; then
+    if ! semantics="$(verify_buffer_semantics "${tmp}")"; then
+      jq -n --arg sha "${digest}" --argjson bytes "${bytes}" --arg semantics "${semantics}" \
+        --arg process "${process}" \
+        '{sha256:$sha,bytes:$bytes,process:$process,output_semantics:$semantics}' > "${scenario_state_file}"
+      rm -f "${tmp}"
+      printf '%s' "${semantics}" >&2
+      return 1
+    fi
+    semantics=verified
+  elif [[ -z "${process}" ]]; then
+    # No recording means the job was not submitted through submit_async or
+    # record_job_process; say so in the receipt rather than implying a clean pass.
+    semantics=not-applicable-unrecorded-process
+  else
+    semantics="not-applicable-${process}"
+  fi
+
+  jq -n --arg sha "${digest}" --argjson bytes "${bytes}" --arg semantics "${semantics}" \
+    --arg process "${process}" \
+    '{sha256:$sha,bytes:$bytes,process:$process,output_semantics:$semantics}' > "${scenario_state_file}"
   rm -f "${tmp}"
   printf '%s' "${digest}"
+}
+
+# Canonicalizes an OGC results document with the requesting host's own origin
+# replaced by a fixed token, so two hosts sharing one store compare equal on the
+# durable descriptor while any change to a link's path still fails the compare.
+normalized_descriptor() {
+  jq -cS --arg base "$2" 'walk(if type == "string" and startswith($base)
+    then "{host}" + .[($base | length):] else . end)' <<<"$1"
+}
+
+# Deployment qualification for referenced output staging (#3900). Proves the
+# candidate rejects an unattested container-local directory, publishes
+# credential-free store evidence, and keeps staged bytes byte-identical when
+# every producer and consumer container is replaced rather than restarted.
+run_output_store_attestation() {
+  local scenario=output-store-attestation job terminal state declared
+  local ephemeral_root ephemeral_log ephemeral_code attestation
+  local before_ids after_ids objects worker_before worker_after worker_attestation
+  local content_before content_after sha_before sha_after descriptor_before descriptor_after
+  local content_type_before content_type_after content_bytes
+  local -a rejection
+
+  declared="$(compose_staging_value ConfigurationDigest)"
+
+  # An existing directory that is not the attested shared mount stands in for
+  # container-local ephemeral storage: the server must refuse it, and must not
+  # quietly provision it into a supported store.
+  ephemeral_root="${receipt_root}/.unattested-store"
+  rm -rf "${ephemeral_root}"; mkdir -p "${ephemeral_root}"; chmod 777 "${ephemeral_root}"
+  ephemeral_log="$(mktemp)"
+  rejection=(
+    run --rm --no-deps -T
+    -v "${ephemeral_root}:/var/lib/honua/gp-unattested"
+    -e Geoprocessing__OutputStaging__LocalRootPath=/var/lib/honua/gp-unattested
+    server
+  )
+  timeout 180 docker compose --project-name "${project_name}" -f "${compose_file}" "${rejection[@]}" > "${ephemeral_log}" 2>&1
+  ephemeral_code=$?
+  if (( ephemeral_code == 124 || ephemeral_code == 137 )); then
+    rm -f "${ephemeral_log}"
+    write_receipt "${scenario}" fail "FINDING: unattested store startup timed out rather than failing closed"
+    return 1
+  fi
+  if (( ephemeral_code == 0 )); then
+    rm -f "${ephemeral_log}"
+    write_receipt "${scenario}" fail "FINDING: an unattested container-local directory satisfied the supported-store precondition"
+    return 1
+  fi
+  if ! grep -qi attestation "${ephemeral_log}"; then
+    rm -f "${ephemeral_log}"
+    write_receipt "${scenario}" fail "FINDING: unattested store rejection did not name the missing attestation"
+    return 1
+  fi
+  rm -f "${ephemeral_log}"
+  if [[ -n "$(find "${ephemeral_root}" -mindepth 1 -print -quit 2>/dev/null)" ]]; then
+    write_receipt "${scenario}" fail "FINDING: the rejected store root was provisioned by the server"
+    return 1
+  fi
+  rm -rf "${ephemeral_root}"
+
+  # Credential-free evidence for the release and DR record, path-free by contract.
+  # Structured sinks render the same event with and without quoted values.
+  attestation="$(compose logs server 2>/dev/null | grep -o 'GP output store attestation: .*' | tr -d '"' | tail -1)"
+  if [[ -z "${attestation}" || "${attestation}" != *"configurationDigest=${declared}"* ]]; then
+    write_receipt "${scenario}" fail "FINDING: the runtime did not publish the declared store attestation"
+    return 1
+  fi
+  if [[ "${attestation}" == *"$(compose_staging_value LocalRootPath)"* ]]; then
+    write_receipt "${scenario}" fail "FINDING: the store attestation disclosed a mount path"
+    return 1
+  fi
+
+  # A referenced output: MaxInlineArtifactBytes is 1 KiB, so this stages bytes.
+  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || {
+    write_receipt "${scenario}" fail "submission failed"; return 1; }
+  terminal="$(wait_terminal "${job}")" || {
+    write_receipt "${scenario}" fail "FINDING: staged output job did not reach a terminal state" "${job}"; return 1; }
+  state="$(jq -r '.status' <<<"${terminal}")"
+  [[ "${state}" == successful ]] || {
+    write_receipt "${scenario}" fail "unexpected terminal state" "${job}" "${state}"; return 1; }
+  objects="$(object_file_count "${job}")"
+  (( objects > 0 )) || {
+    write_receipt "${scenario}" fail "FINDING: output was not staged by reference on the shared volume" "${job}" "${state}"
+    return 1
+  }
+
+  content_before="$(mktemp)"
+  content_type_before="$(auth_curl -o "${content_before}" -w '%{content_type}' "${base_url}/api/geoprocessing/jobs/${job}/artifacts/0/content")" || {
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: staged artifact was unreadable through the normal server read path" "${job}" "${state}"
+    return 1
+  }
+  content_bytes="$(wc -c < "${content_before}")"
+  if [[ "${content_type_before%%;*}" != application/geo+json ]] || (( content_bytes <= 1024 )); then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: staged GeoJSON media type or byte length is incorrect" "${job}" "${state}"
+    return 1
+  fi
+  jq -n --argjson bytes "${content_bytes}" '{sha256:null,bytes:$bytes}' > "${scenario_state_file}"
+  sha_before="$(sha256sum "${content_before}" | cut -d' ' -f1)"
+  if ! python3 "${repo_root}/scripts/qualification/verify-gp-store-artifact.py" "${content_before}"; then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: staged output differs from independently expected fixture values and coordinates" "${job}" "${state}"
+    return 1
+  fi
+  descriptor_before="$(auth_curl "${base_url}/ogc/processes/jobs/${job}/results")" || {
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: staged output descriptor was unreadable" "${job}" "${state}"
+    return 1
+  }
+
+  # Replacement, not restart: every server and worker container is destroyed and
+  # recreated, so only the shared volume can carry these bytes across.
+  before_ids="$(compose ps -q server server-peer worker | LC_ALL=C sort | paste -sd, -)"
+  worker_before="$(compose ps -q worker | head -1)"
+  record_disruption store replacement before-replace
+  compose up -d --force-recreate server server-peer worker >/dev/null || {
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "replacement containers failed to start" "${job}" "${state}"; return 1; }
+  wait_ready && wait_peer_ready || {
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: the replaced topology did not become ready against the attested store" "${job}" "${state}"
+    return 1
+  }
+  record_disruption store replacement after-replace
+  after_ids="$(compose ps -q server server-peer worker | LC_ALL=C sort | paste -sd, -)"
+  if [[ -z "${before_ids}" || "${before_ids}" == "${after_ids}" ]]; then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: containers were restarted rather than replaced" "${job}" "${state}"
+    return 1
+  fi
+  # The worker has no health check and the read path below does not need it, so
+  # an aggregate identity change could otherwise pass with the replacement worker
+  # dead on its own store attestation. Assert the producer explicitly.
+  worker_after="$(compose ps -q worker | head -1)"
+  if [[ -z "${worker_before}" || -z "${worker_after}" || "${worker_before}" == "${worker_after}" ]]; then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: the worker was not replaced" "${job}" "${state}"
+    return 1
+  fi
+  # The worker publishes its attestation as it starts, concurrently with the
+  # servers this scenario already waited on; poll rather than sample once.
+  worker_attestation=""
+  for _ in $(seq 1 60); do
+    [[ "$(docker inspect -f '{{.State.Running}}' "${worker_after}" 2>/dev/null)" == true ]] || break
+    worker_attestation="$(docker logs "${worker_after}" 2>&1 | grep -o 'GP output store attestation: .*' | tr -d '"' | tail -1)"
+    [[ -z "${worker_attestation}" ]] || break
+    sleep 1
+  done
+  if [[ "$(docker inspect -f '{{.State.Running}}' "${worker_after}" 2>/dev/null)" != true ]]; then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: the replacement worker did not stay up against the attested store" "${job}" "${state}"
+    return 1
+  fi
+  if [[ "${worker_attestation}" != *"configurationDigest=${declared}"* ]]; then
+    rm -f "${content_before}"
+    write_receipt "${scenario}" fail "FINDING: the replacement worker did not resolve the declared store identity" "${job}" "${state}"
+    return 1
+  fi
+
+  # Read back through a replacement host that never produced these bytes.
+  content_after="$(mktemp)"
+  content_type_after="$(auth_curl -o "${content_after}" -w '%{content_type}' "${peer_url}/api/geoprocessing/jobs/${job}/artifacts/0/content")" || {
+    rm -f "${content_before}" "${content_after}"
+    write_receipt "${scenario}" fail "FINDING: staged artifact was lost across server and worker replacement" "${job}" "${state}"
+    return 1
+  }
+  sha_after="$(sha256sum "${content_after}" | cut -d' ' -f1)"
+  descriptor_after="$(auth_curl "${peer_url}/ogc/processes/jobs/${job}/results")" || {
+    rm -f "${content_before}" "${content_after}"
+    write_receipt "${scenario}" fail "FINDING: staged output descriptor was lost across replacement" "${job}" "${state}"
+    return 1
+  }
+  if [[ "${content_type_after}" != "${content_type_before}" ]] || ! cmp -s "${content_before}" "${content_after}"; then
+    rm -f "${content_before}" "${content_after}"
+    write_receipt "${scenario}" fail "FINDING: staged output bytes changed across server and worker replacement" "${job}" "${state}"
+    return 1
+  fi
+  rm -f "${content_before}" "${content_after}"
+  [[ "${sha_before}" == "${sha_after}" ]] || {
+    write_receipt "${scenario}" fail "FINDING: staged output checksum changed across replacement" "${job}" "${state}"; return 1; }
+  # Staged artifact links are built from the requesting host's own base URL, so
+  # the same durable descriptor renders a different origin on the peer. Normalize
+  # the origin away and compare everything else — ids, kinds, titles, content
+  # types and the artifact route path — exactly.
+  [[ "$(normalized_descriptor "${descriptor_before}" "${base_url}")" \
+     == "$(normalized_descriptor "${descriptor_after}" "${peer_url}")" ]] || {
+    write_receipt "${scenario}" fail "FINDING: staged output descriptor changed across replacement" "${job}" "${state}"; return 1; }
+
+  set_scenario_evidence "$(jq -n --arg digest "${declared}" --arg attestation "${attestation}" --arg worker_attestation "${worker_attestation}" --arg sha_before "${sha_before}" --arg sha_after "${sha_after}" --arg before_ids "${before_ids}" --arg after_ids "${after_ids}" --argjson objects "${objects}" --argjson descriptor "$(normalized_descriptor "${descriptor_after}" "${peer_url}")" '{store:{configuration_digest:$digest,attestation:$attestation,worker_attestation:$worker_attestation},unattested_root:{accepted:false,self_provisioned:false},staged_objects:$objects,replacement:{before_container_ids:$before_ids,after_container_ids:$after_ids},artifact:{sha256_before:$sha_before,sha256_after:$sha_after,descriptor_after_host_normalized:$descriptor}}')"
+  write_receipt "${scenario}" pass "" "${job}" "${state}" "${sha_after}"
 }
 
 run_sync() {
@@ -257,24 +829,10 @@ run_duplicate_delivery() {
   write_receipt "${scenario}" pass "" "${job}" "${state}" "${digest}"
 }
 
-run_cancel() {
-  local scenario=cancel job terminal state
-  job="$(submit_async)" || { write_receipt "${scenario}" fail "submission failed"; return 1; }
-  auth_curl -X DELETE "${base_url}/ogc/processes/jobs/${job}" >/dev/null || {
-    write_receipt "${scenario}" fail "cancel request failed" "${job}"; return 1;
-  }
-  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: cancelled job lost" "${job}"; return 1; }
-  state="$(jq -r '.status' <<<"${terminal}")"
-  case "${state}" in
-    dismissed) write_receipt "${scenario}" pass "" "${job}" "${state}";;
-    successful)
-      # A bounded job may win the race with cancellation. Its output must still be durable.
-      local digest
-      digest="$(result_digest "${job}" 2>/dev/null || true)"
-      [[ -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: cancel race orphaned successful output" "${job}" "${state}"; return 1; }
-      write_receipt "${scenario}" pass "cancel raced with terminal success" "${job}" "${state}" "${digest}";;
-    *) write_receipt "${scenario}" fail "unexpected cancel terminal state" "${job}" "${state}"; return 1;;
-  esac
+run_cancel_barrier() {
+  local target="$1"
+  scenario_name="cancel-$target"
+  cancel_barrier_job "$target"
 }
 
 run_idempotency() {
@@ -291,6 +849,9 @@ run_idempotency() {
     write_receipt "${scenario}" fail "FINDING: identical Idempotency-Key created two jobs" "${first}"
     return 1
   fi
+  # Submitted with raw curl rather than submit_async, so record the process by hand
+  # to keep result_digest's buffer-output check applied to this scenario (#4401).
+  record_job_process "${first}" geometry.buffer
   local terminal state digest
   terminal="$(wait_terminal "${first}")" || { write_receipt "${scenario}" fail "FINDING: idempotent job lost" "${first}"; return 1; }
   state="$(jq -r '.status' <<<"${terminal}")"; digest="$(result_digest "${first}" 2>/dev/null || true)"
@@ -327,25 +888,127 @@ run_retry() {
   write_receipt "${scenario}" pass "" "${job}" "${state}" "${digest}"
 }
 
-run_timeout() {
-  local scenario=timeout job record terminal state
-  compose stop worker >/dev/null
-  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { write_receipt "${scenario}" fail "timeout seed submission failed"; compose start worker >/dev/null; return 1; }
-  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:${job}")"
-  record="$(jq -c '.timeoutPolicy={maxDuration:"00:00:00.0010000"}' <<<"${record}")" || {
-    write_receipt "${scenario}" fail "could not install bounded timeout policy" "${job}"; compose start worker >/dev/null; return 1;
+run_timeout_live() {
+  local mode="$1" job record terminal state retry_code result_code failed_terminal_count
+  local request_at signal_file object_count_before object_count_after process_ready child_pid worker_container child_alive signal_deadline
+  local behavior="native production executor"
+  export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+  export HONUA_GP_TIMEOUT_SECONDS=2
+  if [[ "$mode" == ignore-cancellation ]]; then
+    export HONUA_GP_QUALIFICATION_EXECUTOR_MODE=ignore-cancellation
+    behavior="native production executor ignores operator cancellation; timeout remains authoritative"
+  else
+    unset HONUA_GP_QUALIFICATION_EXECUTOR_MODE
+  fi
+  compose up -d --force-recreate server server-peer worker >/dev/null || {
+    scenario_fail "timeout qualification topology could not be recreated"
+    return 1
   }
-  printf '%s' "${record}" | compose exec -T redis redis-cli -x SET "controlplane:job:${job}" KEEPTTL >/dev/null
-  compose start worker >/dev/null
-  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: timed job was lost" "${job}"; return 1; }
-  state="$(jq -r '.status' <<<"${terminal}")"
-  if [[ "${state}" != failed ]]; then
-    write_receipt "${scenario}" fail "FINDING: timeout did not produce one failed terminal state" "${job}" "${state}"; return 1
+  wait_ready && wait_peer_ready || return 1
+  request_at="$(now)"
+  job="$(submit_async gdal.ogr2ogr "$native_payload")" || return 1
+  object_count_before="$(object_file_count "$job")"
+  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
+  jq -e '.timeoutPolicy.maxDuration != null' <<<"$record" >/dev/null || {
+    scenario_fail "supported workload timeout was not persisted on the submitted job"
+    return 1
+  }
+  wait_barrier "$job" claimed || return 1
+  release_barrier "$job" claimed
+  wait_barrier "$job" native-process-started || return 1
+  process_ready="$(barrier_record "$job" native-process-started)"
+  child_pid="$(jq -r '.childProcessId // empty' <<<"$process_ready")"
+  worker_container="$(compose ps -q worker)"
+  [[ -n "$child_pid" && -n "$worker_container" ]] || {
+    scenario_fail "native-process-started barrier did not report a child PID"
+    return 1
+  }
+  docker exec "$worker_container" kill -0 "$child_pid" >/dev/null 2>&1 || {
+    scenario_fail "native child was not alive at the execution barrier"
+    return 1
+  }
+  signal_file="$(barrier_directory "$job")/native-process-started.signal-observed.json"
+  signal_deadline=$((SECONDS + 60))
+
+  # Retry is not accepted while execution is live. In ignore mode the durable
+  # operator cancellation is also sent while the real native child is alive;
+  # timeout must still win and terminate the child.
+  retry_code="$(curl --silent --show-error -H "X-API-Key: $api_key" -H 'Content-Type: application/json' \
+    -o /dev/null -w '%{http_code}' -X POST -d '{}' "$base_url/api/v1/admin/jobs/$job/retry")"
+  if [[ "$mode" == ignore-cancellation ]]; then
+    delete_capture "$peer_url" "$job" first >/dev/null || return 1
+    delete_capture "$peer_url" "$job" second >/dev/null || return 1
   fi
-  if result_digest "${job}" >/dev/null 2>&1; then
-    write_receipt "${scenario}" fail "FINDING: timed-out job exposed orphaned output" "${job}" "${state}"; return 1
-  fi
-  write_receipt "${scenario}" pass "" "${job}" "${state}"
+  while [[ ! -s "$signal_file" ]]; do
+    (( SECONDS < signal_deadline )) || return 1
+    sleep 0.05
+  done
+  compose kill -s TERM worker >/dev/null || true
+  compose up -d worker >/dev/null || return 1
+  child_alive=false
+  docker exec "$worker_container" kill -0 "$child_pid" >/dev/null 2>&1 && child_alive=true
+  [[ "$child_alive" == false ]] || {
+    scenario_fail "native child process remained alive after timeout"
+    return 1
+  }
+
+  terminal="$(wait_terminal "$job")" || return 1
+  state="$(jq -r '.status' <<<"$terminal")"
+  [[ "$state" == failed ]] || {
+    scenario_fail "supported timeout did not produce Failed"
+    return 1
+  }
+  jq -e 'all(.[]; .state != "successful")' <(jq -s '.' "$scenario_transition_file") >/dev/null || {
+    scenario_fail "timed-out job was observed as Success"
+    return 1
+  }
+  failed_terminal_count="$(jq -s '[.[] | select(.state == "failed")] | length' "$scenario_transition_file")"
+  [[ "$failed_terminal_count" == 1 ]] || {
+    scenario_fail "supported timeout produced more than one Failed terminal observation"
+    return 1
+  }
+  [[ ! "$retry_code" =~ ^2[0-9][0-9]$ ]] || {
+    scenario_fail "retry was accepted while the timed executor was live"
+    return 1
+  }
+  result_code="$(result_status_code "$job" "$base_url")"
+  [[ "$result_code" == 500 ]] || {
+    scenario_fail "timed-out job exposed a readable result"
+    return 1
+  }
+  sleep 2
+  object_count_after="$(object_file_count "$job")"
+  [[ "$object_count_after" == 0 ]] || {
+    scenario_fail "timed-out job retained staged objects after retention cleanup"
+    return 1
+  }
+  record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
+  pending="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:pending "$job" || true)"
+  claimed_score="$(compose exec -T redis redis-cli --raw ZSCORE controlplane:jobqueue:claimed "$job" || true)"
+  set_scenario_evidence "$(jq -n \
+    --arg request_at "$request_at" --arg behavior "$behavior" \
+    --arg retry_code "$retry_code" --arg result_code "$result_code" \
+    --argjson record "$record" --argjson signal "$(barrier_record "$job" native-process-started signal-observed)" \
+    --argjson process "$(barrier_record "$job" native-process-started)" \
+    --argjson transitions "$(jq -s '.' "$scenario_transition_file")" \
+    --arg pending "$pending" --arg claimed "$claimed_score" \
+    --argjson before "$object_count_before" --argjson after "$object_count_after" \
+    --argjson child_alive "$child_alive" --argjson failed_terminal_count "$failed_terminal_count" \
+    '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,artifact_references:($record.artifactReferences // []),timeout_source:"supported workload policy batch.timeout_seconds",cancellation_source:(if $behavior|startswith("native production executor ignores") then "OGC DELETE via peer" else null end),signal_observed_at:($signal.observedAt // null),child_process:{pid:($process.childProcessId // null),exit_observed:($child_alive|not)},terminal_history:$transitions,terminal_failure_count:$failed_terminal_count,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},retry_race_http:$retry_code,result_visibility:{after_terminal:$result_code},object_inventory:{before:$before,after_retention_cleanup:$after}}')"
+  unset HONUA_GP_QUALIFICATION_EXECUTOR_MODE
+  unset HONUA_GP_QUALIFICATION_BARRIER_ROOT
+  export HONUA_GP_TIMEOUT_SECONDS=3600
+  compose up -d --force-recreate server server-peer worker >/dev/null || return 1
+  wait_ready || return 1
+  write_receipt "$scenario_name" pass "" "$job" "$state"
+}
+
+run_timeout_cooperative() {
+  run_timeout_live cooperative
+}
+
+run_timeout_ignoring() {
+  run_timeout_live ignore-cancellation
 }
 
 run_disruption() {
@@ -486,7 +1149,7 @@ run_soak() {
 
 run_topology() {
   local name value backlog_jobs backlog_cap soak_seconds soak_concurrency
-  for name in docker curl jq; do
+  for name in docker curl jq python3; do
     command -v "${name}" >/dev/null || { preflight_failure="missing required command: ${name}"; return 1; }
   done
   require_digest HONUA_SERVER_IMAGE || { preflight_failure="HONUA_SERVER_IMAGE is not an exact digest"; return 1; }
@@ -515,8 +1178,11 @@ run_topology() {
   if [[ "${HONUA_GP_SKIP_PULL:-false}" != true ]]; then
     compose pull || { preflight_failure="candidate image pull failed"; return 1; }
   fi
+  # Referenced output staging is fail-closed: without an attested volume the
+  # candidate cannot reach readiness at all, so provision before the first start.
+  provision_output_store || return 1
   compose up -d || { preflight_failure="candidate topology failed to start"; return 1; }
-  wait_ready || { preflight_failure="topology did not become ready"; return 1; }
+  wait_ready && wait_peer_ready || { preflight_failure="topology did not become ready"; return 1; }
   read_running_identity || { preflight_failure="candidate identity could not be read from running containers"; return 1; }
   candidate_matches_request || { preflight_failure="running candidate identity does not match requested source/images"; return 1; }
 }
@@ -525,7 +1191,7 @@ read_running_identity() {
   local component container image_id config_image revision refs
   local json
   json="$(<"${observed_candidate_file}")"
-  for component in server worker; do
+  for component in server server-peer worker; do
     container="$(compose ps -q "${component}")" || return 1
     [[ -n "${container}" ]] || return 1
     image_id="$(docker inspect --format '{{.Image}}' "${container}")" || return 1
@@ -567,27 +1233,35 @@ run_scenario() {
 }
 
 self_test_assertion_failure() { scenario_fail "intentional assertion failure"; }
-self_test_follow_up() { [[ -z "${scenario_finding}" ]] || return 1; return 0; }
+self_test_follow_up() {
+  [[ -z "${scenario_finding}" ]] || return 1
+  # A real replacement proof carries a decoded results document larger than
+  # Linux's single-argument limit. Exercise receipt and summary serialization
+  # with that boundary, without depending on Docker or an executed job.
+  jq -n '{payload: ("x" * 262144)}' > "${scenario_evidence_file}"
+}
 self_test_cleanup() { return 0; }
 
 write_summary() {
-  local declared_json missing_json duplicates_json receipts_json scenario missing_count duplicate_count receipt_count
+  local declared_json missing_json duplicates_json scenario missing_count duplicate_count receipt_count
+  local receipts_file="${receipt_root}/.summary-receipts.ndjson"
   declared_json="$(printf '%s\n' "${declared_scenarios[@]}" | jq -Rsc 'split("\n")|map(select(length>0))')"
-  missing_json='[]'; duplicates_json='[]'; receipts_json='[]'
+  missing_json='[]'; duplicates_json='[]'
+  : > "${receipts_file}"
   for scenario in "${declared_scenarios[@]}"; do
-    if [[ ! -f "${receipt_root}/${scenario}.json" ]]; then
+    if [[ ! -f "${receipt_root}/${scenario}.json" ]] || ! jq -se 'length == 1 and (.[0] | type == "object" and (.outcome == "pass" or .outcome == "fail"))' "${receipt_root}/${scenario}.json" >/dev/null 2>&1; then
       missing_json="$(jq --arg scenario "${scenario}" '. + [$scenario]' <<<"${missing_json}")"
     else
-      receipts_json="$(jq --slurpfile receipt "${receipt_root}/${scenario}.json" '. + $receipt' <<<"${receipts_json}")"
+      jq -c . "${receipt_root}/${scenario}.json" >> "${receipts_file}" || return 1
     fi
     if (( ${receipt_written["${scenario}"]:-0} > 1 )); then
       duplicates_json="$(jq --arg scenario "${scenario}" --argjson count "${receipt_written["${scenario}"]}" '. + [{scenario:$scenario,attempts:$count}]' <<<"${duplicates_json}")"
     fi
   done
-  missing_count="$(jq 'length' <<<"${missing_json}")"; duplicate_count="$(jq 'length' <<<"${duplicates_json}")"; receipt_count="$(jq 'length' <<<"${receipts_json}")"
+  missing_count="$(jq 'length' <<<"${missing_json}")"; duplicate_count="$(jq 'length' <<<"${duplicates_json}")"; receipt_count="$(jq -s 'length' "${receipts_file}")"
   jq -n --arg schema "honua.gp-qualification-summary.v2" --arg lane "${lane}" \
     --arg generated_at "$(now)" --arg run_url "${run_url}" --argjson declared "${declared_json}" \
-    --argjson receipts "${receipts_json}" --argjson missing "${missing_json}" --argjson duplicates "${duplicates_json}" \
+    --slurpfile receipts "${receipts_file}" --argjson missing "${missing_json}" --argjson duplicates "${duplicates_json}" \
     --argjson declared_count "${#declared_scenarios[@]}" --argjson receipt_count "${receipt_count}" \
     --argjson missing_count "${missing_count}" --argjson duplicate_count "${duplicate_count}" \
     '{schema:$schema,lane:$lane,generated_at:$generated_at,github_run_url:$run_url,declared_scenarios:$declared,declared_scenario_count:$declared_count,receipt_count:$receipt_count,missing_scenarios:$missing,duplicate_receipts:$duplicates,passed:($receipts|map(select(.outcome=="pass"))|length),failed:($receipts|map(select(.outcome=="fail"))|length),scenarios:$receipts}' \
@@ -636,13 +1310,24 @@ else
     fill_missing_receipts
   }
   if [[ -z "${preflight_failure}" ]]; then
-    if [[ "${lane}" == lifecycle ]]; then
+    if [[ "${lane}" == output-store ]]; then
+      run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
+    elif [[ "${lane}" == lifecycle ]]; then
+      run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
       run_scenario sync run_sync || failures=$((failures + 1))
       run_scenario async run_async_baseline || failures=$((failures + 1))
-      run_scenario cancel run_cancel || failures=$((failures + 1))
+      export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+      compose up -d --force-recreate worker >/dev/null || failures=$((failures + 1))
+      run_scenario cancel-claimed run_cancel_barrier claimed || failures=$((failures + 1))
+      run_scenario cancel-native-process-started run_cancel_barrier native-process-started || failures=$((failures + 1))
+      run_scenario cancel-output-bytes-written-unpublished run_cancel_barrier output-bytes-written-unpublished || failures=$((failures + 1))
+      run_scenario cancel-artifact-reference-published-terminal-cas-pending run_cancel_barrier artifact-reference-published-terminal-cas-pending || failures=$((failures + 1))
+      unset HONUA_GP_QUALIFICATION_BARRIER_ROOT
+      compose up -d --force-recreate worker >/dev/null || failures=$((failures + 1))
       run_scenario idempotency run_idempotency || failures=$((failures + 1))
       run_scenario retry run_retry || failures=$((failures + 1))
-      run_scenario timeout run_timeout || failures=$((failures + 1))
+      run_scenario timeout-cooperative run_timeout_cooperative || failures=$((failures + 1))
+      run_scenario timeout-ignoring run_timeout_ignoring || failures=$((failures + 1))
       for component in worker server redis postgres; do
         for boundary in accepted running terminal results-read; do
           run_scenario "restart-${component}-${boundary}" run_disruption "${component}" "${boundary}" || failures=$((failures + 1))

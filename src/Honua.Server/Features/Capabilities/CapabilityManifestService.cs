@@ -103,15 +103,15 @@ internal sealed class CapabilityManifestService(
         var operationCapabilities = await ResolveOperationCapabilitiesAsync(request.Environment, cancellationToken)
             .ConfigureAwait(false);
 
-        // #2335 (B3): the registry-derived composition resolves each descriptor through
-        // the shared gate resolver (edition/experimental precedence). All descriptors
-        // stay Implemented today, so this produces the same wire document as the legacy
-        // hand-curated composition; the gate context is the seam T10 (#2346) flips.
+        // The registry-derived composition resolves protocol capabilities through
+        // the shared edition/experimental gate. File import/export availability is
+        // appended from the same direction descriptors in both composition modes.
         var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
 
         var capabilities = options.ManifestFromRegistry
             ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
+        capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
             : BuildPackages();
@@ -162,6 +162,39 @@ internal sealed class CapabilityManifestService(
 
         return manifest;
     }
+
+    private IEnumerable<CapabilityManifestCapability> BuildFileFormatCapabilities(
+        CapabilityPolicyContext context, ClaimsPrincipal principal)
+    {
+        var plugins = runtimeInventory.ActiveOutputFormats
+            .ToDictionary(format => "format.write." + format.FormatId.ToLowerInvariant(), StringComparer.Ordinal);
+        var emitted = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var descriptor in capabilityRegistry.All.Where(d => d.Category is "format-read" or "format-write"))
+        {
+            var read = descriptor.Category == "format-read";
+            var supported = descriptor.ImplementationStatus == CapabilityImplementationStatus.Served
+                || (!read && plugins.ContainsKey(descriptor.Id));
+            emitted.Add(descriptor.Id);
+            yield return Capability(descriptor.Id, descriptor.Category, context,
+                maturity: supported ? CapabilityMaturity.Implemented : descriptor.Maturity,
+                supported: supported,
+                configured: !read || runtimeInventory.HasFileImportService,
+                entitlementKey: read ? "import.file" : null,
+                requiresAuthentication: true,
+                callerAuthorized: CanUseFileFormats(principal, read),
+                unavailableReasonOverride: CapabilityReasonCodes.DependencyUnavailable);
+        }
+
+        foreach (var id in plugins.Keys.Order(StringComparer.Ordinal).Where(id => !emitted.Contains(id)))
+        {
+            yield return Capability(id, "format-write", context, requiresAuthentication: true,
+                callerAuthorized: CanUseFileFormats(principal, read: false));
+        }
+    }
+
+    private static bool CanUseFileFormats(ClaimsPrincipal principal, bool read) =>
+        (principal.IsInRole("admin") || principal.IsInRole(AdminApiKeyPermission.ScopedAdminRole))
+        && AdminApiKeyPermission.IsAuthorized(principal, read ? HttpMethods.Post : HttpMethods.Get);
 
     private async ValueTask<CapabilityManifestEnvironment> ResolveEnvironmentAsync(
         string? environment,
@@ -430,6 +463,12 @@ internal sealed class CapabilityManifestService(
                 entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey,
                 policyCapability: "features.edit",
                 requiresWorkspace: true),
+            Capability("admin.multi-tenancy", "control-plane", context,
+                maturity: CapabilityMaturity.Preview,
+                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("admin.multi-tenancy")
+                    && options.TenantSchemaRoutingEnabled,
+                entitlementKey: FeatureCatalog.MultiTenancyKey,
+                requiresAuthentication: true),
             Capability("realtime.feature-streams", "realtime", context,
                 maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("realtime.feature-streams"),
@@ -477,6 +516,26 @@ internal sealed class CapabilityManifestService(
             Capability("publication.metadata-release", "publication", context, policyCapability: "catalog.publish", requiresEnvironment: true),
             Capability("upload.file", "upload", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("edit.features", "edit", context, entitlementKey: FeatureCatalog.FeatureServerEditsKey, policyCapability: "features.edit"),
+
+            // Collaborative-editing leases (#4402). Enforcement ships on every feature-write
+            // path, so `supported` is true unconditionally; `available` follows whether the
+            // deployment supplied an IFeatureLockAuthorizer, because the shipped one denies
+            // every claim and an "available" lease nobody can take is the exact over-claim
+            // this manifest exists to prevent.
+            Capability("collaboration.feature-locks", "collaboration", context,
+                configured: runtimeInventory.FeatureLockAuthorizerConfigured,
+                requiresAuthentication: true),
+            // The two recorded 2026.1 gaps, published rather than left to the docs page: a
+            // lease is node-local, and GeoServices applyEdits honours no client-supplied
+            // version token. Same wire shape as an unimplemented file-format writer. The
+            // version-token row is scoped to GeoServices because OGC API Features does
+            // enforce If-Match/412 — a global name would under-report the working surfaces.
+            Capability("collaboration.feature-locks.cross-node", "collaboration", context,
+                maturity: CapabilityMaturity.Planned,
+                supported: false),
+            Capability("edit.geoservices-version-tokens", "edit", context,
+                maturity: CapabilityMaturity.Planned,
+                supported: false),
             // Branch versioning (VMS) — built-experimental, gated OFF the GA surface by
             // default (#2480 / ADR-0058). Mirrors the registry descriptor order
             // (CapabilityRegistry.BuildManifestCapabilityDescriptors) so the hand-curated and
@@ -520,6 +579,10 @@ internal sealed class CapabilityManifestService(
 
             var spec = specs.GetValueOrDefault(descriptor.Id, ManifestCapabilitySpec.Default);
             var resolution = CapabilityGateResolver.Resolve(descriptor, gateContext);
+            // A declared implementation gap is not supported, whatever its spec says. Derived
+            // from the descriptor rather than restated in the spec map so this path and the
+            // hand-curated roster cannot disagree about which capabilities are gaps.
+            var served = descriptor.ImplementationStatus == CapabilityImplementationStatus.Served;
             var lifecycleEnabled = descriptor.Maturity is not (CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
                 || !IsExperimentalDisabled(resolution);
             var configured = spec.Configured && lifecycleEnabled;
@@ -528,7 +591,7 @@ internal sealed class CapabilityManifestService(
                 descriptor.Category,
                 context,
                 maturity: descriptor.Maturity,
-                supported: spec.Supported,
+                supported: spec.Supported && served,
                 configured: configured,
                 unavailableReasonOverride: lifecycleEnabled
                     ? null
@@ -623,6 +686,12 @@ internal sealed class CapabilityManifestService(
             ["scene.catalog"] = new(),
             ["scene.bim-ingest"] = new() { EntitlementKey = FeatureCatalog.SceneBimIngestKey },
             ["scene.pointcloud-ingest"] = new() { EntitlementKey = FeatureCatalog.ScenePointCloudIngestKey },
+            ["admin.multi-tenancy"] = new()
+            {
+                Configured = options.TenantSchemaRoutingEnabled,
+                EntitlementKey = FeatureCatalog.MultiTenancyKey,
+                RequiresAuthentication = true,
+            },
             ["realtime.feature-streams"] = new() { EntitlementKey = "streaming.feature-subscriptions" },
             ["alerts.geofence"] = new() { EntitlementKey = "alerts.enter-exit", Configured = alertsConfigured },
             ["jobs.runner"] = new() { Supported = jobsSupported, RequiresAuthentication = true, RequiresDurableJobStore = true },
@@ -645,6 +714,11 @@ internal sealed class CapabilityManifestService(
             ["publication.metadata-release"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
             ["upload.file"] = new() { EntitlementKey = "import.file", PolicyCapability = "metadata.write" },
             ["edit.features"] = new() { EntitlementKey = FeatureCatalog.FeatureServerEditsKey, PolicyCapability = "features.edit" },
+            ["collaboration.feature-locks"] = new()
+            {
+                Configured = runtimeInventory.FeatureLockAuthorizerConfigured,
+                RequiresAuthentication = true,
+            },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
             ["ops.findings"] = new() { RequiresAuthentication = true },
@@ -721,6 +795,7 @@ internal sealed class CapabilityManifestService(
         string[]? entitlementKeys = null,
         string? policyCapability = null,
         bool requiresAuthentication = false,
+        bool callerAuthorized = true,
         bool requiresEnvironment = false,
         bool requiresWorkspace = false,
         bool requiresDurableJobStore = false,
@@ -769,7 +844,7 @@ internal sealed class CapabilityManifestService(
             available = false;
             reasonCode = CapabilityReasonCodes.InsufficientPolicy;
         }
-        else if (requiresAuthentication && !context.Authenticated)
+        else if ((requiresAuthentication && !context.Authenticated) || !callerAuthorized)
         {
             available = false;
             reasonCode = CapabilityReasonCodes.InsufficientPolicy;

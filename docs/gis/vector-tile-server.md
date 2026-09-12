@@ -34,9 +34,12 @@ These decisions were ratified under epic **#1776** (VectorTileServer) and its ch
   format, with Esri's 96 DPI scale ladder for 512px tiles (`295828763.7958` at level 0, halved per level).
 - **Single primary source per service.** The composed style emits exactly one vector source
   (id `esri`) whose `tiles[]` is this service's absolute tile template; the legacy TileJSON `url`
-  pointer is stripped so clients fetch tiles directly. The tile and style handlers resolve the
-  service's **primary** tiled publication (preferring the `EsriVectorTileLayer` publication, then
-  the lowest layer index).
+  pointer is stripped so clients fetch tiles directly. The tile and style handlers share one
+  resolver for the service's **primary** tiled publication, so `root.json` is always composed for
+  the layer the tile route renders. Among the routable publications the caller may read (resource
+  and service access policy, tenant scope), it prefers the `EsriVectorTileLayer` publication, then
+  the publication flagged primary, then the lowest layer index. A caller who cannot read the
+  preferred publication gets the style and the tiles of the next accessible publication.
 - **`EsriVectorTileLayer` publication type.** VectorTileServer services publish their tiled layer
   under the `EsriVectorTileLayer` Metadata v2 publication type (wire value `esri-vector-tile-layer`),
   which is the preferred publication type the adapter resolves.

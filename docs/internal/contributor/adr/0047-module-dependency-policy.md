@@ -57,7 +57,8 @@ several assemblies that share a role.
 shell that references only `Honua.ServiceDefaults`. `Honua.Worker.Gdal` is a
 separate side-car GDAL process that, per ADR-0038, deliberately does **not**
 reference `Honua.Server` (so the worker image does not pull in the whole
-host); it depends on `Honua.Core.Abstractions`, `Honua.Core`, and `Honua.Jobs`.
+host); it depends on `Honua.Core.Abstractions`, `Honua.Core`, `Honua.Jobs`,
+and the AWS/Azure satellites for configured license secret resolution.
 These three sit outside the main stack and are matrix entries in their own
 right but do not participate in the tier topology. Hosted sample/demo apps
 (e.g. `Honua.StacOpsDemo`, a Blazor WASM client Server mounts as static
@@ -134,17 +135,24 @@ Reading the matrix:
 
 #### Out-of-stack assemblies
 
-| Consumer ↓ \ Provider → | Abstr | Core | Hosting | Jobs | Server | SvcDef |
-|--------------------------|:-----:|:----:|:-------:|:----:|:------:|:------:|
-| **AppHost**              |       |      |         |      |        |   ✓    |
-| **Worker.Gdal**          |   ✓   |  ✓   |         |  ✓   |        |        |
+| Consumer ↓ \ Provider → | Abstr | Core | Aws | Azure | Hosting | Jobs | Server | SvcDef |
+|--------------------------|:-----:|:----:|:---:|:-----:|:-------:|:----:|:------:|:------:|
+| **AppHost**              |       |      |     |       |         |      |        |   ✓    |
+| **Worker.Gdal**          |   ✓   |  ✓   |  ✓  |   ✓   |         |  ✓   |        |        |
 
 `AppHost` is the Aspire-orchestration entry point; it carries no business
 logic and references only `ServiceDefaults`. `Worker.Gdal` is the GDAL/OGR
 side-car process; per ADR-0038 it deliberately does **not** reference
-`Honua.Server` (so the worker image stays slim) and depends only on
-Abstractions + Core + Jobs. New satellites of this kind require an ADR
-amendment, not just a test allow-list entry.
+`Honua.Server` and composes Abstractions + Core + Jobs and the cloud satellites.
+
+**2026-09-05 strict-license amendment:** the native worker is an executable
+composition root for its own license lifecycle. It may reference Aws and Azure
+to register the existing license secret resolvers, so the same configured secret
+source works at API and worker startup and during renewal. Cloud SDK behavior
+stays in those satellites; license validation remains in Hosting, consumed through
+the existing job substrate. Neither cloud satellite references the worker, and
+this adds no worker-to-server or protocol dependency. New satellites of this kind
+require an ADR amendment, not just a test allow-list entry.
 
 ### Decision tree for new code
 

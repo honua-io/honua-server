@@ -87,10 +87,14 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         }
 
         var family = ParseFamily(argument.Family);
+        var familyDescriptor = lifecycleService.GetCapabilities().Families
+            .FirstOrDefault(descriptor => descriptor.Family == family)
+            ?? throw new GeoprocessingValidationException($"Studio package family '{family}' is not available.");
         var envelope = new StudioPackageEnvelope
         {
             Family = family,
             SchemaVersion = argument.SchemaVersion,
+            Format = familyDescriptor.Format,
             Body = argument.Body,
         };
 
@@ -380,6 +384,22 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             StudioAuthorizationOperation.UpdateDraft,
             draftId.ToString("D"),
             OperatorOperation.Create).ConfigureAwait(false);
+        // Draft metadata may be renamed before a body is composed. Validate document replacements
+        // and format/schema changes, while retaining the existing metadata-only draft workflow.
+        var documentChanged = argument.Body is not null
+            || argument.Format is not null
+            || !string.Equals(argument.SchemaVersion, existing.Envelope.SchemaVersion, StringComparison.Ordinal);
+        if (documentChanged && StudioCompositionBodyEditor.CompositionEligibleFamilies.Contains(existing.Family))
+        {
+            var validation = RequireValidator(httpContext).Validate(envelope);
+            if (validation.Status == StudioPackageValidationStatus.Invalid)
+            {
+                var diagnostic = validation.Diagnostics.Count > 0 ? validation.Diagnostics[0] : null;
+                throw new GeoprocessingValidationException(diagnostic is null
+                    ? "The composition body is invalid."
+                    : $"{diagnostic.Code} at {diagnostic.Path}: {diagnostic.Message}");
+            }
+        }
         var updated = await ApplyUpdateAsync(
             httpContext,
             principal,

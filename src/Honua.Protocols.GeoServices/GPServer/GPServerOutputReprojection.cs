@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using Honua.Geoprocessing.Execution;
 using Honua.Infrastructure.Geometries;
 using Honua.Infrastructure.Rendering;
 using Honua.Core.Features.Shared.Models;
@@ -36,7 +37,7 @@ internal static class GPServerOutputReprojection
     [ThreadStatic]
     private static GeoJsonWriter? _geoJsonWriter;
 
-    private static GeoJsonWriter SharedWriter => _geoJsonWriter ??= new GeoJsonWriter();
+    private static GeoJsonWriter SharedWriter => _geoJsonWriter ??= GeoJsonArtifactCodec.CreateWriter();
 
     internal readonly record struct ReprojectionOutcome(
         bool Reprojected,
@@ -189,7 +190,7 @@ internal static class GPServerOutputReprojection
                 return value;
             }
 
-            var geoJsonReader = new GeoJsonReader();
+            var geoJsonReader = GeoJsonArtifactCodec.CreateReader();
             string rewritten;
 
             // Check "geometry" before "features" so a Feature carrying a "features" foreign
@@ -288,7 +289,7 @@ internal static class GPServerOutputReprojection
             throw new ArgumentException("GeoJSON output does not contain a geometry object.");
         }
 
-        var reader = new GeoJsonReader();
+        var reader = GeoJsonArtifactCodec.CreateReader();
         var geometry = reader.Read<Geometry>(geometryElement.GetRawText());
         if (geometry is null || geometry.IsEmpty)
         {

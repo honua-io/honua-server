@@ -1,3 +1,8 @@
+---
+type: index
+title: "Honua Server"
+description: "Honua is a cloud-native geospatial server that speaks every major GIS protocol — ArcGIS-compatible REST, OGC APIs, WMS/WFS/WMTS, OData, vector tiles, STAC — from one container on your PostGIS database."
+---
 # Honua Server
 
 Honua is a cloud-native geospatial server that speaks every major GIS protocol — ArcGIS-compatible REST, OGC APIs, WMS/WFS/WMTS, OData, vector tiles, STAC — from one container on your PostGIS database. No GDAL toolchain to install, no ETL pipelines, no Esri complexity.
@@ -13,7 +18,9 @@ docker compose ps
 
 Open <http://localhost:8080/healthz/ready> in a browser and wait for `Ready`.
 
-**[Start the quickstart →](get-started/quickstart.md)** — import a dataset and see it on a map in your browser.
+**[Start the quickstart →](get-started/quickstart.md)** — install published packages, import, publish, and verify a dataset through the SDK.
+For a browser map using the source installation above, follow the
+[source quickstart](internal/developer/source-quickstart.md).
 
 ## Pick your path
 

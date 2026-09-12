@@ -13,7 +13,7 @@ using StackExchange.Redis;
 namespace Honua.Server.Startup;
 
 /// <summary>
-/// Wires the file-backed license service plus its three Core-facing facades
+/// Wires the selected licensing mode plus its Core-facing facades
 /// (<see cref="ILicenseEntitlementService"/>, <see cref="ILicenseStatusProvider"/>,
 /// <see cref="ILicenseManager"/>) and registers the resilient identity-provider HTTP clients
 /// used by the admin auth flows.
@@ -29,6 +29,57 @@ internal static class LicensingRegistration
             configuration.GetSection(LicenseOptions.SectionName));
         services.Configure<LicenseCapacityOptions>(
             configuration.GetSection(LicenseCapacityOptions.SectionName));
+        var mode = LicenseOptions.ParseMode(configuration[$"{LicenseOptions.SectionName}:Mode"]);
+        var devGrantEdition = configuration[$"{LicenseOptions.SectionName}:DevGrantEdition"];
+        // The production dev-grant guard applies in every mode, including Disabled.
+        if (!string.IsNullOrWhiteSpace(devGrantEdition) && environment.IsProduction())
+        {
+            throw new InvalidOperationException(
+                $"{LicenseOptions.SectionName}:DevGrantEdition is a test/dev-only license override and must not be " +
+                "set in the Production environment; it would bypass every edition gate without a signed license. " +
+                "Remove it or install a signed license.");
+        }
+
+        if (mode == LicenseMode.Disabled)
+        {
+            services.AddSingleton<DisabledLicenseService>();
+            services.AddSingleton<ILicenseOperationPolicy>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.AddSingleton<ILicenseEntitlementService>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.AddSingleton<ILicenseStatusProvider>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.AddSingleton<ILicenseManager>(sp => sp.GetRequiredService<DisabledLicenseService>());
+            services.AddSingleton<ILicenseCapacityMeter, DisabledLicenseCapacityMeter>();
+        }
+        else
+        {
+            AddEnabledLicensing(services, configuration);
+            // Test/dev only; preserve the explicit entitlement override for enabled licensing.
+            if (!string.IsNullOrWhiteSpace(devGrantEdition) &&
+                Enum.TryParse<HonuaEdition>(devGrantEdition, ignoreCase: true, out var grantEdition))
+            {
+                services.AddSingleton<ILicenseEntitlementService>(sp =>
+                    new DevLicenseEntitlementService(grantEdition, sp.GetService<ILogger<DevLicenseEntitlementService>>()));
+            }
+        }
+
+        // Named HTTP clients for identity provider connectivity tests with resilience.
+        services.AddResilientHttpClient(
+            "IdentityProviderTest",
+            "identity-provider-test",
+            HttpResiliencePolicies.FastApiDefaults);
+        services.AddResilientHttpClient(
+            "AdminAuthOidc",
+            "admin-auth-oidc",
+            HttpResiliencePolicies.FastApiDefaults,
+            configureHandler: () => new HttpClientHandler
+            {
+                AllowAutoRedirect = false
+            });
+
+        return services;
+    }
+
+    private static void AddEnabledLicensing(IServiceCollection services, IConfiguration configuration)
+    {
         services.AddSingleton<IEd25519Verifier, BouncyCastleEd25519Verifier>();
 
         // Register the provider-specific license-content secret resolvers so the license
@@ -37,7 +88,7 @@ internal static class LicensingRegistration
         // Licensing:LicenseContentSecretRef. The AWSSDK / Azure SDK surfaces stay confined to
         // Honua.Aws / Honua.Azure (cloud-SDK isolation contract); the cloud-neutral pipeline
         // consumes only the ILicenseContentSecretResolver abstraction, iterates every registered
-        // resolver, dispatches by reference prefix, and falls back to Community when none matches.
+        // resolver and dispatches by reference prefix. Paid startup refuses when no valid source resolves.
 #if !HONUA_EXCLUDE_AWS
         Honua.Cloud.Aws.Features.Licensing.AwsLicenseSecretResolverServiceCollectionExtensions
             .AddAwsLicenseSecretResolver(services, configuration);
@@ -48,6 +99,8 @@ internal static class LicensingRegistration
 #endif
 
         services.AddSingleton<FileBackedLicenseService>();
+        services.AddSingleton<ILicenseOperationPolicy>(sp =>
+            sp.GetRequiredService<FileBackedLicenseService>());
         services.AddSingleton<ILicenseEntitlementService>(sp =>
             sp.GetRequiredService<FileBackedLicenseService>());
         services.AddSingleton<ILicenseStatusProvider>(sp =>
@@ -68,46 +121,5 @@ internal static class LicensingRegistration
             sp.GetRequiredService<LicenseCapacityMeter>());
         services.AddHostedService(sp =>
             sp.GetRequiredService<LicenseCapacityMeter>());
-
-        // Test/dev only: an explicit Licensing:DevGrantEdition grants every entitlement up to that
-        // edition without a signed license, so an out-of-process test/CI server can exercise
-        // edition-gated features (e.g. FeatureServer editing, honua-server#1591). It is registered
-        // last so it wins ILicenseEntitlementService resolution. It is FAIL-CLOSED in Production:
-        // setting it there throws at startup rather than silently bypassing every edition gate.
-        var devGrantEdition = configuration[$"{LicenseOptions.SectionName}:DevGrantEdition"];
-        if (!string.IsNullOrWhiteSpace(devGrantEdition))
-        {
-            if (environment.IsProduction())
-            {
-                throw new InvalidOperationException(
-                    $"{LicenseOptions.SectionName}:DevGrantEdition is a test/dev-only license override and must not be " +
-                    "set in the Production environment; it would bypass every edition gate without a signed license. " +
-                    "Remove it or install a signed license.");
-            }
-
-            if (Enum.TryParse<HonuaEdition>(devGrantEdition, ignoreCase: true, out var grantEdition))
-            {
-                services.AddSingleton<ILicenseEntitlementService>(sp =>
-                    new DevLicenseEntitlementService(
-                        grantEdition,
-                        sp.GetService<ILogger<DevLicenseEntitlementService>>()));
-            }
-        }
-
-        // Named HTTP clients for identity provider connectivity tests with resilience.
-        services.AddResilientHttpClient(
-            "IdentityProviderTest",
-            "identity-provider-test",
-            HttpResiliencePolicies.FastApiDefaults);
-        services.AddResilientHttpClient(
-            "AdminAuthOidc",
-            "admin-auth-oidc",
-            HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: () => new HttpClientHandler
-            {
-                AllowAutoRedirect = false
-            });
-
-        return services;
     }
 }

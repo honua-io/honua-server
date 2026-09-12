@@ -8,6 +8,7 @@ using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -72,6 +73,7 @@ internal static class StudioAiProxyEndpoints
         IOptions<StudioAiProxyConfiguration> options,
         IStudioAuthorizationService authorizationService,
         IAuditLog auditLog,
+        ITenantContext tenantContext,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
@@ -107,10 +109,25 @@ internal static class StudioAiProxyEndpoints
             return Results.Forbid();
         }
 
+        // The tenant is a server-resolved binding, never a wire value, and it is handed to the
+        // mapper rather than stitched into a rebuilt request: rebuilding drops the accepted request
+        // bytes the transcript signature binds, silently downgrading provenance to a re-serialization.
+        string? certificationTenantId = null;
+        if (httpRequest.Certification is not null)
+        {
+            if (!tenantContext.RequireTenantId(out var tenantId, out _))
+            {
+                return BadRequest(context, "A resolved tenant is required for a certification request.");
+            }
+
+            certificationTenantId = tenantId;
+        }
+
         var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(
             httpRequest,
             allowCallerOverrides,
-            acceptedRequestJson);
+            acceptedRequestJson,
+            certificationTenantId);
         if (mappingError is not null || domainRequest is null)
         {
             return BadRequest(context, mappingError ?? "Invalid request.");

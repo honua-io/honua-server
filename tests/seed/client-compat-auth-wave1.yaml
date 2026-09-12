@@ -3,10 +3,10 @@ sql:
   # Protected vector mirror for OGC API Features and WFS authenticated parity.
   - |
       INSERT INTO honua.services (
-          service_name, description, srid, max_record_count,
+          service_name, description, srid,
           supported_formats, capabilities, service_extent, metadata
       ) VALUES (
-          'cert_auth_vector', 'Authenticated client certification mirror', 4326, 1000,
+          'cert_auth_vector', 'Authenticated client certification mirror', 4326,
           ARRAY['JSON', 'GeoJSON'], ARRAY['Query', 'Extract'],
           ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326),
           jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', false))

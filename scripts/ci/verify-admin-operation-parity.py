@@ -28,8 +28,8 @@ openapi = load(OPENAPI)
 mcp = load(MCP)
 
 expected_exports = [
-    str(OPENAPI.relative_to(ROOT)),
-    str(MCP.relative_to(ROOT)),
+    OPENAPI.relative_to(ROOT).as_posix(),
+    MCP.relative_to(ROOT).as_posix(),
 ]
 roster = mcp.get("roster")
 if not isinstance(roster, dict):

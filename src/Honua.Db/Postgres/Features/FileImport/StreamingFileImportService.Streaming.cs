@@ -24,7 +24,7 @@ internal sealed partial class StreamingFileImportService
     /// <summary>
     /// Stream features from source and insert into database in batches.
     /// </summary>
-    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName)> ImportStreamingAsync(
+    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName, bool replacementBlocked)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
         SupportedFileFormat format,
@@ -76,6 +76,7 @@ internal sealed partial class StreamingFileImportService
             // first statement; preparing the table here (autocommit, on the SAME connection)
             // guarantees it is committed and visible before that snapshot.
             string loadTableName;
+            var hadExistingTarget = false;
             switch (loadMode)
             {
                 case ImportLoadMode.Append:
@@ -88,79 +89,144 @@ internal sealed partial class StreamingFileImportService
                     loadTableName = allowedTableName;
                     break;
                 default:
-                    // Replace via transactional staging-table swap.
+                    // Replace via transactional staging-table swap. Record whether a live
+                    // target already existed before this request: a first-ever replace into a
+                    // brand-new target has no prior complete dataset to protect (#4006), so it
+                    // must still promote even if the load dropped rows.
+                    hadExistingTarget = await ImportTableExistsAsync(
+                        connection, targetSchema, allowedTableName, cancellationToken);
                     loadTableName = await CreateStagingTableAsync(
                         connection, targetSchema, allowedTableName, request.TargetSrid, cancellationToken);
                     break;
             }
 
-            // 2-D default writer. CreateWkb upgrades to an emitZ and/or emitM writer per
-            // geometry when the source geometry actually carries Z and/or M ordinates
-            // (see SelectWkbWriter / DetectZm), so GPX/KML/3-D GeoJSON altitudes and
-            // FileGDB/shapefile XYM/XYZM measures are preserved (#1981) without forcing
-            // every 2-D coordinate through an emitZ/emitM writer (which serializes NaN
-            // Z/M ordinates that PostGIS rejects, dropping otherwise-valid rows).
-            var wkbWriter = new WKBWriter();
-            var batch = new List<IFeature>(_limits.BatchSize);
-            var totalImported = 0;
-            var totalFailed = 0;
-            var nullGeometrySkipped = 0;
-            var batchesCommitted = 0;
-            var repairTally = new GeometryRepairTally();
-            var startTime = DateTimeOffset.UtcNow;
-
-            // Stream features based on format
-            if (format == SupportedFileFormat.Shapefile && shapefileScratch == null)
+            // A Replace load streams into a <table>__staging sibling (loadTableName) rather than
+            // the live table. Before this try, the only path that ever reclaimed that sibling on
+            // failure was the NEXT replace's CreateStagingTableAsync (DROP TABLE IF EXISTS ...
+            // CREATE TABLE), so a thrown exception or a cancellation anywhere below left it and
+            // its indexes behind indefinitely (#4422). DROP TABLE IF EXISTS makes the cleanup safe
+            // to call even when the failure happened after a successful promotion (nothing left to
+            // drop, since SwapStagingTableAsync already renamed it away) or before the staging
+            // table was created (nothing ever existed).
+            try
             {
-                throw new InvalidOperationException("Shapefile scratch directory was not prepared.");
-            }
 
-            // Collects CSV rows whose mapped geometry column held a value that could not be parsed
-            // (e.g. malformed WKT). Surfaced as a completion warning so the loss is never silent.
-            var csvGeometryDiagnostics = format == SupportedFileFormat.Csv ? new CsvGeometryDiagnostics() : null;
+                // 2-D default writer. CreateWkb upgrades to an emitZ and/or emitM writer per
+                // geometry when the source geometry actually carries Z and/or M ordinates
+                // (see SelectWkbWriter / DetectZm), so GPX/KML/3-D GeoJSON altitudes and
+                // FileGDB/shapefile XYM/XYZM measures are preserved (#1981) without forcing
+                // every 2-D coordinate through an emitZ/emitM writer (which serializes NaN
+                // Z/M ordinates that PostGIS rejects, dropping otherwise-valid rows).
+                var wkbWriter = new WKBWriter();
+                var batch = new List<IFeature>(_limits.BatchSize);
+                var totalImported = 0;
+                var totalFailed = 0;
+                var nullGeometrySkipped = 0;
+                var batchesCommitted = 0;
+                var repairTally = new GeometryRepairTally();
+                var startTime = DateTimeOffset.UtcNow;
 
-            // Collects WKT records that could not be parsed (bad WKT/EWKT, stray header lines, a
-            // truncated multi-line tail). Surfaced as a completion warning so the loss is never silent.
-            var wktGeometryDiagnostics = format == SupportedFileFormat.Wkt ? new WktGeometryDiagnostics() : null;
-
-            var featureStream = format switch
-            {
-                SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
-                SupportedFileFormat.EsriJson => EsriJsonFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                SupportedFileFormat.Wkb => WkbFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, wktGeometryDiagnostics, cancellationToken),
-                SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                SupportedFileFormat.Gml => GmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, delimiterOverride: null, csvGeometryDiagnostics, request.CsvOptions, cancellationToken),
-                SupportedFileFormat.FlatGeobuf => FlatGeobufFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
-                SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
-                SupportedFileFormat.FileGdb => FileGdb.FileGdbReader.ReadStreamingAsync(fileGdbScratch!.GdbPath, cancellationToken),
-                SupportedFileFormat.GeoParquet => GeoParquetReader.ReadStreamingAsync(fileStream, _limits, cancellationToken),
-                _ => throw new NotSupportedException($"Streaming not supported for format: {format}")
-            };
-
-            await foreach (var feature in featureStream.WithCancellation(cancellationToken))
-            {
-                // GeoParquet: skip rows with null geometry and count them as failures
-                // per design decision "Null geometry rows | Skip, count" (ticket #423).
-                if (format == SupportedFileFormat.GeoParquet && feature.Geometry == null)
+                // Stream features based on format
+                if (format == SupportedFileFormat.Shapefile && shapefileScratch == null)
                 {
-                    totalFailed++;
-                    nullGeometrySkipped++;
-                    continue;
+                    throw new InvalidOperationException("Shapefile scratch directory was not prepared.");
                 }
 
-                if (format != SupportedFileFormat.FileGdb && feature.Geometry != null)
+                // Collects CSV rows whose mapped geometry column held a value that could not be parsed
+                // (e.g. malformed WKT). Surfaced as a completion warning so the loss is never silent.
+                var csvGeometryDiagnostics = format == SupportedFileFormat.Csv ? new CsvGeometryDiagnostics() : null;
+
+                // Collects WKT records that could not be parsed (bad WKT/EWKT, stray header lines, a
+                // truncated multi-line tail). Surfaced as a completion warning so the loss is never silent.
+                var wktGeometryDiagnostics = format == SupportedFileFormat.Wkt ? new WktGeometryDiagnostics() : null;
+
+                var featureStream = format switch
                 {
-                    feature.Geometry.SRID = sourceSrid;
+                    SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
+                    SupportedFileFormat.EsriJson => EsriJsonFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                    SupportedFileFormat.Wkb => WkbFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                    SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, wktGeometryDiagnostics, cancellationToken),
+                    SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                    SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                    SupportedFileFormat.Gml => GmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                    SupportedFileFormat.Csv => CsvFormatReader.ReadStreamingAsync(fileStream, delimiterOverride: null, csvGeometryDiagnostics, request.CsvOptions, cancellationToken),
+                    SupportedFileFormat.FlatGeobuf => FlatGeobufFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                    SupportedFileFormat.Shapefile => ReadShapefileStreamingAsync(shapefileScratch!.ShpPath, cancellationToken),
+                    SupportedFileFormat.GeoPackage => ReadGeoPackageStreamingAsync(fileStream, cancellationToken),
+                    SupportedFileFormat.FileGdb => FileGdb.FileGdbReader.ReadStreamingAsync(fileGdbScratch!.GdbPath, cancellationToken),
+                    SupportedFileFormat.GeoParquet => GeoParquetReader.ReadStreamingAsync(fileStream, _limits, cancellationToken),
+                    _ => throw new NotSupportedException($"Streaming not supported for format: {format}")
+                };
+
+                await foreach (var feature in featureStream.WithCancellation(cancellationToken))
+                {
+                    // GeoParquet: skip rows with null geometry and count them as failures
+                    // per design decision "Null geometry rows | Skip, count" (ticket #423).
+                    if (format == SupportedFileFormat.GeoParquet && feature.Geometry == null)
+                    {
+                        totalFailed++;
+                        nullGeometrySkipped++;
+                        continue;
+                    }
+
+                    if (format != SupportedFileFormat.FileGdb && feature.Geometry != null)
+                    {
+                        feature.Geometry.SRID = sourceSrid;
+                    }
+
+                    batch.Add(feature);
+
+                    // Process batch when full
+                    if (batch.Count >= _limits.BatchSize)
+                    {
+                        var (imported, failed) = await InsertBatchAsync(
+                            connection,
+                            targetSchema,
+                            loadTableName,
+                            batch,
+                            sourceSrid,
+                            request.TargetSrid,
+                            wkbWriter,
+                            loadMode,
+                            request.KeyColumns,
+                            repairTally,
+                            cancellationToken);
+
+                        totalImported += imported;
+                        totalFailed += failed;
+                        batchesCommitted++;
+                        batch.Clear();
+
+                        // Report progress
+                        progress?.Report(new ImportProgress
+                        {
+                            JobId = jobId,
+                            Status = ImportStatus.Processing,
+                            FeaturesProcessed = totalImported,
+                            FailedFeatures = totalFailed + repairTally.SkippedInvalid,
+                            RepairedFeatures = repairTally.Repaired,
+                            BatchesCommitted = batchesCommitted,
+                            TableName = request.TableName,
+                            FileName = request.FileName,
+                            SourceKind = request.SourceKind,
+                            SourceUrl = request.SourceUrl,
+                            CloudFileId = request.CloudFileId,
+                            UploadId = request.UploadId,
+                            Format = format,
+                            StartedAt = startTime,
+                            BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
+                            TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
+                            Warnings = warnings,
+                            CurrentPhase = "Importing features"
+                        });
+
+                        // Yield control to prevent blocking
+                        await Task.Yield();
+                    }
                 }
 
-                batch.Add(feature);
-
-                // Process batch when full
-                if (batch.Count >= _limits.BatchSize)
+                // Process remaining features
+                if (batch.Count > 0)
                 {
                     var (imported, failed) = await InsertBatchAsync(
                         connection,
@@ -178,152 +244,140 @@ internal sealed partial class StreamingFileImportService
                     totalImported += imported;
                     totalFailed += failed;
                     batchesCommitted++;
-                    batch.Clear();
-
-                    // Report progress
-                    progress?.Report(new ImportProgress
-                    {
-                        JobId = jobId,
-                        Status = ImportStatus.Processing,
-                        FeaturesProcessed = totalImported,
-                        FailedFeatures = totalFailed + repairTally.SkippedInvalid,
-                        RepairedFeatures = repairTally.Repaired,
-                        BatchesCommitted = batchesCommitted,
-                        TableName = request.TableName,
-                        FileName = request.FileName,
-                        SourceKind = request.SourceKind,
-                        SourceUrl = request.SourceUrl,
-                        CloudFileId = request.CloudFileId,
-                        UploadId = request.UploadId,
-                        Format = format,
-                        StartedAt = startTime,
-                        BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
-                        TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
-                        Warnings = warnings,
-                        CurrentPhase = "Importing features"
-                    });
-
-                    // Yield control to prevent blocking
-                    await Task.Yield();
                 }
-            }
 
-            // Process remaining features
-            if (batch.Count > 0)
-            {
-                var (imported, failed) = await InsertBatchAsync(
-                    connection,
-                    targetSchema,
-                    loadTableName,
-                    batch,
-                    sourceSrid,
-                    request.TargetSrid,
-                    wkbWriter,
-                    loadMode,
-                    request.KeyColumns,
-                    repairTally,
-                    cancellationToken);
+                // Roll geometry-gate skips into the failure tally before the replace path decides
+                // whether to promote: a skip excludes the feature entirely rather than reporting a
+                // batch insert failure (see InsertBatchFastAsync/InsertBatchIndividuallyAsync), so
+                // totalFailed would otherwise read zero here even though input rows were dropped.
+                totalFailed += repairTally.SkippedInvalid;
 
-                totalImported += imported;
-                totalFailed += failed;
-                batchesCommitted++;
-            }
+                // For a replace, the load streamed into the staging sibling. Promote it over the
+                // live target unless doing so would destroy a prior COMPLETE dataset: when a target
+                // already existed and this load dropped rows (skip/continue), promoting the
+                // incomplete staging sibling would silently replace a complete dataset with a
+                // partial one (#4006). A first-ever replace into a brand-new target has nothing to
+                // protect, so it still promotes even with dropped rows — that is a normal partial
+                // import, not data loss.
+                var replacementBlocked = loadMode == ImportLoadMode.Replace && hadExistingTarget && totalFailed > 0;
+                if (loadMode == ImportLoadMode.Replace)
+                {
+                    if (replacementBlocked)
+                    {
+                        await DropStagingTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+                    }
+                    else
+                    {
+                        await SwapStagingTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+                    }
+                }
 
-            // For a replace, the load streamed into the staging sibling; atomically rename it
-            // over the live target now that every batch committed successfully. A failure or
-            // cancellation before this point left the live table untouched.
-            if (loadMode == ImportLoadMode.Replace)
-            {
-                await SwapStagingTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
-            }
+                // Skip ANALYZE when the replace was blocked: the live table is unchanged, so its
+                // statistics are already current, and re-analyzing it is pure overhead.
+                if (!replacementBlocked)
+                {
+                    await AnalyzeTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+                }
 
-            await AnalyzeTableAsync(connection, targetSchema, allowedTableName, cancellationToken);
+                // Surface skipped null-geometry rows in the completion progress report
+                // so background/queued imports expose the same warning as synchronous results.
+                var completionWarningsBuilder = new List<string>(warnings.Length + 2);
+                completionWarningsBuilder.AddRange(warnings);
+                if (format == SupportedFileFormat.GeoParquet && nullGeometrySkipped > 0)
+                {
+                    completionWarningsBuilder.Add(string.Format(null, _nullGeometryWarningFormat, nullGeometrySkipped));
+                }
 
-            // Surface skipped null-geometry rows in the completion progress report
-            // so background/queued imports expose the same warning as synchronous results.
-            var completionWarningsBuilder = new List<string>(warnings.Length + 2);
-            completionWarningsBuilder.AddRange(warnings);
-            if (format == SupportedFileFormat.GeoParquet && nullGeometrySkipped > 0)
-            {
-                completionWarningsBuilder.Add(string.Format(null, _nullGeometryWarningFormat, nullGeometrySkipped));
-            }
+                if (csvGeometryDiagnostics is { UnparseableGeometryRows: > 0 })
+                {
+                    completionWarningsBuilder.Add(string.Format(
+                        null, _csvUnparseableGeometryWarningFormat, csvGeometryDiagnostics.UnparseableGeometryRows));
+                }
 
-            if (csvGeometryDiagnostics is { UnparseableGeometryRows: > 0 })
-            {
-                completionWarningsBuilder.Add(string.Format(
-                    null, _csvUnparseableGeometryWarningFormat, csvGeometryDiagnostics.UnparseableGeometryRows));
-            }
+                if (wktGeometryDiagnostics is { UnparseableRecords: > 0 })
+                {
+                    completionWarningsBuilder.Add(string.Format(
+                        null, _wktUnparseableGeometryWarningFormat, wktGeometryDiagnostics.UnparseableRecords));
+                }
 
-            if (wktGeometryDiagnostics is { UnparseableRecords: > 0 })
-            {
-                completionWarningsBuilder.Add(string.Format(
-                    null, _wktUnparseableGeometryWarningFormat, wktGeometryDiagnostics.UnparseableRecords));
-            }
-
-            // CSV address rows that could not be geocoded were imported without geometry; surface
-            // a summary warning plus per-row issues so callers can report/repair individual rows.
-            IReadOnlyList<ImportValidationIssue> rowIssues = [];
-            if (csvGeometryDiagnostics is { GeocodeFailureCount: > 0 })
-            {
-                completionWarningsBuilder.Add(string.Format(
-                    null, _csvGeocodeFailureWarningFormat, csvGeometryDiagnostics.GeocodeFailureCount));
-                rowIssues = [.. csvGeometryDiagnostics.GeocodeFailures.Select(static failure =>
+                // CSV address rows that could not be geocoded were imported without geometry; surface
+                // a summary warning plus per-row issues so callers can report/repair individual rows.
+                IReadOnlyList<ImportValidationIssue> rowIssues = [];
+                if (csvGeometryDiagnostics is { GeocodeFailureCount: > 0 })
+                {
+                    completionWarningsBuilder.Add(string.Format(
+                        null, _csvGeocodeFailureWarningFormat, csvGeometryDiagnostics.GeocodeFailureCount));
+                    rowIssues = [.. csvGeometryDiagnostics.GeocodeFailures.Select(static failure =>
                 ImportValidationIssue.Create(
                     ImportValidationErrorCodes.AddressGeocodeFailed,
                     failure.Address.Length == 0
                         ? "The address column was empty; the row was imported without geometry."
                         : $"Address '{failure.Address}' could not be geocoded; the row was imported without geometry.",
                     featureIndex: failure.RowNumber - 1))];
+                }
+
+                if (_limits.ContinueOnError && totalFailed > 0)
+                {
+                    completionWarningsBuilder.Add(string.Format(null, _partialImportWarningFormat, totalFailed));
+                }
+
+                // Surface per-row geometry repair accounting so the shared validity gate never silently
+                // rewrites input geometry (#2743). Default gate mode is Repair, so previously-invalid
+                // geometry is fixed (ST_MakeValid-equivalent) instead of stored as-is.
+                if (repairTally.Repaired > 0)
+                {
+                    completionWarningsBuilder.Add(string.Format(null, _repairedGeometryWarningFormat, repairTally.Repaired));
+                }
+
+                // Features the geometry gate excluded entirely (SkipInvalidGeometry): already rolled
+                // into totalFailed above (before the replace promotion decision); surface the loss
+                // here so a skip is never silent.
+                if (repairTally.SkippedInvalid > 0)
+                {
+                    completionWarningsBuilder.Add(string.Format(null, _skippedInvalidGeometryWarningFormat, repairTally.SkippedInvalid));
+                }
+
+                string[] completionWarnings = [.. completionWarningsBuilder];
+
+                // Report completion
+                progress?.Report(new ImportProgress
+                {
+                    JobId = jobId,
+                    Status = ImportStatus.Completed,
+                    FeaturesProcessed = totalImported,
+                    FailedFeatures = totalFailed,
+                    RepairedFeatures = repairTally.Repaired,
+                    BatchesCommitted = batchesCommitted,
+                    TableName = request.TableName,
+                    FileName = request.FileName,
+                    SourceKind = request.SourceKind,
+                    SourceUrl = request.SourceUrl,
+                    CloudFileId = request.CloudFileId,
+                    UploadId = request.UploadId,
+                    Format = format,
+                    StartedAt = startTime,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
+                    TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
+                    Warnings = completionWarnings,
+                    CurrentPhase = "Import completed"
+                });
+
+                return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName, replacementBlocked);
             }
-
-            if (_limits.ContinueOnError && totalFailed > 0)
+            catch when (loadMode == ImportLoadMode.Replace)
             {
-                completionWarningsBuilder.Add(string.Format(null, _partialImportWarningFormat, totalFailed));
+                try
+                {
+                    await DropStagingTableAsync(connection, targetSchema, allowedTableName, CancellationToken.None);
+                }
+                catch (Exception cleanupEx)
+                {
+                    ImportLog.StagingTableCleanupFailed(_logger, cleanupEx, targetSchema, allowedTableName);
+                }
+
+                throw;
             }
-
-            // Surface per-row geometry repair accounting so the shared validity gate never silently
-            // rewrites input geometry (#2743). Default gate mode is Repair, so previously-invalid
-            // geometry is fixed (ST_MakeValid-equivalent) instead of stored as-is.
-            if (repairTally.Repaired > 0)
-            {
-                completionWarningsBuilder.Add(string.Format(null, _repairedGeometryWarningFormat, repairTally.Repaired));
-            }
-
-            // Features the geometry gate excluded entirely (SkipInvalidGeometry): count them as
-            // not-imported rows and surface the loss so a skip is never silent.
-            if (repairTally.SkippedInvalid > 0)
-            {
-                totalFailed += repairTally.SkippedInvalid;
-                completionWarningsBuilder.Add(string.Format(null, _skippedInvalidGeometryWarningFormat, repairTally.SkippedInvalid));
-            }
-
-            string[] completionWarnings = [.. completionWarningsBuilder];
-
-            // Report completion
-            progress?.Report(new ImportProgress
-            {
-                JobId = jobId,
-                Status = ImportStatus.Completed,
-                FeaturesProcessed = totalImported,
-                FailedFeatures = totalFailed,
-                RepairedFeatures = repairTally.Repaired,
-                BatchesCommitted = batchesCommitted,
-                TableName = request.TableName,
-                FileName = request.FileName,
-                SourceKind = request.SourceKind,
-                SourceUrl = request.SourceUrl,
-                CloudFileId = request.CloudFileId,
-                UploadId = request.UploadId,
-                Format = format,
-                StartedAt = startTime,
-                CompletedAt = DateTimeOffset.UtcNow,
-                BytesRead = fileStream.CanSeek ? fileStream.Position : 0,
-                TotalBytes = fileStream.CanSeek ? fileStream.Length : null,
-                Warnings = completionWarnings,
-                CurrentPhase = "Import completed"
-            });
-
-            return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName);
         }
         finally
         {

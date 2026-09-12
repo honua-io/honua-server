@@ -14,6 +14,7 @@ on:
       - 'scripts/ci/check-import-fidelity-perf-budget.sh'
       - 'scripts/ci/fixtures/import-fidelity-perf-scorecard-pass.json'
       - 'scripts/ci/fixtures/import-fidelity-perf-scorecard-fail.json'
+      - 'scripts/ci/fixtures/import-fidelity-scorecard-regressed.json'
       - '.github/workflows/geoservices-import-fidelity-external.yml'
       - '.github/workflows/import-fidelity-scorecard-governance.yml'
   workflow_dispatch:
@@ -32,13 +33,29 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
-      - name: Smoke test import-fidelity regression gate
+      - name: Smoke test import-fidelity regression gate (identical scorecard passes)
         run: |
           bash scripts/ci/check-import-fidelity-scorecard-regression.sh \
             tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json \
             tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json
+
+      # honua-server#4420: the step above compared the baseline to itself, which is trivially
+      # equal regardless of whether check-import-fidelity-scorecard-regression.sh's diff logic
+      # actually works — a script that always exits 0 would pass it identically. This step feeds
+      # it a copy with one previously-passing check ("esri_census_states"/"all_fields_diff")
+      # flipped to Passed:false and asserts the gate rejects it, the same discriminating-fixture
+      # pattern the perf-parity gate below already uses.
+      - name: Smoke test import-fidelity regression gate (regressed scorecard is rejected)
+        run: |
+          if bash scripts/ci/check-import-fidelity-scorecard-regression.sh \
+               scripts/ci/fixtures/import-fidelity-scorecard-regressed.json \
+               tests/dotnet/Honua.Server.Tests/Import/import-fidelity-scorecard-baseline.json; then
+            echo "::error::Import-fidelity regression gate accepted a scorecard with a pass-to-fail regression; the gate is not enforcing anything." >&2
+            exit 1
+          fi
+          echo "Import-fidelity regression gate correctly rejected the regressed fixture."
 
       - name: Verify import-fidelity baseline sync
         run: |

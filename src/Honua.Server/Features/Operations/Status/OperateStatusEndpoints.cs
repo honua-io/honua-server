@@ -8,7 +8,7 @@ namespace Honua.Server.Features.Operations.Status;
 
 /// <summary>
 /// HTTP surface for the server-authoritative aggregated operational status (A12). One endpoint
-/// returns a server-computed verdict plus per-domain rollups and an availability SLO snapshot, so a
+/// returns a server-computed verdict plus per-domain rollups and an explicitly sourced SLO posture, so a
 /// copilot no longer stitches ~8 endpoints and invents its own health verdict. Guarded by the
 /// read-only ops-reader policy: an <c>ops:read</c> key (or any admin key) can read it, but a mutating
 /// ops operation still requires full admin write.
@@ -30,8 +30,9 @@ internal static class OperateStatusEndpoints
             .WithSummary("Get the server-authoritative aggregated operational status")
             .WithDescription(
                 "Returns a server-computed overall verdict (healthy/degraded/unhealthy), per-domain "
-                + "rollups (deploys, jobs, alerts, migrations, findings, telemetry backends), and — when "
-                + "configured — an availability SLO / error-budget snapshot. Accepts a read-only ops:read "
+                + "rollups (deploys, jobs, alerts, migrations, findings, telemetry backends), the platform "
+                + "SLO source posture, and a separately named replica-local retained-tail diagnostic. "
+                + "Accepts a read-only ops:read "
                 + "credential as well as admin keys.")
             .Produces<OperateStatusResponse>();
     }

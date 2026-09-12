@@ -68,7 +68,7 @@ internal static partial class CogLog
     [LoggerMessage(
         EventId = 7909,
         Level = LogLevel.Warning,
-        Message = "COG {RegistrationId} uses CRS SRID {Srid} which is not EPSG:3857 or EPSG:4326. Web map clients may display tiles incorrectly.")]
+        Message = "COG {RegistrationId} uses CRS SRID {Srid} which is not EPSG:3857. Direct ImageServer tile serving requires EPSG:3857 with GoogleMapsCompatible alignment.")]
     public static partial void NonWebMercatorCrs(ILogger logger, long registrationId, int srid);
 
     [LoggerMessage(
@@ -76,6 +76,12 @@ internal static partial class CogLog
         Level = LogLevel.Debug,
         Message = "COG {RegistrationId} cannot satisfy requested format {RequestedFormat} with native tile content type {ContentType}.")]
     public static partial void UnsupportedTileFormat(ILogger logger, long registrationId, string requestedFormat, string contentType);
+
+    [LoggerMessage(
+        EventId = 7912,
+        Level = LogLevel.Warning,
+        Message = "COG {RegistrationId} JPEG tile level={Level}, row={Row}, col={Col} is not a complete JPEG stream for its declared layout (missing tables, unsupported frame, or photometric/band mismatch); it is not served as image/jpeg.")]
+    public static partial void UndecodableJpegTile(ILogger logger, long registrationId, int level, int row, int col);
 
     [LoggerMessage(
         EventId = 7911,

@@ -4003,7 +4003,7 @@
           "License"
         ],
         "summary": "Get License Status",
-        "description": "Returns the active runtime license snapshot. Empty LicensePath reports Community mode with isValid=true; invalid configured files report Community mode with isValid=false and a validationState.",
+        "description": "Returns the runtime license status. Licensing:Mode=Disabled reports mode=disabled, edition=Unlicensed-2026.1, validationState=Disabled, isValid=true, all entitlements active and no expiry. Enabled licensing retains Community defaults and validates configured paid licenses.",
         "operationId": "getLicenseStatus",
         "responses": {
           "200": {
@@ -4106,7 +4106,7 @@
           "License"
         ],
         "summary": "Get Platform License Status",
-        "description": "Returns the same active license status contract as GET /api/v1/admin/license.",
+        "description": "Returns the runtime license status. Licensing:Mode=Disabled reports mode=disabled, edition=Unlicensed-2026.1, validationState=Disabled, isValid=true, all entitlements active and no expiry. Enabled licensing retains Community defaults and validates configured paid licenses.",
         "operationId": "getPlatformLicenseStatus",
         "responses": {
           "200": {
@@ -7839,6 +7839,16 @@
               "type": "integer",
               "format": "int64"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Operator retry identity. Repeating the same lifecycle action with the same key produces one logical lifecycle transition and one alert domain audit action instead of duplicates. When omitted, the request's own correlation identity is used, so a retry without this header is a NEW action. Maximum 128 characters; a longer value is rejected rather than truncated.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
           }
         ],
         "requestBody": {
@@ -7896,6 +7906,16 @@
               "type": "integer",
               "format": "int64"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Operator retry identity. Repeating the same lifecycle action with the same key produces one logical lifecycle transition and one alert domain audit action instead of duplicates. When omitted, the request's own correlation identity is used, so a retry without this header is a NEW action. Maximum 128 characters; a longer value is rejected rather than truncated.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
           }
         ],
         "requestBody": {
@@ -7952,6 +7972,16 @@
             "schema": {
               "type": "integer",
               "format": "int64"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Operator retry identity. Repeating the same lifecycle action with the same key produces one logical lifecycle transition and one alert domain audit action instead of duplicates. When omitted, the request's own correlation identity is used, so a retry without this header is a NEW action. Maximum 128 characters; a longer value is rejected rather than truncated.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128
             }
           }
         ],
@@ -24891,12 +24921,27 @@
               "enum": [
                 "FeatureServer",
                 "MapServer",
+                "ImageServer",
+                "GPServer",
+                "VectorTileServer",
                 "OgcFeatures",
+                "OGC-API-Maps",
+                "OGC-API-Coverages",
+                "OGC-API-Tiles",
+                "Wfs20",
+                "Wms",
+                "Wmts",
+                "Wcs",
                 "OData",
-                "Grpc"
+                "Grpc",
+                "Stac",
+                "SensorThings",
+                "Terrain",
+                "Elevation"
               ]
             },
-            "minItems": 1
+            "minItems": 1,
+            "description": "Protocols the service exposes. Replaces the existing set rather than adding to it. These are the per-service toggles only; instance-level surfaces (Geometry Service, geocoding, OGC API Processes/Records/Styles, EDR, WPS, MCP, PMTiles, 3D scenes) and licence-gated ones (NAServer, VersionManagementServer) are not set here."
           }
         }
       },
@@ -27731,17 +27776,17 @@
         "properties": {
           "edition": {
             "type": "string",
-            "description": "Active platform edition label."
+            "description": "Active platform edition label, or Unlicensed-2026.1 when licensing is disabled."
           },
           "expiresAt": {
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "License expiry timestamp, or null for Community/perpetual licenses."
+            "description": "License expiry timestamp, or null for disabled licensing and Community/perpetual licenses."
           },
           "isValid": {
             "type": "boolean",
-            "description": "Whether the active configured license validated successfully."
+            "description": "True when licensing is disabled or the active licensing snapshot is valid."
           },
           "daysUntilExpiry": {
             "type": "integer",
@@ -27762,7 +27807,8 @@
               "Malformed",
               "UnknownKey",
               "InvalidSignature",
-              "Expired"
+              "Expired",
+              "Disabled"
             ],
             "description": "Runtime validation state for the active license snapshot."
           },
@@ -27785,6 +27831,14 @@
               "$ref": "#/components/schemas/EntitlementResponse"
             },
             "description": "Known FeatureCatalog entitlement inventory with active/inactive state."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "disabled"
+            ],
+            "description": "Runtime licensing mode. Disabled grants all catalog entitlements without license validation, expiry or capacity metering."
           }
         }
       },
@@ -33174,7 +33228,13 @@
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Timestamp of the most recent successful dispatch pass, when known."
+            "description": "Timestamp of the most recent dispatch attempt, including failed attempts."
+          },
+          "backlogObservedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp of the most recent successfully collected backlog, when known."
           },
           "pendingCount": {
             "type": "integer",
@@ -34252,6 +34312,14 @@
             "nullable": true,
             "description": "Optional ETL/data-populate workload id dispatched after the schema change."
           },
+          "dataPopulateFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Fields the data-populate workload writes. Required with dataPopulateWorkloadId; the release is rejected before mutation unless every field is the new nullable field."
+          },
           "scriptId": {
             "type": "string",
             "nullable": true,
@@ -34539,6 +34607,14 @@
             "type": "string",
             "nullable": true,
             "description": "Optional ETL/data-populate workload identifier dispatched after the schema change."
+          },
+          "dataPopulateFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Fields the data-populate workload writes. Required with dataPopulateWorkloadId; the release is rejected before mutation unless every field is the new nullable field."
           },
           "scriptId": {
             "type": "string",
@@ -46483,9 +46559,11 @@
               4,
               5,
               6,
-              7
+              7,
+              8,
+              9
             ],
-            "description": "Numeric LicenseCapacityBandState: 0 NotConfigured, 1 Excluded, 2 Normal, 3 ApproachingBand, 4 Burst, 5 Grace, 6 GraceExpired, 7 Surge."
+            "description": "Numeric LicenseCapacityBandState: 0 NotConfigured, 1 Excluded, 2 Normal, 3 ApproachingBand, 4 Burst, 5 Grace, 6 GraceExpired, 7 Surge, 8 MeteringGap, 9 Disabled."
           },
           "terms": {
             "$ref": "#/components/schemas/LicenseCapacityTermsView"
@@ -46591,6 +46669,10 @@
               "type": "string"
             },
             "description": "Safe operator-facing state messages."
+          },
+          "meteringEnabled": {
+            "type": "boolean",
+            "description": "False in Disabled licensing mode; no registrations, usage samples, surge state or capacity enforcement are active."
           }
         }
       },

@@ -37,6 +37,7 @@ public sealed class JobCallableProcessCatalog(
             {
                 ExecutionKind = ProcessExecutionKind.Job,
                 SupportedExecutionModes = ProcessExecutionModes.Async,
+                SupportedEntryPoints = ProcessEntryPoints.Job | ProcessEntryPoints.Workflow,
                 ExecutionCapabilityReason = null
             }
             : definition;

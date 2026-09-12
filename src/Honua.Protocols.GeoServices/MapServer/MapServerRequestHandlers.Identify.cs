@@ -250,7 +250,7 @@ internal static partial class MapServerEndpoints
             // ({"xmin":..,"ymin":..,"xmax":..,"ymax":..,"spatialReference":..}).
             // Normalize that to the comma form before the shared bbox parser, which
             // also keeps the existing "xmin,ymin,xmax,ymax" string form working.
-            if (!TryNormalizeIdentifyMapExtent(mapExtentValue, out var normalizedMapExtent, out var mapExtentError))
+            if (!TryNormalizeMapEnvelope(mapExtentValue, "mapExtent", out var normalizedMapExtent, out var mapExtentError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, mapExtentError ?? "Invalid mapExtent parameter. Expected format: xmin,ymin,xmax,ymax");
             }
@@ -656,64 +656,6 @@ internal static partial class MapServerEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Normalizes a mapExtent value into the comma-delimited "xmin,ymin,xmax,ymax"
-    /// form. Accepts both the legacy comma string and the Esri JSON envelope object
-    /// ({"xmin":..,"ymin":..,"xmax":..,"ymax":..}) that the ArcGIS JS SDK and arcpy emit.
-    /// </summary>
-    private static bool TryNormalizeIdentifyMapExtent(
-        string? mapExtentValue,
-        out string? normalized,
-        out string? error)
-    {
-        normalized = mapExtentValue;
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(mapExtentValue))
-        {
-            return true;
-        }
-
-        var trimmed = mapExtentValue.TrimStart();
-        if (!trimmed.StartsWith('{'))
-        {
-            // Legacy comma form (or anything else) — let the shared bbox parser decide.
-            return true;
-        }
-
-        try
-        {
-            using var doc = JsonDocument.Parse(mapExtentValue);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                error = "Invalid mapExtent parameter. Expected an Esri JSON envelope or xmin,ymin,xmax,ymax.";
-                return false;
-            }
-
-            var root = doc.RootElement;
-            var xmin = TryGetDouble(root, "xmin");
-            var ymin = TryGetDouble(root, "ymin");
-            var xmax = TryGetDouble(root, "xmax");
-            var ymax = TryGetDouble(root, "ymax");
-
-            if (!(xmin.HasValue && ymin.HasValue && xmax.HasValue && ymax.HasValue))
-            {
-                error = "mapExtent envelope must include xmin, ymin, xmax, and ymax.";
-                return false;
-            }
-
-            normalized = string.Create(
-                CultureInfo.InvariantCulture,
-                $"{xmin.Value},{ymin.Value},{xmax.Value},{ymax.Value}");
-            return true;
-        }
-        catch (JsonException)
-        {
-            error = "Invalid mapExtent parameter. Expected an Esri JSON envelope or xmin,ymin,xmax,ymax.";
-            return false;
-        }
-    }
-
     private static bool TryParseIdentifyGeometry(
         string geometryValue,
         string geometryType,
@@ -730,7 +672,8 @@ internal static partial class MapServerEndpoints
         }
 
         if (string.Equals(geometryType, "esriGeometryPoint", StringComparison.OrdinalIgnoreCase) &&
-            TryParsePointPair(geometryValue, out var pairX, out var pairY))
+            (TryParsePointPair(geometryValue, out var pairX, out var pairY) ||
+             TryParsePointLiteral(geometryValue, out pairX, out pairY)))
         {
             geometry = new IdentifyGeometryInput(
                 geometryValue,
@@ -818,6 +761,55 @@ internal static partial class MapServerEndpoints
 
         return double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out x) &&
                double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out y);
+    }
+
+    private static bool TryParsePointLiteral(string value, out double x, out double y)
+    {
+        // Esri's Identify wire examples and native QGIS use {x: number, y: number}.
+        // Accept only those two finite coordinates, then use the existing point
+        // validation/CRS pipeline. Do not relax the general GeoServices JSON parser.
+        x = 0;
+        y = 0;
+        var literal = value.AsSpan().Trim();
+        if (literal.Length < 2 || literal[0] != '{' || literal[^1] != '}')
+        {
+            return false;
+        }
+
+        var members = literal[1..^1];
+        var comma = members.IndexOf(',');
+        if (comma < 0 ||
+            !TryParsePointLiteralMember(members[..comma], out var firstKey, out var firstValue) ||
+            !TryParsePointLiteralMember(members[(comma + 1)..], out var secondKey, out var secondValue) ||
+            firstKey == secondKey)
+        {
+            return false;
+        }
+
+        x = firstKey == 'x' ? firstValue : secondValue;
+        y = firstKey == 'y' ? firstValue : secondValue;
+        return true;
+    }
+
+    private static bool TryParsePointLiteralMember(ReadOnlySpan<char> member, out char key, out double value)
+    {
+        key = default;
+        value = default;
+        var colon = member.IndexOf(':');
+        if (colon < 0)
+        {
+            return false;
+        }
+
+        var name = member[..colon].Trim();
+        if (name.Length != 1 || name[0] is not ('x' or 'y'))
+        {
+            return false;
+        }
+
+        key = name[0];
+        return double.TryParse(member[(colon + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
+               double.IsFinite(value);
     }
 
     private static double? TryGetDouble(JsonElement obj, string propertyName)

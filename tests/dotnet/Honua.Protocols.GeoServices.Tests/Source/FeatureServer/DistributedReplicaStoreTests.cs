@@ -117,8 +117,12 @@ public sealed class DistributedReplicaStoreTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task SetGetRemove_ConcurrentOperations_DoNotThrowAndLeaveNoReplica()
+    public async Task SetGetRemove_IndependentReplicasInParallel_DoNotThrowAndLeaveNoReplica()
     {
+        // #4405: each task uses its own replica id, so there is no contention. Renamed to say
+        // what it proves — 40 independent sequences interleave without throwing or leaking —
+        // and paired with SetGetRemove_ContendingOnOneReplicaId_... below, which is the
+        // contended case the old name promised.
         var store = new DistributedReplicaStore(
             cache: null,
             NullLogger<DistributedReplicaStore>.Instance);
@@ -141,6 +145,60 @@ public sealed class DistributedReplicaStoreTests
             var loaded = await store.GetAsync(replicaId);
             loaded.Should().BeNull();
         }));
+    }
+
+    /// <summary>
+    /// The contended case: many writers and removers on <em>one</em> replica id. The store must
+    /// stay internally consistent — every read returns either the fully-written record or
+    /// nothing, never a torn one — exactly one <c>RemoveAsync</c> may report success, and the
+    /// key must be absent once the storm settles (honua-server#4405).
+    /// </summary>
+    [UnitTest]
+    [Operation(Operations.ExtractChanges)]
+    public async Task SetGetRemove_ContendingOnOneReplicaId_StaysConsistentAndRemovesExactlyOnce()
+    {
+        var store = new DistributedReplicaStore(
+            cache: null,
+            NullLogger<DistributedReplicaStore>.Instance);
+
+        const string replicaId = "replica-contended";
+        const string serviceId = "svc-contended";
+        var createdAt = DateTimeOffset.UtcNow;
+
+        var writers = Enumerable.Range(0, 24).Select(async _ =>
+        {
+            await Task.Yield();
+            await store.SetAsync(CreateReplicaState(replicaId, serviceId, createdAt), TimeSpan.FromMinutes(5));
+        });
+
+        var readers = Enumerable.Range(0, 24).Select(async _ =>
+        {
+            await Task.Yield();
+            var loaded = await store.GetAsync(replicaId);
+
+            // Either not yet written / already removed, or complete. Never partially populated.
+            if (loaded is not null)
+            {
+                loaded.ReplicaId.Should().Be(replicaId);
+                loaded.ServiceId.Should().Be(serviceId);
+                loaded.CreatedAt.Should().Be(createdAt);
+            }
+        });
+
+        await Task.WhenAll(writers.Concat(readers));
+
+        // With the key present, a storm of removers must produce exactly one winner.
+        (await store.GetAsync(replicaId)).Should().NotBeNull("the writers above left the key present");
+
+        var removals = await Task.WhenAll(Enumerable.Range(0, 24).Select(async _ =>
+        {
+            await Task.Yield();
+            return await store.RemoveAsync(replicaId);
+        }));
+
+        removals.Count(removed => removed).Should().Be(
+            1, "removing a replica is an at-most-once effect, not a per-caller success");
+        (await store.GetAsync(replicaId)).Should().BeNull();
     }
 
     [UnitTest]

@@ -216,6 +216,7 @@ The sections below are therefore a **human contract, not a gate**. Fill them bec
   - **Useful flags:** `--dry-run` prints the whole resolved selection — build set, targeted shards, format scope — and exits without restoring, building or testing anything, at zero Docker/dotnet cost. It is the fastest way to see what a run would actually do. `--fast` skips the heavy `Honua.Server.Tests` shards and the AOT publish (what the pre-push hook uses); `--base <ref>` overrides the diff base. The script requires `jq`.
 - The compliance check triggers on **push / `labeled` / `ready_for_review`**, **not** on PR-body edits. Editing the body to add the box will *not* re-run it — push a commit, toggle a label, or mark the PR ready-for-review to re-trigger CI.
 - **Known flake, not a break:** integration shards (e.g. `DbUpMigrations.MobileOfflineDemoSeed`, `OGC API Maps and Tiles`) intermittently fail with a transient Postgres `40P01: deadlock detected` under concurrent host load. This is environmental — re-run the failed shard (`gh run rerun <run-id> --failed`) rather than treating it as a code failure. Root-cause serialization lives in `PostgresFixture`/`SeedRunner` (honua-server#1568).
+- **Known flake, not a break:** `Server Tests (Core and Cloud Contracts)` intermittently fails with `System.InvalidOperationException: Unable to resolve service for type 'Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider'` (or `IMetadataV2GraphStore`) while activating a scoped consumer — observed both mid-request (`ResourceValidator`) and during `WebApplicationFactory` host startup (`GeoprocessingServiceSeeder` inside `GeoprocessingSeedHostedService.StartAsync`). Both registrations are unconditional in `Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices`; the failure is load-dependent (only seen under the shard's full concurrent `WebApplicationFactory` construction, never in an isolated run) and self-resolves on a bare CI rerun with no code change — this is environmental host-construction contention, not a registration bug. Re-run the failed shard rather than treating it as a code failure (honua-server#4640).
 
 ## Merge Train (how PRs actually land)
 
@@ -240,6 +241,22 @@ deterministic trunk red pauses the lander for everything except `fix/`,
 tests to clear it). `.github/workflows/merge-train.yml` remains for manual
 and release-candidate batch validation via explicit `train_apply=true`
 dispatch; it is no longer the routine landing path.
+
+**Batch verification by the lander (shadow, CI velocity plan v2).** The same
+lander also verifies *candidate batches* of landable PRs: it reproduces
+GitHub's sequential squash merges on a private `land/batch/<base7>/<id>` ref
+(never `train/batch/*`), dispatches `ci.yml` there with `selective_base` set
+to the last verified trunk head, and judges the run by a verification receipt
+(see `docs/internal/ci/gate-model.md`, "Verification receipts and batch
+landing"), never by a job count. While it runs in shadow it only records
+would-land / would-quarantine outcomes: per-PR landing is unchanged and no PR
+is merged, labelled or commented on by the batch path. `land/batch/*` branches
+and `CI lander-batch-*` runs belong to the lander — do not push to, rerun or
+delete them, and never read one as a verdict on trunk or on your PR. When
+batch landing goes live (a separate operator decision), a red batch
+quarantines its members until a verified green subset containing them exists;
+a quarantine is keyed to the head it was judged at, so pushing a fix releases
+it.
 
 ### Base every PR on `trunk` — do not stack (#3248)
 

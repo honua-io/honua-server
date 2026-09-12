@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Amazon Redshift provider"
+resource: "honua://capability/provider.redshift"
+---
 # Amazon Redshift provider
 
 ## Protocol routing

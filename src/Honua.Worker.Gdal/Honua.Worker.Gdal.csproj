@@ -49,6 +49,8 @@
     <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />
+    <ProjectReference Include="..\Honua.Cloud\Aws\Honua.Aws.csproj" />
+    <ProjectReference Include="..\Honua.Cloud\Azure\Honua.Azure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,3 +1,8 @@
+---
+type: index
+title: "Guides"
+description: "Task-oriented guides, grouped by what you want to do."
+---
 # Guides
 
 Task-oriented guides, grouped by what you want to do. New to Honua? Start with the [quickstart](../get-started/quickstart.md).

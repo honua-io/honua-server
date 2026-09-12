@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Publish layers"
+description: "Register a database connection and publish its spatial tables through Honua's supported control-plane SDK."
+---
 # Publish layers
 
 Register a database connection and publish its spatial tables through Honua's supported control-plane SDK. Each published layer is immediately available through every enabled protocol.

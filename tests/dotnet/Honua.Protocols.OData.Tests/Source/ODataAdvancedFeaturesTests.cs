@@ -444,10 +444,14 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
         batchResponses[0].GetProperty("status").GetInt32().Should().Be(200);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("https://attacker.example/odata/Features(0,1)")]
+    [InlineData("//attacker.example/odata/Features(0,1)")]
+    [InlineData("/\\attacker.example/odata/Features(0,1)")]
+    [InlineData("file:///odata/Features(0,1)")]
     [Operation(Operations.ODataBatch)]
     [Endpoint("POST /odata/$batch")]
-    public async Task Batch_WithAbsoluteSubrequestUrl_ReturnsBadRequestWithoutEchoingHost()
+    public async Task Batch_WithAbsoluteSubrequestUrl_ReturnsBadRequestWithoutEchoingHost(string url)
     {
         var batchRequest = new ODataBatchRequest
         {
@@ -455,7 +459,7 @@ public sealed class ODataAdvancedFeaturesTests : IAsyncLifetime
             {
                 Id = "absolute-url",
                 Method = "GET",
-                Url = "https://attacker.example/odata/Features(0,1)"
+                Url = url
             })
         };
 

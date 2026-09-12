@@ -13,7 +13,7 @@ using Honua.Ai.Protocols.Mcp.Tools;
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
 /// <summary>
-/// MCP tool that adds a layer to a map/app-family Studio draft's composition
+/// MCP tool that adds a layer to a map/app/dashboard-family Studio draft's composition
 /// (honua-server#3002, REQ-002). Mirrors the honua-sdk-js agent-tools
 /// <c>addLayer(layer, beforeId?)</c> shape so the SDK and server stay
 /// vocabulary-aligned.
@@ -43,8 +43,8 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
         Name = ToolName,
         Title = "Add Studio layer",
         Description =
-            "Add a layer to a map/app-family Studio draft's composition, with optimistic-generation checking. "
-            + "Fails with invalid_argument if a layer with the same id already exists, or if the draft's family is not map/app.",
+            "Add a layer to a map/app/dashboard-family Studio draft's composition, with optimistic-generation checking. "
+            + "Fails with invalid_argument if a layer with the same id already exists, or if the draft's family is not map/app/dashboard.",
         InputSchema = StudioMcpSchemas.AddLayerArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Add Studio layer", destructive: false, idempotent: false)
@@ -100,7 +100,7 @@ internal sealed class AddStudioLayerTool : StudioCompositionToolBase, IMcpTool
 }
 
 /// <summary>
-/// MCP tool that removes a layer from a map/app-family Studio draft's
+/// MCP tool that removes a layer from a map/app/dashboard-family Studio draft's
 /// composition (honua-server#3002, REQ-002).
 /// </summary>
 internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpTool
@@ -128,7 +128,7 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
         Name = ToolName,
         Title = "Remove Studio layer",
         Description =
-            "Remove a layer from a map/app-family Studio draft's composition by id, with optimistic-generation checking. "
+            "Remove a layer from a map/app/dashboard-family Studio draft's composition by id, with optimistic-generation checking. "
             + "Fails with not_found if no layer with that id exists.",
         InputSchema = StudioMcpSchemas.RemoveLayerArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
@@ -173,7 +173,7 @@ internal sealed class RemoveStudioLayerTool : StudioCompositionToolBase, IMcpToo
 
 /// <summary>
 /// MCP tool that sets (or clears) a layer's bound style reference in a
-/// map/app-family Studio draft's composition (honua-server#3002, REQ-002).
+/// map/app/dashboard-family Studio draft's composition (honua-server#3002, REQ-002).
 /// </summary>
 internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpTool
 {
@@ -200,7 +200,7 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
         Name = ToolName,
         Title = "Set Studio layer style",
         Description =
-            "Set (or, when styleRef is omitted/null, clear) a layer's bound style reference in a map/app-family Studio draft's "
+            "Set (or, when styleRef is omitted/null, clear) a layer's bound style reference in a map/app/dashboard-family Studio draft's "
             + "composition, with optimistic-generation checking. Fails with not_found if no layer with that id exists. "
             + "This binds a style reference on the composed layer; it does not validate the reference against a style catalog.",
         InputSchema = StudioMcpSchemas.SetLayerStyleArgumentSchema,
@@ -245,7 +245,7 @@ internal sealed class SetStudioLayerStyleTool : StudioCompositionToolBase, IMcpT
 }
 
 /// <summary>
-/// MCP tool that shows or hides a layer in a map/app-family Studio draft's
+/// MCP tool that shows or hides a layer in a map/app/dashboard-family Studio draft's
 /// composition (honua-server#3199), the server-side execution path for the
 /// ADR-0030 <c>setVisibility</c> action verb.
 /// </summary>
@@ -280,7 +280,7 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
         Name = ToolName,
         Title = "Set Studio layer visibility",
         Description =
-            "Show or hide a layer in a map/app-family Studio draft's composition, with optimistic-generation "
+            "Show or hide a layer in a map/app/dashboard-family Studio draft's composition, with optimistic-generation "
             + "checking. This is the persisted counterpart of the ADR-0030 'setVisibility' action verb: a "
             + "client-local toggle is overwritten by the next draft sync, a toggle written here is not. "
             + "Fails with not_found if no layer with that id exists.",
@@ -333,7 +333,7 @@ internal sealed class SetStudioLayerVisibilityTool : StudioCompositionToolBase, 
 }
 
 /// <summary>
-/// MCP tool that replaces a map/app-family Studio draft's composition view
+/// MCP tool that replaces a map/app/dashboard-family Studio draft's composition view
 /// (honua-server#3002, REQ-002). Mirrors the honua-sdk-js agent-tools
 /// <c>setViewport</c> shape (bbox, center, zoom, pitch, bearing, crs).
 /// </summary>
@@ -362,7 +362,7 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
         Name = ToolName,
         Title = "Set Studio view",
         Description =
-            "Replace a map/app-family Studio draft's composition view (bbox, center, zoom, pitch, bearing, crs), "
+            "Replace a map/app/dashboard-family Studio draft's composition view (bbox, center, zoom, pitch, bearing, crs), "
             + "with optimistic-generation checking.",
         InputSchema = StudioMcpSchemas.SetViewArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
@@ -411,7 +411,7 @@ internal sealed class SetStudioViewTool : StudioCompositionToolBase, IMcpTool
 }
 
 /// <summary>
-/// MCP tool that adds a widget to an app-family Studio draft's composition
+/// MCP tool that adds a widget to a map/app/dashboard-family Studio draft's composition
 /// (honua-server#3002, REQ-002).
 /// </summary>
 internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
@@ -439,8 +439,8 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
         Name = ToolName,
         Title = "Add Studio widget",
         Description =
-            "Add a widget to a map/app-family Studio draft's composition, with optimistic-generation checking. "
-            + "Fails with invalid_argument if a widget with the same id already exists, or if the draft's family is not map/app.",
+            "Add a widget to a map/app/dashboard-family Studio draft's composition, with optimistic-generation checking. "
+            + "Fails with invalid_argument if a widget with the same id already exists, or if the draft's family is not map/app/dashboard.",
         InputSchema = StudioMcpSchemas.AddWidgetArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Add Studio widget", destructive: false, idempotent: false)
@@ -496,7 +496,7 @@ internal sealed class AddStudioWidgetTool : StudioCompositionToolBase, IMcpTool
 }
 
 /// <summary>
-/// MCP tool that removes a widget from an app-family Studio draft's
+/// MCP tool that removes a widget from a map/app/dashboard-family Studio draft's
 /// composition (honua-server#3002, REQ-002).
 /// </summary>
 internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTool
@@ -524,7 +524,7 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
         Name = ToolName,
         Title = "Remove Studio widget",
         Description =
-            "Remove a widget from a map/app-family Studio draft's composition by id, with optimistic-generation checking. "
+            "Remove a widget from a map/app/dashboard-family Studio draft's composition by id, with optimistic-generation checking. "
             + "Fails with not_found if no widget with that id exists.",
         InputSchema = StudioMcpSchemas.RemoveWidgetArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
@@ -567,7 +567,7 @@ internal sealed class RemoveStudioWidgetTool : StudioCompositionToolBase, IMcpTo
 
 /// <summary>
 /// MCP tool that adds or replaces one declarative event→action binding in a
-/// map/app-family Studio draft's composition — the reference implementation of
+/// map/app/dashboard-family Studio draft's composition — the reference implementation of
 /// the geospatial-mcp standard's <c>bind_interaction</c> (ADR-0030, <c>composition</c>
 /// profile). The standard-level target is a composition document
 /// (<c>mapPackageId</c>/<c>appPackageId</c>); Honua authors compositions through the
@@ -599,7 +599,7 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
         Name = ToolName,
         Title = "Bind Studio interaction",
         Description =
-            "Add or replace (by id) one declarative event→action binding in a map/app-family Studio draft's "
+            "Add or replace (by id) one declarative event→action binding in a map/app/dashboard-family Studio draft's "
             + "composition, with optimistic-generation checking. Bindings are data, not code: arguments are static "
             + "JSON plus '$event.' path substitution, and actions never emit events, so bindings cannot cascade. "
             + "Fails with invalid_argument when the event/verb is outside the closed sets, when on.ref/do.ref does "
@@ -719,7 +719,7 @@ internal sealed class BindStudioInteractionTool : StudioCompositionToolBase, IMc
 
 /// <summary>
 /// MCP tool that removes one declarative event→action binding, by id, from a
-/// map/app-family Studio draft's composition — the reference implementation of the
+/// map/app/dashboard-family Studio draft's composition — the reference implementation of the
 /// geospatial-mcp standard's <c>remove_interaction</c> (ADR-0030, <c>composition</c>
 /// profile). Removing an unknown id is an error, not a no-op.
 /// </summary>
@@ -748,7 +748,7 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
         Name = ToolName,
         Title = "Remove Studio interaction",
         Description =
-            "Remove one declarative event→action binding from a map/app-family Studio draft's composition by id, "
+            "Remove one declarative event→action binding from a map/app/dashboard-family Studio draft's composition by id, "
             + "with optimistic-generation checking. Fails with not_found if no interaction with that id exists.",
         InputSchema = StudioMcpSchemas.RemoveInteractionArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
@@ -798,7 +798,7 @@ internal sealed class RemoveStudioInteractionTool : StudioCompositionToolBase, I
 }
 
 /// <summary>
-/// MCP tool that adds or replaces one control in a map/app-family Studio draft's
+/// MCP tool that adds or replaces one control in a map/app/dashboard-family Studio draft's
 /// composition — the reference implementation of the geospatial-mcp standard's
 /// <c>add_control</c> (ADR-0031, <c>composition</c> profile). Controls are a peer
 /// collection to layers and widgets, not a widget kind: a control is an input
@@ -833,12 +833,12 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
         Name = ToolName,
         Title = "Add Studio control",
         Description =
-            "Add or replace (by id) one control in a map/app-family Studio draft's composition, with "
+            "Add or replace (by id) one control in a map/app/dashboard-family Studio draft's composition, with "
             + "optimistic-generation checking. Controls are input affordances (chrome), not layout grid items, and "
             + "are what 'control:{id}' interaction references resolve against. Fails with invalid_argument when the "
             + "kind is outside the closed vocabulary ("
             + $"{string.Join(", ", StudioInteractionVocabulary.ControlKinds)}), when a supplied sourceId does not "
-            + "resolve to a layer or datasource declared in the same document, or when the draft's family is not map/app.",
+            + "resolve to a layer or datasource declared in the same document, or when the draft's family is not map/app/dashboard.",
         InputSchema = StudioMcpSchemas.AddControlArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
         // Re-adding the same id with the same body is idempotent; the tool never
@@ -932,7 +932,7 @@ internal sealed class AddStudioControlTool : StudioCompositionToolBase, IMcpTool
 }
 
 /// <summary>
-/// MCP tool that removes one control, by id, from a map/app-family Studio draft's
+/// MCP tool that removes one control, by id, from a map/app/dashboard-family Studio draft's
 /// composition — the reference implementation of the geospatial-mcp standard's
 /// <c>remove_control</c> (ADR-0031, <c>composition</c> profile). Removing an unknown id
 /// is an error, not a no-op, and removing a control an interaction still references
@@ -965,7 +965,7 @@ internal sealed class RemoveStudioControlTool : StudioCompositionToolBase, IMcpT
         Name = ToolName,
         Title = "Remove Studio control",
         Description =
-            "Remove one control from a map/app-family Studio draft's composition by id, with "
+            "Remove one control from a map/app/dashboard-family Studio draft's composition by id, with "
             + "optimistic-generation checking. Fails with not_found if no control with that id exists, and with "
             + "invalid_argument when an interaction still references 'control:{id}' unless cascadeInteractions is "
             + "true, in which case those bindings are removed with the control.",

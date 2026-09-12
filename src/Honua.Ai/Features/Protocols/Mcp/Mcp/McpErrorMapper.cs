@@ -140,7 +140,8 @@ internal static class McpErrorMapper
             Message = preconditionEx.Message,
             Data = new McpErrorData
             {
-                Code = Codes.FailedPrecondition
+                Code = Codes.FailedPrecondition,
+                CurrentGeneration = (preconditionEx as Studio.StudioDraftGenerationConflictException)?.CurrentGeneration,
             }
         },
 

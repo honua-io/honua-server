@@ -52,13 +52,15 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("map")]
+    [InlineData("dashboard")]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_create_draft")]
     [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
     [Endpoint("POST /mcp tools/call honua_studio_update_draft")]
     [Endpoint("GET /api/v1/studio/package-drafts/{draftId}")]
-    public async Task RestAndMcp_ApplyTheSameOwnerAndCrossUserDenialRules()
+    public async Task RestAndMcp_ApplyTheSameOwnerAndCrossUserDenialRules(string family)
     {
         var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var aliceKey = await apiKeyStore.CreateAsync(
@@ -77,7 +79,7 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
             aliceClient,
             "honua_studio_create_draft",
             $$"""
-              {"packageKey":"owner-parity-map","family":"map","schemaVersion":"1.0","ownerId":"{{bobOwnerId}}"}
+              {"packageKey":"owner-parity-map","family":"{{family}}","schemaVersion":"1.0","ownerId":"{{bobOwnerId}}"}
               """);
         AssertOwnerAssignmentToolDenial(rejectedCreate);
 
@@ -85,7 +87,7 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         var created = await CallToolAsync(
             aliceClient,
             "honua_studio_create_draft",
-            """{"packageKey":"owner-parity-map","family":"map","schemaVersion":"1.0"}""");
+            $$"""{"packageKey":"owner-parity-map","family":"{{family}}","schemaVersion":"1.0"}""");
         var draftId = created.GetProperty("structuredContent").GetProperty("draftId").GetGuid();
         created.GetProperty("structuredContent").GetProperty("ownerId").GetString()
             .Should().Be(aliceOwnerId);

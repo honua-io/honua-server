@@ -50,7 +50,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout trusted observer policy
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           path: policy
@@ -141,7 +141,7 @@ jobs:
       # regression. Read from the artifact catalog; never downloaded.
       - name: Retain observation skip marker
         if: steps.collect.outputs.skip == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: native-image-impact-skipped-${{ steps.collect.outputs.skip_code }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/observation-skipped.json
@@ -150,7 +150,7 @@ jobs:
 
       - name: Checkout candidate tree as inert data
         if: steps.collect.outputs.skip != 'true'
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           repository: ${{ steps.collect.outputs.head_repository }}
           ref: ${{ steps.collect.outputs.head_sha }}
@@ -259,9 +259,15 @@ jobs:
           EXPECTED_HEAD: ${{ steps.collect.outputs.head_sha }}
         with:
           script: |
+            const fs = require('fs');
+            const path = require('path');
             const {
+              SKIP_CODE,
+              recordObservationSkip,
               resolveTrustedPullRequestWorkflowRun,
             } = require('./policy/scripts/ci/trusted-pr-workflow-run');
+            const runnerTemp = process.env.RUNNER_TEMP;
+            if (!runnerTemp) throw new Error('RUNNER_TEMP is unavailable');
             const { data: repository } = await github.rest.repos.get(context.repo);
             // The retention invariant is "never retain evidence for a moved pull
             // request"; discarding satisfies it exactly as well as failing the
@@ -279,18 +285,53 @@ jobs:
               unresolved: 'skip',
             });
             const moved = resolved.skipped
-              ? resolved.reason
+              ? { code: SKIP_CODE.test(resolved.code || '') ? resolved.code : 'source-unresolved',
+                  reason: resolved.reason }
               : (String(resolved.pullRequestNumber) !== process.env.EXPECTED_PR ||
                  resolved.baseSha !== process.env.EXPECTED_BASE ||
                  resolved.headSha !== process.env.EXPECTED_HEAD)
-                ? 'pull request identity moved during observation'
-                : '';
+                ? { code: 'pull-request-identity-moved-during-observation',
+                    reason: 'pull request identity moved during observation' }
+                : null;
             if (moved) {
-              core.warning(`Discarding native-image observation: ${moved}.`);
+              core.warning(`Discarding native-image observation: ${moved.reason}.`);
+              // A discard here is the SAME fact as a skip at collect time: the
+              // source was superseded, so no receipt was ever owed. Leaving
+              // nothing behind made the evidence ledger read a successful
+              // observer shell with no artifact as receipt loss, and it was the
+              // sole cause of all 24 lost native receipts in the 2026-09-04
+              // ledger (4.25% of the native stream against a 5% budget).
+              // Record the same stable-name marker the collect-time skip
+              // records, so the ledger classifies it as
+              // observation-skipped:<code> instead.
+              recordObservationSkip({
+                core,
+                fs,
+                label: 'native-image-impact',
+                markerPath: path.join(runnerTemp, 'observation-skipped.json'),
+                code: moved.code,
+                reason: moved.reason,
+                source: {
+                  runId: process.env.SOURCE_RUN_ID,
+                  runAttempt: process.env.SOURCE_RUN_ATTEMPT,
+                  runConclusion: process.env.SOURCE_RUN_CONCLUSION,
+                },
+              });
               core.setOutput('retain', 'false');
               return;
             }
             core.setOutput('retain', 'true');
+
+      # Mutually exclusive with the collect-time marker above: the recheck only
+      # runs when collect did not skip, so the two can never both upload.
+      - name: Retain post-observation skip marker
+        if: steps.recheck.outputs.skip == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-image-impact-skipped-${{ steps.recheck.outputs.skip_code }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observation-skipped.json
+          if-no-files-found: error
+          retention-days: 7
 
       # Published only after the recheck, so a discarded observation is never
       # presented in the job summary as if it were evidence.
@@ -300,7 +341,7 @@ jobs:
 
       - name: Retain trusted observation evidence
         if: steps.recheck.outputs.retain == 'true'
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: native-image-impact-observation-v3-attempt-${{ github.run_attempt }}
           path: |

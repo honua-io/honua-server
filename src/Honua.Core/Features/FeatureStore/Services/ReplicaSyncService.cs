@@ -154,6 +154,10 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     .ConfigureAwait(false);
                 foreach (var change in serverChanges)
                 {
+                    if (string.Equals(change.OriginReplicaId, request.ReplicaId, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
                     var matchedPublicObjectIds = new HashSet<long>();
                     if (publicObjectIdsByStorageObjectId.TryGetValue(change.ObjectId, out var mappedPublicObjectIds))
                     {
@@ -435,6 +439,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 }
             }
 
+            using var uploadOrigin = ReplicaUploadOriginScope.Begin(request.ReplicaId);
             var applyResult = editsToApply.Count == 0
                 ? new ReplicaLayerApplyResult(layer.PublicLayerId, 0, 0, 0, Failed: false, FailureMessage: null)
                 : await editApplier
@@ -516,8 +521,8 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
             activity?.SetStatus(ActivityStatusCode.Error, firstFailure);
         }
 
-        // The server generation produced once the uploaded edits applied. A subsequent download delta
-        // uses this as its lower bound so the replica does not receive its own edits back.
+        // The post-upload checkpoint is used for upload conflict bookkeeping. It does not acknowledge
+        // a download; durable provenance suppresses this replica's own changes in later deltas.
         var serverGeneration = await _changeTracker.GetCurrentGenerationAsync(cancellationToken).ConfigureAwait(false);
 
         return new ReplicaSyncUploadReport(

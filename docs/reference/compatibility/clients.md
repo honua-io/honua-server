@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Supported clients and known limitations"
+description: "This page lists the clients Honua Server is tested against, the protocol each one uses, and the honest list of current gaps."
+---
 # Supported clients and known limitations
 
 This page lists the clients Honua Server is tested against, the protocol each one
@@ -30,6 +35,68 @@ Cesium lanes are re-certified automatically in CI. See the
 per-lane test-case coverage (connection, auth, discovery, schema, query, paging,
 geometry fidelity, error handling, rendering).
 
+## Public URL and host validation
+
+Set `Public:BaseUrl` (or its `Public__BaseUrl` environment form) or
+`PUBLIC_BASE_URL` to the public HTTP(S) origin used by desktop clients. A blank
+`Public:BaseUrl` falls back to `PUBLIC_BASE_URL`; a nonblank primary setting takes
+precedence. Request host validation, strict startup validation
+(`HostValidation:RequireExplicitHosts=true`) and generated links use the same URL resolution.
+An explicit host allowlist still takes precedence over the public URL, and
+unrelated request hosts remain rejected when host validation is enabled.
+
+## Managed API keys and Portal token exchange
+
+Managed API-key expiry rejects the credential while retaining its registry
+metadata for administrative list, effective-permissions and revoke operations.
+An expired or revoked record does not authorize a desktop request. Internal
+approval replay credentials still expire from Redis. Older registry entries
+need a successful validation, rotation or revocation before their original Redis
+expiry to adopt the new retention behavior; already removed records cannot be
+restored. See the [managed-key lifecycle guide](../../guides/secure/authentication.md).
+
+The default local admin bridge for `/sharing/rest/generateToken` accepts bootstrap
+admin credentials and managed keys with full administrative authority. Scoped
+service/layer keys, narrow admin or operations keys, and approved-operation replay
+keys receive an Esri `400` issuance error rather than an elevated admin token.
+The restriction applies with both `admin` and other supplied usernames. Direct
+API-key authorization retains the key's existing grants; configured OIDC token
+issuance uses its existing identity projection.
+
+This is an explicit unsupported exchange, not evidence that scoped Portal-token
+authentication works in a desktop client. Native acquisition, storage, lifecycle
+and protocol authorization still require separate client evidence. See
+[authentication setup and token revocation during upgrades](../../guides/secure/authentication.md#4-issue-arcgis-compatible-tokens).
+
+## Realtime credentials and reconnects
+
+Protected FeatureServer and SensorThings SSE/WebSocket subscriptions revalidate
+their admitted credential every second in a fresh authentication scope. Expiry,
+issuer-observed revocation, changed identity/tenant/role claims, or validation
+failure ends the subscription. SSE sends `event: status` with
+`{"status":"error","code":"authorization-ended"}` and closes; WebSocket closes
+with code `1008` and reason `authorization-ended`. Clients must obtain a valid
+replacement credential before reconnecting. OData polling authenticates each
+request and rejects expired or revoked portal credentials with HTTP 401.
+
+The five-second qualification bound requires zero issuer expiry leeway. Portal
+tokens have no expiry leeway; OIDC deployments qualifying this bound must set
+`TokenValidation.ClockSkew` to zero (the default is five minutes). Revocation is
+observable through the configured authenticator's policy and backing store.
+
+Feature-stream clients retain their last delivered cursor and reconnect with the
+same authorized tenant scope; access policies are evaluated again before replay.
+Changing credentials does not grant access to another tenant's resources.
+SensorThings subscriptions require an explicit tenant claim for non-admin users
+and are live-only: cursor or `Last-Event-ID` resume attempts return HTTP 400.
+A SensorThings subscription refused by an admission cap never opens a stream:
+HTTP 429 means the caller's own credential or tenant already holds its share of
+concurrent subscriptions (close one or wait), and HTTP 503 means the node is at
+capacity. Both carry `Retry-After`; clients must honour it rather than reconnect
+in a tight loop.
+These local regression guarantees do not certify a release candidate; exact-image
+live issuer/SDK evidence is still required by the qualification gate.
+
 ## Known limitations
 
 Current gaps, stated as fact. Protocol-level Esri parity detail lives in
@@ -41,11 +108,29 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   reports the full add set and later syncs do not provide DB-level incremental
   change tracking. Suitable for short-lived sync and client validation, not a full
   ArcGIS offline-geodatabase replacement.
+- **GeoServices 64-bit fields require client support.** Ordinary BigInteger
+  fields use Esri's `esriFieldTypeBigInteger` in layer metadata and JSON queries,
+  and field enum 13 in PBF; object identifiers retain `esriFieldTypeOID`.
+  Stock QGIS 3.40.15's ArcGIS REST provider does not recognize BigInteger fields.
+  Native table/export testing retained a missing-column failure; correcting
+  Honua's former invalid `esriFieldTypeInteger64` token does not establish a
+  QGIS type-preservation pass. See [the server defect](https://github.com/honua-io/honua-server/issues/4551)
+  and [the version-specific QGIS converter](https://github.com/qgis/QGIS/blob/final-3_40_15/src/core/providers/arcgis/qgsarcgisrestutils.cpp#L59).
 - **WMS 1.1.1 passes its CITE profile.** It is served (with `SRS`, `X`/`Y`, and
   lon/lat EPSG:4326 BBOX order); both WMS 1.1.1 and WMS 1.3 have current
   all-pass CITE evidence.
 - **WMTS scope is WebMercatorQuad only** on the GeoServices `MapServer/WMTS` alias
   and the `/ogc` classic surface.
+- **SensorThings query options are honoured or refused, never ignored.** `$filter`,
+  `$orderby`, `$select`, `$top`, `$skip` and `$count` work on every entity set, and
+  `$expand` works on Datastreams for `Thing`, `Sensor`, `ObservedProperty` and
+  `Observations` (including nested `$top`/`$skip`/`$filter`/`$orderby`). Anything
+  outside that surface fails the request rather than returning unfiltered data:
+  expanding `Datastreams` from a Thing/Sensor/ObservedProperty, or `Datastream`/
+  `FeatureOfInterest` from an Observation, returns HTTP 501 — follow the entity's
+  `@iot.navigationLink` instead. A `$filter` naming an unknown property, or carrying
+  a literal of the wrong type for its property, returns HTTP 400. `$filter` and
+  `$orderby` on a single-entity route return HTTP 400 because they cannot apply.
 - **OGC API Processes negotiates sync and async execution.** Omission runs a process
   synchronously when it advertises `sync-execute`; `Prefer: respond-async` requests a
   durable job. Document-mode JSON is the default, while synchronous single-output
@@ -58,11 +143,27 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
 - **WCS 2.0.1 is a thin slice over the primary raster.** Range subset/band
   selection, scaling/interpolation extensions, XML POST, NetCDF, and
   temporal/multidimensional slicing are not implemented.
+- **ImageServer metadata retains native mosaic resolution.** `pixelSizeX` and
+  `pixelSizeY` advertise the finest finite positive source geotransform scale
+  on each axis. Aggregate extent rounding or offsets between source rasters
+  do not change these values. If an axis has no usable geotransform scale,
+  metadata retains the aggregate-extent/primary-dimension fallback. This
+  contract is covered by HTTP regressions and does not establish native
+  QGIS or ArcGIS Pro raster certification.
 - **OGC API Coverages is MVP-scoped**: GeoTIFF/PNG retrieval with bbox/CRS/scale
   parameters; `datetime`, `subset`, CoverageJSON, NetCDF, and tiled coverage
-  delivery are not implemented.
-- **OData v4 delta tracking is timestamp-based** (MVP-level) and `PUT` is not
-  supported.
+  delivery are not implemented. Collection discovery emits each accessible
+  storage-layer identifier once even when feature and raster resources share
+  that storage binding. Access filtering precedes deduplication, with a primary
+  publication preferred among accessible aliases. Numeric collection detail URLs
+  use the same storage identity and accessible-publication selection as discovery,
+  including when publication IDs differ from the storage-layer ID. Other protocols
+  retain their existing publication-identifier routing.
+- **OData v4 delta tracking uses durable authorized query snapshots.** Clients
+  apply key-preserving `@removed` entries for deletes and filter exits. Legacy
+  timestamp tokens require a new baseline after typed 410 recovery. Tracking
+  requires PostgreSQL snapshot storage, expires after 24 hours, and has bounded
+  query shapes and capacity; see [OData change tracking](../protocols/odata.md#change-tracking).
 - **GeoServices GPServer synchronous `execute` is limited to deterministic
   single-geometry tasks** (the `geometry.*` family and `conversion.geometry-format`,
   run inline over the canonical job runtime); heavyweight/layer-scoped tasks stay

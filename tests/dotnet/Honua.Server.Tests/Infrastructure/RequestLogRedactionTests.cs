@@ -63,7 +63,12 @@ public sealed class RequestLogRedactionTests
         request.Headers.Add("Cookie", "session=cookie-marker");
         using var response = await client.SendAsync(request);
         Assert.Equal(200, (int)response.StatusCode);
-        // Stop waits for the framework request-finished event before inspecting captures.
+        // TestHost completes the response body - which is what releases SendAsync - before it disposes
+        // the HttpContext, and the hosting "Request finished" event is written during that disposal.
+        // TestServer.StopAsync drains nothing, so wait for the request-scoped events here. The
+        // forwarded provider sink is registered ahead of this sink, so it has already seen whatever
+        // this sink captured.
+        await sink.WaitForEventsAsync(TimeSpan.FromSeconds(30), "Request starting", "Request finished", "HTTP");
         await host.StopAsync();
 
         Assert.Contains(sink.Events, e => e.MessageTemplate.Text.StartsWith("Request starting", StringComparison.Ordinal));
@@ -158,8 +163,65 @@ public sealed class RequestLogRedactionTests
 
     private sealed class CaptureSink : ILogEventSink
     {
-        public ConcurrentQueue<LogEvent> Events { get; } = new();
-        public void Emit(LogEvent logEvent) => Events.Enqueue(logEvent);
+        private readonly object gate = new();
+        private readonly List<LogEvent> events = [];
+        private TaskCompletionSource emitted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IReadOnlyList<LogEvent> Events
+        {
+            get
+            {
+                lock (gate)
+                {
+                    return events.ToArray();
+                }
+            }
+        }
+
+        public void Emit(LogEvent logEvent)
+        {
+            TaskCompletionSource captured;
+            lock (gate)
+            {
+                events.Add(logEvent);
+                captured = emitted;
+                emitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            captured.SetResult();
+        }
+
+        /// <summary>
+        /// Waits until an event has been captured for every supplied message template prefix.
+        /// Returns on timeout so the assertions that follow report which event is missing.
+        /// </summary>
+        public async Task WaitForEventsAsync(TimeSpan timeout, params string[] messageTemplatePrefixes)
+        {
+            using var expiry = new CancellationTokenSource(timeout);
+            while (true)
+            {
+                Task nextEmit;
+                lock (gate)
+                {
+                    if (messageTemplatePrefixes.All(prefix =>
+                        events.Any(entry => entry.MessageTemplate.Text.StartsWith(prefix, StringComparison.Ordinal))))
+                    {
+                        return;
+                    }
+
+                    nextEmit = emitted.Task;
+                }
+
+                try
+                {
+                    await nextEmit.WaitAsync(expiry.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+        }
     }
 
     private sealed class CaptureProvider : ILoggerProvider

@@ -784,10 +784,37 @@ public sealed class OpsFindingsServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_CapturesBacklogAndTimestampOnceForTheWholeEvaluation()
+    {
+        var observedAt = DateTimeOffset.UtcNow.AddHours(-1);
+        var reads = 0;
+        var health = new FakeAlertDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastPollAt = DateTimeOffset.UtcNow,
+            ObservationReader = () => ++reads == 1
+                ? new AlertDispatchObservation(new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 }, observedAt)
+                : new AlertDispatchObservation(new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 }, DateTimeOffset.UtcNow),
+        };
+        var evaluation = await CreateService(alertHealth: health).EvaluateWithEvidenceAsync();
+        Assert.Equal(1, reads);
+        var finding = Assert.Single(evaluation.Findings, item => item.Rule == OpsFindingsService.RuleAlertDispatchBacklog);
+        Assert.Equal(2, finding.RecommendedAction!.BlastRadius);
+        var source = Assert.Single(evaluation.Posture.Sources,
+            item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch);
+        Assert.Equal(observedAt, source.ObservedAt);
+        Assert.Equal(observedAt, source.LastSuccessfulAt);
+        Assert.Contains(EvidencePostureVocabulary.ReasonCodes.Stale, source.ReasonCodes);
+    }
+
     [Theory]
     [InlineData("backendOutage")]
     [InlineData("neverSucceeded")]
     [InlineData("stale")]
+    [InlineData("freshAttemptStaleObservation")]
     [InlineData("futureObservation")]
     [Operation(Operations.TestInfrastructure)]
     public async Task Propose_IncompleteRequiredSourceEvidence_BlocksWithZeroGatewayCalls(string scenario)
@@ -801,9 +828,11 @@ public sealed class OpsFindingsServiceTests
             IsDispatcherRunning = true,
             LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
             IsStoragePollFailing = scenario == "backendOutage",
+            SuccessfulBacklogAt = scenario == "freshAttemptStaleObservation" ? now.AddHours(-1) : null,
             LastPollAt = scenario switch
             {
                 "backendOutage" => now,
+                "freshAttemptStaleObservation" => now,
                 "neverSucceeded" => null,
                 "stale" => now.AddHours(-1),
                 "futureObservation" => now.AddHours(1),
@@ -820,6 +849,12 @@ public sealed class OpsFindingsServiceTests
             item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch);
         Assert.NotEqual(EvidencePostureVocabulary.Completeness.Complete, source.Completeness);
         Assert.NotEmpty(source.ReasonCodes);
+        if (scenario == "freshAttemptStaleObservation")
+        {
+            Assert.Equal(now.AddHours(-1), source.ObservedAt);
+            Assert.Equal(now.AddHours(-1), source.LastSuccessfulAt);
+            Assert.Contains(EvidencePostureVocabulary.ReasonCodes.Stale, source.ReasonCodes);
+        }
 
         var result = await service.ProposeAsync(finding.Id);
 
@@ -1322,6 +1357,16 @@ public sealed class OpsFindingsServiceTests
         public bool IsDispatcherEnabled { get; set; }
 
         public DateTimeOffset? LastPollAt { get; set; }
+
+        public DateTimeOffset? SuccessfulBacklogAt { get; set; }
+
+        public DateTimeOffset? BacklogObservedAt => SuccessfulBacklogAt ?? LastPollAt;
+
+        public Func<AlertDispatchObservation?>? ObservationReader { get; set; }
+
+        public AlertDispatchObservation? LastObservation => ObservationReader is { } read
+            ? read()
+            : LastBacklog is { } backlog ? new(backlog, BacklogObservedAt) : null;
 
         public AlertDispatchBacklog? LastBacklog { get; set; }
 

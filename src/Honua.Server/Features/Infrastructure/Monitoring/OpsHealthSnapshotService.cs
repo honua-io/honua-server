@@ -212,7 +212,19 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
                 "alert-dispatch-store");
         }
 
-        return alertDispatch.LastPollAt is { } lastPollAt
+        if (alertDispatch.StoragePollFailing)
+        {
+            return EvidencePostureFactory.Unavailable(
+                EvidencePostureVocabulary.SourceIds.AlertDispatch,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                "alert-dispatch-store",
+                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable,
+                observedAt: alertDispatch.BacklogObservedAt,
+                lastSuccessfulAt: alertDispatch.BacklogObservedAt,
+                maximumAge: SectionValidity);
+        }
+
+        return alertDispatch.BacklogObservedAt is { } lastPollAt
             ? EvidencePostureFactory.Complete(
                 EvidencePostureVocabulary.SourceIds.AlertDispatch,
                 EvidencePostureVocabulary.BackendKinds.DurableStore,
@@ -382,7 +394,8 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
 
     private OpsAlertDispatchView BuildAlertDispatchView()
     {
-        var backlog = _alertHealth.LastBacklog;
+        var observation = _alertHealth.LastObservation;
+        var backlog = observation?.Backlog;
         var now = _timeProvider.GetUtcNow();
         return new OpsAlertDispatchView
         {
@@ -390,6 +403,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
             DispatcherEnabled = _alertHealth.IsDispatcherEnabled,
             StoragePollFailing = _alertHealth.IsStoragePollFailing,
             LastPollAt = _alertHealth.LastPollAt,
+            BacklogObservedAt = observation?.ObservedAt,
             PendingCount = backlog?.PendingCount,
             DeadLetteredCount = backlog?.DeadLetteredCount,
             RetryingCount = backlog?.RetryingCount,

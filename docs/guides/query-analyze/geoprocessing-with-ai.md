@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Geoprocessing with AI"
+description: "Use one governed geometry.buffer operation across OGC API Processes, Honua's MCP plan tools, and the JavaScript SDK, then hand the result artifact to Studio."
+---
 # Geoprocessing with AI
 
 Use one governed `geometry.buffer` operation across OGC API Processes, Honua's MCP plan tools, and the JavaScript SDK, then hand the result artifact to Studio. This is stage two of the terminal journey: complete the [server setup and control-plane walkthrough](https://github.com/honua-io/honua-server/issues/3364) first, and continue with the [Studio save and reopen journey](https://github.com/honua-io/honua-server/issues/3305) when that documentation lands.
@@ -121,7 +126,7 @@ The SDK handles either legal synchronous or asynchronous response shape. It does
 
 Add the GeoJSON result referenced by `artifact.href` to the same server-resident Studio draft. The `geometry.buffer` result is an inline GeoJSON data-URI artifact, not a materialized database table, so it cannot be passed directly to `honua_publish_result`. A hosted-layer workflow must first import or otherwise materialize the GeoJSON into a table that records `connectionId`, `schema`, and `table` metadata. Save the artifact id, job id, draft id, and draft generation together so the next stage can prove it is using this run rather than a fixture.
 
-The complete Studio authoring/run UI is a 2026.2 surface. Until [#3305](https://github.com/honua-io/honua-server/issues/3305) lands, use the existing [Studio AI proxy guide](../run-studio-ai-proxy.md) and the `honua_studio_*` MCP lifecycle described in [Connect AI agents](../connect/ai-agents-mcp.md). Console job/result inspection is optional and does not define completion of this terminal path.
+The complete Studio authoring/run UI is a 2026.2 surface. Until [#3305](https://github.com/honua-io/honua-server/issues/3305) lands, use the existing [Bring your own model](../../studio/byom.md) and the `honua_studio_*` MCP lifecycle described in [Connect AI agents](../connect/ai-agents-mcp.md). Console job/result inspection is optional and does not define completion of this terminal path.
 
 ## Deferred surfaces
 

@@ -81,3 +81,12 @@ public class DatabaseAdminAuthorizationCollection : ICollectionFixture<DatabaseF
 public class DatabaseSceneGrpcCollection : ICollectionFixture<DatabaseFixtureAdapter>
 {
 }
+
+/// <summary>
+/// Database-backed collection for OIDC authentication tests.
+/// </summary>
+[CollectionDefinition("Database.OidcAuthentication")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
+public class DatabaseOidcAuthenticationCollection : ICollectionFixture<DatabaseFixtureAdapter>
+{
+}

@@ -25,14 +25,22 @@ internal readonly record struct GeoservicesReconciliationGateOutcome
     /// <summary>Per-layer data-reconciliation artifact, when reconciliation ran.</summary>
     public MigrationReconciliationArtifact? Artifact { get; init; }
 
-    /// <summary>Catalog parity report, when one was produced. Always <c>null</c> on the per-layer geoservices path today.</summary>
+    /// <summary>Catalog parity report, when one was produced.</summary>
     public MigrationCatalogReconciliationReport? CatalogReport { get; init; }
 
-    /// <summary>True when a hard finding routes the run to operator review.</summary>
-    public bool NeedsReview { get; init; }
+    /// <summary>
+    /// True when the data-movement reconciliation probe actually ran. <c>false</c> when no
+    /// reconciliation service is registered or the probe threw. Distinguishes "ran and passed" from
+    /// "never ran", which <see cref="Artifact"/> being non-null cannot (#4600).
+    /// </summary>
+    public bool DataCheckExecuted { get; init; }
 
-    /// <summary>Operator-visible reason the run was routed to review. <c>null</c> when the gate passed.</summary>
-    public string? ReviewReason { get; init; }
+    /// <summary>
+    /// True when the catalog reconciliation pass actually ran against a published catalog entry.
+    /// <c>false</c> when there was no read-back seam, no activated snapshot, or no published entry
+    /// to locate — in each case schema parity is unproven rather than proven good (#4600).
+    /// </summary>
+    public bool CatalogCheckExecuted { get; init; }
 }
 
 internal sealed partial class GeoservicesLayerPublicationService
@@ -65,8 +73,8 @@ internal sealed partial class GeoservicesLayerPublicationService
             // Catalog reconciliation (issue #1379): reconcile the published Metadata v2 catalog entry
             // against the apply-time source layer definition. This is the deeper "counts can match
             // while the schema is wrong" pass (schema/domain/identifier/relationship/attachment/
-            // subtype). It is recorded on the artifact and surfaced separately; it does NOT change
-            // the #1380 gate verdict, which stays driven by the data-movement artifact below.
+            // subtype). Since #4600 its findings feed the same unified migration verdict as the
+            // data-movement artifact rather than being recorded and then ignored.
             var catalogReport = await RunCatalogReconciliationAsync(
                 jobId,
                 layerInfo,
@@ -80,20 +88,12 @@ internal sealed partial class GeoservicesLayerPublicationService
                 artifact = artifact with { CatalogReconciliation = catalogReport };
             }
 
-            // Parity gate (issue #1380): a hard (fail) finding blocks Completed and routes the run to
-            // NeedsReview. Warn and skipped classifications are recorded on the artifact but do not
-            // block — they surface to operators without halting the import.
-            var needsReview = string.Equals(
-                artifact.Classification,
-                MigrationReconciliationClassifications.Fail,
-                StringComparison.Ordinal);
-
             return new GeoservicesReconciliationGateOutcome
             {
                 Artifact = artifact,
                 CatalogReport = catalogReport,
-                NeedsReview = needsReview,
-                ReviewReason = needsReview ? BuildReviewReason(artifact) : null
+                DataCheckExecuted = true,
+                CatalogCheckExecuted = catalogReport is not null
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -157,16 +157,6 @@ internal sealed partial class GeoservicesLayerPublicationService
             SourceKind = "arcgis-geoservices-rest",
             Layers = [layerInput]
         };
-    }
-
-    private static string BuildReviewReason(MigrationReconciliationArtifact artifact)
-    {
-        if (artifact.Reasons.Length > 0)
-        {
-            return $"Post-publish reconciliation reported {artifact.Summary.FailCount} blocking finding(s): {string.Join(" ", artifact.Reasons)}";
-        }
-
-        return $"Post-publish reconciliation reported {artifact.Summary.FailCount} blocking finding(s).";
     }
 
     /// <summary>

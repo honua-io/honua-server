@@ -133,7 +133,12 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis)
             var resultRoot = resultDoc.RootElement;
             resultRoot.GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
             resultRoot.GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
-            resultRoot.GetProperty("value").GetString().Should().Be(DurableArtifactUri);
+            // Esri GPFeatureRecordSetLayer URL results use an object containing url:
+            // https://developers.arcgis.com/rest/services-reference/enterprise/gp-data-types/#feature-service-output
+            var value = resultRoot.GetProperty("value");
+            value.ValueKind.Should().Be(JsonValueKind.Object);
+            value.EnumerateObject().Should().ContainSingle().Which.Name.Should().Be("url");
+            value.GetProperty("url").GetString().Should().Be(DurableArtifactUri);
 
             var jobStore = fixture.GetService<IExecutionJobStore>();
             var durableJob = await jobStore.GetAsync(jobId!);

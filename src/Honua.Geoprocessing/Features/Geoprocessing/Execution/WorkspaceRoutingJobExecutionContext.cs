@@ -55,6 +55,9 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
     public Task AppendLogAsync(ExecutionLogEntry entry, CancellationToken cancellationToken = default)
         => _inner.AppendLogAsync(entry, cancellationToken);
 
+    public Task ThrowIfExecutionLeaseLostAsync(CancellationToken cancellationToken = default)
+        => _inner.ThrowIfExecutionLeaseLostAsync(cancellationToken);
+
     /// <summary>
     /// Registers the artifact both on the durable job record (unchanged default
     /// behavior) and, when <c>env:workspace</c> was requested, as a workspace

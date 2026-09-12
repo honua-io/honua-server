@@ -688,12 +688,20 @@ internal sealed class Wcs20Handler
         // the resource directly from the storage-layer index, with a fallback to
         // publication.LayerIndex for fixtures/graphs that haven't migrated their
         // storage bindings (matches the resolution order used elsewhere in the V2 ports).
-        if (!TryResolveResourceForLayer(snapshot, layerId, out var resource))
+        if (!TryResolveResourceForLayer(snapshot, layerId, out var resource, out var owningService))
         {
             return new LayerCoverageResult(null, null);
         }
 
-        var accessDecision = AccessPolicyHelpers.EvaluateAccess(context, resource.AccessPolicy, servicePolicy: null);
+        // The owning service's policy is part of the decision (honua-server#4388). It
+        // was previously passed as null here, so a service-level read restriction was
+        // discarded on this route: a resource with no policy of its own resolved to
+        // "any authenticated principal", and DescribeCoverage/GetCoverage served the
+        // coverage to a caller the service denies. Every other classic surface (WMS
+        // and WMTS via RequireAnyResourceAccess, WFS via ValidateLayerWithAccessV2Async)
+        // evaluates both policies.
+        var accessDecision = AccessPolicyHelpers.EvaluateAccess(
+            context, resource.AccessPolicy, owningService?.AccessPolicy);
         if (!accessDecision.IsAllowed)
         {
             return failOnAccessDenied
@@ -707,39 +715,99 @@ internal sealed class Wcs20Handler
             : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, null), null);
     }
 
-    private static bool TryResolveResourceForLayer(MetadataV2GraphSnapshot snapshot, int layerId, out MetadataV2Resource resource)
+    private static bool TryResolveResourceForLayer(
+        MetadataV2GraphSnapshot snapshot,
+        int layerId,
+        out MetadataV2Resource resource,
+        out MetadataV2Service? owningService)
     {
         var matchingBindings = snapshot.Graph.StorageBindings
             .Where(candidate => candidate.StorageLayerId == layerId)
             .ToArray();
-        foreach (var binding in matchingBindings)
+
+        // Storage-layer ids are not unique across stores — the default test graph binds
+        // both a feature resource and a raster resource at id 0 — so a coverage route
+        // must prefer the raster resource rather than whichever binding happens to come
+        // first. Taking the first match would let an unrelated feature service's policy
+        // decide a coverage request.
+        var routable = matchingBindings
+            .Select(binding => snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var candidate)
+                && binding.IsRoutable(candidate)
+                    ? candidate
+                    : null)
+            .Where(candidate => candidate is not null)
+            .Select(candidate => candidate!)
+            .ToArray();
+
+        var preferred = routable.FirstOrDefault(candidate => candidate.Type == MetadataV2ResourceType.RasterDataset)
+            ?? routable.FirstOrDefault();
+        if (preferred is not null)
         {
-            if (snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var byBinding) &&
-                binding.IsRoutable(byBinding))
-            {
-                resource = byBinding;
-                return true;
-            }
+            resource = preferred;
+            owningService = FindOwningService(snapshot, preferred);
+            return true;
         }
         if (matchingBindings.Length > 0)
         {
             resource = default!;
+            owningService = null;
             return false;
         }
 
-        var resolved = snapshot.Graph.Publications
+        var candidate = snapshot.Graph.Publications
             .Where(p => p.LayerIndex == layerId)
             .Select(publication => (Publication: publication, Resource: snapshot.ResolveResource(publication)))
-            .FirstOrDefault(candidate => snapshot.IsRoutable(candidate.Publication))
-            .Resource;
-        if (resolved is not null)
+            .FirstOrDefault(entry => snapshot.IsRoutable(entry.Publication));
+        if (candidate.Resource is not null)
         {
-            resource = resolved;
+            resource = candidate.Resource;
+            owningService = snapshot.Index.ServicesById.TryGetValue(candidate.Publication.ServiceId, out var byPublication)
+                ? byPublication
+                : FindOwningService(snapshot, candidate.Resource);
             return true;
         }
 
         resource = default!;
+        owningService = null;
         return false;
+    }
+
+    /// <summary>
+    /// Finds the service that publishes <paramref name="resource"/> over a coverage
+    /// surface, so the layer-scoped WCS route can honour a service-level access policy
+    /// (honua-server#4388). The route is keyed by an integer storage-layer handle and
+    /// carries no service segment, so the owning service has to be recovered from the
+    /// publication graph.
+    /// </summary>
+    /// <remarks>
+    /// Only services that actually expose this route — those enabling ImageServer or
+    /// WCS — are considered. A resource can be published by several services, and
+    /// borrowing the policy of one that cannot serve coverages at all (a feature
+    /// service, say) would let an unrelated policy decide a coverage request in either
+    /// direction. Returns <see langword="null"/> when no such publication carries a
+    /// policy, which leaves the decision resting on the resource policy alone, exactly
+    /// as before this seam existed.
+    /// </remarks>
+    private static MetadataV2Service? FindOwningService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource)
+    {
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            if (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
+                !snapshot.IsRoutable(publication))
+            {
+                continue;
+            }
+
+            if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
+                service.AccessPolicy is not null &&
+                (IsProtocolEnabled(service, WcsProtocolName) ||
+                 IsProtocolEnabled(service, ServiceProtocols.ImageServer)))
+            {
+                return service;
+            }
+        }
+
+        return null;
     }
 
     private static ServiceResolutionResult ResolveService(
@@ -824,8 +892,10 @@ internal sealed class Wcs20Handler
     /// Resolves the bounded set of transformable CRS values for the supplied coverage
     /// native SRIDs. Seeds each native CRS plus the default identifiers (WGS84, WebMercator),
     /// keeps only those the CRS registry can resolve (== transformable via ST_Transform),
-    /// and returns both the SRID set (for GetCoverage validation) and the ordered EPSG-URI
-    /// list (for GetCapabilities advertisement) so the two always agree.
+    /// and returns both the SRID set (for GetCoverage validation) and the ordered CRS-URI
+    /// list (for GetCapabilities advertisement) so the two always agree. The advertised
+    /// identifiers are the ones this service actually honours, so SRID 4326 is advertised
+    /// as CRS84 (see <see cref="CreateCrsUri"/>).
     /// </summary>
     private async Task<WcsSupportedCrs> ResolveSupportedCrsAsync(
         IEnumerable<int?> nativeSrids,
@@ -858,7 +928,7 @@ internal sealed class Wcs20Handler
             {
                 case true:
                     srids.Add(seed);
-                    uris.Add(CreateEpsgUri(seed));
+                    uris.Add(CreateCrsUri(seed));
                     break;
             }
         }
@@ -1068,7 +1138,7 @@ internal sealed class Wcs20Handler
         }
 
         children.Add(new XElement(Wcs + "CoverageId", FormatCoverageId(coverage.LayerId)));
-        children.Add(new XElement(Wcs + "CoverageSubtype", "gmlcov:RectifiedGridCoverage"));
+        children.Add(new XElement(Wcs + "CoverageSubtype", "RectifiedGridCoverage"));
 
         return new XElement(Wcs + "CoverageSummary", children);
     }
@@ -1101,7 +1171,8 @@ internal sealed class Wcs20Handler
         }
 
         var coverageId = FormatCoverageId(coverage.LayerId);
-        var srsName = CreateEpsgUri(srid);
+        // Coverage coordinates use x/y order, which CRS84 declares (see CreateCrsUri).
+        var srsName = CreateCrsUri(srid);
         description = new XElement(Wcs + "CoverageDescription",
             new XAttribute(Gml + "id", coverageId),
             new XElement(Gml + "boundedBy",
@@ -1134,7 +1205,7 @@ internal sealed class Wcs20Handler
                     Enumerable.Range(1, Math.Max(coverage.Raster.BandCount, 1))
                         .Select(band => BuildBandField(coverage.Raster, band)))),
             new XElement(Wcs + "ServiceParameters",
-                new XElement(Wcs + "CoverageSubtype", "gmlcov:RectifiedGridCoverage"),
+                new XElement(Wcs + "CoverageSubtype", "RectifiedGridCoverage"),
                 new XElement(Wcs + "nativeFormat", Wcs20Utilities.TiffContentType)));
 
         return true;
@@ -2816,9 +2887,13 @@ internal sealed class Wcs20Handler
         var geoTransform = raster.GeoTransform;
         if (geoTransform is { Length: >= 6 })
         {
-            origin = new Coordinate(geoTransform[0], geoTransform[3]);
             xVector = new Coordinate(geoTransform[1], geoTransform[4]);
             yVector = new Coordinate(geoTransform[2], geoTransform[5]);
+            // GDAL transforms locate the pixel corner; GML grid coordinates locate
+            // the sample center. Include both vectors for rotated grids.
+            origin = new Coordinate(
+                geoTransform[0] + (xVector.X + yVector.X) / 2,
+                geoTransform[3] + (xVector.Y + yVector.Y) / 2);
             return true;
         }
 
@@ -2830,14 +2905,17 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        origin = new Coordinate(extent.XMin, extent.YMax);
         xVector = new Coordinate((extent.XMax - extent.XMin) / raster.Width, 0);
         yVector = new Coordinate(0, -((extent.YMax - extent.YMin) / raster.Height));
+        origin = new Coordinate(extent.XMin + xVector.X / 2, extent.YMax + yVector.Y / 2);
         return true;
     }
 
     private static IEnumerable<XAttribute> RootNamespaceAttributes()
     {
+        // CoverageSubtype is a QName. Keep its GML coverage namespace binding
+        // while using the unprefixed spelling accepted by ArcGIS Pro's WCS driver.
+        yield return new XAttribute("xmlns", Wcs20Utilities.GmlcovNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "wcs", Wcs20Utilities.WcsNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "ows", Wcs20Utilities.OwsNamespace);
         yield return new XAttribute(XNamespace.Xmlns + "crs", Wcs20Utilities.CrsNamespace);
@@ -2857,6 +2935,18 @@ internal sealed class Wcs20Handler
 
     private static string CreateEpsgUri(int srid)
         => FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{srid}");
+
+    /// <summary>
+    /// Maps an SRID to the CRS identifier this service both advertises and honours.
+    /// SRID 4326 becomes CRS84 because every coverage envelope, offset vector, SUBSET
+    /// and BBOX here is expressed in longitude/latitude order (TryCreateEnvelope always
+    /// parses east-north); EPSG:4326 declares the opposite latitude/longitude order, so
+    /// advertising it would invite reversed subsets from conforming clients. EPSG:4326
+    /// spellings stay accepted on request for compatibility -- they resolve to the same
+    /// SRID -- but the longitude/latitude identifier is the one clients are offered.
+    /// </summary>
+    private static string CreateCrsUri(int srid)
+        => srid == 4326 ? SpatialReferenceHelpers.Crs84Uri : CreateEpsgUri(srid);
 
     private static string FormatPosition(double x, double y)
         => string.Concat(FormatDouble(x), " ", FormatDouble(y));

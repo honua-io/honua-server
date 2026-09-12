@@ -21,11 +21,97 @@ Each `Honua.Server.Tests` shard carries two timeouts:
 2. **Keep measured p90 at or below 70% of the test cap**
    (`shard_budget_policy.target_utilization`). The inner timeout exists to bound
    a genuine *hang*, not to bound normal test growth — a shard that legitimately
-   needs more time should be given a bigger budget or split, not left to fail
-   intermittently with `exit 124`.
+   needs more time should be split, not left to fail intermittently with
+   `exit 124`. (Historically this rule also allowed re-basing the budget upward;
+   rule 4 supersedes that.)
 3. **A passing shard at or above 80% of its budget is a defect to schedule**
    (`shard_budget_policy.warn_utilization`). `run-server-test-shard.sh` emits
    `::warning::HONUA_SHARD_LOW_HEADROOM` for that case.
+4. **Every shard keeps at least 25% headroom — measured utilization at or below
+   75% of its test cap — and the way to restore it is to move whole test classes
+   out, never to raise the cap.** Raising a cap converts a capacity problem into
+   a slower gate and buys one PR's worth of room; the drain of test-heavy
+   must-fix PRs then refills it. Three shards hit their cap in the 24 hours to
+   2026-09-07 — `Core and Cloud Contracts` (#4450), `STAC Protocol` (#4455) and
+   `Server Features Analytics Studio Export and Reporting` (run 34072577139) —
+   each of which had spent >85% of its budget on the run *before* it went red.
+   `scripts/ci/audit-shard-headroom.py --max-utilization 0.85` is the guard for
+   that window. It runs per shard as a non-required advisory step
+   (`Report shard headroom (advisory)` in `ci.yml`) that also prints the headroom
+   table to the job summary. It reads the **last** measured run, not a p90,
+   because a single run is what any one CI invocation produces; a shard that
+   timed out is scored at the cap it was killed at, not at the truncated
+   duration.
+
+   **Where it fires.** Only on the full matrix — the nightly schedule, a manual
+   dispatch, and the train's `train/batch/*` dispatch. It is *not* a per-PR
+   signal: `pr-gate.yml` runs no shard matrix, so a PR head produces no
+   `*.timing.json` for the audit to read, and `ci.yml` has no `pull_request`
+   trigger by design (#2865). Under the trailing-matrix landing model the
+   warning therefore arrives after merge — its value is that it arrives while
+   the shard still **passes** at >85%, rather than one or more runs later when
+   it times out and turns trunk red. A genuine pre-merge signal would require
+   per-PR shard execution, which #2865 deliberately removed; re-introducing it
+   is out of scope for this guard.
+
+   In guard mode the audit deliberately stops printing its "recommended cap"
+   re-basing advice, so CI never tells an operator to raise the budget this
+   policy forbids. That recommendation is still emitted (and still on the JSON
+   row) when the audit is run without `--max-utilization`, which is the budget
+   re-basing workflow described under "Re-basing the budgets".
+
+### Sizing a split
+
+Size splits with `scripts/ci/summarize-trx-class-intervals.py`, which measures
+per-class **union of `startTime`..`endTime` intervals**. Do not size them from
+the TRX `duration` sum: `duration` excludes fixture and collection setup and
+under-reports an integration shard by a factor of ~3. The union measure predicted
+the #4455 STAC split's post-split wall at 7.1 min against an actual 6.5-7.5 min.
+
+Read `summed/whole` first. At ~1.0 the shard is serial and class placement is
+directly additive, so moving a class moves its whole interval. Above that the
+shard runs collections in parallel, spans overlap, and the union of what remains
+is the honest (conservative) estimate of the residual — a Catalog-only split of
+`GeoServices ImageServer` was rejected on exactly that basis, because it left the
+parent at 88% while `ImageServerEndpointsTests` alone was a 24.1 min union.
+
+**A single test class can be the floor.** When one class already exceeds 75% of
+the shard's cap, no whole-class move reaches the target and the follow-up is to
+split the class in source. `Core Endpoints` remains in that state
+(`FeatureServerEndpointTests`, 24.6 min of a 32 min cap).
+
+`GeoServices MapServer` previously had the same floor: `MapServerEndpointTests`
+occupied 22.9 min of a 29 min cap. Run 34150993948 subsequently exhausted that
+cap after 1743 seconds while still producing output (2 seconds idle), leaving
+no completed TRX. The source split in #4533 preserves its 123 test methods and
+141 parameterized cases across three classes: metadata/query/legend in the
+existing shard (52 cases), export/tile-package/KML in `GeoServices MapServer
+Export` (57 cases), and identify/find in `GeoServices MapServer Identify`
+(32 cases). All use the same per-test lifecycle and cleanup. The two sibling
+shards retain the original 29-minute test and 39-minute job caps. The minor
+MapServer classes still belong to `GeoServices Geometry VectorTile and
+Versioning`; its catch-all excludes all three endpoint classes.
+
+Full CI [run 34163714144](https://github.com/honua-io/honua-server/actions/runs/34163714144)
+on source `a6b9a4d552e2fe2d95ab0fb4c523a51023f5df5e` completed all three
+partitions with 141 passes and no skipped cases. TRX method identities and
+parameter-case counts match all 123 original methods exactly. The recorded
+test wall times include fixture setup and cleanup:
+
+| Partition | Passed / total | Test wall time | Utilization of unchanged 29-minute cap |
+|---|---|---|---|
+| Metadata/query/legend | 52 / 52 | 300 seconds | 17.24% |
+| Export/tile-package/KML | 57 / 57 | 315 seconds | 18.10% |
+| Identify/find | 32 / 32 | 160 seconds | 9.20% |
+
+Each timing artifact reports `capacity_status: ok`, exit 0, and no timeout or
+kill escalation. These are single-run measurements, not a p90 estimate. The
+source-bound hashes and normalization provenance are retained in the
+[verification record](mapserver-shard-capacity-20260907.json). Wider CI is not
+claimed green: the original source has the expected generated-catalog drift
+plus separate Studio/export/import failures requiring attribution. Later
+tests, including the QGIS point-literal regressions in #4523, must be included
+when assessing their final branch.
 
 ## Signals
 
@@ -559,3 +645,394 @@ classes from a shard already at 8% utilisation, and `Server Features Misc` sheds
 four from a 61% shard, so neither needs a re-base. Fold the observed
 `server-tests-raster-serving` p90 into the table above at the next audit
 (`scripts/ci/audit-shard-headroom.py`).
+
+## Core and Cloud Contracts capacity split (2026-09-06, #4451)
+
+Trunk went red at `3c4a8cd` with `Server Tests (Core and Cloud Contracts)` at
+exit 124: `HONUA_SHARD_CAPACITY_EXHAUSTED`, 1561s against the 26-minute inner
+cap, 4 idle seconds at exit, every test that ran passed. The newer tip
+`470dd1b` reproduced it ([`34028070097`](https://github.com/honua-io/honua-server/actions/runs/34028070097),
+1562s). This is a capacity failure, not a defect in a landing.
+
+### Evidence: one class, and it is serialized
+
+The last passing run of the shard,
+[`34022872366`](https://github.com/honua-io/honua-server/actions/runs/34022872366)
+at `010a3c0`, took **1041s (17.4 min, 67% of cap)**. Only two commits separate
+it from the first red run, and diffing the console results of the two shard logs
+shows the red run executed **exactly the same 442 tests plus 15 cases of one new
+class** — `PatchConcurrencyTests`, added by #4354 — and was killed while still
+inside it.
+
+`PatchConcurrencyTests` carries `[Collection("Database")]`, the one
+database-backed collection still declared `DisableParallelization` (see
+`tests/dotnet/Honua.Server.Tests/DatabaseCollection.cs`; #1359 moved the rest of
+the Core classes onto the parallel `Database.*` siblings). Its cases therefore
+run strictly one at a time and add their full duration to whichever shard owns
+them instead of overlapping with it. Both timeout runs measure the same rate:
+
+| Run | Cases completed | Wall span | Per case | Projected 40 cases |
+|---|---:|---:|---:|---:|
+| `34025905230` | 15 of 40 | 246.6s | 16.4s | 10.9 min |
+| `34028070097` | 26 of 40 | 422.3s | 16.2s | 10.8 min |
+
+Adding ~10.9 min of serial work to a shard that already sat at 17.4 min of a
+26-minute cap cannot fit under any placement, which is why the class moves
+rather than the budget.
+
+### The split
+
+`Core Mutation Concurrency` (inner 20, job 30 — the standard gap of 10) takes
+`PatchConcurrencyTests` alone. Four further classes leave `Core and Cloud
+Contracts` for shards that already have headroom, so the remainder keeps margin
+under the runner contention both red runs ran into. Per-class spans are from
+`scripts/ci/summarize-trx-class-intervals.py` over the last passing run's TRX;
+the shard columns are `scripts/ci/audit-shard-headroom.py` over run
+`34025905230`.
+
+| Class | Span (min) | Collection | From | To |
+|---|---:|---|---|---|
+| `PatchConcurrencyTests` | 10.9 (projected) | `Database` (serial) | Core and Cloud Contracts | **Core Mutation Concurrency** |
+| `CrsTransformationCorrectnessTests` | 4.38 | `Database.CoreSpatial` | Core and Cloud Contracts | Core Attachments and Records |
+| `AdvancedSpatialQueryTests` | 3.56 | `Database.CoreSpatial` | Core and Cloud Contracts | Core Endpoints |
+| `ApiSurfaceComplianceTests` | 1.90 | `Database` (serial) | Core and Cloud Contracts | STAC and API Governance |
+| `TestQualityValidationTests` | 0.90 | `Database` (serial) | Core and Cloud Contracts | STAC and API Governance |
+
+Projected headroom, taking every receiving shard's cost as fully additive (the
+pessimistic bound — three of the four moved classes are on parallel sibling
+collections and will overlap with their new shard's work):
+
+| Shard | Measured p90 | Change | Projected | Inner cap | Projected / cap |
+|---|---:|---|---:|---:|---:|
+| Core and Cloud Contracts | 26.0 (exit 124) | −5 classes, incl. all 10.9 min of serial patch work | ≤ 17.4 | 26 | ≤ 67% |
+| Core Mutation Concurrency | — (new) | +`PatchConcurrencyTests` | ~12.5 | 20 | ~63% |
+| Core Endpoints | 18.9 | +`AdvancedSpatialQueryTests` | ≤ 22.5 | 32 | ≤ 70% |
+| Core Attachments and Records | 10.9 | +`CrsTransformationCorrectnessTests` | ≤ 15.3 | 26 | ≤ 59% |
+| STAC and API Governance | 3.5 | +2 governance classes | ≤ 6.3 | 20 | ≤ 32% |
+
+The `Core and Cloud Contracts` bound is exact rather than modelled: after the
+move its test set is a strict subset of what run `34022872366` executed in
+17.4 min, so it cannot run longer. `Core Mutation Concurrency` is a new matrix
+entry with no measured p90 — its 20/30 budget is the projected 10.9 min class
+span plus the ~1.5 min of `dotnet test` startup, discovery and container warm-up
+that separates a shard's `timing.json` wall from its TRX span. Fold its observed
+p90 into the next audit.
+
+`.github/ci-shards.json` records the pre-split ownership in
+`shard_partitions`, so `scripts/ci/check-server-test-shard-coverage.py` fails if
+any class the old filters claimed ends up orphaned or double-owned.
+
+## STAC Protocol capacity split (2026-09-06, #3204)
+
+Trunk went red at `959a830` with `Server Tests (STAC Protocol)` at exit 124 on
+**both attempts** of run
+[`34039679229`](https://github.com/honua-io/honua-server/actions/runs/34039679229):
+
+```text
+##[error]HONUA_SHARD_CAPACITY_EXHAUSTED shard='STAC Protocol' hit its 15m test
+budget while still producing output 4s ago. This is shard capacity exhaustion,
+not a hang, and it is not attributable to any single change: raise
+test_timeout_minutes/timeout_minutes or split the shard in .github/ci-shards.json.
+##[error]Server test shard 'STAC Protocol' timed out after 15 minute(s).
+Filter: ((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac)&Tier!=Slow)&Tier!=Fast
+```
+
+Attempt 1 (job `101504134560`) built locally and reported **no failing test** —
+it was killed mid-run at the cap. Attempt 2 (job `101509249930`) reproduced the
+same exhaustion. No landing between the last green run and `959a830` touched
+this shard: #4450 changed `.github/ci-shards.json` but not the `STAC Protocol`
+entry, and #4451 touched `ExecutionQualification*` and `RedisFixture` only.
+
+### Evidence: the shard was already over the warn line, and it is fully serial
+
+The last green run of the shard,
+[`34034090781`](https://github.com/honua-io/honua-server/actions/runs/34034090781)
+at `58d45bc`, wrote this `timing.json`:
+
+```json
+{"duration_seconds":766,"timeout_seconds":900,"headroom_ratio":0.8511,
+ "capacity_status":"low_headroom","idle_seconds_at_exit":5,"timed_out":false}
+```
+
+`low_headroom` is the "defect to schedule" signal from the policy above; the
+shard tipped over on the next run rather than growing into a cap it had room
+for. `scripts/ci/summarize-trx-class-intervals.py` over that run's TRX reports
+`summed/whole = 0.98 (serial - spans are additive)`: **136 tests occupy 755s of
+wall with 19s of total idle and no two classes overlapping.** Every class in the
+assembly carries `[Collection("Database")]`, the one collection still declared
+`DisableParallelization`, and the five heavy ones construct a `WebAppFixture`
+per *case* (class-level `IAsyncLifetime`), so a case costs ~9.4s of host
+construction that cannot overlap with anything else. Class placement is
+therefore directly additive and a split moves whole intervals.
+
+### The split
+
+`STAC Items and Collections` takes the two heaviest classes; `STAC Protocol`
+keeps the rest. Both budgets are unchanged at inner 15 / job 25.
+
+| Class | Span (min) | Cases | From | To |
+|---|---:|---:|---|---|
+| `StacCollectionsTests` | 3.00 | 18 | STAC Protocol | **STAC Items and Collections** |
+| `StacItemsTests` | 2.81 | 19 | STAC Protocol | **STAC Items and Collections** |
+
+| Shard | Measured p90 | Change | Projected | Inner cap | Projected / cap |
+|---|---:|---|---:|---:|---:|
+| STAC Protocol | 15.0 (exit 124) | −`StacItemsTests`, −`StacCollectionsTests` | ≤ 6.5 | 15 | ≤ 43% |
+| STAC Items and Collections | — (new) | +2 classes | ~5.8 + startup | 15 | ~43% |
+
+Both bounds are exact rather than modelled: after the move each shard's test set
+is a strict subset of what run `34034090781` executed in 12.8 min on a serial
+timeline, so neither can run longer than its share of that span. Even at the
+1.35x runner contention the failing attempt measured (128 tests in 900s against
+136 in 755s), both stay under the 70% target. Fold the observed p90s into the
+next audit.
+
+### The split's one hazard: the hosted Blazor content root
+
+Two shards on the same `csproj` change the build topology. `ci.yml` sorts the
+matrix by `-dispatch_rank` and `scripts/ci/server-test-shard-cache.sh` makes the
+first selected shard for a project the exact-head cache **writer**; every later
+sibling materializes the writer's packaged payload instead of building
+(`plan-server-test-reuse-benchmark.py` calls the same relationship a "producer"
+with "reused consumers").
+
+`scripts/ci/package-server-test-binaries.sh` stages only the *test project's*
+`bin/` and `obj/`. `Honua.Server.staticwebassets.runtime.json` in that output
+resolves `/samples/stac-ops/` from six content roots, and two of them are build
+outputs of a **different** project:
+
+```text
+samples/Honua.StacOpsDemo/wwwroot/                       <- source, always present
+samples/Honua.StacOpsDemo/bin/Release/net10.0/wwwroot/   <- build output, NOT packaged
+samples/Honua.StacOpsDemo/obj/Release/net10.0/compressed/ <- build output, NOT packaged
+```
+
+That is exactly what attempt 2 of `34039679229` showed. It materialized the
+payload (`REASON: exact_cache_hit`, `Build server test binaries` skipped) and
+`StacOpsDemoEndpointTests.GetStacOpsDemoFrameworkAsset_WhenDemoEnabled_ReturnsStaticFile`
+failed with `Expected ... HttpStatusCode.OK ... but found HttpStatusCode.NotFound`
+on `/samples/stac-ops/_framework/blazor.webassembly.js`, while
+`GetStacOpsDemo_ServesHostedSampleShell` passed — `index.html` comes from the
+source content root, the 420 files under `_framework/` do not. The same four
+tests all passed on the building attempt 1.
+
+That defect predates this split (any rerun of the single shard hit it) and is
+tracked separately as #4453, not fixed here. What the split must not do is promote it from a rerun-only
+failure to an attempt-1 failure, so `StacOpsDemoEndpointTests` stays on the
+higher-`dispatch_rank` shard, which is the writer and therefore the one shard
+that still builds on attempt 1. It is only attempt 1 that this buys:
+`server-test-shard-cache.sh` tests `run_attempt > 1` *before* the writer
+designation, so on a rerun the writer materializes the payload like everyone
+else and the class 404s again exactly as attempt 2 did. Ranking cannot fix the
+rerun case; #4453 has to. `scripts/ci/validate-ci-router.sh` pins both halves of
+what ranking *can* hold: the class's owning shard, and that shard being the
+top-ranked one for its `csproj`.
+
+### Local verification of the split
+
+Both post-split filters were run on the lane box with
+`scripts/ci/run-server-test-shard.sh` (the same script CI runs), Release,
+testcontainers Postgres, while four other lanes were building — so these are
+pessimistic numbers against a dedicated CI runner:
+
+| Shard | Tests | Result | Test time | % of 15m cap |
+|---|---:|---|---:|---:|
+| STAC Protocol | 99 | 98 passed, 1 environmental (below) | 9.37 min | 62% |
+| STAC Items and Collections | 37 | 37 passed | 7.91 min | 53% |
+
+`99 + 37 = 136`, the exact test count the pre-split shard ran on the last green
+run `34034090781`, so the split neither drops nor duplicates a case. Even at
+these contended local timings both shards clear the 15m cap with more than 20%
+headroom; the CI projections above (43% and 39%) are the expected steady state.
+
+`scripts/ci/summarize-trx-class-intervals.py` over the two local TRX files
+independently reproduces the serial premise this split relies on —
+`summed/whole = 0.99 (serial - spans are additive)` — and ranks the classes:
+
+```text
+ span p50  key
+     4.59  StacSearchTests
+     4.01  StacCollectionsTests
+     3.90  StacItemsTests
+     2.06  StacProviderNeutralRoutingTests
+     1.74  StacPagingRegressionTests
+     0.54  StacTemporalSearchRegressionTests
+```
+
+The one failure was
+`StacSearchTests.SearchPost_WithInvalidThreeDimensionalBbox_ReturnsBadRequest`
+throwing `InvalidOperationException : PostGIS preflight check failed` out of
+host construction, not out of a STAC assertion. It is local Docker contention,
+not a split effect: its GET twin
+`SearchGet_WithInvalidThreeDimensionalBbox_ReturnsBadRequest` passed in the same
+run, `PostGIS preflight check passed` appears repeatedly around it, the class
+sits on the same shard before and after the split, and CI attempt 1 at this same
+`959a830` reported no failing test at all.
+
+
+## Fleet-wide headroom rebalance (2026-09-07, #3204)
+
+Trunk went red at `3139aa7` on run
+[34072577139](https://github.com/honua-io/honua-server/actions/runs/34072577139):
+`Server Features Analytics Studio Export and Reporting` hit
+`HONUA_SHARD_CAPACITY_EXHAUSTED` at its 22 min budget with every executed test
+passing, after #4475 added export/capability cases to it. It was the third
+shard-budget red in 24 hours (`Core and Cloud Contracts` -> #4450, `STAC
+Protocol` -> #4455), so this pass audited **every** server-test shard instead of
+the one that failed.
+
+**Baseline.** p90 of the measured test-step duration per shard over the four
+full runs on the current config — 34054772215, 34058058911, 34066674166 and the
+red 34072577139 — with the timed-out shard scored at the cap it was killed at.
+Run 34022872366 is deliberately excluded: it predates #4450/#4455 and its
+pre-split durations would misreport `Core and Cloud Contracts` and `STAC
+Protocol`. **14 of 59 shards were at or above 75% of budget.**
+
+**Method.** Per-class union-of-intervals (see "Sizing a split" above), not the
+TRX `duration` sum. Splits were chosen to balance the two halves, and three
+candidate cuts were measured and rejected for leaving a child over the line:
+Catalog-only for `GeoServices ImageServer` (88%), Identity+Mobile together for
+`Server Features Collaboration Mobile and Identity` (73% next to 15%), and
+Processes-vs-Tiles for `OGC API Tiles Coverages and Processes` (77% either way,
+that shard being the most parallel of the set at `summed/whole` = 1.95).
+
+**Result.** 59 -> 71 shards: 12 new shards, plus four whole-class moves into
+existing shards with room (`GeoServices Geometry VectorTile and Versioning`,
+`Server Features Streaming Endpoints`, `OData Pagination and Spatial`) where a
+new runner job was not justified. **No budget was raised or lowered.** The
+longest shard drops from 31.9 min to a predicted 24.2 min, which also shortens
+the gate's critical path.
+
+Two shards remain above 75% and cannot be fixed by moving whole classes, because
+a single class is over the line on its own; splitting those classes in source is
+the follow-up:
+
+| Shard | Cap | Blocking class | Class union |
+|---|---:|---|---:|
+| `GeoServices MapServer` | 29m | `MapServerEndpointTests` (130 cases) | 22.9m (79%) |
+| `Core Endpoints` | 32m | `FeatureServerEndpointTests` (131 cases) | 24.6m (77%) |
+
+### Before / after
+
+"After" is the predicted union for shards this change touched, and the measured
+baseline carried forward for the shards it does not.
+
+| Shard | Before p90 | Cap | Before util | After (predicted) | Cap | After util |
+|---|---:|---:|---:|---:|---:|---:|
+| GeoServices MapServer | 24.6m | 29m | 85% | 22.9m | 29m | 79% ⚠️ |
+| Core Endpoints | 26.3m | 32m | 82% | 24.6m | 32m | 77% ⚠️ |
+| Security and Authorization | 21.4m | 30m | 71% | 21.4m | 30m | 71% |
+| GeoServices ImageServer | 31.9m | 35m | 91% | 24.2m | 35m | 69% |
+| Server Features Admin Operations Endpoints | 14.9m | 22m | 68% | 14.9m | 22m | 68% |
+| Scene | 19.5m | 30m | 65% | 19.5m | 30m | 65% |
+| FeatureServer Endpoints Query Services and Replication | 16.9m | 26m | 65% | 16.9m | 26m | 65% |
+| OGC API Features | 13.9m | 22m | 63% | 13.9m | 22m | 63% |
+| OData Core | 26.0m | 29m | 90% | 18.3m | 29m | 63% |
+| Elevation and Terrain Analysis **(new)** | — | — | — | 9.4m | 15m | 63% |
+| Server Features Admin Authorization | 13.8m | 22m | 63% | 13.8m | 22m | 63% |
+| WFS | 15.4m | 25m | 62% | 15.4m | 25m | 62% |
+| OGC API Tiles Coverages and Processes | 17.1m | 22m | 78% | 13.5m | 22m | 61% |
+| Operator Eval Harness | 12.3m | 20m | 61% | 12.3m | 20m | 61% |
+| OGC API Tiles Endpoints and CRS **(new)** | — | — | — | 13.4m | 22m | 61% |
+| Server Features Miscellaneous | 17.8m | 22m | 81% | 13.4m | 22m | 61% |
+| Geocoding | 9.0m | 15m | 60% | 9.0m | 15m | 60% |
+| OGC Classic Maps | 12.0m | 20m | 60% | 12.0m | 20m | 60% |
+| OData Advanced and Filters | 16.5m | 22m | 75% | 13.2m | 22m | 60% |
+| Caching File Storage Styling and Infrastructure | 17.9m | 30m | 60% | 17.9m | 30m | 60% |
+| GeoServices Catalog and ImageServer Support **(new)** | — | — | — | 10.7m | 18m | 59% |
+| Core Attachments and Records | 15.4m | 26m | 59% | 15.4m | 26m | 59% |
+| Server Features Streaming Endpoints | 12.5m | 22m | 57% | 13.0m | 22m | 59% |
+| File and Raster Import | 18.9m | 20m | 94% | 11.7m | 20m | 58% |
+| WFS Endpoints | 12.5m | 22m | 57% | 12.5m | 22m | 57% |
+| Server Features Collaboration Mobile and Identity | 21.2m | 22m | 96% | 12.1m | 22m | 55% |
+| GeoServices GPServer and NAServer | 11.8m | 22m | 54% | 11.8m | 22m | 54% |
+| STAC Protocol | 8.0m | 15m | 53% | 8.0m | 15m | 53% |
+| Migration Source Imports **(new)** | — | — | — | 13.2m | 25m | 53% |
+| Server Features Studio Packaging **(new)** | — | — | — | 11.5m | 22m | 52% |
+| Server Features Admin Authentication and Credentials | 11.5m | 22m | 52% | 11.5m | 22m | 52% |
+| Server Features Console and Alerts | 11.0m | 22m | 50% | 11.0m | 22m | 50% |
+| MCP and Sessions | 17.3m | 20m | 86% | 10.0m | 20m | 50% |
+| OGC API Maps and Tiles | 10.9m | 22m | 50% | 10.9m | 22m | 50% |
+| Admin & Infrastructure | 15.6m | 32m | 49% | 15.6m | 32m | 49% |
+| Migration | 27.4m | 29m | 95% | 14.0m | 29m | 48% |
+| MCP Authentication and Governance **(new)** | — | — | — | 7.2m | 15m | 48% |
+| Server Features Capabilities **(new)** | — | — | — | 10.4m | 22m | 47% |
+| Cloud and Streaming Import **(new)** | — | — | — | 7.0m | 15m | 47% |
+| Server Features Sharing | 10.3m | 22m | 47% | 10.3m | 22m | 47% |
+| Server Features Analytics Studio Export and Reporting | 22.0m | 22m | 100% | 10.2m | 22m | 46% |
+| Server Features Data Enrichment and Capabilities | 19.4m | 22m | 88% | 10.0m | 22m | 46% |
+| GeoServices Geometry VectorTile and Versioning | 9.1m | 24m | 38% | 10.5m | 24m | 44% |
+| OData Pagination and Spatial | 6.5m | 22m | 30% | 9.5m | 22m | 43% |
+| Server Features Identity **(new)** | — | — | — | 9.0m | 22m | 41% |
+| FeatureServer Tiles and Replica | 8.9m | 22m | 41% | 8.9m | 22m | 41% |
+| OGC Classic WMTS | 7.8m | 20m | 39% | 7.8m | 20m | 39% |
+| Server Features Admin Governance and Sharing | 8.4m | 22m | 38% | 8.4m | 22m | 38% |
+| OData Errors and Conformance **(new)** | — | — | — | 7.4m | 20m | 37% |
+| Server Features Spec Printing and Static Maps | 17.4m | 48m | 36% | 17.4m | 48m | 36% |
+| Server Features Admin Network and Jobs | 7.6m | 22m | 34% | 7.6m | 22m | 34% |
+| OData Mutations and Batch | 6.8m | 20m | 34% | 6.8m | 20m | 34% |
+| Core Spatial Query and Streaming **(new)** | — | — | — | 4.9m | 15m | 32% |
+| Server Features Admin Platform and Connections | 6.8m | 22m | 31% | 6.8m | 22m | 31% |
+| Server Features Admin Integrations and Automation | 6.8m | 22m | 31% | 6.8m | 22m | 31% |
+| Server Features Admin Catalog and Configuration | 6.6m | 22m | 30% | 6.6m | 22m | 30% |
+| SensorThings | 4.4m | 15m | 29% | 4.4m | 15m | 29% |
+| Raster Serving Scene Geometry and Terrain | 15.4m | 20m | 77% | 5.8m | 20m | 29% |
+| Server Features Admin Release Control | 6.3m | 22m | 29% | 6.3m | 22m | 29% |
+| FeatureServer Maintenance and Temporal | 6.3m | 22m | 29% | 6.3m | 22m | 29% |
+| Server Features Admin Runtime Operations | 6.3m | 22m | 29% | 6.3m | 22m | 29% |
+| Server Features Studio AI **(new)** | — | — | — | 4.2m | 15m | 28% |
+| STAC and API Governance | 5.4m | 20m | 27% | 5.4m | 20m | 27% |
+| STAC Items and Collections | 3.8m | 15m | 26% | 3.8m | 15m | 26% |
+| Server Features Streaming Snapshot and Conformance | 7.4m | 30m | 25% | 7.4m | 30m | 25% |
+| Server Features Admin Layer Management | 7.3m | 35m | 21% | 7.3m | 35m | 21% |
+| Server Features Admin Tiles and Scenes | 7.1m | 35m | 20% | 7.1m | 35m | 20% |
+| Core and Cloud Contracts | 5.1m | 26m | 20% | 5.1m | 26m | 20% |
+| Core Mutation Concurrency | 3.7m | 20m | 18% | 3.7m | 20m | 18% |
+| OData Client Certification | 4.0m | 25m | 16% | 4.0m | 25m | 16% |
+| GP Devkit CLI | 0.1m | 10m | 1% | 0.1m | 10m | 1% |
+
+## GPServer and NAServer capacity split (2026-09-11)
+
+Trunk went red at `cec6b0b` on run
+[34616571873](https://github.com/honua-io/honua-server/actions/runs/34616571873):
+both attempts of `GeoServices GPServer and NAServer` hit
+`HONUA_SHARD_CAPACITY_EXHAUSTED` at the 22m budget (1321s and 1322s, 3-4s
+idle), with no failing test in either log.
+
+### Evidence: growth, then a slow runner
+
+`cec6b0b` touched only an OGC Processes test, so the shard's code was identical
+to its parent `873fe9b`, which passed. The test step grew from 801s at `bbcb3f9`
+(109 cases) to 991s at `873fe9b` (153 cases, 74% of cap) after #4615 added
+`GPServerSoapEndpointsTests` and ten more alias endpoint cases. Both red
+attempts then ran nearly every test about 1.4x slower than `873fe9b` and were
+killed six cases short. The shard was already above the 70% target, so one
+slow runner was enough to exhaust it.
+
+`summed/whole` is 1.41 at `873fe9b`, so the shard runs classes in parallel and
+the union is the honest measure. `GPServerEndpointTests` is a 10.7m union of
+the 16.3m whole. Moving the SOAP and alias classes out instead would have left
+the parent at a 13.1m union (59%, about 83% at 1.4x), because the endpoint
+class runs alongside them.
+
+### The split
+
+`GPServerEndpointTests` moves to a new `GeoServices GPServer Endpoints` shard.
+`GeoServices GPServer and NAServer` keeps every other GPServer and NAServer
+class, plus the Routing paths. Both keep the unchanged 22m test and 32m job
+caps. The `GPServer and NAServer capacity partition` contract preserves the
+original class surface with exactly one owner per class.
+
+The slow timing is now the norm: the next trunk run, at `ac0d5d0`
+([34623708857](https://github.com/honua-io/honua-server/actions/runs/34623708857)),
+passed all 153 cases at 1321s, 100.1% of the cap. That TRX gives the current
+sizing:
+
+| Shard | Union at `873fe9b` | Union at `ac0d5d0` | Cap | Util at `ac0d5d0` |
+|---|---:|---:|---:|---:|
+| GeoServices GPServer Endpoints **(new)** | 10.7m | 14.3m | 22m | 65% |
+| GeoServices GPServer and NAServer | 5.6m | 7.5m | 22m | 34% |
+
+The GeoServices test project's exact-head cache writer is still
+`GeoServices ImageServer` (rank 26.9), so this split does not move the #4453
+static-asset hazard.

@@ -31,6 +31,12 @@ public sealed class CreateReplicaRequest
     /// <summary>
     /// Return attachments with the replica.
     /// </summary>
+    /// <remarks>
+    /// Not supported. This server does not replicate attachments; <c>createReplica</c>
+    /// rejects <c>returnAttachments=true</c> with a 400 rather than silently producing a
+    /// replica without them (honua-server#4405). The property is retained so the Esri
+    /// request shape still binds.
+    /// </remarks>
     [JsonPropertyName("returnAttachments")]
     public bool ReturnAttachments { get; set; }
 
@@ -497,7 +503,7 @@ public sealed class SynchronizeReplicaResponse
     public string? SyncDirection { get; set; }
 
     /// <summary>
-    /// Current server generation number after synchronization.
+    /// Acknowledged download generation. Upload-only calls retain the preceding download cursor.
     /// </summary>
     [JsonPropertyName("serverGen")]
     public long ServerGen { get; set; }
@@ -594,6 +600,18 @@ public sealed class SynchronizeReplicaConflict
 /// </summary>
 public sealed class SynchronizeReplicaLayerEdits
 {
+    /// <summary>Stock Esri feature edit envelope.</summary>
+    [JsonPropertyName("features")]
+    public SynchronizeReplicaFeatureEdits? Features { get; set; }
+
+    /// <summary>Stock Esri delete-id alias for the legacy flat layer shape.</summary>
+    [JsonPropertyName("deleteIds")]
+    public long[]? DeleteIds { get; set; }
+
+    /// <summary>Attachment edits, checked for unsupported nonempty uploads.</summary>
+    [JsonPropertyName("attachments")]
+    public System.Text.Json.JsonElement Attachments { get; set; }
+
     /// <summary>Service-local layer id the edits target.</summary>
     [JsonPropertyName("id")]
     public int Id { get; set; }
@@ -609,6 +627,24 @@ public sealed class SynchronizeReplicaLayerEdits
     /// <summary>Object ids to delete.</summary>
     [JsonPropertyName("deletes")]
     public long[]? Deletes { get; set; }
+}
+
+/// <summary>
+/// Feature operations carried by a stock Esri per-layer sync envelope.
+/// </summary>
+public sealed class SynchronizeReplicaFeatureEdits
+{
+    /// <summary>Features to create.</summary>
+    [JsonPropertyName("adds")]
+    public GeoServicesFeature[]? Adds { get; set; }
+
+    /// <summary>Features to update.</summary>
+    [JsonPropertyName("updates")]
+    public GeoServicesFeature[]? Updates { get; set; }
+
+    /// <summary>Object IDs to delete.</summary>
+    [JsonPropertyName("deleteIds")]
+    public long[]? DeleteIds { get; set; }
 }
 
 /// <summary>

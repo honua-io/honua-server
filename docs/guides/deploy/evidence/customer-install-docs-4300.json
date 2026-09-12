@@ -1,0 +1,87 @@
+{
+  "kind": "customer-install-documentation-pre-cut-validation",
+  "observedAt": "2026-09-08T17:56:02.231266+00:00",
+  "documentRevision": "a27184e7c4",
+  "environment": "Ubuntu 24.04 / Python 3.12 / Bash through WSL; Docker Desktop Linux engine 29.6.2, anonymous Docker configuration; native Windows PowerShell 5.1 syntax checks only",
+  "server": {
+    "image": "ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9",
+    "sourceSha": "5a657b9eaed7cdeac915d584ad58c028a52ca61e",
+    "platform": "linux/amd64",
+    "manifestUrl": "https://ghcr.io/v2/honua-io/honua-server/manifests/sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9",
+    "credentialsRequired": false,
+    "selectionSource": "https://github.com/honua-io/honua-server/pull/4429",
+    "verification": "Anonymous GHCR OCI index bytes SHA-256 and amd64 configuration revision checked 2026-09-08"
+  },
+  "clients": {
+    "honua-admin": {
+      "ecosystem": "pypi",
+      "package": "honua-admin",
+      "version": "0.1.8",
+      "filename": "honua_admin-0.1.8-py3-none-any.whl",
+      "digest": "sha256:fe69794cdcf9293e095401a9c361b6cfb00a28886dc504df511a0795d8d7096b",
+      "downloadUrl": "https://files.pythonhosted.org/packages/fc/40/1ab98fcd7c070b2baf0940b2a7fca6b993c8cd1806058901db37e52c825e/honua_admin-0.1.8-py3-none-any.whl",
+      "metadataUrl": "https://pypi.org/pypi/honua-admin/0.1.8/json",
+      "credentialsRequired": false,
+      "role": "control-plane"
+    },
+    "honua-sdk": {
+      "ecosystem": "pypi",
+      "package": "honua-sdk",
+      "version": "0.1.11",
+      "filename": "honua_sdk-0.1.11-py3-none-any.whl",
+      "digest": "sha256:80ac6a25fa5fed0ee7d8dca4ca94d14c098d9f72a149c9e271b1a1d04b78c3e9",
+      "downloadUrl": "https://files.pythonhosted.org/packages/6e/32/95a9b26657362fd35b8506b85af7ae6531a2b463ca094c9a63a5af731353/honua_sdk-0.1.11-py3-none-any.whl",
+      "metadataUrl": "https://pypi.org/pypi/honua-sdk/0.1.11/json",
+      "credentialsRequired": false,
+      "role": "data-plane"
+    },
+    "mcp": {
+      "ecosystem": "pypi",
+      "package": "mcp",
+      "version": "2.1.1",
+      "filename": "mcp-2.1.1-py3-none-any.whl",
+      "digest": "sha256:1c6c31c5d6471c58db76af3af8af67f46d11d01f0a59077d0a308cbdb3d3e915",
+      "downloadUrl": "https://files.pythonhosted.org/packages/50/af/8644cc5fa26a59afd2df2e98eeb19e72926887fa4b7441aba4ff661140db/mcp-2.1.1-py3-none-any.whl",
+      "metadataUrl": "https://pypi.org/pypi/mcp/2.1.1/json",
+      "credentialsRequired": false,
+      "role": "MCP import transport"
+    }
+  },
+  "exactCandidateQualification": false,
+  "cleanWindowsQualification": false,
+  "nativeWindowsRuntimeReplay": false,
+  "linuxLiteralCommandReplay": {
+    "exitCode": 0,
+    "project": "honua-ff8e984182e8",
+    "freshDirectoryVenvAndVolumes": true,
+    "anonymousRegistryAccess": true,
+    "anonymousAdminDenied": true,
+    "authenticatedAdminSucceeded": true,
+    "importPublishQuery": true,
+    "featureCount": 2,
+    "exactNamesValuesCoordinatesAndCrs": true,
+    "restartReadback": true,
+    "databaseBackupRestoreReadback": true,
+    "nonemptyFileStorageBackupRestoreReadback": true,
+    "containerRecreationReadback": true,
+    "scopedTeardown": true,
+    "logSha256": "2ad991dbe7467ddbf22594052d3a8ea2d0628978e9671dff031ddd92ec9bffb3"
+  },
+  "documentationChecks": {
+    "nativePowerShell51BlocksParsed": 30,
+    "linuxBlocksParse": true,
+    "linksAndCodeReferencedAnchors": true,
+    "noRawCurlAdditions": true,
+    "optimizedPythonReadbackCorruptionTests": true,
+    "sharedInstallBlocksIdentical": true,
+    "siteComposeDownloadMatchesGuide": true,
+    "publicManifestMatchesImmutableReleaseSource": true
+  },
+  "limitations": [
+    "The live runtime replay used the Linux shell, not a clean Windows machine.",
+    "Public DNS, TLS proxy and host restart behavior require validation on the deployment host.",
+    "The optional NuGet sample is sourced from the release manifest; it was syntax checked, not runtime restored in this Python journey.",
+    "After the cut, update server and compatible client pins together from the signed release lock and replay on a clean Windows machine in the Windows licensed lane; link the record on #4300."
+  ],
+  "issue": "https://github.com/honua-io/honua-server/issues/4300"
+}

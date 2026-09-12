@@ -63,7 +63,7 @@ public sealed record ObservationStreamStatus
 }
 
 /// <summary>Redis pub/sub envelope used to fan observation frames out across nodes.</summary>
-internal sealed record ClusterBroadcastDto(string OriginInstanceId, ObservationStreamFrame Frame);
+internal sealed record ClusterBroadcastDto(string OriginInstanceId, ObservationStreamFrame Frame, ObservationStreamScope? Scope);
 
 /// <summary>Source-generated JSON context for observation-stream frames.</summary>
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
@@ -88,4 +88,7 @@ internal static partial class ObservationStreamLog
 
     [LoggerMessage(EventId = 5103, Level = LogLevel.Warning, Message = "Observation stream cluster unsubscribe failed during dispose; continuing shutdown.")]
     public static partial void ClusterUnsubscribeFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 5104, Level = LogLevel.Debug, Message = "Observation stream session refused ({Transport}): {Limit} admission cap reached.")]
+    public static partial void SessionRejected(ILogger logger, string transport, ObservationStreamAdmissionLimit limit);
 }

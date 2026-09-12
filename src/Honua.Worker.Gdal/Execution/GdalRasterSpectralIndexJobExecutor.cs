@@ -171,8 +171,6 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                 args.Add(inputPath);
             }
 
-            args.Add("--calc");
-            args.Add(calc);
             args.Add("--type");
             args.Add("Float32");
 
@@ -181,7 +179,15 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
             // gdal_calc's per-input masking).
             var effectiveNoData = explicitNoData
                 ?? await GdalNoData.TryReadSourceNoDataAsync(
-                    runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken).ConfigureAwait(false);
+                    runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken).ConfigureAwait(false)
+                ?? double.NaN;
+            // Undefined indices must be invalid to raster consumers, not merely
+            // NaN pixels tagged as valid under a different nodata sentinel.
+            var noDataLiteral = double.IsNaN(effectiveNoData)
+                ? "numpy.nan"
+                : effectiveNoData.ToString("R", CultureInfo.InvariantCulture);
+            args.Add("--calc");
+            args.Add($"numpy.nan_to_num({calc},nan={noDataLiteral},posinf={noDataLiteral},neginf={noDataLiteral})");
             GdalNoData.AppendNoDataArg(args, effectiveNoData);
 
             args.Add("--overwrite");

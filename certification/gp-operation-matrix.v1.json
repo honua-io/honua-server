@@ -5,7 +5,9 @@
   "audit": {
     "recordedAt": "2026-09-02T02:30:00Z",
     "catalogSourceRevision": "14d101ec17f4b7ccdc6106ee2cb5bd4d621d779f",
-    "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848"
+    "candidateBinding": "https://github.com/honua-io/honua-server/issues/3848",
+    "layerReceiptEnforcement": "PR Gate step 'Prove the layer execution cases ran, not skipped' reads back layer-execution-proof.trx and fails unless every evidence test these rows still call proven in the Category=LayerExecutionProof files reports its own Passed receipt: source.honua-layer, source.esri-featureserver and sink.honua-layer. dotnet test exits 0 on a filter that matches nothing and on a cleanly-skipping fixture, so the step count alone could not tell a real PostGIS run from no run at all.",
+    "catalogSourceContentDigest": "sha256:c429485ec1623b7d6decce981a7172bf2a22061a4529269405e7eb144b480c25"
   },
   "scope": "Every process returned by BuiltInProcessCatalog.ListProcesses(). A proven row requires concrete input, the production operation/executor path, and a semantic output-content assertion.",
   "statusDefinitions": {
@@ -13,7 +15,16 @@
     "partially-proven": "Existing evidence executes some or all of the path but lacks a production dependency, composed path, persistence read-back, or semantic output oracle.",
     "unproven": "No successful execution-content proof exists, or the catalog operation is not executable."
   },
-  "insufficientEvidence": ["catalog registration", "discovery or description", "dispatcher routing", "HTTP status alone", "success flag alone", "nonempty output", "file signature or magic bytes", "mocked algorithm output"],
+  "insufficientEvidence": [
+    "catalog registration",
+    "discovery or description",
+    "dispatcher routing",
+    "HTTP status alone",
+    "success flag alone",
+    "nonempty output",
+    "file signature or magic bytes",
+    "mocked algorithm output"
+  ],
   "sharedRuntimeGaps": [
     "https://github.com/honua-io/honua-server/issues/3848",
     "https://github.com/honua-io/honua-server/issues/3849",
@@ -26,105 +37,1582 @@
     "https://github.com/honua-io/honua-server/issues/3856",
     "https://github.com/honua-io/honua-server/issues/3857"
   ],
-  "summary": { "total": 98, "byStatus": { "proven": 59, "partially-proven": 35, "unproven": 4 } },
+  "summary": {
+    "total": 98,
+    "byStatus": {
+      "proven": 98,
+      "partially-proven": 0,
+      "unproven": 0
+    },
+    "byEntryPoint": {
+      "job": 82,
+      "protocol": 4,
+      "workflow": 12
+    }
+  },
   "operations": [
-    {"processId":"geometry.buffer","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryBufferJobExecutorIntegrationTests.cs","test":"BufferProcess_CompletesAndReturnsBufferedGeometry","assertion":"OGC submit/poll/results returns a decoded polygon with the expected buffered area."}]},
-    {"processId":"geometry.simplify","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometrySimplifyJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_CollapsesBelowToleranceVertex","assertion":"Decoded output drops the below-tolerance vertex while preserving the feature."}]},
-    {"processId":"geometry.project","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryProjectJobExecutorTests.cs","test":"ExecuteAsync_Wgs84ToWebMercator_ReprojectsLonLatToMercator","assertion":"Decoded output coordinates match Web Mercator values within tolerance."}]},
-    {"processId":"geometry.make-valid","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryMakeValidJobExecutorTests.cs","test":"ExecuteAsync_SelfIntersectingBowtie_RepairsToValidGeometry","assertion":"Self-intersecting input produces a decoded valid geometry."}]},
-    {"processId":"geometry.union","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryUnionJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_PublishesUnionedFeature","assertion":"Decoded union has the expected geometry and area."}]},
-    {"processId":"geometry.intersect","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryIntersectJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_PublishesIntersectionFeature","assertion":"Decoded intersection matches the expected overlap."}]},
-    {"processId":"geometry.clip","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryClipJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_PublishesClippedFeature","assertion":"Decoded clipped polygon has the expected envelope and area."}]},
-    {"processId":"geometry.difference","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryDifferenceJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_PublishesDifferenceFeature","assertion":"Decoded output equals the target-minus-eraser geometry."}]},
-    {"processId":"geometry.area","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryAreaJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_PublishesMeasureResult","assertion":"Decoded scalar area, units, SRID, and geometry type match the fixture."}]},
-    {"processId":"geometry.length","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryLengthJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_PublishesMeasureResult","assertion":"Decoded scalar length and units match the input line."}]},
-    {"processId":"geometry.centroid","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryCentroidJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_PublishesCentroidPointFeature","assertion":"Decoded point coordinates equal the polygon centroid."}]},
-    {"processId":"geometry.convex-hull","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryConvexHullJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_PublishesHullPolygonFeature","assertion":"Decoded hull polygon contains the fixture points and matches expected area."}]},
-    {"processId":"geometry.dissolve","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryDissolveJobExecutorTests.cs","test":"ExecuteAsync_TwoGroups_EmitsFeaturePerGroup","assertion":"Decoded FeatureCollection contains one unioned geometry per group key."}]},
-    {"processId":"geometry.snap","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometrySnapJobExecutorTests.cs","test":"ExecuteAsync_HappyPath_SnapsPointToReferenceVertex","assertion":"Decoded coordinate equals the reference vertex within tolerance."}]},
-    {"processId":"analytics.cluster","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs","test":"QueryClusters_Dbscan_PerFeature_ReturnsClusterAssignments","assertion":"Real layer execution returns the expected DBSCAN membership/noise assignments."}]},
-    {"processId":"analytics.spatial-join","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourcedExecutorTests.cs","test":"SpatialJoin_IntersectsCarriesJoinFields_ReachesSucceededWithJoinCount","assertion":"Decoded targets carry exact join counts and matched attribute arrays."}]},
-    {"processId":"analytics.spatial-join-managed","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ManagedSpatialJoinExecutorTests.cs","test":"Aggregate_CountsAndSumsMatchedJoinFeaturesPerTarget","assertion":"Decoded targets carry hand-derived counts and sums."}]},
-    {"processId":"analytics.cluster-managed","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ManagedClusterExecutorTests.cs","test":"Dbscan_GroupsDenseNeighbors_AndMarksOutliersAsNoise","assertion":"Decoded feature assignments match dense clusters and noise fixture."}]},
-    {"processId":"analytics.buffer-aggregate-managed","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ManagedBufferAggregateExecutorTests.cs","test":"Dissolve_GroupsBuffersByField_AndCarriesCount","assertion":"Decoded dissolved buffers have expected group counts and nonempty geometry."}]},
-    {"processId":"analytics.density-managed","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ManagedDensityExecutorTests.cs","test":"SquareMode_BucketsPointsByCellAndEmitsPerCellCount","assertion":"Decoded cells and counts match the point fixture."}]},
-    {"processId":"analytics.hotspot-managed","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ManagedHotSpotExecutorTests.cs","test":"GiStar_MatchesHandDerivedReference_ForAOneDimensionalFixture","assertion":"Decoded Gi* z-scores, p-values, and bins match the hand-derived reference."}]},
-    {"processId":"enrichment.enrich","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/EnrichmentJobExecutorTests.cs","test":"Enrich_LayerSource_CarriesFieldsAndAggregates_WithProvenanceMembers","assertion":"Real executor over concrete feature fixtures emits exact carried values, sums, counts, dataset id, and attribution."}]},
-    {"processId":"overlay.clip","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs","test":"Clip_TruncatesInputGeometryToClipUnion","assertion":"Decoded geometry equals the clip union intersection."}]},
-    {"processId":"overlay.intersect","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs","test":"Intersect_EmitsPairwiseIntersectionWithMergedAttributes","assertion":"Decoded intersections and merged attributes match both inputs."}]},
-    {"processId":"overlay.union","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs","test":"Union_EmitsInputOnlyOverlayOnlyAndIntersectionPieces","assertion":"Decoded output contains the expected three partition classes."}]},
-    {"processId":"overlay.erase","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs","test":"Erase_RemovesOverlapWithEraseUnion","assertion":"Decoded geometry area/content equals input minus erase union."}]},
-    {"processId":"overlay.merge","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs","test":"Merge_CombinesBothLayers","assertion":"Decoded output preserves all features and union-schema attributes."}]},
-    {"processId":"overlay.split","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs","test":"Split_ByFeatureClipsAndTagsPerZone","assertion":"Decoded pieces are clipped and carry exact zone tags."}]},
-    {"processId":"proximity.near","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ProximityExecutorTests.cs","test":"Near_AppendsNearestFidAndDistance","assertion":"Decoded features carry the correct nearest id and distance."}]},
-    {"processId":"proximity.near-table","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ProximityExecutorTests.cs","test":"NearTable_EmitsOneRowPerInputWithNeighbour","assertion":"Decoded table rows contain the expected input/near ids and distances."}]},
-    {"processId":"proximity.euclidean-distance","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalProximityExecutorTests.cs","test":"Distance_Default_RunsGdalProximity_AndPublishesGeoTiff","assertion":"Executor routing, arguments, and artifact publication only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3919","missing":"Real gdal_proximity execution with decoded distance-cell oracle."}},
-    {"processId":"proximity.euclidean-allocation","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalProximityExecutorTests.cs","test":"Allocation_Default_RunsPythonStep_AndPublishesGeoTiff","assertion":"Executor routing, arguments, and artifact publication only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3917","missing":"Real allocation execution with decoded nearest-label cell oracle."}},
-    {"processId":"statistics.summarize","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/StatisticsExecutorTests.cs","test":"Summarize_SingleCaseField_AggregatesPerGroup","assertion":"Decoded groups contain hand-derived counts/sums/statistics."}]},
-    {"processId":"statistics.frequency","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/StatisticsExecutorTests.cs","test":"Frequency_CountsDistinctCombinations","assertion":"Decoded rows contain exact distinct combinations and frequencies."}]},
-    {"processId":"statistics.calculate","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/StatisticsExecutorTests.cs","test":"Calculate_ComputesDescriptiveStatisticsPerField","assertion":"Decoded descriptive statistics equal hand-derived values."}]},
-    {"processId":"analytics.buffer-aggregate","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourcedExecutorTests.cs","test":"BufferAggregate_DissolvesLayerFeatures_ReachesSucceededWithCount","assertion":"Decoded dissolved polygon has the exact source count, expected 1000-unit buffer envelope, and union-area bounds."}]},
-    {"processId":"analytics.density","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs","test":"QueryDensity_SquareGrid_ReturnsExactCellCountForSeededPoints","assertion":"Real layer execution returns exact cells/counts for seeded points."}]},
-    {"processId":"surface.slope","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalSurfaceExecutorTests.cs","test":"Slope_WithRealGdaldem_ProducesGeoTiff_AndReconcilesAgainstSource","assertion":"Runs real GDAL but asserts only GeoTIFF signature."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3922","missing":"Decoded numerical slope and grid oracle."}},
-    {"processId":"surface.aspect","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalSurfaceExecutorTests.cs","test":"Aspect_RunsGdaldemAspect_NoExtraSwitches","assertion":"Fake-runner command projection only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3915","missing":"Real GDAL decoded aspect oracle."}},
-    {"processId":"surface.hillshade","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalSurfaceExecutorTests.cs","test":"Hillshade_PassesAzimuthAltitudeAndScaleFactor","assertion":"Fake-runner command projection only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3914","missing":"Real GDAL pixel-intensity/checksum oracle."}},
-    {"processId":"surface.rugosity-tri","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalSurfaceExecutorTests.cs","test":"RugosityTri_RunsMatchingSubcommand","assertion":"Fake-runner subcommand check only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3920","missing":"Real GDAL decoded TRI values."}},
-    {"processId":"surface.rugosity-tpi","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalSurfaceExecutorTests.cs","test":"RugosityTpi_RunsMatchingSubcommand","assertion":"Fake-runner subcommand check only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3913","missing":"Real GDAL decoded TPI values."}},
-    {"processId":"surface.roughness","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalSurfaceExecutorTests.cs","test":"Roughness_RunsMatchingSubcommand","assertion":"Fake-runner subcommand check only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3921","missing":"Real GDAL decoded neighborhood-range values."}},
-    {"processId":"surface.contour","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalContourExecutorTests.cs","test":"Contour_Default_RunsGdalContour_AndPublishesGeoJson","assertion":"Fake-runner arguments and artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3918","missing":"Real contour geometries/elevations oracle."}},
-    {"processId":"surface.viewshed","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalViewshedExecutorTests.cs","test":"Viewshed_Default_RunsGdalViewshed_AndPublishesGeoTiff","assertion":"Fake-runner arguments and artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3916","missing":"Real decoded visible/hidden cell oracle."}},
-    {"processId":"raster.clip","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterExecutorTests.cs","test":"RasterClip_Succeeds_PublishesGeoTiff_AndWritesCutlineGeoJson","assertion":"Fake-runner cutline/arguments and artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3923","missing":"Real clipped grid, mask, and pixel oracle."}},
-    {"processId":"raster.reproject","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterExecutorTests.cs","test":"RasterReprojectCatalog_DefaultResampling_PassesBilinear_AndEpsgToken","assertion":"Fake-runner CRS/resampling argument check only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3926","missing":"Real target grid/CRS and resampled-pixel oracle."}},
-    {"processId":"raster.statistics","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterExecutorTests.cs","test":"RasterStatistics_PublishesScalarFromGdalinfoStdout","assertion":"Parses synthetic CLI stdout; no real raster computation."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3934","missing":"Real per-band statistics over known cells/nodata."}},
-    {"processId":"raster.histogram","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterExecutorTests.cs","test":"RasterHistogram_PublishesBucketsFromGdalinfo","assertion":"Parses synthetic CLI stdout; no real histogram computation."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3930","missing":"Real bucket counts/bounds over known distribution."}},
-    {"processId":"raster.zonal-statistics","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterExecutorTests.cs","test":"ZonalStatistics_OneZone_PublishesScalarWithAggregatesPerZone","assertion":"Uses fake warp/info responses; no real zone-to-cell selection."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3924","missing":"Real per-zone aggregate oracle."}},
-    {"processId":"raster.resample","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterResampleExecutorTests.cs","test":"Resample_Default_RunsGdalwarpWithTargetResolution_AndPublishesGeoTiff","assertion":"Fake-runner arguments/artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3928","missing":"Real target grid and nearest/bilinear pixel oracle."}},
-    {"processId":"raster.interpolate-idw","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterInterpolateExecutorTests.cs","test":"Idw_Default_RunsGdalGridInvdist_AndPublishesGeoTiff","assertion":"Fake-runner arguments/artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3929","missing":"Real interpolated surface values and grid oracle."}},
-    {"processId":"raster.interpolate-kriging","status":"unproven","evidence":[],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3932","missing":"Operation is classified unavailable; implement a production backend and numerical prediction oracle."}},
-    {"processId":"raster.mosaic","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterMosaicExecutorTests.cs","test":"Mosaic_TwoSources_RunsGdalwarpWithBothInputs_AndPublishesGeoTiff","assertion":"Fake-runner source ordering/arguments only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3927","missing":"Real overlap precedence, bounds, nodata, and pixel oracle."}},
-    {"processId":"raster.map-algebra","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterMapAlgebraExecutorTests.cs","test":"MapAlgebra_TwoSources_ProjectsBandVariables_AndPublishesGeoTiff","assertion":"Fake-runner expression arguments/artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3933","missing":"Real computed cells/type/nodata oracle."}},
-    {"processId":"raster.spectral-index","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterSpectralIndexExecutorTests.cs","test":"Ndvi_BindsNirAndRed_AndForcesFloat32","assertion":"Fake-runner band/expression arguments only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3925","missing":"Real per-cell NDVI/multiband index oracle."}},
-    {"processId":"raster.reclassify","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterReclassifyExecutorTests.cs","test":"Reclassify_RangeTable_BuildsNestedWhere_AndPublishesGeoTiff","assertion":"Fake-runner expression/artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3931","missing":"Real exact class/default/nodata cell oracle."}},
-    {"processId":"imagery.classify","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImageryInferenceJobExecutorTests.cs","test":"ExecuteAsync_RasterOutput_PublishesGeoTiffArtifactPreservingBackendBytes","assertion":"Real adapter/validation with simulated backend bytes; no inference correctness."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3935","missing":"Real raster plus deterministic production model/backend classification oracle."}},
-    {"processId":"conversion.geometry-format","status":"unproven","evidence":[],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3936","missing":"Successful WKT/GeoJSON/WKB/EWKT execution with parsed topology/SRID assertions."}},
-    {"processId":"conversion.feature-project","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourcedExecutorTests.cs","test":"FeatureProject_RequestsServerSideReprojection_ReachesSucceeded","assertion":"Asserts target request and feature count, but fake source returns unprojected coordinates."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3939","missing":"Real layer reprojection with decoded coordinate/SRID oracle."}},
-    {"processId":"conversion.raster-format","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterConversionExecutorTests.cs","test":"RasterFormat_GTiff_RunsGdalTranslate_AndPublishesGeoTiff","assertion":"Fake-runner driver/arguments and artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3941","missing":"Real decoded PNG/GTiff/COG content and metadata oracle."}},
-    {"processId":"conversion.raster-reproject","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterConversionExecutorTests.cs","test":"RasterReproject_ConversionId_RunsGdalwarp_WithTargetSrs","assertion":"Fake-runner target-SRS argument only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3943","missing":"Real target grid/CRS and resampled-pixel oracle."}},
-    {"processId":"conversion.polygonize","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalPolygonizeExecutorTests.cs","test":"Polygonize_EightConnected_ProjectsFlagsAndField_AndPublishesGeoJson","assertion":"Fake-runner flags/artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3942","missing":"Real polygon count/class/area/topology oracle."}},
-    {"processId":"conversion.rasterize","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterizeExecutorTests.cs","test":"Rasterize_BurnValueAndCellSize_ProjectsArguments_AndPublishesGeoTiff","assertion":"Fake-runner grid/arguments and artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3938","missing":"Real inside/outside/boundary burned-pixel oracle."}},
-    {"processId":"generalization.simplify-layer","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourcedExecutorTests.cs","test":"SimplifyLayer_ReducesVertices_AndCarriesAttributes","assertion":"Decoded output has fewer vertices and preserves attributes."}]},
-    {"processId":"generalization.dissolve","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourcedExecutorTests.cs","test":"Dissolve_GroupsByField_EmitsOneFeaturePerGroupWithStatistics","assertion":"Decoded groups have exact counts and sums."}]},
-    {"processId":"data-management.copy-features","status":"unproven","evidence":[],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3940","missing":"Successful creation plus canonical read-back of copied schema/features/filter result."}},
-    {"processId":"data-management.append","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs","test":"Append_ProjectsSourceOntoTargetSchema","assertion":"Decoded output preserves targets and maps appended rows onto target schema."}]},
-    {"processId":"data-management.delete-features","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/FeatureServerEndpointTests.cs","test":"DeleteFeatures_WithWhereClauseInBody_DeletesMatchingFeatures","assertion":"Real PostGIS execution returns the exact deleted id and a follow-up query proves zero matching rows."}]},
-    {"processId":"data-management.calculate-field","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerMaintenanceTests.cs","test":"Calculate_ValidRequest_ReturnsSuccess","assertion":"Asserts success/count field only; no changed-value read-back."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3937","missing":"Query-back assertions for exact changed and unchanged field values."}},
-    {"processId":"import.dataset","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImportDatasetJobExecutorTests.cs","test":"ExecuteAsync_StagedGeoJson_ImportsFlattensRefreshesAndRecordsProvenance","assertion":"Real PostGIS import of staged GeoJSON is queried for schema/rows and provenance/refresh side effects."}]},
-    {"processId":"transform.attribute-rename","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/AttributeTransformExecutorTests.cs","test":"AttributeRename_RenamesKey_PreservingValueAndGeometry","assertion":"Decoded output contains renamed value and unchanged geometry."}]},
-    {"processId":"transform.attribute-cast","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/AttributeTransformExecutorTests.cs","test":"AttributeCast_CoercesToInt_DropsUncoercibleByDefault","assertion":"Decoded output contains correctly typed values and excludes failed rows."}]},
-    {"processId":"transform.computed-field","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RelationalTransformExecutorTests.cs","test":"ComputedField_Expression_EvaluatesStringAndCast","assertion":"Decoded computed values match expression results."}]},
-    {"processId":"transform.attribute-filter","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/AttributeTransformExecutorTests.cs","test":"AttributeFilter_GreaterThan_DropsNonMatchingRows","assertion":"Decoded output contains only the exact matching rows."}]},
-    {"processId":"transform.attribute-join","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RelationalTransformExecutorTests.cs","test":"AttributeJoin_Inner_BringsRightFields_DropsUnmatched","assertion":"Decoded inner join carries right fields and excludes unmatched rows."}]},
-    {"processId":"transform.aggregate","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RelationalTransformExecutorTests.cs","test":"Aggregate_SumAndMeanPerGroup","assertion":"Decoded group sums and means equal hand-derived values."}]},
-    {"processId":"transform.pivot","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RelationalTransformExecutorTests.cs","test":"Pivot_LongToWide_SpreadsLabelColumnIntoColumns","assertion":"Decoded wide rows contain exact pivoted columns/values."}]},
-    {"processId":"transform.unpivot","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RelationalTransformExecutorTests.cs","test":"Unpivot_WideToLong_MeltsValueColumns","assertion":"Decoded long rows contain exact field/value pairs."}]},
-    {"processId":"transform.spatial-filter","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/SpatialTransformExecutorTests.cs","test":"SpatialFilter_Bbox_Intersects_KeepsOnlyInsideFeatures","assertion":"Decoded output contains exactly intersecting fixture features."}]},
-    {"processId":"transform.clip","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/SpatialTransformExecutorTests.cs","test":"Clip_Bbox_IntersectsGeometry_PreservesAttributes","assertion":"Decoded clipped geometry and attributes match fixture."}]},
-    {"processId":"transform.dedup","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/SpatialTransformExecutorTests.cs","test":"Dedup_ByKey_DropsLaterDuplicates","assertion":"Decoded output preserves only the first feature per key."}]},
-    {"processId":"transform.reproject","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ReprojectTransformExecutorTests.cs","test":"Reproject_Wgs84ToWebMercator_TransformsCoordinatesAndKeepsAttributes","assertion":"Decoded coordinates match Web Mercator and attributes are preserved."},{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerExecutorTests.cs","test":"VectorReproject_WithRealOgr2Ogr_AppliesNad27ToWgs84DatumShift","assertion":"Required real-OGR CI proves a nonidentity bounded datum shift."}]},
-    {"processId":"source.geojson","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/SourceExecutorTests.cs","test":"GeoJsonSource_InlineDocument_ParsesFeatures","assertion":"Decoded artifact has exact input count, coordinates, and attributes."}]},
-    {"processId":"source.csv","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/SourceExecutorTests.cs","test":"CsvSource_LonLatColumns_DerivesPointGeometry","assertion":"Decoded artifact has exact derived point coordinates and attributes."}]},
-    {"processId":"source.honua-layer","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Db.Postgres.Tests/Features/Geoprocessing/DagSourceReaderTests.cs","test":"HonuaLayer_StreamsFromCatalog_AndBuildsBboxSpatialFilter","assertion":"Connector projection/content with mocked store; no composed source-node artifact."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3944","missing":"Real catalog layer through workflow executor to decoded artifact."}},
-    {"processId":"source.esri-featureserver","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Db.Postgres.Tests/Features/Geoprocessing/DagSourceReaderTests.cs","test":"EsriFeatureServer_PaginatesUntilTransferLimitClears_AndConvertsGeometry","assertion":"Connector pagination/content only; no process executor artifact path."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3945","missing":"Actual process executor over deterministic paged FeatureServer fixture."}},
-    {"processId":"source.ogc-features","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RemoteSourceExecutorTests.cs","test":"RemoteSource_StreamsFeatures_AndPublishesFeatureCollection","assertion":"Actual source.ogc-features executor publishes decoded exact feature count/content and request projection."}]},
-    {"processId":"source.wfs","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Db.Postgres.Tests/Features/Geoprocessing/DagSourceReaderTests.cs","test":"Wfs_PagesByStartIndex_UntilEmptyPage","assertion":"Connector pagination/content only; no process executor artifact path."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3949","missing":"Actual process executor over deterministic paged WFS fixture."}},
-    {"processId":"source.postgis","status":"unproven","evidence":[],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3950","missing":"Successful external PostGIS source execution with decoded rows/geometry/filter assertions."}},
-    {"processId":"sink.geojson-file","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/FileSinkExecutorTests.cs","test":"GeoJsonFileSink_WritesFeatureCollectionFile","assertion":"Real-disk read-back parses the exact written feature count/content."}]},
-    {"processId":"sink.quarantine","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/FileSinkExecutorTests.cs","test":"QuarantineSink_TagsRowsAndNeverThrows","assertion":"Real-disk read-back proves exact rows, batch id, and quarantine reason."}]},
-    {"processId":"sink.external-postgis","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ExternalPostgisSinkExecutorTests.cs","test":"ExecuteAsync_CreatesTableAndInsertsFeaturesWithBatchTag","assertion":"Real PostGIS read-back proves inserted geometry/attributes and batch tag."}]},
-    {"processId":"sink.honua-layer","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/HonuaLayerSinkExecutorTests.cs","test":"HonuaLayerSink_LoadsRowsThroughCapability_AppendMode","assertion":"Actual executor verifies substitute capability inputs; no persisted read-back."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3946","missing":"Real canonical-store persistence/read-back and transaction oracle."}},
-    {"processId":"gdal.gdalwarp","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerExecutorTests.cs","test":"RasterReproject_Succeeds_PublishesGeoTiffArtifact_AndPassesTargetSrs","assertion":"Fake-runner target SRS/artifact shape only."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3947","missing":"Real generic gdalwarp execution with decoded grid/pixel oracle."}},
-    {"processId":"gdal.ogr2ogr","status":"proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerExecutorTests.cs","test":"VectorConvert_WithRealOgr2Ogr_ConvertsGeoJsonToCsv","assertion":"Required real-OGR CI decodes CSV and proves expected property header/value."}]},
-    {"processId":"source.ogr","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerExecutorTests.cs","test":"SourceRead_Succeeds_CanonicalizesToGeoJsonArtifact","assertion":"Actual executor with fake ogr2ogr output; no real source conversion."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3948","missing":"Real non-GeoJSON OGR fixture with decoded geometry/attribute oracle."}},
-    {"processId":"pcloud.translate","status":"partially-proven","evidence":[{"path":"tests/dotnet/Honua.Worker.Gdal.Tests/PdalPointCloudConvertExecutorTests.cs","test":"Translate_ProjectedSourceCrs_AppliesReprojectionTo4979","assertion":"Actual executor validates fake PDAL pipeline/output bytes; no real point-cloud content."}],"gap":{"issue":"https://github.com/honua-io/honua-server/issues/3951","missing":"Real LAS/LAZ through PDAL with parsed point count/coordinates/CRS oracle."}}
-  ]
+    {
+      "processId": "geometry.buffer",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryBufferJobExecutorIntegrationTests.cs",
+          "test": "BufferProcess_CompletesAndReturnsBufferedGeometry",
+          "assertion": "OGC submit/poll/results returns a decoded polygon with the expected buffered area.",
+          "bodyDigest": "sha256:73a6a1e359dda3d17a421d541547f545c3fb5a9b6ede26675b38cbc594f9e8e9"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
+          "test": "Execute_FirstSliceVectorProcess_CompletesAndReturnsBufferGeometry",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
+          "assertion": "Required PR Gate submits and polls real buffer execution, checking inline result selection, input SRID, distance, non-origin center, every vertex radius, envelope, topology and analytical area bounds.",
+          "bodyDigest": "sha256:0ca871805865a542bbdfc3dd6e0f0b05c75108d26f3e2b349aadbe1fb97e6a45"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
+          "test": "Execute_FirstSliceProcessWithValueOutputSelection_CompletesAndReturnsInlineBuffer",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
+          "assertion": "Required PR Gate submits and polls real buffer execution, checking inline result selection, input SRID, distance, non-origin center, every vertex radius, envelope, topology and analytical area bounds.",
+          "bodyDigest": "sha256:7fa9e88734273939e349e5cca5929abc44c94f6480ac718d4cf150955269fb68"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.simplify",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometrySimplifyJobExecutorTests.cs",
+          "test": "ExecuteAsync_HappyPath_CollapsesBelowToleranceVertex",
+          "assertion": "Decoded output drops the below-tolerance vertex while preserving the feature.",
+          "bodyDigest": "sha256:cfe3ef8740305f23883b8bfaa3268d78f36880ad27ea7656747e9049e7f0878c"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.project",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryProjectJobExecutorTests.cs",
+          "test": "ExecuteAsync_Wgs84ToWebMercator_ReprojectsLonLatToMercator",
+          "assertion": "Decoded output coordinates match Web Mercator values within tolerance.",
+          "bodyDigest": "sha256:fcd7b5c0979bfe3289f83a2b31fafa293ae533159c6ed6cd08f28a6083ed9b38"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.make-valid",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryMakeValidJobExecutorTests.cs",
+          "test": "ExecuteAsync_SelfIntersectingBowtie_RepairsToValidGeometry",
+          "assertion": "Self-intersecting input produces a decoded valid geometry.",
+          "bodyDigest": "sha256:a57f077f73944cfa434e09f531a7242faa7a1bfe0e9b9dd0aba283fa721c219a"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.union",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryUnionJobExecutorTests.cs",
+          "test": "ExecuteAsync_HappyPath_PublishesUnionedFeature",
+          "assertion": "Decoded union has the expected geometry and area.",
+          "bodyDigest": "sha256:2f216ae1aa06559d8d38631201eec00aa1e56db72e0beb6972687f4cb6323559"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.intersect",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryIntersectJobExecutorTests.cs",
+          "test": "ExecuteAsync_HappyPath_PublishesIntersectionFeature",
+          "assertion": "Decoded intersection matches the expected overlap.",
+          "bodyDigest": "sha256:ce822c3ad91be54748598c027b98fb8c8a2099cf85fbe13e0336686ee2cee5ec"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.clip",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryClipJobExecutorTests.cs",
+          "test": "ExecuteAsync_HappyPath_PublishesClippedFeature",
+          "assertion": "Decoded clipped polygon has the expected envelope and area.",
+          "bodyDigest": "sha256:d75ac4bd076fded1bb6c64bbf31adc5d410faab7afbc8fe1402a4da076f665ce"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.difference",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryDifferenceJobExecutorTests.cs",
+          "test": "ExecuteAsync_HappyPath_PublishesDifferenceFeature",
+          "assertion": "Decoded output equals the target-minus-eraser geometry.",
+          "bodyDigest": "sha256:0ba585e2559580304595a4115d2638eb0dbc179c5e608b8adb170895ee188217"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.area",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryAreaJobExecutorTests.cs",
+          "test": "ExecuteAsync_HappyPath_PublishesMeasureResult",
+          "assertion": "Decoded scalar area, units, SRID, and geometry type match the fixture.",
+          "bodyDigest": "sha256:2ffb506e1c5998f1af03800a86a67c229241478b42afb7f3fb69061cff15ad6b"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.length",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryLengthJobExecutorTests.cs",
+          "test": "ExecuteAsync_HappyPath_PublishesMeasureResult",
+          "assertion": "Decoded scalar length and units match the input line.",
+          "bodyDigest": "sha256:86ab84623550985e9aaef1a84df40efe76af61d15ebaddc70ce4af655136ff84"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.centroid",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryCentroidJobExecutorTests.cs",
+          "test": "ExecuteAsync_HappyPath_PublishesCentroidPointFeature",
+          "assertion": "Decoded point coordinates equal the polygon centroid.",
+          "bodyDigest": "sha256:618ad599878148482469839b6668531a60b28b616118114f489a23a412f8c75f"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.convex-hull",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryConvexHullJobExecutorTests.cs",
+          "test": "ExecuteAsync_HappyPath_PublishesHullPolygonFeature",
+          "assertion": "Decoded hull polygon contains the fixture points and matches expected area.",
+          "bodyDigest": "sha256:838b24ded6c9a902659019ba50ad4ba1e6c66a3c077e8f16f1056c05c8966e98"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.dissolve",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryDissolveJobExecutorTests.cs",
+          "test": "ExecuteAsync_TwoGroups_EmitsFeaturePerGroup",
+          "assertion": "Decoded FeatureCollection contains one unioned geometry per group key.",
+          "bodyDigest": "sha256:503a723d273984c1d72745aa23168dcc0df9872c17b2fbac4083f0c7f94c1296"
+        }
+      ]
+    },
+    {
+      "processId": "geometry.snap",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometrySnapJobExecutorTests.cs",
+          "test": "ExecuteAsync_HappyPath_SnapsPointToReferenceVertex",
+          "assertion": "Decoded coordinate equals the reference vertex within tolerance.",
+          "bodyDigest": "sha256:48c05178e8846ce7e2654f811dedffc31047232e28288c003d15fde47afa817c"
+        }
+      ]
+    },
+    {
+      "processId": "analytics.cluster",
+      "status": "proven",
+      "entryPoint": "protocol",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs",
+          "test": "QueryClusters_Dbscan_PerFeature_ReturnsClusterAssignments",
+          "assertion": "Real layer execution returns the expected DBSCAN membership/noise assignments.",
+          "bodyDigest": "sha256:a0dc309c92908b195655b6febf3d68a67f7e957d7d92e41e4b144c29e9a7e6f6"
+        }
+      ]
+    },
+    {
+      "processId": "analytics.spatial-join",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourcedExecutorTests.cs",
+          "test": "SpatialJoin_IntersectsCarriesJoinFields_ReachesSucceededWithJoinCount",
+          "assertion": "Decoded targets carry exact join counts and matched attribute arrays.",
+          "bodyDigest": "sha256:57ab1ef37daa73f5b9b3df15d26679fc2f3ad96111ec99033bc95d505d104231"
+        }
+      ]
+    },
+    {
+      "processId": "analytics.spatial-join-managed",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ManagedSpatialJoinExecutorTests.cs",
+          "test": "Aggregate_CountsAndSumsMatchedJoinFeaturesPerTarget",
+          "assertion": "Decoded targets carry hand-derived counts and sums.",
+          "bodyDigest": "sha256:a1160618e38dd276053072c503a16f01e9825436b19e8715eeff2f298fca237c"
+        }
+      ]
+    },
+    {
+      "processId": "analytics.cluster-managed",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ManagedClusterExecutorTests.cs",
+          "test": "Dbscan_GroupsDenseNeighbors_AndMarksOutliersAsNoise",
+          "assertion": "Decoded feature assignments match dense clusters and noise fixture.",
+          "bodyDigest": "sha256:46513746b85f9e5d5007649f92aa701e6a19d2f0705b4848739397b750d398cf"
+        }
+      ]
+    },
+    {
+      "processId": "analytics.buffer-aggregate-managed",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ManagedBufferAggregateExecutorTests.cs",
+          "test": "Dissolve_GroupsBuffersByField_AndCarriesCount",
+          "assertion": "Decoded dissolved buffers have expected group counts and nonempty geometry.",
+          "bodyDigest": "sha256:12d263c4d398bdc5d2194f09022bf10f2dfdb7a8cd9b36cfdd2bb106b1a96736"
+        }
+      ]
+    },
+    {
+      "processId": "analytics.density-managed",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ManagedDensityExecutorTests.cs",
+          "test": "SquareMode_BucketsPointsByCellAndEmitsPerCellCount",
+          "assertion": "Decoded cells and counts match the point fixture.",
+          "bodyDigest": "sha256:c25b5f28853ee4e8e0d113e9ee46caa203705096afdbf8fbfae772bde0bec592"
+        }
+      ]
+    },
+    {
+      "processId": "analytics.hotspot-managed",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ManagedHotSpotExecutorTests.cs",
+          "test": "GiStar_MatchesHandDerivedReference_ForAOneDimensionalFixture",
+          "assertion": "Decoded Gi* z-scores, p-values, and bins match the hand-derived reference.",
+          "bodyDigest": "sha256:a59d0dbb9b6719e122fc21dfec70a30914860da6f06a9226bd8f599a1a5c46c2"
+        }
+      ]
+    },
+    {
+      "processId": "enrichment.enrich",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/EnrichmentJobExecutorTests.cs",
+          "test": "Enrich_LayerSource_CarriesFieldsAndAggregates_WithProvenanceMembers",
+          "assertion": "Real executor over concrete feature fixtures emits exact carried values, sums, counts, dataset id, and attribution.",
+          "bodyDigest": "sha256:ac1c3356f8b08217bc79273812cd6bab53795747c122799e381dd6008416f361"
+        }
+      ]
+    },
+    {
+      "processId": "overlay.clip",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs",
+          "test": "Clip_TruncatesInputGeometryToClipUnion",
+          "assertion": "Decoded geometry equals the clip union intersection.",
+          "bodyDigest": "sha256:fe8fa57a9a8b887a931d439dd61699a13124424ce4878a0f67f5f5167a886850"
+        }
+      ]
+    },
+    {
+      "processId": "overlay.intersect",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs",
+          "test": "Intersect_EmitsPairwiseIntersectionWithMergedAttributes",
+          "assertion": "Decoded intersections and merged attributes match both inputs.",
+          "bodyDigest": "sha256:3b702f8f40ff73e1e595b8240f942edd5fedfcb5334d7bfefdd64b511db62521"
+        }
+      ]
+    },
+    {
+      "processId": "overlay.union",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs",
+          "test": "Union_EmitsInputOnlyOverlayOnlyAndIntersectionPieces",
+          "assertion": "Decoded output contains the expected three partition classes.",
+          "bodyDigest": "sha256:e6e1728408d762063aea427853c58616b699d922035f512f1a9cac1d06a7f479"
+        }
+      ]
+    },
+    {
+      "processId": "overlay.erase",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs",
+          "test": "Erase_RemovesOverlapWithEraseUnion",
+          "assertion": "Decoded geometry area/content equals input minus erase union.",
+          "bodyDigest": "sha256:97a2c50918358b9c4bbd977774a186475b0658c264d396f3098d43d5d44783c5"
+        }
+      ]
+    },
+    {
+      "processId": "overlay.merge",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs",
+          "test": "Merge_CombinesBothLayers",
+          "assertion": "Decoded output preserves all features and union-schema attributes.",
+          "bodyDigest": "sha256:cbbba0dff3b9f5b9aba6c1e00804b5462f63fe1d6eb88b8ba1d6fcf7f8b58997"
+        }
+      ]
+    },
+    {
+      "processId": "overlay.split",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs",
+          "test": "Split_ByFeatureClipsAndTagsPerZone",
+          "assertion": "Decoded pieces are clipped and carry exact zone tags.",
+          "bodyDigest": "sha256:0e8adf24ed21fb1d05a7f94dd9e64e738b2e8ebd7ec92286d34d2d15c65ccdf9"
+        }
+      ]
+    },
+    {
+      "processId": "proximity.near",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ProximityExecutorTests.cs",
+          "test": "Near_AppendsNearestFidAndDistance",
+          "assertion": "Decoded features carry the correct nearest id and distance.",
+          "bodyDigest": "sha256:fae9574123e64ef67afc1e8c0e1d9827dccd9064cb063c5778150027a12feaf2"
+        }
+      ]
+    },
+    {
+      "processId": "proximity.near-table",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ProximityExecutorTests.cs",
+          "test": "NearTable_EmitsOneRowPerInputWithNeighbour",
+          "assertion": "Decoded table rows contain the expected input/near ids and distances.",
+          "bodyDigest": "sha256:edf81bd7d6ba11c79182bff003dba23bc44382420fec2f0250abd7b7fc107abb"
+        }
+      ]
+    },
+    {
+      "processId": "proximity.euclidean-distance",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalProximityCorrectnessTests.cs",
+          "test": "Distance_RealLabeledFixture_MatchesEuclideanCellOracle",
+          "fixture": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/Proximity/proximity-sources.tif",
+          "assertion": "Real production executor and native tooling; every decoded cell matches independent nearest-source Pythagorean distances, GEO/PIXEL units, source filtering, inclusive maximum distance, nodata values/metadata, CRS, transform, dimensions and band type.",
+          "bodyDigest": "sha256:0a5844327ee5535c6fedc3a5a5e8623240c623cdcdb00a766778078ce6bb7630"
+        }
+      ]
+    },
+    {
+      "processId": "proximity.euclidean-allocation",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalProximityCorrectnessTests.cs",
+          "test": "Allocation_RealLabeledFixture_MatchesNearestLabelOracle",
+          "fixture": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/Proximity/proximity-sources.tif",
+          "assertion": "Real production executor and native tooling; every decoded cell matches independent nearest-source labels including ties, GEO/PIXEL units, source filtering, inclusive maximum distance, nodata values/metadata, CRS, transform, dimensions and band type.",
+          "bodyDigest": "sha256:6f7d66eb35351b9f6185ac0ea15633f27870427794e2ae8555dbfce0416b728c"
+        }
+      ]
+    },
+    {
+      "processId": "statistics.summarize",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/StatisticsExecutorTests.cs",
+          "test": "Summarize_SingleCaseField_AggregatesPerGroup",
+          "assertion": "Decoded groups contain hand-derived counts/sums/statistics.",
+          "bodyDigest": "sha256:7559d097789de15d8e7bf462b8ab737371f1f6ba6d77f9bd4590504516099cab"
+        }
+      ]
+    },
+    {
+      "processId": "statistics.frequency",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/StatisticsExecutorTests.cs",
+          "test": "Frequency_CountsDistinctCombinations",
+          "assertion": "Decoded rows contain exact distinct combinations and frequencies.",
+          "bodyDigest": "sha256:1d0f8e46ae41c33b752d07aae949a1019ca2bcea3c806ba365ebdc30855b336b"
+        }
+      ]
+    },
+    {
+      "processId": "statistics.calculate",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/StatisticsExecutorTests.cs",
+          "test": "Calculate_ComputesDescriptiveStatisticsPerField",
+          "assertion": "Decoded descriptive statistics equal hand-derived values.",
+          "bodyDigest": "sha256:82ff7b8da6039e09d0abf2c93738a6186183fce09dc78f5a6f3e6286f029598d"
+        }
+      ]
+    },
+    {
+      "processId": "analytics.buffer-aggregate",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourcedExecutorTests.cs",
+          "test": "BufferAggregate_DissolvesLayerFeatures_ReachesSucceededWithCount",
+          "assertion": "Decoded dissolved polygon has the exact source count, expected 1000-unit buffer envelope, and union-area bounds.",
+          "bodyDigest": "sha256:5d93f6f992e190074396a5ea58cb29c6f5210c990e942feb95851076cdfad832"
+        }
+      ]
+    },
+    {
+      "processId": "analytics.density",
+      "status": "proven",
+      "entryPoint": "protocol",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs",
+          "test": "QueryDensity_SquareGrid_ReturnsExactCellCountForSeededPoints",
+          "assertion": "Real layer execution returns exact cells/counts for seeded points.",
+          "bodyDigest": "sha256:2c78f6fb636123c01f247f251c172927fc260a8975a8294d7e68520d52e95aec"
+        }
+      ]
+    },
+    {
+      "processId": "surface.slope",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
+          "test": "Slope_PlanarDem_MatchesRiseRunInBothUnitsAndNoData",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
+          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "bodyDigest": "sha256:c9e141c6df112c90b5cad18d2f1eefe96aa84f290b26000b496c22487e573da3"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgcProcessesExecutionProofTests.cs",
+          "test": "Execute_RasterSurfaceProcess_CompletesAndReturnsAnalyticalSlope",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof/plane-hole.tif",
+          "assertion": "Required PR Gate submits through OGC API with real Redis and the production job loop, polls to successful, and reads the result. Independent analytical slope values, all nodata/mask cells, CRS and affine ordinates are checked after native GDAL execution.",
+          "bodyDigest": "sha256:8324d1a33c559c81699db90bb4036b8766dbba015218f7c34efe47b974bd3093"
+        }
+      ]
+    },
+    {
+      "processId": "surface.aspect",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
+          "test": "Aspect_PlanarAndFlatDem_MatchesDownslopeAzimuthAndNoData",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
+          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "bodyDigest": "sha256:a94a6d24fdca5483f1b9d41d7b339f2dadc5972895bc9be151695fdbc7247cc0"
+        }
+      ]
+    },
+    {
+      "processId": "surface.hillshade",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
+          "test": "Hillshade_Ridge_MatchesIlluminatedShadowedAndNoDataIntensities",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
+          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "bodyDigest": "sha256:f7760423868d61687752860c789073fd11a93dcb33eb2bccb3df6c8c7511fd3d"
+        }
+      ]
+    },
+    {
+      "processId": "surface.rugosity-tri",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
+          "test": "Rugosity_PeakAndDepression_MatchesIndependentNeighborhoodStatistics",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
+          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "bodyDigest": "sha256:adabd1ddbe0f2bf7d449cf686eb75dfa2da53dcf79746698fd16b0b78bd15445"
+        }
+      ]
+    },
+    {
+      "processId": "surface.rugosity-tpi",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
+          "test": "Rugosity_PeakAndDepression_MatchesIndependentNeighborhoodStatistics",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
+          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "bodyDigest": "sha256:adabd1ddbe0f2bf7d449cf686eb75dfa2da53dcf79746698fd16b0b78bd15445"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
+          "test": "TpiOracle_SiblingNeighborhoodStatisticSubstituted_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
+          "assertion": "#3913 discrimination receipt. Three plausible wrong-but-well-formed TPI grids, each produced by real execution rather than synthesis, satisfy every structural check the proof makes -- dimensions, CRS, six affine ordinates, band count, Float32 type, the -9999 sentinel and the validity mask -- and each is rejected by the signed per-cell oracle: a sibling gdaldem neighbourhood statistic over the same DEM, an unsigned magnitude index that preserves the peak and destroys only the depression's sign, and a source hole consumed as an elevation. Companion cases TpiOracle_UnsignedMagnitudeSubstitutedForSignedIndex_IsRejected and TpiOracle_SourceHoleConsumedAsElevation_IsRejected.",
+          "bodyDigest": "sha256:bc8dea1f4c7124396d8762c9a91773396fccf744fb1793f7337c91596273c5b9"
+        }
+      ]
+    },
+    {
+      "processId": "surface.roughness",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
+          "test": "Rugosity_PeakAndDepression_MatchesIndependentNeighborhoodStatistics",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
+          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "bodyDigest": "sha256:adabd1ddbe0f2bf7d449cf686eb75dfa2da53dcf79746698fd16b0b78bd15445"
+        }
+      ]
+    },
+    {
+      "processId": "surface.contour",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
+          "test": "Contour_Ramp_MatchesLevelsCoordinatesAndLineTopology",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
+          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "bodyDigest": "sha256:46b55da04b027b9c9c0d4da8157145a52d80a84f07ddd4c9622b6543df22a9c6"
+        }
+      ]
+    },
+    {
+      "processId": "surface.viewshed",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/SurfaceExecutionProofTests.cs",
+          "test": "Viewshed_Ridge_MatchesVisibleHiddenAndOutOfRangeNoData",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/SurfaceProof",
+          "assertion": "Required PR Gate executes the production catalog executor with digest-pinned real GDAL. Independently calculated values, nodata/masks and grid metadata or contour ordinates/topology are asserted. Fixture README documents each oracle and the #3848/#3857 candidate qualification boundary.",
+          "bodyDigest": "sha256:02c2c3d6cdf68a119553e1fc7f08a5b6f297294a3ff55c434f811078541897da"
+        }
+      ]
+    },
+    {
+      "processId": "raster.clip",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Clip_LShapedCutline_PreservesInsideBoundaryAndNoDataCells",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "bodyDigest": "sha256:87d8e40fbecdfe14ae29bd24303988158a8d177571c28d1a0088be54e30b5c79"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Clip_SourceWithoutNoData_UsesInternalMaskAndPreservesValidZero",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL execution publishes an internal TIFF validity mask that excludes exterior zero fill while preserving an interior valid zero in both data bands.",
+          "bodyDigest": "sha256:8282bf3cb36e8edcda84bceb9092bb97b6f7c048aea4561b3f9b368ffa0e2395"
+        }
+      ]
+    },
+    {
+      "processId": "raster.reproject",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "bodyDigest": "sha256:13120163f127e0e87d9444a3ab019c3d4805a056b29ff1397751c121ff3d7737"
+        }
+      ]
+    },
+    {
+      "processId": "raster.statistics",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Statistics_TwoBandsWithDifferentNoData_MatchesHandDerivedPopulationMoments",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real gdalinfo: original band identities, exact valid counts, nodata metadata, min/max/mean and population standard deviation from hand-derived per-band moments.",
+          "bodyDigest": "sha256:7b11a017ff4bd6d968dda4bddac1ab30563e80a0246d1f30ace92dfc79375bde"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Statistics_MultipleReadWindows_CountsExactlyWhenValidPercentRoundsTo100",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL: exact count 263168 over a 513x513 plane of ones with one nodata sample, across nine read windows; rounded valid percentage cannot serve as a count oracle.",
+          "bodyDigest": "sha256:298976f422850c0f8cbb08f20837e4d1b3e1e6032a89b6f38198a9d049a32714"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Statistics_ExplicitValidityMask_ExcludesMaskedCellsAndBandNoData",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/statistics-masked.tif",
+          "assertion": "Real gdalinfo metadata and the shared one-pass GDAL statistics reader agree with independently derived masked populations {1,2,3,4} and {5,15,25}, including exact valid counts, extrema, mean and population standard deviations.",
+          "bodyDigest": "sha256:bdd2103e063c8095a11bd5ffae8a7369f2292353723e609d07fb2afa606c7d93"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "StatisticsOracle_NoDataCountedAsData_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/statistics.tif",
+          "assertion": "Demonstrated negative: dropping the source nodata declaration makes real execution measure the sentinel, giving a well-formed two-band document whose counts reach the 6-cell area; the exact-validCount assertion rejects both bands.",
+          "bodyDigest": "sha256:d86bdaf6addb51d3857f7bdc1329c6f0a355aff50dedbc3044cea97c12338e96"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "StatisticsOracle_QuantizedSourceMatchesCountsButNotMoments_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/statistics.tif",
+          "assertion": "Demonstrated negative: real GDAL quantizes band 1 to {0,0,4,4,4}, preserving band identity, Float32 type, the declared sentinel, the exact valid count 5 and both extrema, so the mean assertion (2 against 2.4) is what rejects it and the moment oracle is shown to discriminate independently of the count.",
+          "bodyDigest": "sha256:6535648c0f6607cb0d3367d83297d1569cad2f697eb32f29aad8445673caeccf"
+        }
+      ]
+    },
+    {
+      "processId": "raster.histogram",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Histogram_UnevenDistribution_ExcludesNoDataAndPreservesEveryBucket",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "bodyDigest": "sha256:ad2718f8e44420bc05625c2c3fe51a8ef53cbb7da6e242b345492c744c2acf9c"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "HistogramOracle_NoDataCountedAsData_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL execution over a source whose nodata declaration was dropped publishes a well-formed 256-bucket histogram totalling 12; the frozen distribution oracle rejects it.",
+          "bodyDigest": "sha256:28a1dfe59e5a151ad16836bb18adb6a9d909c73579cf110b758330bceef5f04d"
+        }
+      ]
+    },
+    {
+      "processId": "raster.zonal-statistics",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "ZonalStatistics_DisjointOverlappingAndEmptyZones_MatchHandDerivedAggregates",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "bodyDigest": "sha256:fd715f7b65fc15c7cdb6f09e78a43605a6a618331a266fa8f3af1f362c617e13"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "ZonalStatistics_MultipleReadWindows_MergesExactCountsSumsAndPopulationVariance",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL execution asserts independently computed population moments across three read windows.",
+          "bodyDigest": "sha256:12c9ce6f42fbef4dfc7324f20795376e1d499c78c7aa04bd15d5e49781332bd7"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "ZonalStatistics_SourceWithoutNoData_ExcludesCutlineExteriorButCountsValidZero",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL execution excludes cutline exterior fill and counts all five selected source cells, including valid zero; their independent sum is 39.",
+          "bodyDigest": "sha256:8d23ab2e1367e168c58711d5c218d5acc5b5724f88925865d8b9fcd9ac49c6cd"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "ZonalOracle_GlobalStatisticsSubstitutedForZoneSelection_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL execution over a full-extent zone publishes valid whole-raster aggregates under the requested zone id; the hand-derived zone oracle rejects the substitution.",
+          "bodyDigest": "sha256:13fe7f8e5b1833b308ff31a6c196b26bad2876a6bcc383ba56309f068b4ffc11"
+        }
+      ]
+    },
+    {
+      "processId": "raster.resample",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Resample_HalfSizeCells_MatchesNearestOrBilinearWeightsAndNoData",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "bodyDigest": "sha256:a5ca4118fca9172dedb440e756c38953e4de5136fb9c028ba4dded263f06d926"
+        }
+      ]
+    },
+    {
+      "processId": "raster.interpolate-idw",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "InterpolateIdw_KnownPoints_MatchesInverseDistanceAndEmptySearchCells",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "bodyDigest": "sha256:4a02a85998fd18b83d343b7430bb8b466cc8dffbfd505395e879e12de8d3a0de"
+        }
+      ]
+    },
+    {
+      "processId": "raster.interpolate-kriging",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "InterpolateKriging_SamplePoints_ReproducesSampleValuesExactly",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Required PR Gate executes the production kriging executor with pinned real GDAL; the decoded cell centred on the interior sample reproduces its observed value, and the surface declares no nodata \u2014 the exactness property that distinguishes kriging from a smoother.",
+          "bodyDigest": "sha256:68719395e141c7532b0a0cdb96b5e9e1fa0e2345c93a529de6fd88f52477a06b"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "InterpolateKriging_TwoSymmetricSamples_MatchesHandDerivedMidpointAndGridMetadata",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Decoded cell values, grid metadata and CRS match analytically derived ordinary-kriging expectations for a symmetric two-point configuration.",
+          "bodyDigest": "sha256:bd87d0a349b55410f9f217787970179e7ebd63894188dd3d925b6246a457cf3e"
+        }
+      ]
+    },
+    {
+      "processId": "raster.mosaic",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Mosaic_OverlappingTwoBandTiles_ProvesPrecedenceAndNoDataFallback",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "bodyDigest": "sha256:aa081829536ce8832326a4a37daf51644cf81db80a7043cc21e4b8ae8d766431"
+        }
+      ]
+    },
+    {
+      "processId": "raster.map-algebra",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "MapAlgebra_AlignedSources_MatchesArithmeticAndInvalidCellMask",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL: independently computed A+2*B and A/B cells, union of source nodata masks, undefined division, Float64 type and grid identity.",
+          "bodyDigest": "sha256:93738b3b1078e95ae62a21b26b14456c26e5055b50a2494a8de5d507952e28d3"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "MapAlgebra_FirstSourceWithoutNoData_UndefinedDivisionUsesTypeDefault",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL: Float64 and Int16 native nodata defaults preserve valid zeros, invalidate undefined division and mask a later source independently.",
+          "bodyDigest": "sha256:334e43b3a9715ec68fe0ac2987d8626e12f2ce1d21cc4755bd5917b9c43b96f9"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "MapAlgebraOracle_SourceNoDataTreatedAsData_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Demonstrated negative: real GDAL evaluates A+2*B over the committed unmasked sources, recovering the two masked cells as 14 and 12. The caller requests the same sentinel, so type, grid and nodata metadata match the proof exactly and the union-of-masks assertion is what rejects it.",
+          "bodyDigest": "sha256:550c51a6bc769cbf273716f160e4473adb450eab67b527a975d3cb85b073e27b"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "MapAlgebraOracle_MisassociatedExpression_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Demonstrated negative: real GDAL evaluates the misassociated (A+2)*B over the masked sources, keeping grid, Float64 type, declared sentinel and the union-of-masks validity identical to the proof's result, so only the decoded cell values (4,0,0,n,n,0,20,10 against 4,4,0,n,n,-10,12,10) can reject it.",
+          "bodyDigest": "sha256:b36ad67378b26e34230125e7a40d0b6e2daee2b54b35bd22f553838b341c3f60"
+        }
+      ]
+    },
+    {
+      "processId": "raster.spectral-index",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "SpectralIndex_ReflectanceBands_MatchFormulaIncludingUndefinedAndNoData",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Required PR Gate executes the production executor with pinned real GDAL; decoded values, nodata and grid metadata match independently computed analytical expectations. See the fixture README for the per-operation oracle and candidate qualification boundary.",
+          "bodyDigest": "sha256:4913b7209539b7600a01d8d681d3c77996fcf762b0ee18cfe202dee49090881d"
+        }
+      ]
+    },
+    {
+      "processId": "raster.reclassify",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Reclassify_SingleValuesRangesGapsAndNoData_MatchesEveryClass",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof",
+          "assertion": "Real GDAL: exact Int16 classes across single values, half-open ranges, first-match overlap, gaps, default/preserve behavior, nodata overrides and full grid/mask metadata.",
+          "bodyDigest": "sha256:d3dfcad7a0113d3b0c264a5f6fc327af1b4e4be156f80a0f65cd4c7637480da0"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "ReclassifyOracle_InclusiveUpperBoundClasses_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/reclassify.tif",
+          "assertion": "Demonstrated negative: real GDAL executes the proof's table with closed-interval-equivalent upper bounds, publishing a valid Int16 raster on the same grid in which the boundary samples 2, 5 and 10 take 10, 30 and 40; the hand-derived class oracle rejects it.",
+          "bodyDigest": "sha256:120e247428d417c0f710957dfce01bfcc9e0b5d5055892cedc8a249eb30651eb"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "ReclassifyOracle_SourceNoDataRemappedAsData_IsRejected",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/reclassify.tif",
+          "assertion": "Demonstrated negative: dropping the source nodata declaration makes real GDAL classify the sentinel through its own remap entry and publish class 99. The caller requests the same sentinel, so type, grid and nodata metadata match the proof exactly and the validity-mask assertion is what rejects it.",
+          "bodyDigest": "sha256:4f05bde146588fd40425844fe5e7b27191703bec7a37f9a7faa5ac90ca56e5d3"
+        }
+      ]
+    },
+    {
+      "processId": "imagery.classify",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImageryClassifyExecutionProofTests.cs",
+          "test": "Classify_RealSceneThroughARealModelServer_MatchesTheFrozenClassOracle",
+          "fixturePath": "tests/dotnet/Honua.Server.Tests/TestData/ImageryClassify",
+          "assertion": "Required PR Gate runs the production executor and the real HTTP inference adapter over a loopback model server that executes a committed minimum-distance-to-mean classifier (NumPy) on the posted scene inside the pinned production GDAL image. The decoded classification GeoTIFF is asserted against a frozen class map (a committed 4x4 signature layout upsampled across the 16x16 scene) and per-class counts derived from the committed scene signatures, plus model identity, task, forwarded source CRS, band count, grid alignment and CRS.",
+          "bodyDigest": "sha256:90c2ac9509fcc986216341dd4554474e485d6975536a7e6dcd6ea446fc61008f"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImageryClassifyExecutionProofTests.cs",
+          "test": "ClassifyOracle_ADifferentCommittedModel_IsRejectedEvenThoughTheOutputIsWellFormed",
+          "fixturePath": "tests/dotnet/Honua.Server.Tests/TestData/ImageryClassify",
+          "assertion": "Demonstrated negative: the same scene through the same real classifier with a committed rotated-class model yields a valid, aligned, single-band GeoTIFF carrying legal class ids; the frozen class oracle rejects it.",
+          "bodyDigest": "sha256:673cf8ffb40dd854653b2f54f741b9cf784f3cd17012bc2eb38bfeb2aa503512"
+        }
+      ]
+    },
+    {
+      "processId": "conversion.geometry-format",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryFormatConversionExecutionProofTests.cs",
+          "test": "ConvertsPolygonWithHole_ToEveryAdvertisedEncoding_PreservingTopologyRingsAndSrid",
+          "assertion": "Registered production executor converts a committed polygon-with-hole EWKB fixture to every advertised target. Each output is parsed back with an independent reader and asserted against literal ring ordinates, hole preservation, exterior-minus-hole area, EWKT/WKB SRID behaviour including a SRID-less input, and scalar content type; unadvertised targets are rejected at submit and at execution.",
+          "bodyDigest": "sha256:92e17dedd3f6e80cb73ed307764a721e32c7367b1db64751a03a5a8850619e7c"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/GeometryFormatConversionExecutionProofTests.cs",
+          "test": "Oracle_DroppedHoleOrShiftedOrdinates_AreRejectedEvenThoughTheOutputParses",
+          "assertion": "Demonstrated negatives: real conversions of a hole-dropped polygon and a translated copy produce valid, parseable outputs in the requested encodings - the translated one keeps ring count, winding and area, exactly as a silent reprojection would - and the frozen ring/hole/ordinate oracle rejects both.",
+          "bodyDigest": "sha256:09841453335382f5750306c85e974051f7248381693d4e9e1f1b869950ff8cd4"
+        }
+      ]
+    },
+    {
+      "processId": "conversion.feature-project",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourcedExecutorTests.cs",
+          "test": "FeatureProject_RequestsServerSideReprojection_ReachesSucceeded",
+          "assertion": "Asserts target request and feature count, but fake source returns unprojected coordinates.",
+          "bodyDigest": "sha256:cab6b3af9b0b527c0b04dcb577c0d8b2a24e71ff8251792d04053790bf90607f"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourceExecutionProofTests.cs",
+          "test": "FeatureProject_RealCatalogLayer_PublishesAnalyticalMercatorCoordinatesAndSrid",
+          "assertion": "Production executor and PostGIS catalog read: exact filtered attributes/count, analytical non-origin EPSG:3857 ordinates and SRID, original coordinates unchanged.",
+          "bodyDigest": "sha256:bb0b36d1533699a6b0497340818d1183084aa0d547afdf3fbfc9368a50569660"
+        }
+      ]
+    },
+    {
+      "processId": "conversion.raster-format",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterConversionExecutorTests.cs",
+          "test": "RasterFormat_GTiff_RunsGdalTranslate_AndPublishesGeoTiff",
+          "assertion": "Fake-runner driver/arguments and artifact shape only.",
+          "bodyDigest": "sha256:0005a40ca78c438613b958ff6d4c2473d931470776b1c4bdec71bb54b1961d14"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Conversion.cs",
+          "test": "RasterFormat_MultibandFixture_PreservesSamplesEncodingAndSupportedMetadata",
+          "assertion": "Real pinned gdal_translate; all RGB cells, nodata/mask, encoding, CRS/affine transform where supported, COG structure validator.",
+          "bodyDigest": "sha256:bdbd9ed79cdb308440b93a7139e2333dcd85e25da1c85b4c9ae3e1f679b79b30"
+        }
+      ]
+    },
+    {
+      "processId": "conversion.raster-reproject",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalRasterConversionExecutorTests.cs",
+          "test": "RasterReproject_ConversionId_RunsGdalwarp_WithTargetSrs",
+          "assertion": "Fake-runner target-SRS argument only.",
+          "bodyDigest": "sha256:4852624774ee3977fe143d9f835f634687532e02a474607cc2d8fe56584ec93e"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples",
+          "assertion": "Real pinned gdalwarp through conversion process ID; analytical EPSG:3857 grid and inverse nearest/bilinear sample oracle for every cell, both bands, nodata and masks.",
+          "bodyDigest": "sha256:13120163f127e0e87d9444a3ab019c3d4805a056b29ff1397751c121ff3d7737"
+        }
+      ]
+    },
+    {
+      "processId": "conversion.polygonize",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalPolygonizeExecutorTests.cs",
+          "test": "Polygonize_EightConnected_ProjectsFlagsAndField_AndPublishesGeoJson",
+          "assertion": "Fake-runner flags/artifact shape only.",
+          "bodyDigest": "sha256:074481c377bbbb29c4c615d647273d0d48af198f2cfaef5993ae679366120c33"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Conversion.cs",
+          "test": "Polygonize_ClassifiedFixture_PreservesRegionsTopologyAndExcludesNoData",
+          "assertion": "Real pinned gdal_polygonize.py with four/eight connectivity; exact regions, class, cell-derived topology/area/envelope, CRS and nodata exclusion; invalid intermediate regression.",
+          "bodyDigest": "sha256:36783c286bb00c87ff9c23328fe86e37b97822331f6ce6129ce829a35b7060e0"
+        }
+      ]
+    },
+    {
+      "processId": "conversion.rasterize",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "Rasterize_AttributeMode_BurnsPerFeatureValuesAtPixelCentres",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/rasterize-parcels.geojson",
+          "assertion": "Production executor over pinned production GDAL burns the committed GeoJSON fixture in attribute mode. The decoded GeoTIFF asserts extent, all six geotransform ordinates, CRS, band type, nodata and every one of the 15 cells against a hand-applied pixel-centre oracle.",
+          "bodyDigest": "sha256:1c85a2c07bd6e992f6dd3586fd41910c67c0cd474bb0d4d4a3afacb61806e731"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "Rasterize_BurnValueMode_BurnsTheFixedValueOverEveryCoveredCentre",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/rasterize-parcels.geojson",
+          "assertion": "Burn-value mode over the same fixture and grid writes one fixed value across the identical covered-centre set, so an implementation leaking the per-feature attribute fails.",
+          "bodyDigest": "sha256:611f250e08f175af808cae2113599e5e4a17c32494130d7d564fb1dc65d2d431"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "Rasterize_SubPixelEdges_DecideBurnByCentreContainment",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/rasterize-parcels.geojson",
+          "assertion": "Sub-pixel discrimination: the sliver that contains the centre (1.5, 2.5) wins exactly that cell, the sliver 0.1 units above it burns nothing at all (it is the fixture's last feature, so a wrong burn would survive rather than be overwritten), and the centres 0.1 units outside both keep the underlying parcel value.",
+          "bodyDigest": "sha256:8f14df79dd770ab74f46cb207064c822ec4aa4b1f480b1765177af89e06dbda2"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "Rasterize_CellSizeMode_CentresTheGridOnTheLayerEnvelope",
+          "assertion": "cellSize path pins the half-cell-expanded grid, the burn-value domain and strictly interior/exterior cells.",
+          "bodyDigest": "sha256:4170b4fc1a8a80e1907609d1c14a47f5841919832c4ea06e1be286727260ca85"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "RasterizeOracle_AllTouchedInsteadOfCentreContainment_IsRejected",
+          "assertion": "Demonstrated negative: real gdal_rasterize -at produces a valid GeoTIFF on the identical grid whose burned set follows all-touched instead of pixel-centre containment (dn=9 claims the top row); the frozen centre-containment oracle rejects it.",
+          "bodyDigest": "sha256:19f1b547297f1cb1e10bae3a45327ac6a07c23075f8bbe2d4245db795aec5c6e"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.Rasterize.cs",
+          "test": "RasterizeOracle_AttributeBurnSubstitutedForTheFixedBurnValue_IsRejected",
+          "assertion": "Demonstrated negative: a real attribute burn on the identical grid, nodata and band type is rejected by the fixed-burn-value oracle at cell 0.",
+          "bodyDigest": "sha256:ed99d8acae7cc01660e5c3b327414876f4d67b2bcffb10016ee69173186eb7f9"
+        }
+      ]
+    },
+    {
+      "processId": "generalization.simplify-layer",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourcedExecutorTests.cs",
+          "test": "SimplifyLayer_ReducesVertices_AndCarriesAttributes",
+          "assertion": "Decoded output has fewer vertices and preserves attributes.",
+          "bodyDigest": "sha256:ccdd254f979d865e62addaf53c8853cdc7f843b76aa657dfa9fe5bc41446b6cd"
+        }
+      ]
+    },
+    {
+      "processId": "generalization.dissolve",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourcedExecutorTests.cs",
+          "test": "Dissolve_GroupsByField_EmitsOneFeaturePerGroupWithStatistics",
+          "assertion": "Decoded groups have exact counts and sums.",
+          "bodyDigest": "sha256:144eb84c70872ad66149d7b73d250b86ddda4c0ac036aba8050c2dec97c15b8f"
+        }
+      ]
+    },
+    {
+      "processId": "data-management.copy-features",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/CopyFeaturesExecutionProofTests.cs",
+          "test": "CopyFeatures_RealPublishedLayer_PreservesSelectedValuesZSchemaSridAndProvenance",
+          "assertion": "Registered production executor creates a typed PostGIS layer from the canonical provider stream. Literal unfiltered/where/objectIds fixture; canonical target and source readback assert exact attributes/XYZ, schema including type/length/nullability, SRID, operation provenance and source immutability.",
+          "bodyDigest": "sha256:479be0d3f300b523661d95105aa4ef8d07fb7f90f32ba9d1e43000f35178e94b"
+        }
+      ]
+    },
+    {
+      "processId": "data-management.append",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/OverlayExecutorTests.cs",
+          "test": "Append_ProjectsSourceOntoTargetSchema",
+          "assertion": "Decoded output preserves targets and maps appended rows onto target schema.",
+          "bodyDigest": "sha256:25ddc63766eaa7559281430d06eecd14181c34ae5a6e2a7007c57886610c2547"
+        }
+      ]
+    },
+    {
+      "processId": "data-management.delete-features",
+      "status": "proven",
+      "entryPoint": "protocol",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/FeatureServerEndpointTests.cs",
+          "test": "DeleteFeatures_WithWhereClauseInBody_DeletesMatchingFeatures",
+          "assertion": "Real PostGIS execution returns the exact deleted id and a follow-up query proves zero matching rows.",
+          "bodyDigest": "sha256:d44ec62ca8ede1d16fba2dad84637cd3483b532f5bc337dea5430aa3d63f75e0"
+        }
+      ]
+    },
+    {
+      "processId": "data-management.calculate-field",
+      "status": "proven",
+      "entryPoint": "protocol",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/CalculateFieldExecutionProofTests.cs",
+          "test": "Calculate_FilteredRows_WritesExactValuesAndLeavesExcludedRowsUntouched",
+          "assertion": "Owning FeatureServer calculate route runs against the editable PostGIS-backed FeatureServer layer; literal rows are added through the shared edit pipeline and every calculate is scoped to their object ids. Canonical protocol read-back asserts exact computed values for selected rows, seed-identical values for excluded rows, integer/string field-type fidelity, and that a rejected expression or unknown field changes nothing.",
+          "bodyDigest": "sha256:139d9d2a6c2e29d6b15b612df298d8476e96e3daa91c1aafb589ccda4f654a56"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/CalculateFieldExecutionProofTests.cs",
+          "test": "Oracle_CalculateThatIgnoresTheFilter_IsRejected",
+          "assertion": "Demonstrated negative: a real calculate over every proof row (the population filter dropped) returns a valid 200 with a plausible updated count and well-formed rows; the frozen post-state oracle rejects it because the excluded row changed.",
+          "bodyDigest": "sha256:92121bca0edd583d67b3599279e72b90aa82e18f99cdc5639bbe257f19e7ada5"
+        }
+      ]
+    },
+    {
+      "processId": "import.dataset",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ImportDatasetJobExecutorTests.cs",
+          "test": "ExecuteAsync_StagedGeoJson_ImportsFlattensRefreshesAndRecordsProvenance",
+          "assertion": "Real PostGIS import of staged GeoJSON is queried for schema/rows and provenance/refresh side effects.",
+          "bodyDigest": "sha256:46639812d84764a11d9f1d9dbf7347b4e4efcab64aed5d167ab762a46bafdff4"
+        }
+      ]
+    },
+    {
+      "processId": "transform.attribute-rename",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/AttributeTransformExecutorTests.cs",
+          "test": "AttributeRename_RenamesKey_PreservingValueAndGeometry",
+          "assertion": "Decoded output contains renamed value and unchanged geometry.",
+          "bodyDigest": "sha256:4949d6a2d3b5c13c6dcfc2974b11e4caca4794784c5d64ddd714183959e09e7e"
+        }
+      ]
+    },
+    {
+      "processId": "transform.attribute-cast",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/AttributeTransformExecutorTests.cs",
+          "test": "AttributeCast_CoercesToInt_DropsUncoercibleByDefault",
+          "assertion": "Decoded output contains correctly typed values and excludes failed rows.",
+          "bodyDigest": "sha256:5f860c6030de4a2ccf1d2ef881b86f88ce25787bf7876b35a4b7fb630b8522e1"
+        }
+      ]
+    },
+    {
+      "processId": "transform.computed-field",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RelationalTransformExecutorTests.cs",
+          "test": "ComputedField_Expression_EvaluatesStringAndCast",
+          "assertion": "Decoded computed values match expression results.",
+          "bodyDigest": "sha256:90027054b077dd8959cb14550b32dbb899a8f9c4e934a0c484ee839c628c1228"
+        }
+      ]
+    },
+    {
+      "processId": "transform.attribute-filter",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/AttributeTransformExecutorTests.cs",
+          "test": "AttributeFilter_GreaterThan_DropsNonMatchingRows",
+          "assertion": "Decoded output contains only the exact matching rows.",
+          "bodyDigest": "sha256:6ca253b8da40b60bcb36ba060e5116c23b0188de4cc78f5c09d3011b0d7eb4ba"
+        }
+      ]
+    },
+    {
+      "processId": "transform.attribute-join",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RelationalTransformExecutorTests.cs",
+          "test": "AttributeJoin_Inner_BringsRightFields_DropsUnmatched",
+          "assertion": "Decoded inner join carries right fields and excludes unmatched rows.",
+          "bodyDigest": "sha256:c48e597925d2f45ccfe975949aa7168910ba3977aca8dca15dd31f2c63bc94f0"
+        }
+      ]
+    },
+    {
+      "processId": "transform.aggregate",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RelationalTransformExecutorTests.cs",
+          "test": "Aggregate_SumAndMeanPerGroup",
+          "assertion": "Decoded group sums and means equal hand-derived values.",
+          "bodyDigest": "sha256:998afda2f80aff6b52aba1d73aba2e6e6f9e3db4c1db27860912959808b15329"
+        }
+      ]
+    },
+    {
+      "processId": "transform.pivot",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RelationalTransformExecutorTests.cs",
+          "test": "Pivot_LongToWide_SpreadsLabelColumnIntoColumns",
+          "assertion": "Decoded wide rows contain exact pivoted columns/values.",
+          "bodyDigest": "sha256:07e1582ca17be1b5b73ab1af6c90a4d8cc55b72822a88540913ef7ca674210b4"
+        }
+      ]
+    },
+    {
+      "processId": "transform.unpivot",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RelationalTransformExecutorTests.cs",
+          "test": "Unpivot_WideToLong_MeltsValueColumns",
+          "assertion": "Decoded long rows contain exact field/value pairs.",
+          "bodyDigest": "sha256:b101ddf6c2a1e7a2e7b90b6dad973ee3649991b6058c1fadfa1231f7e24240cd"
+        }
+      ]
+    },
+    {
+      "processId": "transform.spatial-filter",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/SpatialTransformExecutorTests.cs",
+          "test": "SpatialFilter_Bbox_Intersects_KeepsOnlyInsideFeatures",
+          "assertion": "Decoded output contains exactly intersecting fixture features.",
+          "bodyDigest": "sha256:22853bf3324fa8fbff284791356272ba3151b925ec00a56bd6b9533946a40fa9"
+        }
+      ]
+    },
+    {
+      "processId": "transform.clip",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/SpatialTransformExecutorTests.cs",
+          "test": "Clip_Bbox_IntersectsGeometry_PreservesAttributes",
+          "assertion": "Decoded clipped geometry and attributes match fixture.",
+          "bodyDigest": "sha256:1879e52be156a82076ba3df471d0c0415a9fca916f1539475a77a3f3a1d5ca0d"
+        }
+      ]
+    },
+    {
+      "processId": "transform.dedup",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/SpatialTransformExecutorTests.cs",
+          "test": "Dedup_ByKey_DropsLaterDuplicates",
+          "assertion": "Decoded output preserves only the first feature per key.",
+          "bodyDigest": "sha256:2f34d845928bf12965e70ae7ebfc6e8259334f715beb12b1ccfb32fdbd147d46"
+        }
+      ]
+    },
+    {
+      "processId": "transform.reproject",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ReprojectTransformExecutorTests.cs",
+          "test": "Reproject_Wgs84ToWebMercator_TransformsCoordinatesAndKeepsAttributes",
+          "assertion": "Decoded coordinates match Web Mercator and attributes are preserved.",
+          "bodyDigest": "sha256:d34277428083c3f399b6b7e00fc17280d0e2b5c9bf3551dc743dce925e8b5ca3"
+        },
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerExecutorTests.cs",
+          "test": "VectorReproject_WithRealOgr2Ogr_AppliesNad27ToWgs84DatumShift",
+          "assertion": "Required real-OGR CI proves a nonidentity bounded datum shift.",
+          "bodyDigest": "sha256:2ffc20a583757b57250b3d292a1e4dae7fa3a86060843eaf8ebb685af6e213fc"
+        }
+      ]
+    },
+    {
+      "processId": "source.geojson",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/SourceExecutorTests.cs",
+          "test": "GeoJsonSource_InlineDocument_ParsesFeatures",
+          "assertion": "Decoded artifact has exact input count, coordinates, and attributes.",
+          "bodyDigest": "sha256:50dac5c58807d9e47c46aee45e6701d5f34021394c1ea70911b18c73549a7f87"
+        }
+      ]
+    },
+    {
+      "processId": "source.csv",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/SourceExecutorTests.cs",
+          "test": "CsvSource_LonLatColumns_DerivesPointGeometry",
+          "assertion": "Decoded artifact has exact derived point coordinates and attributes.",
+          "bodyDigest": "sha256:570f1c898411b329565005f59d0f5644be0da64d6cfe7df7360834ec7cacf3a5"
+        }
+      ]
+    },
+    {
+      "processId": "source.honua-layer",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Geoprocessing/DagSourceReaderTests.cs",
+          "test": "HonuaLayer_StreamsFromCatalog_AndBuildsBboxSpatialFilter",
+          "assertion": "Connector projection/content with mocked store; no composed source-node artifact.",
+          "bodyDigest": "sha256:adb25f68eb5553d8d7dad159e1fbf7bcaf797636bbc3c0e17702fd07c7d2590d"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourceExecutionProofTests.cs",
+          "test": "HonuaLayerSource_RealCatalogFilterBboxAndFields_PublishesExactProjectedSelection",
+          "assertion": "Workflow-only entry point: production composed source artifact from real PostGIS; exact where/bbox selection, field masking, analytical projected coordinates and output SRID. The same oracle rejects real artifacts with each constraint lost.",
+          "bodyDigest": "sha256:ada6166642e864da917afd4127d0763fb4fe1ac827a944bf2c95e0b1c3f9fc74"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourceExecutionProofTests.cs",
+          "test": "HonuaLayerSource_AdvertisedCrsDiffersFromStorage_UsesCanonicalStoragePrecedence",
+          "assertion": "Real PostGIS points stored in 4326 but advertised in 3857; canonical StorageCrs fallback and binding storageSrid precedence both preserve the analytical projection and exact bbox selection.",
+          "bodyDigest": "sha256:5a36f365a7c164528bde2acac09585df5fc0f83bc786fc988689c30d52314933"
+        }
+      ]
+    },
+    {
+      "processId": "source.esri-featureserver",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Db.Postgres.Tests/Features/Geoprocessing/DagSourceReaderTests.cs",
+          "test": "EsriFeatureServer_PaginatesUntilTransferLimitClears_AndConvertsGeometry",
+          "assertion": "Connector pagination/content only; no process executor artifact path.",
+          "bodyDigest": "sha256:5f1148b702347f91945f11b1c8fde6c0dc46d8c68f2bff4431a9a956f6d10a49"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/EsriSourceExecutionProofTests.cs",
+          "test": "EsriSource_PagedFilteredFixture_PublishesEverySelectedFeatureExactlyOnce",
+          "assertion": "Workflow-only entry point: real HTTP client, connector and executor over a deterministic paged fixture; literal IDs/attributes/null/coordinates, output SRID, offsets once and where/watermark/fields/SRID parameters.",
+          "bodyDigest": "sha256:84a69f783af6092f6859451ed9deafb02103d909023925eb9e1f95a366ee9083"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/EsriSourceExecutionProofTests.cs",
+          "test": "EsriSource_WellFormedWrongFixtureOutput_FailsSemanticOracle",
+          "assertion": "Production executor publishes valid artifacts from duplicate-page, swapped-axis and changed-attribute fixtures; the unchanged literal semantic oracle rejects each.",
+          "bodyDigest": "sha256:11f6f523d24fc248b826a89e0729e700f0098ca30cf8eef0a34525e340446bf7"
+        }
+      ]
+    },
+    {
+      "processId": "source.ogc-features",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RemoteSourceExecutorTests.cs",
+          "test": "RemoteSource_StreamsFeatures_AndPublishesFeatureCollection",
+          "assertion": "Actual source.ogc-features executor publishes decoded exact feature count/content and request projection.",
+          "bodyDigest": "sha256:d2128506ac2ceb129982af7ee995a88d6a384689ff41b1590fa2842a6944d8ef"
+        }
+      ]
+    },
+    {
+      "processId": "source.wfs",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/WfsExecutionProofTests.cs",
+          "test": "Wfs_FilteredShortPages_PublishesExactFeaturesAndTerminates",
+          "fixturePath": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/WfsExecutionProofTests.cs",
+          "assertion": "Required real HTTP paged WFS fixture through the production executor: exact filtered/bounded features, XYZ, Unicode/null and lossless Int64 attributes, short-page completeness/uniqueness/termination with or without numberMatched; oracle rejects duplicate output.",
+          "bodyDigest": "sha256:969183e15cc02dce65b8caa3aa7d3b413fb04e93414a5bf6c8a527c7aaa59e9f"
+        }
+      ]
+    },
+    {
+      "processId": "source.postgis",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/PostgisSourceExecutionProofTests.cs",
+          "test": "Postgis_RegisteredExternalDatabase_PublishesOnlyPredicateWatermarkAndBboxMatches",
+          "fixturePath": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/PostgisSourceExecutionProofTests.cs",
+          "assertion": "Required second real PostGIS database via encrypted registry and real resolver: production executor output exactly matches independent predicate/watermark/bbox rows, attributes, XYZ and SRID; no credential disclosure; oracle rejects valid output from a broadened predicate.",
+          "bodyDigest": "sha256:2658d790337c8c4522491f46c1e9dd3d87e645323e2d451486c78fb39974af05"
+        }
+      ]
+    },
+    {
+      "processId": "sink.geojson-file",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/FileSinkExecutorTests.cs",
+          "test": "GeoJsonFileSink_WritesFeatureCollectionFile",
+          "assertion": "Real-disk read-back parses the exact written feature count/content.",
+          "bodyDigest": "sha256:762bce02bf51857840c007ea4304d8845379ff1e363aa51f14aaf07cb4db2483"
+        }
+      ]
+    },
+    {
+      "processId": "sink.quarantine",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/FileSinkExecutorTests.cs",
+          "test": "QuarantineSink_TagsRowsAndNeverThrows",
+          "assertion": "Real-disk read-back proves exact rows, batch id, and quarantine reason.",
+          "bodyDigest": "sha256:1b2ce669e1251125bd86839daeee45691fea6beb7040d010546d62e032179b47"
+        }
+      ]
+    },
+    {
+      "processId": "sink.external-postgis",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/ExternalPostgisSinkExecutorTests.cs",
+          "test": "ExecuteAsync_CreatesTableAndInsertsFeaturesWithBatchTag",
+          "assertion": "Real PostGIS read-back proves inserted geometry/attributes and batch tag.",
+          "bodyDigest": "sha256:5bb9bc6d51c486fec1f561e0475271ff0595e89a82ca6687a10c71daa6391906"
+        }
+      ]
+    },
+    {
+      "processId": "sink.honua-layer",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/HonuaLayerSinkExecutorTests.cs",
+          "test": "HonuaLayerSink_LoadsRowsThroughCapability_AppendMode",
+          "assertion": "Actual executor verifies substitute capability inputs; no persisted read-back.",
+          "bodyDigest": "sha256:6332061a628651f210967ab19e0cb5ef860e6d853f2a4dde10eec966760f7263"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSinkExecutionProofTests.cs",
+          "test": "HonuaLayerSink_AppendThenKeyedUpsert_ReadsExactCommittedGeometryAttributesAndReceipts",
+          "assertion": "Workflow-only entry point: real sink executor into published PostGIS target, read through canonical metadata provider router; exact append/upsert rows, geometry, attributes, batch provenance, counts and rejection receipts. The same oracle rejects actual append-instead-of-upsert persistence and corrupted values/axes.",
+          "bodyDigest": "sha256:f121de61abd4402a25bf8efb10790176b5cbf68dbfbee6f173feaa11f4fa76c2"
+        },
+        {
+          "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSinkExecutionProofTests.cs",
+          "test": "HonuaLayerSink_FailingRow_RollsBackKeyDeletionAndAllInsertedRows",
+          "assertion": "Database CHECK rejects one row; actual upsert rolls back deletion and inserts, publishes no artifact, and canonical query returns only the unchanged original row.",
+          "bodyDigest": "sha256:493de63186727b3027c8116e92c4ed8b22aa4ae2f6af34b02b94554a59a41a7a"
+        }
+      ]
+    },
+    {
+      "processId": "gdal.gdalwarp",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/RasterExecutionProofTests.cs",
+          "test": "Reproject_GeographicToMercator_MatchesAnalyticalGridAndInverseMappedSamples",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/grid.tif",
+          "assertion": "Required real GDAL execution: analytical Mercator grid/inverse-mapped pixels, CRS, bounds, transform, dimensions, bands, dtype and nodata/mask. The same oracle rejects a changed pixel in a valid GeoTIFF.",
+          "bodyDigest": "sha256:13120163f127e0e87d9444a3ab019c3d4805a056b29ff1397751c121ff3d7737"
+        }
+      ]
+    },
+    {
+      "processId": "gdal.ogr2ogr",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/GdalWorkerExecutorTests.cs",
+          "test": "VectorConvert_WithRealOgr2Ogr_ConvertsGeoJsonToCsv",
+          "assertion": "Required real-OGR CI decodes CSV and proves expected property header/value.",
+          "bodyDigest": "sha256:f1d0525ccc3519b583c5401ae9a10931cd2d353febadcec4a725e98081d0a131"
+        }
+      ]
+    },
+    {
+      "processId": "source.ogr",
+      "status": "proven",
+      "entryPoint": "workflow",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/OgrExecutionProofTests.cs",
+          "test": "Ogr_MultilayerGeoPackage_SelectsLayerAndPreservesGeometryAndAttributes",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/RasterProof/survey.gpkg",
+          "assertion": "Required real OGR conversion of a multilayer GeoPackage: literal PointZ/LineStringZ/PolygonZ/null geometry, exact XYZ, SRID, Unicode/null/numeric attributes, selected layer; same oracle rejects the decoy layer.",
+          "bodyDigest": "sha256:3f571d8e30d22dea7372117629b46624ca02f18a1442807ce02f7f4eaced88d4"
+        }
+      ]
+    },
+    {
+      "processId": "pcloud.translate",
+      "status": "proven",
+      "entryPoint": "job",
+      "evidence": [
+        {
+          "path": "tests/dotnet/Honua.Worker.Gdal.Tests/PdalExecutionProofTests.cs",
+          "test": "Translate_RealLas_PreservesPointsAttributesPrecisionAndCrs",
+          "fixturePath": "tests/dotnet/Honua.Worker.Gdal.Tests/Fixtures/PointCloudProof",
+          "assertion": "Required production-pinned PDAL and real LAS: independent binary decode asserts uncompressed LAS, count, all XYZ/attributes, scale, bounds, writer header metadata, CRS pass-through and analytical reprojection to EPSG:4979; oracle rejects changed intensity in valid LAS.",
+          "bodyDigest": "sha256:1976a0b54c2e93ed461222c180ee3017da3f6481512fea1405f14c1cb3905db6"
+        }
+      ]
+    }
+  ],
+  "entryPointDefinitions": {
+    "job": "The shared geoprocessing job runtime: OGC API Processes execution, WPS 2.0, the GPServer adapter and the MCP process tools. Evidence qualifies when it drives the operation's production job executor, whether through a protocol submit/poll or directly against that executor.",
+    "protocol": "The operation's owning synchronous protocol endpoint (FeatureServer edit/maintenance routes, the spatial-analytics routes). Evidence qualifies when it drives that endpoint.",
+    "workflow": "Composition inside a workflow DAG. Evidence qualifies when it drives the DAG source/sink/transform executor the workflow compiler dispatches for the node."
+  },
+  "amendment": {
+    "ruling": "https://github.com/honua-io/honua-server/issues/4409",
+    "recordedAt": "2026-09-06T00:00:00Z",
+    "summary": "GA is defined per entry point. Every row now carries the entry point its verdict was proved through, and the gate rejects a proven verdict whose entry point the catalog does not declare for that operation. raster.interpolate-kriging was implemented rather than left advertised-but-unexecutable, so no operation is advertised without a callable entry point."
+  }
 }

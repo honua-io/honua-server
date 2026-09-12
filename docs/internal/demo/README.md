@@ -1,3 +1,8 @@
+---
+type: index
+title: "Demo runbooks"
+description: "Entry point for the demo runbooks, which now live in honua-demo."
+---
 # Demo runbooks — moved
 
 Recording and operator runbooks for the live demo deployment live in the

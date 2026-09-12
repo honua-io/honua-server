@@ -70,11 +70,14 @@ internal sealed class GeoprocessingJobDispatcher
     private readonly IExecutionAdmissionEvaluator? _admissionEvaluator;
     private readonly IOperationGateway? _operationGateway;
     private readonly IOperationEnvelopeFactory? _operationEnvelopeFactory;
+    private readonly ExecutionAdmissionCoordinator _admissionCoordinator;
 
     /// <summary>
     /// Creates the dispatcher over the admission evaluator, workload registry, queue,
     /// batch compute backends, and approval-lane operation gateway, falling back to
-    /// null-object/empty semantics when any are absent.
+    /// null-object/empty semantics when any are absent. Without a composed
+    /// <see cref="ExecutionAdmissionCoordinator"/> the admission window is serialized
+    /// process-wide only.
     /// </summary>
     public GeoprocessingJobDispatcher(
         ILogger<GeoprocessingJobService> logger,
@@ -85,7 +88,8 @@ internal sealed class GeoprocessingJobDispatcher
         IEnumerable<IBatchComputeBackend>? backends = null,
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
         IOperationGateway? operationGateway = null,
-        IOperationEnvelopeFactory? operationEnvelopeFactory = null)
+        IOperationEnvelopeFactory? operationEnvelopeFactory = null,
+        ExecutionAdmissionCoordinator? admissionCoordinator = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -96,9 +100,18 @@ internal sealed class GeoprocessingJobDispatcher
         _admissionEvaluator = admissionEvaluator;
         _operationGateway = operationGateway;
         _operationEnvelopeFactory = operationEnvelopeFactory;
+        _admissionCoordinator = admissionCoordinator ?? ExecutionAdmissionCoordinator.ProcessLocal;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
+
+    /// <summary>
+    /// Enters the admission check-and-create window (#3853). Every read that feeds admission and
+    /// the durable record creation must happen while the returned lease is held; dispose it as soon
+    /// as the record exists so backend submission does not extend the serialized window.
+    /// </summary>
+    public Task<ExecutionAdmissionCoordinator.Lease> EnterAdmissionWindowAsync(CancellationToken cancellationToken)
+        => _admissionCoordinator.AcquireAsync(cancellationToken);
 
     /// <summary>
     /// Evaluates execution admission for the submission. Returns the admitted decision, or

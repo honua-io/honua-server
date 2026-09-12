@@ -33,10 +33,12 @@ public sealed class CatalogExecutableConformanceTests
         definitions.Should().HaveCount(98);
         definitions.Should().OnlyHaveUniqueItems(process => process.ProcessId);
         definitions.Should().NotContain(process => process.ExecutionKind == ProcessExecutionKind.Unclassified);
-        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(79);
-        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(6);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Job).Should().Be(82);
+        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.ProtocolOnly).Should().Be(4);
         definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.WorkflowOnly).Should().Be(12);
-        definitions.Count(process => process.ExecutionKind == ProcessExecutionKind.Unavailable).Should().Be(1);
+        definitions.Should().NotContain(
+            process => process.ExecutionKind == ProcessExecutionKind.Unavailable,
+            "the entry-point ruling admits no advertised-but-unexecutable operation (#4409)");
     }
 
     [UnitTest]
@@ -214,6 +216,7 @@ public sealed class CatalogExecutableConformanceTests
             new GeometrySnapJobExecutor(monitor, NullLogger<GeometrySnapJobExecutor>.Instance),
             new GeometryMakeValidJobExecutor(monitor, NullLogger<GeometryMakeValidJobExecutor>.Instance),
             new GeometryDifferenceJobExecutor(monitor, NullLogger<GeometryDifferenceJobExecutor>.Instance),
+            new GeometryFormatConvertJobExecutor(monitor, NullLogger<GeometryFormatConvertJobExecutor>.Instance),
             new ManagedSpatialJoinExecutor(monitor),
             new ManagedClusterExecutor(monitor),
             new ManagedBufferAggregateExecutor(monitor),
@@ -221,6 +224,7 @@ public sealed class CatalogExecutableConformanceTests
             new ManagedHotSpotExecutor(monitor),
             new LayerBufferAggregateExecutor(scopeFactory, monitor, NullLogger<LayerBufferAggregateExecutor>.Instance),
             new LayerFeatureProjectExecutor(scopeFactory, monitor, NullLogger<LayerFeatureProjectExecutor>.Instance),
+            new CopyFeaturesExecutor(scopeFactory, monitor, NullLogger<CopyFeaturesExecutor>.Instance),
             new LayerDissolveExecutor(scopeFactory, monitor, NullLogger<LayerDissolveExecutor>.Instance),
             new LayerSimplifyExecutor(scopeFactory, monitor, NullLogger<LayerSimplifyExecutor>.Instance),
             new LayerSpatialJoinExecutor(scopeFactory, monitor, NullLogger<LayerSpatialJoinExecutor>.Instance),

@@ -1,3 +1,7 @@
+---
+type: reference
+title: "SQL Server provider"
+---
 # SQL Server provider
 
 ## Protocol routing

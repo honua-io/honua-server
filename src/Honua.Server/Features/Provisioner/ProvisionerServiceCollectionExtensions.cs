@@ -6,7 +6,6 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Provisioner.BuildJobs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using StackExchange.Redis;
 
 namespace Honua.Server.Features.Provisioner;
 
@@ -14,8 +13,8 @@ namespace Honua.Server.Features.Provisioner;
 /// Registers the per-area geocoder/router build job submission service and its
 /// config-driven backend options. Mirrors the batch-dispatched tile-cache registration:
 /// the submission service depends on the durable execution-job store/queue, which are only
-/// present when Redis is configured, so registration is gated on the Redis multiplexer to
-/// keep <c>GetService&lt;IProvisionerBuildJobService&gt;()</c> from throwing on a missing
+/// present when an attested Redis substrate is configured, so registration is gated on the durable
+/// job store to keep <c>GetService&lt;IProvisionerBuildJobService&gt;()</c> from throwing on a missing
 /// dependency in stores-less dev/test profiles. The build jobs ride the same GP-on-Batch
 /// dispatch path (durable record → reconciler → IBatchComputeBackend) that tiling uses.
 /// </summary>
@@ -52,7 +51,7 @@ internal static class ProvisionerServiceCollectionExtensions
                 sp.GetRequiredService<IUniversalProgressStore>(),
                 sp.GetRequiredService<ILogger<ProvisionerBuildJobExecutor>>()));
 
-        if (services.Any(d => d.ServiceType == typeof(IConnectionMultiplexer)))
+        if (services.Any(d => d.ServiceType == typeof(IExecutionJobStore)))
         {
             services.TryAddSingleton<IProvisionerBuildJobService, ProvisionerBuildJobService>();
         }

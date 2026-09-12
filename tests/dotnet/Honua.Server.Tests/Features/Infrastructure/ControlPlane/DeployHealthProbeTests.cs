@@ -141,6 +141,116 @@ public sealed class DeployHealthProbeTests
         sendCount.Should().Be(0, "a rejected URL must never hit the network");
     }
 
+    // ---- HTTP-200 error envelopes and wrong-result markers (#4617) ----------
+
+    [Theory]
+    [InlineData("{\"error\":{\"code\":500,\"message\":\"Unable to complete operation.\",\"details\":[]},\"marker\":\"GOLDEN-OK\"}", "JSON error envelope")]
+    [InlineData("<?xml version=\"1.0\"?><ows:ExceptionReport xmlns:ows=\"http://www.opengis.net/ows/1.1\"><ows:Exception exceptionCode=\"NoApplicableCode\"><ows:ExceptionText>GOLDEN-OK lookup failed</ows:ExceptionText></ows:Exception></ows:ExceptionReport>", "OGC exception report")]
+    [InlineData("{\"type\":\"about:blank\",\"title\":\"Internal Server Error\",\"status\":500,\"detail\":\"GOLDEN-OK\"}", "problem-details error envelope")]
+    [InlineData("{\"code\":\"InvalidParameterValue\",\"description\":\"GOLDEN-OK is not a collection\"}", "OGC API exception")]
+    public async Task ProbeGoldenQueryAsync_Http200ErrorEnvelope_DoesNotMatchEvenWhenTokenPresent(string body, string expectedShape)
+    {
+        // Every body contains the golden token, so a substring-only check would pass; the envelope
+        // itself proves the query failed.
+        using var factory = BodyFactory(HttpStatusCode.OK, body);
+        var probe = new HttpDeployHealthProbe(factory);
+
+        var result = await probe.ProbeGoldenQueryAsync(
+            new DeployGoldenQueryRequest { Url = "https://example.com/probe", ExpectedBodyContains = "GOLDEN-OK" },
+            CancellationToken.None);
+
+        result.Validated.Should().BeTrue();
+        result.Matched.Should().BeFalse("an HTTP 200 carrying an error envelope is a failed query, not a result");
+        result.Detail.Should().Contain("HTTP 200").And.Contain(expectedShape);
+    }
+
+    [Fact]
+    public async Task ProbeGoldenQueryAsync_NullErrorProperty_IsNotAnEnvelope()
+    {
+        // Some APIs always emit "error": null on success; that is not a failure signal.
+        using var factory = BodyFactory(HttpStatusCode.OK, "{\"error\":null,\"features\":[{\"attributes\":{\"NAME\":\"GOLDEN-OK\"}}]}");
+        var probe = new HttpDeployHealthProbe(factory);
+
+        var result = await probe.ProbeGoldenQueryAsync(
+            new DeployGoldenQueryRequest { Url = "https://example.com/probe", ExpectedBodyContains = "GOLDEN-OK" },
+            CancellationToken.None);
+
+        result.Matched.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProbeGoldenQueryAsync_WrongResultMarker_DoesNotMatch()
+    {
+        // The service answered 200 with the expected token but also its fallback/empty-result sentinel.
+        using var factory = BodyFactory(HttpStatusCode.OK, "{\"features\":[],\"marker\":\"GOLDEN-OK\",\"note\":\"FALLBACK-RESULT\"}");
+        var probe = new HttpDeployHealthProbe(factory);
+
+        var result = await probe.ProbeGoldenQueryAsync(
+            new DeployGoldenQueryRequest
+            {
+                Url = "https://example.com/probe",
+                ExpectedBodyContains = "GOLDEN-OK",
+                ForbiddenBodyContains = "FALLBACK-RESULT"
+            },
+            CancellationToken.None);
+
+        result.Matched.Should().BeFalse();
+        result.Detail.Should().Contain("wrong-result marker");
+    }
+
+    [Fact]
+    public async Task ProbeGoldenQueryAsync_ExpectedErrorStatus_DoesNotApplyEnvelopeDetection()
+    {
+        // An operator can deliberately probe a failure path (expected 400); the envelope is then the
+        // declared result and only the declared expectations decide.
+        using var factory = BodyFactory(HttpStatusCode.BadRequest, "{\"error\":{\"code\":400,\"message\":\"EXPECTED-REJECTION\"}}");
+        var probe = new HttpDeployHealthProbe(factory);
+
+        var result = await probe.ProbeGoldenQueryAsync(
+            new DeployGoldenQueryRequest
+            {
+                Url = "https://example.com/probe",
+                ExpectedStatusCode = 400,
+                ExpectedBodyContains = "EXPECTED-REJECTION"
+            },
+            CancellationToken.None);
+
+        result.Matched.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("Unhealthy")]
+    [InlineData("{\"status\":\"Unhealthy\",\"entries\":{\"postgres\":{\"status\":\"Unhealthy\"}}}")]
+    [InlineData("{\"error\":{\"code\":503,\"message\":\"Service unavailable\"}}")]
+    public async Task ProbeAsync_Http200WithUnhealthyOrErrorBody_CountsAsFailure(string body)
+    {
+        using var factory = BodyFactory(HttpStatusCode.OK, body);
+        var probe = new HttpDeployHealthProbe(factory);
+
+        var result = await probe.ProbeAsync(
+            new DeployHealthProbeRequest { Url = "https://example.com/healthz/ready", Samples = 3 },
+            CancellationToken.None);
+
+        result.Validated.Should().BeTrue();
+        result.Failures.Should().Be(3, "a readiness 200 whose body reports failure is not a healthy check");
+    }
+
+    [Theory]
+    [InlineData("Healthy")]
+    [InlineData("{\"status\":\"Healthy\"}")]
+    [InlineData("")]
+    public async Task ProbeAsync_Http200WithHealthyBody_CountsAsHealthy(string body)
+    {
+        using var factory = BodyFactory(HttpStatusCode.OK, body);
+        var probe = new HttpDeployHealthProbe(factory);
+
+        var result = await probe.ProbeAsync(
+            new DeployHealthProbeRequest { Url = "https://example.com/healthz/ready", Samples = 2 },
+            CancellationToken.None);
+
+        result.Failures.Should().Be(0);
+    }
+
     private static StubHttpClientFactory StubFactory(HttpStatusCode status)
         => new(new HttpClient(new FixedStatusHandler(status)));
 

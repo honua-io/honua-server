@@ -1,3 +1,7 @@
+---
+type: guide
+title: "Open-data area-import provisioner"
+---
 # Open-data area-import provisioner
 
 > Status: **first slice.** A curated open-data source catalog plus one

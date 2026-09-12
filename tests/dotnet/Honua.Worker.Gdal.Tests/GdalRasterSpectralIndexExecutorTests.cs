@@ -52,7 +52,7 @@ public sealed class GdalRasterSpectralIndexExecutorTests
 
             var args = runner.Invocations.Single(i => i.Tool == "gdal_calc.py").Arguments;
             args.Should().Contain(a => a.StartsWith("-A")).And.Contain(a => a.StartsWith("-B"));
-            args.Should().ContainInOrder("--calc", "(1.0*A-B)/(1.0*A+B)");
+            args.Should().ContainInOrder("--calc", "numpy.nan_to_num((1.0*A-B)/(1.0*A+B),nan=numpy.nan,posinf=numpy.nan,neginf=numpy.nan)");
             args.Should().ContainInOrder("--type", "Float32");
         }
         finally

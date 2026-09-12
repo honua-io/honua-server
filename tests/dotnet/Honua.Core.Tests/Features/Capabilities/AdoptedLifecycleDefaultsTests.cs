@@ -20,6 +20,7 @@ public sealed class AdoptedLifecycleDefaultsTests
         { "scene.pointcloud-ingest", CapabilityMaturity.Experimental },
         { "alerts.geofence", CapabilityMaturity.Preview },
         { "sync.offline", CapabilityMaturity.Preview },
+        { "admin.multi-tenancy", CapabilityMaturity.Preview },
     };
 
     [Theory]
@@ -34,7 +35,7 @@ public sealed class AdoptedLifecycleDefaultsTests
         requiredDescriptor.Maturity.Should().Be(expectedMaturity);
 
         CapabilityResolution disabled = Registry.Resolve(capabilityId, CapabilityGateContext.Default);
-        disabled.Enabled.Should().BeFalse("all seven adopted rows are default-off");
+        disabled.Enabled.Should().BeFalse("every adopted lifecycle row is default-off");
         disabled.ReasonCode.Should().Be(CapabilityReasonCodes.ExperimentalDisabled);
 
         var enabledFlags = new CapabilityFlagOptions();

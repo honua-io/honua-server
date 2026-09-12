@@ -7,6 +7,7 @@ using Honua.Protocols.SensorThings.Streaming;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Honua.Protocols.SensorThings;
@@ -21,23 +22,32 @@ internal static class SensorThingsServiceCollectionExtensions
     /// (<see cref="Honua.Core.Features.SensorThings.Abstractions.IObservationStore"/>)
     /// is registered by the active data provider. The Phase 2 ingest path publishes new
     /// observations to the Phase 3 real-time stream through
-    /// <see cref="IObservationChangeEventPublisher"/>, implemented by the singleton
-    /// <see cref="ObservationStreamSessionManager"/> (Redis cross-node fan-out when a
+    /// <see cref="IObservationChangeEventPublisher"/>, implemented by a scoped publisher
+    /// feeding the singleton <see cref="ObservationStreamSessionManager"/> (Redis cross-node fan-out when a
     /// multiplexer is registered, single-node otherwise).
     /// </summary>
     public static IServiceCollection AddSensorThings(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.TryAddScoped<StaObservationFilterTranslator>();
+        services.TryAddScoped<StaFilterTranslator>();
 
-        // The session manager is both the observation-stream transport and the
-        // change-event publisher consumed by the ingest path.
+        // Per-principal, per-tenant and per-node admission caps (#4198). Validated at
+        // startup so a per-scope cap can never be configured at or above the node cap.
+        services.AddOptions<ObservationStreamOptions>()
+            .BindConfiguration(ObservationStreamOptions.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<ObservationStreamOptions>, ObservationStreamOptionsValidator>());
+
+        // Capture tenant/schema only after request middleware resolves them. The
+        // singleton transport must never hold request services or read ambient state.
         services.TryAddSingleton(sp => new ObservationStreamSessionManager(
             sp.GetRequiredService<ILogger<ObservationStreamSessionManager>>(),
-            sp.GetService<IConnectionMultiplexer>()));
-        services.TryAddSingleton<IObservationChangeEventPublisher>(sp =>
-            sp.GetRequiredService<ObservationStreamSessionManager>());
+            sp.GetService<IConnectionMultiplexer>(),
+            sp.GetRequiredService<IOptions<ObservationStreamOptions>>().Value));
+        services.TryAddScoped(ObservationStreamScope.FromServices);
+        services.TryAddScoped<IObservationChangeEventPublisher, ObservationStreamPublisher>();
         services.AddHostedService<ObservationStreamHeartbeatService>();
 
         return services;

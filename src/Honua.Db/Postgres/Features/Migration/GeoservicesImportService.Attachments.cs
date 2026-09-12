@@ -11,7 +11,14 @@ internal sealed partial class GeoservicesImportService
 {
     private const int AttachmentQueryBatchSize = 50;
 
-    private async Task<(int Copied, int Failed)> CopyAttachmentsAsync(
+    /// <summary>
+    /// Copies the source layer's attachments into the Honua attachment store and reports the
+    /// attachment inventory independently of the feature counts (issue #4600). The advertised total
+    /// is what the source said exists; <c>UnverifiedParents</c> counts imported features whose
+    /// attachment inventory could not be read at all, so the fidelity gate can tell "no attachments"
+    /// apart from "we never found out".
+    /// </summary>
+    private async Task<AttachmentCopyOutcome> CopyAttachmentsAsync(
         GeoservicesImportRequest request,
         GeoservicesLayerInfo layerInfo,
         int publishedLayerId,
@@ -25,7 +32,7 @@ internal sealed partial class GeoservicesImportService
     {
         if (_attachmentStore == null || objectIdMap.Count == 0)
         {
-            return (0, 0);
+            return default;
         }
 
         Log.AttachmentCopyStarting(_logger, request.LayerId, objectIdMap.Count);
@@ -45,6 +52,8 @@ internal sealed partial class GeoservicesImportService
 
         var attachmentsCopied = 0;
         var failedAttachments = 0;
+        var advertisedAttachments = 0;
+        var unverifiedParents = 0;
 
         // Stable batches of source ObjectIds keep attachment-group ordering deterministic for tests.
         var sourceObjectIds = objectIdMap.Keys
@@ -81,6 +90,10 @@ internal sealed partial class GeoservicesImportService
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 Log.AttachmentQueryBatchFailed(_logger, request.LayerId, batch.Length, ex);
+                // #4600: the advertised attachment count for these parents is now unknowable, so the
+                // attachment check cannot be reported as passing. Record the parents as unverified
+                // rather than letting the run imply they simply had no attachments.
+                unverifiedParents += batch.Length;
                 warnings.Add(
                     $"Attachment metadata query failed for {batch.Length} parent features; "
                     + "this batch of attachments was skipped.");
@@ -98,6 +111,8 @@ internal sealed partial class GeoservicesImportService
                 {
                     continue;
                 }
+
+                advertisedAttachments += group.AttachmentInfos.Length;
 
                 if (!objectIdMap.TryGetValue(group.ParentObjectId, out var honuaFeatureId))
                 {
@@ -187,6 +202,31 @@ internal sealed partial class GeoservicesImportService
                 + "but some attachments are missing from the target store.");
         }
 
-        return (attachmentsCopied, failedAttachments);
+        return new AttachmentCopyOutcome
+        {
+            Copied = attachmentsCopied,
+            Failed = failedAttachments,
+            Advertised = advertisedAttachments,
+            UnverifiedParents = unverifiedParents
+        };
+    }
+
+    /// <summary>
+    /// Attachment-copy accounting for one import run. Kept separate from the feature counters so
+    /// attachment parity is reconciled on its own evidence (issue #4600 acceptance criterion 6).
+    /// </summary>
+    internal readonly record struct AttachmentCopyOutcome
+    {
+        /// <summary>Attachments whose bytes reached the Honua attachment store.</summary>
+        public int Copied { get; init; }
+
+        /// <summary>Advertised attachments that could not be copied.</summary>
+        public int Failed { get; init; }
+
+        /// <summary>Attachments the source advertised across every parent feature that was probed.</summary>
+        public int Advertised { get; init; }
+
+        /// <summary>Imported features whose source attachment inventory could not be read.</summary>
+        public int UnverifiedParents { get; init; }
     }
 }

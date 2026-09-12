@@ -9,7 +9,8 @@
     "cross-cutting-default": "Applies automatically as a default behavior, not a distinct route.",
     "ops-background-job": "An operational background job or scheduled task, not an HTTP route.",
     "sdk-only": "Exposed to SDKs/MCP tooling without a distinct catalogued HTTP route in this slice.",
-    "infra-owned": "Owned by the deployment's infrastructure/managed-database layer by design (stateless server); no server-side route or background job performs this function."
+    "infra-owned": "No server-side route or background job performs this function today; it is owned by the deployment's infrastructure or managed-database layer. This describes the current split, not a permanent one — disaster recovery is scoped as an opt-in managed capability (honua-server#4677), so these keys are deliberately retained rather than removed as unimplemented.",
+    "non-http-transport": "Served over a non-HTTP wire (gRPC over h2c), so it has no entry in a feature catalog that catalogues HTTP routes. The surface exists and is tested; the catalogue simply does not model it."
   },
   "noSurfaceCapabilities": [
     {
@@ -139,18 +140,18 @@
       "edition": "Enterprise"
     },
     {
-      "capability": "geocoding.failover",
-      "reasonCode": "config-flag",
-      "reason": "Provider failover is a configuration behavior of the geocoding.forward/reverse routes, not a distinct route.",
-      "category": "Geocoding",
-      "edition": "Pro"
-    },
-    {
       "capability": "format.geoarrow",
       "reasonCode": "content-negotiation",
       "reason": "GeoArrow is selected with f=arrow on the shared FeatureServer query route and is proven by the formatter/query conformance tests; it has no separate route.",
       "category": "Format",
       "edition": "Community"
+    },
+    {
+      "capability": "geocoding.failover",
+      "reasonCode": "config-flag",
+      "reason": "Provider failover is a configuration behavior of the geocoding.forward/reverse routes, not a distinct route.",
+      "category": "Geocoding",
+      "edition": "Pro"
     },
     {
       "capability": "identity.claims-mapping",
@@ -167,6 +168,13 @@
       "edition": "Enterprise"
     },
     {
+      "capability": "jobs.durable-runtime",
+      "category": "Jobs",
+      "edition": "Community",
+      "reasonCode": "ops-background-job",
+      "reason": "The durable job substrate is a background runtime behind the import, tile, geoprocessing and workflow routes rather than a route of its own; those routes are catalogued against their own capabilities. It is advertised as jobs.runner on the capability manifest and named by typed dependency-unavailable refusals, which is why it needs a key a client can resolve."
+    },
+    {
       "capability": "plugin.sdk",
       "reasonCode": "sdk-only",
       "reason": "Server plugin/extension SDK is a compile-time, AOT-safe registration surface, not an HTTP route.",
@@ -181,6 +189,27 @@
       "edition": "Pro"
     },
     {
+      "capability": "provider.databricks",
+      "reasonCode": "provider-runtime-gate",
+      "reason": "Experimental Databricks is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
+      "category": "DataProviders",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "provider.redshift",
+      "reasonCode": "provider-runtime-gate",
+      "reason": "Experimental Redshift is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
+      "category": "DataProviders",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "provider.snowflake",
+      "reasonCode": "provider-runtime-gate",
+      "reason": "Experimental Snowflake is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
+      "category": "DataProviders",
+      "edition": "Enterprise"
+    },
+    {
       "capability": "raster.cloud-storage-config",
       "reasonCode": "config-flag",
       "reason": "Cloud storage provider selection (AWS S3 / Azure Blob) is process-startup dependency-injection wiring driven by configuration/environment variables (for example HONUA_STORAGE_PROVIDER; see FileStorageServiceCollectionExtensions.AddCloudFileStorage), not a request-time HTTP route. Verified: no LicenseGate call checks this entitlement key anywhere in the codebase. Paid-tier enforcement for cloud-served COG/raster delivery happens at request time through the distinct raster.cloud-cog-serving entitlement gate (CogTileResolver); raster.cloud-storage-config exists only as a descriptive FeatureCatalog entry today, not an enforced gate.",
@@ -193,6 +222,13 @@
       "reason": "Temporal mosaic selection is a query parameter on ImageServer/raster serve routes (serve.geoservices-imageserver), not a distinct route.",
       "category": "Raster",
       "edition": "Pro"
+    },
+    {
+      "capability": "serve.grpc",
+      "category": "Serve",
+      "edition": "Community",
+      "reasonCode": "non-http-transport",
+      "reason": "The geospatial.v1 services are served over native h2c gRPC on port 8081 and gRPC-Web on 8080. feature-catalog.json catalogues HTTP routes, so a protocol whose surface is a set of protobuf service methods has no entry there. This was the reason gRPC — alone among the 25 served protocols — had no capability key at all until #3607."
     },
     {
       "capability": "staticmap.high-dpi",
@@ -221,27 +257,6 @@
       "reason": "Smart style defaults apply automatically when a layer publishes; not a distinct route of their own.",
       "category": "Styling",
       "edition": "Community"
-    },
-    {
-      "capability": "provider.databricks",
-      "reasonCode": "provider-runtime-gate",
-      "reason": "Experimental Databricks is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
-      "category": "DataProviders",
-      "edition": "Enterprise"
-    },
-    {
-      "capability": "provider.redshift",
-      "reasonCode": "provider-runtime-gate",
-      "reason": "Experimental Redshift is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
-      "category": "DataProviders",
-      "edition": "Enterprise"
-    },
-    {
-      "capability": "provider.snowflake",
-      "reasonCode": "provider-runtime-gate",
-      "reason": "Experimental Snowflake is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
-      "category": "DataProviders",
-      "edition": "Enterprise"
     },
     {
       "capability": "temporal.animation-api",

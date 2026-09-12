@@ -1,3 +1,9 @@
+---
+type: reference
+title: ".NET SDK: common tasks"
+description: "Two of the most common reads with the Honua .NET SDK: querying a FeatureServer layer and searching a STAC catalog."
+resource: "https://github.com/orgs/honua-io/packages?repo_name=honua-sdk-dotnet"
+---
 # .NET SDK: common tasks
 
 Two of the most common reads with the Honua .NET SDK: querying a FeatureServer layer and searching a STAC catalog. Both assume a registered client — see [Get started with the .NET SDK](getting-started.md).

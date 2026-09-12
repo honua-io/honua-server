@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Deploy on AWS and Azure"
+description: "You'll pick a managed-cloud deployment pattern for Honua — ECS/Fargate, Lambda, Azure Container Apps, or Azure Functions — and know which image, configuration, and rollout mechanism each one uses."
+---
 # Deploy on AWS and Azure
 
 You'll pick a managed-cloud deployment pattern for Honua — ECS/Fargate, Lambda, Azure Container Apps, or Azure Functions — and know which image, configuration, and rollout mechanism each one uses.
@@ -100,6 +105,10 @@ az functionapp config container set --name honua-prod --resource-group honua \
 
 **Redis is a hard dependency for the ops control plane.** Durable jobs, queued imports, deploy workflows, and the operation gateway are all backed by Redis (ElastiCache / Azure Cache for Redis). Without it these surfaces fail closed — job/import/workflow endpoints return `503` rather than silently running node-local work — and the ops-findings recommended-action gateway reports a degraded, unavailable state. Provision Redis for any environment that runs jobs, imports, workflows, or the deploy control plane; single-host dev/test via Docker Compose is the only tier where you can skip it.
 
+**Provision it for durability, not just reachability.** The server inspects the Redis persistence policy once at startup and accepts the durability attestation only when `appendonly` is `yes` (with `INFO persistence` reporting `aof_enabled:1`), `appendfsync` is `everysec` or `always`, and `maxmemory-policy` is `noeviction`. Enable AOF on ElastiCache, or data persistence on an Azure Cache for Redis tier that supports it. A **rejected** attestation degrades rather than stopping the server: jobs keep running, the server logs one warning naming the typed cause and its remediation, the `redis` health entry reports `Degraded`, and the capability manifest withholds `jobs.runner` instead of advertising durability the deployment cannot provide. `/healthz/ready` stays `Ready`, so an AOF-less cache does not take every instance out of the load balancer. Set `Jobs__RequireDurableStore=true` if you would rather the process refuse to start at all, in which case a rejection exits with a single typed startup error.
+
+This matters most on **serverless** substrates, where a frozen or torn-down process keeps no state of its own: an unattested Redis there means acknowledged job state has no durable home at all.
+
 **The local batch-compute backends are single-host only.** The in-process `local` backend and the child-process `honua-local-process` pool track launched jobs in an in-process registry that cannot survive a host restart or be observed from another node. They are the zero-dependency executors for single-host / air-gapped deployments; they **cannot** work on:
 
 - a **serverless** substrate (Lambda, Functions, Cloud Run), whose process and filesystem are frozen or torn down between invocations, or
@@ -123,6 +132,7 @@ Expected: the script runs `scripts/cloud/post-deployment-verification.sh` plus t
 
 - **Serverless cold starts time out** — use the `-aot` image variants and confirm `HONUA_SKIP_MIGRATIONS=true`; migrations during cold start are the usual culprit.
 - **Job/import endpoints return `503`** — durable jobs, queued imports, and workflows require Redis (ElastiCache / Azure Cache for Redis); serverless patterns without Redis don't host them.
+- **Logs warn "Redis durability attestation was REJECTED"** — Redis is reachable but its persistence policy does not protect acknowledged writes. Jobs still run, non-durably; fix the policy per the remediation in the warning (see the durability paragraph above).
 - **Deploy-plan validation fails on Lambda/Functions/Container Apps** — full deploy-plan support is ECS-first; set `HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT=false` (the script auto-defaults this per platform).
 - **Admin calls return 401** — confirm the secret store value actually reaches the container env as `HONUA_ADMIN_PASSWORD` and requests send it in the `X-API-Key` header.
 

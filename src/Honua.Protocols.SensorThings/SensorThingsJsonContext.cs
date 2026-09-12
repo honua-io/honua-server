@@ -12,6 +12,7 @@ namespace Honua.Protocols.SensorThings;
 /// <c>@iot.*</c> annotation members), so no naming policy is applied here.
 /// </summary>
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(StaServiceDocument))]
 [JsonSerializable(typeof(StaEntitySet<StaThing>))]
 [JsonSerializable(typeof(StaEntitySet<StaSensor>))]
 [JsonSerializable(typeof(StaEntitySet<StaObservedProperty>))]

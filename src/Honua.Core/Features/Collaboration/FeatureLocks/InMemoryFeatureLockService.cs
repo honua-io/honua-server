@@ -179,6 +179,16 @@ public sealed class InMemoryFeatureLockService : IFeatureLockService
     }
 
     /// <inheritdoc />
+    public ValueTask<bool> HasAnyActiveLeasesAsync(CancellationToken cancellationToken = default)
+        // Deliberately unsynchronised and un-pruned: this is the per-request fast-path
+        // probe write paths use to skip per-feature lookups. A stale "true" only costs
+        // the caller the individual GetActiveLeaseAsync checks it would otherwise have
+        // done, and those are authoritative. A stale "false" is impossible while a lease
+        // is live, because the entry is added to _leases before the claim response is
+        // observable to any writer.
+        => ValueTask.FromResult(!_leases.IsEmpty);
+
+    /// <inheritdoc />
     public ValueTask<int> PruneExpiredAsync(CancellationToken cancellationToken = default)
     {
         lock (_gate)

@@ -106,6 +106,48 @@ public sealed class HostValidationFallbackTests : IAsyncLifetime
 
 public sealed class HostValidationMiddlewareUnitTests
 {
+    [Theory]
+    [InlineData(null, "alias.honua.test", true)]
+    [InlineData("", "alias.honua.test", true)]
+    [InlineData(" \t ", "alias.honua.test", true)]
+    [InlineData("", "attacker.example", false)]
+    [InlineData("https://primary.honua.test", "primary.honua.test", true)]
+    [InlineData("https://primary.honua.test", "alias.honua.test", false)]
+    public async Task InvokeAsync_PublicUrlAlias_PreservesPrimaryPrecedenceAndRejectsForgedHost(
+        string? primaryUrl, string requestHost, bool expectedAllowed)
+    {
+        var (middleware, tracker) = CreateMiddleware(settings: new Dictionary<string, string?>
+        {
+            ["Public:BaseUrl"] = primaryUrl,
+            ["PUBLIC_BASE_URL"] = "https://alias.honua.test"
+        });
+        var context = CreateContext(requestHost, IPAddress.Parse("203.0.113.10"));
+
+        await middleware.InvokeAsync(context);
+
+        tracker.NextCalled.Should().Be(expectedAllowed);
+        context.Response.StatusCode.Should().Be(expectedAllowed
+            ? StatusCodes.Status204NoContent : StatusCodes.Status400BadRequest);
+    }
+
+    [Theory]
+    [InlineData("allowed.honua.test", true)]
+    [InlineData("alias.honua.test", false)]
+    public async Task InvokeAsync_PublicUrlAlias_ExplicitHostAllowlistRetainsPrecedence(string requestHost, bool expectedAllowed)
+    {
+        var (middleware, tracker) = CreateMiddleware(settings: new Dictionary<string, string?>
+        {
+            ["Public:BaseUrl"] = string.Empty,
+            ["PUBLIC_BASE_URL"] = "https://alias.honua.test",
+            ["HostValidation:AllowedHosts:0"] = "allowed.honua.test"
+        });
+        var context = CreateContext(requestHost, IPAddress.Parse("203.0.113.10"));
+
+        await middleware.InvokeAsync(context);
+
+        tracker.NextCalled.Should().Be(expectedAllowed);
+    }
+
     [Fact]
     public async Task InvokeAsync_FallbackMode_LocalhostWithNonLoopbackLocalAddress_ReturnsBadRequest()
     {
@@ -179,7 +221,8 @@ public sealed class HostValidationMiddlewareUnitTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status204NoContent);
     }
 
-    private static (HostValidationMiddleware Middleware, InvocationTracker Tracker) CreateMiddleware(string environmentName = "Production")
+    private static (HostValidationMiddleware Middleware, InvocationTracker Tracker) CreateMiddleware(
+        string environmentName = "Production", Dictionary<string, string?>? settings = null)
     {
         var tracker = new InvocationTracker();
         var configuration = new ConfigurationBuilder()
@@ -187,6 +230,7 @@ public sealed class HostValidationMiddlewareUnitTests
             {
                 ["HostValidation:Enabled"] = "true"
             })
+            .AddInMemoryCollection(settings ?? [])
             .Build();
 
         Task Next(HttpContext context)

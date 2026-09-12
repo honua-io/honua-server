@@ -46,6 +46,7 @@ internal static partial class FeatureStreamEndpoints
             .WithTags("Streaming");
 
         streamGroup.MapGet("/features", HandleFeatureStream)
+            .AddEndpointFilter<LiveStreamAuthorizationFilter>()
             .WithDisplayName("Stream Feature Changes")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .WithMetadata(LongLivedStreamEndpointMetadata.Instance)

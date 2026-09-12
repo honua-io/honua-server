@@ -54,7 +54,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                 try
                 {
                     var externalConnectionString = Environment.GetEnvironmentVariable(ExternalConnectionStringEnv);
-                    if (string.IsNullOrWhiteSpace(externalConnectionString))
+                    if (ShouldStartContainer(externalConnectionString))
                     {
                         SharedState.SharedContainer = new PostgreSqlBuilder()
                             .WithImage("postgis/postgis:18-3.6")
@@ -79,6 +79,16 @@ public sealed class PostgresFixture : IAsyncLifetime
                         await using var conn = await SharedState.SharedDataSource.OpenConnectionAsync().ConfigureAwait(false);
                         await using var cmd = conn.CreateCommand();
                         cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
+                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        // Test hosts skip application migrations. Execute the owning
+                        // production receipt DDL once under the shared initialization
+                        // lock so every protocol fixture gets the durable delta store.
+                        var assembly = typeof(Program).Assembly;
+                        var migration = assembly.GetManifestResourceNames().Single(name =>
+                            name.EndsWith("113_AddDurableQuerySnapshots.sql", StringComparison.Ordinal));
+                        await using var sql = assembly.GetManifestResourceStream(migration)!;
+                        using var reader = new StreamReader(sql);
+                        cmd.CommandText = "CREATE SCHEMA IF NOT EXISTS honua;\n" + await reader.ReadToEndAsync().ConfigureAwait(false);
                         await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                     }).ConfigureAwait(false);
 
@@ -595,6 +605,15 @@ public sealed class PostgresFixture : IAsyncLifetime
             .ToArray());
         return $"test_{prefix}_{Guid.NewGuid():N}".ToLowerInvariant();
     }
+
+    /// <summary>
+    /// Decides whether <see cref="InitializeAsync"/> must start a Testcontainer-managed
+    /// PostgreSQL instance. It must not when a CI-provided sidecar connection string
+    /// (<see cref="ExternalConnectionStringEnv"/>) is already available, so tests reuse
+    /// that sidecar instead of paying redundant container-image/startup cost.
+    /// </summary>
+    internal static bool ShouldStartContainer([System.Diagnostics.CodeAnalysis.NotNullWhen(false)] string? externalConnectionString)
+        => string.IsNullOrWhiteSpace(externalConnectionString);
 
     private static bool IsTransientDropSchemaFailure(Exception ex)
     {
