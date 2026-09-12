@@ -32,9 +32,10 @@ no GeoServices alias, where WMS, WMTS and WCS each have one.
 
 This is not documented anywhere, so it is guessed. In September 2026 the
 honua-sdk-dotnet release pipeline guessed it. Its ephemeral staging job read the
-WFS type name from `/ogc/services/{serviceId}/wfs`, which 404s; `curl -sf`
-reports a 404 as exit 22 with an empty body, so the failure read as *the server
-did not come up* rather than *that route does not exist*. The job died before
+WFS type name from `/ogc/services/{serviceId}/wfs`, which 404s. The fetch was
+configured to fail hard on HTTP errors and stay quiet, so a 404 surfaced as a
+transport-style failure with an empty body, and the job read as *the server did
+not come up* rather than *that route does not exist*. The job died before
 `Publish Packages`, and `dotnet-sdk-v1.6.1` and `v1.6.2` sat tagged and
 unpublished until someone re-read the route table (honua-sdk-dotnet#355).
 

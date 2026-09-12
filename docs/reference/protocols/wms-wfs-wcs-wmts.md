@@ -48,10 +48,11 @@ So WFS is served **only** at the root `/wfs`. There is no service-scoped form
 and no GeoServices alias — `FeatureServer` has no `WFS` endpoint here for the
 same reason Esri's own `FeatureServer` does not expose one.
 
-Asking for `/ogc/services/{serviceId}/wfs` returns **404**, which `curl -sf`
-surfaces as exit 22 with an empty body. That failure reads as though the server
-is broken rather than as a route that does not exist, so it is worth ruling out
-first when a WFS request fails with nothing in the response.
+Asking for `/ogc/services/{serviceId}/wfs` returns **404**. A client configured to
+fail hard on HTTP errors and stay quiet reports that as a transport-style failure
+with an empty body, which reads as though the server is broken rather than as a
+route that does not exist. Rule the URL out first when a WFS request fails with
+nothing in the response.
 
 The same rule explains the rest of the surface: OData (`/odata`), STAC
 (`/stac`) and SensorThings (`/sta/v1.1`) are all single-rooted because each
