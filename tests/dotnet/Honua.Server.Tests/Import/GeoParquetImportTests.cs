@@ -24,6 +24,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private HttpClient _client = null!;
+    private string? _publishedServiceName;
 
     public async Task InitializeAsync()
     {
@@ -31,7 +32,26 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         _client = _fixture.Client;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        try
+        {
+            if (_publishedServiceName is not null)
+            {
+                // This fixture reseeds shared catalog connections before services. Remove
+                // only our publication first so its connection FK cannot poison the next test.
+                await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = "DELETE FROM honua.services WHERE service_name = @service";
+                command.Parameters.AddWithValue("service", _publishedServiceName);
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+        finally
+        {
+            await _fixture.DisposeAsync();
+        }
+    }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload")]
@@ -275,6 +295,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         var root = document.RootElement;
         var connectionId = await _fixture.GetTestSecureConnectionIdAsync();
         connectionId.Should().NotBeNull();
+        _publishedServiceName = $"geoparquet_readback_{Guid.NewGuid():N}";
         using var publishResponse = await _client.PostAsJsonAsync(
             $"/api/v1/admin/connections/{connectionId}/layers",
             new
@@ -282,7 +303,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
                 Schema = root.GetProperty("schema").GetString(),
                 Table = root.GetProperty("physicalTableName").GetString(),
                 LayerName = "GeoParquet readback",
-                ServiceName = $"geoparquet_readback_{Guid.NewGuid():N}",
+                ServiceName = _publishedServiceName,
                 GeometryColumn = "geometry",
                 PrimaryKey = "id",
                 Fields = new[] { "id", "properties" },

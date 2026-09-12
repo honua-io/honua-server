@@ -63,6 +63,10 @@ def _require_parquet_available(response: httpx.Response) -> None:
         f"{response.status_code}: {response.text[:300] if response.status_code != 200 else ''}"
     )
 
+    assert PARQUET_CONTENT_TYPE in response.headers.get("content-type", "").lower(), (
+        f"Expected GeoParquet, got {response.headers.get('content-type')}: {response.text[:500]}"
+    )
+
 
 def _read_geo_metadata(payload: bytes) -> dict:
     """Read the raw GeoParquet ``geo`` metadata via pyarrow (no geopandas decode)."""
