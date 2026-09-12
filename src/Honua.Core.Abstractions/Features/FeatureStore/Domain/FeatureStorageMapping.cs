@@ -66,6 +66,33 @@ public sealed record FeatureStorageMapping(
         && sourceBacked;
 
     /// <summary>
+    /// Canonical name of the managed feature store's shared feature table. Layers whose
+    /// rows live in the managed store all map onto this one table and are separated by the
+    /// <see cref="LayerDiscriminatorColumn"/> layer discriminator.
+    /// </summary>
+    public const string ManagedFeaturesTableName = "features";
+
+    /// <summary>
+    /// Gets a value indicating whether a mutation applied through the managed feature
+    /// store lands in the rows this mapping reads.
+    /// </summary>
+    /// <remarks>
+    /// <para>The managed feature writer always writes the shared
+    /// <see cref="ManagedFeaturesTableName"/> table keyed by layer id; it has no notion of
+    /// the physical table a mapping names. For a mapping that is not source-backed, or for
+    /// one that is source-backed onto the shared table itself, that is the same storage the
+    /// serving protocols read, so a write is readable back.</para>
+    /// <para>A layer published over an arbitrary source table is different: publishing
+    /// materializes a one-time snapshot into the shared table for the tile path while the
+    /// feature protocols read the live source table. A managed write against such a layer
+    /// therefore lands in the snapshot and is never readable back — the protocols must
+    /// refuse it rather than acknowledge a write that cannot be served (honua-server#4707).</para>
+    /// </remarks>
+    public bool SupportsManagedWrites =>
+        !IsSourceBacked
+        || ManagedFeaturesTableName.Equals(TableName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Gets the best available fully qualified storage name for diagnostics and capability reporting.
     /// </summary>
     public string QualifiedName

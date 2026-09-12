@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -895,7 +896,170 @@ internal static class LayerValidationHelpers
                 canonicalError);
         }
 
+        // Declared capabilities are an editing contract, not advisory text. The Esri
+        // GeoServices edits handler already refuses an edit kind the publication never
+        // declared (#4073); this surface did not, so a layer published with the default
+        // ["Query","Extract"] capabilities accepted OGC API Features writes it never
+        // advertised (#4707). Both surfaces now resolve capabilities the same way.
+        var capabilityError = ValidateDeclaredEditCapability(context, validation, operation);
+        if (capabilityError != null)
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                validation.Publication,
+                validation.Resource,
+                validation.Service,
+                capabilityError);
+        }
+
+        // Storage-routing contract: refuse a mutation the managed feature writer cannot
+        // land where the serving protocols read, instead of acknowledging a write that is
+        // never readable back (#4707).
+        var routingError = await ValidateWriteRoutingAsync(
+            context, validation, cancellationToken).ConfigureAwait(false);
+        if (routingError != null)
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                validation.Publication,
+                validation.Resource,
+                validation.Service,
+                routingError);
+        }
+
         return validation;
+    }
+
+    /// <summary>
+    /// Rejects a mutation whose edit kind the validated publication does not declare.
+    /// Returns null when no specific operation was requested (the batch surface checks
+    /// each kind present in its body separately) or when the capability is declared.
+    /// </summary>
+    /// <param name="context">Current HTTP context.</param>
+    /// <param name="validation">Successful write-access validation result.</param>
+    /// <param name="operation">Authorization operation the caller is performing, when known.</param>
+    /// <returns>A 405 result when the capability is undeclared, otherwise null.</returns>
+    private static IResult? ValidateDeclaredEditCapability(
+        HttpContext context,
+        MetadataV2ValidationResult validation,
+        AuthorizationOperation? operation)
+    {
+        if (validation.Service is null || operation is not { } requested)
+        {
+            return null;
+        }
+
+        var capability = MapToEditCapability(requested);
+        return capability is null
+            ? null
+            : ValidateDeclaredEditCapability(context, validation.Service, validation.Publication, capability);
+    }
+
+    /// <summary>
+    /// Rejects a mutation whose edit kind the supplied publication does not declare.
+    /// </summary>
+    /// <param name="context">Current HTTP context.</param>
+    /// <param name="service">Service hosting the publication.</param>
+    /// <param name="publication">Publication being written through.</param>
+    /// <param name="capability">Edit capability token the request needs
+    /// (<see cref="MetadataV2EditCapabilities.Create"/> and friends).</param>
+    /// <returns>A 405 result when the capability is undeclared, otherwise null.</returns>
+    internal static IResult? ValidateDeclaredEditCapability(
+        HttpContext context,
+        MetadataV2Service service,
+        MetadataV2Publication? publication,
+        string capability)
+    {
+        // Only a declared capability set that omits the operation is a denial. Metadata that
+        // declares nothing at all (the v1-compatibility snapshot projects no capabilities onto
+        // OGC API Features publications) makes no statement, and treating that silence as a
+        // denial would take editing away from deployments that never opted out of it.
+        if (MetadataV2EditCapabilities.SupportsDeclared(service, publication, capability) != false)
+        {
+            return null;
+        }
+
+        // 405 rather than 403: the collection is not writable in this way for anybody, so
+        // this is a property of the resource and not of the caller's credentials. The Allow
+        // header advertises the methods that remain available.
+        context.Response.Headers.Allow = "GET, HEAD, OPTIONS";
+        return StandardErrorHelpers.CreateMethodNotAllowed(
+            context,
+            $"{capability} edits are not enabled for this collection.",
+            [$"Declare the {capability} capability on the publication before submitting {capability.ToLowerInvariant()} edits."]);
+    }
+
+    /// <summary>
+    /// Maps an authorization operation onto the edit capability token a publication must
+    /// declare for it. Returns null for operations that are not feature mutations.
+    /// </summary>
+    /// <param name="operation">Authorization operation being performed.</param>
+    /// <returns>The required capability token, or null when the operation is not an edit.</returns>
+    private static string? MapToEditCapability(AuthorizationOperation operation)
+        => operation switch
+        {
+            AuthorizationOperation.Insert => MetadataV2EditCapabilities.Create,
+            AuthorizationOperation.Update => MetadataV2EditCapabilities.Update,
+            AuthorizationOperation.Delete => MetadataV2EditCapabilities.Delete,
+            _ => null
+        };
+
+    /// <summary>
+    /// Rejects a mutation against a publication whose storage the managed feature writer
+    /// cannot service. The managed writer only ever writes the shared features table keyed
+    /// by layer id; a layer published over an arbitrary source table reads that source
+    /// table, so the write would land in the publish-time snapshot and never be readable
+    /// back. Answering 501 is the honest outcome — the alternative the server used to
+    /// produce was a 201 for a feature that could not be fetched or listed (#4707).
+    /// </summary>
+    /// <param name="context">Current HTTP context.</param>
+    /// <param name="validation">Successful write-access validation result.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A 501 result when the write cannot be serviced, otherwise null.</returns>
+    private static async Task<IResult?> ValidateWriteRoutingAsync(
+        HttpContext context,
+        MetadataV2ValidationResult validation,
+        CancellationToken cancellationToken)
+    {
+        if (validation.Resource is null || validation.Publication is null)
+        {
+            return null;
+        }
+
+        var snapshot = validation.Snapshot
+            ?? await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var storageBinding = snapshot.ResolveStorageBinding(validation.Publication);
+        if (storageBinding is null || storageBinding.StorageType != MetadataV2StorageType.RelationalTable)
+        {
+            // Non-relational (or unresolvable) storage is out of this guard's scope: the
+            // read paths raise their own diagnostics for a binding they cannot map.
+            return null;
+        }
+
+        FeatureStorageMapping mapping;
+        try
+        {
+            mapping = FeatureStorageMapping.FromMetadata(validation.Resource, storageBinding);
+        }
+        catch (InvalidOperationException)
+        {
+            // An unmappable binding is a metadata defect the read paths already report;
+            // do not convert it into a write-specific error here.
+            return null;
+        }
+
+        if (mapping.SupportsManagedWrites)
+        {
+            return null;
+        }
+
+        return StandardErrorHelpers.CreateNotImplemented(
+            context,
+            "This collection is published over an external source table, which this server cannot write through.",
+            [
+                $"Features are served from '{mapping.QualifiedName}'; the managed feature writer cannot modify it.",
+                "Edit the source table directly and refresh the published layer, or republish the data into the managed feature store."
+            ]);
     }
 
     /// <summary>

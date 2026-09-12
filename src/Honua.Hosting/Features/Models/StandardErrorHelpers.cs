@@ -136,6 +136,25 @@ internal static class StandardErrorHelpers
     }
 
     /// <summary>
+    /// Creates a Method Not Allowed error response. Used when the request method is
+    /// unavailable for the target resource itself (e.g. an edit kind the publication does
+    /// not declare) rather than unavailable to this particular caller.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol detection.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A protocol-specific Method Not Allowed response.</returns>
+    internal static IResult CreateMethodNotAllowed(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status405MethodNotAllowed,
+            "Method Not Allowed",
+            detail,
+            additionalDetails);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+    }
+
+    /// <summary>
     /// Creates a Not Implemented error response.
     /// </summary>
     /// <param name="context">The HTTP context for protocol detection.</param>

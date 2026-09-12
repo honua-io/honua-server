@@ -927,21 +927,13 @@ internal static partial class FeatureServerEndpoints
     internal static bool ServiceSupportsOperationV2(MetadataV2Service service, string operation)
         => ServiceSupportsOperationV2(service, operation, publication: null);
 
+    // Delegates to the shared resolver so the Esri edits surface and the OGC API Features
+    // write surface answer the same question the same way (#4073, #4707).
     internal static bool ServiceSupportsOperationV2(
         MetadataV2Service service,
         string operation,
         MetadataV2Publication? publication)
-    {
-        ArgumentNullException.ThrowIfNull(service);
-        ArgumentException.ThrowIfNullOrWhiteSpace(operation);
-
-        var capabilities = publication?.Capabilities is { Count: > 0 }
-            ? publication.Capabilities
-            : ReadServiceCapabilitiesV2(service);
-        return capabilities.Any(capability =>
-            capability.Equals(operation, StringComparison.OrdinalIgnoreCase) ||
-            capability.Equals("Editing", StringComparison.OrdinalIgnoreCase));
-    }
+        => MetadataV2EditCapabilities.Supports(service, publication, operation);
 
     private static void AddDeclaredEditCapabilities(
         List<string> capabilities,
