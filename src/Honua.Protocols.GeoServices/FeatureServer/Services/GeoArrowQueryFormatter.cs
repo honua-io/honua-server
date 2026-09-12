@@ -44,7 +44,7 @@ internal sealed class GeoArrowQueryFormatter
 
         var selectedFields = GeoParquetQueryFormatter.ResolveSelectedFields(resource, outFields);
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
-        var includeGeometry = returnGeometry && HasGeometry(resource);
+        var includeGeometry = returnGeometry && resource.HasGeometry();
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry, srid, "GeoArrow");
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoArrow");
@@ -567,9 +567,6 @@ internal sealed class GeoArrowQueryFormatter
         metadata[GeoMetadataKey] = geoJson;
         return metadata;
     }
-
-    private static bool HasGeometry(MetadataV2Resource resource)
-        => resource.ReadGeometryType() != MetadataV2GeometryType.None;
 
     // Type converters — duplicated from GeoParquetQueryFormatter because Arrow builder
     // API (Append/AppendNull) differs from Parquet's column-array model.

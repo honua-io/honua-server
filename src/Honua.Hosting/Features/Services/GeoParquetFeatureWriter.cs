@@ -82,7 +82,7 @@ public static partial class GeoParquetFeatureWriter
         ArgumentNullException.ThrowIfNull(resource);
 
         var features = result.Items;
-        var includeGeometry = returnGeometry && HasGeometry(resource);
+        var includeGeometry = returnGeometry && resource.HasGeometry();
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
 
         // Resolve (and thereby validate) the output-CRS PROJJSON up-front so a non-resolvable
@@ -100,7 +100,7 @@ public static partial class GeoParquetFeatureWriter
         BinaryArray? geometryArray = null;
         StructArray? bboxArray = null;
         string[]? geometryTypes = null;
-        if (returnGeometry && HasGeometry(resource))
+        if (returnGeometry && resource.HasGeometry())
         {
             (geometryArray, bboxArray, geometryTypes) = BuildGeometryArray(
                 features,
@@ -245,7 +245,7 @@ public static partial class GeoParquetFeatureWriter
             new Field(objectIdFieldName, new Int64Type(), false)
         };
 
-        if (returnGeometry && HasGeometry(resource))
+        if (returnGeometry && resource.HasGeometry())
         {
             schemaFields.Add(new Field(GeometryColumnName, new BinaryType(), true));
         }
@@ -270,7 +270,7 @@ public static partial class GeoParquetFeatureWriter
 
         // GeoParquet 1.1 covering bbox column. Declared last so attribute/runtime ordering stays
         // stable; the `geo` metadata `covering` maps xmin/ymin/xmax/ymax onto this struct.
-        if (returnGeometry && HasGeometry(resource))
+        if (returnGeometry && resource.HasGeometry())
         {
             schemaFields.Add(new Field(BboxColumnName, CreateBboxStructType(), nullable: true));
         }
@@ -292,7 +292,7 @@ public static partial class GeoParquetFeatureWriter
     {
         var metadata = new Dictionary<string, string>();
 
-        if (!returnGeometry || !HasGeometry(resource))
+        if (!returnGeometry || !resource.HasGeometry())
         {
             return metadata;
         }
@@ -527,9 +527,6 @@ public static partial class GeoParquetFeatureWriter
             _ => "TEXT"
         };
     }
-
-    private static bool HasGeometry(MetadataV2Resource resource)
-        => resource.ReadGeometryType() != MetadataV2GeometryType.None;
 
     private static bool IsGeometryField(MetadataV2Field field)
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;

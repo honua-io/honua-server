@@ -765,6 +765,7 @@
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataErrorHandlingTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataGeometryConverterTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataLimitsEnforcementTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataParquetFormatTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataQueryHandlerTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataSearchServiceSqlTests.cs",
         "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs",
