@@ -104,6 +104,24 @@ public static class LoadTestScenarios
         return client;
     }
 
+    /// <summary>
+    /// Issues one scenario request under a hard deadline.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="HttpClient.Timeout"/> alone is not enough: NBomber's client reads response
+    /// headers first, so a server that answers with headers and then never finishes the body
+    /// leaves the request outstanding forever. That is not hypothetical — honua-server#4709 does
+    /// exactly that, and it stalled a soak until every virtual user was parked on a response that
+    /// would never end, so the run generated ~4 requests/second for an hour and never terminated.
+    /// A cancellation token bounds the whole operation, body included: the request is recorded as
+    /// the failure it is and the virtual user moves on.
+    /// </remarks>
+    private static async Task<HttpResponseMessage> GetWithDeadlineAsync(HttpClient client, string url)
+    {
+        using var deadline = new CancellationTokenSource(RequestTimeout);
+        return await client.GetAsync(url, deadline.Token).ConfigureAwait(false);
+    }
+
     private static LoadSimulation[] CreateLoadSimulations(int copies, LoadTestProfile profile)
     {
         return new[]
@@ -125,7 +143,7 @@ public static class LoadTestScenarios
         return Scenario.Create(FeatureQueryScenarioName, async _ =>
             {
                 // Test simple feature query
-                var response = await httpClient.GetAsync($"{baseUrl}/rest/services/test/FeatureServer/{layerId}/query?f=json&where=1=1");
+                var response = await GetWithDeadlineAsync(httpClient, $"{baseUrl}/rest/services/test/FeatureServer/{layerId}/query?f=json&where=1=1");
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })
@@ -159,7 +177,8 @@ public static class LoadTestScenarios
                 var maxY = centerY + halfHeight;
 
                 var bbox = string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3}", minX, minY, maxX, maxY);
-                var response = await httpClient.GetAsync(
+                var response = await GetWithDeadlineAsync(
+                    httpClient,
                     $"{baseUrl}/rest/services/test/FeatureServer/{layerId}/query?f=json&geometry={bbox}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&inSR=4326");
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
@@ -183,7 +202,7 @@ public static class LoadTestScenarios
         return Scenario.Create(OgcQueryScenarioName, async _ =>
             {
                 // Test OGC API Features endpoint
-                var response = await httpClient.GetAsync($"{baseUrl}/ogc/features/collections/{collectionId}/items?limit=10");
+                var response = await GetWithDeadlineAsync(httpClient, $"{baseUrl}/ogc/features/collections/{collectionId}/items?limit=10");
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })
@@ -207,7 +226,7 @@ public static class LoadTestScenarios
             {
                 var filterIndex = (int)(context.InvocationNumber % _cqlFilters.Length);
                 var filter = _cqlFilters[filterIndex];
-                var response = await httpClient.GetAsync($"{baseUrl}/ogc/features/collections/{collectionId}/items?filter={Uri.EscapeDataString(filter)}");
+                var response = await GetWithDeadlineAsync(httpClient, $"{baseUrl}/ogc/features/collections/{collectionId}/items?filter={Uri.EscapeDataString(filter)}");
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })
@@ -238,7 +257,7 @@ public static class LoadTestScenarios
                 var endpoint = template.Contains("{0}", StringComparison.Ordinal)
                     ? template.Replace("{0}", layerId, StringComparison.Ordinal)
                     : template;
-                var response = await httpClient.GetAsync($"{baseUrl}{endpoint}");
+                var response = await GetWithDeadlineAsync(httpClient, $"{baseUrl}{endpoint}");
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })
@@ -263,7 +282,7 @@ public static class LoadTestScenarios
                 // Mix of different endpoints to stress connection pool
                 var endpointIndex = (int)(context.InvocationNumber % _connectionPoolEndpoints.Length);
                 var endpoint = _connectionPoolEndpoints[endpointIndex];
-                var response = await httpClient.GetAsync($"{baseUrl}{endpoint}");
+                var response = await GetWithDeadlineAsync(httpClient, $"{baseUrl}{endpoint}");
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
             })
@@ -286,7 +305,8 @@ public static class LoadTestScenarios
         return Scenario.Create(MemoryStressScenarioName, async _ =>
             {
                 // Request large result sets
-                var response = await httpClient.GetAsync(
+                var response = await GetWithDeadlineAsync(
+                    httpClient,
                     $"{baseUrl}/rest/services/test/FeatureServer/{layerId}/query?f=json&where=1=1&resultRecordCount=1000");
 
                 return response.IsSuccessStatusCode ? Response.Ok() : Response.Fail();
@@ -319,7 +339,8 @@ public static class LoadTestScenarios
                 var row = random.Next(0, maxIndex);
                 var col = random.Next(0, maxIndex);
 
-                var response = await httpClient.GetAsync(
+                var response = await GetWithDeadlineAsync(
+                    httpClient,
                     $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{zoom}/{row}/{col}");
 
                 return response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.NoContent

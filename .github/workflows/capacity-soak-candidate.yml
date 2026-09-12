@@ -468,6 +468,10 @@ jobs:
         id: receipt
         working-directory: producer
         run: |
+          # GitHub runs `run:` blocks with `bash -e`, so the self-check's non-zero exit would end
+          # the step before the receipt is ever attested or published. Turn that off deliberately:
+          # a failing self-check is an outcome this step has to carry forward, not an abort.
+          set +e
           set -uo pipefail
           # The self-check applies honua-release's own rules. A run that misses a frozen threshold
           # still produces a receipt — an honest negative one, status `incomplete` or with the
@@ -490,7 +494,10 @@ jobs:
             echo "selfcheck=fail" >> "$GITHUB_OUTPUT"
             echo "::warning::the soak did not satisfy the frozen lock; publishing the negative receipt and expecting the release gate to refuse it"
           fi
-          test -s "$RUNNER_TEMP/capacity-soak-receipt.payload.json"
+          if [ ! -s "$RUNNER_TEMP/capacity-soak-receipt.payload.json" ]; then
+            echo "::error::no receipt payload was written"
+            exit 1
+          fi
 
       - name: Attest the receipt payload
         id: payload_attestation
