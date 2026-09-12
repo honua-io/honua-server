@@ -46,6 +46,20 @@ internal static class Program
         }
 
         var profile = LoadTestProfile.FromName(options.Profile);
+        if (options.PrintProfile)
+        {
+            // The capacity-soak producer reads this to assert the profile it is about to run
+            // against the frozen lock BEFORE a 60-minute run starts, so a drifted profile fails
+            // in seconds instead of producing a receipt that claims the wrong concurrency.
+            Console.WriteLine(
+                "{\"profile\":\"" + options.Profile + "\",\"totalVirtualUsers\":" +
+                profile.TotalVirtualUsers.ToString(CultureInfo.InvariantCulture) +
+                ",\"rampUpSeconds\":" + profile.RampUp.TotalSeconds.ToString("R", CultureInfo.InvariantCulture) +
+                ",\"steadyStateSeconds\":" + profile.Duration.TotalSeconds.ToString("R", CultureInfo.InvariantCulture) +
+                ",\"rampDownSeconds\":" + profile.RampDown.TotalSeconds.ToString("R", CultureInfo.InvariantCulture) + "}");
+            return 0;
+        }
+
         if (options.Duration is { } duration)
         {
             profile = profile.WithDuration(duration);
@@ -218,13 +232,13 @@ internal static class Program
     {
         var builder = new System.Text.StringBuilder();
         builder.Append("{\n");
-        builder.Append($"  \"generatedAt\": \"{DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)}\",\n");
-        builder.Append($"  \"profile\": {JsonString(profile)},\n");
-        builder.Append($"  \"baseUrl\": {JsonString(baseUrl)},\n");
-        builder.Append($"  \"durationSeconds\": {JsonNumber(ReadDurationSeconds(stats))},\n");
-        builder.Append($"  \"allRequestCount\": {JsonNumber(ReadNullableDouble(stats, "AllRequestCount"))},\n");
-        builder.Append($"  \"allOkCount\": {JsonNumber(ReadNullableDouble(stats, "AllOkCount"))},\n");
-        builder.Append($"  \"allFailCount\": {JsonNumber(ReadNullableDouble(stats, "AllFailCount"))},\n");
+        builder.Append(CultureInfo.InvariantCulture, $"  \"generatedAt\": \"{DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)}\",\n");
+        builder.Append(CultureInfo.InvariantCulture, $"  \"profile\": {JsonString(profile)},\n");
+        builder.Append(CultureInfo.InvariantCulture, $"  \"baseUrl\": {JsonString(baseUrl)},\n");
+        builder.Append(CultureInfo.InvariantCulture, $"  \"durationSeconds\": {JsonNumber(ReadDurationSeconds(stats))},\n");
+        builder.Append(CultureInfo.InvariantCulture, $"  \"allRequestCount\": {JsonNumber(ReadNullableDouble(stats, "AllRequestCount"))},\n");
+        builder.Append(CultureInfo.InvariantCulture, $"  \"allOkCount\": {JsonNumber(ReadNullableDouble(stats, "AllOkCount"))},\n");
+        builder.Append(CultureInfo.InvariantCulture, $"  \"allFailCount\": {JsonNumber(ReadNullableDouble(stats, "AllFailCount"))},\n");
         builder.Append("  \"scenarios\": [\n");
 
         var scenarios = ReadEnumerable(stats, "ScenarioStats");
@@ -248,15 +262,15 @@ internal static class Program
                 var fail = ReadProperty(scenario, "Fail");
                 var latency = ok is null ? null : ReadProperty(ok, "Latency");
                 builder.Append("    {\n");
-                builder.Append($"      \"name\": {JsonString(ReadProperty(scenario, "ScenarioName") as string ?? string.Empty)},\n");
-                builder.Append($"      \"durationSeconds\": {JsonNumber(ReadDurationSeconds(scenario))},\n");
-                builder.Append($"      \"okCount\": {JsonNumber(ReadRequestStat(ok, "Count"))},\n");
-                builder.Append($"      \"failCount\": {JsonNumber(ReadRequestStat(fail, "Count"))},\n");
-                builder.Append($"      \"okRps\": {JsonNumber(ReadRequestStat(ok, "RPS"))},\n");
-                builder.Append($"      \"meanMs\": {JsonNumber(ReadNullableDouble(latency, "MeanMs"))},\n");
-                builder.Append($"      \"maxMs\": {JsonNumber(ReadNullableDouble(latency, "MaxMs"))},\n");
-                builder.Append($"      \"p95Ms\": {JsonNumber(ReadNullableDouble(latency, "Percent95"))},\n");
-                builder.Append($"      \"p99Ms\": {JsonNumber(ReadNullableDouble(latency, "Percent99"))}\n");
+                builder.Append(CultureInfo.InvariantCulture, $"      \"name\": {JsonString(ReadProperty(scenario, "ScenarioName") as string ?? string.Empty)},\n");
+                builder.Append(CultureInfo.InvariantCulture, $"      \"durationSeconds\": {JsonNumber(ReadDurationSeconds(scenario))},\n");
+                builder.Append(CultureInfo.InvariantCulture, $"      \"okCount\": {JsonNumber(ReadRequestStat(ok, "Count"))},\n");
+                builder.Append(CultureInfo.InvariantCulture, $"      \"failCount\": {JsonNumber(ReadRequestStat(fail, "Count"))},\n");
+                builder.Append(CultureInfo.InvariantCulture, $"      \"okRps\": {JsonNumber(ReadRequestStat(ok, "RPS"))},\n");
+                builder.Append(CultureInfo.InvariantCulture, $"      \"meanMs\": {JsonNumber(ReadNullableDouble(latency, "MeanMs"))},\n");
+                builder.Append(CultureInfo.InvariantCulture, $"      \"maxMs\": {JsonNumber(ReadNullableDouble(latency, "MaxMs"))},\n");
+                builder.Append(CultureInfo.InvariantCulture, $"      \"p95Ms\": {JsonNumber(ReadNullableDouble(latency, "Percent95"))},\n");
+                builder.Append(CultureInfo.InvariantCulture, $"      \"p99Ms\": {JsonNumber(ReadNullableDouble(latency, "Percent99"))}\n");
                 builder.Append("    }");
             }
         }
@@ -405,6 +419,7 @@ internal static class Program
         writer.WriteLine("  --report-folder <path>   Output directory for NBomber reports");
         writer.WriteLine("  --max-failure-rate <n>   Max failed request ratio (0-1, e.g. 0.0001 = 0.01%)");
         writer.WriteLine("  --stats-out <path>       Write aggregate/per-scenario statistics as JSON");
+        writer.WriteLine("  --print-profile          Print the resolved profile as JSON and exit");
         writer.WriteLine("  --help                   Show this help");
         writer.WriteLine("");
         WriteKnownScenarios(writer);
@@ -434,6 +449,7 @@ internal sealed class LoadTestOptions
     public string ReportFolder { get; private set; } = "load-test-reports";
     public double? MaxFailureRate { get; private set; }
     public string? StatsOut { get; private set; }
+    public bool PrintProfile { get; private set; }
     public bool ShowHelp { get; private set; }
 
     public static bool TryParse(string[] args, out LoadTestOptions options, out string error)
@@ -531,6 +547,9 @@ internal sealed class LoadTestOptions
                     }
 
                     options.ReportFolder = reportFolder;
+                    break;
+                case "--print-profile":
+                    options.PrintProfile = true;
                     break;
                 case "--stats-out":
                     if (!TryReadValue(args, ref index, out var statsOut, out error))
