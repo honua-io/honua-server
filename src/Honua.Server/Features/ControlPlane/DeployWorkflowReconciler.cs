@@ -79,6 +79,8 @@ internal sealed partial class DeployWorkflowReconciler(
             else
             {
                 var observation = await backend.ObserveAsync(operation, reconciliationCancellation.Token).ConfigureAwait(false);
+                var stagesCandidateWithoutTraffic = await backend.GetCapabilitiesAsync(reconciliationCancellation.Token).ConfigureAwait(false)
+                    is { StagesCandidateWithoutTraffic: true };
                 updated = operation with
                 {
                     Status = observation.Status,
@@ -95,7 +97,7 @@ internal sealed partial class DeployWorkflowReconciler(
                         CurrentRevision = string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision)
                             ? observation.ObservedRevision ?? operation.Deploy.CurrentRevision
                             : operation.Deploy.CurrentRevision,
-                        TrafficExposedAt = StampTrafficExposure(operation, observation.Status)
+                        TrafficExposedAt = StampTrafficExposure(operation, observation.Status, stagesCandidateWithoutTraffic)
                     }
                 };
 
@@ -119,6 +121,7 @@ internal sealed partial class DeployWorkflowReconciler(
                         operation,
                         updated,
                         backend,
+                        stagesCandidateWithoutTraffic,
                         observation.PromotionRecommended,
                         observation.RollbackRecommended,
                         observation.Message,
@@ -226,16 +229,28 @@ internal sealed partial class DeployWorkflowReconciler(
     /// window anchors on actual exposure rather than operation creation (#4617). The stamp is persisted
     /// with the operation and never moved, so it survives controller restarts and lease hand-offs. An
     /// operation that was already serving before exposure tracking existed keeps its prior CreatedAt
-    /// anchor rather than having its bake window restarted by an upgrade.
+    /// anchor rather than having its bake window restarted by an upgrade. A backend that stages the
+    /// candidate without traffic reports Reconciling while nothing reaches the candidate, so its exposure
+    /// is stamped at the promotion cutover instead (<see cref="BeginPostActivationObservationIfPromoted"/>).
     /// </summary>
-    private static DateTimeOffset? StampTrafficExposure(WorkflowOperationRecord operation, WorkflowOperationStatus observedStatus)
+    private static DateTimeOffset? StampTrafficExposure(
+        WorkflowOperationRecord operation,
+        WorkflowOperationStatus observedStatus,
+        bool stagesCandidateWithoutTraffic)
     {
         if (operation.Deploy?.TrafficExposedAt is { } existing)
         {
             return existing;
         }
 
-        if (observedStatus is not (WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded))
+        // An open protection window already recorded when the promoted candidate was first exposed.
+        if (operation.Deploy?.Protection is { } protection)
+        {
+            return protection.FirstExposureAt;
+        }
+
+        if (stagesCandidateWithoutTraffic ||
+            observedStatus is not (WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded))
         {
             return null;
         }
@@ -255,6 +270,7 @@ internal sealed partial class DeployWorkflowReconciler(
         WorkflowOperationRecord previous,
         WorkflowOperationRecord current,
         IDeployBackend backend,
+        bool stagesCandidateWithoutTraffic,
         bool promotionRecommended,
         bool backendRollbackRecommended,
         string? backendMessage,
@@ -286,7 +302,15 @@ internal sealed partial class DeployWorkflowReconciler(
             // on-prem/air-gapped deploys (no metrics substrate) are not structurally unable to promote.
             var promotionGate = DeployPromotionPolicy.Resolve(current.Deploy);
 
-            var telemetryDecision = await telemetrySignalEvaluator.EvaluateAsync(current, cancellationToken).ConfigureAwait(false);
+            // A backend that stages the candidate without traffic gives the metrics gate nothing to measure
+            // before cutover (#4617): until exposure only the pre-cutover checks run, and the full gate runs
+            // from cutover inside the post-activation observation window.
+            var stagedBeforeExposure = stagesCandidateWithoutTraffic &&
+                current.Deploy is { TrafficExposedAt: null, Protection: null } &&
+                current.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling;
+            var telemetryDecision = stagedBeforeExposure
+                ? await telemetrySignalEvaluator.EvaluateStagedCandidateAsync(current, promotionRecommended, cancellationToken).ConfigureAwait(false)
+                : await telemetrySignalEvaluator.EvaluateAsync(current, cancellationToken).ConfigureAwait(false);
             if (telemetryDecision != null)
             {
                 // Persist any parameter updates the evaluator carried back (e.g. the anti-flap
@@ -325,6 +349,23 @@ internal sealed partial class DeployWorkflowReconciler(
                         CurrentPhase = telemetryDecision.Message,
                         ErrorMessage = current.Status == WorkflowOperationStatus.Failed ? telemetryDecision.Message : current.ErrorMessage
                     };
+                }
+
+                // An open observation window must not commit on missing evidence (#4617): record that the
+                // gate is still waiting so the window holds past its deadline until the gate passes or the
+                // evaluator's own evidence bound escalates to rollback.
+                if (current.Deploy?.Protection is { Phase: DeployProtectionPhase.Observing } observing)
+                {
+                    var pendingReason = telemetryDecision.WaitForMoreTelemetry
+                        ? TelemetryEvidencePendingReasonCode
+                        : observing.ReasonCode == TelemetryEvidencePendingReasonCode ? null : observing.ReasonCode;
+                    if (!string.Equals(pendingReason, observing.ReasonCode, StringComparison.Ordinal))
+                    {
+                        current = current with
+                        {
+                            Deploy = WithProtectionPhase(current.Deploy, DeployProtectionPhase.Observing, pendingReason)
+                        };
+                    }
                 }
 
                 // A configured telemetry gate must clear (not rollback, not still waiting) before
@@ -589,6 +630,12 @@ internal sealed partial class DeployWorkflowReconciler(
     /// </summary>
     internal const string ProtectionObservationWindowSecondsParameterKey = "deployment.protection.observation_window_seconds";
 
+    /// <summary>
+    /// Protection reason code recorded while the telemetry gate is still waiting for evidence inside an
+    /// open observation window (honua-server#4617). The window does not commit while it is set.
+    /// </summary>
+    internal const string TelemetryEvidencePendingReasonCode = "telemetry-evidence-pending";
+
     private static readonly TimeSpan DefaultProtectionObservationWindow = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan MaximumProtectionObservationWindow = TimeSpan.FromHours(24);
 
@@ -599,7 +646,9 @@ internal sealed partial class DeployWorkflowReconciler(
     /// drives the backend outside the reconcile loop). Forces the operation back into
     /// <see cref="WorkflowOperationStatus.Reconciling"/> so terminal deploys stop dropping out of
     /// reconciliation the moment cutover completes, which previously let a self-hosted backend retire
-    /// its old replica before the advertised rollback protection window elapsed.
+    /// its old replica before the advertised rollback protection window elapsed. Also stamps
+    /// <see cref="DeployOperationSpec.TrafficExposedAt"/> when it is still unset: for a backend that
+    /// stages the candidate without traffic, the cutover is the moment of exposure (#4617).
     /// </summary>
     internal static WorkflowOperationRecord BeginPostActivationObservationIfPromoted(WorkflowOperationRecord promoted)
     {
@@ -629,7 +678,11 @@ internal sealed partial class DeployWorkflowReconciler(
             UpdatedAt = now,
             CompletedAt = null,
             CurrentPhase = $"Candidate '{deploy.DesiredRevision}' activated; observing for {DescribeDuration(window)} before the deploy is fully committed.",
-            Deploy = deploy with { Protection = protection }
+            Deploy = deploy with
+            {
+                Protection = protection,
+                TrafficExposedAt = deploy.TrafficExposedAt ?? now
+            }
         };
     }
 
@@ -664,6 +717,18 @@ internal sealed partial class DeployWorkflowReconciler(
             return current with
             {
                 CurrentPhase = $"Observing candidate '{protection.CandidateRevision}' ({Math.Ceiling(Math.Max(remaining.TotalSeconds, 0)).ToString("0", CultureInfo.InvariantCulture)}s remaining before the deploy is fully committed).",
+                ErrorMessage = null
+            };
+        }
+
+        // The window elapsed while the telemetry gate is still waiting for evidence (#4617). Committing
+        // now would be a missing-data success path, so hold uncommitted; the evaluator's evidence bound
+        // turns sustained absence into a rollback on a later cycle.
+        if (string.Equals(protection.ReasonCode, TelemetryEvidencePendingReasonCode, StringComparison.Ordinal))
+        {
+            return current with
+            {
+                CurrentPhase = $"Observation window for candidate '{protection.CandidateRevision}' elapsed, but its telemetry gate has not passed; the deploy stays uncommitted. {current.CurrentPhase}".TrimEnd(),
                 ErrorMessage = null
             };
         }

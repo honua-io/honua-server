@@ -57,6 +57,26 @@ public sealed class DeployWorkflowReconcilerPostActivationObservationTests
     }
 
     [Fact]
+    public void BeginPostActivationObservation_StampsExposureAtCutover_AndNeverMovesAnExistingStamp()
+    {
+        // A backend that stages the candidate without traffic is first exposed by the cutover itself (#4617).
+        var promoted = CreateOperation(WorkflowOperationStatus.Succeeded);
+        var beforeCutover = DateTimeOffset.UtcNow;
+
+        var observing = DeployWorkflowReconciler.BeginPostActivationObservationIfPromoted(promoted);
+
+        observing.Deploy!.TrafficExposedAt.Should().NotBeNull();
+        observing.Deploy.TrafficExposedAt!.Value.Should().BeOnOrAfter(beforeCutover);
+        observing.Deploy.TrafficExposedAt.Should().Be(observing.Deploy.Protection!.FirstExposureAt);
+
+        var exposedEarlier = DateTimeOffset.UtcNow.AddMinutes(-7);
+        var alreadyExposed = promoted with { Deploy = promoted.Deploy! with { TrafficExposedAt = exposedEarlier } };
+
+        DeployWorkflowReconciler.BeginPostActivationObservationIfPromoted(alreadyExposed)
+            .Deploy!.TrafficExposedAt.Should().Be(exposedEarlier, "an exposure stamp is persisted once and never moved");
+    }
+
+    [Fact]
     public async Task Reconcile_ObservationWindowElapsed_FinalizesAndSucceeds()
     {
         var store = new InMemoryWorkflowOperationStore();

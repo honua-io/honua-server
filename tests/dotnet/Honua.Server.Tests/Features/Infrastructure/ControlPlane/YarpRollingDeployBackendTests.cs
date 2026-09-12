@@ -44,6 +44,7 @@ public sealed class YarpRollingDeployBackendTests
         capabilities.RequiresOutOfBandMigrations.Should().BeTrue();
         capabilities.SupportsProgressPolling.Should().BeTrue();
         capabilities.SupportsRevisionPinning.Should().BeTrue();
+        capabilities.StagesCandidateWithoutTraffic.Should().BeTrue("the standby replica serves no traffic until the proxy swap");
     }
 
     [Fact]

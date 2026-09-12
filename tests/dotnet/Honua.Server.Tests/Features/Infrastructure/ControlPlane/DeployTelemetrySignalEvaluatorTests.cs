@@ -1581,6 +1581,161 @@ public sealed class DeployTelemetrySignalEvaluatorTests
         probe.Invocations.Should().Be(0, "an invalid policy is never evaluated as if it were health-only");
     }
 
+    // ---- staged candidate before cutover (#4617) ----------------------------
+
+    private static Dictionary<string, string> StagedMetricsParameters(params (string Key, string Value)[] extra)
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua",
+            ["telemetry.healthz.url"] = "http://127.0.0.1:18081/healthz/ready"
+        };
+        foreach (var (key, value) in extra)
+        {
+            parameters[key] = value;
+        }
+
+        return parameters;
+    }
+
+    [Fact]
+    public async Task EvaluateStagedCandidateAsync_BackendHealthGateNotPassed_HoldsWithoutProbingOrQuerying()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe, responses: CreateSuccessfulResponses("25", "0.01", "150"));
+        var operation = CreateOperation(
+            DeployTargetKind.SelfHostedRolling,
+            StagedMetricsParameters(),
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-10));
+
+        var decision = await evaluator.EvaluateStagedCandidateAsync(operation, candidateReady: false);
+
+        decision!.WaitForMoreTelemetry.Should().BeTrue();
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("pass the backend health gate before cutover");
+        probe.Invocations.Should().Be(0);
+        capturedQueries.Should().BeEmpty("a staged candidate serves no traffic for the metrics gate to measure");
+    }
+
+    [Fact]
+    public async Task EvaluateStagedCandidateAsync_NeverReadyPastExposureDeadline_FailsWithoutActivation()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries, responses: CreateSuccessfulResponses("25", "0.01", "150"));
+        var operation = CreateOperation(
+            DeployTargetKind.SelfHostedRolling,
+            StagedMetricsParameters(("telemetry.exposure_deadline_seconds", "600")),
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-11));
+
+        var decision = await evaluator.EvaluateStagedCandidateAsync(operation, candidateReady: false);
+
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("never passed the backend health gate within the 600-second exposure deadline");
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EvaluateStagedCandidateAsync_ReadyWithHealthyProbe_ClearsCutoverWithoutReadingMetrics()
+    {
+        // Created one minute ago: inside the preset warmup. EvaluateAsync would hold on warmup and then on
+        // a sample floor that a candidate with no traffic can never reach; the staged path clears the
+        // cutover on the checks that can actually run.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
+        var operation = CreateOperation(
+            DeployTargetKind.SelfHostedRolling,
+            StagedMetricsParameters(),
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-1));
+
+        var decision = await evaluator.EvaluateStagedCandidateAsync(operation, candidateReady: true);
+
+        decision!.WaitForMoreTelemetry.Should().BeFalse();
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("telemetry gate is evaluated from cutover");
+        probe.Invocations.Should().Be(1);
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EvaluateStagedCandidateAsync_ReadinessProbeUnhealthy_RecommendsRollback()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 3 });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
+        var operation = CreateOperation(
+            DeployTargetKind.SelfHostedRolling,
+            StagedMetricsParameters(),
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-1));
+
+        var decision = await evaluator.EvaluateStagedCandidateAsync(operation, candidateReady: true);
+
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.Message.Should().Contain("synthetic health probe is unhealthy");
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EvaluateStagedCandidateAsync_GoldenQueryWrongResult_RecommendsRollback()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(
+            new DeployHealthProbeResult { Attempts = 3, Failures = 0 },
+            new DeployGoldenQueryResult { Matched = false, Detail = "response body contained the forbidden marker" });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
+        var operation = CreateOperation(
+            DeployTargetKind.SelfHostedRolling,
+            StagedMetricsParameters(
+                ("telemetry.golden_query.url", "http://127.0.0.1:18081/rest/services/parcels/FeatureServer/0/query"),
+                ("telemetry.golden_query.expected_contains", "\"features\"")),
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-1));
+
+        var decision = await evaluator.EvaluateStagedCandidateAsync(operation, candidateReady: true);
+
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.Message.Should().Contain("golden-query correctness gate");
+        probe.GoldenInvocations.Should().Be(1);
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EvaluateStagedCandidateAsync_ProbeServiceMissing_IsBoundedByTheExposureDeadline()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries);
+        var parameters = StagedMetricsParameters(("telemetry.exposure_deadline_seconds", "600"));
+
+        var holding = await evaluator.EvaluateStagedCandidateAsync(
+            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-1)),
+            candidateReady: true);
+        var escalated = await evaluator.EvaluateStagedCandidateAsync(
+            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            candidateReady: true);
+
+        holding!.WaitForMoreTelemetry.Should().BeTrue("a probe that cannot run is not a passing probe");
+        holding.RollbackRecommended.Should().BeFalse();
+        escalated!.RollbackRecommended.Should().BeTrue();
+        escalated.Message.Should().Contain("beyond the 600-second exposure deadline");
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EvaluateStagedCandidateAsync_NoTelemetryPolicy_ReturnsNull()
+    {
+        var evaluator = CreateEvaluator(new ConcurrentQueue<string>());
+        var operation = CreateOperation(
+            DeployTargetKind.SelfHostedRolling,
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-1));
+
+        var decision = await evaluator.EvaluateStagedCandidateAsync(operation, candidateReady: true);
+
+        decision.Should().BeNull("without a telemetry policy the backend's own health gate decides the cutover");
+    }
+
     private static string[] CreateSuccessfulResponses(string sampleCount, string errorRate, string latencyP95)
         =>
         [

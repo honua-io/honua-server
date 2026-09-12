@@ -534,8 +534,10 @@ public sealed record DeployOperationSpec
 
     /// <summary>
     /// Timestamp the candidate revision first began receiving live traffic, stamped once by the
-    /// reconciler the first time the backend reports <see cref="WorkflowOperationStatus.Reconciling"/>
-    /// (honua-server#4617). Telemetry warmup/bake windows anchor on this rather than
+    /// reconciler (honua-server#4617): the first time the backend reports
+    /// <see cref="WorkflowOperationStatus.Reconciling"/>, or, for a backend that stages the candidate
+    /// without traffic (<see cref="DeployBackendCapabilities.StagesCandidateWithoutTraffic"/>), when
+    /// promotion cuts over to it. Telemetry warmup/bake windows anchor on this rather than
     /// <see cref="WorkflowOperationRecord.CreatedAt"/>, which can precede actual traffic exposure by an
     /// unbounded amount of backend provisioning time. Null while the operation is still provisioning
     /// (including for operations persisted before this field existed), in which case evaluators fall
@@ -1363,6 +1365,15 @@ public sealed record DeployBackendCapabilities
     /// Whether the backend can pin or restore a specific revision.
     /// </summary>
     public bool SupportsRevisionPinning { get; init; }
+
+    /// <summary>
+    /// Whether the backend stages the candidate revision without live traffic until promotion, as a
+    /// single-switch cutover does (the self-hosted rolling backend health-gates a standby replica that
+    /// serves nothing until the proxy swaps to it). Such a backend reports
+    /// <see cref="WorkflowOperationStatus.Reconciling"/> while the candidate is staged, so traffic
+    /// exposure starts at the promotion cutover rather than at that observation (honua-server#4617).
+    /// </summary>
+    public bool StagesCandidateWithoutTraffic { get; init; }
 }
 
 /// <summary>
