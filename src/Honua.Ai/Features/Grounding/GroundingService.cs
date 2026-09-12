@@ -122,7 +122,20 @@ internal sealed class GroundingService : IGroundingService
         // promoted to the front instead of being trimmed and then rejected
         // as invalid_argument. The contract pins against the post-
         // authorization ranking (see docs/developer/GROUNDING.md).
-        var processes = _processCatalog.ListProcesses();
+        //
+        // A grounded process.selection candidate is what a caller places into
+        // an AnalysisPlan step and submits to the job runtime, so the
+        // candidate pool is restricted to processes the runtime will actually
+        // accept before the engine ever scores them — never to a
+        // protocol-only or workflow-only operation that
+        // DirectSubmitPlanValidator/GeoprocessingJobService.EnsurePlanExecutable
+        // is guaranteed to reject (honua-server#4454). This is enforced
+        // independent of which IGroundingEngine implementation is scoring, and
+        // pinned against ProcessDefinition.SupportedEntryPoints rather than a
+        // hard-coded id list via ProcessExecutionEligibility.IsJobCallable.
+        var processes = _processCatalog.ListProcesses()
+            .Where(ProcessExecutionEligibility.IsJobCallable)
+            .ToArray();
         var processCandidates = _engine.ScoreProcesses(request, processes);
         processCandidates = await _authorizationFilter
             .FilterAsync(principal, processCandidates, cancellationToken)
