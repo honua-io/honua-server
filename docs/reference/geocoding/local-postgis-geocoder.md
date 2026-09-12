@@ -2,6 +2,7 @@
 type: reference
 title: "Local PostGIS-backed geocoder"
 description: "The local geocoder (provider = \"local\") is a self-hosted, offline geocoding backend that runs entirely against a PostGIS reference dataset you load yourself."
+resource: "honua://capability/geocoding.forward"
 ---
 # Local PostGIS-backed geocoder
 

@@ -2,6 +2,7 @@
 type: reference
 title: "Get started with the Python SDK"
 description: "Install the Honua Python SDK, construct a client, authenticate with an API key, and make your first feature query."
+resource: "https://pypi.org/project/honua-sdk/"
 ---
 # Get started with the Python SDK
 

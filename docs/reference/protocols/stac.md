@@ -2,6 +2,7 @@
 type: reference
 title: "STAC"
 description: "Honua serves a STAC API v1.0.0 (SpatioTemporal Asset Catalog) at /stac for standards-based discovery of spatiotemporal collections and items."
+resource: "honua://capability/serve.stac"
 ---
 # STAC
 

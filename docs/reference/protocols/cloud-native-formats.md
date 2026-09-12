@@ -2,6 +2,7 @@
 type: reference
 title: "Cloud-native formats"
 description: "Honua's support for the cloud-native geospatial format family: what each format is used for, the endpoints involved, and an honest status per format."
+resource: "honua://capability/raster.cloud-cog-serving"
 ---
 # Cloud-native formats
 

@@ -2,6 +2,7 @@
 type: guide
 title: "Edit features"
 description: "Insert, update, and delete features over HTTP using whichever protocol your client already speaks: GeoServices FeatureServer, OGC API Features, or OData v4."
+resource: "honua://capability/editing.featureserver-edits"
 ---
 # Edit features
 

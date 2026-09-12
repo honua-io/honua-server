@@ -2,6 +2,7 @@
 type: reference
 title: "SCIM / SAML IdP Conformance Matrix"
 description: "Status receipt for the enterprise-identity conformance work (#2154), built on the SCIM 2.0 + SAML 2.0 foundation delivered in #2110."
+resource: "honua://capability/identity.scim"
 ---
 # SCIM / SAML IdP Conformance Matrix
 

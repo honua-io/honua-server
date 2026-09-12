@@ -1,6 +1,7 @@
 ---
 type: reference
 title: "Spec engine"
+resource: "honua://capability/ai.spec-apply"
 ---
 # Spec engine
 

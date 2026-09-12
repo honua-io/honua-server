@@ -2,6 +2,7 @@
 type: guide
 title: "Install on Windows from published packages"
 description: "Run these blocks in order in Windows PowerShell 5.1 or PowerShell 7, from a directory where you can create a private installation folder."
+resource: "https://github.com/honua-io/honua-server/releases"
 ---
 # Install on Windows from published packages
 

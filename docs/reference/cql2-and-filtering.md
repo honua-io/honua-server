@@ -2,6 +2,7 @@
 type: reference
 title: "CQL2 and filtering"
 description: "Honua accepts three filter languages, each tied to a protocol surface."
+resource: "honua://capability/serve.ogc-api-features"
 ---
 # CQL2 and filtering
 

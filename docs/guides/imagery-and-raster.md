@@ -2,6 +2,7 @@
 type: guide
 title: "Imagery and raster: shipped state"
 description: "This page is the 2026.1 truth map for imagery, raster, and multidimensional coverage."
+resource: "honua://capability/serve.geoservices-imageserver"
 ---
 # Imagery and raster: shipped state
 

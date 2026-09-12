@@ -2,6 +2,7 @@
 type: reference
 title: "Connections and layers"
 description: "Reference for the connection registry, table discovery, layer publishing, and service/layer settings endpoints."
+resource: "honua://capability/admin.control-plane"
 ---
 # Connections and layers
 

@@ -2,6 +2,7 @@
 type: guide
 title: "Bring your own model"
 description: "The 2026.1 preview path keeps provider credentials in honua-server."
+resource: "honua://capability/ai.grounding"
 ---
 # Bring your own model
 

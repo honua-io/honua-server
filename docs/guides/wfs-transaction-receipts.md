@@ -2,6 +2,7 @@
 type: guide
 title: "WFS 2.0 best-effort transaction receipts"
 description: "WFS 2.0 TransactionResponse has standard success totals plus per-feature results for inserts and replaces, but it has no standard per-operation failure list for a best-effort rollbackOnFailure=\"false\" transaction."
+resource: "honua://capability/serve.wfs"
 ---
 # WFS 2.0 best-effort transaction receipts
 
