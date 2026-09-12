@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 
 public sealed class ApiKeyAuthenticationLoggingTests
 {
-    private const string AdminPassword = "logging-regression-admin-password";
+    private const string AdminPassword = "LoggingRegression-AdminPassword123!";
 
     [Theory]
     [InlineData(null, true)]
@@ -55,6 +55,7 @@ public sealed class ApiKeyAuthenticationLoggingTests
         if (!validKey)
         {
             Assert.NotNull(result.Failure);
+            Assert.Equal("Invalid API key", result.Failure.Message);
         }
 
         var bypassWarnings = logger.ReceivedCalls()
