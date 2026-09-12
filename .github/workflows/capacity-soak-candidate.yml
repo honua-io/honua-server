@@ -585,7 +585,7 @@ jobs:
         if: always()
         run: |
           # Tail only: this server can emit gigabytes of Information records per hour under the
-          # declared subscription load (honua-server#4710), and an artifact nobody can open is not
+          # declared subscription load (honua-server#4711), and an artifact nobody can open is not
           # evidence. The rotated container log keeps the rest until the runner is recycled.
           docker logs --tail 50000 honua-capacity-soak-honua-1 > "$RUNNER_TEMP/honua-server.log" 2>&1 || true
           docker logs honua-capacity-soak-postgres-1 > "$RUNNER_TEMP/postgres.log" 2>&1 || true
