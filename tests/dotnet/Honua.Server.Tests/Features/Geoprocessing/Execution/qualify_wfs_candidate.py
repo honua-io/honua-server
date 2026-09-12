@@ -52,6 +52,8 @@ def utc():
 
 
 def main():
+    if not __debug__:
+        raise RuntimeError("Qualification requires Python assertions; do not use optimization flags")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--container", required=True)
