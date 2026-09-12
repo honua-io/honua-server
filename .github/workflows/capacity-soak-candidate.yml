@@ -360,11 +360,13 @@ jobs:
           # same window: the harness offers the declared concurrency, the driver measures what a
           # request generator cannot see. The driver skips the harness's ramp-up so its
           # steady-state window sits inside the harness's steady-state phase.
-          # Hard budget for the harness: ramp-up + steady state + ramp-down + 15 minutes of slack
-          # for report generation. A harness that outlives that is killed and reported, because a
-          # run that never ends produces no evidence at all (an endpoint that accepts a request and
-          # never finishes its response once hung a soak 45 minutes past its end: honua-server#4709).
-          budget=$(( RAMP_UP + STEADY + 120 + 900 ))
+          # Hard budget for the harness: ramp-up + steady state + ramp-down + 40 minutes of slack
+          # for shutdown and report generation. A harness that outlives that is killed and reported,
+          # because a run that never ends produces no evidence at all — an endpoint that accepts a
+          # request and never finishes its response once hung a soak 45 minutes past its end
+          # (honua-server#4709), and the harness has not yet completed a full-length run against
+          # this candidate even with bounded requests (honua-server#4727).
+          budget=$(( RAMP_UP + STEADY + 120 + 2400 ))
           timeout --kill-after=60 "${budget}s" \
             ./scripts/scale/run-load-soak-tests.sh \
             --base-url "$BASE_URL" \
