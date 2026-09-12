@@ -65,6 +65,15 @@ Applying it:
 - **Vector tiles and scenes are scoped by layer and scene** — the unit a client
   actually fetches.
 
+- **The rule discriminates by unit, not by resemblance.** Native vector tiles
+  are at `/tiles/{layerId}/{z}/{x}/{y}.mvt` and PMTiles at
+  `/api/v1/tiles/pmtiles/{artifactId}`. Both are "tiles", and the superficial
+  read is that one of them is in the wrong place. They are addressed
+  differently: a vector tile is a live view of a **layer**, requested per
+  z/x/y; a PMTiles archive is a published **artifact**, retrieved whole. Two
+  units, two scopes, two roots. Resembling each other is not a reason to share
+  a prefix.
+
 - **GeoServices aliases exist only where Esri has one.** `MapServer` exposes
   WMS/WMTS and `ImageServer` exposes WCS/WMTS because Esri's own products do;
   `FeatureServer` has no `WFS` alias here because it has none there. The alias
