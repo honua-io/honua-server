@@ -98,6 +98,8 @@ def prove(image, revision):
                     if call("/healthz/ready")[0] == 200:
                         return
                 except (OSError, TimeoutError):
+                    # Connection refusal/timeouts are expected while the host starts;
+                    # retry only until the readiness deadline, then fail the proof.
                     pass
                 time.sleep(1)
             raise RuntimeError("Candidate did not become ready")
