@@ -45,6 +45,19 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "sta_observation_default",
     ];
 
+    // Identifier sequences owned by the SensorThings id-sequence migration. They are
+    // relkind 'S', not tables, so they are matched separately from _sensorThingsTables:
+    // a deployment that has 059 but not the sequence migration must fail against the
+    // sequence migration's identity, not 059's.
+    private static readonly string[] _sensorThingsIdSequences =
+    [
+        "sta_thing_id_seq",
+        "sta_sensor_id_seq",
+        "sta_observed_property_id_seq",
+        "sta_datastream_id_seq",
+        "sta_observation_id_seq",
+    ];
+
     private static readonly string[] _metadataV2ReleasePackageTables =
     [
         "metadata_v2_release_packages",
@@ -318,6 +331,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         .. _metadataV2Tables,
         .. _metadataV2ReleasePackageTables,
         .. _sensorThingsTables,
+        .. _sensorThingsIdSequences,
         .. _governedLineageTables,
         .. _initialSchemaTables,
         "raster_layer_statistics",
@@ -551,6 +565,34 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 migration,
                 kind,
                 "the required numbered migration is not recorded in public.schema_versions.");
+        }
+
+        if (requirement == DatabaseSchemaRequirement.SensorThings &&
+            _migrations.SensorThingsIdSequencesMigration is { } idSequencesMigration)
+        {
+            // Ingest allocates @iot.ids from these sequences. Without them every insert
+            // fails on the NOT NULL id column, so the floor has to name the migration that
+            // creates them rather than let the write path report a constraint violation.
+            if (!state.IsApplied(idSequencesMigration))
+            {
+                throw CreateFailure(
+                    idSequencesMigration,
+                    _sensorThingsIdSequences.Any(state.Tables.Contains)
+                        ? DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
+                        : DatabaseSchemaFloorFailureKind.MigrationNotApplied,
+                    "the required numbered migration is not recorded in public.schema_versions.");
+            }
+
+            var missingSequences = _sensorThingsIdSequences
+                .Where(sequence => !state.Tables.Contains(sequence))
+                .ToArray();
+            if (missingSequences.Length > 0)
+            {
+                throw CreateFailure(
+                    idSequencesMigration,
+                    DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                    $"required identifier sequence(s) are absent from schema '{_schemaName}': {string.Join(", ", missingSequences)}.");
+            }
         }
 
         if (requirement == DatabaseSchemaRequirement.RasterExternalStorage)
@@ -864,7 +906,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                          c.relname = ANY(@initial_schema_tables)))
                 )
                   AND (c.relname = ANY(@tables) OR c.relname = ANY(@indexes))
-                  AND c.relkind IN ('r', 'p', 'i', 'I')
+                  AND c.relkind IN ('r', 'p', 'i', 'I', 'S')
                 """;
             var schemaParameter = schemaCommand.CreateParameter();
             schemaParameter.ParameterName = "schema";
