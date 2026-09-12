@@ -113,6 +113,7 @@
 ## Reference
 
 - [Reference index](reference/README.md)
+- [Open Knowledge Format](okf/README.md)
 - [Capability concepts](okf/capabilities/README.md)
 - Protocols
   - [GeoServices REST](reference/protocols/geoservices-rest.md)
@@ -150,7 +151,10 @@
 - [CQL2 & filtering](reference/cql2-and-filtering.md)
 - [Geoprocessing operations](reference/geoprocessing-operations.md)
 - [Spec plan/apply engine](reference/spec-engine.md)
+- [Spec grammar v1.0](developer/spec-grammar/v1.0/README.md)
+- [Spec grounding v1.0](developer/spec-grounding/v1.0/README.md)
 - [OpenAPI specs & explorer](reference/openapi-and-explorer.md)
+- [Interactive API documentation](developer/api-specs/README.md)
 - [Versioning & support](reference/versioning-and-support.md)
 - [Control Plane migration guide](reference/control-plane-migration-guide.md)
 - [Integration patterns](reference/integration-patterns.md)

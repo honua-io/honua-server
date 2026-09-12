@@ -105,6 +105,7 @@ Every page below is an Open Knowledge Format concept: one subject per file, type
 ## Reference
 
 - [Reference](https://docs.honua.io/reference/README): Lookup material for Honua's public surfaces: protocols, the admin API, configuration, compatibility status, and cross-cutting contracts.
+- [Open Knowledge Format in honua-server](https://docs.honua.io/okf/README): How this repository's documentation is shaped as an OKF v0.2 bundle: what the contract is, where it is defined, what is generated, and what CI checks.
 - [Capability concepts](https://docs.honua.io/okf/capabilities/README): One concept per entry in the server capability registry: what it is, which edition carries it, and how mature its surfaces are.
 - [GeoServices REST (ArcGIS-compatible)](https://docs.honua.io/reference/protocols/geoservices-rest): Honua serves a GeoServices REST surface under /rest/services, plus a Portal Sharing slice under /sharing/rest for token issuance and item discovery.
 - [OGC APIs](https://docs.honua.io/reference/protocols/ogc-apis): Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages, Processes, Records, and Styles — as JSON-first REST surfaces under /ogc/.
@@ -138,7 +139,10 @@ Every page below is an Open Knowledge Format concept: one subject per file, type
 - [CQL2 and filtering](https://docs.honua.io/reference/cql2-and-filtering): Honua accepts three filter languages, each tied to a protocol surface.
 - [Geoprocessing operations](https://docs.honua.io/reference/geoprocessing-operations): Catalog of the built-in geoprocessing processes (process catalog honua.processcatalog.builtin.v1).
 - [Spec engine](https://docs.honua.io/reference/spec-engine)
+- [Honua Spec Grammar v1.0](https://docs.honua.io/developer/spec-grammar/v1.0/README): The Honua declarative geospatial spec language is the shared surface between the admin workspace (Spec IDE), the CLIs (honua spec …), the grounding pipeline, and downstream plan/apply.
+- [Spec Grounding v1.0](https://docs.honua.io/developer/spec-grounding/v1.0/README): /v1/grounding/spec/ turns natural-language edit requests into validated canonical-spec mutations and deterministic per-section summaries for the Honua spec grammar v1.0.
 - [OpenAPI and the API explorer](https://docs.honua.io/reference/openapi-and-explorer): Honua serves OpenAPI documents at runtime for each protocol surface, ships pinned spec bundles in the repository, and can host an interactive explorer at /docs.
+- [Interactive API Documentation](https://docs.honua.io/developer/api-specs/README): Honua Server provides OpenAPI specifications for OGC APIs and a curated, versioned Admin API contract snapshot.
 - [Versioning and support](https://docs.honua.io/reference/versioning-and-support): How each public surface of Honua is versioned, what counts as a breaking change, and how deprecations are rolled out.
 - [Control Plane API Migration Guide](https://docs.honua.io/reference/control-plane-migration-guide): This guide covers migration for the Honua control-plane/admin API only.
 - [Integration patterns](https://docs.honua.io/reference/integration-patterns): Cross-cutting patterns for building integrations against Honua: choosing a surface, discovering capabilities at runtime, paginating correctly, reacting to changes (polling vs webhooks), authenticating, and keeping batch loads idempotent.
