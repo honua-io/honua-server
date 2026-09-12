@@ -25,6 +25,22 @@ internal sealed class GeoprocessingExecutorOptions
     [Range(1024, 1024L * 1024L * 1024L, ErrorMessage = "MaxArtifactBytes must be between 1 KiB and 1 GiB")]
     public long MaxArtifactBytes { get; set; } = 50L * 1024L * 1024L;
 
+    /// <summary>Maximum wall time allowed for layer reading, managed computation and serialization.</summary>
+    [Range(1, 3600)]
+    public int MaxLayerExecutionSeconds { get; set; } = 300;
+
+    /// <summary>Maximum cumulative vertices materialized from each layer or in buffered intermediates.</summary>
+    [Range(1, 1_000_000)]
+    public int MaxLayerVertices { get; set; } = 100_000;
+
+    /// <summary>
+    /// Maximum conservative segment-pair work admitted to non-preemptible managed topology.
+    /// Unary topology charges the square of all input vertices; joins charge both sides' product.
+    /// This is an admission ceiling, not a claim that every admitted input takes equal time.
+    /// </summary>
+    [Range(1, 1_000_000_000)]
+    public long MaxTopologyWork { get; set; } = 4_000_000;
+
     /// <summary>
     /// Maximum decoded byte length accepted for a deliberately inline raster source.
     /// Larger sources must use PostGIS, object-store, Zarr, or staged-artifact references.

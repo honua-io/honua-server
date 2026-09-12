@@ -70,6 +70,9 @@ internal sealed class LayerDissolveExecutor : LayerSourcedFeatureExecutor
             return passthrough;
         }
 
+        var vertices = LayerComputationBudget.CountVertices(source);
+        LayerComputationBudget.EnsureTopologyWork(vertices, vertices, Options.CurrentValue.MaxTopologyWork);
+
         var groups = new Dictionary<string, GroupState>(StringComparer.Ordinal);
         var order = new List<string>();
         foreach (var feature in source)

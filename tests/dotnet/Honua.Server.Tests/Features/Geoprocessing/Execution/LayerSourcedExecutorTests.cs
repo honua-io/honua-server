@@ -45,6 +45,93 @@ public sealed class LayerSourcedExecutorTests
     private const string DataUriPrefix = "data:application/geo+json;base64,";
     private const string HonuaLayerSourceId = "source.honua-layer";
 
+    [Theory]
+    [InlineData(100, true)]
+    [InlineData(99, false)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task Dissolve_TopologyWorkBoundary_ProducesExactUnionOrRejectsBeforeCompute(long budget, bool succeeds)
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId,
+            [BoxFeature(0, 0, 2, 2), BoxFeature(1, 1, 3, 3)]);
+        var (status, uri, _) = await RunAsync(
+            new LayerDissolveExecutor(ScopeFactory(source), Options(maxTopologyWork: budget),
+                NullLogger<LayerDissolveExecutor>.Instance),
+            LayerDissolveExecutor.HandledProcessId, ("layerId", "9"));
+        if (succeeds)
+        {
+            status.Should().Be(ExecutionJobStatus.Succeeded);
+            var result = ReadFeatures(uri!).Single();
+            // Two 2x2 squares overlap in one 1x1 square: union area = 4 + 4 - 1.
+            result.Geometry.Area.Should().Be(7);
+            Convert.ToInt64(result.Attributes["COUNT"], CultureInfo.InvariantCulture).Should().Be(2);
+        }
+        else
+        {
+            status.Should().Be(ExecutionJobStatus.Failed);
+            uri.Should().BeNull();
+            _lastErrorForAssertions.Should().Contain("MaxTopologyWork=99").And.Contain("stopped before computation");
+        }
+    }
+
+    [Theory]
+    [InlineData(2, true)]
+    [InlineData(1, false)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task Dissolve_CumulativeVertexBoundary_IsChargedAcrossFeatures(int vertices, bool succeeds)
+    {
+        var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(1, 2), PointFeature(3, 4)]);
+        var (status, uri, _) = await RunAsync(
+            new LayerDissolveExecutor(ScopeFactory(source), Options(maxLayerVertices: vertices),
+                NullLogger<LayerDissolveExecutor>.Instance),
+            LayerDissolveExecutor.HandledProcessId, ("layerId", "9"), ("dissolve", "false"));
+        status.Should().Be(succeeds ? ExecutionJobStatus.Succeeded : ExecutionJobStatus.Failed);
+        if (succeeds)
+        {
+            ReadFeatures(uri!).Select(f => f.Geometry.Coordinate.X).Should().Equal(1, 3);
+        }
+        else
+        {
+            uri.Should().BeNull();
+            _lastErrorForAssertions.Should().Contain("MaxLayerVertices=1").And.Contain("while streaming");
+        }
+    }
+
+    [UnitTest]
+    public async Task Dissolve_ElapsedReadLimit_DisposesSourceAndPublishesNothing()
+    {
+        var source = new WaitingLayerSource();
+        var (status, uri, _) = await RunAsync(
+            new LayerDissolveExecutor(ScopeFactory(source), Options(maxExecutionSeconds: 1),
+                NullLogger<LayerDissolveExecutor>.Instance),
+            LayerDissolveExecutor.HandledProcessId, ("layerId", "9"));
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+        source.Disposed.Should().BeTrue();
+        _lastErrorForAssertions.Should().Contain("MaxLayerExecutionSeconds=1").And.Contain("resubmit");
+    }
+
+    private sealed class WaitingLayerSource : IDagFeatureSource
+    {
+        public string SourceId => HonuaLayerSourceId;
+        public bool Disposed { get; private set; }
+
+        public async IAsyncEnumerable<DagSourceFeature> ReadAsync(
+            DagSourceRequest request, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                yield return PointFeature(1, 2);
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            finally
+            {
+                Disposed = true;
+            }
+        }
+    }
+
     [UnitTest]
     public async Task BufferAggregate_DissolvesLayerFeatures_ReachesSucceededWithCount()
     {
@@ -1198,12 +1285,15 @@ public sealed class LayerSourcedExecutorTests
             Attributes = new Dictionary<string, object?> { [groupField] = groupValue, [numericField] = numericValue },
         };
 
-    private static IOptionsMonitor<GeoprocessingExecutorOptions> Options(long? maxArtifactBytes = null)
+    private static IOptionsMonitor<GeoprocessingExecutorOptions> Options(long? maxArtifactBytes = null, long maxTopologyWork = 4_000_000, int maxLayerVertices = 100_000, int maxExecutionSeconds = 300)
     {
         var options = new GeoprocessingExecutorOptions
         {
             MaxArtifactBytes = maxArtifactBytes ?? 50L * 1024L * 1024L,
             ResultRetention = TimeSpan.FromDays(7),
+            MaxTopologyWork = maxTopologyWork,
+            MaxLayerVertices = maxLayerVertices,
+            MaxLayerExecutionSeconds = maxExecutionSeconds,
         };
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
         monitor.CurrentValue.Returns(options);

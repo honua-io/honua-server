@@ -105,6 +105,26 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         IJobExecutionContext context,
         CancellationToken cancellationToken)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var seconds = Options.CurrentValue.MaxLayerExecutionSeconds;
+        deadline.CancelAfter(TimeSpan.FromSeconds(seconds));
+        try
+        {
+            return await ExecuteCoreAsync(job, context, deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            return JobExecutionResult.Failed(
+                $"{ProcessId} exceeded Geoprocessing:Executors:MaxLayerExecutionSeconds={seconds}; " +
+                "narrow the selection or simplify the input, then resubmit.");
+        }
+    }
+
+    private async Task<JobExecutionResult> ExecuteCoreAsync(
+        ExecutionJobRecord job,
+        IJobExecutionContext context,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(context);
 
@@ -168,7 +188,8 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     $"layer {request.LayerId}",
                     Limits.Geometry.MaxVerticesPerGeometry,
                     Limits.Geometry.MaxGeometrySize,
-                    Limits.Analytics.MaxInputBytes)
+                    Limits.Analytics.MaxInputBytes,
+                    Options.CurrentValue.MaxLayerVertices)
                 .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
@@ -238,12 +259,15 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
         await context.ReportProgressAsync(80, $"Encoding {ProcessId} artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = FeatureCollectionArtifact.WriteFeatureCollection(output, ProcessId,
-            request.OutputSrid is { } outputSrid ? [("srid", outputSrid)] : null);
-        if (payload.Length > maxBytes)
+        byte[] payload;
+        try
         {
-            return JobExecutionResult.Failed(
-                $"{ProcessId} artifact size {payload.Length} bytes exceeds configured MaxArtifactBytes={maxBytes}.");
+            payload = BoundedArtifactWriter.WriteFeatureCollection(output, ProcessId, maxBytes, cancellationToken,
+                request.OutputSrid is { } outputSrid ? [("srid", outputSrid)] : null);
+        }
+        catch (TransformInputException ex)
+        {
+            return JobExecutionResult.Failed($"{ProcessId} {ex.PublicMessage}");
         }
 
         var artifactUri = FeatureCollectionArtifact.BuildDataUri(payload);
@@ -349,11 +373,13 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         string? limitLabel = null,
         int? maxVerticesPerGeometry = null,
         long? maxGeometryBytes = null,
-        long? maxInputBytes = null)
+        long? maxInputBytes = null,
+        int? maxTotalVertices = null)
     {
         var geoJsonReader = new GeoJsonReader();
         var features = new List<IFeature>();
         long inputBytes = 0;
+        long totalVertices = 0;
         await foreach (var sourceFeature in source.ReadAsync(request, cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -396,6 +422,14 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     $"{limitLabel ?? "layer"} contains a geometry with {geometry.NumPoints} vertices, "
                     + $"exceeding the configured limit of {vertexCap}; simplify the source geometry or "
                     + "raise the limit.");
+            }
+
+            totalVertices += feature.Geometry?.NumPoints ?? 0;
+            if (maxTotalVertices is { } totalCap && totalVertices > totalCap)
+            {
+                throw new TransformInputException(
+                    $"{limitLabel ?? "layer"} exceeds Geoprocessing:Executors:MaxLayerVertices={totalCap} " +
+                    "while streaming; narrow the selection or simplify the input, then resubmit.");
             }
 
             features.Add(feature);

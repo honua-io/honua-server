@@ -97,9 +97,14 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
                 $"join layer {joinLayerId}",
                 Limits.Geometry.MaxVerticesPerGeometry,
                 Limits.Geometry.MaxGeometrySize,
-                Limits.Analytics.MaxInputBytes)
+                Limits.Analytics.MaxInputBytes,
+                    Options.CurrentValue.MaxLayerVertices)
             .ConfigureAwait(false);
 
+        LayerComputationBudget.EnsureTopologyWork(
+            LayerComputationBudget.CountVertices(context.Features),
+            LayerComputationBudget.CountVertices(joinFeatures),
+            Options.CurrentValue.MaxTopologyWork);
         var index = SpatialJoinSupport.BuildIndex(joinFeatures, cancellationToken);
 
         // The join itself is a Cartesian product: two per-layer-admitted but broadly

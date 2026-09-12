@@ -67,7 +67,9 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
         // buffering instead of discovering the overflow after every buffer was computed. With
         // dissolve the union can shrink the output, so the base's pre-serialization check
         // bounds the final result instead.
-        long? maxOutputVertices = dissolve ? null : Options.CurrentValue.MaxArtifactBytes / MinSerializedBytesPerVertex;
+        long? maxOutputVertices = dissolve
+            ? Options.CurrentValue.MaxLayerVertices
+            : Math.Min(Options.CurrentValue.MaxLayerVertices, Options.CurrentValue.MaxArtifactBytes / MinSerializedBytesPerVertex);
         var bufferedGeometries = await BufferSourceFeaturesAsync(
                 context, inputs, source, distanceMeters, maxOutputVertices, cancellationToken)
             .ConfigureAwait(false);
@@ -98,6 +100,9 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
 
             return perFeature;
         }
+
+        var vertices = buffered.Sum(entry => (long)entry.Geometry.NumPoints);
+        LayerComputationBudget.EnsureTopologyWork(vertices, vertices, Options.CurrentValue.MaxTopologyWork);
 
         var groups = new Dictionary<string, GroupAccumulator>(StringComparer.Ordinal);
         var order = new List<string>();
@@ -233,8 +238,8 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
             {
                 throw new TransformInputException(
                     $"the buffered output reached {outputVertices} vertices after {i + 1} of {source.Count} features, more than "
-                    + "the configured MaxArtifactBytes can hold; stopped during buffering. Narrow the selection, set dissolve=true, "
-                    + "or raise Geoprocessing:Executor:MaxArtifactBytes, then resubmit.");
+                    + "the configured MaxArtifactBytes or MaxLayerVertices budget can hold; stopped during buffering. Narrow the selection, "
+                    + "or qualify a larger Geoprocessing:Executors budget, then resubmit.");
             }
 
             results[i] = buffered;

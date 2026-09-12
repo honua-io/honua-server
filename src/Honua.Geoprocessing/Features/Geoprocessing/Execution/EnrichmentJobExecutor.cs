@@ -160,6 +160,26 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         IJobExecutionContext context,
         CancellationToken cancellationToken)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var seconds = _options.CurrentValue.MaxLayerExecutionSeconds;
+        deadline.CancelAfter(TimeSpan.FromSeconds(seconds));
+        try
+        {
+            return await ExecuteCoreAsync(job, context, deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            return JobExecutionResult.Failed(
+                $"{HandledProcessId} exceeded Geoprocessing:Executors:MaxLayerExecutionSeconds={seconds}; " +
+                "narrow the selection or simplify the input, then resubmit.");
+        }
+    }
+
+    private async Task<JobExecutionResult> ExecuteCoreAsync(
+        ExecutionJobRecord job,
+        IJobExecutionContext context,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(context);
 
@@ -267,7 +287,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             targets = hasInline
                 ? ParseInlineSource(inlineUri!, plan.MaxInputFeatures)
                 : await ReadSourceLayerAsync(
-                        source, inputs, plan, _maxVerticesPerGeometry, _maxGeometryBytes, _maxInputBytes, cancellationToken)
+                        source, inputs, plan, _maxVerticesPerGeometry, _maxGeometryBytes, _maxInputBytes, _options.CurrentValue.MaxLayerVertices, cancellationToken)
                     .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -284,7 +304,8 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
                     $"enrichment dataset layer {dataset.LayerId}",
                     _maxVerticesPerGeometry,
                     _maxGeometryBytes,
-                    _maxInputBytes)
+                    _maxInputBytes,
+                    _options.CurrentValue.MaxLayerVertices)
                 .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
@@ -311,6 +332,10 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         List<IFeature> output;
         try
         {
+            LayerComputationBudget.EnsureTopologyWork(
+                LayerComputationBudget.CountVertices(targets),
+                LayerComputationBudget.CountVertices(joinFeatures),
+                _options.CurrentValue.MaxTopologyWork);
             output = Enrich(targets, joinFeatures, plan, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -333,13 +358,16 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(85, "Encoding enrichment artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = FeatureCollectionArtifact.WriteFeatureCollection(
-            output, HandledProcessId, BuildProvenanceMembers(dataset, plan));
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
-        if (payload.Length > maxBytes)
+        byte[] payload;
+        try
         {
-            return JobExecutionResult.Failed(
-                $"{HandledProcessId} artifact size {payload.Length} bytes exceeds configured MaxArtifactBytes={maxBytes}.");
+            payload = BoundedArtifactWriter.WriteFeatureCollection(
+                output, HandledProcessId, maxBytes, cancellationToken, BuildProvenanceMembers(dataset, plan));
+        }
+        catch (TransformInputException ex)
+        {
+            return JobExecutionResult.Failed($"{HandledProcessId} {ex.PublicMessage}");
         }
 
         await context.PublishArtifactAsync(FeatureCollectionArtifact.BuildDataUri(payload), cancellationToken)
@@ -460,6 +488,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         int maxVerticesPerGeometry,
         long maxGeometryBytes,
         long maxInputBytes,
+        int maxTotalVertices,
         CancellationToken cancellationToken)
     {
         if (!inputs.TryGet("layerId", out var raw)
@@ -482,7 +511,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 
         return LayerSourcedFeatureExecutor.ReadLayerAsync(
             source, request, cancellationToken, plan.MaxInputFeatures, $"source layer {layerId}", maxVerticesPerGeometry,
-            maxGeometryBytes, maxInputBytes);
+            maxGeometryBytes, maxInputBytes, maxTotalVertices);
     }
 
     // Resolves the effective join behavior from the enrichment vocabulary: the
