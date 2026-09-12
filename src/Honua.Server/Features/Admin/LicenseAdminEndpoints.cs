@@ -76,7 +76,10 @@ internal static class LicenseAdminEndpoints
             snapshot.LicenseId,
             snapshot.IssuedAt,
             snapshot.Entitlements,
-            snapshot.CapacityTerms);
+            snapshot.CapacityTerms)
+        {
+            Mode = snapshot.Mode
+        };
 
         var capacity = await capacityMeter.GetCapacityStateAsync(cancellationToken).ConfigureAwait(false);
         var response = LicenseStatusResponseMapper.FromStatus(
@@ -142,7 +145,7 @@ internal static class LicenseAdminEndpoints
 
         var response = new LicenseEntitlementsResponse
         {
-            Edition = snapshot.Edition.ToString(),
+            Edition = snapshot.EditionName,
             Features = features
         };
 

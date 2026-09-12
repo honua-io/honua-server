@@ -8,6 +8,9 @@ namespace Honua.Core.Features.Licensing.Domain;
 /// </summary>
 public sealed class LicenseInfo
 {
+    /// <summary>Deployment licensing mode, independent of the entitlement edition.</summary>
+    public LicenseMode Mode { get; init; } = LicenseMode.Enabled;
+
     /// <summary>
     /// The server edition (e.g., Community, Professional, Enterprise).
     /// </summary>

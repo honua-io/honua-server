@@ -68,7 +68,8 @@ internal static class LicenseGate
         if (entitlementService is not null)
         {
             var decision = entitlementService.CheckEntitlement(entitlementKey);
-            if (decision.Edition > HonuaEdition.Community && decision.ValidationState != LicenseValidationState.Valid)
+            if (decision.Mode != LicenseMode.Disabled &&
+                decision.Edition > HonuaEdition.Community && decision.ValidationState != LicenseValidationState.Valid)
             {
                 return decision with { IsActive = false, UpgradeMessage = "A valid paid license is required. Renew the configured license." };
             }
