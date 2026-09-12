@@ -12,6 +12,7 @@ on:
       - 'NuGet.config'
       - 'src/Honua.Server/Honua.Server.csproj'
       - 'src/Honua.Core/Features/Metadata/**'
+      - 'src/Honua.Core.Abstractions/Features/Metadata/**'
       - 'src/Honua.Core/Features/Infrastructure/Crs/**'
       - 'src/Honua.Protocols.OData/**'
       - 'src/Honua.Protocols.GeoServices/FeatureServer/**'
