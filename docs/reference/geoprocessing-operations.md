@@ -2,6 +2,7 @@
 type: reference
 title: "Geoprocessing operations"
 description: "Catalog of the built-in geoprocessing processes (process catalog honua.processcatalog.builtin.v1)."
+resource: "honua://capability/process.geoprocessing"
 ---
 # Geoprocessing operations
 

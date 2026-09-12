@@ -2,6 +2,7 @@
 type: guide
 title: "Registry clients and package credentials"
 description: "The customer install manifest records the pins and their origins."
+resource: "https://hub.docker.com/r/honuaio/honua-server"
 ---
 # Registry clients and package credentials
 

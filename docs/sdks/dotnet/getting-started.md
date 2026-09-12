@@ -2,6 +2,7 @@
 type: reference
 title: "Get started with the .NET SDK"
 description: "Install the Honua .NET SDK, point a client at your server, authenticate with an API key, and make your first feature query."
+resource: "https://github.com/orgs/honua-io/packages?repo_name=honua-sdk-dotnet"
 ---
 # Get started with the .NET SDK
 

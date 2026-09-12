@@ -2,6 +2,7 @@
 type: reference
 title: "Vector tiles"
 description: "Honua serves Mapbox Vector Tiles (MVT) per layer with TileJSON metadata and a generated MapLibre style, plus a range proxy for published PMTiles artifacts."
+resource: "honua://capability/serve.vector-tiles"
 ---
 # Vector tiles
 

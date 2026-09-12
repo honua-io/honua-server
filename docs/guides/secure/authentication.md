@@ -2,6 +2,7 @@
 type: guide
 title: "Authenticate clients"
 description: "Set up the three ways callers prove who they are: API keys for automation and the admin API, OIDC for browser and console sign-in, and ArcGIS-compatible portal tokens for Esri clients."
+resource: "honua://capability/identity.oidc"
 ---
 # Authenticate clients
 

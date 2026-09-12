@@ -441,6 +441,98 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         }
     }
 
+    /// <summary>
+    /// honua-server#4422 — the streaming loop's only <c>finally</c> released the advisory lock;
+    /// nothing dropped the <c>&lt;table&gt;__staging</c> sibling when a Replace load THREW (as
+    /// opposed to completing with a counted failure, which
+    /// <see cref="ImportFileAsync_ReplaceWithSkippedHostileFeature_DoesNotPromotePartialDataset"/>
+    /// already covers). Strict validity mode with <c>SkipInvalidGeometry=false</c> and
+    /// <c>ContinueOnError=false</c> makes the invalid geometry throw
+    /// <see cref="InvalidOperationException"/> out of <c>InsertBatchFastAsync</c>, uncaught,
+    /// after <c>CreateStagingTableAsync</c> already created the sibling — exactly the leak the
+    /// issue reports. Every expected value here is a fixed, independently-known ground truth (no
+    /// table of any kind, staging or live, may exist for a target that was never successfully
+    /// created), not a snapshot of whatever the importer happens to leave behind.
+    /// </summary>
+    [IntegrationTest]
+    public async Task ImportFileAsync_ReplaceThrowsMidStream_DropsOrphanedStagingTable()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests) + "_throw_cleanup");
+        const string logicalTable = "cleanup_on_throw";
+        const string physicalTable = "imported_" + logicalTable;
+        const string stagingTable = physicalTable + "__staging";
+        try
+        {
+            await EnsureImportFunctionsAsync();
+
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var strictLimits = ImportLimits.Default with
+            {
+                GeometryValidityMode = Honua.Core.Configuration.ValidationMode.Strict,
+                SkipInvalidGeometry = false,
+                ContinueOnError = false,
+            };
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance,
+                strictLimits);
+
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(SelfIntersectingPolygonGeoJson));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "bowtie_throw.geojson",
+                TableName = logicalTable,
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true,
+            });
+
+            bool stagingExists = await TableExistsAsync(schema, stagingTable);
+            bool liveExists = await TableExistsAsync(schema, physicalTable);
+
+            using (new AssertionScope())
+            {
+                result.Success.Should().BeFalse("Strict mode with SkipInvalidGeometry=false must reject the invalid geometry rather than storing or repairing it");
+                stagingExists.Should().BeFalse("a Replace load that throws mid-stream must not leave its <table>__staging sibling behind");
+                liveExists.Should().BeFalse("the target was never successfully created, so nothing may exist under its live name either");
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private async Task<bool> TableExistsAsync(string schema, string tableName)
+    {
+        await using var connection = await fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_class AS relation
+                INNER JOIN pg_catalog.pg_namespace AS namespace
+                    ON namespace.oid = relation.relnamespace
+                WHERE namespace.nspname = @schema_name
+                  AND relation.relname = @table_name)
+            """;
+        var schemaParameter = command.CreateParameter();
+        schemaParameter.ParameterName = "schema_name";
+        schemaParameter.Value = schema;
+        command.Parameters.Add(schemaParameter);
+        var tableParameter = command.CreateParameter();
+        tableParameter.ParameterName = "table_name";
+        tableParameter.Value = tableName;
+        command.Parameters.Add(tableParameter);
+        return (bool)(await command.ExecuteScalarAsync())!;
+    }
+
     private const string OverwriteGuardLogicalTable = "overwrite_guard";
     private const string OverwriteGuardPhysicalTable = "imported_" + OverwriteGuardLogicalTable;
 

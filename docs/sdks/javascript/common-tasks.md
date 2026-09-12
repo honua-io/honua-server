@@ -2,6 +2,7 @@
 type: reference
 title: "JavaScript SDK: common tasks"
 description: "Two of the most common reads with the Honua JavaScript SDK: querying a FeatureServer layer and searching a STAC catalog."
+resource: "https://www.npmjs.com/package/@honua/sdk-js"
 ---
 # JavaScript SDK: common tasks
 

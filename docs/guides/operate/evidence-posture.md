@@ -2,6 +2,7 @@
 type: guide
 title: "Ops evidence posture"
 description: "The 2026.1 operational read surfaces add an evidencePosture object to their existing JSON responses."
+resource: "honua://capability/ops.health"
 ---
 # Ops evidence posture
 

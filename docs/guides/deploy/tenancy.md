@@ -2,6 +2,7 @@
 type: guide
 title: "Tenancy support"
 description: "Honua 2026.1 is generally available for single-tenant deployments."
+resource: "honua://capability/admin.multi-tenancy"
 ---
 # Tenancy support
 

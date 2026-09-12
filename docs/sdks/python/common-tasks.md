@@ -2,6 +2,7 @@
 type: reference
 title: "Python SDK: common tasks"
 description: "Two of the most common reads with the Honua Python SDK: querying a FeatureServer layer and searching a STAC catalog."
+resource: "https://pypi.org/project/honua-sdk/"
 ---
 # Python SDK: common tasks
 

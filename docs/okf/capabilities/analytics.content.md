@@ -1,0 +1,25 @@
+---
+type: capability
+title: "Analysis Artifact Content"
+description: "Store and retrieve spatial-analysis artifacts. The analytics compute operations themselves (clustering, spatial join, etc.) remain Pro-gated."
+resource: "honua://capability/analytics.content"
+tags: [capability, analytics, community]
+---
+<!-- GENERATED FILE - DO NOT EDIT. Regenerate with scripts/ci/generate-capability-concepts.py -->
+
+# Analysis Artifact Content
+
+Store and retrieve spatial-analysis artifacts. The analytics compute operations themselves (clustering, spatial join, etc.) remain Pro-gated.
+
+| | |
+| --- | --- |
+| Capability key | `analytics.content` |
+| Category | Analytics |
+| Edition | Community |
+| Surface maturity | 13 implemented |
+| Registry entries | 13 |
+| Proving tests | 21 |
+
+The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
+
+Which pages discuss this capability is a question about the prose, so it is reported rather than baked in: run `scripts/ci/generate-capability-concepts.py --report`.

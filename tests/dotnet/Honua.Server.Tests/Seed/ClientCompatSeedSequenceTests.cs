@@ -7,36 +7,55 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Npgsql;
-using Testcontainers.PostgreSql;
+using Xunit;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
 namespace Honua.Server.Tests.Seed;
 
+/// <remarks>
+/// Uses the shared <see cref="PostgresFixture"/> sidecar (honua-server#3988) instead of a
+/// dedicated Testcontainer per test: the class writes to the literal, process-global
+/// <c>honua</c> schema via the seed SQL, which per-test <c>search_path</c> isolation does not
+/// protect, so each test still gets its own dedicated database via
+/// <see cref="PostgresFixture.CreateIsolatedDatabaseAsync"/>.
+/// </remarks>
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.Infrastructure)]
-public sealed class ClientCompatSeedSequenceTests
+public sealed class ClientCompatSeedSequenceTests : IAsyncLifetime
 {
-    private const string PostgisImage = "postgis/postgis:16-3.4";
-    private const string TestRunIdEnv = "HONUA_TEST_RUN_ID";
+    private readonly PostgresFixture _postgres = new();
+    private string _connectionString = null!;
+    private string _databaseName = null!;
+
+    public async Task InitializeAsync()
+    {
+        await _postgres.InitializeAsync();
+        _connectionString = await _postgres.CreateIsolatedDatabaseAsync(nameof(ClientCompatSeedSequenceTests));
+        _databaseName = new NpgsqlConnectionStringBuilder(_connectionString).Database!;
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _postgres.DropDatabaseAsync(_databaseName);
+        await _postgres.DisposeAsync();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void PostgresFixture_WithExternalConnectionString_DoesNotStartTestcontainer()
+    {
+        PostgresFixture.ShouldStartContainer("Host=sidecar;Database=honua_test;Username=test;Password=test")
+            .Should().BeFalse("CI exports a live sidecar connection string that must be reused, not shadowed by a redundant container");
+        PostgresFixture.ShouldStartContainer(null).Should().BeTrue("no sidecar is available, so a local Testcontainer must still start");
+        PostgresFixture.ShouldStartContainer("   ").Should().BeTrue("a blank connection string must not be treated as a usable sidecar");
+    }
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task ClientCompatSeedSequence_WithBrowserCompatSeed_RefreshesMetadataV2Snapshots()
     {
-        await using var container = new PostgreSqlBuilder()
-            .WithImage(PostgisImage)
-            .WithDatabase("honua_seed_regression")
-            .WithUsername("postgres")
-            .WithPassword("compat_password")
-            .WithEnvironment("POSTGIS_GDAL_ENABLED_DRIVERS", "ENABLE_ALL")
-            .WithLabel("honua.test.owner", "honua-server")
-            .WithLabel("honua.test.run_id", Environment.GetEnvironmentVariable(TestRunIdEnv) ?? "manual")
-            .Build();
-
-        await container.StartAsync();
-
-        var connectionString = new NpgsqlConnectionStringBuilder(container.GetConnectionString())
+        var connectionString = new NpgsqlConnectionStringBuilder(_connectionString)
         {
             Timeout = 60,
             CommandTimeout = 120
@@ -70,19 +89,7 @@ public sealed class ClientCompatSeedSequenceTests
         // options, FeatureStorageMapping.FromMetadata falls back to the `geometry.primary`
         // field name (`shape`) and to bare per-field column projection, producing Postgres
         // 42703 "column \"shape\" does not exist" on every OGC API Features items query.
-        await using var container = new PostgreSqlBuilder()
-            .WithImage(PostgisImage)
-            .WithDatabase("honua_seed_binding_regression")
-            .WithUsername("postgres")
-            .WithPassword("compat_password")
-            .WithEnvironment("POSTGIS_GDAL_ENABLED_DRIVERS", "ENABLE_ALL")
-            .WithLabel("honua.test.owner", "honua-server")
-            .WithLabel("honua.test.run_id", Environment.GetEnvironmentVariable(TestRunIdEnv) ?? "manual")
-            .Build();
-
-        await container.StartAsync();
-
-        var connectionString = new NpgsqlConnectionStringBuilder(container.GetConnectionString())
+        var connectionString = new NpgsqlConnectionStringBuilder(_connectionString)
         {
             Timeout = 60,
             CommandTimeout = 120

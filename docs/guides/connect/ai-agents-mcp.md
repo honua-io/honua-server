@@ -2,6 +2,7 @@
 type: guide
 title: "Connect AI agents to Honua over MCP"
 description: "Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol."
+resource: "honua://capability/ai.mcp-discovery"
 ---
 # Connect AI agents to Honua over MCP
 

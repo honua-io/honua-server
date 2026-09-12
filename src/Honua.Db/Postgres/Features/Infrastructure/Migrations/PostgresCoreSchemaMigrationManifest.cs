@@ -20,7 +20,8 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         string rasterFootprintsMigration,
         string configuredSchemaAdoptionMigration,
         string governedLineageMigration,
-        string? initialSchemaMigration = null)
+        string? initialSchemaMigration = null,
+        string? sensorThingsIdSequencesMigration = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationMigrationAssemblyName);
         ArgumentException.ThrowIfNullOrWhiteSpace(metadataV2SnapshotMigration);
@@ -42,6 +43,7 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         ConfiguredSchemaAdoptionMigration = configuredSchemaAdoptionMigration;
         GovernedLineageMigration = governedLineageMigration;
         InitialSchemaMigration = initialSchemaMigration;
+        SensorThingsIdSequencesMigration = sensorThingsIdSequencesMigration;
     }
 
     public string ApplicationMigrationAssemblyName { get; }
@@ -67,4 +69,11 @@ internal sealed class PostgresCoreSchemaMigrationManifest
     /// may omit this because they intentionally exercise only provider-owned floors.
     /// </summary>
     public string? InitialSchemaMigration { get; }
+
+    /// <summary>
+    /// Journal identity for the migration that creates the SensorThings identifier
+    /// sequences the ingest path allocates <c>@iot.id</c>s from. Synthetic manifests that
+    /// predate the sequences leave this null and the guard skips the check.
+    /// </summary>
+    public string? SensorThingsIdSequencesMigration { get; }
 }

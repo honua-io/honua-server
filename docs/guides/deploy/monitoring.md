@@ -2,6 +2,7 @@
 type: guide
 title: "Monitor Honua Server"
 description: "You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice."
+resource: "honua://capability/ops.observability"
 ---
 # Monitor Honua Server
 

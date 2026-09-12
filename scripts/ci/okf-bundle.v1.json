@@ -14,7 +14,8 @@
     "concept": "What a thing is and how it fits. No procedure.",
     "guide": "A task someone performs, start to finish.",
     "reference": "Lookup material: surfaces, options, contracts, matrices.",
-    "runbook": "A remediation procedure an alert or an error payload points at."
+    "runbook": "A remediation procedure an alert or an error payload points at.",
+    "capability": "One entry in the server capability registry, generated from docs/gis/data/capability-keys.v1.json. Its `resource` is the stable capability key, which is the identity the capability matrix, the licensing registry and the route mapping all use - so an agent that lands on one of these joins straight to the evidence."
   },
   "excludedDirs": [
     {

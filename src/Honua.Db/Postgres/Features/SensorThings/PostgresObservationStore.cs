@@ -29,6 +29,17 @@ internal sealed class PostgresObservationStore : IObservationStore
     private string _datastreamTable => SchemaSearchPath.QualifyTable("sta_datastream", _schemaContext?.CurrentSchema ?? _configuredSchema);
     private string _observationTable => SchemaSearchPath.QualifyTable("sta_observation", _schemaContext?.CurrentSchema ?? _configuredSchema);
 
+    // Identifier sequences created by server migration 116. Allocating from a sequence
+    // instead of SELECT MAX(id) + 1 is what makes concurrent ingest safe: nextval is
+    // non-transactional and never returns the same value to two sessions, so overlapping
+    // writers cannot mint the same @iot.id (#4199).
+    private string _thingIdSequence => SchemaSearchPath.QualifyTable("sta_thing_id_seq", _schemaContext?.CurrentSchema ?? _configuredSchema);
+    private string _sensorIdSequence => SchemaSearchPath.QualifyTable("sta_sensor_id_seq", _schemaContext?.CurrentSchema ?? _configuredSchema);
+    private string _observedPropertyIdSequence => SchemaSearchPath.QualifyTable("sta_observed_property_id_seq", _schemaContext?.CurrentSchema ?? _configuredSchema);
+    // sta_datastream_id_seq and sta_observation_id_seq are reached through the column
+    // default alone: neither entity accepts a client-supplied id, so nothing has to
+    // reposition them.
+
     public PostgresObservationStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         IDatabaseSchemaGuard schemaGuard,
@@ -350,28 +361,21 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        // Reserve a contiguous id block atomically. The observation id is a plain bigint
-        // (the partition key participates in the PK), so a transactional MAX+offset keeps
-        // ids monotonic without a dedicated sequence on the journaled schema.
-        long nextId;
-        await using (var maxCommand = new NpgsqlCommand(
-            $"SELECT COALESCE(MAX(id), 0) FROM {_observationTable}", connection, transaction))
-        {
-            var max = (long)(await maxCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
-            nextId = max + 1;
-        }
-
+        // The id column defaults to nextval(sta_observation_id_seq) (migration 116), so the
+        // identifier is allocated by the INSERT itself and returned. There is no read-then-write
+        // window for a concurrent writer to observe: reserving the block with MAX(id) + 1 under
+        // READ COMMITTED handed overlapping ingests the same ids, and because the observation PK
+        // is (id, phenomenon_time) the duplicate rows were accepted silently (#4199).
         var results = new List<SensorThingsObservation>(rows.Count);
         var insertSql = $"""
-INSERT INTO {_observationTable} (id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id)
-VALUES (@id, @datastream_id, @phenomenon_time, @result_time, @result, @feature_of_interest_id)
+INSERT INTO {_observationTable} (datastream_id, phenomenon_time, result_time, result, feature_of_interest_id)
+VALUES (@datastream_id, @phenomenon_time, @result_time, @result, @feature_of_interest_id)
+RETURNING id
 """;
 
         foreach (var row in rows)
         {
-            var id = nextId++;
             await using var command = new NpgsqlCommand(insertSql, connection, transaction);
-            command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
             command.Parameters.AddWithValue("datastream_id", NpgsqlDbType.Bigint, row.DatastreamId);
             command.Parameters.AddWithValue("phenomenon_time", NpgsqlDbType.TimestampTz, row.PhenomenonTime);
             command.Parameters.AddWithValue(
@@ -383,7 +387,8 @@ VALUES (@id, @datastream_id, @phenomenon_time, @result_time, @result, @feature_o
                 "feature_of_interest_id",
                 NpgsqlDbType.Bigint,
                 (object?)row.FeatureOfInterestId ?? DBNull.Value);
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            var id = (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Observation insert did not return a server-allocated id."));
 
             results.Add(new SensorThingsObservation
             {
@@ -412,23 +417,22 @@ VALUES (@id, @datastream_id, @phenomenon_time, @result_time, @result, @feature_o
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         var thingId = await UpsertRelatedAsync(
-            connection, transaction, _thingTable, request.Thing, cancellationToken).ConfigureAwait(false);
+            connection, transaction, _thingTable, _thingIdSequence, request.Thing, cancellationToken).ConfigureAwait(false);
         var sensorId = await UpsertSensorAsync(
             connection, transaction, request.Sensor, cancellationToken).ConfigureAwait(false);
         var observedPropertyId = await UpsertObservedPropertyAsync(
             connection, transaction, request.ObservedProperty, cancellationToken).ConfigureAwait(false);
 
-        var datastreamId = await NextIdAsync(connection, transaction, _datastreamTable, cancellationToken).ConfigureAwait(false);
-
         var insertSql = $"""
 INSERT INTO {_datastreamTable}
-    (id, name, description, observation_type, unit_name, unit_symbol, unit_definition, thing_id, sensor_id, observed_property_id)
-VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @unit_definition, @thing_id, @sensor_id, @observed_property_id)
+    (name, description, observation_type, unit_name, unit_symbol, unit_definition, thing_id, sensor_id, observed_property_id)
+VALUES (@name, @description, @observation_type, @unit_name, @unit_symbol, @unit_definition, @thing_id, @sensor_id, @observed_property_id)
+RETURNING id
 """;
 
+        long datastreamId;
         await using (var command = new NpgsqlCommand(insertSql, connection, transaction))
         {
-            command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, datastreamId);
             command.Parameters.AddWithValue("name", NpgsqlDbType.Text, request.Name);
             command.Parameters.AddWithValue("description", NpgsqlDbType.Text, request.Description);
             command.Parameters.AddWithValue("observation_type", NpgsqlDbType.Text, request.ObservationType);
@@ -438,7 +442,8 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
             command.Parameters.AddWithValue("thing_id", NpgsqlDbType.Bigint, thingId);
             command.Parameters.AddWithValue("sensor_id", NpgsqlDbType.Bigint, sensorId);
             command.Parameters.AddWithValue("observed_property_id", NpgsqlDbType.Bigint, observedPropertyId);
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            datastreamId = (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Datastream insert did not return a server-allocated id."));
         }
 
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
@@ -458,15 +463,28 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
         };
     }
 
-    private static async Task<long> NextIdAsync(
+    /// <summary>
+    /// Advances <paramref name="sequence"/> past a client-supplied identifier so a later
+    /// server allocation cannot collide with the row just written. Catalog entities may be
+    /// deep-inserted with an explicit <c>@iot.id</c>, which bypasses the column default;
+    /// without this the sequence would still be sitting behind that id.
+    /// </summary>
+    private static async Task AdvanceSequencePastAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        string table,
+        string sequence,
+        long id,
         CancellationToken cancellationToken)
     {
+        // The sequence name is an internal schema-qualified identifier built from the
+        // validated schema, never request text. GREATEST keeps the sequence monotonic: an
+        // explicit id below the current position leaves it untouched.
         await using var command = new NpgsqlCommand(
-            $"SELECT COALESCE(MAX(id), 0) + 1 FROM {table}", connection, transaction);
-        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 1L);
+            $"SELECT setval('{sequence}', GREATEST(last_value, @id), true) FROM {sequence}",
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
+        await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<bool> ExistsAsync(
@@ -486,6 +504,7 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string table,
+        string sequence,
         RelatedEntityRef entity,
         CancellationToken cancellationToken)
     {
@@ -494,14 +513,24 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
             return entity.Id;
         }
 
-        var id = entity.Id > 0 ? entity.Id : await NextIdAsync(connection, transaction, table, cancellationToken).ConfigureAwait(false);
+        if (entity.Id > 0)
+        {
+            await using var explicitCommand = new NpgsqlCommand(
+                $"INSERT INTO {table} (id, name, description) VALUES (@id, @name, @description)", connection, transaction);
+            explicitCommand.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, entity.Id);
+            explicitCommand.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"Thing {entity.Id}");
+            explicitCommand.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
+            await explicitCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await AdvanceSequencePastAsync(connection, transaction, sequence, entity.Id, cancellationToken).ConfigureAwait(false);
+            return entity.Id;
+        }
+
         await using var command = new NpgsqlCommand(
-            $"INSERT INTO {table} (id, name, description) VALUES (@id, @name, @description)", connection, transaction);
-        command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
-        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"Thing {id}");
+            $"INSERT INTO {table} (name, description) VALUES (@name, @description) RETURNING id", connection, transaction);
+        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? "Thing");
         command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        return id;
+        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Related-entity insert did not return a server-allocated id."));
     }
 
     private async Task<long> UpsertSensorAsync(
@@ -515,16 +544,28 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
             return entity.Id;
         }
 
-        var id = entity.Id > 0 ? entity.Id : await NextIdAsync(connection, transaction, _sensorTable, cancellationToken).ConfigureAwait(false);
+        if (entity.Id > 0)
+        {
+            await using var explicitCommand = new NpgsqlCommand(
+                $"INSERT INTO {_sensorTable} (id, name, description, encoding_type, metadata) VALUES (@id, @name, @description, 'application/pdf', '')",
+                connection,
+                transaction);
+            explicitCommand.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, entity.Id);
+            explicitCommand.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"Sensor {entity.Id}");
+            explicitCommand.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
+            await explicitCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await AdvanceSequencePastAsync(connection, transaction, _sensorIdSequence, entity.Id, cancellationToken).ConfigureAwait(false);
+            return entity.Id;
+        }
+
         await using var command = new NpgsqlCommand(
-            $"INSERT INTO {_sensorTable} (id, name, description, encoding_type, metadata) VALUES (@id, @name, @description, 'application/pdf', '')",
+            $"INSERT INTO {_sensorTable} (name, description, encoding_type, metadata) VALUES (@name, @description, 'application/pdf', '') RETURNING id",
             connection,
             transaction);
-        command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
-        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"Sensor {id}");
+        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? "Sensor");
         command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        return id;
+        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Sensor insert did not return a server-allocated id."));
     }
 
     private async Task<long> UpsertObservedPropertyAsync(
@@ -538,16 +579,28 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
             return entity.Id;
         }
 
-        var id = entity.Id > 0 ? entity.Id : await NextIdAsync(connection, transaction, _observedPropertyTable, cancellationToken).ConfigureAwait(false);
+        if (entity.Id > 0)
+        {
+            await using var explicitCommand = new NpgsqlCommand(
+                $"INSERT INTO {_observedPropertyTable} (id, name, definition, description) VALUES (@id, @name, '', @description)",
+                connection,
+                transaction);
+            explicitCommand.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, entity.Id);
+            explicitCommand.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"ObservedProperty {entity.Id}");
+            explicitCommand.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
+            await explicitCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await AdvanceSequencePastAsync(connection, transaction, _observedPropertyIdSequence, entity.Id, cancellationToken).ConfigureAwait(false);
+            return entity.Id;
+        }
+
         await using var command = new NpgsqlCommand(
-            $"INSERT INTO {_observedPropertyTable} (id, name, definition, description) VALUES (@id, @name, '', @description)",
+            $"INSERT INTO {_observedPropertyTable} (name, definition, description) VALUES (@name, '', @description) RETURNING id",
             connection,
             transaction);
-        command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
-        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"ObservedProperty {id}");
+        command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? "ObservedProperty");
         command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        return id;
+        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("ObservedProperty insert did not return a server-allocated id."));
     }
 
     private static SensorThingsDatastream ReadDatastream(NpgsqlDataReader reader) => new()

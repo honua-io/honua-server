@@ -44,6 +44,7 @@ on:
       - 'scripts/ci/check-okf-bundle.py'
       - 'scripts/ci/check-okf-bundle.test.py'
       - 'scripts/ci/okf-bundle.v1.json'
+      - 'scripts/ci/generate-capability-concepts.py'
       - 'scripts/ci/generate-llms-txt.py'
       - 'scripts/ci/doc-wire-reference-allowlist.v1.json'
       - 'scripts/docs-validation/test_windows_package_verification.py'
@@ -95,6 +96,22 @@ jobs:
       # outside by a recorded decision rather than by being un-navigable.
       - name: Check the OKF concept bundle
         run: python3 scripts/ci/check-okf-bundle.py --summary
+
+      # One capability concept per registry entry, generated from
+      # docs/gis/data/capability-keys.v1.json and the capability matrix. They
+      # are the join between the capability registry and the documentation
+      # graph, so a capability added to the registry without regenerating them
+      # would leave an agent unable to find it - and a capability no page
+      # documents is stated as such rather than quietly absent.
+      - name: Check the capability concepts are current
+        run: python3 scripts/ci/generate-capability-concepts.py --check
+
+      # Not a gate: which prose pages name a capability is a property of the
+      # prose, so baking it into the concepts would make an unrelated edit
+      # stale all 117 of them. Printed here so the documentation backlog stays
+      # visible without being enforced.
+      - name: Report capability documentation coverage
+        run: python3 scripts/ci/generate-capability-concepts.py --report
 
       # llms.txt is derived from SUMMARY.md plus each page's frontmatter, so it
       # cannot drift from the docs on its own -- but it can go stale against

@@ -227,6 +227,41 @@ def check_summary_is_in_bundle(root: pathlib.Path, excluded) -> list[str]:
 REMEDIATION_RE = re.compile(r"runbook_url|remediationRef", re.IGNORECASE)
 
 
+CAPABILITY_RESOURCE_RE = re.compile(r'resource:\s*"honua://capability/([^"]+)"')
+CAPABILITY_KEYS_PATH = REPO_ROOT / "docs" / "gis" / "data" / "capability-keys.v1.json"
+
+
+def check_capability_resources(root: pathlib.Path, excluded) -> list[str]:
+    """A `resource` naming a capability must name one that exists.
+
+    honua://capability/<key> is the identity the capability concepts, the
+    capability matrix, the licensing registry and the route mapping share. An
+    edge pointing at a key nobody declares is worse than no edge: it reads as a
+    join and resolves to nothing. Capabilities do get renamed, so this is the
+    check that turns a silent dangling pointer into a failure.
+    """
+    if not CAPABILITY_KEYS_PATH.is_file():
+        return []
+    registry = json.loads(CAPABILITY_KEYS_PATH.read_text(encoding="utf-8"))
+    entries = registry["capabilities"] if isinstance(registry, dict) else registry
+    known = {entry["key"] for entry in entries}
+
+    problems: list[str] = []
+    for path in sorted(root.rglob("*.md"), key=lambda p: p.as_posix()):
+        if excluded(path):
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for key in CAPABILITY_RESOURCE_RE.findall(text):
+            if key not in known:
+                rel = path.relative_to(REPO_ROOT).as_posix()
+                problems.append(
+                    f"{rel}: `resource` names capability {key!r}, which is not in "
+                    f"{CAPABILITY_KEYS_PATH.relative_to(REPO_ROOT).as_posix()}. Either the key "
+                    "was renamed or the edge was guessed."
+                )
+    return problems
+
+
 def check_runbook_typing(root: pathlib.Path, excluded) -> list[str]:
     """A page an alert or an error payload sends someone to is a runbook. Say so.
 
@@ -369,6 +404,7 @@ def main(argv: list[str]) -> int:
                     f"{rel}: `{field}` must be an ISO-8601 date or date-time, got {value!r}"
                 )
 
+    problems.extend(check_capability_resources(root, excluded))
     problems.extend(check_runbook_typing(root, excluded))
     problems.extend(check_summary_is_in_bundle(root, excluded))
     problems.extend(check_mermaid_diagrams(root, excluded))

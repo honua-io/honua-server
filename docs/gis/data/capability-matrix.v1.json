@@ -1179,7 +1179,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 74,
-      "provingTestCount": 227,
+      "provingTestCount": 230,
       "maturity": {
         "implemented": 74
       },
@@ -1220,6 +1220,28 @@
         "implemented": 10
       },
       "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "jobs.durable-runtime",
+      "displayName": "Durable Job Runtime",
+      "category": "Jobs",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "jobs.durable-runtime",
+        "category": "Jobs",
+        "edition": "Community",
+        "reasonCode": "ops-background-job",
+        "reason": "The durable job substrate is a background runtime behind the import, tile, geoprocessing and workflow routes rather than a route of its own; those routes are catalogued against their own capabilities. It is advertised as jobs.runner on the capability manifest and named by typed dependency-unavailable refusals, which is why it needs a key a client can resolve."
+      },
       "cite": [],
       "parity": [],
       "esriAssess": [],
@@ -1913,6 +1935,28 @@
       "geobench": []
     },
     {
+      "key": "serve.grpc",
+      "displayName": "gRPC (geospatial.v1)",
+      "category": "Serve",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "serve.grpc",
+        "category": "Serve",
+        "edition": "Community",
+        "reasonCode": "non-http-transport",
+        "reason": "The geospatial.v1 services are served over native h2c gRPC on port 8081 and gRPC-Web on 8080. feature-catalog.json catalogues HTTP routes, so a protocol whose surface is a set of protobuf service methods has no entry there. This was the reason gRPC \u2014 alone among the 25 served protocols \u2014 had no capability key at all until #3607."
+      },
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "serve.i3s-scene",
       "displayName": "I3S Scene Serving",
       "category": "Serve",
@@ -2188,7 +2232,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 16,
-      "provingTestCount": 55,
+      "provingTestCount": 60,
       "maturity": {
         "preview": 16
       },
