@@ -88,6 +88,12 @@ internal static class Program
 
         Console.WriteLine($"Reports: {reportFolder}");
 
+        // An interrupted repeat must not leave a previous run's successful receipt input.
+        if (!string.IsNullOrWhiteSpace(options.StatsOut))
+        {
+            File.Delete(options.StatsOut);
+        }
+
         var context = LoadTestScenarios.CreateLoadTestSuite(
             baseUrl,
             profile,
@@ -102,7 +108,42 @@ internal static class Program
             context = context.WithTargetScenarios(targets.ToArray());
         }
 
-        var stats = context.Run();
+        if (options.Profile.Equals("soak", StringComparison.OrdinalIgnoreCase))
+        {
+            // A soak measures the entire window, including a failing candidate. NBomber's
+            // default 5,000-error circuit breaker otherwise stops it during ramp-up.
+            // This controls early termination only: every failure is still counted and
+            // EvaluateResults applies the unchanged failure-rate acceptance threshold.
+            var settings = context.RegisteredScenarios.Select(scenario =>
+                $"{{\"ScenarioName\":{JsonString(scenario.ScenarioName)},\"MaxFailCount\":{int.MaxValue}}}");
+            context = context.LoadConfig("{\"GlobalSettings\":{\"ScenariosSettings\":[" +
+                string.Join(",", settings) + "]}}");
+        }
+
+        context = context
+            .DisplayConsoleMetrics(!Console.IsOutputRedirected)
+            .WithReportingSinks(new LoadProgressSink())
+            .WithScenarioCompletionTimeout(LoadTestScenarios.RequestTimeout + TimeSpan.FromSeconds(10));
+
+        var budget = profile.RampUp + profile.Duration + profile.RampDown
+            + LoadTestScenarios.RequestTimeout + TimeSpan.FromMinutes(2);
+        Console.WriteLine($"Load harness completion budget: {budget} (including request drain and final statistics).");
+        if (!LoadRunDeadline.TryComplete(context.Run, budget, out var stats))
+        {
+            Console.Error.WriteLine($"Load harness did not complete within {budget}; refusing incomplete statistics. Last progress: {LoadProgressSink.LastProgress}");
+            return 124;
+        }
+
+        var expectedDuration = profile.RampUp + profile.Duration + profile.RampDown;
+        var expectedNames = targets.Count > 0 ? targets : _knownScenarioSet;
+        if (!expectedNames.SetEquals(stats.ScenarioStats.Select(scenario => scenario.ScenarioName))
+            || stats.ScenarioStats.Any(scenario => scenario.Duration < expectedDuration
+                || scenario.Ok.Request.Count + scenario.Fail.Request.Count == 0))
+        {
+            Console.Error.WriteLine($"Load harness returned an incomplete run; every selected scenario must execute {expectedDuration} and report requests. Refusing partial statistics.");
+            return 1;
+        }
+
         if (!string.IsNullOrWhiteSpace(options.StatsOut))
         {
             WriteStatsSummary(stats, options.StatsOut!, options.Profile, baseUrl);
@@ -409,9 +450,9 @@ internal static class Program
         writer.WriteLine("Options:");
         writer.WriteLine("  --base-url <url>         Base URL for Honua Server (default: http://localhost:5000)");
         writer.WriteLine("  --profile <name>         Load profile: quick, nightly, soak (default: quick)");
-        writer.WriteLine("  --duration <timespan>    Override steady-state duration (e.g., 30m, 00:30:00)");
-        writer.WriteLine("  --ramp-up <timespan>     Override ramp-up duration");
-        writer.WriteLine("  --ramp-down <timespan>   Override ramp-down duration");
+        writer.WriteLine("  --duration <timespan>    Override steady-state duration (e.g., 1800, 30m, 00:30:00)");
+        writer.WriteLine("  --ramp-up <timespan>     Override ramp-up duration (bare numbers are seconds)");
+        writer.WriteLine("  --ramp-down <timespan>   Override ramp-down duration (bare numbers are seconds)");
         writer.WriteLine("  --layer-id <id>          Feature layer id (default: 0)");
         writer.WriteLine("  --collection-id <id>     OGC collection id (default: 0)");
         writer.WriteLine("  --tile-matrix-set <id>   Tile matrix set id (default: WebMercatorQuad)");
@@ -487,7 +528,7 @@ internal sealed class LoadTestOptions
                         return false;
                     }
 
-                    options.Profile = profile;
+                    options.Profile = profile.Trim().ToLowerInvariant();
                     break;
                 case "--duration":
                     if (!TryReadTimeSpan(args, ref index, out var duration, out error))
@@ -693,6 +734,13 @@ internal sealed class LoadTestOptions
 
     private static bool TryParseDuration(string value, out TimeSpan duration)
     {
+        // The capacity producer exports numeric seconds (RAMP_UP=300). TimeSpan
+        // parses a bare integer as DAYS, so handle seconds before its rich syntax.
+        if (TryParseWithUnit(value, TimeSpan.FromSeconds, out duration))
+        {
+            return true;
+        }
+
         if (TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out duration))
         {
             return true;
@@ -724,10 +772,18 @@ internal sealed class LoadTestOptions
 
     private static bool TryParseWithUnit(string value, Func<double, TimeSpan> factory, out TimeSpan duration)
     {
-        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+            && double.IsFinite(number))
         {
-            duration = factory(number);
-            return true;
+            try
+            {
+                duration = factory(number);
+                return true;
+            }
+            catch (OverflowException)
+            {
+                return FailDuration(out duration);
+            }
         }
 
         duration = default;
