@@ -1,0 +1,175 @@
+{
+  "schema": "honua.wfs-candidate-proof.v1",
+  "startedAt": "2026-09-12T20:58:01.463959+00:00",
+  "outcome": "pass",
+  "requestedImage": "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+  "scenarios": [
+    {
+      "numberMatched": false,
+      "packageId": "wfs-proof-a5aa83d74350",
+      "startedAt": "2026-09-12T20:58:01.556693+00:00",
+      "states": [
+        "Queued",
+        "Succeeded"
+      ],
+      "workflowRunId": "wf-0c97173622a54ede9de5d94a3160faf4",
+      "job": {
+        "jobId": "gp-45473e13b393f65de1bf4722",
+        "kind": "Geoprocessing",
+        "queue": "local",
+        "backend": "local",
+        "targetKind": "KubernetesJob",
+        "workloadName": "Geoprocessing (local baseline)",
+        "definitionId": "workflow-package:wfs-proof-a5aa83d74350:v1:wfs",
+        "status": "Succeeded",
+        "priority": "Normal",
+        "requestedBy": "admin",
+        "createdAt": "2026-09-12T20:58:05.8329659+00:00",
+        "updatedAt": "2026-09-12T20:58:11.0970347+00:00",
+        "completedAt": "2026-09-12T20:58:11.0970347+00:00",
+        "durationMs": 5264,
+        "percentComplete": 100,
+        "currentPhase": "Completed",
+        "attemptCount": 1,
+        "maxAttempts": 3,
+        "resourceRefs": [],
+        "artifactCount": 1,
+        "latestEvent": {
+          "type": "job.completed",
+          "occurredAt": "2026-09-12T20:58:11.0970347+00:00",
+          "status": "Succeeded",
+          "phase": "Completed"
+        },
+        "links": {
+          "self": "/api/v1/admin/jobs/gp-45473e13b393f65de1bf4722",
+          "logs": "/api/v1/admin/jobs/gp-45473e13b393f65de1bf4722/logs",
+          "artifacts": "/api/v1/admin/jobs/gp-45473e13b393f65de1bf4722/artifacts",
+          "actions": "/api/v1/admin/jobs/gp-45473e13b393f65de1bf4722/actions",
+          "steps": "/api/v1/admin/jobs/gp-45473e13b393f65de1bf4722/steps",
+          "cancel": "/api/v1/admin/jobs/gp-45473e13b393f65de1bf4722/cancel",
+          "retry": "/api/v1/admin/jobs/gp-45473e13b393f65de1bf4722/retry",
+          "eventsByJob": "/api/v1/admin/observability/events?kind=job&operationId=gp-45473e13b393f65de1bf4722"
+        }
+      },
+      "artifacts": {
+        "jobId": "gp-45473e13b393f65de1bf4722",
+        "items": [
+          {
+            "artifactId": "data:application/geo+json;base64,eyJ0eXBlIjoiRmVhdHVyZUNvbGxlY3Rpb24iLCJwcm9jZXNzSWQiOiJzb3VyY2Uud2ZzIiwiZmVhdHVyZUNvdW50IjozLCJmZWF0dXJlcyI6W3sidHlwZSI6IkZlYXR1cmUiLCJnZW9tZXRyeSI6eyJ0eXBlIjoiUG9pbnQiLCJjb29yZGluYXRlcyI6WzEuMCwyLjAsMy4yNV19LCJwcm9wZXJ0aWVzIjp7ImtleSI6MTEsInNlcmlhbCI6OTAwNzE5OTI1NDc0MTAwNCwibmFtZSI6IktcdTAxMkJsYXVlYSBcdTY1RTVcdTY3MkMiLCJhY3RpdmUiOnRydWV9fSx7InR5cGUiOiJGZWF0dXJlIiwiZ2VvbWV0cnkiOnsidHlwZSI6IlBvaW50IiwiY29vcmRpbmF0ZXMiOlszLjAsNC4wLC0xLjVdfSwicHJvcGVydGllcyI6eyJrZXkiOjEyLCJzZXJpYWwiOjkwMDcxOTkyNTQ3NDEwMDUsIm5hbWUiOm51bGwsImFjdGl2ZSI6dHJ1ZX19LHsidHlwZSI6IkZlYXR1cmUiLCJnZW9tZXRyeSI6eyJ0eXBlIjoiUG9pbnQiLCJjb29yZGluYXRlcyI6WzUuMCw2LjAsOS43NV19LCJwcm9wZXJ0aWVzIjp7ImtleSI6MTMsInNlcmlhbCI6OTAwNzE5OTI1NDc0MTAwNiwibmFtZSI6Imxhc3QiLCJhY3RpdmUiOnRydWV9fV19",
+            "availability": "Redacted",
+            "message": "Artifact reference is not safe to expose."
+          }
+        ]
+      },
+      "duplicatePageRejected": true,
+      "outcome": "pass",
+      "starts": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "outputBytes": 564,
+      "outputSha256": "c8224a9711980f20c6ec3d5978263284a1eaf7c206bfb55d45920902b9e258ef",
+      "completedAt": "2026-09-12T20:58:11.767154+00:00"
+    },
+    {
+      "numberMatched": true,
+      "packageId": "wfs-proof-6e4792516427",
+      "startedAt": "2026-09-12T20:58:11.767192+00:00",
+      "states": [
+        "Succeeded"
+      ],
+      "workflowRunId": "wf-fc25f16c41eb485bba398006b4fb14b1",
+      "job": {
+        "jobId": "gp-2eed4b51e06cb7c8948b4866",
+        "kind": "Geoprocessing",
+        "queue": "local",
+        "backend": "local",
+        "targetKind": "KubernetesJob",
+        "workloadName": "Geoprocessing (local baseline)",
+        "definitionId": "workflow-package:wfs-proof-6e4792516427:v1:wfs",
+        "status": "Succeeded",
+        "priority": "Normal",
+        "requestedBy": "admin",
+        "createdAt": "2026-09-12T20:58:15.9609501+00:00",
+        "updatedAt": "2026-09-12T20:58:16.2610951+00:00",
+        "completedAt": "2026-09-12T20:58:16.2610951+00:00",
+        "durationMs": 300,
+        "percentComplete": 100,
+        "currentPhase": "Completed",
+        "attemptCount": 1,
+        "maxAttempts": 3,
+        "resourceRefs": [],
+        "artifactCount": 1,
+        "latestEvent": {
+          "type": "job.completed",
+          "occurredAt": "2026-09-12T20:58:16.2610951+00:00",
+          "status": "Succeeded",
+          "phase": "Completed"
+        },
+        "links": {
+          "self": "/api/v1/admin/jobs/gp-2eed4b51e06cb7c8948b4866",
+          "logs": "/api/v1/admin/jobs/gp-2eed4b51e06cb7c8948b4866/logs",
+          "artifacts": "/api/v1/admin/jobs/gp-2eed4b51e06cb7c8948b4866/artifacts",
+          "actions": "/api/v1/admin/jobs/gp-2eed4b51e06cb7c8948b4866/actions",
+          "steps": "/api/v1/admin/jobs/gp-2eed4b51e06cb7c8948b4866/steps",
+          "cancel": "/api/v1/admin/jobs/gp-2eed4b51e06cb7c8948b4866/cancel",
+          "retry": "/api/v1/admin/jobs/gp-2eed4b51e06cb7c8948b4866/retry",
+          "eventsByJob": "/api/v1/admin/observability/events?kind=job&operationId=gp-2eed4b51e06cb7c8948b4866"
+        }
+      },
+      "artifacts": {
+        "jobId": "gp-2eed4b51e06cb7c8948b4866",
+        "items": [
+          {
+            "artifactId": "data:application/geo+json;base64,eyJ0eXBlIjoiRmVhdHVyZUNvbGxlY3Rpb24iLCJwcm9jZXNzSWQiOiJzb3VyY2Uud2ZzIiwiZmVhdHVyZUNvdW50IjozLCJmZWF0dXJlcyI6W3sidHlwZSI6IkZlYXR1cmUiLCJnZW9tZXRyeSI6eyJ0eXBlIjoiUG9pbnQiLCJjb29yZGluYXRlcyI6WzEuMCwyLjAsMy4yNV19LCJwcm9wZXJ0aWVzIjp7ImtleSI6MTEsInNlcmlhbCI6OTAwNzE5OTI1NDc0MTAwNCwibmFtZSI6IktcdTAxMkJsYXVlYSBcdTY1RTVcdTY3MkMiLCJhY3RpdmUiOnRydWV9fSx7InR5cGUiOiJGZWF0dXJlIiwiZ2VvbWV0cnkiOnsidHlwZSI6IlBvaW50IiwiY29vcmRpbmF0ZXMiOlszLjAsNC4wLC0xLjVdfSwicHJvcGVydGllcyI6eyJrZXkiOjEyLCJzZXJpYWwiOjkwMDcxOTkyNTQ3NDEwMDUsIm5hbWUiOm51bGwsImFjdGl2ZSI6dHJ1ZX19LHsidHlwZSI6IkZlYXR1cmUiLCJnZW9tZXRyeSI6eyJ0eXBlIjoiUG9pbnQiLCJjb29yZGluYXRlcyI6WzUuMCw2LjAsOS43NV19LCJwcm9wZXJ0aWVzIjp7ImtleSI6MTMsInNlcmlhbCI6OTAwNzE5OTI1NDc0MTAwNiwibmFtZSI6Imxhc3QiLCJhY3RpdmUiOnRydWV9fV19",
+            "availability": "Redacted",
+            "message": "Artifact reference is not safe to expose."
+          }
+        ]
+      },
+      "duplicatePageRejected": true,
+      "outcome": "pass",
+      "starts": [
+        0,
+        1,
+        2
+      ],
+      "outputBytes": 564,
+      "outputSha256": "c8224a9711980f20c6ec3d5978263284a1eaf7c206bfb55d45920902b9e258ef",
+      "completedAt": "2026-09-12T20:58:16.906432+00:00"
+    }
+  ],
+  "candidate": {
+    "containerId": "4e83bfbf9ae4e6a6fe695da73e1a5b4fdcc56b2c03a697f63530b651fc3ef8e5",
+    "imageId": "sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+    "repoDigests": [
+      "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd"
+    ],
+    "labels": {
+      "description": "Honua Geospatial Feature Server",
+      "honua.runtime.compilation": "native-aot",
+      "honua.runtime.entrypoint": "/app/Honua.Server",
+      "honua.runtime.profile": "web",
+      "maintainer": "Honua Development Team",
+      "org.opencontainers.image.created": "2026-09-11T10:08:22.453Z",
+      "org.opencontainers.image.description": "Cloud-native multi-protocol geospatial server — GeoServices REST, OGC API, WMS/WFS/WMTS/WCS, STAC, OData v4, vector tiles, MCP, and gRPC, backed by PostGIS",
+      "org.opencontainers.image.licenses": "NOASSERTION",
+      "org.opencontainers.image.revision": "7ba422672e0c751843b17beb36e954a019cc19fb",
+      "org.opencontainers.image.source": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.title": "honua-server",
+      "org.opencontainers.image.url": "https://github.com/honua-io/honua-server",
+      "org.opencontainers.image.version": "nightly-amd64",
+      "security.capabilities.drop": "ALL",
+      "security.group": "1001",
+      "security.non-root": "true",
+      "security.read-only-root": "true",
+      "security.user": "1001",
+      "version": "1.0"
+    },
+    "memoryLimitBytes": 1073741824,
+    "nanoCpus": 1000000000
+  },
+  "completedAt": "2026-09-12T20:58:16.906452+00:00"
+}
