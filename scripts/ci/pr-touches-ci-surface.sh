@@ -48,8 +48,16 @@ answer() {
   reason="$(printf '%s' "$2" | tr '\n\r' '  ')"
   echo "ci_surface=${verdict}"
   echo "reason=${reason}"
-  if [[ "${github_output}" == 1 && -n "${GITHUB_OUTPUT:-}" ]]; then
-    printf 'ci_surface=%s\nreason=%s\n' "${verdict}" "${reason}" >> "${GITHUB_OUTPUT}"
+  if [[ "${github_output}" == 1 ]]; then
+    if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+      printf 'ci_surface=%s\nreason=%s\n' "${verdict}" "${reason}" >> "${GITHUB_OUTPUT}"
+    fi
+    # --github-output callers (PR Gate's `Classify CI-surface diff` step)
+    # branch on the ci_surface output, not the exit code, per the EXIT STATUS
+    # contract above — exiting nonzero here instead fails that step (and the
+    # whole job) for every PR that does not touch the CI surface, which is
+    # every PR except the rare `.github/` / `scripts/ci/` change.
+    exit 0
   fi
   if [[ "${verdict}" == true ]]; then
     exit 0
