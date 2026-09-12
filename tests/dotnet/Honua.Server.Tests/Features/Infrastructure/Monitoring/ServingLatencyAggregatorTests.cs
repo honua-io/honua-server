@@ -111,10 +111,71 @@ public sealed class ServingLatencyAggregatorTests
 
         var entry = Assert.Single(aggregator.GetSnapshot().Protocols);
         Assert.Equal(8, entry.RequestCount); // only the most recent 8 of 20 survive
+        Assert.Equal(8, entry.RetentionCapacity);
+        Assert.Equal(20, entry.TotalRecordedSinceReset);
+        Assert.Equal(12, entry.OverwrittenSampleCount);
         Assert.Equal(20d, entry.MaxMs); // last written sample retained
         // Retained set sorted ascending is [13,14,15,16,17,18,19,20];
         // nearest-rank p50 => ceil(0.50*8)=4th sample => 16ms.
         Assert.Equal(16d, entry.P50Ms);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void GetSnapshot_ExposesEffectiveRetainedInterval()
+    {
+        long now = 100 * TicksPerSecond;
+        var aggregator = new ServingLatencyAggregator(TimeSpan.FromMinutes(5), samplesPerProtocol: 8, timestampProvider: () => now);
+
+        aggregator.Record("MapServer", 1, statusCode: 200);
+        now = 125 * TicksPerSecond;
+        aggregator.Record("MapServer", 2, statusCode: 200);
+
+        var entry = Assert.Single(aggregator.GetSnapshot().Protocols);
+        Assert.Equal(25d, entry.OldestRetainedSampleAgeSeconds, precision: 6);
+        Assert.Equal(0d, entry.NewestRetainedSampleAgeSeconds, precision: 6);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void GetSnapshot_IdledPastWindow_StillReportsLifetimeCounters()
+    {
+        // A replica that served traffic and then went quiet is not a freshly reset process.
+        // Dropping the protocol entirely would make the diagnostic report the two identically,
+        // which is exactly the confusion #3909 is about.
+        long now = 0;
+        var aggregator = new ServingLatencyAggregator(
+            TimeSpan.FromSeconds(60),
+            samplesPerProtocol: 4,
+            timestampProvider: () => now);
+
+        for (var i = 0; i < 10; i++)
+        {
+            aggregator.Record("MapServer", 5, statusCode: 200);
+        }
+
+        // Slide the window well past every retained sample.
+        now = 600 * TicksPerSecond;
+
+        var snapshot = aggregator.GetSnapshot();
+
+        // No latency population, so the protocol stays out of Protocols and cannot pollute
+        // percentile or error-rate consumers.
+        Assert.Empty(snapshot.Protocols);
+
+        var idle = Assert.Single(snapshot.IdleProtocols);
+        Assert.Equal("MapServer", idle.Protocol);
+        Assert.Equal(10, idle.TotalRecordedSinceReset);
+        Assert.Equal(6, idle.OverwrittenSampleCount);
+        Assert.Equal(4, idle.RetentionCapacity);
+
+        // A genuinely reset aggregator publishes nothing at all for the protocol.
+        var reset = new ServingLatencyAggregator(
+            TimeSpan.FromSeconds(60),
+            samplesPerProtocol: 4,
+            timestampProvider: () => now);
+        Assert.Empty(reset.GetSnapshot().Protocols);
+        Assert.Empty(reset.GetSnapshot().IdleProtocols);
     }
 
     [UnitTest]
