@@ -26,7 +26,7 @@ finding-proposal cases, the tested commit and source/assembly hashes.
 | Generic model proposal-only boundary and negative authorization | Source references below; #3411, #3430, #3431 and #3474 are closed as checked September 5. Their old open-blocker claims were removed. |
 | One joined deployment actuator receipt and convergence window | **Unmet.** The approval receipt below exercises a real Studio draft operation; it does not prove deployment convergence or recovery. |
 | Exact Local Docker and ECS-small route/tool/CLI/rollback replay | **Unmet.** The accepted manifest pin exists and must be tested. The installed service-staging receipt below fails on that pin; missing final release-lock manufacture does not release this criterion. |
-| GitBook/docs validation | Run the repository documentation link/anchor and example-surface gates. Hosted GitBook preview is separately reported by the PR checks. |
+| GitBook/docs validation | Local link/anchor, example-surface, OKF bundle, generated capability concepts and `llms.txt` checks pass. Checker regressions (24 links, example surfaces, 17 OKF, 2 Windows package verification) and `scripts/ci/pre-pr-check.sh` pass. The pre-PR selector uses the documentation-only shell/governance path; no managed build is required. Hosted GitBook preview is separately reported by the PR checks. |
 | honua-site #185 links without broadening claims | [Site PR #275](https://github.com/honua-io/honua-site/pull/275) contains both `guides/operate/scenario` and `guides/operate/metrics` links in `operations.html`, verified at `012f8acbbc8aeb427d7326e5f9cc0f6204d5dbcc`. It remains open on September 12; publication is not claimed. |
 
 The release promise is the bounded terminal Operate journey in the 2026.1
