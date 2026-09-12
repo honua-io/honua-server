@@ -528,7 +528,7 @@ internal sealed class LoadTestOptions
                         return false;
                     }
 
-                    options.Profile = profile;
+                    options.Profile = profile.Trim().ToLowerInvariant();
                     break;
                 case "--duration":
                     if (!TryReadTimeSpan(args, ref index, out var duration, out error))
