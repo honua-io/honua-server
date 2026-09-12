@@ -62,28 +62,29 @@ internal sealed class PostgresObservationStore : IObservationStore
     }
 
     public async Task<IReadOnlyList<SensorThingsDatastream>> ListDatastreamsAsync(
-        int skip,
-        int top,
+        CatalogQuery query,
         CancellationToken cancellationToken)
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $"""
+        var sql = new System.Text.StringBuilder($"""
 SELECT d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
        d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id,
        MIN(o.phenomenon_time) AS pt_start, MAX(o.phenomenon_time) AS pt_end
 FROM {_datastreamTable} d
 LEFT JOIN {_observationTable} o ON o.datastream_id = d.id
+""");
+        AppendWhere(sql, query.WhereSql);
+        sql.Append("""
+
 GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
          d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id
-ORDER BY d.id
-OFFSET @skip LIMIT @top
-""";
+""");
+        AppendOrderByAndPaging(sql, query.OrderBySql ?? "d.id ASC");
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, lease);
-        command.Parameters.AddWithValue("skip", NpgsqlDbType.Integer, skip);
-        command.Parameters.AddWithValue("top", NpgsqlDbType.Integer, top);
+        await using var command = new NpgsqlCommand(sql.ToString(), lease);
+        AddCatalogParameters(command, query);
 
         var results = new List<SensorThingsDatastream>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -118,15 +119,16 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadDatastream(reader) : null;
     }
 
-    public async Task<IReadOnlyList<SensorThingsThing>> ListThingsAsync(int skip, int top, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<SensorThingsThing>> ListThingsAsync(CatalogQuery query, CancellationToken cancellationToken)
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $"SELECT id, name, description FROM {_thingTable} ORDER BY id OFFSET @skip LIMIT @top";
+        var sql = new System.Text.StringBuilder($"SELECT id, name, description FROM {_thingTable}");
+        AppendWhere(sql, query.WhereSql);
+        AppendOrderByAndPaging(sql, query.OrderBySql ?? "id ASC");
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, lease);
-        command.Parameters.AddWithValue("skip", NpgsqlDbType.Integer, skip);
-        command.Parameters.AddWithValue("top", NpgsqlDbType.Integer, top);
+        await using var command = new NpgsqlCommand(sql.ToString(), lease);
+        AddCatalogParameters(command, query);
 
         var results = new List<SensorThingsThing>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -166,15 +168,17 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         };
     }
 
-    public async Task<IReadOnlyList<SensorThingsSensor>> ListSensorsAsync(int skip, int top, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<SensorThingsSensor>> ListSensorsAsync(CatalogQuery query, CancellationToken cancellationToken)
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $"SELECT id, name, description, encoding_type, metadata FROM {_sensorTable} ORDER BY id OFFSET @skip LIMIT @top";
+        var sql = new System.Text.StringBuilder(
+            $"SELECT id, name, description, encoding_type, metadata FROM {_sensorTable}");
+        AppendWhere(sql, query.WhereSql);
+        AppendOrderByAndPaging(sql, query.OrderBySql ?? "id ASC");
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, lease);
-        command.Parameters.AddWithValue("skip", NpgsqlDbType.Integer, skip);
-        command.Parameters.AddWithValue("top", NpgsqlDbType.Integer, top);
+        await using var command = new NpgsqlCommand(sql.ToString(), lease);
+        AddCatalogParameters(command, query);
 
         var results = new List<SensorThingsSensor>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -200,17 +204,18 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
     }
 
     public async Task<IReadOnlyList<SensorThingsObservedProperty>> ListObservedPropertiesAsync(
-        int skip,
-        int top,
+        CatalogQuery query,
         CancellationToken cancellationToken)
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $"SELECT id, name, definition, description FROM {_observedPropertyTable} ORDER BY id OFFSET @skip LIMIT @top";
+        var sql = new System.Text.StringBuilder(
+            $"SELECT id, name, definition, description FROM {_observedPropertyTable}");
+        AppendWhere(sql, query.WhereSql);
+        AppendOrderByAndPaging(sql, query.OrderBySql ?? "id ASC");
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, lease);
-        command.Parameters.AddWithValue("skip", NpgsqlDbType.Integer, skip);
-        command.Parameters.AddWithValue("top", NpgsqlDbType.Integer, top);
+        await using var command = new NpgsqlCommand(sql.ToString(), lease);
+        AddCatalogParameters(command, query);
 
         var results = new List<SensorThingsObservedProperty>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -235,25 +240,92 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadObservedProperty(reader) : null;
     }
 
-    public Task<long> CountThingsAsync(CancellationToken cancellationToken) =>
-        CountCatalogAsync(_thingTable, cancellationToken);
+    public Task<long> CountThingsAsync(CatalogQuery query, CancellationToken cancellationToken) =>
+        CountCatalogAsync(_thingTable, null, query, cancellationToken);
 
-    public Task<long> CountSensorsAsync(CancellationToken cancellationToken) =>
-        CountCatalogAsync(_sensorTable, cancellationToken);
+    public Task<long> CountSensorsAsync(CatalogQuery query, CancellationToken cancellationToken) =>
+        CountCatalogAsync(_sensorTable, null, query, cancellationToken);
 
-    public Task<long> CountObservedPropertiesAsync(CancellationToken cancellationToken) =>
-        CountCatalogAsync(_observedPropertyTable, cancellationToken);
+    public Task<long> CountObservedPropertiesAsync(CatalogQuery query, CancellationToken cancellationToken) =>
+        CountCatalogAsync(_observedPropertyTable, null, query, cancellationToken);
 
-    public Task<long> CountDatastreamsAsync(CancellationToken cancellationToken) =>
-        CountCatalogAsync(_datastreamTable, cancellationToken);
+    // The datastream filter is written against the `d` alias the list query uses, so the
+    // count has to introduce the same alias.
+    public Task<long> CountDatastreamsAsync(CatalogQuery query, CancellationToken cancellationToken) =>
+        CountCatalogAsync(_datastreamTable, "d", query, cancellationToken);
 
-    private async Task<long> CountCatalogAsync(string table, CancellationToken cancellationToken)
+    private async Task<long> CountCatalogAsync(
+        string table,
+        string? alias,
+        CatalogQuery query,
+        CancellationToken cancellationToken)
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        // The table is a schema-qualified internal catalog identifier, never request text.
-        await using var command = new NpgsqlCommand($"SELECT COUNT(*) FROM {table}", lease);
+        // The table and alias are internal catalog identifiers, never request text; the
+        // WHERE fragment is built by the protocol adapter over whitelisted column names and
+        // carries its values as @p0..@pN parameters.
+        var sql = new System.Text.StringBuilder(
+            $"SELECT COUNT(*) FROM {table}{(alias is null ? string.Empty : " " + alias)}");
+        AppendWhere(sql, query.WhereSql);
+        await using var command = new NpgsqlCommand(sql.ToString(), lease);
+        AddFilterParameters(command, query.WhereParameters);
         return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
+    }
+
+    private static void AppendWhere(System.Text.StringBuilder sql, string? whereSql)
+    {
+        if (!string.IsNullOrWhiteSpace(whereSql))
+        {
+            sql.Append(" WHERE (").Append(whereSql).Append(')');
+        }
+    }
+
+    private static void AppendOrderByAndPaging(System.Text.StringBuilder sql, string orderBySql)
+    {
+        sql.Append(" ORDER BY ").Append(orderBySql).Append(" OFFSET @skip LIMIT @top");
+    }
+
+    private static void AddCatalogParameters(NpgsqlCommand command, CatalogQuery query)
+    {
+        AddFilterParameters(command, query.WhereParameters);
+        command.Parameters.AddWithValue("skip", NpgsqlDbType.Integer, Math.Max(0, query.Skip));
+        command.Parameters.AddWithValue("top", NpgsqlDbType.Integer, Math.Max(0, query.Top));
+    }
+
+    /// <summary>
+    /// Binds the translated <c>$filter</c> values with the PostgreSQL type their column
+    /// expects. The translator already refused any literal that does not match the column,
+    /// so the CLR type here is authoritative; binding it explicitly keeps an inferred
+    /// parameter type from reintroducing a text-versus-double comparison (#4203).
+    /// </summary>
+    private static void AddFilterParameters(NpgsqlCommand command, IReadOnlyList<object?> parameters)
+    {
+        for (var i = 0; i < parameters.Count; i++)
+        {
+            var name = "p" + i.ToString(CultureInfo.InvariantCulture);
+            switch (parameters[i])
+            {
+                case null:
+                    command.Parameters.AddWithValue(name, DBNull.Value);
+                    break;
+                case long integer:
+                    command.Parameters.AddWithValue(name, NpgsqlDbType.Bigint, integer);
+                    break;
+                case double number:
+                    command.Parameters.AddWithValue(name, NpgsqlDbType.Double, number);
+                    break;
+                case string text:
+                    command.Parameters.AddWithValue(name, NpgsqlDbType.Text, text);
+                    break;
+                case DateTimeOffset instant:
+                    command.Parameters.AddWithValue(name, NpgsqlDbType.TimestampTz, instant);
+                    break;
+                default:
+                    command.Parameters.AddWithValue(name, parameters[i]!);
+                    break;
+            }
+        }
     }
 
     public async Task<long> CountObservationsAsync(ObservationQuery query, CancellationToken cancellationToken)
@@ -293,12 +365,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
             command.Parameters.AddWithValue("datastream_id", NpgsqlDbType.Bigint, id);
         }
 
-        for (var i = 0; i < query.WhereParameters.Count; i++)
-        {
-            command.Parameters.AddWithValue(
-                "p" + i.ToString(CultureInfo.InvariantCulture),
-                query.WhereParameters[i] ?? DBNull.Value);
-        }
+        AddFilterParameters(command, query.WhereParameters);
     }
 
     public async Task<IReadOnlyList<SensorThingsObservation>> QueryObservationsAsync(
@@ -311,9 +378,9 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
             $"SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM {_observationTable}");
 
         AppendObservationFilter(sql, query);
-        sql.Append(" ORDER BY phenomenon_time ").Append(query.OrderByDescending ? "DESC" : "ASC");
-        sql.Append(", id ").Append(query.OrderByDescending ? "DESC" : "ASC");
-        sql.Append(" OFFSET @skip LIMIT @top");
+        // The ORDER BY body is translated from $orderby against the observation column
+        // whitelist; absent it, observations page in phenomenon-time order.
+        AppendOrderByAndPaging(sql, query.OrderBySql ?? "phenomenon_time ASC, id ASC");
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql.ToString(), lease);
