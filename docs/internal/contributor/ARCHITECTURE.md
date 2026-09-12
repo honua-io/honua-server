@@ -132,7 +132,7 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 
 For deployment architecture and infrastructure details, see:
 - [Deployment Scenarios](../../guides/deploy/cloud-deployments.md)
-- [Architecture Diagrams](ARCHITECTURE_DIAGRAMS.md)
+- [Architecture Diagrams](../../concepts/architecture-diagrams.md)
 - [Platform Overview](../../concepts/architecture.md)
 
 Historical AI-operator design notes are archived and are not part of the current contributor entrypoints.

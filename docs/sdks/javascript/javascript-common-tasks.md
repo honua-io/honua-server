@@ -6,7 +6,7 @@ resource: "https://www.npmjs.com/package/@honua/sdk-js"
 ---
 # JavaScript SDK: common tasks
 
-Two of the most common reads with the Honua JavaScript SDK: querying a FeatureServer layer and searching a STAC catalog. Both assume a constructed client — see [Get started with the JavaScript SDK](getting-started.md).
+Two of the most common reads with the Honua JavaScript SDK: querying a FeatureServer layer and searching a STAC catalog. Both assume a constructed client — see [Get started with the JavaScript SDK](javascript-getting-started.md).
 
 ## Query a FeatureServer layer
 
@@ -99,7 +99,7 @@ See [ArcGIS apps & SDKs](../../guides/migrate/arcgis-apps-and-sdks.md) for the m
 
 ## Next steps
 
-- [Get started with the JavaScript SDK](getting-started.md)
+- [Get started with the JavaScript SDK](javascript-getting-started.md)
 - [GeoServices REST reference](../../reference/protocols/geoservices-rest.md)
 - [STAC reference](../../reference/protocols/stac.md)
 - [MapLibre web maps](../../guides/connect/maplibre-web-maps.md)

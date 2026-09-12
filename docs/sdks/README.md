@@ -13,9 +13,9 @@ The three first-party server SDKs are generated and tested against the same admi
 
 | SDK | Package | Latest | Runtime | Start here |
 |---|---|---|---|---|
-| **.NET** | `Honua.Sdk` (NuGet) | 1.6.2 | net10.0 | [.NET getting started](dotnet/getting-started.md) |
-| **Python** | `honua-sdk` (PyPI) | 0.1.11 | Python ≥ 3.11 | [Python getting started](python/getting-started.md) |
-| **JavaScript / TypeScript** | `@honua/sdk-js` (npm) | 0.1.9-beta.0 | Node ≥ 20 | [JavaScript getting started](javascript/getting-started.md) |
+| **.NET** | `Honua.Sdk` (NuGet) | 1.6.2 | net10.0 | [.NET getting started](dotnet/dotnet-getting-started.md) |
+| **Python** | `honua-sdk` (PyPI) | 0.1.11 | Python ≥ 3.11 | [Python getting started](python/python-getting-started.md) |
+| **JavaScript / TypeScript** | `@honua/sdk-js` (npm) | 0.1.9-beta.0 | Node ≥ 20 | [JavaScript getting started](javascript/javascript-getting-started.md) |
 | Mobile controls (.NET MAUI) | [honua-mobile](https://github.com/honua-io/honua-mobile) | Experimental (Apache-2.0) | .NET MAUI | Reusable SDK and map/control foundation; repo README |
 | Field collection app | [honua-collect](https://github.com/honua-io/honua-collect) | Experimental (ELv2) | .NET MAUI | Full end-user app built on `honua-mobile`; repo README |
 
@@ -56,8 +56,8 @@ All three follow the same shape so concepts transfer between languages:
 
 Each SDK has a short common-tasks page covering the two most common reads — query a FeatureServer layer and run a STAC search:
 
-- [.NET common tasks](dotnet/common-tasks.md)
-- [Python common tasks](python/common-tasks.md)
-- [JavaScript common tasks](javascript/common-tasks.md)
+- [.NET common tasks](dotnet/dotnet-common-tasks.md)
+- [Python common tasks](python/python-common-tasks.md)
+- [JavaScript common tasks](javascript/javascript-common-tasks.md)
 
 The underlying protocols are documented under [Reference → Protocols](../reference/README.md): [GeoServices REST](../reference/protocols/geoservices-rest.md), [OGC APIs](../reference/protocols/ogc-apis.md), and [STAC](../reference/protocols/stac.md). For generated OpenAPI equivalents of these calls, see [Query features](../guides/query-analyze/query-features.md).

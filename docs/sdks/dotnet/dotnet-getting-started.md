@@ -134,7 +134,7 @@ More general failures: [Troubleshooting](../../guides/deploy/troubleshooting.md)
 
 ## Next steps
 
-- [.NET common tasks](common-tasks.md) — query a FeatureServer layer and run a STAC search
+- [.NET common tasks](dotnet-common-tasks.md) — query a FeatureServer layer and run a STAC search
 - [honua-sdk-dotnet on GitHub](https://github.com/honua-io/honua-sdk-dotnet) — full package list and samples
 - [Query features over HTTP](../../guides/query-analyze/query-features.md) — the protocol surfaces the SDK wraps
 - [SDK overview](../README.md)
