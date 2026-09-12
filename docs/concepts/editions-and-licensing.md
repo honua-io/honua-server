@@ -20,7 +20,9 @@ rejected while this mode is active, and surge requests leave metering disabled.
 Licensing__Mode=Disabled
 ```
 
-Restart the server after changing the mode. This explicit choice belongs in the
+Set the same mode on standalone GDAL workers; their job coordination still requires
+Redis, while licensing and capacity metering remain off. Restart each host after
+changing the mode. This explicit choice belongs in the
 deployment configuration: the server default remains `Licensing__Mode=Enabled`
 with Community when no edition or license source is configured. Honua's 2026.1
 deployment surfaces select Disabled through their own configuration.

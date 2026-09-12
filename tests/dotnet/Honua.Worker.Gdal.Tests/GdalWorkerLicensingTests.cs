@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -22,6 +23,51 @@ namespace Honua.Worker.Gdal.Tests;
 [Operation(Operations.TestInfrastructure)]
 public sealed class GdalWorkerLicensingTests
 {
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData("not-a-signed-license")]
+    public async Task AddGdalWorker_DisabledProduction_StartsWithoutLoadingLegacyLicense(string? licenseContent)
+    {
+        await using var redis = BuildRedis("yes", "always", "noeviction");
+        await redis.StartAsync();
+        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+        {
+            EnvironmentName = Environments.Production
+        });
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:redis"] = $"{redis.Hostname}:{redis.GetMappedPublicPort(6379)}",
+            ["Licensing:Mode"] = "Disabled",
+            ["Licensing:Edition"] = "Enterprise",
+            ["Licensing:LicensePath"] = "/nonexistent/disabled-worker/license.json",
+            ["Licensing:LicenseContent"] = licenseContent,
+            ["Licensing:LicenseContentSecretRef"] = "aws:secretsmanager:synthetic-disabled-license"
+        });
+        builder.Services.AddGdalWorker(builder.Configuration);
+        using var host = builder.Build();
+        using var connection = host.Services.GetRequiredService<IConnectionMultiplexer>();
+        await host.StartAsync();
+        try
+        {
+            host.Services.GetRequiredService<IHostEnvironment>().IsProduction().Should().BeTrue();
+            var policy = host.Services.GetRequiredService<ILicenseOperationPolicy>();
+            policy.IsBlocked.Should().BeFalse();
+            policy.OperationCancellation.CanBeCanceled.Should().BeFalse();
+            host.Services.GetServices<IHostedService>().Should().NotContain(service => ReferenceEquals(service, policy));
+            host.Services.GetServices<ILicenseContentSecretResolver>().Should().BeEmpty();
+            var snapshot = host.Services.GetRequiredService<ILicenseEntitlementService>().GetSnapshot();
+            snapshot.Mode.Should().Be(LicenseMode.Disabled);
+            snapshot.Entitlements.Should().HaveCount(FeatureCatalog.All.Count).And.OnlyContain(entitlement => entitlement.IsActive);
+            var capacity = await host.Services.GetRequiredService<ILicenseCapacityMeter>().GetCapacityStateAsync();
+            capacity.MeteringEnabled.Should().BeFalse();
+            capacity.LiveInstanceCount.Should().Be(0);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
     [IntegrationTest]
     public async Task AddGdalWorker_AttestsRedisAndRegistersLicensePolicyAndBothCloudSecretResolvers()
     {

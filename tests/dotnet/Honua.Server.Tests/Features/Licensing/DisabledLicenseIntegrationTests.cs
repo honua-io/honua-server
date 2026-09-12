@@ -34,6 +34,11 @@ public sealed class DisabledLicenseIntegrationTests
     [Endpoint("GET /api/v1/admin/license/features")]
     public async Task Production_DisabledWithoutLicense_StartsWithActiveEntitlementsAndTruthfulAdminResponses()
     {
+        using var contract = JsonDocument.Parse(await File.ReadAllTextAsync(
+            RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+        var schemas = contract.RootElement.GetProperty("components").GetProperty("schemas");
+        var statusSchema = schemas.GetProperty("LicenseStatusResponse").GetProperty("properties");
+        var capacitySchema = schemas.GetProperty("LicenseCapacitySnapshot").GetProperty("properties");
         var postgres = new PostgresFixture();
         await postgres.InitializeAsync();
         var schema = await postgres.CreateIsolatedSchemaAsync(nameof(DisabledLicenseIntegrationTests));
@@ -58,6 +63,10 @@ public sealed class DisabledLicenseIntegrationTests
                 Assert.Equal("disabled", data.GetProperty("mode").GetString());
                 Assert.Equal("Unlicensed-2026.1", data.GetProperty("edition").GetString());
                 Assert.Equal("Disabled", data.GetProperty("validationState").GetString());
+                Assert.Contains(statusSchema.GetProperty("mode").GetProperty("enum").EnumerateArray(),
+                    value => value.GetString() == data.GetProperty("mode").GetString());
+                Assert.Contains(statusSchema.GetProperty("validationState").GetProperty("enum").EnumerateArray(),
+                    value => value.GetString() == data.GetProperty("validationState").GetString());
                 Assert.True(data.GetProperty("isValid").GetBoolean());
                 Assert.False(data.GetProperty("expiryWarning").GetBoolean());
                 Assert.True(!data.TryGetProperty("expiresAt", out var expires) || expires.ValueKind == JsonValueKind.Null);
@@ -76,6 +85,10 @@ public sealed class DisabledLicenseIntegrationTests
             using var capacityJson = JsonDocument.Parse(await capacityResponse.Content.ReadAsStringAsync());
             var capacity = capacityJson.RootElement.GetProperty("data");
             Assert.False(capacity.GetProperty("meteringEnabled").GetBoolean());
+            Assert.Equal("boolean", capacitySchema.GetProperty("meteringEnabled").GetProperty("type").GetString());
+            Assert.Equal(9, capacity.GetProperty("state").GetInt32());
+            Assert.Contains(capacitySchema.GetProperty("state").GetProperty("enum").EnumerateArray(),
+                value => value.GetInt32() == capacity.GetProperty("state").GetInt32());
             Assert.False(capacity.GetProperty("registrationEnforced").GetBoolean());
             Assert.Equal(0, capacity.GetProperty("liveInstanceCount").GetInt32());
 
