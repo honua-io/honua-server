@@ -339,6 +339,7 @@ jobs:
           curl -fsS "$BASE_URL/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&returnCountOnly=true"
 
       - name: Run the locked soak profile and observe it
+        id: soak
         working-directory: producer
         env:
           HONUA_API_KEY: ${{ env.SOAK_ADMIN_PASSWORD }}
@@ -346,18 +347,32 @@ jobs:
           STEADY: ${{ steps.window.outputs.steady }}
           RAMP_UP: ${{ steps.profile.outputs.ramp_up }}
           PROFILE: ${{ steps.lock.outputs.profile }}
+          # The driver injects the recovery fault with `docker compose restart`, which re-reads
+          # docker-compose.soak.yml and needs the same variables the substrate was started with.
+          SOAK_SERVER_IMAGE: ${{ steps.substrate.outputs.image }}
+          SOAK_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          SOAK_LICENSE_TRUSTED_KEY: ${{ steps.license.outputs.trusted_key }}
+          SOAK_MAX_STREAM_SESSIONS: ${{ steps.lock.outputs.subscriptions }}
         run: |
           set -euo pipefail
+          export SOAK_LICENSE_CONTENT="$(cat "$RUNNER_TEMP/license/license.json")"
           # The load harness and the observation driver run against the same deployment over the
           # same window: the harness offers the declared concurrency, the driver measures what a
           # request generator cannot see. The driver skips the harness's ramp-up so its
           # steady-state window sits inside the harness's steady-state phase.
-          ./scripts/scale/run-load-soak-tests.sh \
+          # Hard budget for the harness: ramp-up + steady state + ramp-down + 15 minutes of slack
+          # for report generation. A harness that outlives that is killed and reported, because a
+          # run that never ends produces no evidence at all (an endpoint that accepts a request and
+          # never finishes its response once hung a soak 45 minutes past its end: honua-server#4709).
+          budget=$(( RAMP_UP + STEADY + 120 + 900 ))
+          timeout --kill-after=60 "${budget}s" \
+            ./scripts/scale/run-load-soak-tests.sh \
             --base-url "$BASE_URL" \
             --profile "$PROFILE" \
             --duration "${STEADY}s" \
             --report-dir "$RUNNER_TEMP/load-test-reports" \
             --stats-out "$RUNNER_TEMP/load-stats.json" \
+            --report-formats csv \
             --api-key "$HONUA_API_KEY" \
             --container honua-capacity-soak-honua-1 \
             --max-failure-rate "$HONUA_LOAD_MAX_FAILURE_RATE" > "$RUNNER_TEMP/load-harness.log" 2>&1 &
@@ -381,16 +396,24 @@ jobs:
           driver=$?
           set -e
 
+          set +e
           wait "$harness"; harness_status=$?
+          set -e
           tail -40 "$RUNNER_TEMP/load-harness.log"
           echo "load harness exit: $harness_status, driver exit: $driver"
+          echo "harness_exit=$harness_status" >> "$GITHUB_OUTPUT"
+
+          # A non-zero harness status is a RESULT, not a broken run: the harness exits non-zero when
+          # the measured failure rate exceeds what it was told to allow, which is exactly the case
+          # the receipt has to report honestly. Carry on and let the receipt's self-check against
+          # the frozen lock decide. A driver failure is different: without a verified envelope there
+          # is nothing the receipt may claim.
           if [ "$driver" -ne 0 ]; then
             echo "::error::the soak driver could not establish or verify the declared envelope"
             exit "$driver"
           fi
           if [ "$harness_status" -ne 0 ]; then
-            echo "::error::the load harness reported failures beyond the allowed failure rate"
-            exit "$harness_status"
+            echo "::warning::the load harness exited $harness_status (failure rate above the allowed bound, or the run hit its hard budget)"
           fi
 
       - name: Describe the substrate and the producer
@@ -400,6 +423,7 @@ jobs:
           IMAGE_DIGEST: ${{ inputs.candidate_image == '' && steps.image.outputs.digest || steps.pulled.outputs.digest }}
           IMAGE_SOURCE: ${{ inputs.candidate_image == '' && steps.image.outputs.source || steps.pulled.outputs.source }}
           LOCK_URL: ${{ steps.lock.outputs.url }}
+          HARNESS_EXIT: ${{ steps.soak.outputs.harness_exit }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -435,6 +459,7 @@ jobs:
               "runUrl": f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
               "producerRevision": os.environ["GITHUB_SHA"],
               "lockSource": os.environ["LOCK_URL"],
+              "loadHarnessExit": os.environ.get("HARNESS_EXIT"),
           }
           (temp / "producer.json").write_text(json.dumps(producer, indent=2, sort_keys=True), encoding="utf-8")
           PY
@@ -559,7 +584,10 @@ jobs:
       - name: Collect server logs
         if: always()
         run: |
-          docker logs honua-capacity-soak-honua-1 > "$RUNNER_TEMP/honua-server.log" 2>&1 || true
+          # Tail only: this server can emit gigabytes of Information records per hour under the
+          # declared subscription load (honua-server#4710), and an artifact nobody can open is not
+          # evidence. The rotated container log keeps the rest until the runner is recycled.
+          docker logs --tail 50000 honua-capacity-soak-honua-1 > "$RUNNER_TEMP/honua-server.log" 2>&1 || true
           docker logs honua-capacity-soak-postgres-1 > "$RUNNER_TEMP/postgres.log" 2>&1 || true
 
       - name: Upload run evidence

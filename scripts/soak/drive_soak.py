@@ -98,6 +98,8 @@ class SoakDriver:
         self.unexercised: dict[str, str] = dict(
             item.split("=", 1) for item in (args.unexercised or []) if "=" in item
         )
+        self._subscription_readers: list[asyncio.Task[None]] = []
+        self._subscription_bytes = 0
         self.steady_start: datetime | None = None
         self.steady_end: datetime | None = None
         self._stop = asyncio.Event()
@@ -318,14 +320,19 @@ class SoakDriver:
     # ------------------------------------------------------------ subscriptions
 
     async def hold_subscriptions(self, count: int) -> list[Any]:
-        """Open and hold `count` live feature-stream subscriptions (SSE)."""
+        """Open and hold `count` live feature-stream subscriptions (SSE).
+
+        Each stream gets a reader that drains it. A subscriber that never reads is a slow
+        consumer by definition, and the server disconnects slow consumers once its per-connection
+        buffer fills — an earlier run opened all 1,000 subscriptions and had only 198 left an hour
+        later for exactly that reason. Holding the declared subscription count means behaving like
+        a subscriber, not like an open socket.
+        """
         streams: list[Any] = []
-        clients: list[httpx.AsyncClient] = []
         opened = 0
         errors: list[str] = []
         limits = httpx.Limits(max_connections=count + 32, max_keepalive_connections=count + 32)
         client = httpx.AsyncClient(limits=limits, timeout=httpx.Timeout(60.0, read=None))
-        clients.append(client)
         for index in range(count):
             try:
                 context = client.stream(
@@ -342,14 +349,26 @@ class SoakDriver:
                     await context.__aexit__(None, None, None)
                     break
                 streams.append(context)
+                self._subscription_readers.append(asyncio.create_task(self._drain_subscription(response, index)))
                 opened += 1
             except Exception as exc:  # noqa: BLE001 - the count and the reason are both evidence
                 errors.append(f"subscription {index}: {exc}")
                 break
         self.subscriptions.add(opened=opened, requested=count)
         self.subscriptions.errors.extend(errors)
-        self._subscription_clients = clients
+        self._subscription_clients = [client]
         return streams
+
+    async def _drain_subscription(self, response: httpx.Response, index: int) -> None:
+        """Consume one subscription's frames so the session stays a live, healthy consumer."""
+        try:
+            async for _ in response.aiter_bytes():
+                self._subscription_bytes += 1
+                if self._stop.is_set():
+                    return
+        except Exception as exc:  # noqa: BLE001 - a dropped subscription is evidence, not a crash
+            if not self._stop.is_set():
+                self.subscriptions.errors.append(f"subscription {index} ended: {type(exc).__name__}")
 
     async def observe_subscriptions(self, client: httpx.AsyncClient) -> None:
         try:
@@ -482,6 +501,27 @@ class SoakDriver:
             )
             await self._sleep_until_next(started, self.args.gp_interval)
 
+    async def heartbeat(self, phase: str) -> None:
+        """Print progress while the window runs.
+
+        A soak step that prints nothing for an hour is undiagnosable while it is happening: the
+        only way to see a stall is to wait for the job to end. These lines make the live log
+        answer "is anything still moving?".
+        """
+        while not self._stop.is_set():
+            await self._sleep_until_next(time.monotonic(), self.args.heartbeat_seconds)
+            if self._stop.is_set():
+                return
+            availability = self.availability.samples
+            ok = sum(1 for sample in availability if sample.get("ok"))
+            gp = [sample for sample in self.gp.samples if "queueDepth" in sample]
+            print(
+                f"[{iso(utcnow())}] {phase}: availability {ok}/{len(availability)} probes ok, "
+                f"{len(self.saturation.samples)} saturation samples, "
+                f"{gp[-1].get('observedJobs') if gp else 0} gp jobs observed",
+                flush=True,
+            )
+
     async def _sleep_until_next(self, started: float, interval: float) -> None:
         remaining = interval - (time.monotonic() - started)
         if remaining > 0:
@@ -565,7 +605,10 @@ class SoakDriver:
                 asyncio.create_task(self.probe_availability(client)),
                 asyncio.create_task(self.sample_saturation(client)),
                 asyncio.create_task(self.drive_gp_queue(client)),
+                asyncio.create_task(self.heartbeat("soak")),
             ]
+            print(f"[{iso(utcnow())}] observing: ramp-up {self.args.ramp_up_seconds}s then "
+                  f"{self.args.steady_seconds}s of steady state", flush=True)
 
             if self.args.ramp_up_seconds:
                 await asyncio.sleep(self.args.ramp_up_seconds)
@@ -581,9 +624,12 @@ class SoakDriver:
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
+            for reader in self._subscription_readers:
+                reader.cancel()
+            # Bounded teardown: a subscription that will not close must not hold the run open.
             for context in streams:
                 with contextlib.suppress(Exception):
-                    await context.__aexit__(None, None, None)
+                    await asyncio.wait_for(context.__aexit__(None, None, None), timeout=5.0)
             for subscription_client in getattr(self, "_subscription_clients", []):
                 with contextlib.suppress(Exception):
                     await subscription_client.aclose()
@@ -749,6 +795,7 @@ def main() -> int:
     parser.add_argument("--compose-service", default="honua")
     parser.add_argument("--subscriptions", action="store_true", help="hold the declared subscription count")
     parser.add_argument("--keep-series", action="store_true", help="write every sample, not just the head")
+    parser.add_argument("--heartbeat-seconds", type=float, default=300.0, help="progress line interval")
     parser.add_argument(
         "--unexercised",
         action="append",

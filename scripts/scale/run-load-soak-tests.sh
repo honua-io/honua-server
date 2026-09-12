@@ -17,6 +17,7 @@ TILE_MATRIX_SET_ID="${TILE_MATRIX_SET_ID:-${HONUA_LOAD_TILE_MATRIX_SET_ID:-WebMe
 TARGET_SCENARIOS="${TARGET_SCENARIOS:-${HONUA_LOAD_TARGET_SCENARIOS:-}}"
 MAX_FAILURE_RATE="${MAX_FAILURE_RATE:-${HONUA_LOAD_MAX_FAILURE_RATE:-}}"
 STATS_OUT="${STATS_OUT:-${HONUA_LOAD_STATS_OUT:-}}"
+REPORT_FORMATS="${REPORT_FORMATS:-${HONUA_LOAD_REPORT_FORMATS:-}}"
 REPORT_ROOT="${REPORT_DIR:-${HONUA_LOAD_REPORT_FOLDER:-load-test-reports}}"
 SAMPLE_INTERVAL="${SAMPLE_INTERVAL:-30}"
 HONUA_DOCKER_CONTAINER="${HONUA_DOCKER_CONTAINER:-}"
@@ -39,6 +40,7 @@ usage() {
     echo "  --report-dir <path>      Root output directory (default: load-test-reports)"
     echo "  --max-failure-rate <n>   Max failed request ratio (0-1, e.g. 0.0001 = 0.01%)"
     echo "  --stats-out <path>       Write aggregate/per-scenario statistics as JSON"
+    echo "  --report-formats <csv>   NBomber report formats (html,csv,md,txt or none)"
     echo "  --sample-interval <sec>  Metrics sampling interval (default: 30)"
     echo "  --container <name>       Docker container name for CPU/memory sampling"
     echo "  --pid <pid>              Process ID for CPU/memory sampling"
@@ -90,6 +92,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --stats-out)
             STATS_OUT="$2"
+            shift 2
+            ;;
+        --report-formats)
+            REPORT_FORMATS="$2"
             shift 2
             ;;
         --report-dir)
@@ -240,6 +246,10 @@ fi
 
 if [[ -n "$STATS_OUT" ]]; then
     LOAD_ARGS+=(--stats-out "$STATS_OUT")
+fi
+
+if [[ -n "$REPORT_FORMATS" ]]; then
+    LOAD_ARGS+=(--report-formats "$REPORT_FORMATS")
 fi
 
 echo "Running load tests against $BASE_URL (profile: $PROFILE)"

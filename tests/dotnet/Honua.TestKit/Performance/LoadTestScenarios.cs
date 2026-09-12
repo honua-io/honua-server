@@ -67,6 +67,43 @@ public static class LoadTestScenarios
         "/odata/Layers?$top=5"
     };
 
+    /// <summary>
+    /// Default per-request timeout for every load scenario's HTTP client.
+    /// </summary>
+    /// <remarks>
+    /// NBomber's default client leaves <see cref="HttpClient.Timeout"/> effectively unbounded, so a
+    /// single endpoint that accepts a request and never finishes its response stalls the scenario's
+    /// ramp-down and the whole run never terminates — a soak against honua-server#4709 hung for
+    /// three quarters of an hour past its scheduled end before it was cancelled, producing no
+    /// statistics at all. A load generator has to bound its own requests: a request that has not
+    /// completed inside this budget is recorded as the failure it is, and the run still ends with
+    /// numbers a receipt can be built from. Override with HONUA_LOAD_REQUEST_TIMEOUT_SECONDS.
+    /// </remarks>
+    private const int DefaultRequestTimeoutSeconds = 30;
+
+    internal const string RequestTimeoutEnvVar = "HONUA_LOAD_REQUEST_TIMEOUT_SECONDS";
+
+    /// <summary>Per-request timeout applied to every scenario client.</summary>
+    public static TimeSpan RequestTimeout
+    {
+        get
+        {
+            var raw = Environment.GetEnvironmentVariable(RequestTimeoutEnvVar);
+            return !string.IsNullOrWhiteSpace(raw)
+                && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds)
+                && seconds > 0
+                ? TimeSpan.FromSeconds(seconds)
+                : TimeSpan.FromSeconds(DefaultRequestTimeoutSeconds);
+        }
+    }
+
+    private static HttpClient CreateScenarioClient()
+    {
+        var client = Http.CreateDefaultClient();
+        client.Timeout = RequestTimeout;
+        return client;
+    }
+
     private static LoadSimulation[] CreateLoadSimulations(int copies, LoadTestProfile profile)
     {
         return new[]
@@ -83,7 +120,7 @@ public static class LoadTestScenarios
     /// </summary>
     public static ScenarioProps CreateFeatureQueryScenario(string baseUrl, LoadTestProfile profile, string layerId = "0")
     {
-        var httpClient = Http.CreateDefaultClient();
+        var httpClient = CreateScenarioClient();
 
         return Scenario.Create(FeatureQueryScenarioName, async _ =>
             {
@@ -106,7 +143,7 @@ public static class LoadTestScenarios
     /// </summary>
     public static ScenarioProps CreateSpatialQueryScenario(string baseUrl, LoadTestProfile profile, string layerId = "0")
     {
-        var httpClient = Http.CreateDefaultClient();
+        var httpClient = CreateScenarioClient();
 
         return Scenario.Create(SpatialQueryScenarioName, async context =>
             {
@@ -141,7 +178,7 @@ public static class LoadTestScenarios
     /// </summary>
     public static ScenarioProps CreateOgcQueryScenario(string baseUrl, LoadTestProfile profile, string collectionId = "0")
     {
-        var httpClient = Http.CreateDefaultClient();
+        var httpClient = CreateScenarioClient();
 
         return Scenario.Create(OgcQueryScenarioName, async _ =>
             {
@@ -164,7 +201,7 @@ public static class LoadTestScenarios
     /// </summary>
     public static ScenarioProps CreateCqlFilterScenario(string baseUrl, LoadTestProfile profile, string collectionId = "0")
     {
-        var httpClient = Http.CreateDefaultClient();
+        var httpClient = CreateScenarioClient();
 
         return Scenario.Create(CqlFilterScenarioName, async context =>
             {
@@ -188,7 +225,7 @@ public static class LoadTestScenarios
     /// </summary>
     public static ScenarioProps CreateODataQueryScenario(string baseUrl, LoadTestProfile profile, string layerId = "0")
     {
-        var httpClient = Http.CreateDefaultClient();
+        var httpClient = CreateScenarioClient();
 
         return Scenario.Create(ODataQueryScenarioName, async context =>
             {
@@ -219,7 +256,7 @@ public static class LoadTestScenarios
     /// </summary>
     public static ScenarioProps CreateConnectionPoolScenario(string baseUrl, LoadTestProfile profile)
     {
-        var httpClient = Http.CreateDefaultClient();
+        var httpClient = CreateScenarioClient();
 
         return Scenario.Create(ConnectionPoolScenarioName, async context =>
             {
@@ -244,7 +281,7 @@ public static class LoadTestScenarios
     /// </summary>
     public static ScenarioProps CreateMemoryStressScenario(string baseUrl, LoadTestProfile profile, string layerId = "0")
     {
-        var httpClient = Http.CreateDefaultClient();
+        var httpClient = CreateScenarioClient();
 
         return Scenario.Create(MemoryStressScenarioName, async _ =>
             {
@@ -272,7 +309,7 @@ public static class LoadTestScenarios
         string collectionId = "0",
         string tileMatrixSetId = "WebMercatorQuad")
     {
-        var httpClient = Http.CreateDefaultClient();
+        var httpClient = CreateScenarioClient();
 
         return Scenario.Create(TilesScenarioName, async context =>
             {

@@ -95,7 +95,7 @@ internal static class Program
             options.CollectionId,
             options.TileMatrixSet,
             reportFolder,
-            new[] { ReportFormat.Html, ReportFormat.Csv });
+            options.ReportFormats);
 
         if (targets.Count > 0)
         {
@@ -420,6 +420,7 @@ internal static class Program
         writer.WriteLine("  --max-failure-rate <n>   Max failed request ratio (0-1, e.g. 0.0001 = 0.01%)");
         writer.WriteLine("  --stats-out <path>       Write aggregate/per-scenario statistics as JSON");
         writer.WriteLine("  --print-profile          Print the resolved profile as JSON and exit");
+        writer.WriteLine("  --report-formats <csv>   NBomber report formats (html,csv,md,txt or none; default html,csv)");
         writer.WriteLine("  --help                   Show this help");
         writer.WriteLine("");
         WriteKnownScenarios(writer);
@@ -449,6 +450,14 @@ internal sealed class LoadTestOptions
     public string ReportFolder { get; private set; } = "load-test-reports";
     public double? MaxFailureRate { get; private set; }
     public string? StatsOut { get; private set; }
+
+    /// <summary>
+    /// Report formats NBomber renders at the end of the run. HTML and CSV are the default because
+    /// they are what a human reads after a nightly. An hour-long soak produces millions of data
+    /// points, and rendering them all is neither free nor needed by an automated consumer: the
+    /// capacity-soak producer reads <c>--stats-out</c> instead and asks for a cheaper set here.
+    /// </summary>
+    public ReportFormat[] ReportFormats { get; private set; } = new[] { ReportFormat.Html, ReportFormat.Csv };
     public bool PrintProfile { get; private set; }
     public bool ShowHelp { get; private set; }
 
@@ -548,6 +557,19 @@ internal sealed class LoadTestOptions
 
                     options.ReportFolder = reportFolder;
                     break;
+                case "--report-formats":
+                    if (!TryReadValue(args, ref index, out var formats, out error))
+                    {
+                        return false;
+                    }
+
+                    if (!TryParseReportFormats(formats, out var parsedFormats, out error))
+                    {
+                        return false;
+                    }
+
+                    options.ReportFormats = parsedFormats;
+                    break;
                 case "--print-profile":
                     options.PrintProfile = true;
                     break;
@@ -624,6 +646,31 @@ internal sealed class LoadTestOptions
             return false;
         }
 
+        return true;
+    }
+
+    private static bool TryParseReportFormats(string value, out ReportFormat[] formats, out string error)
+    {
+        error = string.Empty;
+        var parsed = new List<ReportFormat>();
+        foreach (var token in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (string.Equals(token, "none", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!Enum.TryParse<ReportFormat>(token, ignoreCase: true, out var format))
+            {
+                formats = Array.Empty<ReportFormat>();
+                error = $"Unknown report format: {token}";
+                return false;
+            }
+
+            parsed.Add(format);
+        }
+
+        formats = parsed.ToArray();
         return true;
     }
 

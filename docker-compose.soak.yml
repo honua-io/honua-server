@@ -123,6 +123,16 @@ services:
     volumes:
       - honua_storage:/var/lib/honua/storage
     restart: "no"
+    # Bounded, rotated logs. At the declared 1,000 active subscriptions this server writes about a
+    # megabyte of Information records per second (honua-server#4710: one "Replaying 0 events" line
+    # per session per cross-node sweep), which reached 3.8 GB in 90 minutes on the first soak.
+    # Rotation keeps the substrate from being taken down by its own log volume; it does not reduce
+    # the work the server does, so the cost of that logging is still inside the measurement.
+    logging:
+      driver: json-file
+      options:
+        max-size: "64m"
+        max-file: "3"
 
 volumes:
   honua_storage:

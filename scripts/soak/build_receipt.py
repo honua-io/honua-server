@@ -274,8 +274,18 @@ def main() -> int:
     args = parser.parse_args()
 
     lock = json.loads(args.lock.read_text(encoding="utf-8"))
-    stats = json.loads(args.stats.read_text(encoding="utf-8"))
     observations = json.loads(args.observations.read_text(encoding="utf-8"))
+
+    # A load harness that was killed for exceeding its hard budget writes no statistics. That is a
+    # failed run, and it has to produce a receipt that SAYS so — four unobserved signals — rather
+    # than crash here and leave the run with no evidence at all.
+    stats_error = None
+    try:
+        stats = json.loads(args.stats.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        stats = {}
+        stats_error = f"{type(exc).__name__}: {exc}"
+        print(f"load statistics unavailable ({stats_error}); load-derived signals will be unobserved")
 
     observed_revision = (observations.get("deployment") or {}).get("observedRevision")
     signals = build_signals(stats=stats, observations=observations, revision=args.candidate_sha)
@@ -295,6 +305,7 @@ def main() -> int:
         producer=json.loads(args.producer.read_text(encoding="utf-8")),
         measurement={
             "loadHarness": "tests/dotnet/Honua.LoadTests (NBomber) via scripts/scale/run-load-soak-tests.sh",
+            "loadStatisticsError": stats_error,
             "loadProfile": stats.get("profile"),
             "loadRunSeconds": stats.get("durationSeconds"),
             "loadScenarios": stats.get("scenarios"),
