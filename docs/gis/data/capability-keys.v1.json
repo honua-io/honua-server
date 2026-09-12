@@ -24,7 +24,7 @@
       "displayName": "Agent Operations (Validation Layer)",
       "category": "AI",
       "edition": "Pro",
-      "description": "Agent-initiated changes run through a validation layer \u2014 planned, dry-run, validated, with a pre-change snapshot/backup gate before apply (spec apply, NL grounding mutations, workflow generation, and MCP execute tools)."
+      "description": "Agent-initiated changes run through a validation layer — planned, dry-run, validated, with a pre-change snapshot/backup gate before apply (spec apply, NL grounding mutations, workflow generation, and MCP execute tools)."
     },
     {
       "key": "ai.approval-workflows",
@@ -301,7 +301,7 @@
       "displayName": "FeatureServer Editing",
       "category": "Editing",
       "edition": "Pro",
-      "description": "Create, update, and delete features through the Esri GeoServices FeatureServer write surface \u2014 applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate."
+      "description": "Create, update, and delete features through the Esri GeoServices FeatureServer write surface — applyEdits, addFeatures, updateFeatures, deleteFeatures, and calculate."
     },
     {
       "key": "enrichment.datasets",
@@ -437,6 +437,13 @@
       "category": "Import",
       "edition": "Enterprise",
       "description": "Import layers from ArcGIS REST services."
+    },
+    {
+      "key": "jobs.durable-runtime",
+      "displayName": "Durable Job Runtime",
+      "category": "Jobs",
+      "edition": "Community",
+      "description": "The durable job substrate behind imports, tile operations, geoprocessing and workflow orchestration. Advertised as jobs.runner on the honua.capability_manifest.v1 wire and named by typed dependency-unavailable refusals, so a client receiving one can resolve the id. The runtime itself is Community; durable persistence across restarts and nodes requires Redis, which caching.redis gates."
     },
     {
       "key": "ops.health",
@@ -637,6 +644,13 @@
       "category": "Serve",
       "edition": "Community",
       "description": "Serve Esri vector tile services through the GeoServices VectorTileServer surface."
+    },
+    {
+      "key": "serve.grpc",
+      "displayName": "gRPC (geospatial.v1)",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "The geospatial.v1 gRPC surface — FeatureService, ProcessService, SpecService, SceneService, TileService and ElevationService — served natively over h2c on port 8081 and as gRPC-Web on 8080. Advertised as transport.grpc, transport.grpc-web and transport.native-grpc on the capability manifest, which are wire framings of this one capability."
     },
     {
       "key": "serve.i3s-scene",
