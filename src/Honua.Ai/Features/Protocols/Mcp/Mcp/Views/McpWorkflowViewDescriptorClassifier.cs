@@ -26,8 +26,7 @@ internal static class McpWorkflowViewDescriptorClassifier
         ArgumentNullException.ThrowIfNull(tool);
 
         var descriptor = tool.Describe();
-        if (tool is not StudioDraftToolBase &&
-            !(tool is PublishedOperationTool && descriptor.Name.StartsWith("honua_op_studio_", StringComparison.Ordinal)))
+        if (tool is not StudioDraftToolBase)
         {
             return descriptor;
         }

@@ -1166,6 +1166,18 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    public static readonly JsonElement StudioVersionMutationOutputSchema = Parse("""
+        {"type":"object","required":["operation"],"properties":{
+          "operation":{"type":"object","required":["operationId","operationInstanceId","status"],"properties":{
+            "operationId":{"type":"string"},"operationInstanceId":{"type":"string"},"status":{"type":"string"},
+            "proposalId":{"type":["string","null"]}}},
+          "version":{"type":["object","null"],"properties":{
+            "itemId":{"type":"string"},"versionId":{"type":"string"},"contentHash":{"type":"string"},
+            "envelope":{"type":"object"},"validation":{"type":"object"}}},
+          "studioAuthorizationCode":{"type":["string","null"]},
+          "currentGeneration":{"type":["integer","null"],"minimum":1}}}
+        """);
+
     private static string ArtifactKindEnum => JsonStringArray(Enum.GetNames<ArtifactKind>());
 
     private static string JsonStringArray(string[] values)

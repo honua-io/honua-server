@@ -19,6 +19,16 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// </summary>
 internal static class StudioMcpSchemas
 {
+    public static readonly JsonElement SaveVersionArgumentSchema = Parse("""
+        {"type":"object","required":["draftId","generation"],"additionalProperties":false,"properties":{
+          "draftId":{"type":"string","format":"uuid"},"generation":{"type":"integer","minimum":1},
+          "changeNote":{"type":["string","null"],"maxLength":2000}}}
+        """);
+    public static readonly JsonElement ReopenVersionArgumentSchema = Parse("""
+        {"type":"object","required":["itemId","versionId"],"additionalProperties":false,"properties":{
+          "itemId":{"type":"string","format":"uuid"},"versionId":{"type":"string","format":"uuid"}}}
+        """);
+
     /// <summary>Maximum accepted length for free-text fields (packageKey, ids, titles, notes).</summary>
     public const int MaxShortTextLength = 200;
 

@@ -90,7 +90,7 @@ server-authored setup view:
 ```
 
 Retain its revision, membership and descriptor digests, descriptor count,
-byte size and paging state. The source view is `setup.v1`; a discovered
+byte size and paging state. The source view is `setup.v2`; a discovered
 descriptor does not prove its downstream operation works. Record the
 candidate's actual profile/catalog counts instead of copying historical
 counts. Discover the explicit analysis and Esri GP profile surfaces when
