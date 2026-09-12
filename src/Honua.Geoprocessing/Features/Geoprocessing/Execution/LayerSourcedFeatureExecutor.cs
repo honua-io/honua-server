@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -364,6 +365,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     /// BEFORE the geometry is parsed into NetTopologySuite objects, so neither a single huge
     /// geometry nor a moderate count of large features is materialized past its budget.
     /// </para>
+    /// <para><paramref name="maxTotalVertices"/> caps cumulative vertices across the complete streamed layer.</para>
     /// </summary>
     internal static async Task<List<IFeature>> ReadLayerAsync(
         IDagFeatureSource source,
@@ -394,7 +396,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     + "narrow the selection (where/bbox) or raise the limit.");
             }
 
-            long geometryBytes = sourceFeature.GeometryGeoJson?.Length ?? 0;
+            long geometryBytes = sourceFeature.GeometryGeoJson is { } geometryJson ? Encoding.UTF8.GetByteCount(geometryJson) : 0;
             if (maxGeometryBytes is { } geometryCap && geometryBytes > geometryCap)
             {
                 throw new TransformInputException(
@@ -403,7 +405,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     + "geometry or raise the limit.");
             }
 
-            inputBytes += geometryBytes + EstimateAttributeBytes(sourceFeature.Attributes);
+            inputBytes += geometryBytes + EstimateAttributeBytes(sourceFeature.Attributes, maxInputBytes ?? long.MaxValue);
             if (maxInputBytes is { } inputCap && inputBytes > inputCap)
             {
                 throw new TransformInputException(
@@ -442,21 +444,94 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     /// Serialized-size estimate of a streamed feature's attributes for the input byte budget:
     /// key and string lengths as written, a fixed width for scalars.
     /// </summary>
-    private static long EstimateAttributeBytes(IEnumerable<KeyValuePair<string, object?>> attributes)
+    private static long EstimateAttributeBytes(IEnumerable<KeyValuePair<string, object?>> attributes, long budget)
     {
         long bytes = 0;
         foreach (var (key, value) in attributes)
         {
-            bytes += key.Length + value switch
+            bytes += Encoding.UTF8.GetByteCount(key);
+            ChargeValue(value, ref bytes, budget, 0);
+            if (bytes > budget)
             {
-                null => 4,
-                string text => text.Length + 2,
-                byte[] blob => blob.Length,
-                _ => 8,
-            };
+                break;
+            }
         }
 
         return bytes;
+    }
+
+    private static void ChargeValue(object? value, ref long bytes, long budget, int depth)
+    {
+        if (bytes > budget)
+        {
+            return;
+        }
+
+        if (depth > 32)
+        {
+            throw new TransformInputException("attribute nesting exceeds the supported depth of 32; flatten the attributes, then resubmit.");
+        }
+
+        switch (value)
+        {
+            case null:
+                bytes += 4;
+                break;
+            case string text:
+                bytes += Encoding.UTF8.GetByteCount(text) + 2L;
+                break;
+            case byte[] blob:
+                bytes += blob.LongLength;
+                break;
+            case System.Text.Json.JsonElement json:
+                bytes += 8;
+                if (json.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (var item in json.EnumerateArray())
+                    {
+                        ChargeValue(item, ref bytes, budget, depth + 1);
+                        if (bytes > budget) { break; }
+                    }
+                }
+                else if (json.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    foreach (var property in json.EnumerateObject())
+                    {
+                        bytes += Encoding.UTF8.GetByteCount(property.Name);
+                        ChargeValue(property.Value, ref bytes, budget, depth + 1);
+                        if (bytes > budget) { break; }
+                    }
+                }
+                else if (json.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    ChargeValue(json.GetString(), ref bytes, budget, depth + 1);
+                }
+                else
+                {
+                    bytes += json.GetRawText().Length;
+                }
+                break;
+            case IEnumerable<KeyValuePair<string, object?>> map:
+                bytes += 8;
+                foreach (var (key, item) in map)
+                {
+                    bytes += Encoding.UTF8.GetByteCount(key);
+                    ChargeValue(item, ref bytes, budget, depth + 1);
+                    if (bytes > budget) { break; }
+                }
+                break;
+            case System.Collections.IEnumerable items:
+                bytes += 8;
+                foreach (var item in items)
+                {
+                    ChargeValue(item, ref bytes, budget, depth + 1);
+                    if (bytes > budget) { break; }
+                }
+                break;
+            default:
+                bytes += 32;
+                break;
+        }
     }
 
     /// <summary>

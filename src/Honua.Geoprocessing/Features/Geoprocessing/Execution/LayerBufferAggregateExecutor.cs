@@ -62,11 +62,8 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
                 "'outStatistics' requires dissolve=true; per-feature output cannot carry aggregate columns.");
         }
 
-        // #4629: without dissolve every buffered geometry is emitted as-is, so the running
-        // vertex total of the buffers is already a lower bound on the artifact; charge it WHILE
-        // buffering instead of discovering the overflow after every buffer was computed. With
-        // dissolve the union can shrink the output, so the base's pre-serialization check
-        // bounds the final result instead.
+        // Charge intermediate vertices even when dissolve can shrink the final output.
+        // Undissolved output also has a minimum serialized-size bound.
         long? maxOutputVertices = dissolve
             ? Options.CurrentValue.MaxLayerVertices
             : Math.Min(Options.CurrentValue.MaxLayerVertices, Options.CurrentValue.MaxArtifactBytes / MinSerializedBytesPerVertex);
