@@ -133,7 +133,14 @@ def prove(image, revision):
                     "envelope": {"family": "query", "schemaVersion": "1.0",
                                  "format": "studio_query_package.v1", "body": {"where": "population > 42"}},
                 })["data"]
+                # Read the persisted baseline: PostgreSQL normalizes timestamp precision
+                # relative to the immediate create response. Assert fixture values before
+                # using the full persisted document for subsequent no-change comparisons.
+                draft = expect("/api/v1/studio/package-drafts/" + draft["draftId"], 200)["data"]
                 require(draft["envelope"]["body"] == {"where": "population > 42"}, "Fixture values differ")
+                require(draft["packageKey"] == "proof-" + decision and draft["generation"] == 1
+                        and draft["workspaceId"] == project and draft["family"] == "query",
+                        "Persisted fixture metadata differs")
                 drafts.append(draft)
 
             # Tighten the canonical guardrail after setup; the API is the only fixture writer.
