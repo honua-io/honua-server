@@ -9,7 +9,11 @@ using Honua.Infrastructure.Licensing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Mixins;
+using Honua.TestKit.Seeding;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -21,6 +25,8 @@ namespace Honua.Server.Tests.Features.Licensing;
 [Operation(Operations.LicenseManagement)]
 public sealed class DisabledLicenseIntegrationTests
 {
+    private const string AdminPassword = "Synthetic-Disabled-License-4721!";
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/license")]
     [Endpoint("GET /api/v1/admin/license/status")]
@@ -28,34 +34,21 @@ public sealed class DisabledLicenseIntegrationTests
     [Endpoint("GET /api/v1/admin/license/features")]
     public async Task Production_DisabledWithoutLicense_StartsWithActiveEntitlementsAndTruthfulAdminResponses()
     {
-        var fixture = new WebAppFixture()
-            .UseSeed("tests/seed/server.yaml")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment(Environments.Production);
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "disabled-license-admin-key");
-                builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-                    new Dictionary<string, string?>
-                    {
-                        ["Licensing:Mode"] = "Disabled",
-                        ["Licensing:Edition"] = "Enterprise",
-                        ["Licensing:LicensePath"] = null,
-                        ["Licensing:LicenseContent"] = null,
-                        ["Licensing:LicenseContentSecretRef"] = null,
-                        ["Licensing:DevGrantEdition"] = null
-                    }));
-            });
-        await fixture.InitializeAsync();
+        var postgres = new PostgresFixture();
+        await postgres.InitializeAsync();
+        var schema = await postgres.CreateIsolatedSchemaAsync(nameof(DisabledLicenseIntegrationTests));
         try
         {
-            Assert.Equal(Environments.Production, fixture.GetService<IHostEnvironment>().EnvironmentName);
+            await postgres.ApplySeedAsync(RepositoryPaths.Resolve("tests", "seed", "server.yaml"), schema);
+            await using var fixture = new ProductionLicenseFactory(postgres.ConnectionString, schema);
+            Assert.Equal(Environments.Production, fixture.Services.GetRequiredService<IHostEnvironment>().EnvironmentName);
             Assert.All(FeatureCatalog.All, feature =>
                 Assert.True(LicenseGate.CheckEntitlement(fixture.Services, feature.Key).IsActive));
             Assert.DoesNotContain(fixture.Services.GetServices<IHostedService>(), service =>
                 service is FileBackedLicenseService or LicenseCapacityMeter);
-            Assert.False(fixture.GetService<ILicenseOperationPolicy>().IsBlocked);
-            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", "disabled-license-admin-key"));
+            Assert.False(fixture.Services.GetRequiredService<ILicenseOperationPolicy>().IsBlocked);
+            using var client = fixture.CreateClient();
+            client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
             foreach (var path in new[] { "/api/v1/admin/license", "/api/v1/admin/license/status" })
             {
                 using var response = await client.GetAsync(path);
@@ -103,7 +96,37 @@ public sealed class DisabledLicenseIntegrationTests
         }
         finally
         {
-            await fixture.DisposeAsync();
+            await postgres.DropSchemaAsync(schema);
+            await postgres.DisposeAsync();
         }
     }
+
+    private sealed class ProductionLicenseFactory(string connectionString, string schema) : WebApplicationFactory<Program>
+    {
+        protected override IHost CreateHost(IHostBuilder builder)
+        {
+            // Host configuration becomes entrypoint arguments in WebApplicationFactory.
+            // App-configuration callbacks run too late for the bootstrap licensing gate.
+            var settings = WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(connectionString);
+            settings[HostDefaults.EnvironmentKey] = Environments.Production;
+            settings["Licensing:Mode"] = "Disabled";
+            settings["Licensing:Edition"] = "Enterprise";
+            settings["Licensing:LicensePath"] = string.Empty;
+            settings["Licensing:LicenseContent"] = string.Empty;
+            settings["Licensing:LicenseContentSecretRef"] = string.Empty;
+            settings["Licensing:DevGrantEdition"] = string.Empty;
+            settings["HONUA_DEV_AUTH"] = "false";
+            settings["HONUA_ADMIN_PASSWORD"] = AdminPassword;
+            builder.ConfigureHostConfiguration(configuration => configuration.AddInMemoryCollection(settings));
+            return base.CreateHost(builder);
+        }
+
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseEnvironment(Environments.Production);
+            builder.ConfigureTestServices(services => WebAppFixturePostgresWiringMixin.ConfigureIsolatedTestServices(
+                services, connectionString, () => schema, []));
+        }
+    }
+
 }
