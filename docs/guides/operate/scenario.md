@@ -1,25 +1,51 @@
 ---
 type: guide
-title: "Operate scenario: evidence before action"
-description: "Follow one deployment/readiness failure through the bounded loop:"
+title: "Operate scenario: a protected update"
+description: "Review and approve a bounded update, follow server-owned progress, and verify success or recovery across terminal, MCP and optional Console."
 ---
-# Operate scenario: evidence before action
+# Operate scenario: a protected update
 
 Follow one deployment/readiness failure through the bounded loop:
 
-`observe → deterministic finding → diagnose → sealed proposal → separate approval → typed actuator → verify`
+`observe → diagnose → sealed proposal → separate approval → stage → validate → activate → observe → complete or restore and verify`
 
 The server owns evidence and governed operations. The terminal DevOps client
 owns the model session. Console is an optional independent inspector/approver.
 The infrastructure control plane provisions the placement; the server control
 plane configures resources and governs registered operations.
 
-> **Pre-cut runbook, not a certification receipt.** The September 6 source
-> review establishes route/tool contracts. Exact 2026.1 candidate replay is
-> still required. The platform manifest calls itself a working snapshot, and
-> [release #231](https://github.com/honua-io/honua-release/issues/231) owns the
-> signed artifact lock. A local source build is not that lock. See the
-> [evidence disposition](../../internal/contributor/operate-docs-precut-evidence.md).
+Review the proposed service change and its protection limits, then obtain a
+separate approval. Follow progress in the terminal or Console. Ordinary users
+do not need to manage Git branches, PRs or telemetry queries. The numbered
+sections below provide the advanced API/MCP procedure for operators and replay.
+
+> **Qualification is still incomplete.** Replay uses the image digest pinned in
+> the accepted platform manifest, even before the final signed release lock is
+> cut. Source tests, an available rollback method and a proposed newer image
+> are not passing qualification for that pin. The [evidence
+> disposition](../../internal/contributor/operate-docs-precut-evidence.md)
+> records the accepted pin's known failure and remaining receipt requirements.
+
+## Progress and protection
+
+These are the required client descriptions of server truth, not additional API
+enum values. Inspect the durable operation and its verification evidence; never
+advance a label using a client timer or a model's prose.
+
+| User sees | Required server truth and meaning |
+|---|---|
+| **Checking update** | Preflight checks the supported change, authorization, schema compatibility, target, prior revision and required fresh evidence. Show whether protection is available and its limits before approval. |
+| **Updating** | The separately approved operation is staging, validating or activating the change through its registered actuator. Preparation must leave the current service revision available. |
+| **Confirming service health** | Activation has occurred but the observation window remains open (`protection.phase=observing`), or recovery is still being verified. Show the observation/recovery deadline; one ready probe is insufficient. |
+| **Update complete** | The operation succeeded after its required observation window and verification checks. An expired window without success is not completion; once retained recovery capacity is retired, explain that protection has ended. |
+| **Previous version restored** | The rollback settled, the expected prior revision/configuration is observed, and functional recovery checks passed. A provider acknowledgement, routing change or bare `RolledBack` string without those checks is insufficient. |
+| **Needs attention** | A check blocks the change, protection is unavailable, recovery fails or its deadline expires. State the reason and required operator action. Never convert an unknown or failed result into success. |
+
+Protection is bounded to the approved target/change and recorded policy. The
+supported-change matrix covers backward-compatible application updates and
+reversible service configuration; additive schema changes need explicit
+qualification. Destructive migrations and irreversible data transformations
+are rejected before mutation. Database restore is a separate recovery procedure.
 
 ## 1. Establish the placement and identities
 
@@ -100,10 +126,17 @@ components and replicas without truncation. Never replace absent observation
 or last-success timestamps with response `generatedAt`.
 
 Stale, partial, unavailable, not-configured or backend-unverified evidence
-permits bounded diagnosis but **zero proposals and zero actuator calls**.
+permits bounded diagnosis but **zero new proposals and zero new-change actuator calls**.
 The server re-evaluates the finding before routing;
 `evidencePostureNotActionable` is a blocked outcome, not an invitation to try
-another mutation tool. Recovery requires a fresh complete observation.
+another mutation tool. A new change requires a fresh complete observation.
+
+This gate does not cancel deterministic recovery already authorized by a bound
+protection policy. After exposure, missing telemetry may itself trigger that
+recovery when the policy's grace period expires. Keep the same operation,
+approval, target, prior revision and policy digest; do not let the model create
+a new proposal to bypass missing evidence. Restoration still requires verified
+functional recovery, or the outcome is **Needs attention**.
 
 In an isolated replay, interrupt only the telemetry backend identified by the
 fixture, retain its unavailable observation, attempt the finding proposal,
@@ -148,8 +181,49 @@ the returned ID:
 honua admin operate getOperationProposal --path "id=$proposalId" --profile proposer
 ```
 
-The separate human reviews the sealed target, diff, risk, policy, scope and
-evidence before running:
+### Check protection before approval
+
+The proposal detail alone does **not** expose backend capabilities or the full
+protection policy. Before approving, an authorized operator uses the installed
+Admin CLI's planning route with the target and desired revision from the
+server-authored finding/release handoff. Obtain the current revision from an
+observed deployment/provider receipt; do not infer it from the desired image.
+If there is no verified prior revision, stop the protected-update flow.
+
+Replace the three placeholders with those independently observed identities.
+The planning profile needs authority for `POST /api/v1/admin/deploy/plan`;
+do not broaden the separate approver's grants merely to perform this lookup.
+
+```powershell
+$planRequest = @{
+  targetId = "<target-id>"
+  desiredRevision = "<desired-revision>"
+  currentRevision = "<observed-current-revision>"
+} | ConvertTo-Json -Compress
+honua admin release planDeployOperation --body $planRequest --profile planner --yes --json
+```
+
+This calls the plan endpoint, which does not create, submit or approve a deploy;
+`--yes` confirms the CLI's POST operation. Inspect `target.targetId`, `target.backend`,
+`target.currentRevision`, `target.desiredRevision`, `target.parameters`,
+`backendRegistered`, `capabilities.supportsRollback`, `blockingReasons` and
+`warnings`. The current revision in the plan reflects the supplied value, so
+the plan is not independent proof that the provider is serving it. An absent
+backend/capability, `supportsRollback=false`, missing prior revision or blocking
+reason means protection is unavailable; stop and report **Needs attention**.
+`readyToSubmit` alone is insufficient and may be false pending required approval.
+
+Retain the plan and the installed profile's observation/recovery limits and
+policy identity. Match them to the sealed proposal's target, prior/desired
+revisions and effective parameters immediately before approval. Do not decode
+or reconstruct a hidden executable payload. If the client cannot establish
+that match, or cannot expose the exact limits/policy for review, leave the
+proposal unapproved: this candidate has not established the protected path.
+Show that limitation plainly to the user. A plan response cannot repair a
+missing prior identity in a sealed finding proposal.
+
+Only after those checks, the separate human reviews the sealed target, diff,
+risk, policy, scope and evidence before running:
 
 ```powershell
 honua admin operate approveOperationProposal --path "id=$proposalId" --profile approver --yes
@@ -170,12 +244,15 @@ tests were rerun against the candidate. A same-tenant reviewer with the
 required read authority must be able to inspect the proposal; a different
 actor is not automatically an unauthorized actor.
 
-## 5. Verify fix-forward convergence
+## 5. Verify the update or recovery
 
 For a declared-release divergence, the fix-forward goal is the declared
 serving artifact on the selected target, followed by readiness recovery.
 Use the finding's registered action; do not invent a shell command or
-deployment revision. An unsupported target requires manual intervention.
+deployment revision. Keep the operation pending through its protection window.
+If an approved recovery trigger fires, restore the bound prior revision and
+verify it before reporting **Previous version restored**. An unsupported target
+or failed recovery requires **Needs attention** and an explicit operator action.
 
 Retain one canonical operation instance and one typed actuator receipt,
 including backend/target, requested and observed revision, timestamps, result
@@ -190,6 +267,15 @@ health throughout that interval, assert the intended revision is serving,
 and verify that the original finding clears while evidence remains complete
 and fresh. A single successful readiness response cannot prove convergence.
 
+Exercise functional reads, writes, authorization and committed-data preservation
+against independently seeded expected values; include schema compatibility and
+render/query correctness where the changed service uses them. The recovery arm
+must observe the prior revision/configuration and the preserved data, not just
+the load balancer's routing state. Retain detection/recovery durations and
+failed checks. The [protected recovery certificate](https://github.com/honua-io/honua-release/issues/321)
+owns the installed fault matrix; missing or skipped mandatory cells block the
+protected claim for that target.
+
 ## 6. Inspect or approve visually (optional)
 
 Point Console `/operate` at the same verified endpoint. Compare finding,
@@ -197,6 +283,11 @@ proposal and operation IDs with the terminal receipt. A separate authorized
 Console principal can approve in its focused inbox instead of the terminal
 approver. Console does not host the model or create another control plane.
 The terminal remains sufficient when Console is absent.
+
+The DevOps agent and Console must apply the [same progress rules](#progress-and-protection).
+Keep technical provenance expandable. Show the affected service, protection
+availability, deadlines, progress, outcome and required action without asking
+the user to assemble rollback commands or edit telemetry settings.
 
 ## Rollback capability truth
 
@@ -206,6 +297,14 @@ The terminal remains sufficient when Console is absent.
 | AWS ECS-small | Terraform in `honua-iac` declares infrastructure; inspect the runtime backend and prior task revision. A GitOps handoff with `SupportsRollback=false` cannot revert workload traffic. A direct ECS adapter must supply its provider receipt before rollback is claimed. |
 | Helm / Kubernetes GitOps handoff | Pin chart values and image digest; the GitOps owner changes the revision. Unsupported handoff adapters return manual intervention. Helm wiring alone proves neither server rollback nor EKS certification. |
 | Registered real rollback adapter | Require advertised support, a prior revision, an approved operation and an observed provider revert, followed by the same verification window. Missing any one prevents a rollback claim. |
+
+Helm/Terraform wiring provisions the protection profile and its dependencies;
+it is advanced installation work. Retain exact chart/module and configuration
+identities with the target's runtime receipt. A chart rollback or Terraform
+apply result alone proves neither service recovery nor a protected platform
+update. Start from the [Helm installation](https://github.com/honua-io/honua-helm/blob/trunk/README.md)
+or [Terraform infrastructure](https://github.com/honua-io/honua-iac/blob/trunk/README.md)
+handoff, then verify the registered backend through the server control plane.
 
 Application rollback and database restore are different operations. Consult
 [Upgrade and rollback](../deploy/upgrade-and-rollback.md) before reverting an
