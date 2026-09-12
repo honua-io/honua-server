@@ -84,33 +84,45 @@ public sealed class OperationDispatcher : IOperationInvoker
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        // A descriptor can remain discoverable while its secret-aware actuator is deliberately
+        // withheld. Such a submission must not create a handle or approval proposal at all,
+        // because both are durable records of an operation that can never legitimately run.
+        // Every other unregistered operation keeps its existing failed-handle contract below.
+        if (AdminMcpOperationExclusions.RequiresSecretAwareRuntime(request.OperationId) &&
+            !_executors.ContainsKey(request.OperationId))
+        {
+            throw new OperationUnavailableException(
+                request.OperationId,
+                $"Operation '{request.OperationId}' handles one-time secret material and has no "
+                + "secret-aware executor composed in this runtime.");
+        }
+
         var createdAt = _clock.GetUtcNow();
         OperationHandle envelope;
         var invocationContext = context;
 
+        // A scope-governed bearer is constrained on EVERY submission, not only on approved
+        // replay: read-only operations execute directly and never reach the replay branch, so
+        // enforcing there alone let a discover/create-only bearer invoke sensitive inventories.
+        if (ExceedsScopeAuthority(request, context))
+        {
+            return new OperationHandle
+            {
+                OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
+                OperationId = request.OperationId,
+                CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
+                Status = OperationHandleStatus.Failed,
+                CreatedAt = createdAt,
+                UpdatedAt = _clock.GetUtcNow(),
+                Reason = string.IsNullOrWhiteSpace(context.ApprovedProposalId)
+                    ? "Operation exceeds the caller's OAuth scope authority."
+                    : "Approved replay operation exceeds the sealed OAuth scope authority.",
+            };
+        }
+
         string? acceptanceAuditId;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
-            if (context.ScopeGoverned &&
-                (context.RecognizedScopes.Count == 0 ||
-                 context.RecognizedScopes.Any(scope =>
-                     !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal)) ||
-                 !OperationScopeMapping.TryResolve(request, out var requiredOperation) ||
-                 !OperatorScopeCatalog.PermitsOperation(
-                     context.RecognizedScopes.ToHashSet(StringComparer.Ordinal), requiredOperation)))
-            {
-                return new OperationHandle
-                {
-                    OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
-                    OperationId = request.OperationId,
-                    CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
-                    Status = OperationHandleStatus.Failed,
-                    CreatedAt = createdAt,
-                    UpdatedAt = _clock.GetUtcNow(),
-                    Reason = "Approved replay operation exceeds the sealed OAuth scope authority.",
-                };
-            }
-
             if (string.IsNullOrWhiteSpace(context.OperationInstanceId) ||
                 string.IsNullOrWhiteSpace(context.ApprovedPlanHash) ||
                 _approvalReplayVerifier is null ||
@@ -606,6 +618,20 @@ public sealed class OperationDispatcher : IOperationInvoker
             CorrelationId = envelope.CorrelationId,
             Details = $"operationId={envelope.OperationId};status={envelope.Status}",
         }, cancellationToken);
+
+    /// <summary>
+    /// Whether a scope-governed caller lacks the OAuth authority this operation requires. An
+    /// operation with no scope mapping is refused rather than allowed: a bearer cannot invoke
+    /// authority the scope catalog does not describe.
+    /// </summary>
+    private static bool ExceedsScopeAuthority(OperationRequest request, OperationPolicyContext context)
+        => context.ScopeGoverned
+            && (context.RecognizedScopes.Count == 0
+                || context.RecognizedScopes.Any(scope =>
+                    !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal))
+                || !OperationScopeMapping.TryResolve(request, out var requiredOperation)
+                || !OperatorScopeCatalog.PermitsOperation(
+                    context.RecognizedScopes.ToHashSet(StringComparer.Ordinal), requiredOperation));
 
     private IOperationExecutor ResolveExecutor(string operationId)
         => _executors.TryGetValue(operationId, out var executor)

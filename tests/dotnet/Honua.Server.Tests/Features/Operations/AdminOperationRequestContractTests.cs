@@ -310,7 +310,9 @@ public sealed class AdminOperationRequestContractTests
     {
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
-        return new AdminOperateOperationExecutor(AdminOperateOperationCatalog.Definitions.Single(d => d.OperationId == id),
+        return new AdminOperateOperationExecutor(
+            AdminOperateOperationCatalog.Definitions.Single(d => d.OperationId == id),
+            AdminOperateOperationCatalog.Descriptors.Single(d => d.OperationId == id),
             factory, Context(), new InMemoryAdminApiKeyStore(TimeProvider.System), TimeProvider.System,
             new OperationLineageAttestationStore(TimeProvider.System));
     }

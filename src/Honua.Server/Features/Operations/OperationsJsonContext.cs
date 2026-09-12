@@ -19,11 +19,14 @@ namespace Honua.Server.Features.Operations;
 [JsonSerializable(typeof(ApiResponse<OperationValidation>))]
 [JsonSerializable(typeof(ApiResponse<OperationHandle>))]
 [JsonSerializable(typeof(ApiResponse<OperationStatus>))]
+[JsonSerializable(typeof(ApiResponse<OperationSecretValueResponse>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
 [JsonSerializable(typeof(OperationCatalogSnapshot))]
 [JsonSerializable(typeof(OperationValidation))]
 [JsonSerializable(typeof(OperationHandle))]
 [JsonSerializable(typeof(OperationStatus))]
+[JsonSerializable(typeof(OperationSecretValueResponse))]
+[JsonSerializable(typeof(OperationSecretReference))]
 [JsonSerializable(typeof(OperationInvokeRequest))]
 internal sealed partial class OperationsJsonContext : JsonSerializerContext
 {
@@ -60,4 +63,14 @@ public sealed record OperationInvokeRequest
     /// Whether the caller requested a dry-run/preview.
     /// </summary>
     public bool DryRun { get; init; }
+}
+
+/// <summary>One-time secret returned by the authenticated operation secret channel.</summary>
+public sealed record OperationSecretValueResponse
+{
+    /// <summary>Logical secret field name.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Plaintext secret. This response is never cached and is not persisted.</summary>
+    public required string Value { get; init; }
 }
