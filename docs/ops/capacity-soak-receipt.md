@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Candidate capacity-soak receipt"
+description: "How the candidate capacity/SLO receipt the release train requires is produced, what each signal means, what the receipt claims, and how to verify a published one."
+---
 # Candidate capacity-soak receipt
 
 The release train will not certify a candidate without a capacity/SLO receipt. This page
@@ -15,7 +20,8 @@ claims, and how anyone can verify a published receipt for themselves.
 ## The chain
 
 1. The release train takes a `capacity_receipt_url`.
-2. Its `capacity-soak.yml` gate fetches that HTTPS JSON, runs
+2. Its `capacity-soak.yml` gate fetches that HTTPS JSON — HTTPS only, TLS 1.2 or better,
+   failing on any error status, and **without following redirects** — runs
    `gh attestation verify --repo honua-io/honua-server` over the fetched bytes, and evaluates
    them against the frozen lock.
 3. This workflow is what produces those bytes, signs them, and publishes them at a URL the
@@ -147,25 +153,26 @@ the bound; the admission rejections are recorded as evidence.
    certificate's SAN into `signingIdentity`;
 3. the finished receipt is attested as well — that is the attestation the consumer verifies.
 
-To verify a published receipt yourself:
+To verify a published receipt yourself, download it over HTTPS to `receipt.json` (any client;
+the gate's own fetch does not follow redirects, which is why the publication target must answer
+`200` directly), then, from a honua-release checkout:
 
 ```bash
-curl --fail --silent --show-error --proto '=https' --tlsv1.2 "$RECEIPT_URL" -o receipt.json
 gh attestation verify receipt.json --repo honua-io/honua-server
 python3 tools/check_capacity_soak.py --lock certification/capacity-envelope.v1.json \
   --receipt receipt.json --expected-revision "$(yq '.components.honua-server.sha' platform-manifest.yaml)"
 ```
 
-(the last two commands from a honua-release checkout). To re-derive the signed payload, drop the
+To re-derive the signed payload, drop the
 `signature`, `signingIdentity`, `signatureFormat` and `signingIdentitySource` members and
 re-serialise with sorted keys and `(',', ':')` separators; its SHA-256 is the subject digest named
 in `signatureFormat`.
 
 ### Why a commit-pinned raw URL
 
-The consumer fetches with `curl --fail --silent --show-error --proto '=https' --tlsv1.2` and no
-`-L`. A GitHub **release-asset** URL answers `302`, so that curl would write an empty file and
-exit 0 — release assets are not a usable publication target for this gate. A
+The consumer's fetch fails on an error status but does not follow redirects. A GitHub
+**release-asset** URL answers `302`, so that fetch writes an empty file and reports success —
+release assets are therefore not a usable publication target for this gate. A
 `raw.githubusercontent.com` URL pinned to a commit answers `200` with the exact bytes, needs no
 credentials, and cannot be moved afterwards. Receipts are committed to the orphan `soak-receipts`
 branch of this repository — the same repository whose attestation the gate verifies — so
