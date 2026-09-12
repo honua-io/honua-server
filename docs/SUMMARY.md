@@ -113,6 +113,7 @@
 ## Reference
 
 - [Reference index](reference/README.md)
+- [Open Knowledge Format](okf/README.md)
 - [Capability concepts](okf/capabilities/README.md)
 - Protocols
   - [GeoServices REST](reference/protocols/geoservices-rest.md)
