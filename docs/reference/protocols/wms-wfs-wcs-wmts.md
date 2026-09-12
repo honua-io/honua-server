@@ -28,6 +28,36 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | GET | `/ogc/services/{serviceId}/wcs` | WCS 2.0.1, scoped to one service. |
 | GET | `/rest/services/{serviceId}/ImageServer/WCS` | WCS 2.0.1, layer-scoped (`COVERAGEID` is the bare integer layer id). |
 
+### Why WFS has no `/ogc/services/{serviceId}/wfs`
+
+The asymmetry above is deliberate, and it is the one thing about these routes
+worth knowing before you construct a URL by pattern.
+
+**A protocol is scoped by whatever its own specification makes the addressable
+unit.** WMS, WMTS and WCS render a *composition* — which layers, in what order,
+over what extent — and a service is the name for that composition, so the path
+has to carry it. There is no useful `GetMap` without knowing which map.
+
+WFS does not render anything. It returns features, and the request already
+names what it wants in `typeName` (`GetFeature&TYPENAMES=...`), which resolves
+globally. A service segment in front of that would be redundant, and it would
+make the same feature addressable by more than one URL.
+
+So WFS is served **only** at the root `/wfs`. There is no service-scoped form
+and no GeoServices alias — `FeatureServer` has no `WFS` endpoint here for the
+same reason Esri's own `FeatureServer` does not expose one.
+
+Asking for `/ogc/services/{serviceId}/wfs` returns **404**, which `curl -sf`
+surfaces as exit 22 with an empty body. That failure reads as though the server
+is broken rather than as a route that does not exist, so it is worth ruling out
+first when a WFS request fails with nothing in the response.
+
+The same rule explains the rest of the surface: OData (`/odata`), STAC
+(`/stac`) and SensorThings (`/sta/v1.1`) are all single-rooted because each
+addresses its records through the request rather than the path, while vector
+tiles (`/tiles/{layerId}`) and scenes (`/api/scenes/{sceneId}`) are scoped by
+the unit their clients actually fetch.
+
 ## WMS operations
 
 | Operation | Key parameters |
