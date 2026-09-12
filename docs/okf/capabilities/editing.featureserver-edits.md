@@ -20,9 +20,6 @@ Create, update, and delete features through the Esri GeoServices FeatureServer w
 | Registry entries | 7 |
 | Proving tests | 140 |
 
-## Where this is documented
+The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
-- [Editions and licensing](../../concepts/editions-and-licensing.md)
-- [Capability deployment profiles](../../guides/deploy/capability-deployment-profiles.md)
-
-The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, which are generated from the server's own registry and test evidence. The links are computed by searching the bundle for the capability key or its name, so a page that stops discussing a capability stops appearing here.
+Which pages discuss this capability is a question about the prose, so it is reported rather than baked in: run `scripts/ci/generate-capability-concepts.py --report`.

@@ -20,17 +20,6 @@ Query and read features through the Esri GeoServices FeatureServer surface (quer
 | Registry entries | 47 |
 | Proving tests | 430 |
 
-## Where this is documented
+The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
-- [Protocols](../../concepts/protocols.md)
-- [Repoint ArcGIS apps and SDKs at Honua](../../guides/migrate/arcgis-apps-and-sdks.md)
-- [Export data](../../guides/query-analyze/export-data.md)
-- [Query features](../../guides/query-analyze/query-features.md)
-- [MySQL/MariaDB provider](../../reference/configuration/data-sources/mysql-mariadb.md)
-- [Snowflake provider](../../reference/configuration/data-sources/snowflake.md)
-- [CQL2 and filtering](../../reference/cql2-and-filtering.md)
-- [Cloud-native formats](../../reference/protocols/cloud-native-formats.md)
-- [.NET SDK: common tasks](../../sdks/dotnet/common-tasks.md)
-- [Python SDK: common tasks](../../sdks/python/common-tasks.md)
-
-The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, which are generated from the server's own registry and test evidence. The links are computed by searching the bundle for the capability key or its name, so a page that stops discussing a capability stops appearing here.
+Which pages discuss this capability is a question about the prose, so it is reported rather than baked in: run `scripts/ci/generate-capability-concepts.py --report`.

@@ -9,10 +9,14 @@ generated evidence feeding a gate, not prose for a reader.
 
 So an agent asking "what can this server do, and where is that documented?" has
 to read 135 pages of prose and hope. This closes that: every registry entry
-becomes a concept whose `resource` is its stable capability key, carrying the
-registry's own facts and linking to the pages that actually discuss it. The
-edges are computed by searching the bundle for the key, never hand-written, so a
-capability that no page documents shows that plainly instead of pretending.
+becomes a concept whose `resource` is its stable capability key and which carries
+the registry's own facts.
+
+Each page is a pure function of those two JSON files, deliberately. An earlier
+draft embedded the pages that discuss each capability, computed by searching the
+bundle - which made all 117 concepts depend on the prose of every page, so an
+unrelated documentation edit restaled the lot. That view is a report now
+(`--report`), not committed output.
 
 This is the "derive the mechanical join, hand-maintain only the judgement" rule
 ADR-0058 sets for the capability artifacts, applied to the documentation graph.
@@ -20,6 +24,7 @@ The judgement lives in the registry; the concepts are mechanical.
 
     python3 scripts/ci/generate-capability-concepts.py          # write
     python3 scripts/ci/generate-capability-concepts.py --check  # fail on drift
+    python3 scripts/ci/generate-capability-concepts.py --report # prose coverage
 """
 from __future__ import annotations
 
@@ -50,7 +55,9 @@ def bundle_pages() -> list[pathlib.Path]:
     ex_dirs = {(REPO_ROOT / e["path"]).resolve() for e in manifest.get("excludedDirs", [])}
     ex_files = {(REPO_ROOT / e["path"]).resolve() for e in manifest.get("excludedFiles", [])}
     pages = []
-    for path in sorted(root.rglob("*.md")):
+    # Sort on the posix string, not the Path: comparing WindowsPath values is
+    # case-insensitive, so the same tree orders differently on Windows and Linux.
+    for path in sorted(root.rglob("*.md"), key=lambda p: p.as_posix()):
         resolved = path.resolve()
         if resolved in ex_files or any(p in ex_dirs for p in resolved.parents):
             continue
@@ -78,7 +85,7 @@ def citing_pages(key: str, display_name: str, pages: dict[pathlib.Path, str]) ->
     return hits
 
 
-def render(entry: dict, facts: dict, cites: list[pathlib.Path]) -> str:
+def render(entry: dict, facts: dict) -> str:
     key = entry["key"]
     title = entry.get("displayName") or key
     description = " ".join((entry.get("description") or "").split())
@@ -133,40 +140,27 @@ def render(entry: dict, facts: dict, cites: list[pathlib.Path]) -> str:
         lines.append(f"| Proving tests | {facts['provingTestCount']} |")
     lines.append("")
 
-    lines.append("## Where this is documented")
-    lines.append("")
-    if cites:
-        for path in cites:
-            rel = path.relative_to(REPO_ROOT / "docs").as_posix()
-            hops = "../" * (len(OUT_DIR.relative_to(REPO_ROOT / "docs").parts))
-            title_line = path.read_text(encoding="utf-8", errors="replace")
-            match = re.search(r'^title:\s*"?(.+?)"?\s*$', title_line, re.M)
-            label = match.group(1) if match else rel
-            lines.append(f"- [{label}]({hops}{rel})")
-    else:
-        lines.append(
-            "No page inside the documentation bundle names this capability. That is a "
-            "documentation gap, not a missing feature — the registry entry and its proving "
-            "tests exist."
-        )
-    lines.append("")
     lines.append(
         "The facts above come from `docs/gis/data/capability-keys.v1.json` and "
-        "`capability-matrix.v1.json`, which are generated from the server's own registry and "
-        "test evidence. The links are computed by searching the bundle for the capability key "
-        "or its name, so a page that stops discussing a capability stops appearing here."
+        "`capability-matrix.v1.json`, both generated from the server's own registry and test "
+        "evidence. This page is a pure function of those two files — nothing in it depends on "
+        "what the prose happens to say, so an unrelated documentation edit cannot stale it."
+    )
+    lines.append("")
+    lines.append(
+        "Which pages discuss this capability is a question about the prose, so it is reported "
+        "rather than baked in: run `scripts/ci/generate-capability-concepts.py --report`."
     )
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_index(entries: list[tuple[str, str, int]]) -> str:
+def render_index(entries: list[tuple[str, str, str, str]]) -> str:
     lines = [
         "---",
         "type: index",
         'title: "Capability concepts"',
         'description: "One concept per entry in the server capability registry: what it is, '
-        'which edition carries it, how mature its surfaces are, and which documentation pages '
-        'discuss it."',
+        'which edition carries it, and how mature its surfaces are."',
         "tags: [capability, registry, generated]",
         "---",
         GENERATED,
@@ -178,22 +172,21 @@ def render_index(entries: list[tuple[str, str, int]]) -> str:
         "identity the capability matrix, the licensing registry and the route mapping use — so an",
         "answer found here joins to the evidence without a name lookup.",
         "",
-        "These are generated from the registry by `scripts/ci/generate-capability-concepts.py`.",
-        "Edit the registry, not these pages.",
+        "These are generated from the registry by `scripts/ci/generate-capability-concepts.py`,",
+        "and they are a pure function of `docs/gis/data/capability-keys.v1.json` and",
+        "`capability-matrix.v1.json`. Edit the registry, not these pages.",
         "",
-        "| Capability | Edition | Documented on |",
-        "| --- | --- | ---: |",
+        "Which prose pages discuss a capability is a question about the prose, so it is not baked",
+        "in here — a page rewritten elsewhere would silently stale all 117 of these. Run",
+        "`scripts/ci/generate-capability-concepts.py --report` for that view and for the",
+        "capabilities no page in the bundle names yet.",
+        "",
+        "| Capability | Category | Edition |",
+        "| --- | --- | --- |",
     ]
-    for key, title, edition, cites in entries:
-        lines.append(f"| [{title}]({key}.md) | {edition or '—'} | {cites} page(s) |")
+    for key, title, category, edition in entries:
+        lines.append(f"| [{title}]({key}.md) | {category or '—'} | {edition or '—'} |")
     lines.append("")
-    undocumented = [e for e in entries if e[3] == 0]
-    if undocumented:
-        lines.append(
-            f"**{len(undocumented)} of {len(entries)} capabilities are named by no page in the "
-            "bundle.** That is the documentation backlog, stated rather than inferred."
-        )
-        lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -203,26 +196,63 @@ def build() -> dict[str, str]:
     entries = keys["capabilities"] if isinstance(keys, dict) else keys
     facts_by_key = {c["key"]: c for c in matrix.get("capabilities", [])}
 
-    pages = {p: p.read_text(encoding="utf-8", errors="replace") for p in bundle_pages()}
-
     written: dict[str, str] = {}
     index_rows = []
     for entry in sorted(entries, key=lambda e: e["key"]):
         key = entry["key"]
         facts = facts_by_key.get(key, {})
-        cites = citing_pages(key, entry.get("displayName") or key, pages)
-        written[f"{key}.md"] = render(entry, facts, cites)
-        index_rows.append(
-            (key, entry.get("displayName") or key, facts.get("edition") or entry.get("edition"), len(cites))
-        )
+        written[f"{key}.md"] = render(entry, facts)
+        index_rows.append((
+            key,
+            entry.get("displayName") or key,
+            facts.get("category") or entry.get("category"),
+            facts.get("edition") or entry.get("edition"),
+        ))
     written["README.md"] = render_index(index_rows)
     return written
+
+
+def report() -> int:
+    """Print which capabilities the prose names, without committing the answer.
+
+    Baking this into the pages would make every capability concept depend on
+    every page in the bundle, so an unrelated documentation edit would restale
+    all 117. As a report it stays useful and costs nothing.
+    """
+    keys = load(KEYS_PATH)
+    entries = keys["capabilities"] if isinstance(keys, dict) else keys
+    pages = {p: p.read_text(encoding="utf-8", errors="replace") for p in bundle_pages()}
+
+    undocumented = []
+    for entry in sorted(entries, key=lambda e: e["key"]):
+        key = entry["key"]
+        cites = citing_pages(key, entry.get("displayName") or key, pages)
+        if cites:
+            print(f"{key:<44} {len(cites)} page(s)")
+        else:
+            undocumented.append(key)
+    print()
+    print(
+        f"{len(undocumented)} of {len(entries)} capabilities are named by no page inside the "
+        "documentation bundle:"
+    )
+    for key in undocumented:
+        print(f"  {key}")
+    return 0
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="fail if the concepts are stale")
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="print which capabilities the prose names, and which none does",
+    )
     args = parser.parse_args(argv)
+
+    if args.report:
+        return report()
 
     rendered = build()
 

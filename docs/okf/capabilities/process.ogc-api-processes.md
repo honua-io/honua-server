@@ -20,21 +20,6 @@ Submit and poll jobs through OGC API - Processes.
 | Registry entries | 10 |
 | Proving tests | 197 |
 
-## Where this is documented
+The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
-- [Protocols](../../concepts/protocols.md)
-- [Interactive API Documentation](../../developer/api-specs/README.md)
-- [Geoprocessing with AI](../../guides/query-analyze/geoprocessing-with-ai.md)
-- [Author a geoprocessing process](../../guides/query-analyze/gp-devkit-authoring.md)
-- [Local geoprocessing dev quickstart](../../guides/query-analyze/gp-local-dev-quickstart.md)
-- [Run geoprocessing](../../guides/query-analyze/run-geoprocessing.md)
-- [Data enrichment API](../../operator/data-enrichment.md)
-- [Routing geoprocessing jobs to AWS Batch](../../operator/geoprocessing-aws-batch.md)
-- [Supported clients and known limitations](../../reference/compatibility/clients.md)
-- [OGC conformance](../../reference/compatibility/ogc-conformance.md)
-- [Geoprocessing operations](../../reference/geoprocessing-operations.md)
-- [OpenAPI and the API explorer](../../reference/openapi-and-explorer.md)
-- [gRPC](../../reference/protocols/grpc.md)
-- [OGC APIs](../../reference/protocols/ogc-apis.md)
-
-The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, which are generated from the server's own registry and test evidence. The links are computed by searching the bundle for the capability key or its name, so a page that stops discussing a capability stops appearing here.
+Which pages discuss this capability is a question about the prose, so it is reported rather than baked in: run `scripts/ci/generate-capability-concepts.py --report`.

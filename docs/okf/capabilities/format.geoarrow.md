@@ -17,8 +17,6 @@ Return FeatureServer query results as Arrow IPC with GeoArrow extension metadata
 | Category | Format |
 | Edition | Community |
 
-## Where this is documented
+The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
-No page inside the documentation bundle names this capability. That is a documentation gap, not a missing feature — the registry entry and its proving tests exist.
-
-The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, which are generated from the server's own registry and test evidence. The links are computed by searching the bundle for the capability key or its name, so a page that stops discussing a capability stops appearing here.
+Which pages discuss this capability is a question about the prose, so it is reported rather than baked in: run `scripts/ci/generate-capability-concepts.py --report`.

@@ -20,19 +20,6 @@ Serve coverage data through OGC API - Coverages.
 | Registry entries | 8 |
 | Proving tests | 40 |
 
-## Where this is documented
+The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
-- [Protocols](../../concepts/protocols.md)
-- [Interactive API Documentation](../../developer/api-specs/README.md)
-- [Upgrade and roll back](../../guides/deploy/upgrade-and-rollback.md)
-- [Imagery and raster: shipped state](../../guides/imagery-and-raster.md)
-- [Publish rasters](../../guides/publish/publish-rasters.md)
-- [Supported clients and known limitations](../../reference/compatibility/clients.md)
-- [OGC conformance](../../reference/compatibility/ogc-conformance.md)
-- [Data formats](../../reference/data-formats.md)
-- [OpenAPI and the API explorer](../../reference/openapi-and-explorer.md)
-- [Cloud-native formats](../../reference/protocols/cloud-native-formats.md)
-- [OGC APIs](../../reference/protocols/ogc-apis.md)
-- [Terrain and elevation](../../reference/protocols/terrain-and-elevation.md)
-
-The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, which are generated from the server's own registry and test evidence. The links are computed by searching the bundle for the capability key or its name, so a page that stops discussing a capability stops appearing here.
+Which pages discuss this capability is a question about the prose, so it is reported rather than baked in: run `scripts/ci/generate-capability-concepts.py --report`.
