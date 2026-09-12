@@ -383,12 +383,13 @@ FilterExpression
 
 ```mermaid
 erDiagram
-    SERVICES ||--o{ LAYERS : contains
+    SERVICES ||--o{ SERVICE_LAYERS : includes
+    LAYERS ||--o{ SERVICE_LAYERS : maps
     LAYERS ||--o{ LAYER_FIELDS : has
     LAYERS ||--o{ FEATURES : stores
 
     SERVICES {
-        text id PK
+        text service_name PK
         text name
         text description
         boolean enabled
@@ -398,8 +399,6 @@ erDiagram
 
     LAYERS {
         serial id PK
-        text service_id FK
-        int layer_index
         text name
         text description
         text table_name
@@ -418,6 +417,12 @@ erDiagram
         timestamptz created_at
     }
 
+    SERVICE_LAYERS {
+        text service_name PK
+        int layer_id PK
+        int layer_order
+    }
+
     LAYER_FIELDS {
         serial id PK
         int layer_id FK
@@ -432,6 +437,7 @@ erDiagram
 
     FEATURES {
         bigserial objectid PK
+        int layer_id FK
         geometry geom
         jsonb attributes
     }
