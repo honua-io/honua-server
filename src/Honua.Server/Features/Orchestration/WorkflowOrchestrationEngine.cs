@@ -464,7 +464,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             if (definition is null)
             {
                 var now = _clock.GetUtcNow();
-                var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
+                var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
                 var warnings = new List<string>(run.Warnings);
 
                 var finalisedSteps = run.StepStates.ToArray();
@@ -601,7 +601,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             var detail = $"Added: [{string.Join(", ", defStepIds.Except(runStepIds))}], Removed: [{string.Join(", ", runStepIds.Except(defStepIds))}]";
             OrchestrationLog.DefinitionStepSetMismatch(_logger, run.RunId, run.WorkflowId, detail);
 
-            var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
+            var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
             var mismatchWarnings = new List<string>(run.Warnings);
             var finalisedSteps = run.StepStates.ToArray();
             for (var i = 0; i < finalisedSteps.Length; i++)
@@ -684,7 +684,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 if (!string.IsNullOrWhiteSpace(state.JobId) &&
                     state.Status is WorkflowStepStatus.Queued or WorkflowStepStatus.Running)
                 {
-                    var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
+                    var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
                     try
                     {
                         await _jobService.CancelJobAsync(state.JobId!, principal, cancellationToken).ConfigureAwait(false);
@@ -890,7 +890,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         var basePlan = state.AuthorizedPlan ?? stepDefinition.Plan;
         var planForAttempt = WorkflowBindingResolver.ApplyBindings(basePlan, bindingResolution);
         var idempotencyKey = $"{run.RunId}:{state.StepId}:{attemptNumber}";
-        var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
+        var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
         var protocolMetadata = BuildOrchestrationMetadata(run, state.StepId, attemptNumber, stepDefinition.TimeoutSeconds);
 
         ExecutionJobRecord jobRecord;
@@ -982,7 +982,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         }
 
         var now = _clock.GetUtcNow();
-        var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy);
+        var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
 
         ExecutionJobRecord job;
         try

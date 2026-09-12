@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgis/postgis:18-3.6
+    environment:
+      POSTGRES_DB: honua
+      POSTGRES_USER: honua
+      POSTGRES_PASSWORD: gp-proof-local
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U honua -d honua']
+      interval: 2s
+      retries: 30
+  redis:
+    image: redis:7.2-alpine
+    command: [redis-server, --appendonly, 'yes', --appendfsync, always]
+  server:
+    image: ${HONUA_GP_CANDIDATE_IMAGE:?set the manifest-pinned image@sha256 digest}
+    mem_limit: 1g
+    cpus: 1
+    ports: ['127.0.0.1:18449:8080']
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=honua;Username=honua;Password=gp-proof-local
+      ConnectionStrings__Redis: redis:6379
+      HONUA_ADMIN_PASSWORD: gp-proof-admin-local
+      Licensing__DevGrantEdition: Pro
+      Licensing__Mode: Disabled
+      SSL_CERT_FILE: /test-ca.pem
+      Security__ConnectionEncryption__MasterKey: gp-proof-local-master-key-0123456789
+      Security__ConnectionEncryption__Salt: aG9udWEtZ3AtcmVsaWFiaWxpdHktc2FsdA==
+      Kestrel__Endpoints__Http__Url: http://+:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
+    volumes:
+      - ${GP_PROOF_CERT_DIR:?}/ca.pem:/test-ca.pem:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+  fixture:
+    image: python:3.12-alpine
+    command: [python, /proof/wfs_candidate_fixture.py, --certificate, /test-ca.pem, --private-key, /test-key.pem]
+    ports: ['127.0.0.1:18450:18450']
+    volumes:
+      - ${GP_PROOF_SOURCE_DIR:?}:/proof:ro
+      - ${GP_PROOF_CERT_DIR:?}/ca.pem:/test-ca.pem:ro
+      - ${GP_PROOF_CERT_DIR:?}/key.pem:/test-key.pem:ro
+    networks:
+      default:
+        ipv4_address: 11.97.39.10
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 11.97.39.0/24

@@ -63,7 +63,8 @@ def main():
     parser.add_argument("--receipt", required=True)
     args = parser.parse_args()
     receipt = {"schema": "honua.wfs-candidate-proof.v1", "startedAt": utc(),
-               "outcome": "fail", "requestedImage": args.image, "scenarios": []}
+               "outcome": "fail", "requestedImage": args.image, "scenarios": [],
+               "harnessSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     try:
         observed = json.loads(subprocess.check_output(["docker", "inspect", args.container]))[0]
         image = json.loads(subprocess.check_output(["docker", "image", "inspect", observed["Image"]]))[0]
@@ -142,6 +143,17 @@ def main():
             assert starts == ([0, 1, 2] if matched else [0, 1, 2, 3]), starts
             scenario.update(outcome="pass", starts=list(starts), outputBytes=len(data),
                 outputSha256=hashlib.sha256(data).hexdigest(), completedAt=utc())
+        receipt["semanticOutcome"] = "pass"
+        for scenario in receipt["scenarios"]:
+            deadline = time.monotonic() + 30
+            while True:
+                workflow = api("/api/v1/admin/operations/" + scenario["workflowRunId"])
+                scenario["workflow"] = workflow
+                if workflow.get("CompletedAt") or time.monotonic() >= deadline:
+                    break
+                time.sleep(1)
+            scenario["workflowOutcome"] = "pass" if workflow.get("CurrentPhase") == "Succeeded" else "fail"
+        assert all(s["workflowOutcome"] == "pass" for s in receipt["scenarios"]), "Child content passed, but parent workflow did not succeed"
         receipt["outcome"] = "pass"
     except Exception as error:
         receipt["error"] = str(error)

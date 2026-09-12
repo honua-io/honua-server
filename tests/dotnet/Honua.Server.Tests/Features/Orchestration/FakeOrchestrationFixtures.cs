@@ -582,8 +582,11 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
         return Task.FromResult(record);
     }
 
+    public Action<ClaimsPrincipal>? OnJobAccess { get; set; }
+
     public Task<ExecutionJobRecord> GetJobAsync(string jobId, ClaimsPrincipal principal, CancellationToken cancellationToken = default)
     {
+        OnJobAccess?.Invoke(principal);
         if (NextGetJobFailure is { } failure)
         {
             NextGetJobFailure = null;
@@ -600,6 +603,7 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
 
     public Task<AnalysisResultPackage> GetJobResultsAsync(string jobId, ClaimsPrincipal principal, CancellationToken cancellationToken = default)
     {
+        OnJobAccess?.Invoke(principal);
         if (NextGetJobResultsFailure is { } failure)
         {
             NextGetJobResultsFailure = null;
@@ -616,6 +620,7 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
 
     public Task CancelJobAsync(string jobId, ClaimsPrincipal principal, CancellationToken cancellationToken = default)
     {
+        OnJobAccess?.Invoke(principal);
         lock (_cancelled)
         {
             _cancelled.Add(jobId);
