@@ -249,7 +249,13 @@ internal sealed class ApiKeyAuthenticationHandler(
         var startupEnvironment = _authOptions.EnvironmentName;
         if (string.Equals(startupEnvironment, "Production", StringComparison.OrdinalIgnoreCase))
         {
-            AuthenticationLog.DevelopmentBypassBlockedInProduction(Logger);
+            // Normal Production requests are not bypass attempts. Warn only
+            // when the operator has explicitly configured the bypass opt-in.
+            if (string.Equals(_authOptions.DevAuthBypass, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                AuthenticationLog.DevelopmentBypassBlockedInProduction(Logger);
+            }
+
             return false;
         }
 

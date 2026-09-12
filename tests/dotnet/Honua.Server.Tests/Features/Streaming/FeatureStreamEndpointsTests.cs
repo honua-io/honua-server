@@ -28,6 +28,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Streaming;
@@ -919,7 +920,10 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_ControlSubscription_RecoversCrossNodeEventViaDurablePoll()
     {
+        var logger = Substitute.For<ILogger<FeatureStreamEndpointsLog>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var fixture = new WebAppFixture()
+            .ReplaceService<ILogger<FeatureStreamEndpointsLog>>(logger)
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ConfigureWebHost(builder =>
             {
@@ -996,6 +1000,14 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
 
             sawControlSubFrame.Should().BeTrue(
                 "the writer's cross-node poll must replay durable-store events to control-frame subscriptions");
+
+            var replayRecords = logger.ReceivedCalls()
+                .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+                .Select(call => call.GetArguments())
+                .Where(arguments => arguments[1] is EventId { Id: 5005 })
+                .ToArray();
+            Assert.NotEmpty(replayRecords);
+            Assert.All(replayRecords, arguments => Assert.Equal(LogLevel.Debug, arguments[0]));
 
             await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "test done", CancellationToken.None);
         }

@@ -24,7 +24,9 @@ internal static partial class FeatureStreamLog
         Message = "Heartbeat sent to {Count} feature stream sessions")]
     public static partial void HeartbeatBroadcast(ILogger logger, int count);
 
-    [LoggerMessage(EventId = 5005, Level = LogLevel.Information,
+    // Replay also runs once per subscription on every cross-node sweep,
+    // including empty batches. Keep this diagnostic off the normal log path.
+    [LoggerMessage(EventId = 5005, Level = LogLevel.Debug,
         Message = "Replaying {Count} events from cursor {Cursor} for session {SessionId}")]
     public static partial void ReplayStarted(ILogger logger, int count, long cursor, Guid sessionId);
 
