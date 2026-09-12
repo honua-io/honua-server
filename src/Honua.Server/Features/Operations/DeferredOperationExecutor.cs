@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -49,7 +50,7 @@ internal sealed class DeferredOperationExecutor(string operationId, Func<IOperat
 /// <summary>Registers operation identities without constructing their actuator graphs.</summary>
 internal static class DeferredOperationExecutorServiceCollectionExtensions
 {
-    public static IServiceCollection TryAddDeferredOperationExecutor<TExecutor>(
+    public static IServiceCollection TryAddDeferredOperationExecutor<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TExecutor>(
         this IServiceCollection services, string operationId)
         where TExecutor : class, IOperationExecutor
     {
