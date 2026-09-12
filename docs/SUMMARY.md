@@ -89,8 +89,8 @@
   - [Compliance](guides/secure/compliance.md)
 - Deploy & operate
   - [Operating Honua](guides/operate/README.md)
-  - [Operate scenario](guides/operate/scenario.md)
-  - [Operate metrics](guides/operate/metrics.md)
+  - [Operate scenario: protected updates](guides/operate/scenario.md)
+  - [Operate metrics and recovery evidence](guides/operate/metrics.md)
   - [Ops evidence posture](guides/operate/evidence-posture.md)
   - [Docker Compose](guides/deploy/docker-compose.md)
   - [Pilot onboarding runbook](guides/deploy/pilot-onboarding-runbook.md)

@@ -9,15 +9,41 @@ Honua's day-2 operating model is one loop shared by humans, Console, and MCP
 agents: observe, diagnose, remediate, learn, and graduate. The server stays the
 source of truth for health, findings, proposals, approvals, and execution. Tools
 may explain or propose, but the control plane applies only deterministic,
-authorized operations. Start with the pre-cut [Operate
+authorized operations. Start with the [protected-update Operate
 scenario](scenario.md), then use the [metric inventory](metrics.md) and [evidence
 posture contract](evidence-posture.md) to decide whether a successful read is
 actually actionable.
 
-This guide describes source contracts, separate from the remaining exact-candidate
-execution receipt. The infrastructure control plane provisions the placement;
+This guide describes the bounded protected-update contract; the
+[qualification record](../../internal/contributor/operate-docs-precut-evidence.md)
+separately identifies implementation evidence and unmet candidate checks.
+The infrastructure control plane provisions the placement;
 the server control plane configures resources and owns governed operations.
 The terminal client is the model seat, with a separate human approval principal.
+
+## Make a protected change
+
+Review the intended change, the affected service and whether recovery is available,
+then have a separate authorized person approve it. Honua stages and checks a
+supported change before activation, observes it for the declared protection
+window, and either confirms success or restores and verifies the previous version.
+The terminal and optional Console show progress from the same durable server
+operation. Git branches, PRs, telemetry queries and Helm/Argo settings belong in
+advanced deployment details, not the ordinary approval flow.
+
+The [scenario's progress table](scenario.md#progress-and-protection) explains
+**Checking update**, **Updating**, **Confirming service health**, **Update complete**,
+**Previous version restored**, and **Needs attention**. Restoration requires
+functional recovery evidence; traffic routing or a provider acknowledgement
+alone cannot establish it. Show unavailable protection, its expiry and any
+required operator action plainly before approval.
+
+Unknown telemetry blocks a new change. During an already-approved protected
+operation, its bound policy may require deterministic recovery despite missing
+telemetry. That recovery does not authorize another change, broaden scope or
+allow the proposer to approve itself. Unsupported changes stop before mutation;
+unproven recovery requires attention. Fix-forward remains an explicitly approved
+option when appropriate to the failure and schema compatibility.
 
 > **Customer alerting is Preview in 2026.1.** Alert zones, rules, evaluation,
 > delivery channels, and their Console Operate views require an explicit
@@ -37,6 +63,10 @@ backends, an explicitly sourced platform-SLO posture, and a separately named nod
 diagnostic. An `ops:read` key can read
 this and the read-only observability surfaces without gaining rollback or
 proposal authority.
+
+The retained tail is replica-local and HTTP-5xx-only. It is not platform
+availability or an error budget, and it cannot satisfy a protected update's
+required telemetry. See the [inventory](metrics.md#platform-slo-and-local-diagnostics).
 
 1. Observe: read `GET /api/v1/operate/status`, `GET /api/v1/admin/observability/ops-health`,
    `GET /api/v1/admin/observability/ops-health/history`, and
@@ -178,6 +208,12 @@ The public capability keys make the distinction machine-readable:
 available only with the durable operation store, and `deploy.rollback` is
 available only when at least one configured target backend advertises a real
 rollback implementation.
+
+The documentation registry groups these runtime capabilities under
+[Admin Control Plane](../../okf/capabilities/admin.control-plane.md) and
+[observability](../../okf/capabilities/ops.observability.md). An aggregate capability
+does not prove rollback for the selected target; inspect that target's backend,
+prior revision, protection policy and qualification receipt.
 
 | Backend family | `rollbackSupported` | What a rollback request means |
 |---|---:|---|
