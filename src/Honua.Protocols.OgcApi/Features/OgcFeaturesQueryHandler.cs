@@ -1416,6 +1416,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             if (++featuresSinceFlush >= StreamingFlushInterval)
             {
                 await writer.FlushAsync(cancellationToken);
+                await context.Response.BodyWriter.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
         }
@@ -1431,16 +1432,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);
-        await context.Response.BodyWriter.CompleteAsync();
-    }
-
-    private static void EnableChunkedEncodingIfHttp1(HttpContext context)
-    {
-        if (context.Request.Protocol.StartsWith("HTTP/1.", StringComparison.OrdinalIgnoreCase))
-        {
-            context.Response.Headers.ContentLength = null;
-            context.Response.Headers.TransferEncoding = "chunked";
-        }
+        // Flush the pipe as well as the JSON writer. The server owns HTTP framing and
+        // completes the response after the result and surrounding middleware finish.
+        await context.Response.BodyWriter.FlushAsync(cancellationToken);
     }
 
     // Cursor-paging streaming result for JSON (GeoJSON / application/json) responses.
@@ -1513,7 +1507,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
             // OGC-NumberMatched is a non-standard header; numberMatched is written
             // into the FeatureCollection JSON body by StreamFeatureCollectionAsync,
             // which is the spec-compliant location (OGC 17-069r4 §7.14.4).
-            EnableChunkedEncodingIfHttp1(httpContext);
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
                 httpContext.RequestAborted,
@@ -1640,8 +1633,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 httpContext.Response.Headers.Append("Link", $"<{link.Href}>; rel=\"{link.Rel}\"");
             }
 
-            EnableChunkedEncodingIfHttp1(httpContext);
-
             await OgcResponseFormatter.StreamGmlFeatureCollectionAsync(
                 buffered,
                 httpContext.Response.BodyWriter,
@@ -1651,8 +1642,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 _crsUri,
                 _axisOrder,
                 cancellationToken);
-
-            await httpContext.Response.BodyWriter.CompleteAsync();
         }
     }
 

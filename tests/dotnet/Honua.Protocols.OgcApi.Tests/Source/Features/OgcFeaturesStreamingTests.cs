@@ -33,7 +33,7 @@ public sealed class OgcFeaturesStreamingTestsFixture : IAsyncLifetime
         await using var command = connection.CreateCommand();
         // A private schema with known ids, attributes and ordinates, independent of serializer output.
         command.CommandText = """
-            DELETE FROM features WHERE layer_id = 0;
+            DELETE FROM features;
             INSERT INTO features (objectid, layer_id, geometry, attributes)
             SELECT i, 0, CASE WHEN i % 10 = 0 THEN NULL
                 ELSE ST_SetSRID(ST_MakePoint(-120 + i * 0.001, 30 + i * 0.001), 4326) END,
@@ -139,7 +139,7 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
         }
 
         var expectedCount = limit ?? 300;
-        var query = $"sortby=objectid&f={(gml ? "gml" : "json")}";
+        var query = gml ? "sortby=objectid&f=gml" : "sortby=objectid";
         if (limit.HasValue)
         {
             query += $"&limit={limit.Value}";
@@ -154,6 +154,10 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             response.Version.Should().Be(HttpVersion.Version11);
             response.Headers.ConnectionClose.Should().NotBe(true);
+            if (expectedCount > 200)
+            {
+                response.Headers.TransferEncodingChunked.Should().BeTrue();
+            }
             response.Headers.GetValues("Content-Crs").Should()
                 .ContainSingle().Which.Should().Contain("CRS84");
             var body = await response.Content.ReadAsByteArrayAsync();
@@ -170,11 +174,17 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
                 XNamespace gmlNamespace = "http://www.opengis.net/gml/3.2";
                 document.Root!.Attribute("numberMatched")!.Value.Should().Be("1200");
                 document.Root.Attribute("numberReturned")!.Value.Should().Be(returned.ToString(CultureInfo.InvariantCulture));
+                DateTimeOffset.TryParse(document.Root.Attribute("timeStamp")!.Value,
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out _).Should().BeTrue();
+                response.Headers.GetValues("Link").Any(link => link.Contains("rel=\"next\"", StringComparison.Ordinal))
+                    .Should().Be((page + 1) * expectedCount < 1200);
                 var members = document.Root.Elements(wfs + "member").ToArray();
                 members.Should().HaveCount(returned);
                 for (var i = 0; i < returned; i++)
                 {
                     var id = page * expectedCount + i + 1;
+                    members[i].Elements().Single().Attribute(gmlNamespace + "id")!.Value
+                        .Should().Be($"feature_{id}");
                     var position = members[i].Descendants(gmlNamespace + "pos").SingleOrDefault();
                     if (id % 10 == 0)
                     {
@@ -188,9 +198,9 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
                         ordinates[0].Should().BeApproximately(-120 + id * 0.001, 1e-9);
                         ordinates[1].Should().BeApproximately(30 + id * 0.001, 1e-9);
                     }
-                    members[i].Descendants().Single(element => element.Name.LocalName == "name")
+                    members[i].Descendants().Single(element => (string?)element.Attribute("name") == "name")
                         .Value.Should().Be(new string('x', 1024));
-                    members[i].Descendants().Single(element => element.Name.LocalName == "population")
+                    members[i].Descendants().Single(element => (string?)element.Attribute("name") == "population")
                         .Value.Should().Be(id.ToString(CultureInfo.InvariantCulture));
                 }
             }
@@ -200,6 +210,9 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
                 var root = document.RootElement;
                 root.GetProperty("numberMatched").GetInt32().Should().Be(1200);
                 root.GetProperty("numberReturned").GetInt32().Should().Be(returned);
+                root.GetProperty("type").GetString().Should().Be("FeatureCollection");
+                DateTimeOffset.TryParse(root.GetProperty("timeStamp").GetString(),
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out _).Should().BeTrue();
                 var features = root.GetProperty("features").EnumerateArray().ToArray();
                 features.Should().HaveCount(returned);
                 for (var i = 0; i < returned; i++)
