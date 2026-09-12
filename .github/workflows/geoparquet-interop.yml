@@ -6,13 +6,24 @@ on:
     paths:
       - '.github/workflows/geoparquet-interop.yml'
       - 'scripts/ci/check-geoparquet-interop.py'
+      - '.github/actions/setup-dotnet-ci/**'
+      - 'Directory.Build.*'
+      - 'Directory.Packages.props'
+      - 'NuGet.config'
+      - 'src/Honua.Server/Honua.Server.csproj'
+      - 'src/Honua.Core/Features/Metadata/**'
+      - 'src/Honua.Core/Features/Infrastructure/Crs/**'
+      - 'src/Honua.Protocols.OData/**'
+      - 'src/Honua.Protocols.GeoServices/FeatureServer/**'
+      - 'src/Honua.Import/Features/FileImport/**'
+      - 'src/Honua.Db/Postgres/Features/FileImport/**'
+      - 'src/Honua.Geometry/Features/FileImport/**'
       - 'tests/python/feature_server/test_geoparquet_interop.py'
       - 'tests/python/requirements.txt'
       - 'tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataParquetFormatTests.cs'
       - 'tests/dotnet/Honua.Server.Tests/Import/GeoParquetImportTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoParquetSdkInteropConformanceTests.cs'
       - 'src/Honua.Hosting/Features/Services/GeoParquetFeatureWriter.cs'
-      - 'src/Honua.Protocols.GeoServices/FeatureServer/Services/GeoParquetQueryFormatter.cs'
   workflow_dispatch:
 
 permissions:
