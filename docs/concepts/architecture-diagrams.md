@@ -557,5 +557,5 @@ graph TB
 
 ## See Also
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed architecture prose
+- [Architecture (contributor notes)](../internal/contributor/ARCHITECTURE.md) - Detailed architecture prose
 - [ADRs](../internal/contributor/adr/README.md) - Architecture Decision Records
