@@ -510,6 +510,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
+                AppendLinkHeaders(context, links);
                 var gmlSchemaUrl = OgcFeaturesUtilities.BuildGmlApplicationSchemaUrl(baseUrl);
                 var gml = gmlResult.HasValue
                     ? OgcResponseFormatter.BuildGmlFeatureCollection(gmlResult.Value.Items, queryTotalCount, gmlResult.Value.Items.Length, DateTimeOffset.UtcNow, gmlSchemaUrl, outputCrsUri, outputAxisOrder)
@@ -1416,6 +1417,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             if (++featuresSinceFlush >= StreamingFlushInterval)
             {
                 await writer.FlushAsync(cancellationToken);
+                await context.Response.BodyWriter.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
         }
@@ -1431,15 +1433,16 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);
-        await context.Response.BodyWriter.CompleteAsync();
+        // Flush the pipe as well as the JSON writer. The server owns HTTP framing and
+        // completes the response after the result and surrounding middleware finish.
+        await context.Response.BodyWriter.FlushAsync(cancellationToken);
     }
 
-    private static void EnableChunkedEncodingIfHttp1(HttpContext context)
+    private static void AppendLinkHeaders(HttpContext context, ImmutableArray<Link> links)
     {
-        if (context.Request.Protocol.StartsWith("HTTP/1.", StringComparison.OrdinalIgnoreCase))
+        foreach (var link in links.Where(link => !string.IsNullOrEmpty(link.Href)))
         {
-            context.Response.Headers.ContentLength = null;
-            context.Response.Headers.TransferEncoding = "chunked";
+            context.Response.Headers.Append("Link", $"<{link.Href}>; rel=\"{link.Rel}\"");
         }
     }
 
@@ -1513,7 +1516,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
             // OGC-NumberMatched is a non-standard header; numberMatched is written
             // into the FeatureCollection JSON body by StreamFeatureCollectionAsync,
             // which is the spec-compliant location (OGC 17-069r4 §7.14.4).
-            EnableChunkedEncodingIfHttp1(httpContext);
 
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
                 httpContext.RequestAborted,
@@ -1635,12 +1637,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             // the spec-compliant location.
 
             var links = BuildItemsLinks(httpContext.Request, _collectionId, _streamBasePath, MediaTypes.Gml, _effectiveLimit, _effectiveOffset, _maxOffset, hasMoreResults);
-            foreach (var link in links.Where(link => !string.IsNullOrEmpty(link.Href)))
-            {
-                httpContext.Response.Headers.Append("Link", $"<{link.Href}>; rel=\"{link.Rel}\"");
-            }
-
-            EnableChunkedEncodingIfHttp1(httpContext);
+            AppendLinkHeaders(httpContext, links);
 
             await OgcResponseFormatter.StreamGmlFeatureCollectionAsync(
                 buffered,
@@ -1651,8 +1648,6 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 _crsUri,
                 _axisOrder,
                 cancellationToken);
-
-            await httpContext.Response.BodyWriter.CompleteAsync();
         }
     }
 

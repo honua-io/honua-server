@@ -55,6 +55,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     private string? _currentSchema;
     private string _environmentName = "Test";
     private bool _useSharedServer;
+    private bool _useKestrel;
     private string? _seedPath;
     private string? _seedProfile;
     private IServiceScope? _serviceScope;
@@ -128,7 +129,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public IServiceProvider Services => ActiveFactory.Services;
 
-    private bool HasCustomConfiguration => _serviceConfigurations.Count > 0
+    private bool HasCustomConfiguration => _useKestrel || _serviceConfigurations.Count > 0
         || _configureWebHost != null
         || !string.Equals(_environmentName, "Test", StringComparison.OrdinalIgnoreCase);
 
@@ -217,6 +218,11 @@ public sealed class WebAppFixture : IAsyncLifetime
                 });
             },
             _environmentName);
+
+        if (_useKestrel)
+        {
+            _factory.UseKestrel(0);
+        }
 
         Client = CreateClient();
         _serviceScope = _factory.Services.CreateScope();
@@ -498,6 +504,20 @@ public sealed class WebAppFixture : IAsyncLifetime
     public WebAppFixture ConfigureWebHost(Action<IWebHostBuilder> configure)
     {
         _configureWebHost = _configureWebHost == null ? configure : _configureWebHost + configure;
+        return this;
+    }
+
+    /// <summary>
+    /// Uses a real loopback Kestrel server for HTTP transport tests. Call before initialization.
+    /// </summary>
+    public WebAppFixture UseKestrel()
+    {
+        if (_factory is not null || _useSharedServer)
+        {
+            throw new InvalidOperationException("Configure Kestrel before initializing the fixture.");
+        }
+
+        _useKestrel = true;
         return this;
     }
 
