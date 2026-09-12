@@ -481,6 +481,47 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task SecretBearingOperation_WithoutSecretAwareExecutor_NeverCreatesADurableRecord()
+    {
+        // admin.embed-key.create is on the one-time-secret roster but has no composed executor.
+        var instanceStore = new VolatileOperationInstanceStore();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [],
+            new StubPolicyDecisionPoint(new PolicyDecision { Kind = PolicyDecisionKind.Allow }),
+            TimeProvider.System,
+            approvalBridge: null,
+            instanceStore: instanceStore);
+
+        var submit = async () => await dispatcher.SubmitAsync(
+            new OperationRequest { OperationId = "admin.embed-key.create" },
+            new OperationPolicyContext(),
+            CancellationToken.None);
+
+        (await submit.Should().ThrowAsync<OperationUnavailableException>())
+            .Which.Message.Should().Contain("secret-aware executor");
+        (await instanceStore.ListActiveAsync()).Should().BeEmpty(
+            "a withheld secret actuator must not leave a durable handle behind");
+    }
+
+    [UnitTest]
+    public async Task NonSecretOperation_WithoutExecutor_StillFailsThroughADurableHandle()
+    {
+        // The secret gate above must not change the contract for any other missing executor.
+        var dispatcher = BuildDispatcher(
+            BuildExecutor(Substitute.For<ILayerPublishingService>()),
+            new StubPolicyDecisionPoint(new PolicyDecision { Kind = PolicyDecisionKind.Allow }));
+
+        var handle = await dispatcher.SubmitAsync(
+            new OperationRequest { OperationId = "service.unpublish" },
+            new OperationPolicyContext(),
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Reason.Should().Contain("No executor is registered");
+    }
+
+    [UnitTest]
     public async Task LaneC_AccessOperations_RegisterAndExecute()
     {
         var services = new ServiceCollection();

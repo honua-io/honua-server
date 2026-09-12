@@ -84,13 +84,18 @@ public sealed class OperationDispatcher : IOperationInvoker
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        // Resolve both halves of the runtime contract before accepting an envelope. A
-        // descriptor can remain discoverable while its actuator is deliberately withheld;
-        // such a submission must not create a handle or approval proposal.
-        var descriptor = await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new OperationNotFoundException(request.OperationId);
-        var executor = ResolveExecutor(request.OperationId);
+        // A descriptor can remain discoverable while its secret-aware actuator is deliberately
+        // withheld. Such a submission must not create a handle or approval proposal at all,
+        // because both are durable records of an operation that can never legitimately run.
+        // Every other unregistered operation keeps its existing failed-handle contract below.
+        if (AdminMcpOperationExclusions.RequiresSecretAwareRuntime(request.OperationId) &&
+            !_executors.ContainsKey(request.OperationId))
+        {
+            throw new OperationUnavailableException(
+                request.OperationId,
+                $"Operation '{request.OperationId}' handles one-time secret material and has no "
+                + "secret-aware executor composed in this runtime.");
+        }
 
         var createdAt = _clock.GetUtcNow();
         OperationHandle envelope;
@@ -213,9 +218,14 @@ public sealed class OperationDispatcher : IOperationInvoker
         var operationInstanceId = envelope.OperationInstanceId;
         var correlationId = envelope.CorrelationId;
 
+        OperationDescriptor descriptor;
+        IOperationExecutor executor;
         OperationValidation validation;
         try
         {
+            descriptor = await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken).ConfigureAwait(false)
+                ?? throw new OperationNotFoundException(request.OperationId);
+            executor = ResolveExecutor(request.OperationId);
             if (executor is IOperationRequestPreparer preparer)
             {
                 var prepared = await preparer.PrepareAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
@@ -610,18 +620,10 @@ public sealed class OperationDispatcher : IOperationInvoker
             Details = $"operationId={envelope.OperationId};status={envelope.Status}",
         }, cancellationToken);
 
-    // A secret-bearing operation may only actuate through an executor composed with the
-    // consume-once secret channel. When no such executor is registered the operation stays
-    // closed rather than degrading to a runtime that would persist plaintext credentials.
     private IOperationExecutor ResolveExecutor(string operationId)
         => _executors.TryGetValue(operationId, out var executor)
             ? executor
-            : AdminMcpOperationExclusions.RequiresSecretAwareRuntime(operationId)
-                ? throw new OperationUnavailableException(
-                    operationId,
-                    $"Operation '{operationId}' handles one-time secret material and has no secret-aware "
-                    + "executor composed in this runtime.")
-                : throw new OperationNotFoundException(operationId);
+            : throw new OperationNotFoundException(operationId);
 
     private async Task<OperationHandle> BuildDecisionHandleAsync(
         OperationDescriptor descriptor,
