@@ -105,6 +105,7 @@ Every page below is an Open Knowledge Format concept: one subject per file, type
 ## Reference
 
 - [Reference](https://docs.honua.io/reference/README): Lookup material for Honua's public surfaces: protocols, the admin API, configuration, compatibility status, and cross-cutting contracts.
+- [Capability concepts](https://docs.honua.io/okf/capabilities/README): One concept per entry in the server capability registry: what it is, which edition carries it, how mature its surfaces are, and which documentation pages discuss it.
 - [GeoServices REST (ArcGIS-compatible)](https://docs.honua.io/reference/protocols/geoservices-rest): Honua serves a GeoServices REST surface under /rest/services, plus a Portal Sharing slice under /sharing/rest for token issuance and item discovery.
 - [OGC APIs](https://docs.honua.io/reference/protocols/ogc-apis): Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages, Processes, Records, and Styles — as JSON-first REST surfaces under /ogc/.
 - [WMS, WFS, WCS, WMTS (classic OGC)](https://docs.honua.io/reference/protocols/wms-wfs-wcs-wmts): Honua serves the classic OGC KVP/XML web services for clients that have not moved to the OGC API family: desktop GIS, legacy integrations, and CITE-certified workflows.
