@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Performance;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -18,9 +19,11 @@ namespace Honua.LoadTests;
 public sealed class LoadHarnessCompletionTests
 {
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Cli_AllScenariosComplete_ReportsMeasuredSuccessesOrBodyTimeouts(bool stallBody)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task Cli_CompletesWindow_ReportsMeasuredSuccessesAndFailures(int failureMode)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"honua-load-completion-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -33,7 +36,12 @@ public sealed class LoadHarnessCompletionTests
         {
             Interlocked.Increment(ref requests);
             context.Response.ContentType = "application/json";
-            if (stallBody)
+            if (failureMode >= 2)
+            {
+                context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                context.Response.ContentLength = 0;
+            }
+            else if (failureMode == 1)
             {
                 // Headers succeed; the advertised body never arrives. HttpClient's header
                 // timeout alone cannot bound this fixture's response-body read.
@@ -57,6 +65,7 @@ public sealed class LoadHarnessCompletionTests
         var address = app.Services.GetRequiredService<IServer>().Features
             .Get<IServerAddressesFeature>()!.Addresses.Single();
         var statsPath = Path.Combine(directory, "stats.json");
+        await File.WriteAllTextAsync(statsPath, "stale statistics from an earlier run");
         var start = new ProcessStartInfo("dotnet")
         {
             RedirectStandardOutput = true,
@@ -66,7 +75,7 @@ public sealed class LoadHarnessCompletionTests
         };
         foreach (var argument in new[]
         {
-            typeof(Program).Assembly.Location, "--base-url", address, "--profile", "soak",
+            typeof(Program).Assembly.Location, "--base-url", address, "--profile", failureMode == 3 ? "quick" : "soak",
             "--ramp-up", "2s", "--duration", "6s", "--ramp-down", "2s",
             "--stats-out", statsPath, "--report-folder", directory, "--report-formats", "csv"
         })
@@ -75,6 +84,12 @@ public sealed class LoadHarnessCompletionTests
         }
 
         start.Environment["HONUA_LOAD_REQUEST_TIMEOUT_SECONDS"] = "1";
+        if (failureMode >= 2)
+        {
+            start.ArgumentList.Add("--target-scenarios");
+            start.ArgumentList.Add(LoadTestScenarios.FeatureQueryScenarioName);
+        }
+
         using var process = Process.Start(start)!;
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
@@ -83,7 +98,18 @@ public sealed class LoadHarnessCompletionTests
         {
             await process.WaitForExitAsync(deadline.Token);
             var output = await stdout + await stderr;
-            Assert.True(process.ExitCode == (stallBody ? 1 : 0), output);
+            var fails = failureMode != 0;
+            Assert.True(process.ExitCode == (fails ? 1 : 0), output);
+            if (failureMode == 3)
+            {
+                // Quick retains NBomber's circuit breaker. A deliberately truncated run
+                // must not replace the stale input with apparently complete receipt data.
+                Assert.True(Interlocked.Read(ref requests) >= 5000, output);
+                Assert.Contains("Refusing partial statistics", output, StringComparison.Ordinal);
+                Assert.False(File.Exists(statsPath));
+                return;
+            }
+
             Assert.Contains("final statistics received", output, StringComparison.Ordinal);
             Assert.Contains("Completed load test", output, StringComparison.Ordinal);
             using var document = JsonDocument.Parse(await File.ReadAllTextAsync(statsPath));
@@ -93,17 +119,27 @@ public sealed class LoadHarnessCompletionTests
             Assert.Equal(10, root.GetProperty("durationSeconds").GetDouble());
             var total = root.GetProperty("allRequestCount").GetInt64();
             Assert.True(total > 0, output);
-            Assert.Equal(total, root.GetProperty(stallBody ? "allFailCount" : "allOkCount").GetInt64());
-            Assert.Equal(0, root.GetProperty(stallBody ? "allOkCount" : "allFailCount").GetInt64());
+            Assert.Equal(total, root.GetProperty(fails ? "allFailCount" : "allOkCount").GetInt64());
+            Assert.Equal(0, root.GetProperty(fails ? "allOkCount" : "allFailCount").GetInt64());
             Assert.Equal(Interlocked.Read(ref requests), total);
+            if (failureMode == 2)
+            {
+                // Deliberately exceed NBomber's default per-scenario abort count. A soak
+                // must finish the full window, retain every failure, and STILL exit red.
+                Assert.True(total > 5000, output);
+            }
+
             var scenarios = root.GetProperty("scenarios").EnumerateArray().ToArray();
-            Assert.Equal(Program.KnownScenarios.Order(StringComparer.Ordinal),
+            var expectedNames = failureMode == 2
+                ? [LoadTestScenarios.FeatureQueryScenarioName]
+                : Program.KnownScenarios;
+            Assert.Equal(expectedNames.Order(StringComparer.Ordinal),
                 scenarios.Select(s => s.GetProperty("name").GetString()!).Order(StringComparer.Ordinal));
             Assert.All(scenarios, scenario =>
             {
-                Assert.True(scenario.GetProperty(stallBody ? "failCount" : "okCount").GetInt64() > 0);
+                Assert.True(scenario.GetProperty(fails ? "failCount" : "okCount").GetInt64() > 0);
                 Assert.Equal(10, scenario.GetProperty("durationSeconds").GetDouble());
-                if (!stallBody)
+                if (!fails)
                 {
                     Assert.True(scenario.GetProperty("p95Ms").GetDouble() >= 25,
                         scenario.ToString());

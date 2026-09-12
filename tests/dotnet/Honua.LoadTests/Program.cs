@@ -108,6 +108,18 @@ internal static class Program
             context = context.WithTargetScenarios(targets.ToArray());
         }
 
+        if (options.Profile.Equals("soak", StringComparison.OrdinalIgnoreCase))
+        {
+            // A soak measures the entire window, including a failing candidate. NBomber's
+            // default 5,000-error circuit breaker otherwise stops it during ramp-up.
+            // This controls early termination only: every failure is still counted and
+            // EvaluateResults applies the unchanged failure-rate acceptance threshold.
+            var settings = context.RegisteredScenarios.Select(scenario =>
+                $"{{\"ScenarioName\":{JsonString(scenario.ScenarioName)},\"MaxFailCount\":{int.MaxValue}}}");
+            context = context.LoadConfig("{\"GlobalSettings\":{\"ScenariosSettings\":[" +
+                string.Join(",", settings) + "]}}");
+        }
+
         context = context
             .DisplayConsoleMetrics(!Console.IsOutputRedirected)
             .WithReportingSinks(new LoadProgressSink())
@@ -120,6 +132,16 @@ internal static class Program
         {
             Console.Error.WriteLine($"Load harness did not complete within {budget}; refusing incomplete statistics. Last progress: {LoadProgressSink.LastProgress}");
             return 124;
+        }
+
+        var expectedDuration = profile.RampUp + profile.Duration + profile.RampDown;
+        var expectedNames = targets.Count > 0 ? targets : _knownScenarioSet;
+        if (!expectedNames.SetEquals(stats.ScenarioStats.Select(scenario => scenario.ScenarioName))
+            || stats.ScenarioStats.Any(scenario => scenario.Duration < expectedDuration
+                || scenario.Ok.Request.Count + scenario.Fail.Request.Count == 0))
+        {
+            Console.Error.WriteLine($"Load harness returned an incomplete run; every selected scenario must execute {expectedDuration} and report requests. Refusing partial statistics.");
+            return 1;
         }
 
         if (!string.IsNullOrWhiteSpace(options.StatsOut))
