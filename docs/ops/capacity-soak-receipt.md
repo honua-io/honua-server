@@ -97,13 +97,16 @@ nothing is defaulted.
 `check_capacity_soak.py` compares the receipt's `envelope` block with the lock's
 `supportedEnvelope` for exact equality. Copying a block is easy; claiming it is not. The receipt
 therefore also carries `envelopeVerification` — one record per declared dimension, with what was
-declared, what was observed, and how — and an `envelopeCoverage` summary. A dimension is either
+declared, what was observed, and how — and an `envelopeCoverage` summary. A dimension is one of
 
-- `verified` — established on the deployment under test and re-observed there, or
+- `verified` — established on the deployment under test and re-observed there;
 - `not-exercised` — declared by the lock and deliberately not driven by this run, with the reason
-  recorded in the receipt.
+  recorded in the receipt; or
+- `not-met` — driven, and the deployment did not hold it. The receipt records declared against
+  observed, its status becomes `incomplete`, and the release gate refuses it. Aborting the run
+  instead would throw away the very evidence the soak exists to produce.
 
-There is no third, silent state: a dimension with neither record fails receipt construction.
+There is no fourth, silent state: a dimension with no record at all fails receipt construction.
 
 ### Known not-exercised dimension: `alertEvaluationsPerSecond`
 
@@ -114,6 +117,13 @@ layers are served — answers `403 Tenant context is required to query collectio
 the declared alert rate and serving the declared envelope are therefore mutually exclusive on one
 deployment, so the soak keeps the serving surface and records the alert rate as declared, not
 claimed.
+
+### Known not-met dimension on the 2026.1 candidate: `activeSubscriptions`
+
+On `7ba4226` the deployment did not hold the declared 1,000 subscriptions for the hour: 1,000 were
+opened and confirmed by the server, and 400 were still open at the end of the window, with the
+rest closed by the server. Each subscription is drained by a reader, so they are live consumers,
+not idle sockets. The receipt records the shortfall; it does not claim the dimension.
 
 ### Note on `gpQueueDepth`
 

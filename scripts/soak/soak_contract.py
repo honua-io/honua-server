@@ -49,6 +49,12 @@ SIGNATURE_MEMBERS = ("signature", "signingIdentity", "signatureFormat", "signing
 #: dimension with neither record fails `build_receipt`.
 COVERAGE_VERIFIED = "verified"
 COVERAGE_NOT_EXERCISED = "not-exercised"
+#: `not-met` is the third honest outcome: the run DID drive the dimension and the deployment did
+#: not hold it. Aborting there would throw the evidence away; claiming it would be a lie. The
+#: receipt records declared vs observed, the run's status becomes `incomplete`, and the release
+#: gate refuses it — which is the correct verdict for a candidate that cannot hold its own
+#: declared envelope.
+COVERAGE_NOT_MET = "not-met"
 
 STATUS_OBSERVED = "observed"
 STATUS_UNOBSERVED = "unobserved"
@@ -243,7 +249,7 @@ def build_receipt(
     bad_coverage = sorted(
         name
         for name, record in envelope_verification.items()
-        if record.get("coverage") not in (COVERAGE_VERIFIED, COVERAGE_NOT_EXERCISED)
+        if record.get("coverage") not in (COVERAGE_VERIFIED, COVERAGE_NOT_EXERCISED, COVERAGE_NOT_MET)
         or (record.get("coverage") == COVERAGE_VERIFIED and not record.get("verified"))
     )
     if bad_coverage:
@@ -259,7 +265,11 @@ def build_receipt(
         raise ContractError("missing required signal(s): " + ", ".join(sorted(missing)))
 
     unobserved = sorted(name for name, signal in signals.items() if signal.status != STATUS_OBSERVED)
-    status = "completed" if not unobserved else "incomplete"
+    not_met = sorted(
+        name for name, record in envelope_verification.items()
+        if record.get("coverage") == COVERAGE_NOT_MET
+    )
+    status = "completed" if not unobserved and not not_met else "incomplete"
 
     receipt: dict[str, Any] = {
         "schema": RECEIPT_SCHEMA,
@@ -289,8 +299,9 @@ def build_receipt(
         if record.get("coverage") == COVERAGE_NOT_EXERCISED
     )
     receipt["envelopeCoverage"] = {
-        "verified": sorted(set(envelope_verification) - set(not_exercised)),
+        "verified": sorted(set(envelope_verification) - set(not_exercised) - set(not_met)),
         "declaredNotExercised": not_exercised,
+        "notMet": not_met,
     }
     return receipt
 

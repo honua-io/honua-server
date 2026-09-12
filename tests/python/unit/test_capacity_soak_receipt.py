@@ -149,11 +149,43 @@ class TestReceiptAcceptance:
         assert evaluate(document) == []
 
 
+class TestUnmetEnvelope:
+    """A dimension the deployment failed to hold is evidence, not a reason to lose the run."""
+
+    def unmet_receipt(self):
+        envelope = copy.deepcopy(VERIFIED_ENVELOPE)
+        envelope["concurrentVirtualUsers"] = {
+            "declared": 170,
+            "observed": 41,
+            "coverage": soak_contract.COVERAGE_NOT_MET,
+            "verified": False,
+            "method": "driven and measured",
+        }
+        return receipt(envelope_verification=envelope)
+
+    def test_a_dimension_that_was_not_held_is_recorded_not_dropped(self):
+        document = self.unmet_receipt()
+        assert document["envelopeCoverage"]["notMet"] == ["concurrentVirtualUsers"]
+        assert document["envelopeVerification"]["concurrentVirtualUsers"]["observed"] == 41
+        assert "concurrentVirtualUsers" not in document["envelopeCoverage"]["verified"]
+
+    def test_an_unmet_dimension_makes_the_receipt_incomplete_and_the_gate_refuses_it(self):
+        document = self.unmet_receipt()
+        assert document["status"] == "incomplete"
+        assert any("status must be completed" in failure for failure in evaluate(document))
+
+
 class TestReceiptConstructionRefusals:
     def test_unverified_dimension_refuses_to_build(self):
         envelope = copy.deepcopy(VERIFIED_ENVELOPE)
         envelope["featuresPerLayer"]["verified"] = False
         with pytest.raises(soak_contract.ContractError, match="featuresPerLayer"):
+            receipt(envelope_verification=envelope)
+
+    def test_an_unknown_coverage_state_refuses_to_build(self):
+        envelope = copy.deepcopy(VERIFIED_ENVELOPE)
+        envelope["services"]["coverage"] = "probably-fine"
+        with pytest.raises(soak_contract.ContractError, match="services"):
             receipt(envelope_verification=envelope)
 
     def test_missing_dimension_record_refuses_to_build(self):

@@ -45,7 +45,7 @@ from typing import Any
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from soak_contract import COVERAGE_NOT_EXERCISED, COVERAGE_VERIFIED  # noqa: E402
+from soak_contract import COVERAGE_NOT_EXERCISED, COVERAGE_NOT_MET, COVERAGE_VERIFIED  # noqa: E402
 
 ADMIN_HEADER = "X-API-Key"
 SERVICE = "test"
@@ -100,6 +100,8 @@ class SoakDriver:
         )
         self._subscription_readers: list[asyncio.Task[None]] = []
         self._subscription_bytes = 0
+        self._subscription_closed_by_server = 0
+        self._subscription_faulted = 0
         self.steady_start: datetime | None = None
         self.steady_end: datetime | None = None
         self._stop = asyncio.Event()
@@ -126,7 +128,7 @@ class SoakDriver:
         self.envelope_verification[dimension] = {
             "declared": declared,
             "observed": observed,
-            "coverage": COVERAGE_VERIFIED,
+            "coverage": COVERAGE_VERIFIED if verified else COVERAGE_NOT_MET,
             "verified": bool(verified),
             "method": method,
             "observedAt": iso(utcnow()),
@@ -368,7 +370,14 @@ class SoakDriver:
                     return
         except Exception as exc:  # noqa: BLE001 - a dropped subscription is evidence, not a crash
             if not self._stop.is_set():
+                self._subscription_faulted += 1
                 self.subscriptions.errors.append(f"subscription {index} ended: {type(exc).__name__}")
+            return
+        # The iterator ending without an exception means the SERVER closed the stream. A
+        # subscription that the deployment hangs up on is exactly what the activeSubscriptions
+        # dimension is about, so count it rather than letting it vanish quietly.
+        if not self._stop.is_set():
+            self._subscription_closed_by_server += 1
 
     async def observe_subscriptions(self, client: httpx.AsyncClient) -> None:
         try:
@@ -650,10 +659,13 @@ class SoakDriver:
             declared,
             held,
             held is not None and held >= declared,
-            "live feature-stream subscriptions held for the steady-state window, counted by "
-            "GET /api/v1/admin/streaming/features/sessions",
+            "live feature-stream subscriptions, each with a reader draining it, held for the "
+            "steady-state window and counted by GET /api/v1/admin/streaming/features/sessions",
             openErrors=self.subscriptions.errors[:5],
             previewOptIn="realtime.feature-streams",
+            closedByServer=self._subscription_closed_by_server,
+            faulted=self._subscription_faulted,
+            bytesDrained=self._subscription_bytes,
         )
 
     def _verify_gp_dimensions(self, steady_index: int) -> None:
@@ -811,14 +823,16 @@ def main() -> int:
     observations = asyncio.run(driver.run())
     args.out.write_text(json.dumps(observations, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({key: observations[key] for key in ("steadyStart", "steadyEnd", "recovery")}, indent=2))
-    unverified = sorted(
+    # A dimension the deployment failed to hold is DATA: it belongs in the published receipt,
+    # where the release gate can refuse the candidate on it. Only report it here; do not throw the
+    # run away by exiting non-zero, which would stop the receipt from ever being built.
+    not_met = sorted(
         name
         for name, record in observations["envelopeVerification"].items()
-        if record.get("coverage") == COVERAGE_VERIFIED and not record.get("verified")
+        if record.get("coverage") == COVERAGE_NOT_MET
     )
-    if unverified:
-        print("unverified envelope dimension(s): " + ", ".join(unverified), file=sys.stderr)
-        return 2
+    if not_met:
+        print("envelope dimension(s) the deployment did not hold: " + ", ".join(not_met), file=sys.stderr)
     return 0
 
 
