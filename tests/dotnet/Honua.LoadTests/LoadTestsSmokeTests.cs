@@ -84,4 +84,31 @@ public sealed class LoadTestsSmokeTests
             LoadTestScenarios.ScenarioNames.OrderBy(static name => name, StringComparer.Ordinal),
             Program.KnownScenarios.OrderBy(static name => name, StringComparer.Ordinal));
     }
+
+    /// <summary>
+    /// The soak profile is the one the frozen 2026.1 capacity lock names
+    /// (honua-release <c>certification/capacity-envelope.v1.json</c>: <c>soak.profile</c>,
+    /// <c>soak.minimumSteadyStateSeconds</c>, <c>supportedEnvelope.concurrentVirtualUsers</c>).
+    /// A published capacity receipt claims that envelope, so drifting these numbers would make the
+    /// receipt claim concurrency the run never drove, or a steady state shorter than the lock's
+    /// minimum. The lock is frozen and lives in another repository; this test is the local guard
+    /// that the profile still matches it.
+    /// </summary>
+    [UnitTest]
+    public void SoakProfile_MatchesFrozenCapacityEnvelope()
+    {
+        var soak = LoadTestProfile.Soak;
+
+        Assert.Equal(LockedConcurrentVirtualUsers, soak.TotalVirtualUsers);
+        Assert.True(
+            soak.Duration >= TimeSpan.FromSeconds(LockedMinimumSteadyStateSeconds),
+            $"soak steady state {soak.Duration} is below the locked minimum of {LockedMinimumSteadyStateSeconds}s");
+        Assert.Equal(LoadTestProfile.Soak, LoadTestProfile.FromName("soak"));
+    }
+
+    /// <summary><c>supportedEnvelope.concurrentVirtualUsers</c> in the frozen 2026.1 lock.</summary>
+    private const int LockedConcurrentVirtualUsers = 170;
+
+    /// <summary><c>soak.minimumSteadyStateSeconds</c> in the frozen 2026.1 lock.</summary>
+    private const int LockedMinimumSteadyStateSeconds = 3600;
 }
