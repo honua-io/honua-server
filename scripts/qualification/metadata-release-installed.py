@@ -306,6 +306,11 @@ class Harness:
         assert recovered["status"] == "RolledBack", recovered
         graph = self.current()["graph"]
         assert graph["services"] == later["graph"]["services"], "rollback discarded an unrelated service update"
+        foreign_service = next(service for service in graph["services"] if service["metadata"]["id"] == "svc-cng-stac")
+        policy = foreign_service["accessPolicy"]
+        assert policy["allowAnonymous"] is False, policy
+        assert policy["allowedRoles"] == ["recovery-reviewer"], policy
+        self.receipt["preservedServicePolicy"] = {"allowAnonymous": False, "allowedRoles": ["recovery-reviewer"]}
         fields = {f["name"]: f["type"] for f in graph["resources"][0]["schemaFields"]}
         assert fields == {"objectid": "integer", "name": "string", "category": "string", "population": "integer",
                           "ratio": "double", "active": "boolean", "observed_at": "datetime", "geometry": "geometry"}, fields
