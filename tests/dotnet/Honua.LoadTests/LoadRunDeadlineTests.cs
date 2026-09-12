@@ -9,6 +9,14 @@ namespace Honua.LoadTests;
 public sealed class LoadRunDeadlineTests
 {
     [UnitTest]
+    public void TryComplete_LongBudget_DoesNotOverflowTaskWaitTimeout()
+    {
+        var expected = new object();
+        Assert.True(LoadRunDeadline.TryComplete(() => expected, TimeSpan.FromDays(300), out var result));
+        Assert.Same(expected, result);
+    }
+
+    [UnitTest]
     public void TryComplete_BlockedSession_RefusesPartialResultWithinBudget()
     {
         using var releaseSession = new ManualResetEventSlim();

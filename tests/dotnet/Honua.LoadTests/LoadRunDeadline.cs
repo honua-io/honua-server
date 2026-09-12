@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.LoadTests;
@@ -16,12 +17,20 @@ internal static class LoadRunDeadline
     {
         // Keep the watchdog off NBomber's worker pool. LongRunning creates a background
         // thread, so a stuck session cannot keep the CLI alive after Main returns 124.
+        var started = Stopwatch.GetTimestamp();
         var run = Task.Factory.StartNew(action, CancellationToken.None,
             TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        if (!run.Wait(budget))
+        var remaining = budget;
+        // Task.Wait(TimeSpan) accepts at most Int32.MaxValue milliseconds. Chunk
+        // longer sessions while retaining one monotonic wall-clock deadline.
+        while (!run.Wait(remaining > TimeSpan.FromDays(1) ? TimeSpan.FromDays(1) : remaining))
         {
-            result = null;
-            return false;
+            remaining = budget - Stopwatch.GetElapsedTime(started);
+            if (remaining <= TimeSpan.Zero)
+            {
+                result = null;
+                return false;
+            }
         }
 
         result = run.GetAwaiter().GetResult();

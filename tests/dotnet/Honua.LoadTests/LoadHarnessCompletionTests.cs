@@ -76,7 +76,8 @@ public sealed class LoadHarnessCompletionTests
         foreach (var argument in new[]
         {
             typeof(Program).Assembly.Location, "--base-url", address, "--profile", failureMode == 3 ? "quick" : "soak",
-            "--ramp-up", "2s", "--duration", "6s", "--ramp-down", "2s",
+            // Match the bare numeric seconds forwarded by the candidate producer.
+            "--ramp-up", "2", "--duration", "6", "--ramp-down", "2",
             "--stats-out", statsPath, "--report-folder", directory, "--report-formats", "csv"
         })
         {

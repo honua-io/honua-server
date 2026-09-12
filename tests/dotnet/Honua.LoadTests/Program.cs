@@ -450,9 +450,9 @@ internal static class Program
         writer.WriteLine("Options:");
         writer.WriteLine("  --base-url <url>         Base URL for Honua Server (default: http://localhost:5000)");
         writer.WriteLine("  --profile <name>         Load profile: quick, nightly, soak (default: quick)");
-        writer.WriteLine("  --duration <timespan>    Override steady-state duration (e.g., 30m, 00:30:00)");
-        writer.WriteLine("  --ramp-up <timespan>     Override ramp-up duration");
-        writer.WriteLine("  --ramp-down <timespan>   Override ramp-down duration");
+        writer.WriteLine("  --duration <timespan>    Override steady-state duration (e.g., 1800, 30m, 00:30:00)");
+        writer.WriteLine("  --ramp-up <timespan>     Override ramp-up duration (bare numbers are seconds)");
+        writer.WriteLine("  --ramp-down <timespan>   Override ramp-down duration (bare numbers are seconds)");
         writer.WriteLine("  --layer-id <id>          Feature layer id (default: 0)");
         writer.WriteLine("  --collection-id <id>     OGC collection id (default: 0)");
         writer.WriteLine("  --tile-matrix-set <id>   Tile matrix set id (default: WebMercatorQuad)");
@@ -734,6 +734,13 @@ internal sealed class LoadTestOptions
 
     private static bool TryParseDuration(string value, out TimeSpan duration)
     {
+        // The capacity producer exports numeric seconds (RAMP_UP=300). TimeSpan
+        // parses a bare integer as DAYS, so handle seconds before its rich syntax.
+        if (TryParseWithUnit(value, TimeSpan.FromSeconds, out duration))
+        {
+            return true;
+        }
+
         if (TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out duration))
         {
             return true;
@@ -765,10 +772,18 @@ internal sealed class LoadTestOptions
 
     private static bool TryParseWithUnit(string value, Func<double, TimeSpan> factory, out TimeSpan duration)
     {
-        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
+        if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+            && double.IsFinite(number))
         {
-            duration = factory(number);
-            return true;
+            try
+            {
+                duration = factory(number);
+                return true;
+            }
+            catch (OverflowException)
+            {
+                return FailDuration(out duration);
+            }
         }
 
         duration = default;
