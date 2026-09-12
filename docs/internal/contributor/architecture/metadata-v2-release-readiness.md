@@ -366,7 +366,11 @@ proposed re-pin in [honua-release#342](https://github.com/honua-io/honua-release
 The current pin `7ba422672e0c751843b17beb36e954a019cc19fb` predates #4663 and
 fails the prior-capture/staging invariant; it cannot qualify the 2026.1 safe rollout
 promise. Evidence for the proposed `9f2f16a5b9d19becf052f8b2635cf7c2ce109fdd`
-image does not certify the older pin. Re-run against the accepted manifest when
+image passed all five installed scenarios. Its positive receipt does not certify
+the older pin. Both [receipts and compressed logs](../../../../tests/baselines/metadata-release-installed/2026-09-12/)
+are retained with exact input hashes; the current pin advanced the live graph
+from revision 3 to 4 and exposed `owner_email` during preparation while its
+operation still had no captured prior revision. Re-run against the accepted manifest when
 the release owner advances the candidate.
 
 ## Review Output
