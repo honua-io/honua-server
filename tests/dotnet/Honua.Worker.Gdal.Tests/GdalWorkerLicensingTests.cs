@@ -41,7 +41,7 @@ public sealed class GdalWorkerLicensingTests
             ["Licensing:Edition"] = "Enterprise",
             ["Licensing:LicensePath"] = "/nonexistent/disabled-worker/license.json",
             ["Licensing:LicenseContent"] = licenseContent,
-            ["Licensing:LicenseContentSecretRef"] = "aws:secretsmanager:synthetic-disabled-license"
+            ["Licensing:LicenseContentSecretRef"] = null
         });
         builder.Services.AddGdalWorker(builder.Configuration);
         using var host = builder.Build();
