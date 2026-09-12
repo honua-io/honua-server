@@ -68,6 +68,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/operations/{id}/validate"),
         new("POST", "/api/v1/operations/{id}/submit"),
         new("GET", "/api/v1/operations/handles/{handleId}"),
+        new("POST", "/api/v1/operations/handles/{handleId}/secrets/{referenceId}/consume"),
         new("GET", "/api/v1/console/workflow-packages"),
         new("POST", "/api/v1/console/workflow-packages"),
         new("GET", "/api/v1/console/workflow-packages/{packageId}"),

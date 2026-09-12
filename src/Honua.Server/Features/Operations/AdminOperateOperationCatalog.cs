@@ -11,6 +11,23 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Server.Features.Operations;
 
+internal interface IAdminHttpOperationDefinition
+{
+    string OperationId { get; }
+    string Title { get; }
+    HttpMethod Method { get; }
+    string Path { get; }
+    string OpenApiOperationId { get; }
+    OperationSideEffectClass SideEffect { get; }
+    OperationBlastRadiusClass BlastRadius { get; }
+    bool SupportsDryRun { get; }
+    string? DryRunPath { get; }
+    HttpMethod? DryRunMethod { get; }
+    string? ContentType { get; }
+    OperationApprovalModel? ApprovalModel { get; }
+    OperationClass OperationClass { get; }
+}
+
 /// <summary>Release and operate descriptors projected from the shipped Admin OpenAPI contract.</summary>
 internal static class AdminOperateOperationCatalog
 {
@@ -27,7 +44,7 @@ internal static class AdminOperateOperationCatalog
         HttpMethod? DryRunMethod = null,
         string? ContentType = null,
         OperationApprovalModel? ApprovalModel = null,
-        OperationClass OperationClass = OperationClass.AdminConfigChange);
+        OperationClass OperationClass = OperationClass.AdminConfigChange) : IAdminHttpOperationDefinition;
 
     public static IReadOnlyList<Definition> Definitions { get; } =
     [
@@ -73,9 +90,8 @@ internal static class AdminOperateOperationCatalog
     private static OperationDescriptor[] BuildDescriptors() =>
         Definitions.Select(definition => BuildDescriptor(RequestContract, definition)).ToArray();
 
-    internal static JsonElement GetInputContract(string operationId, string name)
+    internal static JsonElement GetInputContract(IAdminHttpOperationDefinition definition, string name)
     {
-        var definition = Definitions.Single(item => item.OperationId == operationId);
         var operation = FindOperation(RequestContract, definition.OpenApiOperationId);
         if (operation.TryGetProperty("parameters", out var parameters))
         {
@@ -92,12 +108,12 @@ internal static class AdminOperateOperationCatalog
                 return ResolveInputContract(property);
             if (name == "body") return body;
         }
-        throw new InvalidOperationException($"Input contract '{operationId}.{name}' was not found.");
+        throw new InvalidOperationException($"Input contract '{definition.OperationId}.{name}' was not found.");
     }
 
     internal static JsonElement ResolveInputContract(JsonElement schema) => Resolve(RequestContract, schema);
 
-    private static OperationDescriptor BuildDescriptor(JsonElement root, Definition definition)
+    internal static OperationDescriptor BuildDescriptor(JsonElement root, IAdminHttpOperationDefinition definition)
     {
         var operation = FindOperation(root, definition.OpenApiOperationId);
         var inputs = BuildInputs(root, operation);
@@ -226,7 +242,8 @@ internal static class AdminOperateOperationCatalog
 }
 
 internal sealed class AdminOperateOperationApprovalRequestMapper(
-    AdminOperateOperationCatalog.Definition definition) : IOperationApprovalRequestMapper
+    IAdminHttpOperationDefinition definition,
+    IOperationSecretStore? secretStore = null) : IOperationApprovalRequestMapper
 {
     public string OperationId => definition.OperationId;
 
@@ -245,7 +262,7 @@ internal sealed class AdminOperateOperationApprovalRequestMapper(
             throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
         }
 
-        var payload = AdminApiOperationApprovalPayload.From(request, context);
+        var payload = AdminApiOperationApprovalPayload.From(request, context, secretStore);
         var serialized = JsonSerializer.Serialize(
             payload,
             AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);
