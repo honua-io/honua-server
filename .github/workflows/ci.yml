@@ -1602,10 +1602,10 @@ jobs:
             --no-restore \
             --configuration Release
 
-      - name: Install GDAL tools
+      - name: Install GDAL tools and native Parquet dependency
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -yqq gdal-bin
+          sudo apt-get install -yqq gdal-bin libatomic1
           ogrinfo --version
 
       - name: Install Python test dependencies
