@@ -90,6 +90,15 @@ contributor mechanics — do not give it frontmatter to quiet the gate. Add it t
 the manifest with a reason. The reasons are the part that keeps the boundary
 honest a year from now.
 
+## Where to go next
+
+| Page | Why |
+| --- | --- |
+| [Capability concepts](capabilities/README.md) | The generated half of the bundle, and the worked example of `resource` as identity. |
+| [Reference](../reference/README.md) | Where these pages sit in the table of contents. |
+| [Concepts](../concepts/README.md) | What `type: concept` looks like in practice. |
+| [Guides](../guides/README.md) | What `type: guide` looks like in practice. |
+
 ## This is a nine-repo contract now
 
 honua-server is one area of an aggregate: every published Honua documentation set
