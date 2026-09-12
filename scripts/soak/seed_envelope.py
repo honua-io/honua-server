@@ -117,7 +117,7 @@ def seed(connection, *, layer_count: int, features_per_layer: int) -> None:
                 """,
                 (SERVICE_NAME, layer_id, layer_id),
             )
-            for field_name, field_type, order, max_length, nullable, description in (
+            for field_name, field_type, order, max_length, nullable, field_description in (
                 ("objectid", "Integer", 0, None, False, "Object ID"),
                 ("name", "String", 1, 255, True, "Name"),
                 ("description", "String", 2, 500, True, "Description"),
@@ -140,7 +140,7 @@ def seed(connection, *, layer_count: int, features_per_layer: int) -> None:
                         nullable = EXCLUDED.nullable,
                         description = EXCLUDED.description;
                     """,
-                    (layer_id, field_name, field_type, order, max_length, nullable, description),
+                    (layer_id, field_name, field_type, order, max_length, nullable, field_description),
                 )
 
         # Re-seeding must be idempotent: the envelope is "featuresPerLayer", not

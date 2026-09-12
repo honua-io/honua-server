@@ -29,10 +29,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import contextlib
 import json
-import os
 import statistics
 import subprocess
 import sys
