@@ -510,6 +510,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
+                AppendLinkHeaders(context, links);
                 var gmlSchemaUrl = OgcFeaturesUtilities.BuildGmlApplicationSchemaUrl(baseUrl);
                 var gml = gmlResult.HasValue
                     ? OgcResponseFormatter.BuildGmlFeatureCollection(gmlResult.Value.Items, queryTotalCount, gmlResult.Value.Items.Length, DateTimeOffset.UtcNow, gmlSchemaUrl, outputCrsUri, outputAxisOrder)
@@ -1437,6 +1438,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
         await context.Response.BodyWriter.FlushAsync(cancellationToken);
     }
 
+    private static void AppendLinkHeaders(HttpContext context, ImmutableArray<Link> links)
+    {
+        foreach (var link in links.Where(link => !string.IsNullOrEmpty(link.Href)))
+        {
+            context.Response.Headers.Append("Link", $"<{link.Href}>; rel=\"{link.Rel}\"");
+        }
+    }
+
     // Cursor-paging streaming result for JSON (GeoJSON / application/json) responses.
     // The query is issued with Limit = effectiveLimit + 1; the extra row determines
     // hasMoreResults without relying on the stale pre-flight COUNT.
@@ -1628,10 +1637,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             // the spec-compliant location.
 
             var links = BuildItemsLinks(httpContext.Request, _collectionId, _streamBasePath, MediaTypes.Gml, _effectiveLimit, _effectiveOffset, _maxOffset, hasMoreResults);
-            foreach (var link in links.Where(link => !string.IsNullOrEmpty(link.Href)))
-            {
-                httpContext.Response.Headers.Append("Link", $"<{link.Href}>; rel=\"{link.Rel}\"");
-            }
+            AppendLinkHeaders(httpContext, links);
 
             await OgcResponseFormatter.StreamGmlFeatureCollectionAsync(
                 buffered,
