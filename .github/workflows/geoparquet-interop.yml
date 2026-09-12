@@ -89,14 +89,12 @@ jobs:
       - name: Verify live HTTP with GeoPandas and pyarrow
         if: ${{ !cancelled() }}
         working-directory: tests/python
-        env:
-          GITHUB_SHA: ${{ env.PRODUCER_COMMIT }}
         run: |
           mkdir -p ../TestResults
           report="../TestResults/geoparquet-interop.xml"
           status=0
           pytest --tb=short -q feature_server/test_geoparquet_interop.py --junitxml="${report}" || status=$?
-          python ../../scripts/ci/check-geoparquet-interop.py "${report}" "${status}"
+          python ../../scripts/ci/check-geoparquet-interop.py "${report}" "${status}" "$(git rev-parse HEAD)"
 
       - name: Require every .NET evidence cell to pass
         if: ${{ !cancelled() }}

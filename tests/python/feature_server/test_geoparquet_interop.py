@@ -221,7 +221,10 @@ class TestGeoParquetSdkInterop:
         table_rows = pyarrow_parquet.read_table(io.BytesIO(response.content)).to_pylist()
         geo = _read_geo_metadata(response.content)
         column = geo["columns"][geo["primary_column"]]
-        assert column["geometry_types"] == ["Point"]
+        # seed_test_catalog declares an untyped Mixed geometry column. Its type
+        # metadata remains unknown even when this page contains only points;
+        # every actual WKB geometry is still required to be a Point below.
+        assert column["geometry_types"] == []
         covering = column["covering"]["bbox"]
         bbox_column = covering["xmin"][0]
         for ordinate in ("xmin", "ymin", "xmax", "ymax"):

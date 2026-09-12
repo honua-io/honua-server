@@ -4,8 +4,8 @@
 
 """Record mandatory GeoParquet pytest cells; skips are non-passing (#4396).
 
-Usage: check-geoparquet-interop.py REPORT PYTEST_EXIT_CODE
-Run from tests/python with GITHUB_SHA and GITHUB_STEP_SUMMARY set.
+Usage: check-geoparquet-interop.py REPORT PYTEST_EXIT_CODE PRODUCER_COMMIT
+Run from tests/python with GITHUB_STEP_SUMMARY set.
 """
 
 import json
@@ -22,7 +22,7 @@ failures = sum(cell.find("failure") is not None for cell in cells)
 executed = len(cells) - skipped - errors
 passed = executed - failures
 receipt = dict(
-    suite="geoparquet-interop", commit=os.environ["GITHUB_SHA"],
+    suite="geoparquet-interop", commit=sys.argv[3],
     runtime="linux-glibc", tests=len(cells), executed=executed,
     passed=passed, skipped=skipped, failures=failures, errors=errors,
     pytest_exit_code=int(sys.argv[2]),

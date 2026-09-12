@@ -1622,7 +1622,7 @@ jobs:
           report="../TestResults/geoparquet-interop.xml"
           status=0
           pytest --tb=short -q feature_server/test_geoparquet_interop.py --junitxml="${report}" || status=$?
-          python ../../scripts/ci/check-geoparquet-interop.py "${report}" "${status}"
+          python ../../scripts/ci/check-geoparquet-interop.py "${report}" "${status}" "$(git rev-parse HEAD)"
 
       - name: Run Python Integration Tests (OGC + FeatureServer + GDAL)
         run: pytest --tb=short
