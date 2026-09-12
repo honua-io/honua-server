@@ -52,6 +52,35 @@ on:
         default: true
         type: boolean
 
+  workflow_call:
+    inputs:
+      candidate_sha:
+        description: Full 40-character honua-server commit SHA to certify (the manifest-pinned candidate)
+        required: true
+        type: string
+      candidate_image:
+        description: >-
+          Optional immutable image reference (repo@sha256:...) to run instead of building the
+          candidate source. Must carry HONUA_GIT_SHA=candidate_sha; the run verifies that by
+          reading the deployment revision back out of the running server either way.
+        required: false
+        default: ''
+        type: string
+      lock_ref:
+        description: honua-release ref to read certification/capacity-envelope.v1.json from
+        required: false
+        default: trunk
+        type: string
+      steady_state_seconds:
+        description: Steady-state duration. 0 uses the lock's soak.minimumSteadyStateSeconds.
+        required: false
+        default: '0'
+        type: string
+      publish:
+        description: Publish the signed receipt to the soak-receipts branch and print its URL
+        required: false
+        default: true
+        type: boolean
 permissions:
   contents: write        # publishes the receipt to the orphan soak-receipts branch
   id-token: write        # actions/attest-build-provenance

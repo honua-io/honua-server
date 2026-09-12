@@ -1,0 +1,36 @@
+name: capacity-soak-proof
+
+# TEMPORARY, BRANCH-SCOPED PROOF LANE — delete before merge.
+#
+# `workflow_dispatch` only resolves for workflows that already exist on the default branch, so a
+# brand-new producer cannot be dispatched from its own pull request. This lane exists so
+# capacity-soak-candidate.yml can be PROVEN on this branch before it is merged: it calls the real
+# producer, unmodified, with the manifest-pinned candidate SHA.
+#
+# It fires only on a commit whose message contains `[soak]`, because each run is a full
+# hour-plus soak on a shared runner.
+
+on:
+  push:
+    branches: [ci/capacity-soak-candidate-receipt]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  packages: read
+
+jobs:
+  proof:
+    if: ${{ contains(github.event.head_commit.message, '[soak]') }}
+    uses: ./.github/workflows/capacity-soak-candidate.yml
+    with:
+      candidate_sha: 7ba422672e0c751843b17beb36e954a019cc19fb
+      lock_ref: trunk
+      steady_state_seconds: '0'
+      publish: true
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      packages: read
