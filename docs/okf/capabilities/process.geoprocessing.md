@@ -18,7 +18,7 @@ Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surfac
 | Edition | Community |
 | Surface maturity | 15 implemented |
 | Registry entries | 15 |
-| Proving tests | 118 |
+| Proving tests | 122 |
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 

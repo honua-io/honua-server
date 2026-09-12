@@ -18,7 +18,7 @@ Import geospatial data from file uploads (GeoJSON, Shapefile, GeoPackage).
 | Edition | Community |
 | Surface maturity | 74 implemented |
 | Registry entries | 74 |
-| Proving tests | 227 |
+| Proving tests | 230 |
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
