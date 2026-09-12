@@ -44,10 +44,12 @@ jobs:
     # (#3812) boot the same deployment; a restart with a different configuration would run
     # the load profile against a server the readiness check never validated.
     env:
-      ASPNETCORE_URLS: ${{ env.BASE_URL }}
+      # Literals, not ${{ env.* }}: the env context is not available to a job-level env
+      # block. They mirror the workflow-level constants above.
+      ASPNETCORE_URLS: "http://localhost:5000"
       ASPNETCORE_ENVIRONMENT: Production
       HONUA_ADMIN_PASSWORD: "Load-Soak-Admin-Pass1!"
-      PUBLIC_BASE_URL: ${{ env.BASE_URL }}
+      PUBLIC_BASE_URL: "http://localhost:5000"
       HostValidation__AllowedHosts__0: "localhost"
       # The soak harness deliberately floods the server from a single host, so the
       # opt-in app-level rate limiter (activated by #355 / appsettings.Security.json,
@@ -75,7 +77,7 @@ jobs:
       Limits__Connections__MaxConnectionPoolSize: "40"
       Limits__Connections__MinConnectionPoolSize: "0"
       Limits__Connections__ConnectionAcquisitionTimeoutSeconds: "15"
-      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=${{ env.DB_NAME }};Username=${{ env.DB_USER }};Password=${{ env.DB_PASSWORD }};Maximum Pool Size=40
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=honua_load;Username=honua;Password=honua_password;Maximum Pool Size=40
     services:
       postgres:
         image: postgis/postgis:16-3.4

@@ -56,6 +56,7 @@ permissions:
   contents: write        # publishes the receipt to the orphan soak-receipts branch
   id-token: write        # actions/attest-build-provenance
   attestations: write    # actions/attest-build-provenance
+  packages: read         # the candidate image build restores Geospatial.Grpc from GitHub Packages
 
 concurrency:
   group: capacity-soak-candidate
@@ -209,9 +210,17 @@ jobs:
       - name: Build the candidate image
         id: image
         if: ${{ inputs.candidate_image == '' }}
+        env:
+          GITHUB_ACTOR_SECRET: ${{ github.actor }}
+          GITHUB_TOKEN_SECRET: ${{ github.token }}
         run: |
           set -euo pipefail
-          docker build candidate \
+          # The restore pulls Geospatial.Grpc from GitHub Packages, which is authenticated: without
+          # these secrets the build dies at NU1301 401 (this is the same pair deploy-platform-images
+          # passes). BuildKit keeps them out of the image layers.
+          DOCKER_BUILDKIT=1 docker build candidate \
+            --secret "id=github_actor,env=GITHUB_ACTOR_SECRET" \
+            --secret "id=github_token,env=GITHUB_TOKEN_SECRET" \
             --build-arg "HONUA_GIT_SHA=${{ inputs.candidate_sha }}" \
             --tag "honua-server:candidate-${{ inputs.candidate_sha }}"
           digest="$(docker image inspect "honua-server:candidate-${{ inputs.candidate_sha }}" --format '{{.Id}}')"

@@ -307,18 +307,18 @@ def main() -> int:
 
     args.out.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"receipt payload: {args.out} ({len(canonical_json(receipt))} canonical bytes)")
+    for name, signal in sorted(signals.items()):
+        marker = "OK " if signal.status == STATUS_OBSERVED else "BAD"
+        print(f"  {marker} {name}: {signal.value if signal.status == STATUS_OBSERVED else signal.detail}")
 
-    # Self-check against the very rules honua-release's gate applies, so a receipt that would
-    # be rejected there is never signed, published or advertised from here.
+    # Self-check against the very rules honua-release's gate applies, so a receipt that would be
+    # rejected there is never advertised from here as if it had passed.
     failures = evaluate(
         lock,
         {**receipt, "signature": "self-check", "signingIdentity": "self-check"},
         lock_digest(args.lock),
         args.candidate_sha,
     )
-    for name, signal in sorted(signals.items()):
-        marker = "OK " if signal.status == STATUS_OBSERVED else "BAD"
-        print(f"  {marker} {name}: {signal.value if signal.status == STATUS_OBSERVED else signal.detail}")
     if failures:
         print("capacity-soak self-check: FAIL", file=sys.stderr)
         for failure in failures:
