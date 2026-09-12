@@ -60,6 +60,7 @@ def pinned_server(manifest: Path) -> dict:
 class Harness:
     def __init__(self, candidate: dict, output: Path):
         self.harness_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+        self.seed = (ROOT / "docker/cng/seed.sql").read_bytes()
         self.candidate = candidate
         self.output = output
         self.prefix = "honua-4619-" + secrets.token_hex(4)
@@ -68,7 +69,8 @@ class Harness:
         self.base = ""
         self.created = []
         self.receipt = {"schema": "honua.metadata-release-installed/v1", "candidate": candidate,
-                        "createdAt": datetime.now(timezone.utc).isoformat(), "scenarios": [], "status": "failed"}
+                        "createdAt": datetime.now(timezone.utc).isoformat(), "fixtureSha256": hashlib.sha256(self.seed).hexdigest(),
+                        "scenarios": [], "status": "failed"}
 
     def sql(self, statement: str) -> str:
         return run("docker", "exec", "-i", "-e", "PGPASSWORD=" + self.password, self.pg, "psql", "-h", "127.0.0.1", "-XAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "honua", data=statement)
@@ -147,7 +149,7 @@ class Harness:
         self.base = "http://" + run("docker", "port", self.server, "8080/tcp")
         self.ready()
         self.sql("CREATE TABLE IF NOT EXISTS public.features (objectid bigserial PRIMARY KEY, layer_id int NOT NULL, geometry geometry, attributes jsonb, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now());")
-        self.sql((ROOT / "docker/cng/seed.sql").read_text())
+        self.sql(self.seed.decode())
         run("docker", "restart", self.server)
         self.ready()
 
@@ -188,7 +190,15 @@ class Harness:
         script = "if redis.call('GET',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) else return 0 end"
         assert run("docker", "exec", self.redis, "redis-cli", "--raw", "EVAL", script, "1", key, self.prefix) == "1"
         deadline = time.monotonic() + 45
+        cancelled_etl = False
         while time.monotonic() < deadline:
+            if (not cancelled_etl and before["metadataRelease"]["executionPlan"].get("dataPopulateWorkloadId") == "cancelled-workload"):
+                job_id = "metadata-release-etl-" + operation_id
+                exists = run("docker", "exec", self.redis, "redis-cli", "--raw", "EXISTS", "controlplane:job:" + job_id)
+                if exists == "1":
+                    cancellation = self.request("/api/v1/admin/jobs/" + job_id + "/cancel", {}, admin=True)
+                    self.receipt["etlCancellation"] = cancellation
+                    cancelled_etl = True
             op = self.operation(operation_id)
             if op["version"] != before["version"]:
                 self.hold(operation_id)
@@ -240,6 +250,13 @@ class Harness:
         operation_id = self.submit("staged-crash-recovery")
         staged = self.until(operation_id, "ServicePublication")
         release = staged["metadataRelease"]
+        self.receipt["stagedOperation"] = staged
+        live_at_staging = self.current()
+        self.receipt["stagingObservation"] = {
+            "priorRevision": before["revision"], "priorEtag": before["etag"],
+            "liveRevisionAtStaging": live_at_staging["revision"], "liveEtagAtStaging": live_at_staging["etag"],
+            "liveFieldNames": [f["name"] for f in live_at_staging["graph"]["resources"][0]["schemaFields"]],
+        }
         # A pre-#4663 candidate fails here: it has already changed the live graph.
         assert release.get("priorRevision") == before["revision"], "prior identity missing or captured after mutation"
         assert release["priorEtag"] == before["etag"]
@@ -250,7 +267,6 @@ class Harness:
         assert candidate["etag"] == release["candidateEtag"]
         assert "owner_email" in {f["name"] for f in candidate["graph"]["resources"][0]["schemaFields"]}
         assert self.sql(f"SELECT count(*) FROM honua.metadata_v2_resources_idx WHERE environment='default' AND revision={int(release['candidateRevision'])}") == "0"
-        self.receipt["stagedOperation"] = staged
         run("docker", "kill", "--signal", "KILL", self.server)
         run("docker", "start", self.server)
         self.ready()
@@ -303,7 +319,7 @@ class Harness:
 
         for label, extra, blocker in [
             ("unsafe-etl-rejected", {"dataPopulateWorkloadId": "unregistered-workload", "dataPopulateFields": ["population"]}, "metadata-release-etl-unproven-compensation"),
-            ("etl-failure-cleans-stage", {"dataPopulateWorkloadId": "unregistered-workload", "dataPopulateFields": ["owner_email"]}, "metadata-release-etl-failed"),
+            ("cancelled-etl-cleans-stage", {"dataPopulateWorkloadId": "cancelled-workload", "dataPopulateFields": ["owner_email"]}, "metadata-release-etl-failed"),
         ]:
             before = self.current()
             operation_id = self.submit(label, **extra)
@@ -351,6 +367,8 @@ def main():
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if not __debug__:
+        parser.error("qualification requires assertions; do not use Python optimization")
     args.output.mkdir(parents=True, exist_ok=False)
     candidate = pinned_server(args.manifest)
     candidate["manifestSha256"] = hashlib.sha256(args.manifest.read_bytes()).hexdigest()
