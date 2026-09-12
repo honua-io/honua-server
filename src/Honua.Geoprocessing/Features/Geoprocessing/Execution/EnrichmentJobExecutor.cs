@@ -463,7 +463,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
     private List<IFeature> ParseInlineSource(string inlineUri, int maxFeatures)
     {
         if (!FeatureCollectionArtifact.TryParseDataUri(
-                inlineUri, out var collection, out var error, _options.CurrentValue.MaxArtifactBytes))
+                inlineUri, out var collection, out var error, Math.Min(_options.CurrentValue.MaxArtifactBytes, _maxInputBytes)))
         {
             throw new TransformInputException($"'input' {error}");
         }
@@ -476,6 +476,15 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             throw new TransformInputException(
                 $"staged 'input' source exceeds the configured limit of {maxFeatures} features; "
                 + "stage fewer features or raise the limit.");
+        }
+
+        var totalVertices = LayerComputationBudget.CountVertices(collection);
+        if (totalVertices > _options.CurrentValue.MaxLayerVertices
+            || collection.Any(feature => (feature.Geometry?.NumPoints ?? 0) > _maxVerticesPerGeometry))
+        {
+            throw new TransformInputException(
+                "staged 'input' exceeds the configured MaxLayerVertices or MaxVerticesPerGeometry budget; " +
+                "simplify the input or stage fewer features, then resubmit.");
         }
 
         return [.. collection];

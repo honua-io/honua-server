@@ -240,11 +240,9 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // #4629: serialization allocates the GeoJSON text, a parsed copy and the re-emitted
-        // payload, so checking MaxArtifactBytes only afterwards let an oversized output cost
-        // several times its size before failing. Refuse up front when even the smallest possible
-        // encoding of the output's coordinates cannot fit; the post-serialization check below
-        // still covers attributes and real ordinate widths.
+        // Refuse before encoding when even the smallest coordinate representation cannot
+        // fit. The streaming writer then charges attributes and actual ordinate widths
+        // before each bounded write, without a second JSON document (#4629).
         var maxBytes = Options.CurrentValue.MaxArtifactBytes;
         var outputVertices = output.Sum(feature => (long)(feature.Geometry?.NumPoints ?? 0));
         if (outputVertices * MinSerializedBytesPerVertex > maxBytes)
@@ -255,7 +253,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                 $"{ProcessId} output has {outputVertices} vertices across {output.Count} features, which needs at least " +
                 $"{outputVertices * MinSerializedBytesPerVertex} bytes once serialized and exceeds the configured " +
                 $"MaxArtifactBytes={maxBytes}; stopped before serialization. Narrow the selection (where/objectIds/geometry/time), " +
-                "simplify the input, or raise Geoprocessing:Executor:MaxArtifactBytes, then resubmit.");
+                "simplify the input, or raise Geoprocessing:Executors:MaxArtifactBytes, then resubmit.");
         }
 
         await context.ReportProgressAsync(80, $"Encoding {ProcessId} artifact", cancellationToken).ConfigureAwait(false);
