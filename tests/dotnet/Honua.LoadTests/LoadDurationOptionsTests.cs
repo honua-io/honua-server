@@ -5,6 +5,9 @@ using Xunit;
 
 namespace Honua.LoadTests;
 
+/// <summary>
+/// Verifies duration arguments match the candidate producer's seconds contract.
+/// </summary>
 public sealed class LoadDurationOptionsTests
 {
     [Theory]
