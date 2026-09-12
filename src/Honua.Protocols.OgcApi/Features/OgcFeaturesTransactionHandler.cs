@@ -131,7 +131,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             // DELETE requires Delete — so an insert-only grantee cannot slip an update or delete
             // through the batch surface. Each distinct kind is checked once.
             var batchOperationError = await AuthorizeBatchOperationKindsAsync(
-                context, resource, layerValidation.Service, batchRequest, cancellationToken).ConfigureAwait(false);
+                context, resource, layerValidation.Service, publication, batchRequest, cancellationToken).ConfigureAwait(false);
             if (batchOperationError is not null)
             {
                 return batchOperationError;
@@ -328,6 +328,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         HttpContext context,
         MetadataV2Resource resource,
         MetadataV2Service? service,
+        MetadataV2Publication publication,
         BatchRequest batchRequest,
         CancellationToken cancellationToken)
     {
@@ -357,6 +358,27 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             if (error is not null)
             {
                 return error;
+            }
+
+            // The single-feature surfaces get this from ValidateCollectionWriteAccessV2Async,
+            // which is called here without a specific operation because a batch body may mix
+            // kinds. Each distinct kind present must still be declared by the publication,
+            // otherwise the batch surface accepts edits the collection never advertised
+            // (#4707).
+            if (service is not null)
+            {
+                var capability = op switch
+                {
+                    AuthorizationOperation.Insert => MetadataV2EditCapabilities.Create,
+                    AuthorizationOperation.Update => MetadataV2EditCapabilities.Update,
+                    _ => MetadataV2EditCapabilities.Delete
+                };
+                var capabilityError = LayerValidationHelpers.ValidateDeclaredEditCapability(
+                    context, service, publication, capability);
+                if (capabilityError is not null)
+                {
+                    return capabilityError;
+                }
             }
         }
 
