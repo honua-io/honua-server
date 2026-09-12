@@ -1133,6 +1133,99 @@ public sealed class GeoParquetQueryFormatterTests
         return ((DoubleArray)bbox.Fields[index]).GetValue(row);
     }
 
+    /// <summary>
+    /// honua-server#4666: a resource may declare geometry through its schema alone —
+    /// <see cref="MetadataV2Resource.Spatial"/> is nullable, so a graph compiled from a source
+    /// that carries a geometry column but no declared layer geometry type leaves the slot unset.
+    /// The writer used to read only the typed slot, so such a layer was served as an
+    /// attribute-only Parquet file: silent, unsignalled geometry loss for every consumer.
+    /// </summary>
+    [Fact]
+    public async Task FormatAsGeoParquet_WhenSpatialSlotIsAbsentButSchemaDeclaresGeometry_StillWritesGeometryColumn()
+    {
+        // The expected ordinates are chosen here, encoded to WKB by NetTopologySuite and read back
+        // by ParquetSharp + a fresh WKBReader — the oracle is this literal, not a captured payload.
+        const double ExpectedX = -157.8583;
+        const double ExpectedY = 21.3069;
+
+        var resource = CreateResourceWithoutSpatialSlot(
+            Field("objectid", MetadataV2FieldType.BigInteger, nullable: false),
+            Field("name", MetadataV2FieldType.String, length: 255));
+        resource.Spatial.Should().BeNull("this fixture is the no-spatial-slot shape under test");
+        resource.ReadGeometryType().Should().Be(MetadataV2GeometryType.None,
+            "the geometry type is unresolvable without the spatial slot - that is the trigger condition");
+
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(ExpectedX, ExpectedY),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["name"] = "Honolulu Harbor"
+            }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            resource,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        batch!.Schema.FieldsList.Select(f => f.Name)
+            .Should().Contain("geometry", "a GeoParquet payload without a geometry column is data loss");
+
+        var geometryArray = batch.Column("geometry").Should().BeOfType<BinaryArray>().Which;
+        geometryArray.IsNull(0).Should().BeFalse();
+        var decoded = new WKBReader().Read(geometryArray.GetBytes(0).ToArray());
+        decoded.Should().BeOfType<Point>();
+        ((Point)decoded).X.Should().BeApproximately(ExpectedX, 1e-9);
+        ((Point)decoded).Y.Should().BeApproximately(ExpectedY, 1e-9);
+
+        // The `geo` key is what tells a reader the binary column is geometry; a file carrying the
+        // column but not the metadata is still a plain Parquet file to GDAL/GeoPandas.
+        reader.Schema.Metadata.Should().ContainKey("geo");
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geoDoc.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry");
+        geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
+            .GetProperty("encoding").GetString().Should().Be("WKB");
+        geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
+            .GetProperty("geometry_types").EnumerateArray()
+            .Select(e => e.GetString()).Should().Equal("Point");
+    }
+
+    /// <summary>
+    /// A resource whose geometry is declared only by a <see cref="MetadataV2FieldType.Geometry"/>
+    /// schema field, with no <see cref="MetadataV2Resource.Spatial"/> slot at all.
+    /// </summary>
+    private static MetadataV2Resource CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "test-layer",
+                Name = "test_layer",
+                Description = "Test Layer"
+            },
+            SchemaFields =
+            [
+                .. fields,
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = true
+                }
+            ]
+        };
+
     private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)
         => CreateResource(fields);
 
