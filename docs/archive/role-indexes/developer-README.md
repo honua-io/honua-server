@@ -39,8 +39,8 @@ Build applications and integrations with Honua APIs and SDKs.
 
 ## Spec Grammar
 
-- [Spec Grammar v1.0](../../developer/spec-grammar/v1.0/README.md) — Declarative geospatial spec language (source, scope, compute, map, output) + [JSON Schema](../../developer/spec-grammar/v1.0/spec.schema.json) and [EBNF](../../developer/spec-grammar/v1.0/spec.ebnf)
-- [Spec Grounding v1.0](../../developer/spec-grounding/v1.0/README.md) — Deterministic NL mutate/summarize endpoints for canonical specs, structured clarifications, and failure envelopes
+- [Spec Grammar v1.0](../../developer/spec-grammar/spec-grammar-v1.0.md) — Declarative geospatial spec language (source, scope, compute, map, output) + [JSON Schema](../../developer/spec-grammar/v1.0/spec.schema.json) and [EBNF](../../developer/spec-grammar/v1.0/spec.ebnf)
+- [Spec Grounding v1.0](../../developer/spec-grounding/spec-grounding-v1.0.md) — Deterministic NL mutate/summarize endpoints for canonical specs, structured clarifications, and failure envelopes
 
 ## Internal Architecture
 

@@ -251,7 +251,7 @@ process IDs that a catalog addition could reshuffle.
 ## Spec-workspace grounding
 
 The workflow-family pipeline above grounds an operator goal into typed
-intents and catalog candidates. Editing a canonical [spec grammar](../../developer/spec-grammar/v1.0/README.md)
+intents and catalog candidates. Editing a canonical [spec grammar](../../developer/spec-grammar/spec-grammar-v1.0.md)
 document from natural language is a separate surface:
 
 - `POST /v1/grounding/spec/mutate` — NL turn → validated `SpecMutationPlan`
@@ -274,14 +274,14 @@ reason codes (`ambiguous_dataset`, `ambiguous_column`,
 candidate payloads. Explicit roadmap keywords (`schedule`, `publish`,
 `deploy`, `dashboard`, `app`) surface `out_of_scope`; other turns that
 cannot be mapped to the closed mutation catalog stay `unresolvable`.
-See [Spec Grounding v1.0](../../developer/spec-grounding/v1.0/README.md) for the full
+See [Spec Grounding v1.0](../../developer/spec-grounding/spec-grounding-v1.0.md) for the full
 contract and clause grammar.
 
 ## Related
 
 - [MCP_SERVER.md](../../guides/connect/ai-agents-mcp.md) — operator MCP surface (tool definitions,
   payload shapes, authorization story)
-- [Spec Grounding v1.0](../../developer/spec-grounding/v1.0/README.md) — spec-workspace
+- [Spec Grounding v1.0](../../developer/spec-grounding/spec-grounding-v1.0.md) — spec-workspace
   mutate/summarize HTTP surface
 - [ADR-0027](../contributor/adr/0027-deterministic-intent-clarification-workflow.md) — canonical workflow
   taxonomy and material-ambiguity contract

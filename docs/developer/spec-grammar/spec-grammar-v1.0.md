@@ -14,10 +14,10 @@ re-parsing the text.
 
 This directory publishes the v1.0 grammar artifacts:
 
-- **[`spec.schema.json`](spec.schema.json)** — JSON Schema Draft 2020-12 for
+- **[`spec.schema.json`](v1.0/spec.schema.json)** — JSON Schema Draft 2020-12 for
   the canonical JSON form. Authoritative. All clients and servers validate
   against this schema.
-- **[`spec.ebnf`](spec.ebnf)** — EBNF for the brace-based text projection
+- **[`spec.ebnf`](v1.0/spec.ebnf)** — EBNF for the brace-based text projection
   (human-friendly; converted to canonical JSON by the parser).
 
 ## Status
@@ -223,7 +223,7 @@ wire up any other feature slice.
   capability version in `SpecGrammarVersion.CurrentOperatorCapability`. The
   grammar version does not change.
 - **New section or keyword.** Bump the grammar minor (e.g. `v1.0` → `v1.1`).
-  Update both [`spec.ebnf`](spec.ebnf) and [`spec.schema.json`](spec.schema.json)
+  Update both [`spec.ebnf`](v1.0/spec.ebnf) and [`spec.schema.json`](v1.0/spec.schema.json)
   in the same change. Servers at `v1.x` accept specs up to their own minor
   and surface `UnsupportedGrammarVersion` for anything newer.
 - **Breaking change.** Bump the grammar major and publish a new directory
@@ -231,7 +231,7 @@ wire up any other feature slice.
 
 ## Related surfaces
 
-- [Spec Grounding v1.0](../../spec-grounding/v1.0/README.md) — `/v1/grounding/spec/mutate`
+- [Spec Grounding v1.0](../spec-grounding/spec-grounding-v1.0.md) — `/v1/grounding/spec/mutate`
   and `/v1/grounding/spec/summarize` author, refine, and describe canonical
   specs from natural-language turns while preserving unchanged sections
   byte-for-byte.
