@@ -168,10 +168,13 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             record.SourceId == resource.Id &&
             record.Category == "fields" &&
             record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated);
+        // #4600 (AC4): imported domains are persisted, served, enforced on applyEdits and verified by
+        // catalog reconciliation, so the classifier reports them as automated, not assisted.
         artifact.FidelityClassifications.Should().Contain(record =>
             record.SourceId == resource.Id &&
             record.Category == "domains" &&
-            record.AutomationStatus == MigrationFidelityAutomationStatuses.Assisted);
+            record.Code == ImportCompatibilityCodes.Compatible &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated);
         artifact.FidelityClassifications.Should().Contain(record =>
             record.SourceId == resource.Id &&
             record.Category == "subtypes" &&
@@ -203,16 +206,18 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
 
         artifact.FidelityMatrix.Should().NotBeNull();
         // Manual-review categories on current trunk are subtypes, renderers, and
-        // time-metadata (domains classify as Assisted; #1256 reclassifies the simple
-        // relationship as Automated), so the matrix carries exactly three manual-review cells.
+        // time-metadata (#1256 reclassifies the simple relationship as Automated; #4600
+        // reclassifies domains as Automated). Domains were this fixture's only assisted
+        // construct, so no assisted cell remains.
         artifact.FidelityMatrix!.Summary.Should().Match<MigrationFidelityMatrixSummary>(summary =>
-            summary.AutomatedCount >= 5 &&
-            summary.AssistedCount >= 1 &&
+            summary.AutomatedCount >= 6 &&
+            summary.AssistedCount == 0 &&
             summary.ManualReviewCount >= 3 &&
             summary.UnsupportedCount == 0);
         artifact.FidelityMatrix.Cells.Should().Contain(cell =>
             cell.Category == "domains" &&
-            cell.AutomationStatus == MigrationFidelityAutomationStatuses.Assisted &&
+            cell.AutomationStatus == MigrationFidelityAutomationStatuses.Automated &&
+            cell.Codes.SequenceEqual(new[] { ImportCompatibilityCodes.Compatible }) &&
             cell.SourceIds.SequenceEqual(new[] { resource.Id }));
         artifact.FidelityMatrix.Cells.Should().Contain(cell =>
             cell.Category == "relationships" &&
@@ -240,6 +245,14 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
         var resource = artifact.Resources.Should().ContainSingle().Subject;
         var named = resource.Fields.Single(f => f.Name == "ZONING");
         named.DomainType.Should().Be("codedValue");
+
+        // #4600: an over-cap coded-value domain is not persisted, so the classifier must not report the
+        // domains construct as automated for this resource.
+        artifact.FidelityClassifications.Should().ContainSingle(record =>
+                record.SourceId == resource.Id && record.Category == "domains")
+            .Which.Should().Match<MigrationFidelityClassificationRecord>(record =>
+                record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview &&
+                record.Code == ImportCompatibilityCodes.ArcGisDomainTruncated);
         named.DomainName.Should().Be("ZoningCode");
         named.DomainValues.Should().BeNull("over-cap coded-value domains drop the values rather than truncating silently");
 

@@ -277,22 +277,95 @@ public sealed class GeoservicesImportServiceScanTests
             new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance));
     }
 
+    /// <summary>
+    /// #4600 (acceptance criterion 4): imported coded-value and range domains are persisted, served,
+    /// enforced on edit and verified by catalog reconciliation, so the classifier reports them as
+    /// automated instead of "assisted / enforcement not automated".
+    /// </summary>
+    [Fact]
+    public async Task ScanSourceAsync_CapturedDomains_ClassifiesDomainsAsAutomated()
+    {
+        var service = CreateService(new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: """{"wkid":3857}""",
+            fieldsJson: FieldsWithCodedValueDomain(entryCount: 3)));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var domains = artifact.FidelityClassifications.Should().ContainSingle(c => c.Category == "domains").Subject;
+        domains.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.Automated);
+        domains.Code.Should().Be(ImportCompatibilityCodes.Compatible);
+        domains.ManualSteps.Should().BeEmpty();
+        domains.Metadata.Should().Contain("domainFieldCount", "2").And.NotContainKey("truncatedDomainCount");
+    }
+
+    /// <summary>
+    /// #4600: a coded-value domain over the capture cap is not persisted, so the field migrates without
+    /// its domain. The classifier must not claim that construct is automated.
+    /// </summary>
+    [Fact]
+    public async Task ScanSourceAsync_CodedValueDomainOverTheCaptureCap_ClassifiesDomainsAsManualReview()
+    {
+        var service = CreateService(new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: """{"wkid":3857}""",
+            fieldsJson: FieldsWithCodedValueDomain(entryCount: EsriFieldDomainParser.CodedValueDomainCap + 1)));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var domains = artifact.FidelityClassifications.Should().ContainSingle(c => c.Category == "domains").Subject;
+        domains.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.ManualReview);
+        domains.Code.Should().Be(ImportCompatibilityCodes.ArcGisDomainTruncated);
+        domains.ManualSteps.Should().ContainSingle();
+        domains.Metadata.Should().Contain("domainFieldCount", "2").And.Contain("truncatedDomainCount", "1");
+    }
+
+    /// <summary>
+    /// Two domain fields: <c>zone</c> carries a coded-value domain with <paramref name="entryCount"/>
+    /// entries and <c>score</c> a range domain, so the domain field count is 2 either way.
+    /// </summary>
+    private static string FieldsWithCodedValueDomain(int entryCount)
+    {
+        var codes = string.Join(",", Enumerable.Range(0, entryCount)
+            .Select(static i => $$"""{ "code": "Z{{i}}", "name": "Zone {{i}}" }"""));
+        return $$"""
+            [
+              { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+              { "name": "zone", "type": "esriFieldTypeString",
+                "domain": { "type": "codedValue", "name": "ZoneDomain", "codedValues": [{{codes}}] } },
+              { "name": "score", "type": "esriFieldTypeInteger",
+                "domain": { "type": "range", "name": "ScoreRange", "range": [0, 100] } }
+            ]
+            """;
+    }
+
     private sealed class GeoservicesScanHandler : HttpMessageHandler
     {
         private readonly string _serviceDescription;
         private readonly string? _rendererUrl;
         private readonly string? _expectedToken;
         private readonly JsonElement _spatialReference;
+        private readonly string? _fieldsJson;
 
         public GeoservicesScanHandler(
             string serviceDescription,
             string spatialReferenceJson,
             string? rendererUrl = null,
-            string? expectedToken = null)
+            string? expectedToken = null,
+            string? fieldsJson = null)
         {
             _serviceDescription = serviceDescription;
             _rendererUrl = rendererUrl;
             _expectedToken = expectedToken;
+            _fieldsJson = fieldsJson;
             _spatialReference = JsonDocument.Parse(spatialReferenceJson).RootElement.Clone();
         }
 
@@ -343,6 +416,7 @@ public sealed class GeoservicesImportServiceScanTests
                       "description": "Parcel polygons",
                       "geometryType": "esriGeometryPolygon",
                       "capabilities": "Query",
+                      {{(_fieldsJson is null ? string.Empty : "\"fields\": " + _fieldsJson + ",")}}
                       "spatialReference": {{_spatialReference.GetRawText()}},
                       "drawingInfo": {
                         "renderer": {{rendererJson}}
