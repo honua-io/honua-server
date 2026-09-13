@@ -59,3 +59,14 @@ and not a claim that the candidate is unavailable. Keep #3859 open.
 The accompanying source-host TRX, when packaged, is explicitly separate evidence:
 it executes the existing .NET startup and live route-discovery tests on the
 recorded source revision, not inside the native candidate image.
+
+## Retained execution
+
+The [immutable archive](evidence/7ba4226-preview-isolation.tar.gz) contains the
+manifest at release commit `f6c54b4396bdadb76676be7b839de71fb9a3de84`, native
+image receipt (71 HTTP observations, 46 refusal audit records, three rejected
+worker configurations), sanitized container logs, exact runner, and separately
+identified source-host TRX (10 passed, zero failures/skips). `binding.json` records
+the identities and qualification boundary. Both the archive and its entries have
+SHA-256 checksums; verify the outer checksum from `evidence/` with
+`sha256sum -c SHA256SUMS`.
