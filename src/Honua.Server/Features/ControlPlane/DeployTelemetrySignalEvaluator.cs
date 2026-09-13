@@ -906,7 +906,7 @@ internal sealed class PrometheusDeployTelemetryProviderEvaluator(
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(connection.TimeoutSeconds));
 
-        var client = httpClientFactory.CreateClient("control-plane-telemetry");
+        var client = httpClientFactory.CreateClient(ControlPlaneHttpClients.Telemetry);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
