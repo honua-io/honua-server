@@ -150,12 +150,22 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
         }
         using var observationBody = new StringContent($$"""
             {"phenomenonTime":"2026-08-01T00:00:00Z","result":42.25,
-             "Datastream":{"@iot.id":{{streamId}}},"FeatureOfInterest":{"@iot.id":987}}
+             "Datastream":{"@iot.id":{{streamId}}}
+            }
             """, Encoding.UTF8, "application/json");
         using var observationResponse = await admin.PostAsync("/sta/v1.1/Observations", observationBody);
         observationResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         using var observation = JsonDocument.Parse(await observationResponse.Content.ReadAsStringAsync());
         observation.RootElement.TryGetProperty("FeatureOfInterest@iot.navigationLink", out _).Should().BeFalse();
+        // The HTTP ingest surface does not accept FeatureOfInterest. Seed the nullable
+        // storage field directly to exercise both mapper branches from the original defect.
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema))
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE sta_observation SET feature_of_interest_id = 987 WHERE id = @id";
+            command.Parameters.AddWithValue("id", observation.RootElement.GetProperty("@iot.id").GetInt64());
+            (await command.ExecuteNonQueryAsync()).Should().Be(1);
+        }
         using var read = await GetAsync(observation.RootElement.GetProperty("@iot.selfLink").GetString()!);
         read.RootElement.GetProperty("result").GetDouble().Should().Be(42.25);
         read.RootElement.TryGetProperty("FeatureOfInterest@iot.navigationLink", out _).Should().BeFalse();

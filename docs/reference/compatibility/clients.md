@@ -136,7 +136,7 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   `FeatureOfInterest` from an Observation, returns HTTP 501. Follow the entity's
   `@iot.navigationLink` for supported relationships instead. FeaturesOfInterest
   and Locations are not exposed; observations omit FeatureOfInterest links even
-  when an ingested row carries an opaque FeatureOfInterest identifier. A `$filter` naming an unknown property, or carrying
+  when a stored row carries an opaque FeatureOfInterest identifier. A `$filter` naming an unknown property, or carrying
   a literal of the wrong type for its property, returns HTTP 400. `$filter` and
   `$orderby` on a single-entity route return HTTP 400 because they cannot apply.
 - **OGC API Processes negotiates sync and async execution.** Omission runs a process
