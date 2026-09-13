@@ -422,6 +422,10 @@ internal static partial class SceneEndpoints
                     {
                         case EnvelopeValidationResult.Allowed:
                             tokenTransport = extractedTokenTransport;
+                            // Envelope authorization does not attach a principal.
+                            // Notify the final cache policy so a fresh private
+                            // response cannot outlive the token's authorization.
+                            AuthenticationResponseCachePolicy.MarkAuthenticated(context);
                             break;
                         case EnvelopeValidationResult.Expired:
                             SceneAccessLog.TokenExpired(logger, scene.Id);
