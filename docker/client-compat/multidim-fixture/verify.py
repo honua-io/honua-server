@@ -52,6 +52,13 @@ def verify_zarr(s3, keys: set[str]) -> None:
     prefix = "imageserver/sea-surface-temperature.zarr/"
     with tempfile.TemporaryDirectory() as directory:
         for key in sorted(keys):
+            if not key.startswith(prefix):
+                raise AssertionError(f"Zarr object outside derived prefix: {key}")
+            # GDAL's /vsis3/ writer emits empty directory markers alongside
+            # real Zarr files. A marker is not a downloadable array chunk.
+            if key.endswith("/"):
+                assert s3.head_object(Bucket=BUCKET, Key=key)["ContentLength"] == 0, key
+                continue
             relative = Path(key.removeprefix(prefix))
             if relative.is_absolute() or ".." in relative.parts:
                 raise AssertionError(f"invalid Zarr object key: {key}")
