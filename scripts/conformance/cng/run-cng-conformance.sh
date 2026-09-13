@@ -364,6 +364,7 @@ echo -e "${YELLOW}Generating honua-produced PMTiles, 3D Tiles and COG-transcode 
 # `pipefail` is already set at the top of this script, so this captures the
 # generator's own exit status rather than tee's.
 dotnet run --project scripts/conformance/cng/artifact-gen/Honua.Cng.ArtifactGen.csproj \
+    -p:HonuaCngSourceRoot="${HONUA_CNG_SOURCE_ROOT:-$REPO_ROOT}" \
     -c Release -- "$ARTIFACTS_DIR" "$ARTIFACTS_DIR" 2>&1 | tee "$RESULTS_DIR/artifact-gen.log"
 ARTIFACT_GEN_STATUS=$?
 

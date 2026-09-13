@@ -35,6 +35,18 @@ on:
         required: false
         type: string
 
+  workflow_call:
+    inputs:
+      server_image:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+      candidate_cut_at:
+        required: true
+        type: string
+
 permissions:
   contents: read
   packages: read
@@ -47,7 +59,7 @@ concurrency:
   # cancellation would destroy a full conformance result and produce nothing in its
   # place. Split the group by tier: self-tests serialise against self-tests, the lane
   # against the lane.
-  group: cng-conformance-${{ github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'lane' || 'selftest' }}
+  group: cng-conformance-${{ github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && 'lane' || 'selftest' }}
   cancel-in-progress: true
 
 jobs:
@@ -76,11 +88,32 @@ jobs:
     runs-on: ubuntu-24.04
     # The lane must not run against a validator whose own tests are red.
     needs: validator-selftest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != ''
     timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+
+      - name: Check out the exact candidate source for offline Honua consumers
+        if: inputs.server_image != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: candidate-source
+
+      - name: Verify candidate identity before installing tools
+        if: inputs.server_image != ''
+        env:
+          SERVER_IMAGE: ${{ inputs.server_image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CUT_AT: ${{ inputs.candidate_cut_at }}
+        run: |
+          set -euo pipefail
+          python3 scripts/conformance/cng/artifact-gen/candidate_identity.py validate-inputs
+          actual="$(git -C candidate-source rev-parse HEAD)"
+          test "$actual" = "$SOURCE_SHA"
+          echo "HONUA_CNG_SOURCE_ROOT=$GITHUB_WORKSPACE/candidate-source" >> "$GITHUB_ENV"
+          echo "CNG_GENERATOR_SOURCE_SHA=$actual" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -159,6 +192,9 @@ jobs:
       - name: Run CNG conformance lane
         id: run
         env:
+          SERVER_IMAGE: ${{ inputs.server_image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CUT_AT: ${{ inputs.candidate_cut_at }}
           HONUA_CNG_SKIP_BUILD: ${{ inputs.server_image != '' }}
           HONUA_CNG_CLEANUP: 'false'
           # Official OSGeo ubuntu-full image includes the Arrow/Parquet driver
@@ -168,23 +204,28 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           HONUA_DOCKER_GITHUB_TOKEN: ${{ github.token }}
         run: |
-          set +e
+          set -uo pipefail
           trap 'docker compose -f docker/cng/compose.yml down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
-          if [[ -n "${{ inputs.server_image }}" ]]; then
-            if [[ ! "${{ inputs.server_image }}" =~ @sha256:[0-9a-f]{64}$ ]]; then
+          if [[ -n "$SERVER_IMAGE" ]]; then
+            if [[ ! "$SERVER_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
               echo "server_image must be digest-addressed" >&2
               exit 1
             fi
-            docker pull "${{ inputs.server_image }}"
-            docker tag "${{ inputs.server_image }}" honua-server:latest
+            docker pull "$SERVER_IMAGE" || exit 1
+            revision="$(docker image inspect "$SERVER_IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+            if [[ "$revision" != "$SOURCE_SHA" ]]; then
+              echo "Candidate image revision $revision differs from $SOURCE_SHA" >&2
+              exit 1
+            fi
+            docker tag "$SERVER_IMAGE" honua-server:latest
           fi
           bash ./scripts/conformance/cng/run-cng-conformance.sh
           cng_exit=$?
 
-          if [[ -n "${{ inputs.server_image }}" ]]; then
-            image_digest="${{ inputs.server_image }}"; image_digest="${image_digest##*@}"
-            source_sha="${{ inputs.source_sha }}"
-            candidate_cut_at="${{ inputs.candidate_cut_at }}"
+          if [[ -n "$SERVER_IMAGE" ]]; then
+            image_digest="$SERVER_IMAGE"; image_digest="${image_digest##*@}"
+            source_sha="$SOURCE_SHA"
+            candidate_cut_at="$CUT_AT"
             if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ || -z "$candidate_cut_at" ]]; then
               echo "Digest-addressed dispatch requires source_sha and candidate_cut_at" >&2
               exit 1
@@ -199,10 +240,10 @@ jobs:
             --native-results cng-results \
             --output cng-results/protocol-certification-fragment.json \
             --source-sha "$source_sha" \
-            --generator-source-sha "$GITHUB_SHA" \
+            --generator-source-sha "${CNG_GENERATOR_SOURCE_SHA:-$GITHUB_SHA}" \
             --image-digest "$image_digest" \
             --candidate-cut-at "$candidate_cut_at" \
-            --fixture-revision "docker/cng/seed.sql@$source_sha" \
+            --fixture-revision "docker/cng/seed.sql@$GITHUB_SHA" \
             --evidence-uri "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --base-url "http://localhost:8094"
           client_exit=$?
