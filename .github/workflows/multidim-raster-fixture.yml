@@ -45,7 +45,7 @@ jobs:
         run: |
           docker compose -f docker/client-compat/compose.yml \
             --profile multidim-fixture \
-            logs --no-color --tail=500 \
+            logs --no-color \
             > artifacts/multidim-raster-fixture/compose.log 2>&1 || true
 
       - name: Upload verification evidence

@@ -92,8 +92,11 @@ services:
       PGUSER: postgres
       PGPASSWORD: compat_password
       PGDATABASE: honua_compat
+    # The real server must own schema creation and its migration journal.
+    # Seeding first creates migration-owned tables without journal entries,
+    # which correctly makes startup/readiness reject the fixture (#4731/#4735).
     depends_on:
-      postgres:
+      honua:
         condition: service_healthy
     networks:
       - compat
@@ -169,8 +172,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      seed:
-        condition: service_completed_successfully
     networks:
       - compat
     healthcheck:
@@ -233,6 +234,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
       gdal-worker:
         condition: service_started
       multidim-object-seed:
@@ -252,6 +255,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -275,6 +280,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -293,6 +300,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -309,6 +318,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -332,6 +343,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -373,6 +386,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -410,6 +425,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -435,6 +452,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -460,6 +479,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -488,6 +509,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
