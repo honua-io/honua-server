@@ -4,8 +4,9 @@
 set -euo pipefail
 
 CONTRACT="honua.server-test-binaries.v1"
-MAX_ARCHIVE_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_ARCHIVE_BYTES:-268435456}"
-MAX_UNPACKED_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_UNPACKED_BYTES:-536870912}"
+# Must match package-server-test-binaries.sh (#4453 re-base).
+MAX_ARCHIVE_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_ARCHIVE_BYTES:-335544320}"
+MAX_UNPACKED_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_UNPACKED_BYTES:-805306368}"
 MAX_EVIDENCE_TTL_SECONDS="${HONUA_SERVER_TEST_ARTIFACT_MAX_TTL_SECONDS:-86400}"
 manifest=""
 destination=""
@@ -67,6 +68,15 @@ jq -e \
     (.file_count | type == "number" and . > 0)
     and ((.created_at_epoch | type) == "number" and .created_at_epoch > 0)
     and ((.expires_at_epoch | type) == "number" and .expires_at_epoch > .created_at_epoch)
+    and (.repo_root | type == "string" and startswith("/"))
+    and ((.static_web_asset_content_roots | type) == "object")
+    and ((.static_web_asset_content_roots.checkout | type) == "array")
+    and ((.static_web_asset_content_roots.nuget | type) == "array")
+    and ((.static_web_asset_content_roots.payload | type) == "array")
+    and all(.static_web_asset_content_roots.payload[];
+      type == "string"
+      and test("^[A-Za-z0-9_.@+-]+(/[A-Za-z0-9_.@+-]+)*$")
+      and (split("/") | all(.[]; . != "." and . != "..") and (index("bin") != null or index("obj") != null)))
   ' "${manifest}" >/dev/null || {
   echo "::error::Artifact manifest does not match the exact source/project/toolchain contract." >&2
   exit 1
@@ -93,19 +103,30 @@ expected_digest="$(jq -r '.archive_sha256' "${manifest}")"
 actual_digest="$(sha256sum "${archive_path}" | cut -d' ' -f1)"
 [[ "${actual_digest}" == "${expected_digest}" ]] || { echo "::error::Artifact SHA-256 integrity check failed." >&2; exit 1; }
 
-# Inspect every entry before extraction. Paths must be normalized and unique;
-# symlinks, hardlinks, devices, FIFOs, control characters, and expansion bombs
+configuration="${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}"
+project_relative_dir="$(dirname "${expected_project}")"
+allowed_root_args=(
+  --allowed-root "${project_relative_dir}/bin/${configuration}"
+  --allowed-root "${project_relative_dir}/obj"
+)
+while IFS= read -r payload_root; do
+  allowed_root_args+=(--allowed-root "${payload_root}")
+done < <(jq -r '.static_web_asset_content_roots.payload[]' "${manifest}")
+
+# Inspect every entry before extraction. Paths must be normalized and unique, and
+# must lie inside the test project's output or a declared static web asset payload
+# root; symlinks, hardlinks, devices, FIFOs, control characters, and expansion bombs
 # are rejected even when their archive digest is otherwise valid.
 python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/validate-server-test-archive.py" \
   --archive "${archive_path}" \
-  --max-unpacked-bytes "${MAX_UNPACKED_BYTES}"
+  --max-unpacked-bytes "${MAX_UNPACKED_BYTES}" \
+  "${allowed_root_args[@]}"
 
 verify_end_ns="$(date +%s%N)"
 unpack_start_ns="${verify_end_ns}"
 tar --no-same-owner --no-same-permissions -xzf "${archive_path}" -C "${destination}"
 unpack_end_ns="$(date +%s%N)"
-project_dir="${destination}/$(dirname "${expected_project}")"
-configuration="${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}"
+project_dir="${destination}/${project_relative_dir}"
 [[ -f "${project_dir}/obj/project.assets.json" ]] || { echo "::error::Restored project assets are missing." >&2; exit 1; }
 find "${project_dir}/bin/${configuration}" -type f -name '*.dll' -print -quit | grep -q . || {
   echo "::error::Restored test binaries are missing." >&2
@@ -115,6 +136,32 @@ find "${project_dir}/bin/${configuration}" -type f -name '*.pdb' -print -quit | 
   echo "::error::Restored PDB failure-attribution evidence is missing." >&2
   exit 1
 }
+
+# Every static web asset content root the restored host opens must exist, or this
+# shard would silently serve 404 where a building shard serves 200 (#4453). Roots
+# under the packaging repository are checked at the same relative path here.
+packaged_repo_root="$(jq -r '.repo_root' "${manifest}")"
+missing_roots=()
+while IFS= read -r -d '' swa_manifest; do
+  roots="$(jq -r '.ContentRoots
+    | if type == "array" and all(.[]; type == "string") then .[] else error("ContentRoots is not a string array") end
+  ' "${swa_manifest}")" || {
+    echo "::error::Restored static web assets manifest '${swa_manifest}' has no readable ContentRoots." >&2
+    exit 1
+  }
+  while IFS= read -r root; do
+    root="${root%/}"
+    [[ -n "${root}" ]] || continue
+    if [[ "${root}" == "${packaged_repo_root}"/* ]]; then
+      root="${destination}/${root#"${packaged_repo_root}/"}"
+    fi
+    [[ -d "${root}" ]] || missing_roots+=("${root}")
+  done <<<"${roots}"
+done < <(find "${project_dir}/bin/${configuration}" -type f -name '*.staticwebassets.runtime.json' -print0)
+if (( ${#missing_roots[@]} > 0 )); then
+  echo "::error::Restored payload is missing static web asset content roots a local build serves from: ${missing_roots[*]}" >&2
+  exit 1
+fi
 
 if [[ -n "${timing_file}" ]]; then
   mkdir -p "$(dirname "${timing_file}")"

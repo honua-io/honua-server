@@ -796,15 +796,15 @@ sibling materializes the writer's packaged payload instead of building
 (`plan-server-test-reuse-benchmark.py` calls the same relationship a "producer"
 with "reused consumers").
 
-`scripts/ci/package-server-test-binaries.sh` stages only the *test project's*
-`bin/` and `obj/`. `Honua.Server.staticwebassets.runtime.json` in that output
-resolves `/samples/stac-ops/` from six content roots, and two of them are build
-outputs of a **different** project:
+At the time of the split, `scripts/ci/package-server-test-binaries.sh` staged
+only the *test project's* `bin/` and `obj/`. `Honua.Server.staticwebassets.runtime.json`
+in that output resolves `/samples/stac-ops/` from six content roots, and two of
+them are build outputs of a **different** project:
 
 ```text
 samples/Honua.StacOpsDemo/wwwroot/                       <- source, always present
-samples/Honua.StacOpsDemo/bin/Release/net10.0/wwwroot/   <- build output, NOT packaged
-samples/Honua.StacOpsDemo/obj/Release/net10.0/compressed/ <- build output, NOT packaged
+samples/Honua.StacOpsDemo/bin/Release/net10.0/wwwroot/   <- build output, NOT packaged before #4453
+samples/Honua.StacOpsDemo/obj/Release/net10.0/compressed/ <- build output, NOT packaged before #4453
 ```
 
 That is exactly what attempt 2 of `34039679229` showed. It materialized the
@@ -816,17 +816,20 @@ on `/samples/stac-ops/_framework/blazor.webassembly.js`, while
 source content root, the 420 files under `_framework/` do not. The same four
 tests all passed on the building attempt 1.
 
-That defect predates this split (any rerun of the single shard hit it) and is
-tracked separately as #4453, not fixed here. What the split must not do is promote it from a rerun-only
-failure to an attempt-1 failure, so `StacOpsDemoEndpointTests` stays on the
-higher-`dispatch_rank` shard, which is the writer and therefore the one shard
-that still builds on attempt 1. It is only attempt 1 that this buys:
-`server-test-shard-cache.sh` tests `run_attempt > 1` *before* the writer
-designation, so on a rerun the writer materializes the payload like everyone
-else and the class 404s again exactly as attempt 2 did. Ranking cannot fix the
-rerun case; #4453 has to. `scripts/ci/validate-ci-router.sh` pins both halves of
-what ranking *can* hold: the class's owning shard, and that shard being the
-top-ranked one for its `csproj`.
+That defect predated this split (any rerun of the single shard hit it). The
+split could not let it become an attempt-1 failure too, so
+`StacOpsDemoEndpointTests` stayed on the higher-`dispatch_rank` shard: that shard
+is the writer, the one shard that still builds on attempt 1. Ranking could not
+help a rerun, because `server-test-shard-cache.sh` tests `run_attempt > 1` *before*
+the writer designation, and `scripts/ci/validate-ci-router.sh` pinned the
+ordering as a stopgap.
+
+**Resolved by #4453.** The payload now carries every build-output content root
+the test project's static web asset manifests reference. Restore rejects a
+payload whose roots would be missing, and the shard builds instead (see "Static
+web asset content roots" in `docs/internal/ci/server-test-binary-artifacts.md`).
+The `dispatch_rank` writer pin was removed. `validate-ci-router.sh` still pins
+the class's owning shard as one side of this split.
 
 ### Local verification of the split
 

@@ -13,12 +13,85 @@ payload implementation and integrity proof are tracked by #2721.
 
 `package-server-test-binaries.sh` creates a deterministic gzip-1 archive and a
 manifest keyed by exact commit, SDK version, project, and contract version. The
-default limits are 256 MiB compressed, 512 MiB staged, and 120 seconds to
+default limits are 320 MiB compressed, 768 MiB staged, and 120 seconds to
 package. Evidence is valid for at most 24 hours; restore rejects future or
 expired manifests even if the transport still retains their bytes.
 `restore-server-test-binaries.sh` rejects toolchain/source/project
-mismatches, size drift, digest failures, unsafe paths, missing project assets,
-or missing binaries/PDBs before extraction is accepted.
+mismatches, size drift, digest failures, unsafe paths, entries outside the
+declared payload roots, missing project assets, missing binaries/PDBs, or a
+missing static web asset content root before extraction is accepted.
+
+The size limits were re-based by #4453, which made every payload of a project
+that references `Honua.Server` carry the hosted Blazor content roots (see
+[Static web asset content roots](#static-web-asset-content-roots-4453)).
+Measured locally at `19cb64cb6a` with .NET SDK 10.0.400, the same build packaged
+before and after the change:
+
+| Project | Staged before | Staged after | Archive before | Archive after | Pack seconds |
+|---|---:|---:|---:|---:|---:|
+| stac | 390.4 MiB | 438.5 MiB | 149.6 MiB | 181.8 MiB | 8.7 |
+| server | 456.1 MiB | 504.2 MiB | 171.9 MiB | 204.1 MiB | 10.8 |
+
+`server` is the largest registered payload. After the change it stood at 98.5%
+of the previous 512 MiB staged limit, and packaging is not `continue-on-error`,
+so the next growth would have turned the writer shard red. The new limits put
+it at 66% staged and 64% compressed, the same headroom for both.
+
+## Static web asset content roots (#4453)
+
+Test projects that reference `Honua.Server` ship `*.staticwebassets.runtime.json`
+manifests. Each names the directories the host serves static web assets from,
+as absolute paths on the building machine. Several of those directories are
+build outputs of *other* projects: the hosted STAC ops demo's
+`samples/Honua.StacOpsDemo/bin/<Configuration>/net10.0/wwwroot` (the ~420
+`_framework/` files), its `obj/.../compressed` and `obj/.../scopedcss/bundle`,
+and `src/Honua.Server/obj/.../compressed`. The payload used to stage only the
+test project's own `bin/` and `obj/`. A materializing shard therefore served
+404 for `/samples/stac-ops/_framework/blazor.webassembly.js` where a building
+shard served 200 (attempt 2 of run 34039679229).
+
+`package-server-test-binaries.sh` classifies every referenced root:
+
+| Class | Where the root is | Handling |
+|---|---|---|
+| `payload` | inside the repository, with a `bin` or `obj` path segment | staged at its repository-relative path; a root the build never materialized is staged empty, which is what the building host sees once `LoadHostedBlazorStaticWebAssets` pre-creates it (#2904) |
+| `checkout` | inside the repository, outside `bin`/`obj` | not staged; packaging fails if `git ls-files --others` finds any untracked or ignored file under it |
+| `nuget` | under `NUGET_PACKAGES` (default `~/.nuget/packages`) | not staged; must exist when packaging |
+
+Packaging fails on any other root. Roots inside the test project's own output
+are already staged. The manifest records `repo_root` and
+`static_web_asset_content_roots`.
+
+Restore then:
+
+- rejects a declared payload root unless it is a normalized repository-relative
+  path with a `bin` or `obj` segment;
+- rejects an archive entry that lies outside the test project's
+  `bin/<Configuration>`, its `obj`, or a declared payload root. Extraction
+  targets the repository root, so this stops a payload overwriting checkout
+  content;
+- after extraction, rejects the payload if any content root named by a restored
+  runtime manifest is missing. Roots under the packaging `repo_root` are checked
+  at the same relative path under the destination.
+
+A rejection takes the existing `rejected_cache_evidence` path.
+`server-test-shard-cache.sh` removes the test project output and every declared
+payload root, and the shard restores and builds as usual. A shard either sees
+the content roots a local build would give it, or it builds; reuse can no longer
+change a test outcome. A consumer whose NuGet cache lacks a package that owns a
+content root now rebuilds rather than serving 404, which costs time only.
+
+The guard is `scripts/ci/validate-server-test-binary-artifacts.sh`, run by
+router validation. It packages and restores a fixture with all three classes,
+an empty unmaterialized root and one of the test project's own roots. It fails
+if a consumer missing a checkout or NuGet root is accepted, if a declared root
+is unsafe, or if packaging accepts an untracked checkout file or a root outside
+the repository. `validate-server-test-shard-cache.sh` covers rejection cleanup,
+and `validate-server-test-archive.test.py` covers the entry scope check.
+
+Shard layout no longer constrains which shard of a project owns tests of hosted
+Blazor assets. The `dispatch_rank` cache-writer pin that
+`validate-ci-router.sh` carried for `StacOpsDemoEndpointTests` was removed.
 
 `.github/server-test-artifact-projects.json` is the complete project registry.
 Router validation requires it to equal the effective unique `csproj` set in
@@ -85,7 +158,7 @@ slice promoted out of shadow, and it is promoted without adding a producer job:
 The key includes the workflow run id. Cache keys are immutable and a payload is
 valid for 24 hours, so a key scoped only to the commit SHA becomes permanently
 poisoned once its payload ages out: every later run of that unchanged head — a
-Saturday scheduled full matrix, a manual dispatch — would download up to 256 MiB
+Saturday scheduled full matrix, a manual dispatch — would download up to 320 MiB
 in every one of ~65 shards, reject it on TTL (`rejected_cache_evidence`),
 rebuild, and then fail to re-save because the immutable key already exists. That
 repeats on every future run of that SHA. Before attempt-1 reads this could only
