@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import copy
 import json
 import tempfile
 import unittest
@@ -13,6 +14,60 @@ SPEC = importlib.util.spec_from_file_location("validate_canonical_artifacts", SC
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+
+IDENTITY_SPEC = importlib.util.spec_from_file_location(
+    "candidate_identity", SCRIPT.parent / "artifact-gen" / "candidate_identity.py"
+)
+assert IDENTITY_SPEC and IDENTITY_SPEC.loader
+IDENTITY = importlib.util.module_from_spec(IDENTITY_SPEC)
+IDENTITY_SPEC.loader.exec_module(IDENTITY)
+
+
+class CandidateIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.manifest = {
+            "candidate": {"ref": "a" * 40, "refSource": "trunk"},
+            "components": {"honua-server": {
+                "sha": "a" * 40,
+                "image": "ghcr.io/honua-io/honua-server:nightly-aot-aaaaaaa",
+                "digest": "sha256:" + "b" * 64,
+            }},
+            "protocolCertification": {
+                "serverCertificationProducerSha": "a" * 40,
+                "candidateCutAt": "2026-09-11T19:47:41Z",
+            },
+        }
+
+    def test_dispatch_uses_manifest_digest_instead_of_mutable_tag(self):
+        self.assertEqual({
+            "server_image": "ghcr.io/honua-io/honua-server@sha256:" + "b" * 64,
+            "source_sha": "a" * 40,
+            "candidate_cut_at": "2026-09-11T19:47:41Z",
+        }, IDENTITY.resolve(self.manifest))
+
+    def test_mixed_candidate_identity_is_rejected(self):
+        for section, key, value in (
+            ("candidate", "ref", "c" * 40),
+            ("candidate", "refSource", "feature"),
+            ("protocolCertification", "serverCertificationProducerSha", "c" * 40),
+            ("protocolCertification", "candidateCutAt", "2026-09-11T19:47:41"),
+        ):
+            with self.subTest(key=key):
+                manifest = copy.deepcopy(self.manifest)
+                manifest[section][key] = value
+                with self.assertRaises(ValueError):
+                    IDENTITY.resolve(manifest)
+
+    def test_invalid_registry_identity_is_rejected(self):
+        for key, value in (
+            ("digest", "nightly"), ("sha", "aaaaaaa"),
+            ("image", "ghcr.io/another/project:nightly"),
+        ):
+            with self.subTest(key=key):
+                manifest = copy.deepcopy(self.manifest)
+                manifest["components"]["honua-server"][key] = value
+                with self.assertRaises(ValueError):
+                    IDENTITY.resolve(manifest)
 
 
 def args() -> Namespace:

@@ -13,6 +13,7 @@
   -->
 
   <PropertyGroup>
+    <HonuaCngSourceRoot Condition="'$(HonuaCngSourceRoot)' == ''">$(MSBuildThisFileDirectory)../../../..</HonuaCngSourceRoot>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -28,9 +29,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\src\Honua.Core\Honua.Core.csproj" />
-    <ProjectReference Include="..\..\..\..\src\Honua.Scene\Honua.Scene.csproj" />
-    <ProjectReference Include="..\..\..\..\src\Honua.Hosting\Honua.Hosting.csproj" />
+    <ProjectReference Include="$(HonuaCngSourceRoot)/src/Honua.Core/Honua.Core.csproj" />
+    <ProjectReference Include="$(HonuaCngSourceRoot)/src/Honua.Scene/Honua.Scene.csproj" />
+    <ProjectReference Include="$(HonuaCngSourceRoot)/src/Honua.Hosting/Honua.Hosting.csproj" />
   </ItemGroup>
 
 </Project>
