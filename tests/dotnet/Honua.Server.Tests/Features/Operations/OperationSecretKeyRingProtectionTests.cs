@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
@@ -64,6 +65,20 @@ public sealed class OperationSecretKeyRingProtectionTests
         {
             File.Delete(path);
         }
+    }
+
+    [UnitTest]
+    public void IsProtectedElement_RequiresEncryptedSecretDescriptor()
+    {
+        var protectedKey = new XElement(
+            "key",
+            new XElement("descriptor", new XElement("encryptedSecret")));
+        var legacyKey = new XElement(
+            "key",
+            new XElement("descriptor", new XElement("descriptor")));
+
+        RedisDataProtectionKeyRepository.IsProtectedElement(protectedKey).Should().BeTrue();
+        RedisDataProtectionKeyRepository.IsProtectedElement(legacyKey).Should().BeFalse();
     }
 
     private static X509Certificate2 CreateCertificate()

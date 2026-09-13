@@ -391,14 +391,18 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
     }
 }
 
-if (connectedRedis is not null)
+if (connectedRedis is not null &&
+    !builder.Environment.IsDevelopment() &&
+    !builder.Environment.IsEnvironment("Test"))
 {
     // The operation-secret protector is intentionally backed by the same Redis authority
     // as the proposal/instance stores so every replay node shares a rotation-capable key ring.
+    var keyRepository = new RedisDataProtectionKeyRepository(connectedRedis);
+    keyRepository.EnsureAllElementsAreProtected();
     var keyRing = builder.Services.AddDataProtection()
         .SetApplicationName("Honua.Server")
         .AddKeyManagementOptions(options =>
-            options.XmlRepository = new RedisDataProtectionKeyRepository(connectedRedis));
+            options.XmlRepository = keyRepository);
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
     // certificate is mandatory so a Redis reader or snapshot cannot carry both halves.
