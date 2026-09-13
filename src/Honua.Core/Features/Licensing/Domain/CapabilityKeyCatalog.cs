@@ -53,6 +53,15 @@ public static class CapabilityKeyCatalog
     public const string PreviewStatus = "preview";
 
     /// <summary>
+    /// Release-posture value for capabilities that support Honua's own hosted operation and are
+    /// not offered to licensees. Distinct from <see cref="PreviewStatus"/>, which promises a GA
+    /// path: this one promises the opposite. A licensee cannot operate these at all, because the
+    /// Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed
+    /// service. Capabilities with this status are never published as customer documentation.
+    /// </summary>
+    public const string InternalStatus = "internal";
+
+    /// <summary>
     /// Edition-qualified, routed capabilities that remain deployable while their public release
     /// posture is experimental.
     /// </summary>
@@ -65,8 +74,8 @@ public static class CapabilityKeyCatalog
     /// <summary>Routed capabilities that ship as explicit opt-in Preview.</summary>
     public static IReadOnlyList<CapabilityKeyDefinition> RoutedPreviewKeys { get; } =
     [
-        new("admin.multi-tenancy", "Multi-Tenant Operation", Categories.ControlPlane,
-            HonuaEdition.Enterprise, "Preview/trial-only tenant lifecycle, schema routing, and usage surfaces for non-production evaluation. Honua 2026.1 GA deployments are single-tenant; do not use customer production data. There is no GA, availability, performance, durability, SLO, or scale commitment, and Preview status never lowers the security severity of cross-tenant disclosure. Honua does not provide SaaS, hosting, or a managed service, and the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service.", Status: PreviewStatus),
+        new("admin.multi-tenancy", "Multi-Tenant Operation", Categories.Internal,
+            HonuaEdition.Enterprise, "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless.", Status: InternalStatus),
 
         // Operator ruling (2026-09-03, honua-release#266 / #264) supersedes the earlier
         // sync.offline GA promotion for release 2026.1: offline sync is Preview in 2026.1.
@@ -89,6 +98,15 @@ public static class CapabilityKeyCatalog
 
         /// <summary>General admin/control-plane CRUD surfaces with no dedicated entitlement.</summary>
         public const string ControlPlane = "ControlPlane";
+
+        /// <summary>
+        /// Capabilities that exist to run Honua's own hosted offering, not to be deployed by a
+        /// licensee. Not part of the customer-deployable product surface and with no path to
+        /// general availability as a customer feature: the Elastic License 2.0 prohibits
+        /// providing Honua to third parties as a hosted or managed service, so a licensee can
+        /// never be the party operating them. Never published as customer documentation.
+        /// </summary>
+        public const string Internal = "Internal";
 
         /// <summary>Operational health, metrics, and observability surfaces.</summary>
         public const string Ops = "Ops";

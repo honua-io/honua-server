@@ -79,7 +79,6 @@ Request body:
 | `holderId` | string | yes | Your editor label. Not a credential — see [Proving you are the holder](#proving-you-are-the-holder). |
 | `displayName` | string | no | Shown to the editor who gets blocked. |
 | `sessionId` | string | no | Editing session. When set, a write must present the same session id to count as yours. |
-| `tenantId` | string | no | Tenant scope. |
 | `leaseSeconds` | int | no | 1–3600, default 120. |
 
 A claim on a feature someone else holds returns `409` with the current holder and the
@@ -117,7 +116,6 @@ Copying another editor's values into them does not make you that editor:
 | --- | --- |
 | `X-Honua-Lock-Holder` | The `holderId` you claimed the lease under. Defaults to your authenticated principal name when the header is absent. |
 | `X-Honua-Lock-Session` | The `sessionId` you claimed under, when you set one. |
-| `X-Honua-Lock-Tenant` | The `tenantId` you claimed under, when you set one. |
 
 Claim under your authenticated principal name and you never need to send a header. Claim
 under any other `holderId` — an application-level editor id, a session-scoped id — and your

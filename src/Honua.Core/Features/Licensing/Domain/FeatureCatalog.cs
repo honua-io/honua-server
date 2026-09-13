@@ -88,8 +88,18 @@ public static class FeatureCatalog
         /// <summary>High availability and disaster recovery — backup automation, failover, RTO/RPO reporting.</summary>
         public const string DisasterRecovery = "DisasterRecovery";
 
-        /// <summary>Tenant administration and other platform control-plane capabilities.</summary>
+        /// <summary>Platform control-plane capabilities.</summary>
         public const string ControlPlane = "ControlPlane";
+
+        /// <summary>
+        /// Capabilities that exist to run Honua's own hosted offering, not to be deployed by a
+        /// licensee. These are not part of the customer-deployable product surface and have no
+        /// path to general availability as a customer feature: the Elastic License 2.0 prohibits
+        /// providing Honua to third parties as a hosted or managed service, so a licensee can
+        /// never be the party operating them. Not Preview - Preview implies a GA path, and there
+        /// is none. Never published as customer documentation.
+        /// </summary>
+        public const string Internal = "Internal";
     }
 
     /// <summary>
