@@ -2546,6 +2546,32 @@ public sealed class GeoprocessingJobServiceTests
         await denied.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("tenant-b")]
+    [InlineData(null)]
+    public async Task JobAccess_WorkflowReconciliation_PreservesDurableTenantAndDeniesForeignJob(string? tenant)
+    {
+        var snapshot = CreateSubmitterSecurityContext() with { TenantId = tenant };
+        var principal = Honua.Server.Features.Orchestration.OrchestrationSystemPrincipal.Create("operator", snapshot);
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier], _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(), NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions, _jobStore, _jobQueue,
+            httpContextAccessor: new HttpContextAccessor { HttpContext = null });
+        var own = CreateTenantJobRecord("workflow-own", tenant);
+        var foreign = CreateTenantJobRecord("workflow-foreign", "tenant-a");
+        _jobStore.GetAsync(own.OperationId, Arg.Any<CancellationToken>()).Returns(own);
+        _jobStore.GetAsync(foreign.OperationId, Arg.Any<CancellationToken>()).Returns(foreign);
+
+        (await sut.GetJobAsync(own.OperationId, principal)).Should().BeSameAs(own);
+        var denied = () => sut.GetJobAsync(foreign.OperationId, principal);
+        await denied.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        var cancelForeign = () => sut.CancelJobAsync(foreign.OperationId, principal);
+        await cancelForeign.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
     private GeoprocessingJobService CreateTenantJobService(IServiceProvider services, ClaimsPrincipal principal)
         => new(
             _progressStore, [_cancellationNotifier], _authEvaluator, _approvalEvaluator,

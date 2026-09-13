@@ -1465,7 +1465,7 @@
         {
           "path": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/WfsExecutionProofTests.cs",
           "test": "Wfs_FilteredShortPages_PublishesExactFeaturesAndTerminates",
-          "fixturePath": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/WfsExecutionProofTests.cs",
+          "fixturePath": "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/RemoteSourceExecutionProofs.md",
           "assertion": "Required real HTTP paged WFS fixture through the production executor: exact filtered/bounded features, XYZ, Unicode/null and lossless Int64 attributes, short-page completeness/uniqueness/termination with or without numberMatched; oracle rejects duplicate output.",
           "bodyDigest": "sha256:969183e15cc02dce65b8caa3aa7d3b413fb04e93414a5bf6c8a527c7aaa59e9f"
         }
