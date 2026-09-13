@@ -41,3 +41,18 @@ It creates isolated databases for all three WFS compositions, checks readiness
 and the seeded catalog, then removes the metadata-floor journal entry and
 requires immediate rejection with the missing migration name and no seed writes.
 The same test runs in the evidence workflow and reusable WFS conformance jobs.
+
+## WCS raster extension ordering
+
+The WCS seed previously installed `postgis_raster` and created raster tables
+*after* the first migration boot. Migration 055 had been journaled as a no-op
+while raster support was absent; the hand-created columns then lacked its
+required EXTERNAL storage. Restart failed with
+`055_SetRasterDataExternalStorage.sql (JournalClaimsMissingSchema)`.
+
+WCS now provisions only the PostGIS raster extension through initdb, before
+Honua discovers its provider migration root. The data-only seed runs against
+that migrated schema. The live `test-wcs-bootstrap.sh` regression verifies
+provider migration receipts, the seeded rasters, EXTERNAL storage and successful
+readiness/GetCapabilities after restart. It uses the same image environment
+variable as the WFS regression and also runs in CITE workflows.
