@@ -29,6 +29,13 @@ case "${lane}" in
   output-store)
     declared_scenarios=(topology output-store-attestation cleanup)
     ;;
+  crash-boundaries)
+    declared_scenarios=(topology)
+    for boundary in output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
+      declared_scenarios+=("crash-${boundary}-worker" "crash-${boundary}-store")
+    done
+    declared_scenarios+=(cleanup)
+    ;;
   output-store-dr)
     declared_scenarios=(topology output-store-attestation output-store-dr cleanup)
     ;;
@@ -50,7 +57,7 @@ case "${lane}" in
     declared_scenarios=(assertion-failure follow-up cleanup)
     ;;
   *)
-    echo "HONUA_GP_LANE must be output-store, output-store-dr, lifecycle, resilience, or self-test" >&2
+    echo "HONUA_GP_LANE must be output-store, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
     exit 2
     ;;
 esac
@@ -1332,6 +1339,13 @@ else
       if [[ "${lane}" == output-store-dr ]]; then
         run_scenario output-store-dr run_output_store_attestation output-store-dr || failures=$((failures + 1))
       fi
+    elif [[ "${lane}" == crash-boundaries ]]; then
+      source "${repo_root}/scripts/qualification/gp-store-crash.sh"
+      for boundary in output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
+        for disruption in worker store; do
+          run_scenario "crash-${boundary}-${disruption}" run_store_crash_boundary "$boundary" "$disruption" || failures=$((failures + 1))
+        done
+      done
     elif [[ "${lane}" == lifecycle ]]; then
       run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
       run_scenario sync run_sync || failures=$((failures + 1))

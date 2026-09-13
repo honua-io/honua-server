@@ -104,7 +104,7 @@ services:
     image: ${HONUA_WORKER_IMAGE:?set HONUA_WORKER_IMAGE to a digest-addressed image}
     environment:
       DOTNET_ENVIRONMENT: Development
-      ConnectionStrings__Redis: redis:6379
+      ConnectionStrings__Redis: ${HONUA_GP_WORKER_REDIS:-redis:6379}
       GdalWorker__ScratchRoot: /tmp/honua-gdal-worker
       Geoprocessing__OutputStaging__Enabled: "true"
       Geoprocessing__OutputStaging__Provider: local
@@ -130,6 +130,19 @@ services:
       - ${HONUA_GP_BARRIER_ROOT:-/tmp/honua-gp-reliability-barriers}:/var/run/honua/qualification
     tmpfs:
       - /tmp:noexec,nosuid,size=256m
+
+  # An external response fence qualifies the already-published worker bytes.
+  # It only withholds explicitly armed successful terminal-CAS acknowledgements.
+  terminal-proxy:
+    profiles: [crash-boundaries]
+    image: python:3.12-alpine@sha256:b64631e04e4920160c50fbe8d8df828f7f35f06f425cb44aa09bca53e708a35a
+    command: [python, /qualification/gp-terminal-proxy.py]
+    volumes:
+      - ../../scripts/qualification/gp-terminal-proxy.py:/qualification/gp-terminal-proxy.py:ro
+      - ${HONUA_GP_BARRIER_ROOT:-/tmp/honua-gp-reliability-barriers}:/barriers
+    depends_on:
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres-data:
