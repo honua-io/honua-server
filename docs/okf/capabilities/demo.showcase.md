@@ -22,12 +22,9 @@ Non-sellable demo/showcase endpoints used for product demonstrations.
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
-## Where to look
+## Preview
 
-No page in this bundle declares this capability, so there is no prose to link. Its registry entry and test evidence are still authoritative:
+This capability is Preview. It is off by default, it needs an explicit opt-in to enable, and it is not covered by the compatibility promise for the release - so it has no customer-facing page in this bundle, and that is deliberate rather than an omission. The counts above are real routes and real tests; what they are not is a commitment.
 
-- [All capabilities](README.md) — the full index with editions and status
-- [Editions and licensing](../../concepts/editions-and-licensing.md) — what each edition includes
-- [Capability matrix](../../gis/data/capability-matrix.v1.json) — the generated evidence for this key
-
-Writing the page that documents it? Declare `resource: "honua://capability/demo.showcase"` in its frontmatter, or add the key under a `resources:` list if the page already claims another one, and it will be linked here.
+- [Editions and licensing](../../concepts/editions-and-licensing.md) — what Preview means here
+- [All capabilities](README.md)

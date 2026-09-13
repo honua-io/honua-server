@@ -98,6 +98,9 @@ def citing_pages(key: str, display_name: str, pages: dict[pathlib.Path, str]) ->
 # Keyed on status rather than on a list of keys, so a future internal capability
 # is excluded by classification instead of by someone remembering to add it here.
 UNPUBLISHED_STATUS = {"internal"}
+# Statuses that mean "real, but not promised". A capability in one of these
+# has no customer page on purpose.
+PREVIEW_STATUS = {"preview", "experimental"}
 
 
 RESOURCE_DECLARATION = re.compile(r'^resource:\s*"honua://capability/([^"]+)"\s*$', re.M)
@@ -236,16 +239,52 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
         lines.append("")
         for label, rel in documented:
             lines.append(f"- [{label}](../../{rel})")
+    elif not facts.get("entryCount") and not facts.get("provingTestCount"):
+        # No route in the generated feature catalog and no proving test. This is
+        # a registry entry for something that is not built, and saying "no page
+        # documents it" invites someone to write a page describing a feature
+        # that does not exist. A reader asking what this key means deserves the
+        # real answer, which is that nothing serves it yet.
+        lines.append("## Not implemented yet")
+        lines.append("")
+        lines.append(
+            "No route in the server's generated feature catalog resolves to this capability, "
+            "and no test proves it. It is a reserved registry key: it names something the "
+            "platform intends to offer and does not offer today, so there is nothing to "
+            "document and nothing to call."
+        )
+        lines.append("")
+        lines.append("- [All capabilities](README.md) — the full index, with what each edition includes")
+        lines.append("- [Editions and licensing](../../concepts/editions-and-licensing.md)")
+    elif ((facts.get("status") or entry.get("status") or "").lower() in PREVIEW_STATUS
+          or not (facts.get("maturity") or {}).get("implemented")):
+        # It has routes and tests, but none of those routes is `implemented`
+        # maturity - they are all preview or experimental - or the capability
+        # itself is marked so. "No page documents this" would read as an
+        # oversight and invite a customer page that promotes something the
+        # release does not promise. The absence is deliberate.
+        lines.append("## Preview")
+        lines.append("")
+        lines.append(
+            "This capability is Preview. It is off by default, it needs an explicit opt-in to "
+            "enable, and it is not covered by the compatibility promise for the release - so it "
+            "has no customer-facing page in this bundle, and that is deliberate rather than an "
+            "omission. The counts above are real routes and real tests; what they are not is a "
+            "commitment."
+        )
+        lines.append("")
+        lines.append("- [Editions and licensing](../../concepts/editions-and-licensing.md) — what Preview means here")
+        lines.append("- [All capabilities](README.md)")
     else:
-        # An instruction to a contributor is not an answer for a reader. Even
-        # with nothing claiming this key, the registry, the matrix and the
-        # editions page are real places to go, and they are what someone
-        # resolving honua://capability/<key> is usually after.
+        # It ships - the table above counts real routes and real tests - and no
+        # page claims it. That is a documentation gap, and naming it as one is
+        # more useful than an instruction to a contributor.
         lines.append("## Where to look")
         lines.append("")
         lines.append(
-            "No page in this bundle declares this capability, so there is no prose to link. "
-            "Its registry entry and test evidence are still authoritative:"
+            "This capability ships - the counts above are routes in the server's generated "
+            "feature catalog and tests that prove them - but no page in this bundle documents "
+            "it yet. Until one does:"
         )
         lines.append("")
         lines.append("- [All capabilities](README.md) — the full index with editions and status")

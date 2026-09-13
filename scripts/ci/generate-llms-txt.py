@@ -29,7 +29,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -171,22 +170,20 @@ BLOB_LINK = re.compile(r"https://github\.com/honua-io/honua-server/blob/trunk/([
 
 
 def unresolvable(rendered: str) -> list[str]:
-    """Links in the rendered file that name nothing on trunk.
+    """Links in the rendered file that name no file in this tree.
 
     141 links shipped pointing at pages that did not exist at the URL given,
     for months, because this file is only ever read by machines and nothing
-    machine-checked it. `git cat-file --batch-check` answers for the whole file
-    in one pass with no network, so there is no reason not to.
+    machine-checked it.
+
+    The check is against the working tree, not `origin/trunk`. The `trunk` in
+    each URL is the branch the page will be on once merged, so resolving against
+    trunk would fail every PR that adds a page - which is exactly the change
+    most likely to add a link. What has to be true is that the path names a real
+    file in the commit being made; merging then makes the URL correct.
     """
     paths = sorted({m.group(1) for m in BLOB_LINK.finditer(rendered)})
-    if not paths:
-        return []
-    out = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "cat-file", "--batch-check"],
-        input="".join(f"origin/trunk:{path}\n" for path in paths),
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    ).stdout.splitlines()
-    return [path for path, line in zip(paths, out) if line.endswith(" missing")]
+    return [path for path in paths if not (REPO_ROOT / path).is_file()]
 
 
 def main(argv: list[str]) -> int:
@@ -208,7 +205,7 @@ def main(argv: list[str]) -> int:
             return 1
         dead = unresolvable(rendered)
         if dead:
-            print(f"::error::docs/llms.txt links {len(dead)} path(s) that do not exist on trunk:",
+            print(f"::error::docs/llms.txt links {len(dead)} path(s) that are not files:",
                   file=sys.stderr)
             for path in dead[:15]:
                 print(f"  {path}", file=sys.stderr)
