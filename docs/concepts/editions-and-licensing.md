@@ -36,8 +36,8 @@ status view displays the returned edition and validation state.
 Disabling licensing grants entitlements only. Authentication, authorization and
 tenant isolation still apply; features still require their runtime configuration
 and dependencies. Preview and Experimental opt-ins and the release manifest's
-`experimental:` exclusions remain in effect. Multi-tenancy, alerting and offline
-sync remain Preview; all four cloud-native formats and the whole GA process catalog
+`experimental:` exclusions remain in effect. Alerting and offline sync remain
+Preview; all four cloud-native formats and the whole GA process catalog
 retain their release scope. `Licensing__DevGrantEdition` remains a development-only
 override and is refused in Production, including when Mode is Disabled.
 
@@ -68,10 +68,7 @@ The [2026-09-04 commercial-boundaries ruling](https://github.com/honua-io/honua-
 | Organisational approval and policy controls | Enterprise | Paid governance around the core versioning/operation workflow |
 | Existing 3D Tiles serving, scene discovery, elevation, and generation from feature layers | Community | 3D remains Experimental; this does not expand the supported release surface |
 | Specialised CityGML/BIM and point-cloud ingest; I3S | Enterprise | Remain Experimental; no tier expansion without a specific commercial decision |
-| Customer-facing multitenancy | Preview/trial only | Single-tenant GA; no Honua SaaS or production multi-tenant deployment |
 | Essential secure operation and recoverability | Baseline in every edition | Authorization, isolation, audit integrity, backup/restore and recovery procedures are product obligations; advanced automation, governance and support are the paid layers |
-
-Any multi-tenant deployment is an explicitly labelled demo/trial/preview environment: no customer production data, production SLO, availability, performance or durability commitment. Cross-tenant disclosure remains a full-severity defect. Multitenancy functional, UX and performance work is deferred to 2026.2.
 
 ## License files
 

@@ -168,4 +168,6 @@ redirects:
   # Flattened so the two v1.0 indexes stop colliding on the slug 'v1.0'.
   developer/spec-grammar/v1.0: developer/spec-grammar/spec-grammar-v1.0.md
   developer/spec-grounding/v1.0: developer/spec-grounding/spec-grounding-v1.0.md
+  # Retired: multi-tenant operation is not an available feature.
+  guides/deploy/tenancy: guides/deploy/README.md
 

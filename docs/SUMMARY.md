@@ -103,7 +103,6 @@
   - [Scaling & performance](guides/deploy/scaling-and-performance.md)
   - [Upgrade & rollback](guides/deploy/upgrade-and-rollback.md)
   - [Troubleshooting](guides/deploy/troubleshooting.md)
-  - [Tenancy support](guides/deploy/tenancy.md)
   - [Capability deployment profiles](guides/deploy/capability-deployment-profiles.md)
   - [Route geoprocessing to AWS Batch](operator/geoprocessing-aws-batch.md)
 - Migrate

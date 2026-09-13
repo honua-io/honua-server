@@ -184,7 +184,7 @@ public static class CapabilityKeyCatalog
 
         // Control plane
         new("admin.control-plane", "Admin Control Plane", Categories.ControlPlane,
-            HonuaEdition.Community, "General administrative CRUD surfaces (connections, metadata, services, users, roles, configuration) with no dedicated entitlement of their own. Tenant administration is Preview/trial only in 2026.1; GA is single-tenant, with no hosted service or production multi-tenant deployment. Cross-tenant isolation remains mandatory."),
+            HonuaEdition.Community, "General administrative CRUD surfaces (connections, metadata, services, users, roles, configuration) with no dedicated entitlement of their own. Isolation between administrative scopes remains mandatory."),
 
         // Ops
         new("ops.health", "Health Checks", Categories.Ops,

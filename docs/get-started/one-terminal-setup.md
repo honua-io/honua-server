@@ -250,5 +250,5 @@ CLI or the agent path. The `admin:read`/`admin:approve` recipe still needs
 the focused candidate receipt tracked by
 [#3365](https://github.com/honua-io/honua-server/issues/3365).
 An optional browser walkthrough neither establishes nor blocks terminal-path
-completeness. Multi-tenancy, customer alerting and offline sync remain Preview;
-no hosted model is required.
+completeness. Customer alerting and offline sync remain Preview; no hosted model
+is required.
