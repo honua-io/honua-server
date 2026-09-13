@@ -329,6 +329,50 @@ Release evidence:
 - The installed fault/recovery proof against a release candidate belongs to the
   release gate, not the per-PR gate.
 
+### Installed fault/recovery qualification
+
+`python3 scripts/qualification/metadata-release-installed.py --manifest /path/to/platform-manifest.yaml --output /tmp/metadata-release-proof`
+
+Run from the repository root with Docker access and the manifest's digest-pinned
+server image already pulled. The harness checks its OCI digest and source label,
+starts isolated PostGIS and persistent Redis containers, and boots that installed
+image with its own migrations. It never builds the server from checkout. It uses
+the existing CNG point fixture and independently specified expected names,
+populations, six longitude/latitude pairs, and EPSG:4326. SQL seeds and observes
+only the isolated fixture; release submission and concurrent service-policy
+updates use the admin API, and functional checks use the public FeatureServer.
+
+Test-owned Redis leases pause the **real polling worker** between durable stages;
+the harness never writes an operation record or replaces a runtime component.
+A SIGKILL/restart with the candidate staged must preserve the operation and leave
+the prior graph active. The existing non-production fault injection fails only
+the post-activation smoke. Recovery must restore the schema, retain the independently
+specified committed population edit (`1000000 + 7`), and pass query/coordinate and
+authorization checks. A concurrent update before activation must force an ETag
+rebase; another service update after activation must survive owned-only rollback.
+Missing-resource preparation, undeclared-compensation ETL, and an operator-cancelled
+durable preparation job must fail without exposing a partial catalog; discarded
+candidates must be absent from retained snapshots.
+
+The harness exits nonzero on any failed assertion or incomplete cleanup. Its
+`receipt.json` includes the source/digest, manifest and harness SHA-256 hashes,
+durable operation records, functional assertions, and server-log hash. Keep the
+receipt and `server.log` together as release evidence. These are installed runtime
+proofs, separate from the seven negative controls in
+`python3 -m unittest discover -s scripts/qualification -p test_metadata_release_installed.py`.
+
+The 2026-09-12 qualification compares the current release manifest with the
+proposed re-pin in [honua-release#342](https://github.com/honua-io/honua-release/pull/342).
+The current pin `7ba422672e0c751843b17beb36e954a019cc19fb` predates #4663 and
+fails the prior-capture/staging invariant; it cannot qualify the 2026.1 safe rollout
+promise. Evidence for the proposed `9f2f16a5b9d19becf052f8b2635cf7c2ce109fdd`
+image passed all five installed scenarios. Its positive receipt does not certify
+the older pin. Both [receipts and compressed logs](../../../../tests/baselines/metadata-release-installed/2026-09-12/)
+are retained with exact input hashes; the current pin advanced the live graph
+from revision 3 to 4 and exposed `owner_email` during preparation while its
+operation still had no captured prior revision. Re-run against the accepted manifest when
+the release owner advances the candidate.
+
 ## Review Output
 
 For a Metadata v2 release candidate, capture:

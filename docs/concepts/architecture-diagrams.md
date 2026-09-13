@@ -1,3 +1,10 @@
+---
+type: concept
+title: "Architecture diagrams"
+description: "Twelve C4 diagrams of Honua: system context, containers, components, query and edit data flow, filter translation, the schema ERD, and Kubernetes and AWS deployment."
+tags: [architecture, diagrams, c4]
+---
+
 # Honua Architecture Diagrams
 
 Visual representations of the Honua system architecture using Mermaid diagrams.
@@ -376,12 +383,13 @@ FilterExpression
 
 ```mermaid
 erDiagram
-    SERVICES ||--o{ LAYERS : contains
+    SERVICES ||--o{ SERVICE_LAYERS : includes
+    LAYERS ||--o{ SERVICE_LAYERS : maps
     LAYERS ||--o{ LAYER_FIELDS : has
     LAYERS ||--o{ FEATURES : stores
 
     SERVICES {
-        text id PK
+        text service_name PK
         text name
         text description
         boolean enabled
@@ -391,8 +399,6 @@ erDiagram
 
     LAYERS {
         serial id PK
-        text service_id FK
-        int layer_index
         text name
         text description
         text table_name
@@ -411,6 +417,12 @@ erDiagram
         timestamptz created_at
     }
 
+    SERVICE_LAYERS {
+        text service_name PK
+        int layer_id PK
+        int layer_order
+    }
+
     LAYER_FIELDS {
         serial id PK
         int layer_id FK
@@ -425,6 +437,7 @@ erDiagram
 
     FEATURES {
         bigserial objectid PK
+        int layer_id FK
         geometry geom
         jsonb attributes
     }
@@ -550,5 +563,5 @@ graph TB
 
 ## See Also
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed architecture prose
-- [ADRs](adr/README.md) - Architecture Decision Records
+- [Architecture (contributor notes)](../internal/contributor/ARCHITECTURE.md) - Detailed architecture prose
+- [ADRs](../internal/contributor/adr/README.md) - Architecture Decision Records

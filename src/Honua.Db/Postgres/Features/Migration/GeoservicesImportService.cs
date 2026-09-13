@@ -92,6 +92,18 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         Log.SpatialIndexCreated(_logger, tableName);
     }
 
+    private static async Task<bool> TableExistsAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT to_regclass(@qualifiedName) IS NOT NULL";
+        cmd.Parameters.AddWithValue("qualifiedName", $"{QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)}");
+        return await cmd.ExecuteScalarAsync(cancellationToken) is true;
+    }
+
     private static async Task AnalyzeTableAsync(
         NpgsqlConnection connection,
         string schemaName,
@@ -295,5 +307,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             "Migration fidelity difference on table {TableName}: [{Code}/{Severity}] {Summary}")]
         public static partial void FidelityDifference(
             ILogger logger, string tableName, string code, string severity, string summary);
+
+        [LoggerMessage(7843, LogLevel.Warning,
+            "Replacement of table {TableName} refused: {FailedCount} source records failed to load; the prior target was retained")]
+        public static partial void ReplacementRefused(ILogger logger, string tableName, int failedCount);
     }
 }

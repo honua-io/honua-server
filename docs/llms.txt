@@ -17,6 +17,7 @@ Every page below is an Open Knowledge Format concept: one subject per file, type
 ## Concepts
 
 - [Architecture](https://docs.honua.io/concepts/architecture): Honua is a geospatial server that publishes, queries, edits, and renders spatial data through standard protocols.
+- [Architecture diagrams](https://docs.honua.io/concepts/architecture-diagrams): Twelve C4 diagrams of Honua: system context, containers, components, query and edit data flow, filter translation, the schema ERD, and Kubernetes and AWS deployment.
 - [Protocols](https://docs.honua.io/concepts/protocols): Honua serves every published layer through multiple protocols at once — the same PostGIS table can be queried from ArcGIS Pro, QGIS, Excel, a MapLibre web map, and an AI agent without ETL or duplication.
 - [Data model](https://docs.honua.io/concepts/data-model): Honua's catalog is built from four ideas: connections point at data, layers publish individual tables or rasters, services expose layers through protocols, and styles and metadata control how layers look and describe themselves.
 - [Ecosystem](https://docs.honua.io/concepts/ecosystem): Honua is developed as a family of repositories around this server.
@@ -25,12 +26,12 @@ Every page below is an Open Knowledge Format concept: one subject per file, type
 ## SDKs
 
 - [SDKs](https://docs.honua.io/sdks/README): The Honua SDKs are typed clients for the same server you run from the quickstart.
-- [Get started with the .NET SDK](https://docs.honua.io/sdks/dotnet/getting-started): Install the Honua .NET SDK, point a client at your server, authenticate with an API key, and make your first feature query.
-- [.NET SDK: common tasks](https://docs.honua.io/sdks/dotnet/common-tasks): Two of the most common reads with the Honua .NET SDK: querying a FeatureServer layer and searching a STAC catalog.
-- [Get started with the Python SDK](https://docs.honua.io/sdks/python/getting-started): Install the Honua Python SDK, construct a client, authenticate with an API key, and make your first feature query.
-- [Python SDK: common tasks](https://docs.honua.io/sdks/python/common-tasks): Two of the most common reads with the Honua Python SDK: querying a FeatureServer layer and searching a STAC catalog.
-- [Get started with the JavaScript SDK](https://docs.honua.io/sdks/javascript/getting-started): Install the Honua JavaScript/TypeScript SDK, construct a client, authenticate with an API key, and make your first feature query.
-- [JavaScript SDK: common tasks](https://docs.honua.io/sdks/javascript/common-tasks): Two of the most common reads with the Honua JavaScript SDK: querying a FeatureServer layer and searching a STAC catalog.
+- [Get started with the .NET SDK](https://docs.honua.io/sdks/dotnet/dotnet-getting-started): Install the Honua .NET SDK, point a client at your server, authenticate with an API key, and make your first feature query.
+- [.NET SDK: common tasks](https://docs.honua.io/sdks/dotnet/dotnet-common-tasks): Two of the most common reads with the Honua .NET SDK: querying a FeatureServer layer and searching a STAC catalog.
+- [Get started with the Python SDK](https://docs.honua.io/sdks/python/python-getting-started): Install the Honua Python SDK, construct a client, authenticate with an API key, and make your first feature query.
+- [Python SDK: common tasks](https://docs.honua.io/sdks/python/python-common-tasks): Two of the most common reads with the Honua Python SDK: querying a FeatureServer layer and searching a STAC catalog.
+- [Get started with the JavaScript SDK](https://docs.honua.io/sdks/javascript/javascript-getting-started): Install the Honua JavaScript/TypeScript SDK, construct a client, authenticate with an API key, and make your first feature query.
+- [JavaScript SDK: common tasks](https://docs.honua.io/sdks/javascript/javascript-common-tasks): Two of the most common reads with the Honua JavaScript SDK: querying a FeatureServer layer and searching a STAC catalog.
 
 ## Guides
 
@@ -81,8 +82,8 @@ Every page below is an Open Knowledge Format concept: one subject per file, type
 - [Harden a production deployment](https://docs.honua.io/guides/secure/production-checklist): Work through this checklist before exposing Honua to the internet; each item is enforced or configured by a setting you can verify in .env.production.example.
 - [Check compliance posture](https://docs.honua.io/guides/secure/compliance): Pull a live SOC 2 / FedRAMP readiness snapshot, export auditor-facing reports, and dry-run your data-residency policy from the admin compliance endpoints.
 - [Operating Honua](https://docs.honua.io/guides/operate/README): Honua's day-2 operating model is one loop shared by humans, Console, and MCP agents: observe, diagnose, remediate, learn, and graduate.
-- [Operate scenario: evidence before action](https://docs.honua.io/guides/operate/scenario): Follow one deployment/readiness failure through the bounded loop:
-- [Operate metric and evidence inventory](https://docs.honua.io/guides/operate/metrics): This inventory separates the signals required by the bounded 2026.1 Operate loop from the deeper performance work tracked by #3300.
+- [Operate scenario: a protected update](https://docs.honua.io/guides/operate/scenario): Review and approve a bounded update, follow server-owned progress, and verify success or recovery across terminal, MCP and optional Console.
+- [Operate metric and evidence inventory](https://docs.honua.io/guides/operate/metrics): Source freshness, coverage, protected-update evidence and metric semantics for the bounded 2026.1 Operate scenario.
 - [Ops evidence posture](https://docs.honua.io/guides/operate/evidence-posture): The 2026.1 operational read surfaces add an evidencePosture object to their existing JSON responses.
 - [Deploy with Docker Compose](https://docs.honua.io/guides/deploy/docker-compose) *(runbook)*: Run a single-node Production configuration from published artifacts on Windows with Docker Desktop (Linux containers), PowerShell 5.1 or 7 and Python 3.11+.
 - [Pilot onboarding runbook](https://docs.honua.io/guides/deploy/pilot-onboarding-runbook): Use this runbook before handing a self-hosted pilot to an operator or customer team.
