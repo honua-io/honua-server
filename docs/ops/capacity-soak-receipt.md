@@ -101,7 +101,8 @@ nothing is defaulted.
 ## Envelope coverage
 
 `check_capacity_soak.py` compares the receipt's `envelope` block with the lock's
-`supportedEnvelope` for exact equality. Copying a block is easy; claiming it is not. The receipt
+`supportedEnvelope` for equality on every dimension present in the lock. Excluded Preview
+observations are informational and cannot make the GA receipt incomplete. Copying a block is easy; claiming it is not. The receipt
 therefore also carries `envelopeVerification` — one record per declared dimension, with what was
 declared, what was observed, and how — and an `envelopeCoverage` summary. A dimension is one of
 
@@ -114,17 +115,29 @@ declared, what was observed, and how — and an `envelopeCoverage` summary. A di
 
 There is no fourth, silent state: a dimension with no record at all fails receipt construction.
 
-### Known not-exercised dimension: `alertEvaluationsPerSecond`
+### Preview exclusions (operator ruling A, 2026-09-13)
+
+[honua-release#345](https://github.com/honua-io/honua-release/pull/345) removes
+`activeSubscriptions` and `alertEvaluationsPerSecond` from the 2026.1 lock. Realtime
+subscriptions and customer alerting are **Preview**; Preview features carry no capacity promise.
+The producer reads the updated lock, seeds only its GA topology, leaves Preview streams disabled,
+and never drives or asserts the removed dimensions. If a receipt still contains Preview
+observations, the release report echoes them as informational. The eight required GA SLO
+signals are unchanged.
+
+The following historical findings explain the ruling; they are not current capacity obligations.
+
+### Historical alerting finding: `alertEvaluationsPerSecond`
 
 The alert pipeline validates at startup that tenant-context resolution is **off** ("alert
 evaluation and delivery stores are instance-wide"). With `MultiTenancy:Enabled=false`, the OGC
 API Features item query — which the soak profile drives and through which the declared envelope's
 layers are served — answers `403 Tenant context is required to query collection items`. Driving
 the declared alert rate and serving the declared envelope are therefore mutually exclusive on one
-deployment, so the soak keeps the serving surface and records the alert rate as declared, not
-claimed.
+deployment. The original #4708 producer kept the serving surface and recorded the alert rate
+as declared, not claimed. Ruling A removes that declaration from the GA envelope.
 
-### Known not-met dimension on the 2026.1 candidate: `activeSubscriptions`
+### Historical subscription finding: `activeSubscriptions`
 
 On `7ba4226` the deployment did not hold the declared 1,000 subscriptions for the hour: 1,000 were
 opened and confirmed by the server, and 400 were still open at the end of the window, with the
