@@ -74,9 +74,14 @@ public sealed class FeatureStorageMappingManagedWriteTests
     [Operation(Operations.Create)]
     public void SupportsManagedWrites_SharedTableNameComparisonIgnoresCase()
     {
+        // Every name the predicate compares — table, attributes column and layer
+        // discriminator column — is matched without regard to case.
         var mapping = new FeatureStorageMapping(
             TableName: "FEATURES",
             SchemaName: "Honua",
+            AttributesColumn: "Attributes",
+            LayerDiscriminatorColumn: "LAYER_ID",
+            LayerDiscriminatorValue: 7,
             ProviderOptions: new Dictionary<string, string>
             {
                 [FeatureStorageMapping.SourceBackedOption] = "true"
