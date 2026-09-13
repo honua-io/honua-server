@@ -137,6 +137,11 @@ services:
     profiles: [crash-boundaries]
     image: python:3.12-alpine@sha256:b64631e04e4920160c50fbe8d8df828f7f35f06f425cb44aa09bca53e708a35a
     command: [python, /qualification/gp-terminal-proxy.py]
+    healthcheck:
+      test: [CMD, python, -c, "import socket; socket.create_connection(('127.0.0.1',6379),2).close()"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
     volumes:
       - ../../scripts/qualification/gp-terminal-proxy.py:/qualification/gp-terminal-proxy.py:ro
       - ${HONUA_GP_BARRIER_ROOT:-/tmp/honua-gp-reliability-barriers}:/barriers

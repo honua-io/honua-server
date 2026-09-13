@@ -3,10 +3,10 @@
 run_store_crash_boundary() {
   local target="$1" disruption="$2" job barrier state terminal before_record after_record
   local before_inventory after_inventory before_sha after_sha content ready outage_root
-  local scenario="crash-${target}-${disruption}"
+  local scenario="crash-${target}-${disruption}" package_before package_after
   export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
   export HONUA_GP_WORKER_REDIS=terminal-proxy:6379
-  compose --profile crash-boundaries up -d terminal-proxy >/dev/null || return 1
+  compose --profile crash-boundaries up -d --wait terminal-proxy >/dev/null || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
   job="$(submit_async gdal.ogr2ogr "${native_payload}")" || return 1
   wait_barrier "$job" claimed || { scenario_fail "worker did not reach claimed fence"; return 1; }
@@ -26,6 +26,7 @@ run_store_crash_boundary() {
   ready="$(barrier_record "$job" "$target")"
   [[ "$ready" != null ]] || { scenario_fail "requested crash fence was never observed"; return 1; }
   before_record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
+  package_before="$(compose exec -T redis redis-cli --raw EXISTS "controlplane:job:gp-result:$job")"
   before_inventory="$(find "$object_root/gp/outputs/$job" -type f -exec sha256sum {} \; | LC_ALL=C sort)"
   content="$(find "$object_root/gp/outputs/$job" -type f ! -name '*.pending' ! -name '*.hold' ! -name '*.readlease' | head -1)"
   [[ -n "$content" ]] || { scenario_fail "crash fixture did not force output staging"; return 1; }
@@ -34,6 +35,8 @@ run_store_crash_boundary() {
   if [[ "$target" == terminal-committed-registration-pending ]]; then
     [[ "$(jq -r .status <<<"$before_record")" == succeeded ]] || {
       scenario_fail "proxy fence did not follow a durable successful terminal CAS"; return 1; }
+    [[ "$package_before" == 0 ]] || {
+      scenario_fail "result package was already registered before the requested crash boundary"; return 1; }
   else
     [[ "$(jq -r .status <<<"$before_record")" == running ]] || {
       scenario_fail "worker escaped the pre-terminal crash fence"; return 1; }
@@ -73,13 +76,18 @@ run_store_crash_boundary() {
   after_sha="$(sha256sum "$content" | cut -d' ' -f1)"
   [[ "$before_sha" == "$after_sha" ]] || { scenario_fail "recovered bytes differ from durable pre-crash bytes"; return 1; }
   after_record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:$job")"
+  [[ "$(jq '.artifactReferences | length' <<<"$after_record")" == 1 ]] || {
+    scenario_fail "recovery did not converge to exactly one externally visible artifact"; return 1; }
   after_inventory="$(find "$object_root/gp/outputs/$job" -type f -exec sha256sum {} \; | LC_ALL=C sort)"
   auth_curl "$peer_url/ogc/processes/jobs/$job/results" > "$receipt_root/.$scenario.descriptor.json" || return 1
+  package_after="$(compose exec -T redis redis-cli --raw EXISTS "controlplane:job:gp-result:$job")"
+  [[ "$package_after" == 1 ]] || { scenario_fail "normal read did not recover result-package registration"; return 1; }
   jq -n --argjson fence "$ready" --argjson before "$before_record" --argjson after "$after_record" \
     --arg before_inventory "$before_inventory" --arg after_inventory "$after_inventory" \
     --arg before_sha "$before_sha" --arg after_sha "$after_sha" \
+    --argjson package_before "$package_before" --argjson package_after "$package_after" \
     --slurpfile descriptor "$receipt_root/.$scenario.descriptor.json" \
-    '{fence:$fence,job_before:$before,job_after:$after,inventory_before:$before_inventory,inventory_after:$after_inventory,sha256_before:$before_sha,sha256_after:$after_sha,descriptor:$descriptor[0]}' > "$scenario_evidence_file" || return 1
+    '{fence:$fence,job_before:$before,job_after:$after,inventory_before:$before_inventory,inventory_after:$after_inventory,sha256_before:$before_sha,sha256_after:$after_sha,result_package_before:$package_before,result_package_after:$package_after,descriptor:$descriptor[0]}' > "$scenario_evidence_file" || return 1
   record_attempt "$(jq -r .attemptCount <<<"$after_record")"
   write_receipt "$scenario" pass "" "$job" "$state" "$after_sha"
 }
