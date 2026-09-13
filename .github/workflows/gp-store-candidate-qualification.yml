@@ -21,6 +21,11 @@ jobs:
   qualify:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    services:
+      registry:
+        image: registry:3
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
@@ -54,13 +59,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: network=host
       - name: Build the unmodified production worker at the candidate source
+        id: worker
         uses: docker/build-push-action@v7
         with:
           context: candidate-worker
           file: candidate-worker/docker/worker-gdal/Dockerfile
-          load: true
-          tags: honua-gp-candidate-worker:qualification
+          push: true
+          tags: localhost:5000/gp-candidate-worker:qualification
           build-args: |
             HONUA_GIT_SHA=${{ steps.candidate.outputs.source_sha }}
           secrets: |
@@ -71,13 +79,13 @@ jobs:
         env:
           HONUA_SERVER_IMAGE: ${{ steps.candidate.outputs.server_image }}
           HONUA_GP_SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
+          HONUA_WORKER_IMAGE: localhost:5000/gp-candidate-worker@${{ steps.worker.outputs.digest }}
           HONUA_GP_SCENARIO_TIMEOUT_SECONDS: '900'
         run: |
           set -euo pipefail
-          export HONUA_WORKER_IMAGE
-          HONUA_WORKER_IMAGE=$(docker image inspect honua-gp-candidate-worker:qualification --format '{{index .RepoDigests 0}}')
-          # The worker is a local build of the pinned production source, as in
-          # the retained deployment proof. Never try to pull its local digest.
+          # Resolve through the runner-local registry so even Docker daemons
+          # using the classic image store retain a real RepoDigest after pull.
+          docker pull "$HONUA_WORKER_IMAGE"
           docker pull "$HONUA_SERVER_IMAGE"
           docker pull pgrouting/pgrouting:17-3.5-3.7.3@sha256:e15a541283d5086981f3e19648a15f969e8d09aa9e72a5a5acf6777673da1784
           docker pull redis:7.2-alpine@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed

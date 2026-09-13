@@ -19,6 +19,44 @@ proxy = module("gp-terminal-proxy")
 
 
 class CandidateBindingTests(unittest.TestCase):
+    def test_repin_and_missing_store_recovery_reject_previously_passing_receipt(self):
+        pin = {"source_sha": "1" * 40, "server_image": "server@sha256:" + "2" * 64}
+        worker = "worker@sha256:" + "3" * 64
+        identity = {"requested": {**pin, "worker_image": worker}, "observed": {}}
+        for host in ("server", "server-peer", "worker"):
+            image = worker if host == "worker" else pin["server_image"]
+            identity["observed"][host] = {"revision": pin["source_sha"],
+                                         "image_ref": image, "repo_digests": [image]}
+        names = ["topology", "output-store-attestation", "output-store-dr", "cleanup"]
+        summary = {"lane": "output-store-dr", "declared_scenarios": names,
+                   "missing_scenarios": [], "duplicate_receipts": [], "failed": 0, "passed": 4,
+                   "scenarios": [{"scenario": name, "outcome": "pass", "candidate": identity}
+                                 for name in names]}
+        summary["scenarios"][2]["evidence"] = {
+            "artifact": {"sha256_before": "a" * 64, "sha256_after": "a" * 64},
+            "recovery": {"substrates": [{"store": store, "original_destroyed": True,
+                                         "restored_into_empty_store": True,
+                                         "files_before": "checksum file", "files_after": "checksum file"}
+                                        for store in ("postgres", "redis", "gp-output")]}}
+        self.assertEqual(pin, binding.verify(pin, summary)["candidate"])
+        with self.assertRaisesRegex(ValueError, "another candidate"):
+            binding.verify({**pin, "server_image": "server@sha256:" + "4" * 64}, summary)
+        for mutation in ("missing-store", "retained-original", "corrupt-bytes", "wrong-worker", "skipped"):
+            bad = copy.deepcopy(summary)
+            proof = bad["scenarios"][2]["evidence"]
+            if mutation == "missing-store":
+                proof["recovery"]["substrates"].pop()
+            elif mutation == "retained-original":
+                proof["recovery"]["substrates"][2]["original_destroyed"] = False
+            elif mutation == "corrupt-bytes":
+                proof["artifact"]["sha256_after"] = "b" * 64
+            elif mutation == "wrong-worker":
+                bad["scenarios"][0]["candidate"]["observed"]["worker"]["revision"] = "0" * 40
+            else:
+                bad["scenarios"][2]["outcome"] = "skipped"
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                binding.verify(pin, bad)
+
     def test_repin_changes_both_image_identity_and_manifest_binding(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "manifest.json"
