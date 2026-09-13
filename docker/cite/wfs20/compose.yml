@@ -7,6 +7,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Test
       - ASPNETCORE_URLS=http://+:8080
+      - PUBLIC_BASE_URL=http://cite-auth-proxy:8080
       - HONUA_DEV_AUTH=true
       - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
       - HONUA_SKIP_MIGRATIONS=false
@@ -75,6 +76,25 @@ services:
       - cite-network
     restart: "no"
 
+  # Authenticate the ETS client using the same configured fixture API key as
+  # ordinary clients. Direct unauthenticated backend management remains denied.
+  cite-auth-proxy:
+    image: caddy:2
+    environment:
+      HONUA_CITE_API_KEY: CiteAdminPassword123!
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    networks:
+      - cite-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   # OGC CITE Team Engine for WFS 2.0 conformance testing
   cite-teamengine:
     image: ogccite/ets-wfs20:latest
@@ -85,8 +105,8 @@ services:
       - TE_BASE=/root/te_base
       - TE_HOME=/root/teamengine
     depends_on:
-      seed:
-        condition: service_completed_successfully
+      cite-auth-proxy:
+        condition: service_healthy
     volumes:
       - cite_data:/root/te_base
       - ./config:/cite-config:ro
@@ -109,7 +129,7 @@ services:
       honua-server:
         condition: service_started
     environment:
-      - WFS_ENDPOINT=http://honua-server:8080/wfs
+      - WFS_ENDPOINT=http://cite-auth-proxy:8080/wfs
       - CITE_ENGINE=http://cite-teamengine:8080/teamengine
       - TEST_PROFILE=${CITE_PROFILE:-basic}
       - HOST_UID=${HOST_UID:-1000}

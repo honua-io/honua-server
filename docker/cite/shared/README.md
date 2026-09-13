@@ -56,3 +56,14 @@ that migrated schema. The live `test-wcs-bootstrap.sh` regression verifies
 provider migration receipts, the seeded rasters, EXTERNAL storage and successful
 readiness/GetCapabilities after restart. It uses the same image environment
 variable as the WFS regression and also runs in CITE workflows.
+
+## WFS stored-query authentication
+
+The WFS 2.0 ETS exercises authenticated stored-query management but has no
+Honua API-key transport. Its private `cite-auth-proxy` supplies the fixture's
+configured API key and forwards requests to the unchanged server. Advertised
+operation URLs point to this client boundary so follow-up ETS requests retain
+the credential. The bootstrap regression verifies that direct unauthenticated
+management still returns 401, while the authenticated request reaches the
+ordinary WFS handler and returns the expected nonexistent-query exception.
+No dev-auth bypass or server authorization policy is relaxed.
