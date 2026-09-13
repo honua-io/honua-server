@@ -1,78 +1,34 @@
 ---
 type: guide
 title: "Quickstart: install, publish, and query"
-description: "Install Honua, publish a dataset, and query it over the protocols - in about ten minutes, with no checkout or credentials."
+description: "Run Honua with Docker Compose, publish a dataset, and query it over the protocols - in about ten minutes, on any machine that runs Docker."
 resource: "https://hub.docker.com/r/honuaio/honua-server"
 ---
 # Quickstart: install, publish, and query
 
-Run these blocks in order in **Windows PowerShell 5.1 or PowerShell 7** with
-Docker Desktop using Linux containers, **Docker Compose 2.23.1+**, and Python 3.11
-or later. Start Docker
-Desktop first. Keep the same terminal and installation directory throughout.
-For a Linux shell, use the equivalent [Linux package quickstart](linux-packages.md).
-For a lasting deployment, continue to [production Compose](../guides/deploy/docker-compose.md).
+Honua runs as one container beside PostGIS and Redis. This page starts it with
+Docker Compose, publishes a small dataset, and queries it back.
 
-The commands below pin an exact server image and client versions so a run is
-reproducible: server
+**You need** Docker with Compose 2.23.1 or later, and Python 3.11+ for the last
+step. Nothing else: no repository checkout, no compiler, and **no registry
+credentials** — the server image and both Python clients are public, and the
+Community edition needs no licence.
+
+Everything below is pinned so a run is reproducible: server
 `ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9`,
-[honua-admin 0.1.8](https://pypi.org/project/honua-admin/0.1.8/) and
-[honua-sdk 0.1.11](https://pypi.org/project/honua-sdk/0.1.11/). No repository
-checkout, compiler, or registry credential is needed - the image and both
-clients are public, and Community needs no license.
+[honua-admin 0.1.8](https://pypi.org/project/honua-admin/0.1.8/), and
+[honua-sdk 0.1.11](https://pypi.org/project/honua-sdk/0.1.11/).
 
-## 1. Create a private, isolated installation
+For a lasting deployment, continue to
+[production Compose](../guides/deploy/docker-compose.md). If you would rather
+install the server as a native package than run a container, see
+[Linux](linux-packages.md) or [Windows](windows-packages.md).
 
-Choose unused loopback ports if `18080` (HTTP) or `18081` (native gRPC) is occupied.
-Set `HONUA_GRPC_PORT` in `.env` to override the gRPC default. Keep this PowerShell
-session open through verification. Each new installation gets its own Compose
-project, network, three volumes, and directory. Do not regenerate credentials
-for an existing database.
+## 1. Create the project
 
-```powershell
-$ErrorActionPreference = 'Stop'
-$ComposeVersion = docker compose version --short
-if ($LASTEXITCODE -ne 0) { throw 'Docker Compose is required' }
-if ([version]($ComposeVersion.TrimStart('v') -split '-', 2)[0] -lt [version]'2.23.1') { throw 'Update Docker Desktop: Compose 2.23.1+ is required' }
-$Project = 'honua-' + [Guid]::NewGuid().ToString('N').Substring(0, 12)
-$Install = Join-Path (Get-Location) $Project
-New-Item -ItemType Directory -Path $Install | Out-Null
-$acl = Get-Acl -LiteralPath $Install
-$acl.SetAccessRuleProtection($true, $false)
-$me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$rule = New-Object System.Security.AccessControl.FileSystemAccessRule($me, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
-$acl.AddAccessRule($rule)
-Set-Acl -LiteralPath $Install -AclObject $acl
-Set-Location -LiteralPath $Install
-function New-InstallSecret {
-    $bytes = New-Object byte[] 32
-    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
-    return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
-}
-$Image = 'ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9'
-$Port = 18080
-@"
-COMPOSE_PROJECT_NAME=$Project
-HONUA_IMAGE=$Image
-HONUA_HTTP_PORT=$Port
-POSTGRES_PASSWORD=$(New-InstallSecret)
-HONUA_ADMIN_PASSWORD=Aa1!$(New-InstallSecret)
-HONUA_MASTER_KEY=$(New-InstallSecret)
-"@ | Set-Content -LiteralPath .env -Encoding Ascii
-function dc {
-    & docker compose --env-file .env -f compose.yaml @args
-    if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed ($LASTEXITCODE)" }
-}
-```
+Make a directory and put this in it as `compose.yaml`:
 
-Save the following customer configuration verbatim. Honua's HTTP and native gRPC ports are
-published on loopback; PostgreSQL and Redis are reachable only on this project's
-network. The inline SQL initializes a fresh database before the final postmaster
-becomes healthy. An existing incompatible database still fails server preflight.
-
-```powershell
-@'
+```yaml
 services:
   honua:
     image: ${HONUA_IMAGE:?Set the immutable server digest}
@@ -144,233 +100,169 @@ configs:
       CREATE EXTENSION IF NOT EXISTS postgis_topology;
       CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;
       CREATE EXTENSION IF NOT EXISTS postgis_tiger_geocoder;
-'@ | Set-Content -LiteralPath compose.yaml -Encoding Ascii
-dc config --quiet
-dc pull
-dc up -d --wait --wait-timeout 180
 ```
 
-## 2. Install the registry clients and verify startup
+## 2. Set the secrets
 
-Use an isolated virtual environment. No activation or execution-policy change is
-needed. Do not substitute `git+https` installs or local source packages.
+Three secrets go in a `.env` file beside `compose.yaml`. Generate them rather
+than inventing them.
 
-```powershell
-python -m venv .venv
-if ($LASTEXITCODE -ne 0) { throw 'Python virtual environment creation failed' }
-$Python = Join-Path $Install '.venv\Scripts\python.exe'
-& $Python -m pip install --index-url https://pypi.org/simple --only-binary=:all: 'honua-admin==0.1.8' 'honua-sdk==0.1.11' 'mcp==2.1.1'
-if ($LASTEXITCODE -ne 0) { throw 'Registry package installation failed' }
-& $Python -m pip freeze | Set-Content -LiteralPath installed-packages.txt -Encoding Ascii
-$values = @{}
-Get-Content -LiteralPath .env | ForEach-Object {
-    $pair = $_ -split '=', 2
-    if ($pair.Count -eq 2) { $values[$pair[0]] = $pair[1] }
-}
-$env:HONUA_BASE_URL = 'http://localhost:' + $values['HONUA_HTTP_PORT']
-$env:HONUA_ADMIN_PASSWORD = $values['HONUA_ADMIN_PASSWORD']
-$env:POSTGRES_PASSWORD = $values['POSTGRES_PASSWORD']
-function Wait-HonuaReady {
-    @'
-import os, time
-from honua_admin import HonuaAdminClient
-from honua_sdk.errors import HonuaHttpError, HonuaTransportError
-with HonuaAdminClient(os.environ['HONUA_BASE_URL'], api_key=os.environ['HONUA_ADMIN_PASSWORD'], timeout=5, max_retries=0) as admin:
-    deadline = time.monotonic() + 180
-    while time.monotonic() < deadline:
-        try:
-            admin.get_config()
-            break
-        except HonuaHttpError as error:
-            if error.status_code != 429 and error.status_code < 500:
-                raise
-        except HonuaTransportError:
-            pass
-        time.sleep(2)
-    else:
-        raise RuntimeError('Readiness failed; inspect Compose logs')
-'@ | & $Python -
-    if ($LASTEXITCODE -ne 0) { throw 'Readiness/authentication verification failed' }
-}
-Wait-HonuaReady
-@'
-import os
-from honua_admin import HonuaAdminClient
-from honua_sdk.errors import HonuaHttpError
-base = os.environ['HONUA_BASE_URL']
-try:
-    with HonuaAdminClient(base) as anonymous:
-        anonymous.get_config()
-except HonuaHttpError as error:
-    if error.status_code != 401:
-        raise RuntimeError('Expected anonymous admin denial with HTTP 401') from error
-else:
-    raise RuntimeError('Anonymous admin access was unexpectedly allowed')
-with HonuaAdminClient(base, api_key=os.environ['HONUA_ADMIN_PASSWORD']) as admin:
-    admin.get_config()
-print('Ready; anonymous admin denied; authenticated admin succeeded')
-'@ | & $Python -
-if ($LASTEXITCODE -ne 0) { throw 'Startup/authentication verification failed' }
+```bash
+cat > .env <<EOF
+COMPOSE_PROJECT_NAME=honua-quickstart
+HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9
+HONUA_HTTP_PORT=18080
+POSTGRES_PASSWORD=$(openssl rand -hex 32)
+HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
+HONUA_MASTER_KEY=$(openssl rand -hex 32)
+EOF
 ```
 
-## 3. Import, publish, and query a real fixture
-
-Save this small customer script. Honua's MCP ingest tool loads the small GeoJSON
-file through the shared import pipeline. The installed admin client registers
-and publishes the connection; the installed data client queries the layer.
-Import returns the physical table and column names, with GeoJSON attributes
-in its `properties` JSON column. Publish that returned table and declare the
-fixture's Point geometry. The expected names, values, longitude/latitude, and CRS are explicit;
-verification fails on lost rows, swapped axes, changed values, or missing geometry.
+<details>
+<summary>PowerShell</summary>
 
 ```powershell
-@'
-import asyncio
+function New-Secret { -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) }) }
+@"
+COMPOSE_PROJECT_NAME=honua-quickstart
+HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9
+HONUA_HTTP_PORT=18080
+POSTGRES_PASSWORD=$(New-Secret)
+HONUA_ADMIN_PASSWORD=Aa1!$(New-Secret)
+HONUA_MASTER_KEY=$(New-Secret)
+"@ | Set-Content .env -Encoding Ascii
+```
+
+</details>
+
+Both ports bind to loopback only; PostgreSQL and Redis are reachable only on the
+project's own network. Change `HONUA_HTTP_PORT` if `18080` is taken, and set
+`HONUA_GRPC_PORT` if `18081` is.
+
+Keep `.env`. Losing it means losing the database.
+
+## 3. Start it
+
+```bash
+docker compose up -d --wait --wait-timeout 180
+```
+
+Check it came up:
+
+```bash
+curl -fsS http://localhost:18080/healthz/ready
+```
+
+The admin API is not anonymous — this returns `401`, which is the correct answer:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:18080/api/v1/admin/config
+```
+
+## 4. Publish a table and query it back
+
+Put a table in the bundled PostGIS. Any SQL client works; the compose project
+already has one:
+
+```bash
+docker compose exec -T postgres psql -U honua -d honua <<'SQL'
+CREATE TABLE places (
+  id   serial PRIMARY KEY,
+  name text NOT NULL,
+  geom geometry(Point, 4326) NOT NULL
+);
+INSERT INTO places (name, geom) VALUES
+  ('west', ST_SetSRID(ST_MakePoint(-157.875, 21.3125), 4326)),
+  ('east', ST_SetSRID(ST_MakePoint(-155.0625, 19.6875), 4326));
+SQL
+```
+
+Install the two public clients, ideally in a virtual environment:
+
+```bash
+python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install 'honua-admin==0.1.8' 'honua-sdk==0.1.11'
+```
+
+Save this as `quickstart.py`. It registers that database as a connection,
+publishes the table as a layer, and queries it back:
+
+```python
 import json
-import math
-import os
-import sys
-from pathlib import Path
-import httpx2
-from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client
 from honua_admin import HonuaAdminClient, CreateSecureConnectionRequest, PublishLayerRequest
 from honua_sdk import HonuaClient
 
-base = os.environ['HONUA_BASE_URL']
-key = os.environ['HONUA_ADMIN_PASSWORD']
-state_path = Path('published-layer.json')
-expected = {'west': (7, -157.875, 21.3125), 'east': (19, -155.0625, 19.6875)}
+env = dict(line.strip().split("=", 1) for line in open(".env") if "=" in line)
+base = "http://localhost:" + env["HONUA_HTTP_PORT"]
+key = env["HONUA_ADMIN_PASSWORD"]
 
-def require(condition, message):
-    if not condition:
-        raise RuntimeError(message)
+with HonuaAdminClient(base, api_key=key) as admin:
+    connection = admin.create_connection(CreateSecureConnectionRequest(
+        name="quickstart",
+        host="postgres", port=5432, database_name="honua",
+        username="honua", password=env["POSTGRES_PASSWORD"],
+        ssl_mode="Disable", ssl_required=False))
 
-async def ingest_fixture():
-    async with httpx2.AsyncClient(headers={'X-API-Key': key}, timeout=120) as transport:
-        async with streamable_http_client(base + '/mcp', http_client=transport) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                call = await session.call_tool('honua_ingest_dataset', {
-                    'format': 'geojson', 'datasetName': 'windows_points',
-                    'data': Path('points.geojson').read_text(encoding='utf-8'), 'sourceSrid': 4326})
-                require(not call.is_error, 'Honua MCP ingest failed')
-                result = call.structured_content
-                require(isinstance(result, dict) and result.get('success'), 'Import did not succeed')
-                require(result['rowCount'] == 2 and not result.get('rowErrors'), 'Expected two imported rows without errors')
-                return result
+    layer = admin.publish_layer(connection.connection_id, PublishLayerRequest(
+        schema="public", table="places", layer_name="places",
+        service_name="quickstart", srid=4326,
+        geometry_column="geom", geometry_type="Point",
+        primary_key="id", fields_list=["id", "name"]))
 
-if '--verify-only' not in sys.argv:
-    if state_path.exists():
-        raise RuntimeError('Already published; use --verify-only after restart')
-    fixture = {'type': 'FeatureCollection', 'features': [
-        {'type': 'Feature', 'properties': {'name': name, 'value': value},
-         'geometry': {'type': 'Point', 'coordinates': [lon, lat]}}
-        for name, (value, lon, lat) in expected.items()]}
-    Path('points.geojson').write_text(json.dumps(fixture), encoding='utf-8')
-    with HonuaAdminClient(base, api_key=key) as admin:
-        connection = next((c for c in admin.list_connections() if c.name == 'windows-local'), None)
-        if connection is None:
-            connection = admin.create_connection(CreateSecureConnectionRequest(
-                name='windows-local', host='postgres', port=5432, database_name='honua',
-                username='honua', password=os.environ['POSTGRES_PASSWORD'],
-                ssl_mode='Disable', ssl_required=False))
-        result = asyncio.run(ingest_fixture())
-        layer = admin.publish_layer(connection.connection_id, PublishLayerRequest(
-            schema=result['schema'], table=result['table'], layer_name='windows-points',
-            service_name='windows', srid=4326, geometry_column=result['geometryColumn'],
-            geometry_type='Point', primary_key=result['primaryKey'], fields_list=['id', 'properties']))
-        state_path.write_text(json.dumps({'service': 'windows', 'layer': layer.layer_id}), encoding='utf-8')
-
-state = json.loads(state_path.read_text(encoding='utf-8'))
 with HonuaClient(base, api_key=key) as client:
-    result = client.query_features(state['service'], state['layer'],
-        out_fields=['id', 'properties'], return_geometry=True, extra_params={'outSR': 4326})
-require(result['spatialReference']['wkid'] == 4326, 'Unexpected query CRS')
-require(result['geometryType'] == 'esriGeometryPoint', 'Expected Point metadata')
-require(result['objectIdFieldName'] == 'id', 'Unexpected object ID field')
-require(len(result['features']) == 2, 'Expected exactly two published features')
-observed = {}
-for feature in result['features']:
-    attributes, geometry = feature['attributes']['properties'], feature['geometry']
-    name = attributes['name']
-    require(name not in observed and name in expected, 'Unexpected or duplicate feature name')
-    value, lon, lat = expected[name]
-    require(attributes['value'] == value, 'Unexpected feature value')
-    require(math.isclose(geometry['x'], lon, rel_tol=0, abs_tol=1e-9), 'Unexpected longitude')
-    require(math.isclose(geometry['y'], lat, rel_tol=0, abs_tol=1e-9), 'Unexpected latitude')
-    observed[name] = True
-require(set(observed) == set(expected), 'Missing expected features')
-print('Verified 2 published features: names, values, XY ordinates, EPSG:4326')
-'@ | Set-Content -LiteralPath journey.py -Encoding Ascii
-& $Python journey.py
-if ($LASTEXITCODE -ne 0) { throw 'Import/publish/query failed; retain diagnostics' }
+    result = client.query_features("quickstart", layer.layer_id,
+                                   out_fields=["id", "name"], return_geometry=True)
+
+print(json.dumps(result["features"], indent=2))
 ```
 
-## 4. Restart and recover
-
-Restart only this installation's server, wait for readiness, then
-read back the same persisted layer without importing or publishing it again:
-
-```powershell
-dc restart honua
-Wait-HonuaReady
-& $Python journey.py --verify-only
-if ($LASTEXITCODE -ne 0) { throw 'Persisted data verification failed' }
+```bash
+python quickstart.py
 ```
 
-To resume from a new PowerShell session, change to the saved installation
-directory, set `$Install = (Get-Location).Path`, and define `dc` from step 1.
-**First run `dc up -d --wait --wait-timeout 180`** to recreate containers using
-the retained volumes and original credentials. Only then run step 2's
-variable-loading and readiness blocks. Run
-`journey.py --verify-only` afterward. A restart or container recreation is not a
-backup restore; follow [backup and recovery](../guides/deploy/backup-and-restore.md)
-before storing irreplaceable data. Retain the private `.env`, database, Redis,
-file-storage backup, and exact image identity together. Never delete volumes or
-regenerate `.env` to bypass a migration or credential failure.
+Two features come back with their geometry, in EPSG:4326.
 
-## Diagnostics and scoped teardown
+`admin.discover_tables(connection.connection_id)` lists what else is in that
+database, with the schema, geometry column and SRID `publish_layer` wants — which
+is how you publish a table you did not create yourself.
 
-```powershell
-dc ps
-dc logs --no-color --tail 150 honua postgres redis
-docker image inspect $values['HONUA_IMAGE'] --format '{{json .RepoDigests}}'
-& $Python -m pip freeze
+The layer is now served over every protocol the deployment advertises: OGC API
+Features at `/ogc/features/collections`, GeoServices REST at
+`/rest/services/quickstart/FeatureServer/0`, WMS, WFS, vector tiles, and the rest.
+
+```bash
+curl -fsS 'http://localhost:18080/ogc/features/collections' -H "X-API-Key: $HONUA_ADMIN_PASSWORD"
 ```
 
-For support, retain the image digest, installed-package list, HTTP status,
-timestamp, and relevant error/correlation ID. Inspect logs before sharing them;
-do not send `.env`, full Compose rendering, credentials, or customer records.
+## What to do next
 
-- **Port already allocated:** change the conflicting `HONUA_HTTP_PORT` or
-  `HONUA_GRPC_PORT` in `.env`, run
-  `dc up -d`, and reload the variables in step 2.
-- **Startup exits or readiness times out:** inspect `dc logs`. A published-image
-  defect is a failed rehearsal, even if PostgreSQL is healthy. Keep the digest
-  and error; do not switch to Development or disable preflight.
-- **Registry access fails:** these pins require no package-read credential.
-  Check network/proxy policy and retry. The optional NuGet client uses a different
-  registry; see [registry clients](registry-clients.md) only if you need .NET.
-- **Import partially completed:** inspect the import result and discovered table
-  before retrying `journey.py` in the same installation. The script reuses the
-  registered `windows-local` connection by name. MCP ingest replaces its named staging dataset; use a new
-  isolated project for a new clean-room rehearsal. After successful publication,
-  the saved state makes this recipe refuse another import; use `--verify-only`.
+| | |
+| --- | --- |
+| **[Publish your own data](first-dataset.md)** | Connect an existing PostGIS database instead of the bundled one. |
+| **[Put it on a map](first-map.md)** | A MapLibre map reading the layer you just published. |
+| **[Pick a protocol](../concepts/protocols.md)** | What each surface is for, and which clients speak it. |
+| **[Deploy it properly](../guides/deploy/docker-compose.md)** | Production Compose: TLS, backups, resource limits. |
 
-Stop this installation while retaining all data:
+## Stop or remove it
 
-```powershell
-dc down
+```bash
+docker compose down              # stop, keep all data
+docker compose down --volumes    # stop and permanently delete this project's data
 ```
 
-Only when you intend to permanently discard **this installation's** data, run
-the following from its saved directory. It removes this project's containers,
-network, and its three project-scoped volumes; it does not prune other projects.
+`down --volumes` removes this project's three volumes and nothing else. Before
+storing anything you cannot lose, read
+[backup and recovery](../guides/deploy/backup-and-restore.md) — a restart is not
+a backup.
 
-```powershell
-dc down --volumes
-Remove-Item Env:HONUA_ADMIN_PASSWORD, Env:POSTGRES_PASSWORD -ErrorAction SilentlyContinue
-```
+## If something goes wrong
 
-The private installation folder remains for deliberate retention or deletion.
+- **`port is already allocated`** — change `HONUA_HTTP_PORT` or `HONUA_GRPC_PORT`
+  in `.env` and run `docker compose up -d` again.
+- **Readiness times out** — `docker compose logs honua postgres redis`. Do not
+  switch to the Development environment or disable preflight to get past a
+  startup failure; it is telling you something.
+- **A pull fails** — these pins need no credentials, so it is network or proxy
+  policy. The optional .NET client uses a different registry; see
+  [registry clients](registry-clients.md) only if you need it.
+- **Anything else** — [troubleshooting](../guides/deploy/troubleshooting.md).

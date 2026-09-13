@@ -8,12 +8,12 @@ Each link resolves to the page's source on `trunk`. These pages are also rendere
 
 ## Get started
 
-- [Install on Windows from published packages](https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/windows-packages.md): Run these blocks in order in Windows PowerShell 5.1 or PowerShell 7, from a directory where you can create a private installation folder.
-- [Linux: install published packages](https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/linux-packages.md): Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv and pip 22.3+, and a Bash terminal.
-- [Registry clients and package credentials](https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/registry-clients.md): The customer install manifest records the pins and their origins.
-- [Quickstart: install, publish, and query](https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/quickstart.md): Install Honua, publish a dataset, and query it over the protocols - in about ten minutes, with no checkout or credentials.
+- [Quickstart: install, publish, and query](https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/quickstart.md): Run Honua with Docker Compose, publish a dataset, and query it over the protocols - in about ten minutes, on any machine that runs Docker.
 - [Publish your first dataset](https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/first-dataset.md): Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 - [Make your first map](https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/first-map.md): You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes.
+- [Linux: install published packages](https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/linux-packages.md): Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv and pip 22.3+, and a Bash terminal.
+- [Install on Windows from published packages](https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/windows-packages.md): Run these blocks in order in Windows PowerShell 5.1 or PowerShell 7, from a directory where you can create a private installation folder.
+- [Client packages and registries](https://github.com/honua-io/honua-server/blob/trunk/docs/get-started/registry-clients.md): Every Honua client package is public. Which registry each one is on, and the version the quickstart pins.
 
 ## Concepts
 
