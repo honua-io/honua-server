@@ -159,6 +159,32 @@ public sealed class MultidimCoverageScanJobTests
     }
 
     [UnitTest]
+    public void EnrichDerivedZarrMetadata_PreservesKnownOrientationWithoutClassicExtent()
+    {
+        foreach (var ascending in new[] { true, false })
+        {
+            var order = ascending ? "true" : "false";
+            // Remote HDF5 can report CF coordinates while gdalinfo fails.
+            var envelope = $$"""{"mdiminfo":{{GdalMdimInfoJson}},"yAxisAscending":{{order}}}""";
+            var artifact = "data:application/json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(envelope));
+            var source = MultidimCoverageScanJob.TryMapArtifact(
+                artifact, MultidimensionalCoverageFormat.NetCdf4, Array.Empty<string>());
+            source.Should().NotBeNull();
+            source!.Extent.Should().BeNull();
+            source.HasYAxisOrientation.Should().BeTrue();
+            var zarr = new ZarrStoreMetadata(
+                ZarrFormatVersion.V2, 4326,
+                new RasterExtent { XMin = -122.525, YMin = 37.675, XMax = -122.325, YMax = 37.875, Srid = 4326 },
+                [], null, null, null, null, YAxisAscending: !ascending);
+
+            var enriched = MultidimCoverageScanJob.EnrichDerivedZarrMetadata(zarr, source);
+
+            enriched.YAxisAscending.Should().Be(ascending);
+            enriched.Extent.Should().Be(zarr.Extent);
+        }
+    }
+
+    [UnitTest]
     public void EnrichDerivedZarrMetadata_CarriesSourceGridAndAxes()
     {
         var array = new ZarrArrayMetadata(

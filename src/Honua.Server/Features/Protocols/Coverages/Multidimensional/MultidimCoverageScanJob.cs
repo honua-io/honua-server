@@ -166,7 +166,7 @@ internal static class MultidimCoverageScanJob
             if (root.TryGetProperty("yAxisAscending", out var ascending) &&
                 ascending.ValueKind is JsonValueKind.True or JsonValueKind.False)
             {
-                metadata = metadata with { YAxisAscending = ascending.GetBoolean() };
+                metadata = metadata with { YAxisAscending = ascending.GetBoolean(), HasYAxisOrientation = true };
             }
 
             return metadata;
@@ -341,7 +341,8 @@ internal static class MultidimCoverageScanJob
             TemporalDimension = tDim,
             Temporal = sourceMetadata.Temporal ?? zarrMetadata.Temporal,
             Axes = axes,
-            YAxisAscending = hasSourceGrid ? sourceMetadata.YAxisAscending : zarrMetadata.YAxisAscending,
+            YAxisAscending = sourceMetadata.HasYAxisOrientation || hasSourceGrid
+                ? sourceMetadata.YAxisAscending : zarrMetadata.YAxisAscending,
         };
     }
 

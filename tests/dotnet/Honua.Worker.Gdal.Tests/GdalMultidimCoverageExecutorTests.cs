@@ -70,10 +70,19 @@ public sealed class GdalMultidimCoverageExecutorTests
     {
         foreach (var ascending in new[] { true, false })
         {
-            foreach (var indexing in new[] { "\"/latitude\"", "{\"latitude\":{\"full_name\":\"/latitude\"}}" })
+            // netCDF reports HORIZONTAL_Y; HDF5 over S3 only preserves CF
+            // attributes on the indexing variable. Neither axis names nor
+            // classic raster geotransforms establish storage direction.
+            foreach (var dimension in new[]
             {
-                var structure = "{\"type\":\"group\",\"dimensions\":[{\"type\":\"HORIZONTAL_Y\",\"indexing_variable\":" +
-                    indexing + "}],\"arrays\":{\"sst\":{\"datatype\":\"Float32\"}}}";
+                "\"type\":\"HORIZONTAL_Y\",\"indexing_variable\":\"/latitude\"",
+                "\"type\":\"HORIZONTAL_Y\",\"indexing_variable\":{\"latitude\":{\"full_name\":\"/latitude\"}}",
+                "\"indexing_variable\":{\"latitude\":{\"full_name\":\"/latitude\",\"attributes\":{\"axis\":\"Y\"}}}",
+                "\"indexing_variable\":{\"latitude\":{\"full_name\":\"/latitude\",\"attributes\":{\"standard_name\":\"latitude\"}}}",
+            })
+            {
+                var structure = "{\"type\":\"group\",\"dimensions\":[{" + dimension +
+                    "},{\"indexing_variable\":{\"longitude\":{\"full_name\":\"/longitude\",\"attributes\":{\"axis\":\"X\"}}}}],\"arrays\":{\"sst\":{\"datatype\":\"Float32\"}}}";
                 var coordinates = ascending
                     ? "{\"values\":[37.70,\"[...]\",37.85]}"
                     : "{\"values\":[37.85,\"[...]\",37.70]}";

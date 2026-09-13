@@ -60,7 +60,7 @@ public static class GdalInfoCoverageEnricher
             var resolution = ReadResolution(root) ?? baseMetadata.Resolution;
             var extent = ReadExtent(root, baseMetadata.Srid) ?? baseMetadata.Extent;
             var (temporal, vertical) = ReadAxes(root);
-            var yAxisAscending = ReadYAxisAscending(root) ?? baseMetadata.YAxisAscending;
+            var yAxisAscending = ReadYAxisAscending(root);
 
             return baseMetadata with
             {
@@ -68,7 +68,8 @@ public static class GdalInfoCoverageEnricher
                 Resolution = resolution,
                 Temporal = temporal ?? baseMetadata.Temporal,
                 Vertical = vertical ?? baseMetadata.Vertical,
-                YAxisAscending = yAxisAscending,
+                YAxisAscending = yAxisAscending ?? baseMetadata.YAxisAscending,
+                HasYAxisOrientation = yAxisAscending.HasValue || baseMetadata.HasYAxisOrientation,
             };
         }
     }
