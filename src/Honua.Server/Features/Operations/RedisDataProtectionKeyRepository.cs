@@ -18,6 +18,31 @@ internal sealed class RedisDataProtectionKeyRepository(IConnectionMultiplexer re
             .Select(value => XElement.Parse(value.ToString(), LoadOptions.PreserveWhitespace))
             .ToArray();
 
+    /// <summary>
+    /// Rejects a legacy ring that contains any key whose descriptor was persisted without XML
+    /// encryption. Existing entries are not rewritten by ProtectKeysWithCertificate, and the
+    /// data-protection provider could otherwise continue selecting one of them after startup.
+    /// </summary>
+    public void EnsureAllElementsAreProtected()
+    {
+        var unprotected = GetAllElements()
+            .FirstOrDefault(static element => !IsProtectedElement(element));
+        if (unprotected is not null)
+        {
+            var keyId = unprotected.Attribute("id")?.Value ?? "unknown";
+            throw new InvalidOperationException(
+                $"Redis data-protection key ring contains unprotected key '{keyId}'. "
+                + "Remove or migrate the legacy key before enabling operation secret storage.");
+        }
+    }
+
+    internal static bool IsProtectedElement(XElement element)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        return element.Descendants()
+            .Any(child => string.Equals(child.Name.LocalName, "encryptedSecret", StringComparison.Ordinal));
+    }
+
     public void StoreElement(XElement element, string friendlyName)
     {
         ArgumentNullException.ThrowIfNull(element);

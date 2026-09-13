@@ -13,25 +13,26 @@ namespace Honua.Server.Features.Operations;
 /// The key ring shares the Redis authority that already holds operation proposals, handles and
 /// the protected credential envelopes, so the ring alone is not a boundary against a reader of
 /// that authority: a snapshot would carry both the ciphertext and the keys. Supplying a
-/// certificate here moves the decryption material outside Redis and restores that boundary.
-/// Without one the channel still keeps plaintext credentials out of every durable store, which
-/// is the defect this guards, but Redis remains inside the trust boundary.
+/// certificate here moves the decryption material outside Redis and restores that boundary. The
+/// certificate is mandatory whenever this durable channel is composed: ciphertext without
+/// separately protected key material is not a durable-store boundary.
 /// </remarks>
 internal static class OperationSecretKeyRingProtection
 {
     internal const string CertificatePathKey = "Operations:SecretChannel:KeyRingCertificatePath";
     internal const string CertificatePasswordKey = "Operations:SecretChannel:KeyRingCertificatePassword";
 
-    /// <summary>Loads the configured key-ring certificate, or null when none is configured.</summary>
+    /// <summary>Loads the configured key-ring certificate.</summary>
     /// <param name="configuration">The server configuration.</param>
-    /// <returns>The certificate, or <see langword="null"/> when unconfigured.</returns>
-    public static X509Certificate2? Resolve(IConfiguration configuration)
+    /// <returns>The certificate with its private key.</returns>
+    public static X509Certificate2 Resolve(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         var path = configuration[CertificatePathKey];
         if (string.IsNullOrWhiteSpace(path))
         {
-            return null;
+            throw new InvalidOperationException(
+                $"'{CertificatePathKey}' is required when the durable operation secret channel is enabled.");
         }
 
         if (!File.Exists(path))
@@ -43,8 +44,16 @@ internal static class OperationSecretKeyRingProtection
         }
 
         var password = configuration[CertificatePasswordKey];
-        return string.IsNullOrEmpty(password)
+        var certificate = string.IsNullOrEmpty(password)
             ? X509CertificateLoader.LoadPkcs12FromFile(path, password: null)
             : X509CertificateLoader.LoadPkcs12FromFile(path, password);
+        if (!certificate.HasPrivateKey)
+        {
+            certificate.Dispose();
+            throw new InvalidOperationException(
+                $"'{CertificatePathKey}' must reference a certificate with a private key.");
+        }
+
+        return certificate;
     }
 }
