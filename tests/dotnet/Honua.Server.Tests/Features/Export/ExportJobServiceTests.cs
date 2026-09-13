@@ -766,7 +766,7 @@ public sealed class ExportJobServiceTests
         if (cleanupFails)
         {
             storage.DeleteAsync("retry-artifact", Arg.Any<CancellationToken>())
-                .Returns(_ => throw new IOException("Cloud cleanup unavailable"));
+                .Returns(Task.FromException<bool>(new IOException("Cloud cleanup unavailable")));
         }
         storage.GetPresignedUrlAsync("retry-artifact", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns("https://example.test/retry.csv");
