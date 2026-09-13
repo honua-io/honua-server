@@ -467,13 +467,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             VerifyLateRasterProvisioningConsistency(state);
         }
 
-        VerifyExclusiveMigrationConsistency(
-            state,
-            RasterLayerStatisticsMigration,
-            ["raster_layer_statistics"],
-            _rasterLayerStatisticsColumns,
-            ["raster_layer_statistics_pkey"],
-            state.CanAwaitConfiguredSchemaAdoption);
+        VerifyRasterLayerStatisticsConsistency(state);
         VerifyExclusiveMigrationConsistency(
             state,
             _migrations.MetadataV2SnapshotMigration,
@@ -561,10 +555,16 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             var kind = requiredTables.Any(state.Tables.Contains)
                 ? DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
                 : DatabaseSchemaFloorFailureKind.MigrationNotApplied;
-            throw CreateFailure(
-                migration,
-                kind,
-                "the required numbered migration is not recorded in public.schema_versions.");
+            var detail = "the required numbered migration is not recorded in public.schema_versions.";
+            if (requirement == DatabaseSchemaRequirement.RasterLayerStatistics && state.IsAwaitingRasterProviderRoot)
+            {
+                // The request path never migrates. Name the one action that does, so a late
+                // postgis_raster enablement is not mistaken for unrecoverable divergence (#4744).
+                detail += " postgis_raster is installed but the raster provider migrations have not run yet; " +
+                    "restart the server (or run the migrations) to apply them.";
+            }
+
+            throw CreateFailure(migration, kind, detail);
         }
 
         if (requirement == DatabaseSchemaRequirement.SensorThings &&
@@ -741,6 +741,47 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal,
                 $"migration adoption candidate is incomplete: EXTERNAL storage is absent for {state.SchemaName}.raster_overviews.raster.");
         }
+    }
+
+    private static void VerifyRasterLayerStatisticsConsistency(SchemaState state)
+    {
+        string[] requiredTables = ["raster_layer_statistics"];
+        string[] requiredIndexes = ["raster_layer_statistics_pkey"];
+
+        // The runner discovers the provider root only once postgis_raster is installed, so a
+        // deployment that enables the extension after its first boot has not run migration 003
+        // yet. A table created in the meantime by infrastructure or a fixture seed (#4744) is
+        // adopted by that pending CREATE TABLE IF NOT EXISTS, which journals it, and the
+        // post-upgrade VerifyAsync then requires the receipt. The adoption cannot repair a
+        // malformed object hidden behind IF NOT EXISTS, and once the provider root is journaled
+        // a missing 003 row is ordinary divergence again.
+        if (state.IsAwaitingRasterProviderRoot &&
+            !state.IsApplied(RasterLayerStatisticsMigration) &&
+            requiredTables.Any(state.Tables.Contains))
+        {
+            var missing = FindMissingPhysicalState(
+                state,
+                requiredTables,
+                _rasterLayerStatisticsColumns,
+                requiredIndexes);
+            if (missing.Length > 0)
+            {
+                throw CreateFailure(
+                    RasterLayerStatisticsMigration,
+                    DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal,
+                    $"migration adoption candidate is incomplete: {string.Join(", ", missing)}.");
+            }
+
+            return;
+        }
+
+        VerifyExclusiveMigrationConsistency(
+            state,
+            RasterLayerStatisticsMigration,
+            requiredTables,
+            _rasterLayerStatisticsColumns,
+            requiredIndexes,
+            state.CanAwaitConfiguredSchemaAdoption);
     }
 
     private static void VerifyPendingLateRasterTable(
@@ -1026,6 +1067,13 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             IsApplied(RasterTablesMigration) ||
             IsApplied(RasterLayerStatisticsMigration) ||
             _rasterTables.Any(Tables.Contains);
+
+        /// <summary>
+        /// postgis_raster is installed, so the canonical runner will discover the provider root,
+        /// but its baseline has never been journaled: the extension was enabled after first boot.
+        /// </summary>
+        public bool IsAwaitingRasterProviderRoot =>
+            HasPostGisRaster && !IsApplied(RasterTablesMigration);
 
         public bool CanAwaitConfiguredSchemaAdoption =>
             !string.Equals(SchemaName, PostgresSchemaConfiguration.DefaultMetadataSchema, StringComparison.Ordinal) &&
