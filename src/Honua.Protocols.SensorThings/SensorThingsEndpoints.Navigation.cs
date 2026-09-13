@@ -90,18 +90,30 @@ internal static partial class SensorThingsEndpoints
         long id, DatastreamRelation relation, HttpContext context,
         IObservationStore store, StaFilterTranslator filterTranslator)
     {
+        var schema = relation switch
+        {
+            DatastreamRelation.Thing => StaEntitySchema.Things,
+            DatastreamRelation.Sensor => StaEntitySchema.Sensors,
+            DatastreamRelation.ObservedProperty => StaEntitySchema.ObservedProperties,
+            _ => throw new ArgumentOutOfRangeException(nameof(relation))
+        };
+        if (!TryPlanEntity(context, schema, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
         var datastream = await store.GetDatastreamAsync(id, context.RequestAborted).ConfigureAwait(false);
         if (datastream is null)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Datastream({id}) not found.");
         }
 
-        // Reuse the target's entity handler, including query validation and projection.
+        // Reuse the target's validated plan and result mapping without reparsing options.
         return relation switch
         {
-            DatastreamRelation.Thing => await HandleGetThing(datastream.ThingId, context, store, filterTranslator).ConfigureAwait(false),
-            DatastreamRelation.Sensor => await HandleGetSensor(datastream.SensorId, context, store, filterTranslator).ConfigureAwait(false),
-            DatastreamRelation.ObservedProperty => await HandleGetObservedProperty(datastream.ObservedPropertyId, context, store, filterTranslator).ConfigureAwait(false),
+            DatastreamRelation.Thing => await GetThingResultAsync(datastream.ThingId, context, store, plan).ConfigureAwait(false),
+            DatastreamRelation.Sensor => await GetSensorResultAsync(datastream.SensorId, context, store, plan).ConfigureAwait(false),
+            DatastreamRelation.ObservedProperty => await GetObservedPropertyResultAsync(datastream.ObservedPropertyId, context, store, plan).ConfigureAwait(false),
             _ => throw new ArgumentOutOfRangeException(nameof(relation))
         };
     }
@@ -110,9 +122,14 @@ internal static partial class SensorThingsEndpoints
         long id, HttpContext context, [FromServices] IObservationStore store,
         [FromServices] StaFilterTranslator filterTranslator)
     {
+        if (!TryPlanEntity(context, StaEntitySchema.Datastreams, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
         var observation = await store.GetObservationAsync(id, context.RequestAborted).ConfigureAwait(false);
         return observation is null
             ? StandardErrorHelpers.CreateNotFound(context, $"Observation({id}) not found.")
-            : await HandleGetDatastream(observation.DatastreamId, context, store, filterTranslator).ConfigureAwait(false);
+            : await GetDatastreamResultAsync(observation.DatastreamId, context, store, plan).ConfigureAwait(false);
     }
 }

@@ -187,14 +187,21 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
         }
         using var selected = await GetAsync("/sta/v1.1/Observations(1)/Datastream?$select=name,Thing&$expand=Thing");
         selected.RootElement.GetProperty("Thing").GetProperty("@iot.id").GetInt64().Should().Be(1);
-        foreach (var path in new[] { "Datastreams(1)/Thing", "Datastreams(1)/Sensor", "Datastreams(1)/ObservedProperty", "Observations(1)/Datastream" })
+        foreach (var path in new[] { "Datastreams(1)/Thing", "Datastreams(1)/Sensor", "Datastreams(1)/ObservedProperty", "Observations(1)/Datastream", "Datastreams(999999)/Thing", "Datastreams(999999)/Sensor", "Datastreams(999999)/ObservedProperty", "Observations(999999)/Datastream" })
         {
-            foreach (var option in new[] { "$filter=id%20eq%201", "$orderby=name", "$top=0", "$skip=1", "$count=true" })
+            foreach (var option in new[] { "$filter=id%20eq%201", "$orderby=name", "$top=0", "$skip=1", "$count=true", "$select=NoSuchProperty" })
             {
                 using var invalid = await _fixture.Client.GetAsync($"/sta/v1.1/{path}?{option}");
                 invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest, "{0} cannot apply to {1}", option, path);
             }
         }
+        foreach (var path in new[] { "Things(999999)/Datastreams", "Sensors(999999)/Datastreams", "ObservedProperties(999999)/Datastreams", "Datastreams(999999)/Observations" })
+        {
+            using var invalid = await _fixture.Client.GetAsync($"/sta/v1.1/{path}?$select=NoSuchProperty");
+            invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        using var missingParentExpansion = await _fixture.Client.GetAsync("/sta/v1.1/Observations(999999)/Datastream?$expand=Observations($select=result)");
+        missingParentExpansion.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
         foreach (var query in new[] { "$select=FeatureOfInterest", "$expand=FeatureOfInterest" })
         {
             using var unavailable = await _fixture.Client.GetAsync("/sta/v1.1/Observations(1)?" + query);

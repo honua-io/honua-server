@@ -303,6 +303,12 @@ internal static partial class SensorThingsEndpoints
             return failure;
         }
 
+        return await GetThingResultAsync(id, context, store, plan).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> GetThingResultAsync(
+        long id, HttpContext context, IObservationStore store, StaQueryPlan plan)
+    {
         var thing = await store.GetThingAsync(id, context.RequestAborted).ConfigureAwait(false);
         return thing is null
             ? StandardErrorHelpers.CreateNotFound(context, $"Thing({id}) not found.")
@@ -350,6 +356,12 @@ internal static partial class SensorThingsEndpoints
             return failure;
         }
 
+        return await GetSensorResultAsync(id, context, store, plan).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> GetSensorResultAsync(
+        long id, HttpContext context, IObservationStore store, StaQueryPlan plan)
+    {
         var sensor = await store.GetSensorAsync(id, context.RequestAborted).ConfigureAwait(false);
         return sensor is null
             ? StandardErrorHelpers.CreateNotFound(context, $"Sensor({id}) not found.")
@@ -397,6 +409,12 @@ internal static partial class SensorThingsEndpoints
             return failure;
         }
 
+        return await GetObservedPropertyResultAsync(id, context, store, plan).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> GetObservedPropertyResultAsync(
+        long id, HttpContext context, IObservationStore store, StaQueryPlan plan)
+    {
         var property = await store.GetObservedPropertyAsync(id, context.RequestAborted).ConfigureAwait(false);
         return property is null
             ? StandardErrorHelpers.CreateNotFound(context, $"ObservedProperty({id}) not found.")
@@ -457,6 +475,12 @@ internal static partial class SensorThingsEndpoints
             return failure;
         }
 
+        return await GetDatastreamResultAsync(id, context, store, plan).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> GetDatastreamResultAsync(
+        long id, HttpContext context, IObservationStore store, StaQueryPlan plan)
+    {
         var ct = context.RequestAborted;
         var datastream = await store.GetDatastreamAsync(id, ct).ConfigureAwait(false);
         if (datastream is null)
@@ -486,13 +510,18 @@ internal static partial class SensorThingsEndpoints
         [FromServices] IObservationStore store,
         [FromServices] StaFilterTranslator filterTranslator)
     {
+        if (!TryPlanCollection(context, StaEntitySchema.Observations, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
         var datastream = await store.GetDatastreamAsync(id, context.RequestAborted).ConfigureAwait(false);
         if (datastream is null)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Datastream({id}) not found.");
         }
 
-        return await QueryObservationsAsync(context, store, filterTranslator, datastreamId: id).ConfigureAwait(false);
+        return await QueryObservationsAsync(context, store, plan, datastreamId: id).ConfigureAwait(false);
     }
 
     private static async Task<IResult> QueryObservationsAsync(
@@ -506,6 +535,12 @@ internal static partial class SensorThingsEndpoints
             return failure;
         }
 
+        return await QueryObservationsAsync(context, store, plan, datastreamId).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> QueryObservationsAsync(
+        HttpContext context, IObservationStore store, StaQueryPlan plan, long? datastreamId)
+    {
         var query = plan.ObservationQuery(datastreamId);
         var ct = context.RequestAborted;
         var observations = await store.QueryObservationsAsync(query, ct).ConfigureAwait(false);
