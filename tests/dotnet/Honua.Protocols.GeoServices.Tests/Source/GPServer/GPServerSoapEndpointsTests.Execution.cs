@@ -38,7 +38,7 @@ public sealed partial class GPServerSoapEndpointsTests
         var jobs = Substitute.For<IGeoprocessingJobService>();
         jobs.EnsureCallerAuthorizedAsync(Arg.Any<ClaimsPrincipal>(), OperatorResourceType.Process,
             OperatorOperation.Execute, Arg.Any<CancellationToken>())
-            .ThrowsAsync(new GeoprocessingAuthorizationException("Execution is forbidden.", false));
+            .ThrowsAsync(new GeoprocessingAuthorizationException(false, "Execution is forbidden."));
         using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
         {
             services.RemoveAll<IGeoprocessingJobService>();
@@ -122,7 +122,7 @@ public sealed partial class GPServerSoapEndpointsTests
     {
         var jobs = Substitute.For<IGeoprocessingJobService>();
         jobs.GetJobAsync("soap-job", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new GeoprocessingAuthorizationException("Job belongs to another caller.", false));
+            .ThrowsAsync(new GeoprocessingAuthorizationException(false, "Job belongs to another caller."));
         using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
         {
             services.RemoveAll<IGeoprocessingJobService>();

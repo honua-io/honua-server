@@ -17,6 +17,8 @@ public sealed class GPServerSoapExecutionTests
     private const string ArcGis = "http://www.esri.com/schemas/ArcGIS/10.8";
 
     [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
     public void Submission_PositionalValues_PreservePublishedInputNamesAndContext()
     {
         var xml = Submission("""
@@ -32,7 +34,11 @@ public sealed class GPServerSoapExecutionTests
         });
     }
 
-    [UnitTheory]
+    [Theory]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [InlineData("<ToolName>duplicate</ToolName><Values/>")]
     [InlineData("<Values><GPValue xsi:type='tns:GPDouble'><Value>3</Value></GPValue></Values>")]
     [InlineData("<Values><GPValue xsi:type='xsd:GPString'><Value>x</Value></GPValue></Values>")]
@@ -50,6 +56,8 @@ public sealed class GPServerSoapExecutionTests
     }
 
     [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
     public void Submission_UnsetValues_DoNotInventDefaults()
     {
         var parameters = GPServerSoapExecution.ReadSubmission(Submission("""
@@ -59,6 +67,8 @@ public sealed class GPServerSoapExecutionTests
     }
 
     [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
     public void Submission_ArcPyDefaultEnvironment_IsNeutralForScalarGeometryOnly()
     {
         var xml = Submission("""
@@ -88,6 +98,8 @@ public sealed class GPServerSoapExecutionTests
     }
 
     [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
     public void Result_ScalarArtifact_PreservesExactValueAndEscapesXml()
     {
         var result = GPServerSoapExecution.BuildResult(
@@ -99,6 +111,8 @@ public sealed class GPServerSoapExecutionTests
     }
 
     [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
     public void ResultNames_PreserveRequestedOrder_AndRejectDuplicates()
     {
         var xml = XElement.Parse("<GetJobResult><JobID>job</JobID><ParameterNames><String>b</String><String>a</String></ParameterNames></GetJobResult>");

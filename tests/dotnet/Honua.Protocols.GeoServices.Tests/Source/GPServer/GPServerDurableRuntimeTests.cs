@@ -205,7 +205,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
                     {
                         break;
                     }
-                    status.Value.Should().NotBeOneOf("esriJobFailed", "esriJobCancelled");
+                    status.Value.Should().NotBe("esriJobFailed").And.NotBe("esriJobCancelled");
                     await Task.Delay(100, timeout.Token);
                 }
                 result = await SendSoapAsync(client, "GetJobResult", $"<JobID>{jobId}</JobID><ParameterNames><String>outputScalar</String></ParameterNames>");
