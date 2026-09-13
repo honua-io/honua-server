@@ -213,7 +213,8 @@ def test_conn01_capabilities(wfs: WebFeatureService, wfs_collector: Certificatio
 
 @pytest.mark.cert("CERT-CONN-02")
 def test_conn02_transport(base_url: str, wfs_collector: CertificationEvidenceCollector) -> None:
-    assert base_url.split("://", 1)[0] == "http"
+    scheme = base_url.split("://", 1)[0]
+    assert scheme == "http"
     wfs_collector.record(
         "CERT-CONN-02", "pass" if scheme == "https" else "not-applicable",
         notes=(
@@ -716,6 +717,17 @@ def test_geom01_anchor_coordinate(wfs: WebFeatureService, typename: str,
     )
 
 
+def _crs_key(value: str) -> str:
+    # OGC WMS 1.3, Annex B.3: CRS:84 is longitude/latitude, just like
+    # the OGC CRS84 URI/URN (https://docs.ogc.org/is/06-042/06-042.pdf).
+    upper = value.upper()
+    if upper == "CRS:84" or upper.endswith(":CRS84") or upper.endswith("/CRS84"):
+        return "OGC:CRS84"
+    if "EPSG" in upper:
+        return "EPSG:" + re.split(r"[:/]", upper)[-1]
+    raise AssertionError(f"unrecognized advertised CRS: {value}")
+
+
 def _gml_anchor(wfs: WebFeatureService, typename: str, srsname: str) -> tuple[list[str], list[float]]:
     """GetFeature as GML for the first (anchor) feature.
 
@@ -764,13 +776,20 @@ def test_ext_every_advertised_crs_round_trips(wfs: WebFeatureService, typename: 
     """
     checked = 0
     for crs in wfs.contents[typename].crsOptions:
-        for spelling in {crs.getcode(), crs.getcodeurn()}:
+        key = _crs_key(crs.id)
+        # OWSLib synthesizes nonstandard urn:ogc:def:crs:CRS::84 from
+        # CRS:84. Exercise the literal advertisement plus the OGC alias.
+        spellings = {crs.id, crs.getcode(), CRS84_URN if key == "OGC:CRS84" else crs.getcodeurn()}
+        for spelling in spellings:
             srs_names, position = _gml_anchor(wfs, typename, spelling)
             assert len(srs_names) == 1, f"{spelling}: mixed srsName values {srs_names}"
-            assert str(crs.code) in srs_names[0], (
+            assert _crs_key(srs_names[0]) == key, (
                 f"requested {spelling!r} but the GML declares {srs_names[0]!r}"
             )
-            if crs.code == 4326:
+            if key == "OGC:CRS84":
+                delta = geographic_delta((position[0], position[1]), (fx.ANCHOR_LON, fx.ANCHOR_LAT))
+                assert delta <= GEOGRAPHIC_TOLERANCE_DEGREES, position
+            elif key == "EPSG:4326":
                 delta = geographic_delta((position[0], position[1]), (fx.ANCHOR_LAT, fx.ANCHOR_LON))
                 assert delta <= GEOGRAPHIC_TOLERANCE_DEGREES, position
             else:
@@ -803,7 +822,7 @@ def test_ext_crs84_label_matches_axis_order(wfs: WebFeatureService, typename: st
     """
     for spelling in (CRS84_URN, "CRS:84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84"):
         srs_names, position = _gml_anchor(wfs, typename, spelling)
-        assert "CRS84" in srs_names[0].upper(), (
+        assert len(srs_names) == 1 and _crs_key(srs_names[0]) == "OGC:CRS84", (
             f"srsname={spelling!r} produced longitude/latitude ordinates {position} but labelled "
             f"them {srs_names[0]!r}, which declares latitude first"
         )
@@ -1046,11 +1065,8 @@ def test_ext_cross_protocol_consistency(wfs: WebFeatureService, typename: str,
         f"feature counts differ: WFS {wfs_total}, OGC API {oaf_total}"
     )
 
-    wfs_codes = {crs.code for crs in wfs.contents[typename].crsOptions}
-    oaf_codes = {
-        int(uri.rstrip("/").rsplit("/", 1)[-1])
-        for uri in collection["crs"] if uri.rstrip("/").rsplit("/", 1)[-1].isdigit()
-    }
+    wfs_codes = {_crs_key(crs.id) for crs in wfs.contents[typename].crsOptions}
+    oaf_codes = {_crs_key(uri) for uri in collection["crs"]}
     assert wfs_codes <= oaf_codes, (
         f"WFS advertises CRS codes {wfs_codes} that OGC API does not: {oaf_codes}"
     )

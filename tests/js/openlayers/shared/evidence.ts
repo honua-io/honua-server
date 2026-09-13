@@ -174,6 +174,7 @@ const VALID_PROTOCOLS = new Set([
 // ---------------------------------------------------------------------------
 
 function getServerVersion(): string {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
   try {
     return execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
   } catch {

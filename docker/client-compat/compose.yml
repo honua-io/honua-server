@@ -92,8 +92,11 @@ services:
       PGUSER: postgres
       PGPASSWORD: compat_password
       PGDATABASE: honua_compat
+    # The real server must own schema creation and its migration journal.
+    # Seeding first creates migration-owned tables without journal entries,
+    # which correctly makes startup/readiness reject the fixture (#4731/#4735).
     depends_on:
-      postgres:
+      honua:
         condition: service_healthy
     networks:
       - compat
@@ -169,8 +172,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      seed:
-        condition: service_completed_successfully
     networks:
       - compat
     healthcheck:
@@ -233,6 +234,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
       gdal-worker:
         condition: service_started
       multidim-object-seed:
@@ -246,12 +249,15 @@ services:
       context: ../..
       dockerfile: docker/client-compat/gdal/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       HONUA_GDAL_SERVICE_ID: test_service
       HONUA_GDAL_COLLECTION_ID: "0"
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -269,12 +275,16 @@ services:
       context: ../..
       dockerfile: docker/client-compat/pyqgis/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
+      HONUA_PYQGIS_SERVER_COMMIT: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       HONUA_PYQGIS_SERVICE_ID: test_service
       HONUA_PYQGIS_COLLECTION_ID: "0"
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -287,12 +297,15 @@ services:
       context: ../..
       dockerfile: docker/client-compat/openlayers/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       HONUA_SERVICE_ID: browser_compat
       HONUA_LAYER_ID: "2000"
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -305,10 +318,13 @@ services:
       context: ../..
       dockerfile: docker/client-compat/cesium/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -321,6 +337,7 @@ services:
       context: ../..
       dockerfile: docker/client-compat/arcgis-stub/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       ARCGIS_STUB_SERVICE_NAME: browser_compat
       ARCGIS_STUB_LAYER_ID: "2000"
@@ -332,6 +349,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -358,7 +377,7 @@ services:
       HONUA_BASE_URL: http://honua:5000
       HONUA_GEOPANDAS_SERVICE_ID: test_service
       HONUA_GEOPANDAS_COLLECTION_ID: "0"
-      HONUA_CERT_VECTOR_COLLECTION_ID: "10"
+      HONUA_CERT_VECTOR_COLLECTION_ID: "2011"
       HONUA_CERT_API_KEY: ClientCompatAdmin123!
       HONUA_CERT_OIDC_ISSUER: https://cert-auth.honua.test
       HONUA_CERT_OIDC_AUDIENCE: honua-client-compat
@@ -373,6 +392,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -393,7 +414,7 @@ services:
       # consumes, so the two lanes certify the same rendered surface.
       HONUA_OWSLIB_RASTER_SERVICE_ID: browser_compat
       HONUA_OWSLIB_RASTER_LAYER_ID: "2000"
-      HONUA_CERT_VECTOR_COLLECTION_ID: "10"
+      HONUA_CERT_VECTOR_COLLECTION_ID: "2011"
       HONUA_CERT_RASTER_SERVICE_ID: cert_auth_raster
       HONUA_CERT_RASTER_LAYER_ID: "2010"
       HONUA_CERT_API_KEY: ClientCompatAdmin123!
@@ -410,6 +431,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -435,6 +458,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -460,6 +485,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:
@@ -488,6 +515,8 @@ services:
     depends_on:
       honua:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     networks:
       - compat
     volumes:

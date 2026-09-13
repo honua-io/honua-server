@@ -289,8 +289,11 @@ def test_schm01_attribute_schema(
 ) -> None:
     """Every canonical attribute field reaches the client over WFS."""
     timer = CaseTimer()
-    info = pyogrio.read_info(wfs_dsn, layer=wfs_typename)
-    fields = {str(name) for name in info["fields"]}
+    # NumPy/read_info drops OGR Time fields; Arrow preserves the complete
+    # schema and lets this assertion verify every declared field and its type.
+    _, table = pyogrio.read_arrow(wfs_dsn, layer=wfs_typename)
+    fields = set(table.schema.names)
+    assert str(table.schema.field("event_time").type) == "time32[ms]"
     missing = [name for name in fixture.ATTRIBUTE_FIELDS if name not in fields]
 
     assert not missing, (
@@ -766,11 +769,11 @@ def test_nb_wfs_typ02_temporal_values(
 ) -> None:
     """Temporal fields carry parseable, correct values."""
     timer = CaseTimer()
-    frame = pyogrio.read_dataframe(wfs_dsn, layer=wfs_typename)
+    frame = pyogrio.read_dataframe(wfs_dsn, layer=wfs_typename, use_arrow=True)
     anchor = _anchor_row(frame)
 
     assert "datetime64" in str(frame["created_at"].dtype)
-    assert "datetime64" in str(frame["event_date"].dtype)
+    assert str(frame["event_date"].iloc[0]) == "2024-02-01"
     created = pandas.to_datetime(frame["created_at"], utc=True)
     dates = pandas.to_datetime(frame["event_date"])
 
@@ -787,8 +790,8 @@ def test_nb_wfs_typ02_temporal_values(
         notes=(
             f"created_at={anchor['created_at']!r}, event_date="
             f"{anchor['event_date']!r}, event_time={anchor['event_time']!r} - "
-            "the declared xsd:dateTime/xsd:date types materialized as pandas "
-            "datetime dtypes and all values match the seeded instants."
+            "the declared xsd:dateTime/xsd:date/xsd:time types survived Arrow "
+            "conversion and all values match the seeded instants."
         ),
     )
 

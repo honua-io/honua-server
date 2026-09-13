@@ -153,6 +153,12 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
                 infoJson = infoResult.StandardOutput;
             }
 
+            // Classic NetCDF raster views normalize rows to north-up, while
+            // gdalmdimtranslate preserves storage order. Read only the Y coordinate
+            // endpoints to bind the metadata to the actual multidimensional rows.
+            var yAxisAscending = await ReadYAxisAscendingAsync(
+                runner, vsiPath, result.StandardOutput, workspace, linked.Token).ConfigureAwait(false);
+
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(80, "Converting to Zarr", cancellationToken).ConfigureAwait(false);
 
@@ -172,7 +178,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(85, "Publishing coverage metadata", cancellationToken).ConfigureAwait(false);
 
-            var payload = Encoding.UTF8.GetBytes(BuildCombinedArtifact(result.StandardOutput, infoJson, zarrRootPath));
+            var payload = Encoding.UTF8.GetBytes(BuildCombinedArtifact(result.StandardOutput, infoJson, zarrRootPath, yAxisAscending));
             if (payload.Length > opts.MaxArtifactBytes)
             {
                 Log.ArtifactTooLarge(logger, job.OperationId, payload.Length, opts.MaxArtifactBytes);
@@ -191,6 +197,115 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         {
             GdalScratch.TryCleanup(workspace, logger);
         }
+    }
+
+    private static async Task<bool?> ReadYAxisAscendingAsync(
+        IGdalCommandRunner runner,
+        string vsiPath,
+        string mdimJson,
+        string workspace,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var structure = JsonDocument.Parse(mdimJson);
+            if (structure.RootElement.ValueKind != JsonValueKind.Object ||
+                !structure.RootElement.TryGetProperty("dimensions", out var dimensions) ||
+                dimensions.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            string? coordinate = null;
+            foreach (var dimension in dimensions.EnumerateArray())
+            {
+                if (dimension.ValueKind != JsonValueKind.Object ||
+                    !dimension.TryGetProperty("indexing_variable", out var indexing))
+                {
+                    continue;
+                }
+
+                var isYAxis = dimension.TryGetProperty("type", out var type) &&
+                    type.ValueKind == JsonValueKind.String && type.GetString() == "HORIZONTAL_Y";
+                string? candidate = isYAxis && indexing.ValueKind == JsonValueKind.String ? indexing.GetString() : null;
+                if (indexing.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var variable in indexing.EnumerateObject())
+                    {
+                        if (variable.Value.ValueKind == JsonValueKind.Object &&
+                            (isYAxis || IsCfYAxis(variable.Value)) &&
+                            variable.Value.TryGetProperty("full_name", out var name) && name.ValueKind == JsonValueKind.String)
+                        {
+                            candidate = name.GetString();
+                            break;
+                        }
+                    }
+                }
+
+                if (candidate is null)
+                {
+                    continue;
+                }
+                if (string.IsNullOrEmpty(candidate) || candidate.Length > 1024 || !candidate.StartsWith('/'))
+                {
+                    return null;
+                }
+                if (coordinate is not null && coordinate != candidate)
+                {
+                    return null; // Multiple grids need a variable-specific coordinate mapping.
+                }
+                coordinate = candidate;
+            }
+
+            if (coordinate is null)
+            {
+                return null;
+            }
+
+            var result = await runner.RunAsync("gdalmdiminfo",
+                new List<string> { "-array", coordinate, "-detailed", "-limit", "2", vsiPath },
+                workspace, cancellationToken).ConfigureAwait(false);
+            if (!result.Succeeded || string.IsNullOrWhiteSpace(result.StandardOutput))
+            {
+                return null;
+            }
+            using var details = JsonDocument.Parse(result.StandardOutput);
+            if (details.RootElement.ValueKind != JsonValueKind.Object ||
+                !details.RootElement.TryGetProperty("values", out var values) || values.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+            // GDAL's bounded output is [first, "[...]", last] for longer axes.
+            var endpoints = values.EnumerateArray()
+                .Where(value => value.ValueKind == JsonValueKind.Number)
+                .Select(value => value.GetDouble()).ToArray();
+            return endpoints.Length == 2 && double.IsFinite(endpoints[0]) && double.IsFinite(endpoints[1]) &&
+                endpoints[0] != endpoints[1] ? endpoints[1] > endpoints[0] : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    private static bool IsCfYAxis(JsonElement coordinate)
+    {
+        // The HDF5 driver used for remote NetCDF4 preserves CF coordinate
+        // attributes but does not populate the dimension's HORIZONTAL_Y type.
+        if (!coordinate.TryGetProperty("attributes", out var attributes) ||
+            attributes.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+        return (attributes.TryGetProperty("axis", out var axis) &&
+                axis.ValueKind == JsonValueKind.String && axis.GetString() == "Y") ||
+            (attributes.TryGetProperty("standard_name", out var standardName) &&
+                standardName.ValueKind == JsonValueKind.String &&
+                standardName.GetString() is "latitude" or "projection_y_coordinate");
     }
 
     private static async Task<GdalCommandResult?> RunInfoAsync(
@@ -243,7 +358,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         return stem + ".zarr";
     }
 
-    private static string BuildCombinedArtifact(string mdimJson, string? infoJson, string? zarrRootPath)
+    private static string BuildCombinedArtifact(string mdimJson, string? infoJson, string? zarrRootPath, bool? yAxisAscending)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
@@ -268,6 +383,11 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
                 {
                     // gdalinfo emitted non-JSON; skip enrichment payload.
                 }
+            }
+
+            if (yAxisAscending is { } ascending)
+            {
+                writer.WriteBoolean("yAxisAscending", ascending);
             }
 
             if (!string.IsNullOrWhiteSpace(zarrRootPath))

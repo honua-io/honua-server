@@ -146,6 +146,7 @@ jobs:
           DOCKER_BUILDKIT=1 docker build \
             --secret id=github_actor,env=GITHUB_ACTOR \
             --secret id=github_token,env=GITHUB_TOKEN \
+            --build-arg HONUA_GIT_SHA="${{ github.sha }}" \
             -t honua-server:client-compat \
             .
           build_exit=$?
@@ -222,7 +223,7 @@ jobs:
             } > docker/client-compat/output/${{ matrix.lane }}/lane-exit-code.txt
             docker compose -f docker/client-compat/compose.yml \
               --profile ${{ matrix.lane }} \
-              logs --no-color --tail=200 \
+              logs --no-color \
               postgres seed honua ${{ matrix.lane }} \
               > docker/client-compat/output/${{ matrix.lane }}/compose.log 2>&1 || true
           fi
@@ -241,10 +242,11 @@ jobs:
           path: docker/client-compat/output/${{ matrix.lane }}
           tier: nightly
 
-      - name: Annotate failed lane
+      - name: Fail failed lane after preserving evidence
         if: steps.run.outputs.exit_code != '0'
         run: |
-          echo "::warning::Lane ${{ matrix.lane }} exited with code ${{ steps.run.outputs.exit_code }}"
+          echo "::error::Lane ${{ matrix.lane }} exited with code ${{ steps.run.outputs.exit_code }}"
+          exit 1
 
   baseline-diff:
     name: Baseline diff and gap report
@@ -277,7 +279,9 @@ jobs:
 
       - name: Stage current-run envelopes
         shell: bash
-        run: scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output
+        run: |
+          scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output
+          python3 scripts/client-compat/validate-envelope-source.py docker/client-compat/output "${{ github.sha }}"
 
       - name: Compare against baselines and refresh gap report
         id: diff

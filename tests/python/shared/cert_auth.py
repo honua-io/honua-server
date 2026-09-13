@@ -73,6 +73,7 @@ class AuthCredentials:
             "iss": self.oidc_issuer,
             "aud": self.oidc_audience,
             "sub": "cert-auth-reader",
+            "tenant_id": "default",
             "name": "Certification Auth Reader",
             "roles": ["admin"],
             "iat": now - 60,

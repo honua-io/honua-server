@@ -19,7 +19,7 @@ sql:
           geometry_column, storage_srid, temporal_column, geometry_type, srid,
           extent, default_visibility, metadata
       ) SELECT
-          10, 'Authenticated Test Layer', 'Authenticated mirror of layer 0',
+          2011, 'Authenticated Test Layer', 'Authenticated mirror of layer 0',
           table_name, primary_key_column, geometry_column, storage_srid,
           temporal_column, geometry_type, srid, extent, default_visibility,
           jsonb_build_object(
@@ -34,19 +34,19 @@ sql:
           layer_id, field_name, field_type, field_order,
           max_length, nullable, default_value, description
       ) SELECT
-          10, field_name, field_type, field_order,
+          2011, field_name, field_type, field_order,
           max_length, nullable, default_value, description
       FROM honua.layer_fields WHERE layer_id = 0
       ON CONFLICT (layer_id, field_name) DO NOTHING;
 
       INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
-      VALUES ('cert_auth_vector', 10, 0)
+      VALUES ('cert_auth_vector', 2011, 0)
       ON CONFLICT (service_name, layer_id) DO NOTHING;
 
       INSERT INTO features (layer_id, geometry, attributes, created_at, updated_at)
-      SELECT 10, geometry, attributes, created_at, updated_at
+      SELECT 2011, geometry, attributes, created_at, updated_at
       FROM features WHERE layer_id = 0
-        AND NOT EXISTS (SELECT 1 FROM features WHERE layer_id = 10);
+        AND NOT EXISTS (SELECT 1 FROM features WHERE layer_id = 2011);
 
   # Protected WMS mirror over the anonymous browser point fixture.
   - |

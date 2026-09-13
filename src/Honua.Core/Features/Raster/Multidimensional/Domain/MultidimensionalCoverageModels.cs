@@ -201,6 +201,12 @@ public sealed record MultidimensionalCoverageMetadata
     public bool YAxisAscending { get; init; }
 
     /// <summary>
+    /// True when coordinate values or a geotransform establish the Y storage
+    /// direction, even if spatial extent enrichment is unavailable.
+    /// </summary>
+    public bool HasYAxisOrientation { get; init; }
+
+    /// <summary>
     /// Discovered data variables. Empty when the operator-declared variable
     /// names did not match any data variable in the source.
     /// </summary>
