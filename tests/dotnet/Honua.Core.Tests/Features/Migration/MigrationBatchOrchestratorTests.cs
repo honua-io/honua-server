@@ -142,12 +142,175 @@ public sealed class MigrationBatchOrchestratorTests
         final.Status.Should().Be(MigrationBatchRunStatus.Succeeded);
     }
 
+    // ---- #4600: service-level fidelity verdict --------------------------------------------------
+    // Expected verdicts come from the acceptance criteria, not from current output: a service
+    // migration is full fidelity only when every layer is full fidelity and every requested
+    // relationship reached the target; a deferred relationship, an apply that never ran, or a layer
+    // that did not complete is blocking; a layer that completed without proving parity is unverified.
+
+    [Fact]
+    public async Task AdvanceAsync_WhenEveryLayerIsFullFidelityAndRelationshipsPersist_ReportsFullFidelity()
+    {
+        var (orchestrator, catalog, jobManager, importService) = Build();
+        importService.Outcomes =
+        [
+            new MigrationRelationshipApplyOutcome
+            {
+                SourceRelationshipId = "resource:x:layer:0:relationship:0",
+                Outcome = MigrationCatalogWriteOutcome.Created,
+                Message = "Relationship persisted onto the target.",
+                TargetRelationshipRef = "rel-200-0"
+            }
+        ];
+        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = EmptyManifestBody(), ApplyRelationships = true });
+
+        await CompleteAllChildrenAsync(orchestrator, catalog, jobManager, batch.BatchId, 200, MigrationFidelityVerdicts.FullFidelity);
+
+        var final = await catalog.GetAsync(batch.BatchId);
+        final!.Status.Should().Be(MigrationBatchRunStatus.Succeeded);
+        final.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.FullFidelity);
+        final.FidelityDifferences.Should().BeEmpty();
+        (await catalog.GetChildrenAsync(batch.BatchId)).Should().OnlyContain(
+            child => child.FidelityVerdict == MigrationFidelityVerdicts.FullFidelity,
+            "each child's per-layer verdict is copied onto the durable child row");
+    }
+
+    [Fact]
+    public async Task AdvanceAsync_WhenRelationshipApplyDefersARelationship_RoutesBatchToNeedsReview()
+    {
+        var (orchestrator, catalog, jobManager, importService) = Build();
+        importService.Outcomes =
+        [
+            new MigrationRelationshipApplyOutcome
+            {
+                SourceRelationshipId = "resource:x:layer:0:relationship:7",
+                Outcome = MigrationCatalogWriteOutcome.AlreadyExists,
+                Message = "Relationship is classified 'manual-review' and is not recreated by automated apply.",
+                TargetRelationshipRef = "rel-200-7",
+                Deferred = true
+            }
+        ];
+        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = EmptyManifestBody(), ApplyRelationships = true });
+
+        await CompleteAllChildrenAsync(orchestrator, catalog, jobManager, batch.BatchId, 200, MigrationFidelityVerdicts.FullFidelity);
+
+        var final = await catalog.GetAsync(batch.BatchId);
+        final!.Status.Should().Be(
+            MigrationBatchRunStatus.NeedsReview,
+            "every layer imported cleanly, but the service lost a relationship the source had");
+        final.RelationshipsApplied.Should().BeTrue();
+        final.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        var difference = final.FidelityDifferences.Should().ContainSingle().Subject;
+        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.RelationshipOmitted);
+        difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Blocking);
+        difference.Subject.Should().Be("resource:x:layer:0:relationship:7");
+        final.StatusNote.Should().Contain("resource:x:layer:0:relationship:7");
+    }
+
+    [Fact]
+    public async Task AdvanceAsync_WhenRelationshipManifestCannotBeParsed_RoutesBatchToNeedsReview()
+    {
+        var (orchestrator, catalog, jobManager, importService) = Build();
+        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = "{ not json", ApplyRelationships = true });
+
+        await CompleteAllChildrenAsync(orchestrator, catalog, jobManager, batch.BatchId, 200, MigrationFidelityVerdicts.FullFidelity);
+
+        importService.ApplyRelationshipsCalls.Should().Be(0);
+        var final = await catalog.GetAsync(batch.BatchId);
+        final!.Status.Should().Be(MigrationBatchRunStatus.NeedsReview);
+        final.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        var difference = final.FidelityDifferences.Should().ContainSingle().Subject;
+        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.RelationshipApplyNotExecuted);
+        difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Blocking);
+        difference.Summary.Should().Contain("could not be parsed");
+    }
+
+    [Fact]
+    public async Task AdvanceAsync_WhenALayerCompletesUnverified_SucceedsWithoutClaimingFullFidelity()
+    {
+        var (orchestrator, catalog, jobManager, _) = Build();
+        var batch = await orchestrator.StartAsync(NewRequest());
+
+        var children = await catalog.GetChildrenAsync(batch.BatchId);
+        await jobManager.CompleteJobAsync(children[0].JobId!, GeoservicesImportStatus.Completed, 100, MigrationFidelityVerdicts.FullFidelity);
+        await orchestrator.AdvanceAsync(batch.BatchId);
+        children = await catalog.GetChildrenAsync(batch.BatchId);
+        await jobManager.CompleteJobAsync(children[1].JobId!, GeoservicesImportStatus.Completed, 101, MigrationFidelityVerdicts.Unverified);
+        await orchestrator.AdvanceAsync(batch.BatchId);
+
+        var final = await catalog.GetAsync(batch.BatchId);
+        final!.Status.Should().Be(MigrationBatchRunStatus.Succeeded, "an unexecuted check is not evidence of a faithless import");
+        final.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Unverified);
+        var difference = final.FidelityDifferences.Should().ContainSingle().Subject;
+        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.ServiceLayerUnverified);
+        difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Unverified);
+        difference.Subject.Should().Be("resource:x:layer:1");
+        difference.Actual.Should().Be(MigrationFidelityVerdicts.Unverified);
+    }
+
+    [Fact]
+    public async Task AdvanceAsync_WhenALayerIsRoutedToReview_ReportsIncompleteServiceWithThatLayer()
+    {
+        var (orchestrator, catalog, jobManager, _) = Build();
+        var batch = await orchestrator.StartAsync(NewRequest());
+
+        var children = await catalog.GetChildrenAsync(batch.BatchId);
+        await jobManager.CompleteJobAsync(children[0].JobId!, GeoservicesImportStatus.NeedsReview, 100, MigrationFidelityVerdicts.Incomplete);
+        await orchestrator.AdvanceAsync(batch.BatchId);
+        children = await catalog.GetChildrenAsync(batch.BatchId);
+
+        // The review-routed origin layer published its data, so its dependent must still be queued;
+        // before #4600 it stayed pending forever and the batch never finished.
+        children[1].Status.Should().Be(MigrationBatchChildStatus.Running);
+        children[1].JobId.Should().NotBeNull();
+        await jobManager.CompleteJobAsync(children[1].JobId!, GeoservicesImportStatus.Completed, 101, MigrationFidelityVerdicts.FullFidelity);
+        await orchestrator.AdvanceAsync(batch.BatchId);
+
+        var final = await catalog.GetAsync(batch.BatchId);
+        final!.Status.Should().Be(MigrationBatchRunStatus.NeedsReview);
+        final.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        var difference = final.FidelityDifferences.Should().ContainSingle().Subject;
+        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.ServiceLayerIncomplete);
+        difference.Subject.Should().Be("resource:x:layer:0");
+        difference.Actual.Should().Be("needs-review (incomplete)");
+    }
+
+    [Fact]
+    public async Task AdvanceAsync_WhenALayerFails_RecordsEveryUnmigratedLayerAndTheSkippedRelationshipApply()
+    {
+        var (orchestrator, catalog, jobManager, importService) = Build();
+        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = EmptyManifestBody(), ApplyRelationships = true });
+
+        var children = await catalog.GetChildrenAsync(batch.BatchId);
+        await jobManager.CompleteJobAsync(children[0].JobId!, GeoservicesImportStatus.Failed, fidelityVerdict: MigrationFidelityVerdicts.Incomplete);
+        await orchestrator.AdvanceAsync(batch.BatchId);
+
+        importService.ApplyRelationshipsCalls.Should().Be(0);
+        var final = await catalog.GetAsync(batch.BatchId);
+        final!.Status.Should().Be(MigrationBatchRunStatus.Failed);
+        final.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        final.FidelityDifferences.Select(d => (d.Code, d.Subject, d.Actual)).Should().Equal(
+            (MigrationFidelityDifferenceCodes.RelationshipApplyNotExecuted, "relationships", "relationship apply did not run"),
+            (MigrationFidelityDifferenceCodes.ServiceLayerIncomplete, "resource:x:layer:0", "failed (incomplete)"),
+            (MigrationFidelityDifferenceCodes.ServiceLayerIncomplete, "resource:x:layer:1", "pending"));
+    }
+
+    private static string EmptyManifestBody() => System.Text.Json.JsonSerializer.Serialize(
+        new MigrationManifestArtifact
+        {
+            SourceKind = "arcgis-geoservices-rest",
+            Source = new MigrationSourceIdentity { DisplayName = "Example", BaseUrl = "https://example.com" },
+            Summary = new MigrationManifestSummary()
+        },
+        MigrationEvidencePackJsonContext.Default.MigrationManifestArtifact);
+
     private static async Task CompleteAllChildrenAsync(
         MigrationBatchOrchestrator orchestrator,
         IMigrationBatchRunCatalog catalog,
         FakeJobManager jobManager,
         string batchId,
-        int publishedLayerId = 100)
+        int publishedLayerId = 100,
+        string? fidelityVerdict = null)
     {
         for (var guard = 0; guard < 10; guard++)
         {
@@ -158,7 +321,7 @@ public sealed class MigrationBatchOrchestratorTests
                 break;
             }
 
-            await jobManager.CompleteJobAsync(running.JobId!, GeoservicesImportStatus.Completed, publishedLayerId);
+            await jobManager.CompleteJobAsync(running.JobId!, GeoservicesImportStatus.Completed, publishedLayerId, fidelityVerdict);
             await orchestrator.AdvanceAsync(batchId);
         }
     }
@@ -211,6 +374,8 @@ public sealed class MigrationBatchOrchestratorTests
 
         public IReadOnlyDictionary<string, int>? LastPublishedLayerMap { get; private set; }
 
+        public MigrationRelationshipApplyOutcome[] Outcomes { get; set; } = [];
+
         public Task<MigrationRelationshipApplyOutcome[]> ApplyRelationshipsAsync(
             MigrationManifestArtifact manifest,
             IReadOnlyDictionary<string, int> publishedLayerMap,
@@ -219,7 +384,7 @@ public sealed class MigrationBatchOrchestratorTests
         {
             ApplyRelationshipsCalls++;
             LastPublishedLayerMap = publishedLayerMap;
-            return Task.FromResult(Array.Empty<MigrationRelationshipApplyOutcome>());
+            return Task.FromResult(Outcomes);
         }
 
         public Task<GeoservicesServiceInfo> DiscoverServiceAsync(GeoservicesDiscoveryRequest request, CancellationToken cancellationToken = default)
@@ -251,13 +416,18 @@ public sealed class MigrationBatchOrchestratorTests
 
         public IReadOnlyList<string> Queue => _queue.Enqueued;
 
-        public async Task CompleteJobAsync(string jobId, GeoservicesImportStatus status, int? publishedLayerId = null)
+        public async Task CompleteJobAsync(
+            string jobId,
+            GeoservicesImportStatus status,
+            int? publishedLayerId = null,
+            string? fidelityVerdict = null)
         {
             var current = await _progress.GetProgressAsync(jobId);
             var updated = (current ?? GeoservicesImportProgress.CreateInitial(jobId, "https://example.com", 0, "t")) with
             {
                 Status = status,
                 PublishedLayerId = publishedLayerId,
+                FidelityVerdict = fidelityVerdict,
                 CompletedAt = DateTimeOffset.UtcNow
             };
             await _progress.SetProgressAsync(jobId, updated);
@@ -349,6 +519,7 @@ public sealed class MigrationBatchOrchestratorTests
             int? publishedLayerId,
             string? statusNote,
             DateTimeOffset updatedAt,
+            string? fidelityVerdict = null,
             CancellationToken cancellationToken = default)
         {
             if (!_children.TryGetValue(batchId, out var children))
@@ -371,6 +542,7 @@ public sealed class MigrationBatchOrchestratorTests
                 JobId = jobId ?? children[index].JobId,
                 PublishedLayerId = publishedLayerId ?? children[index].PublishedLayerId,
                 StatusNote = statusNote ?? children[index].StatusNote,
+                FidelityVerdict = fidelityVerdict ?? children[index].FidelityVerdict,
                 UpdatedAt = updatedAt
             };
             children[index] = updated;
@@ -386,6 +558,8 @@ public sealed class MigrationBatchOrchestratorTests
             DateTimeOffset? completedAt,
             bool? relationshipsApplied,
             string? statusNote,
+            string? fidelityVerdict = null,
+            MigrationFidelityDifference[]? fidelityDifferences = null,
             CancellationToken cancellationToken = default)
         {
             if (!_batches.TryGetValue(batchId, out var record) || record.Status != MigrationBatchRunStatus.Running)
@@ -401,7 +575,9 @@ public sealed class MigrationBatchOrchestratorTests
                 CancelledChildren = cancelledChildren,
                 CompletedAt = completedAt ?? record.CompletedAt,
                 RelationshipsApplied = relationshipsApplied ?? record.RelationshipsApplied,
-                StatusNote = statusNote ?? record.StatusNote
+                StatusNote = statusNote ?? record.StatusNote,
+                FidelityVerdict = fidelityVerdict ?? record.FidelityVerdict,
+                FidelityDifferences = fidelityDifferences ?? record.FidelityDifferences
             };
             _batches[batchId] = updated;
             return Task.FromResult<MigrationBatchRunRecord?>(updated);

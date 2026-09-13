@@ -103,7 +103,7 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 Log.JobRequestNotFound(_logger, jobId);
 
                 if (progress == null ||
-                    progress.Status is GeoservicesImportStatus.Completed or GeoservicesImportStatus.Failed or GeoservicesImportStatus.Cancelled)
+                    IsTerminalStatus(progress.Status))
                 {
                     return;
                 }
@@ -201,8 +201,12 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 return;
             }
 
-            // Update final progress
-            var finalStatus = result.Success ? GeoservicesImportStatus.Completed : GeoservicesImportStatus.Failed;
+            // Update final progress. #4600: a run the fidelity gate routed to review is NeedsReview, not
+            // Failed, and its verdict and per-resource differences are persisted with the job so the batch
+            // orchestrator and API clients can act on them; before this they were dropped here.
+            var finalStatus = result.Success
+                ? GeoservicesImportStatus.Completed
+                : result.NeedsReview ? GeoservicesImportStatus.NeedsReview : GeoservicesImportStatus.Failed;
             var finalProgress = new GeoservicesImportProgress
             {
                 JobId = jobId,
@@ -219,9 +223,20 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
                 CompletedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = result.ErrorMessage,
                 Warnings = result.Warnings,
-                CurrentPhase = result.Success
-                    ? result.PublishedLayerId.HasValue ? "Import completed and layer published" : "Import completed"
-                    : "Import failed"
+                AttachmentsProcessed = result.AttachmentCount,
+                FailedAttachments = result.FailedAttachments,
+                ReconciliationArtifact = result.ReconciliationArtifact,
+                CatalogReconciliationReport = result.CatalogReconciliationReport,
+                FidelityVerdict = result.FidelityVerdict,
+                FidelityDifferences = result.FidelityDifferences,
+                CurrentPhase = finalStatus switch
+                {
+                    GeoservicesImportStatus.Completed => result.PublishedLayerId.HasValue
+                        ? "Import completed and layer published"
+                        : "Import completed",
+                    GeoservicesImportStatus.NeedsReview => "Import published but requires operator review (fidelity gate)",
+                    _ => "Import failed"
+                }
             };
 
             await progressController.SetFinalProgressAsync(finalProgress, jobCancellation.Token).ConfigureAwait(false);
@@ -233,6 +248,10 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
             if (result.Success)
             {
                 Log.JobCompleted(_logger, jobId, result.FeatureCount, stopwatch.Elapsed.TotalSeconds);
+            }
+            else if (result.NeedsReview)
+            {
+                Log.JobNeedsReview(_logger, jobId, result.FidelityVerdict, stopwatch.Elapsed.TotalSeconds);
             }
             else
             {
@@ -379,10 +398,16 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
     }
 
     private static bool IsTerminalStatus(GeoservicesImportStatus status)
-        => status is GeoservicesImportStatus.Completed or GeoservicesImportStatus.Failed or GeoservicesImportStatus.Cancelled;
+        => status is GeoservicesImportStatus.Completed
+            or GeoservicesImportStatus.Failed
+            or GeoservicesImportStatus.Cancelled
+            or GeoservicesImportStatus.NeedsReview;
 
     private static partial class Log
     {
+        [LoggerMessage(7716, LogLevel.Warning, "Import job {JobId} requires operator review (fidelity verdict {FidelityVerdict}, duration: {DurationSeconds:F1}s)")]
+        public static partial void JobNeedsReview(ILogger logger, string jobId, string fidelityVerdict, double durationSeconds);
+
         [LoggerMessage(7700, LogLevel.Information, "Geoservices import background service starting (instance: {InstanceId})")]
         public static partial void ServiceStarting(ILogger logger, string instanceId);
 

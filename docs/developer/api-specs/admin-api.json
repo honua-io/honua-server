@@ -30972,6 +30972,16 @@
           "statusNote": {
             "type": "string",
             "nullable": true
+          },
+          "fidelityVerdict": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "full-fidelity",
+              "unverified",
+              "incomplete"
+            ],
+            "description": "Per-layer migration fidelity verdict reported by the child import job; null until the child is terminal."
           }
         }
       },
@@ -31050,6 +31060,60 @@
             "items": {
               "$ref": "#/components/schemas/ImportMigrationBatchChildResponse"
             }
+          },
+          "fidelityVerdict": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "full-fidelity",
+              "unverified",
+              "incomplete"
+            ],
+            "description": "Service-level migration fidelity verdict. `status` says whether the batch finished; this says whether the migrated service is proven equivalent to the source. Null while running."
+          },
+          "fidelityDifferences": {
+            "type": "array",
+            "description": "Per-resource differences that produced `fidelityVerdict`, ordered by code then subject.",
+            "items": {
+              "$ref": "#/components/schemas/ImportMigrationFidelityDifference"
+            }
+          }
+        }
+      },
+      "ImportMigrationFidelityDifference": {
+        "type": "object",
+        "description": "One actionable source-to-target difference, or a required check that did not execute.",
+        "required": [
+          "code",
+          "severity",
+          "summary"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable finding code, e.g. `fidelity.service.layer-incomplete` or `fidelity.relationship.omitted`."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "unverified"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true
+          },
+          "expected": {
+            "type": "string",
+            "nullable": true
+          },
+          "actual": {
+            "type": "string",
+            "nullable": true
+          },
+          "summary": {
+            "type": "string"
           }
         }
       },

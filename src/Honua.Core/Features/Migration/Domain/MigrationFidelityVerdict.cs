@@ -81,6 +81,24 @@ public static class MigrationFidelityDifferenceCodes
 
     /// <summary>The catalog reconciliation pass did not execute.</summary>
     public const string CatalogReconciliationNotExecuted = "fidelity.catalog-reconciliation.not-executed";
+
+    /// <summary>
+    /// A layer in a service (batch) import did not complete at full fidelity: it failed, was
+    /// cancelled, never ran, or was routed to review with a blocking difference.
+    /// </summary>
+    public const string ServiceLayerIncomplete = "fidelity.service.layer-incomplete";
+
+    /// <summary>
+    /// A layer in a service (batch) import completed, but its own fidelity verdict is not
+    /// full-fidelity (a required check did not execute, or no verdict was recorded).
+    /// </summary>
+    public const string ServiceLayerUnverified = "fidelity.service.layer-unverified";
+
+    /// <summary>
+    /// A service import requested relationship apply, but the apply step never ran, so every
+    /// relationship in the manifest is missing from the target.
+    /// </summary>
+    public const string RelationshipApplyNotExecuted = "fidelity.relationship-apply.not-executed";
 }
 
 /// <summary>

@@ -15,4 +15,5 @@ namespace Honua.Db.Postgres.Features.Migration;
 /// </summary>
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
 [JsonSerializable(typeof(IReadOnlyList<string>))]
+[JsonSerializable(typeof(Honua.Core.Features.Migration.Domain.MigrationFidelityDifference[]))]
 internal sealed partial class MigrationBatchRunJsonContext : JsonSerializerContext;
