@@ -45,4 +45,27 @@ public sealed class SensorThingsServiceRootPublicUrlTests : IAsyncLifetime
                 .Be($"https://sensors.example.test/honua/sta/v1.1/{name}");
         }
     }
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Datastreams({id})/Thing")]
+    [Endpoint("GET /sta/v1.1/Observations({id})/Datastream")]
+    public async Task Navigation_WithPublicBaseUrl_PreservesExternalOriginAndPrefix()
+    {
+        foreach (var path in new[] { "/sta/v1.1/Datastreams(1)/Thing", "/sta/v1.1/Observations(1)/Datastream" })
+        {
+            using var response = await _fixture.Client.GetAsync(path);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("@iot.id").GetInt64().Should().Be(1);
+            var links = document.RootElement.EnumerateObject()
+                .Where(property => property.Name.EndsWith("@iot.navigationLink", StringComparison.Ordinal)
+                    || property.Name == "@iot.selfLink").ToArray();
+            links.Should().NotBeEmpty();
+            foreach (var link in links)
+            {
+                link.Value.GetString().Should().StartWith("https://sensors.example.test/honua/sta/v1.1/");
+            }
+        }
+    }
+
 }

@@ -62,6 +62,18 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /sta/v1.1/Things({id})/Datastreams")]
+    public async Task Navigation_WhenFeatureDisabled_Returns404()
+    {
+        foreach (var path in new[] { "Things(1)/Datastreams", "Sensors(1)/Datastreams", "ObservedProperties(1)/Datastreams", "Datastreams(1)/Thing", "Datastreams(1)/Sensor", "Datastreams(1)/ObservedProperty", "Observations(1)/Datastream" })
+        {
+            using var response = await _fixture.Client.GetAsync("/sta/v1.1/" + path);
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /sta/v1.1/Things")]
     [Trait("Tier", "Fast")]
     public async Task StaThings_WhenFeatureDisabled_Returns404()

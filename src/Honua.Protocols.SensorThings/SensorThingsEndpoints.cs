@@ -28,7 +28,7 @@ namespace Honua.Protocols.SensorThings;
 /// 400 when it is malformed or names an unknown property, 501 when it is recognised but
 /// unimplemented — rather than being dropped (STA 1.1 Req 28-35, OData 4.0 §8.2.1).
 /// </remarks>
-internal static class SensorThingsEndpoints
+internal static partial class SensorThingsEndpoints
 {
     internal const string BasePath = "/sta/v1.1";
 
@@ -76,6 +76,14 @@ internal static class SensorThingsEndpoints
             .Produces(400)
             .Produces(404)
             .Produces(501);
+
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Things({id:long})/Datastreams", HandleThingDatastreams), "ThingsDatastreams");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Sensors({id:long})/Datastreams", HandleSensorDatastreams), "SensorsDatastreams");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/ObservedProperties({id:long})/Datastreams", HandleObservedPropertyDatastreams), "ObservedPropertiesDatastreams");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/Thing", HandleDatastreamThing), "DatastreamsThing");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/Sensor", HandleDatastreamSensor), "DatastreamsSensor");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/ObservedProperty", HandleDatastreamObservedProperty), "DatastreamsObservedProperty");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Observations({id:long})/Datastream", HandleObservationDatastream), "ObservationsDatastream");
 
         // Phase 2 ingest (REST/bulk observation creation + datastream creation) and
         // Phase 3 real-time streaming (SSE/WebSocket) are mapped from their partial-class
@@ -409,8 +417,14 @@ internal static class SensorThingsEndpoints
             return failure;
         }
 
+        return await QueryDatastreamsAsync(context, store, plan, plan.CatalogQuery).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> QueryDatastreamsAsync(
+        HttpContext context, IObservationStore store, StaQueryPlan plan, CatalogQuery query)
+    {
         var ct = context.RequestAborted;
-        var datastreams = await store.ListDatastreamsAsync(plan.CatalogQuery, ct).ConfigureAwait(false);
+        var datastreams = await store.ListDatastreamsAsync(query, ct).ConfigureAwait(false);
         var staBase = StaBase(context);
 
         var expander = new StaDatastreamExpander(store, plan, staBase);
@@ -424,7 +438,7 @@ internal static class SensorThingsEndpoints
             new StaEntitySet<StaDatastream>
             {
                 Value = value,
-                Count = plan.Options.Count ? await store.CountDatastreamsAsync(plan.CatalogQuery, ct).ConfigureAwait(false) : null,
+                Count = plan.Options.Count ? await store.CountDatastreamsAsync(query, ct).ConfigureAwait(false) : null,
                 NextLink = NextLink(context, plan.Options, datastreams.Count)
             },
             SensorThingsJsonContext.Default.StaEntitySetStaDatastream,

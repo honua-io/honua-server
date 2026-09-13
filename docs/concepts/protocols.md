@@ -29,7 +29,7 @@ Honua serves every published layer through multiple protocols at once — the sa
 | OGC API Records | `/ogc/records` | Catalog/metadata search clients | Standards-based catalog discovery and record search |
 | OGC API Environmental Data Retrieval (EDR) **(Preview)** | `/edr` | Environmental/scientific tooling | Query environmental data resources by position or cube. Preview: CRS, temporal-selection, output-format and coordinate-query corrections target 2026.2 |
 | OGC API Styles | `/ogc/styles` | Style-aware map clients | Discover and fetch published layer styles and metadata |
-| OGC SensorThings v1.1 (Preview) | `/sta/v1.1` | IoT/observation clients | REST access to Things, Datastreams, Sensors, and Observations; enable `Capabilities:Experimental:serve.sensorthings:Enabled=true` |
+| OGC SensorThings v1.1 (Preview) | `/sta/v1.1` | IoT/observation clients | Service discovery and linked REST access to Things, Datastreams, Sensors, ObservedProperties, and Observations; FeaturesOfInterest and Locations are not exposed; enable `Capabilities:Experimental:serve.sensorthings:Enabled=true` |
 | WMS 1.3 / 1.1.1 | `/rest/services/{serviceId}/MapServer/WMS` or `/ogc/services/{serviceId}/wms` | QGIS, legacy OGC clients | Clients expect classic GetMap/GetFeatureInfo |
 | WFS 2.0 / 1.1.0 / 1.0.0 | `/wfs` | QGIS, GDAL/OGR, legacy stacks | Clients expect classic GetFeature with GML output |
 | WCS 2.0.1 | `/rest/services/{serviceId}/ImageServer/WCS` or `/ogc/services/{serviceId}/wcs` | Science/elevation tooling | Clients need raw subsetted coverage values |

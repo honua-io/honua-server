@@ -121,14 +121,22 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   all-pass CITE evidence.
 - **WMTS scope is WebMercatorQuad only** on the GeoServices `MapServer/WMTS` alias
   and the `/ogc` classic surface.
+- **SensorThings discovery and navigation cover the five exposed entity sets.**
+  Both `/sta/v1.1` and `/sta/v1.1/` list Things, Sensors, ObservedProperties,
+  Datastreams and Observations. Follow links in either direction between a
+  Datastream and its Thing/Sensor/ObservedProperty, and between an Observation
+  and its Datastream. Related Datastream collections apply query options within
+  the relationship, including counts and continuation links.
 - **SensorThings query options are honoured or refused, never ignored.** `$filter`,
   `$orderby`, `$select`, `$top`, `$skip` and `$count` work on every entity set, and
   `$expand` works on Datastreams for `Thing`, `Sensor`, `ObservedProperty` and
   `Observations` (including nested `$top`/`$skip`/`$filter`/`$orderby`). Anything
   outside that surface fails the request rather than returning unfiltered data:
   expanding `Datastreams` from a Thing/Sensor/ObservedProperty, or `Datastream`/
-  `FeatureOfInterest` from an Observation, returns HTTP 501 — follow the entity's
-  `@iot.navigationLink` instead. A `$filter` naming an unknown property, or carrying
+  `FeatureOfInterest` from an Observation, returns HTTP 501. Follow the entity's
+  `@iot.navigationLink` for supported relationships instead. FeaturesOfInterest
+  and Locations are not exposed; observations omit FeatureOfInterest links even
+  when an ingested row carries an opaque FeatureOfInterest identifier. A `$filter` naming an unknown property, or carrying
   a literal of the wrong type for its property, returns HTTP 400. `$filter` and
   `$orderby` on a single-entity route return HTTP 400 because they cannot apply.
 - **OGC API Processes negotiates sync and async execution.** Omission runs a process

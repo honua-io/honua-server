@@ -56,6 +56,14 @@ public static partial class EndpointRegistry
         new("GET", "/sta/v1.1/Observations"),
         new("GET", "/sta/v1.1/Observations({id})"),
 
+        new("GET", "/sta/v1.1/Things({id})/Datastreams"),
+        new("GET", "/sta/v1.1/Sensors({id})/Datastreams"),
+        new("GET", "/sta/v1.1/ObservedProperties({id})/Datastreams"),
+        new("GET", "/sta/v1.1/Datastreams({id})/Thing"),
+        new("GET", "/sta/v1.1/Datastreams({id})/Sensor"),
+        new("GET", "/sta/v1.1/Datastreams({id})/ObservedProperty"),
+        new("GET", "/sta/v1.1/Observations({id})/Datastream"),
+
         // OGC SensorThings API (STA v1.1) Phase 2 ingest + Phase 3 streaming (#1747)
         new("POST", "/sta/v1.1/Observations"),
         new("POST", "/sta/v1.1/Datastreams({id})/Observations"),

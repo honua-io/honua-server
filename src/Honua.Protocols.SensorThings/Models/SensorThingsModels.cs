@@ -352,7 +352,4 @@ public sealed record StaObservation
     [JsonPropertyName("Datastream@iot.navigationLink")]
     public required string DatastreamNavigationLink { get; init; }
 
-    /// <summary>Navigation link to the related FeatureOfInterest.</summary>
-    [JsonPropertyName("FeatureOfInterest@iot.navigationLink")]
-    public required string FeatureOfInterestNavigationLink { get; init; }
 }

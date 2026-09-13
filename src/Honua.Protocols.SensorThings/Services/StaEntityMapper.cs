@@ -49,10 +49,8 @@ internal static class StaEntityMapper
 
     public static StaObservation MapObservation(SensorThingsObservation observation, string staBase)
     {
-        var foiLink = observation.FeatureOfInterestId is { } foiId
-            ? $"{staBase}/FeaturesOfInterest({foiId})"
-            : $"{staBase}/Observations({observation.Id})/FeatureOfInterest";
-
+        // FeaturesOfInterest has no entity read surface in this Preview adapter.
+        // An opaque ingest identifier is not a resolvable entity: do not advertise it.
         return new StaObservation
         {
             IotId = observation.Id,
@@ -60,8 +58,7 @@ internal static class StaEntityMapper
             PhenomenonTime = Iso(observation.PhenomenonTime),
             ResultTime = observation.ResultTime is { } rt ? Iso(rt) : null,
             Result = observation.Result,
-            DatastreamNavigationLink = $"{staBase}/Observations({observation.Id})/Datastream",
-            FeatureOfInterestNavigationLink = foiLink
+            DatastreamNavigationLink = $"{staBase}/Observations({observation.Id})/Datastream"
         };
     }
 
