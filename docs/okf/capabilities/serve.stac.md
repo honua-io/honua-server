@@ -18,7 +18,7 @@ Search and browse spatiotemporal asset catalogs through the STAC API.
 | Edition | Community |
 | Surface maturity | 12 implemented |
 | Registry entries | 12 |
-| Proving tests | 138 |
+| Proving tests | 141 |
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
