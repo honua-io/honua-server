@@ -152,6 +152,11 @@ internal sealed class StaQueryPlan
 
                 if (schema.IsNavigationProperty(name))
                 {
+                    if (IsUnavailableNavigation(schema, name))
+                    {
+                        return StaQueryPlanResult.NotImplemented("FeaturesOfInterest are not exposed by this server.");
+                    }
+
                     selectNavigations.Add(name);
                     continue;
                 }
@@ -191,6 +196,11 @@ internal sealed class StaQueryPlan
             selectNavigations,
             expansions));
     }
+
+    // Recognise this STA relationship so explicit requests receive 501, while never
+    // projecting an empty selection or directing clients to a link we do not expose.
+    private static bool IsUnavailableNavigation(StaEntitySchema schema, string name) =>
+        schema == StaEntitySchema.Observations && name.Equals("FeatureOfInterest", StringComparison.OrdinalIgnoreCase);
 
     private static StaExpansion? ParseExpansion(
         StaEntitySchema schema,
@@ -234,6 +244,12 @@ internal sealed class StaQueryPlan
             "Observations" => StaEntitySchema.Observations,
             _ => null,
         };
+
+        if (IsUnavailableNavigation(schema, name))
+        {
+            failure = StaQueryPlanResult.NotImplemented("FeaturesOfInterest are not exposed by this server.");
+            return null;
+        }
 
         if (expandedSchema is null || schema.EntitySet != StaEntitySchema.Datastreams.EntitySet)
         {

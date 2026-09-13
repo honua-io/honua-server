@@ -28,9 +28,10 @@ namespace Honua.Protocols.SensorThings;
 /// 400 when it is malformed or names an unknown property, 501 when it is recognised but
 /// unimplemented — rather than being dropped (STA 1.1 Req 28-35, OData 4.0 §8.2.1).
 /// </remarks>
-internal static class SensorThingsEndpoints
+internal static partial class SensorThingsEndpoints
 {
     internal const string BasePath = "/sta/v1.1";
+    private static readonly string[] _collectionOnlyQueryOptions = ["$filter", "$orderby", "$top", "$skip", "$count"];
 
     /// <summary>Logging category marker for SensorThings endpoints.</summary>
     internal sealed class SensorThingsEndpointsLog
@@ -76,6 +77,14 @@ internal static class SensorThingsEndpoints
             .Produces(400)
             .Produces(404)
             .Produces(501);
+
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Things({id:long})/Datastreams", HandleThingDatastreams), "ThingsDatastreams");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Sensors({id:long})/Datastreams", HandleSensorDatastreams), "SensorsDatastreams");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/ObservedProperties({id:long})/Datastreams", HandleObservedPropertyDatastreams), "ObservedPropertiesDatastreams");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/Thing", HandleDatastreamThing), "DatastreamsThing");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/Sensor", HandleDatastreamSensor), "DatastreamsSensor");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Datastreams({id:long})/ObservedProperty", HandleDatastreamObservedProperty), "DatastreamsObservedProperty");
+        ConfigureNavigation(endpoints.MapGet("/sta/v1.1/Observations({id:long})/Datastream", HandleObservationDatastream), "ObservationsDatastream");
 
         // Phase 2 ingest (REST/bulk observation creation + datastream creation) and
         // Phase 3 real-time streaming (SSE/WebSocket) are mapped from their partial-class
@@ -157,9 +166,9 @@ internal static class SensorThingsEndpoints
     }
 
     /// <summary>
-    /// Builds the plan for a single-entity request. <c>$filter</c> and <c>$orderby</c>
-    /// cannot apply to one entity, so naming them is a client error rather than something
-    /// to quietly drop.
+    /// Builds the plan for a single-entity request. Collection filtering, ordering,
+    /// paging and counting cannot apply to one entity, so naming those options is a
+    /// client error rather than something to quietly drop.
     /// </summary>
     private static bool TryPlanEntity(
         HttpContext context,
@@ -173,7 +182,7 @@ internal static class SensorThingsEndpoints
             return false;
         }
 
-        var rejected = plan.Options.Filter is not null ? "$filter" : plan.Options.OrderBy is not null ? "$orderby" : null;
+        var rejected = _collectionOnlyQueryOptions.FirstOrDefault(context.Request.Query.ContainsKey);
         if (rejected is not null)
         {
             failure = StandardErrorHelpers.CreateBadRequest(
@@ -294,6 +303,12 @@ internal static class SensorThingsEndpoints
             return failure;
         }
 
+        return await GetThingResultAsync(id, context, store, plan).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> GetThingResultAsync(
+        long id, HttpContext context, IObservationStore store, StaQueryPlan plan)
+    {
         var thing = await store.GetThingAsync(id, context.RequestAborted).ConfigureAwait(false);
         return thing is null
             ? StandardErrorHelpers.CreateNotFound(context, $"Thing({id}) not found.")
@@ -341,6 +356,12 @@ internal static class SensorThingsEndpoints
             return failure;
         }
 
+        return await GetSensorResultAsync(id, context, store, plan).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> GetSensorResultAsync(
+        long id, HttpContext context, IObservationStore store, StaQueryPlan plan)
+    {
         var sensor = await store.GetSensorAsync(id, context.RequestAborted).ConfigureAwait(false);
         return sensor is null
             ? StandardErrorHelpers.CreateNotFound(context, $"Sensor({id}) not found.")
@@ -388,6 +409,12 @@ internal static class SensorThingsEndpoints
             return failure;
         }
 
+        return await GetObservedPropertyResultAsync(id, context, store, plan).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> GetObservedPropertyResultAsync(
+        long id, HttpContext context, IObservationStore store, StaQueryPlan plan)
+    {
         var property = await store.GetObservedPropertyAsync(id, context.RequestAborted).ConfigureAwait(false);
         return property is null
             ? StandardErrorHelpers.CreateNotFound(context, $"ObservedProperty({id}) not found.")
@@ -409,8 +436,14 @@ internal static class SensorThingsEndpoints
             return failure;
         }
 
+        return await QueryDatastreamsAsync(context, store, plan, plan.CatalogQuery).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> QueryDatastreamsAsync(
+        HttpContext context, IObservationStore store, StaQueryPlan plan, CatalogQuery query)
+    {
         var ct = context.RequestAborted;
-        var datastreams = await store.ListDatastreamsAsync(plan.CatalogQuery, ct).ConfigureAwait(false);
+        var datastreams = await store.ListDatastreamsAsync(query, ct).ConfigureAwait(false);
         var staBase = StaBase(context);
 
         var expander = new StaDatastreamExpander(store, plan, staBase);
@@ -424,7 +457,7 @@ internal static class SensorThingsEndpoints
             new StaEntitySet<StaDatastream>
             {
                 Value = value,
-                Count = plan.Options.Count ? await store.CountDatastreamsAsync(plan.CatalogQuery, ct).ConfigureAwait(false) : null,
+                Count = plan.Options.Count ? await store.CountDatastreamsAsync(query, ct).ConfigureAwait(false) : null,
                 NextLink = NextLink(context, plan.Options, datastreams.Count)
             },
             SensorThingsJsonContext.Default.StaEntitySetStaDatastream,
@@ -442,6 +475,12 @@ internal static class SensorThingsEndpoints
             return failure;
         }
 
+        return await GetDatastreamResultAsync(id, context, store, plan).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> GetDatastreamResultAsync(
+        long id, HttpContext context, IObservationStore store, StaQueryPlan plan)
+    {
         var ct = context.RequestAborted;
         var datastream = await store.GetDatastreamAsync(id, ct).ConfigureAwait(false);
         if (datastream is null)
@@ -471,13 +510,18 @@ internal static class SensorThingsEndpoints
         [FromServices] IObservationStore store,
         [FromServices] StaFilterTranslator filterTranslator)
     {
+        if (!TryPlanCollection(context, StaEntitySchema.Observations, filterTranslator, out var plan, out var failure))
+        {
+            return failure;
+        }
+
         var datastream = await store.GetDatastreamAsync(id, context.RequestAborted).ConfigureAwait(false);
         if (datastream is null)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Datastream({id}) not found.");
         }
 
-        return await QueryObservationsAsync(context, store, filterTranslator, datastreamId: id).ConfigureAwait(false);
+        return await QueryObservationsAsync(context, store, plan, datastreamId: id).ConfigureAwait(false);
     }
 
     private static async Task<IResult> QueryObservationsAsync(
@@ -491,6 +535,12 @@ internal static class SensorThingsEndpoints
             return failure;
         }
 
+        return await QueryObservationsAsync(context, store, plan, datastreamId).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> QueryObservationsAsync(
+        HttpContext context, IObservationStore store, StaQueryPlan plan, long? datastreamId)
+    {
         var query = plan.ObservationQuery(datastreamId);
         var ct = context.RequestAborted;
         var observations = await store.QueryObservationsAsync(query, ct).ConfigureAwait(false);

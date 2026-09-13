@@ -74,7 +74,7 @@ internal sealed class StaEntitySchema
     /// <summary>Every filterable / orderable / selectable property.</summary>
     public IReadOnlyList<StaProperty> Properties { get; }
 
-    /// <summary>Every navigation property the entity envelope carries a link for.</summary>
+    /// <summary>Every recognised STA navigation property, including unavailable relationships that return 501.</summary>
     public IReadOnlyList<string> NavigationProperties { get; }
 
     /// <summary>The ORDER BY clause used when the request carries no <c>$orderby</c>.</summary>
