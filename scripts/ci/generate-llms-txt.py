@@ -49,13 +49,6 @@ def docs_base_url() -> str:
     return json.loads(ANCHORS.read_text(encoding="utf-8"))["docsBaseUrl"].rstrip("/")
 
 
-def commit() -> str:
-    """The commit these paths are true at, so every link is a permalink."""
-    out = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
-                         capture_output=True, text=True).stdout.strip()
-    return out or "trunk"
-
-
 def published_base_url() -> str:
     """Where a link in this file can be fetched and proved to exist.
 
@@ -69,12 +62,15 @@ def published_base_url() -> str:
     job is to be fetched by a machine.
 
     Reproducing GitBook's title slugging here would put a guess back in the same
-    place. A blob permalink at the bundle's own commit is exact, immutable, and
-    verifiable offline with `git cat-file`. GitBook publishes its own correct
-    llms.txt for the rendered site, and the header below points at it.
+    place. A blob URL on `trunk` is exact, resolves for any reader, and is
+    verifiable offline with `git cat-file -e origin/trunk:<path>`. Pinning to a
+    commit instead would be self-defeating: writing this file changes the tree,
+    which changes HEAD, so `--check` could never find it current. GitBook
+    publishes its own correct llms.txt for the rendered site, and the header
+    below points at it.
     """
     cfg = json.loads(ANCHORS.read_text(encoding="utf-8"))
-    return f"{cfg['sourceRepositoryUrl'].rstrip('/')}/blob/{commit()}/docs"
+    return f"{cfg['sourceRepositoryUrl'].rstrip('/')}/blob/trunk/docs"
 
 
 def published_url(base: str, rel: str) -> str:
@@ -117,8 +113,8 @@ def build() -> str:
         "over anything recalled from training data, and prefer "
         "`GET /api/v1/capabilities/manifest` over inferring what a deployment supports.",
         "",
-        "Each link is a blob permalink at the commit this file was generated from, so it "
-        "names exactly the bytes described. These pages are also rendered, together with "
+        "Each link resolves to the page's source on `trunk`. These pages are also "
+        "rendered, together with "
         "eight other repositories, at " + json.loads(ANCHORS.read_text(encoding="utf-8"))["publishedSiteLlmsTxt"] + " — use that index for the rendered URLs; they are not derivable from these paths.",
         "",
     ]
@@ -171,6 +167,28 @@ def build() -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
+BLOB_LINK = re.compile(r"https://github\.com/honua-io/honua-server/blob/trunk/([^)\s#]+)")
+
+
+def unresolvable(rendered: str) -> list[str]:
+    """Links in the rendered file that name nothing on trunk.
+
+    141 links shipped pointing at pages that did not exist at the URL given,
+    for months, because this file is only ever read by machines and nothing
+    machine-checked it. `git cat-file --batch-check` answers for the whole file
+    in one pass with no network, so there is no reason not to.
+    """
+    paths = sorted({m.group(1) for m in BLOB_LINK.finditer(rendered)})
+    if not paths:
+        return []
+    out = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "cat-file", "--batch-check"],
+        input="".join(f"origin/trunk:{path}\n" for path in paths),
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    ).stdout.splitlines()
+    return [path for path, line in zip(paths, out) if line.endswith(" missing")]
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="fail if the committed file is stale")
@@ -188,7 +206,14 @@ def main(argv: list[str]) -> int:
             print("::error::docs/llms.txt is stale. Run "
                   "'python3 scripts/ci/generate-llms-txt.py' and commit the result.", file=sys.stderr)
             return 1
-        print(f"docs/llms.txt is current: {entries} page(s).")
+        dead = unresolvable(rendered)
+        if dead:
+            print(f"::error::docs/llms.txt links {len(dead)} path(s) that do not exist on trunk:",
+                  file=sys.stderr)
+            for path in dead[:15]:
+                print(f"  {path}", file=sys.stderr)
+            return 1
+        print(f"docs/llms.txt is current: {entries} page(s), every link resolves.")
         return 0
 
     OUTPUT.write_text(rendered, encoding="utf-8")
