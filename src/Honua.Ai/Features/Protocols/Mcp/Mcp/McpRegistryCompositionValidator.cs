@@ -89,7 +89,12 @@ internal static class McpRegistryCompositionValidator
             .ToHashSet(StringComparer.Ordinal);
         foreach (var tool in await surface.GetAllToolsAsync(cancellationToken).ConfigureAwait(false))
         {
-            if (!registryToolNames.Contains(tool.Name))
+            // A tool projected from the canonical operation catalog (#2483,
+            // Mcp:PublishOperations) is bound through its operation descriptor, which
+            // is that family's single source of truth; the registry cannot enumerate
+            // the runtime catalog statically. Every other runtime tool source still
+            // needs a registry descriptor (honua-server#3428).
+            if (!registryToolNames.Contains(tool.Name) && tool is not Tools.PublishedOperationTool)
             {
                 problems.Add($"served /mcp tool '{tool.Name}' has no capability-registry descriptor");
             }
