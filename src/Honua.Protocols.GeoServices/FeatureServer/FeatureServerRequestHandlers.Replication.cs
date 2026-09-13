@@ -1188,6 +1188,15 @@ internal static partial class FeatureServerEndpoints
                 [rollbackError ?? "rollbackOnFailure must be a boolean value."]);
         }
 
+        // Esri sync parameter: returnIdsForAdds=true returns the object ids and global ids the server
+        // assigned to uploaded adds, so the client can map its local rows to the created rows (#4016).
+        if (!TryParseBoolValue(values, "returnIdsForAdds", false, out var returnIdsForAdds, out var returnIdsForAddsError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid returnIdsForAdds parameter",
+                [returnIdsForAddsError ?? "returnIdsForAdds must be a boolean value."]);
+        }
+
         // Honua extension parameter (#2430): conflictHandling selects what happens to an uploaded edit
         // that collides with a concurrent server edit. `lastWriteWins` (the default, and the historical
         // behavior) still commits the client edit and records the conflict as advisory review evidence;
@@ -1207,6 +1216,7 @@ internal static partial class FeatureServerEndpoints
         int? appliedAdds = null;
         int? appliedUpdates = null;
         int? appliedDeletes = null;
+        ServiceLayerEditResult[]? addEditResults = null;
 
         // Upload/bidirectional sync with edits is applied through the canonical replica-sync
         // pipeline: it detects server-side conflicts against the replica's base generation, applies
@@ -1323,6 +1333,10 @@ internal static partial class FeatureServerEndpoints
                 appliedAdds = report.AppliedAdds;
                 appliedUpdates = report.AppliedUpdates;
                 appliedDeletes = report.AppliedDeletes;
+                if (returnIdsForAdds)
+                {
+                    addEditResults = [.. applier.AddResults];
+                }
                 uploadServerGen = report.ServerGeneration;
                 didUpload = true;
             }
@@ -1420,6 +1434,7 @@ internal static partial class FeatureServerEndpoints
             AppliedAdds = appliedAdds,
             AppliedUpdates = appliedUpdates,
             AppliedDeletes = appliedDeletes,
+            EditResults = addEditResults,
             Conflicts = conflicts
         };
 

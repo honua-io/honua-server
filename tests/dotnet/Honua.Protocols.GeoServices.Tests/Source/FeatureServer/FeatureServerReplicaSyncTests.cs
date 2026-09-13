@@ -1106,6 +1106,100 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
             "the concurrent other-client edit committed during the upload window must be delivered in the bidirectional delta");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task SynchronizeReplica_BidirectionalReturnIdsForAdds_MapsServerIdsWithoutEchoingOwnAdds()
+    {
+        // #4016: a bidirectional sync must hand the client the server-assigned ids of its uploaded adds
+        // (Esri returnIdsForAdds -> addResults) and must not echo those adds back in the download half,
+        // otherwise the client cannot map its local rows and creates duplicates.
+        var createRoot = await CreateReplicaWithResponseAsync("BidirectionalReturnIds", "0");
+        var replicaId = createRoot.GetProperty("replicaID").GetString()!;
+        await SynchronizeDownloadWithResponseAsync(replicaId, createRoot.GetProperty("serverGen").GetInt64());
+        var foreignId = await AddFeatureWithGeometryAsync("ids-foreign", -99.5, 39.25);
+
+        // Without the flag the upload response carries no add results.
+        var plainUpload = await SynchronizeUploadAsync(replicaId, JsonSerializer.Serialize(new[]
+        {
+            new { id = 0, features = new { adds = new[] { new { attributes = new { name = "ids-plain" } } } } }
+        }));
+        plainUpload.TryGetProperty("editResults", out _).Should().BeFalse("returnIdsForAdds defaults to false");
+
+        var clientAdds = new[]
+        {
+            (Name: "ids-mine-a", X: -101.125, Y: 41.5),
+            (Name: "ids-mine-b", X: -102.75, Y: 42.25)
+        };
+        var edits = JsonSerializer.Serialize(new[]
+        {
+            new
+            {
+                id = 0,
+                features = new
+                {
+                    adds = clientAdds.Select(add => new { attributes = new { name = add.Name }, geometry = new { x = add.X, y = add.Y } }).ToArray()
+                }
+            }
+        });
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "bidirectional",
+            returnIdsForAdds = true,
+            edits,
+            f = "json"
+        });
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            content);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        root.GetProperty("appliedAdds").GetInt32().Should().Be(2, body);
+
+        var layerResults = root.GetProperty("editResults").EnumerateArray().ToArray();
+        layerResults.Should().ContainSingle(body);
+        layerResults[0].GetProperty("id").GetInt32().Should().Be(0);
+        var addResults = layerResults[0].GetProperty("addResults").EnumerateArray().ToArray();
+        addResults.Should().HaveCount(clientAdds.Length, "addResults are index-aligned with the uploaded adds");
+
+        var returnedIds = new List<long>();
+        for (var index = 0; index < clientAdds.Length; index++)
+        {
+            addResults[index].GetProperty("success").GetBoolean().Should().BeTrue();
+            var returnedId = addResults[index].GetProperty("objectId").GetInt64();
+            returnedIds.Add(returnedId);
+
+            // Independent oracle: the stored row found by its unique name must be the returned id,
+            // carrying the uploaded attribute and ordinates.
+            using var query = await _fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+                $"?f=json&where=name%3D%27{clientAdds[index].Name}%27&outFields=*&returnGeometry=true&outSR=4326");
+            query.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var queryDoc = JsonDocument.Parse(await query.Content.ReadAsStringAsync());
+            var stored = queryDoc.RootElement.GetProperty("features").EnumerateArray().Should().ContainSingle().Subject;
+            stored.GetProperty("attributes").GetProperty("objectid").GetInt64().Should().Be(returnedId);
+            stored.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(clientAdds[index].X);
+            stored.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(clientAdds[index].Y);
+        }
+        returnedIds.Should().OnlyHaveUniqueItems();
+
+        var delta = root.GetProperty("edits").EnumerateArray().Single(layer => layer.GetProperty("id").GetInt32() == 0);
+        var deliveredIds = delta.GetProperty("addFeatures").EnumerateArray()
+            .Select(feature => feature.GetProperty("attributes").GetProperty("objectid").GetInt64())
+            .ToList();
+        deliveredIds.Should().Equal([foreignId], "only the other client's add is new to this replica; its own uploads must not be echoed");
+
+        // The acknowledged cursor must not re-deliver the replica's own adds on the next download either.
+        var followUp = await SynchronizeDownloadWithResponseAsync(replicaId, root.GetProperty("serverGen").GetInt64());
+        var followUpLayer = followUp.GetProperty("edits").EnumerateArray().Single(layer => layer.GetProperty("id").GetInt32() == 0);
+        followUpLayer.GetProperty("adds").GetInt32().Should().Be(0);
+    }
+
     private async Task<int> CountAllFeaturesAsync()
     {
         var response = await _fixture.Client.GetAsync(
