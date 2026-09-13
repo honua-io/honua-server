@@ -18,9 +18,9 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 internal abstract class StudioVersionToolBase(IGeoprocessingJobService jobService, ILogger logger)
     : StudioDraftToolBase(jobService, logger)
 {
-    protected static StudioDraftMutationContext MutationContext(HttpContext context, ClaimsPrincipal principal, string? actor) => new()
+    protected static StudioDraftMutationContext MutationContext(HttpContext context, ClaimsPrincipal principal) => new()
     {
-        PrincipalId = actor,
+        PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
         TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
         SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
         CorrelationId = context.TraceIdentifier,
@@ -74,7 +74,7 @@ internal sealed class SaveStudioVersionTool(IGeoprocessingJobService jobService,
         RequireAuthorizedGeneration(draft, argument.Generation);
         var actor = ActorIdFor(authorization, principal);
         var receipt = await RequireMutationRuntime(httpContext).SaveVersionAsync(argument.DraftId, argument.Generation,
-            argument.ChangeNote, actor, MutationContext(httpContext, principal, actor), cancellationToken).ConfigureAwait(false);
+            argument.ChangeNote, actor, MutationContext(httpContext, principal), cancellationToken).ConfigureAwait(false);
         long? generationAfter = receipt.Value is not null
             ? (await RequireAuthorizedDraftAsync(httpContext, principal, lifecycle, draft.DraftId,
                 StudioAuthorizationOperation.CreateVersion, OperatorOperation.Create, cancellationToken)
@@ -125,7 +125,7 @@ internal sealed class ReopenStudioVersionTool(IGeoprocessingJobService jobServic
             cancellationToken).ConfigureAwait(false);
         var actor = ActorIdFor(authorization, principal);
         var receipt = await RequireMutationRuntime(httpContext).ReopenVersionAsync(argument.ItemId, argument.VersionId,
-            actor, MutationContext(httpContext, principal, actor), cancellationToken).ConfigureAwait(false);
+            actor, MutationContext(httpContext, principal), cancellationToken).ConfigureAwait(false);
         if (receipt.Value is { } draft)
         {
             Audit(principal, Name, draft.DraftId, null, draft.Generation);

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -151,6 +152,9 @@ public sealed class StudioVersionMcpTests
         var operation = (await instances.GetAsync(operationId))!;
         operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
         operation.ProposalId.Should().Be("proposal-save");
+        await approval.Received(1).CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
+            Arg.Is<OperationPolicyContext>(policyContext => policyContext.PrincipalId == McpAuthorizationHelper.ResolveActorId(context.User)),
+            Arg.Any<PolicyDecision>(), Arg.Any<CancellationToken>());
         (await lifecycle.GetPointersAsync(draft.ItemId))!.CurrentVersionId.Should().BeNull();
         resultBody.TryGetProperty("version", out _).Should().BeFalse();
     }
@@ -235,7 +239,6 @@ public sealed class StudioVersionMcpTests
         {
             ProposalId = "proposal-result",
             OperationId = operation.OperationId,
-            RequestedBy = "test-user",
             Kind = OperationClass.StudioDraftMutation,
             Status = OperationProposalStatus.Succeeded,
             CreatedAt = DateTimeOffset.UtcNow,
@@ -250,6 +253,8 @@ public sealed class StudioVersionMcpTests
             services.AddSingleton(instances);
             services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
         });
+        var actor = McpAuthorizationHelper.ResolveActorId(context.User);
+        proposal = proposal with { RequestedBy = actor };
         var resource = new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance);
         async Task<JsonElement> ReadAsync()
         {
@@ -263,7 +268,7 @@ public sealed class StudioVersionMcpTests
         (await ReadAsync()).TryGetProperty("resourceIds", out _).Should().BeFalse();
         proposal = proposal with { Status = OperationProposalStatus.Succeeded, RequestedBy = "another-user" };
         (await ReadAsync()).TryGetProperty("resourceIds", out _).Should().BeFalse();
-        proposal = proposal with { RequestedBy = "test-user", TenantId = "another-tenant" };
+        proposal = proposal with { RequestedBy = actor, TenantId = "another-tenant" };
         var crossTenant = () => ReadAsync();
         await crossTenant.Should().ThrowAsync<KeyNotFoundException>();
     }
