@@ -48,10 +48,9 @@ def terminal_job(command):
     return None
 
 
-async def client(reader, writer):
+async def client(reader, writer, root=Path("/barriers")):
     upstream_reader, upstream_writer = await asyncio.open_connection("redis", 6379)
     pending = asyncio.Queue()
-    root = Path("/barriers")
 
     async def requests():
         while True:

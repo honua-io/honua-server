@@ -61,6 +61,61 @@ class CandidateBindingTests(unittest.TestCase):
 
 
 class TerminalProxyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_committed_reply_is_withheld_until_fence_release(self):
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        class Writer:
+            def __init__(self):
+                self.bytes = b""
+
+            def write(self, data):
+                self.bytes += data
+
+            async def drain(self):
+                pass
+
+            def close(self):
+                pass
+
+        for response in (b":1\r\n", b":0\r\n"):
+            with self.subTest(response=response), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                directory = root / "job-1"
+                directory.mkdir()
+                fence = directory / "terminal-committed-registration-pending"
+                fence.with_suffix(".arm").touch()
+                record = json.dumps({"operationId": "job-1", "status": "succeeded"}).encode()
+                command = [b"EVALSHA", b"sha", b"1", b"key", b"1", record]
+                raw = b"*6\r\n" + b"".join(
+                    b"$" + str(len(x)).encode() + b"\r\n" + x + b"\r\n" for x in command)
+                reader, upstream = asyncio.StreamReader(), asyncio.StreamReader()
+                reader.feed_data(raw)
+                upstream.feed_data(response)
+                output, forwarded = Writer(), Writer()
+                with patch.object(proxy.asyncio, "open_connection", new=AsyncMock(return_value=(upstream, forwarded))):
+                    task = asyncio.create_task(proxy.client(reader, output, root))
+                    try:
+                        async with asyncio.timeout(2):
+                            while not (fence.with_suffix(".ready.json").exists() or output.bytes):
+                                await asyncio.sleep(0.005)
+                        self.assertEqual(raw, forwarded.bytes)
+                        if response == b":1\r\n":
+                            self.assertEqual(b"", output.bytes)
+                            evidence = json.loads(fence.with_suffix(".ready.json").read_text())
+                            self.assertFalse(evidence["reply_forwarded"])
+                            self.assertEqual("succeeded", evidence["terminal_record"]["status"])
+                            fence.with_suffix(".release").touch()
+                            async with asyncio.timeout(2):
+                                while not output.bytes:
+                                    await asyncio.sleep(0.005)
+                        else:
+                            self.assertFalse(fence.with_suffix(".ready.json").exists())
+                        self.assertEqual(response, output.bytes)
+                    finally:
+                        reader.feed_eof()
+                        await asyncio.wait_for(task, 2)
+
     async def test_resp_pipeline_preserves_binary_bulk_and_cas_reply(self):
         import asyncio
         stream = asyncio.StreamReader()

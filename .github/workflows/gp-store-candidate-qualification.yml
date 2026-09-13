@@ -1,0 +1,126 @@
+name: GP candidate store recovery
+
+on:
+  workflow_dispatch:
+  # The release manifest is owned by another repository. Each poll resolves its
+  # current immutable commit; an old receipt cannot satisfy a new image pin.
+  schedule:
+    - cron: '29 */6 * * *'
+  repository_dispatch:
+    types: [gp-candidate-repinned]
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: gp-candidate-store-recovery
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML
+      - name: Freeze the current release manifest
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/gp-candidate
+          ref=$(gh api repos/honua-io/honua-release/commits/trunk --jq .sha)
+          gh api "repos/honua-io/honua-release/contents/platform-manifest.yaml?ref=$ref" \
+            --jq .content | base64 -d > artifacts/gp-candidate/platform-manifest.yaml
+          printf '%s\n' "$ref" > artifacts/gp-candidate/release-source.txt
+          python scripts/qualification/gp-candidate-binding.py \
+            --manifest artifacts/gp-candidate/platform-manifest.yaml \
+            --output artifacts/gp-candidate/pin.json
+          jq -r '"source_sha=\(.source_sha)", "server_image=\(.server_image)"' \
+            artifacts/gp-candidate/pin.json >> "$GITHUB_OUTPUT"
+      - name: Check out the matching production worker source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.candidate.outputs.source_sha }}
+          path: candidate-worker
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the unmodified production worker at the candidate source
+        uses: docker/build-push-action@v7
+        with:
+          context: candidate-worker
+          file: candidate-worker/docker/worker-gdal/Dockerfile
+          load: true
+          tags: honua-gp-candidate-worker:qualification
+          build-args: |
+            HONUA_GIT_SHA=${{ steps.candidate.outputs.source_sha }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-worker-gdal-amd64
+      - name: Execute store attestation, cold restore and crash boundaries
+        env:
+          HONUA_SERVER_IMAGE: ${{ steps.candidate.outputs.server_image }}
+          HONUA_GP_SOURCE_SHA: ${{ steps.candidate.outputs.source_sha }}
+          HONUA_GP_SCENARIO_TIMEOUT_SECONDS: '900'
+        run: |
+          set -euo pipefail
+          export HONUA_WORKER_IMAGE
+          HONUA_WORKER_IMAGE=$(docker image inspect honua-gp-candidate-worker:qualification --format '{{index .RepoDigests 0}}')
+          # The worker is a local build of the pinned production source, as in
+          # the retained deployment proof. Never try to pull its local digest.
+          docker pull "$HONUA_SERVER_IMAGE"
+          docker pull pgrouting/pgrouting:17-3.5-3.7.3@sha256:e15a541283d5086981f3e19648a15f969e8d09aa9e72a5a5acf6777673da1784
+          docker pull redis:7.2-alpine@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed
+          export HONUA_GP_SKIP_PULL=true
+          failed=0
+          for lane in output-store-dr crash-boundaries; do
+            HONUA_GP_LANE="$lane" HONUA_GP_RECEIPT_DIR="$PWD/artifacts/gp-candidate/$lane" \
+              scripts/qualification/gp-lifecycle-harness.sh || failed=1
+          done
+          test "$failed" = 0
+          python scripts/qualification/gp-candidate-binding.py \
+            --manifest artifacts/gp-candidate/platform-manifest.yaml \
+            --summary artifacts/gp-candidate/output-store-dr/summary.json \
+            --output artifacts/gp-candidate/receipt.json
+      - name: Retain executed receipts and findings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gp-candidate-store-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/gp-candidate/*.json
+            artifacts/gp-candidate/*.yaml
+            artifacts/gp-candidate/*.txt
+            artifacts/gp-candidate/output-store-dr/*.json
+            artifacts/gp-candidate/crash-boundaries/*.json
+          if-no-files-found: error
+          retention-days: 90
+
+  attest:
+    needs: qualify
+    if: github.ref == 'refs/heads/trunk'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: gp-candidate-store-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            evidence/receipt.json
+            evidence/crash-boundaries/summary.json
