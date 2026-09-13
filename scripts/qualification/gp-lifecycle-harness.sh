@@ -1309,7 +1309,7 @@ fill_missing_receipts() {
 
 cleanup_runtime() {
   [[ -f "${observed_candidate_file}" ]] || return 0
-  compose down --volumes --remove-orphans >/dev/null 2>&1 || { scenario_cleanup_failure="compose cleanup failed"; return 1; }
+  compose --profile crash-boundaries down --volumes --remove-orphans >/dev/null 2>&1 || { scenario_cleanup_failure="compose cleanup failed"; return 1; }
 }
 
 finish() {
