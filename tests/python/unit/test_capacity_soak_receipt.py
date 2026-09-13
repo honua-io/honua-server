@@ -381,3 +381,27 @@ def test_receipt_with_additional_preview_envelope_fields_passes():
     document = receipt()
     document["envelope"] = {**document["envelope"], "activeSubscriptions": 0, "alertEvaluationsPerSecond": 0}
     assert evaluate(document) == []
+
+
+@pytest.mark.asyncio
+async def test_ga_driver_does_not_open_or_assert_preview_dimensions(monkeypatch):
+    from argparse import Namespace
+    from unittest.mock import AsyncMock, Mock
+    driver_module = _load("drive_soak")
+    args = Namespace(base_url="http://localhost", admin_key="test", unexercised=[],
+                     subscriptions=True, ramp_up_seconds=0, steady_seconds=0, keep_series=False)
+    driver = driver_module.SoakDriver(args, LOCK)
+    for name in ("observe_deployment", "establish_envelope", "probe_availability",
+                 "sample_saturation", "drive_gp_queue", "heartbeat", "run_recovery_drill"):
+        monkeypatch.setattr(driver, name, AsyncMock())
+    subscription_probe = AsyncMock(side_effect=AssertionError("Preview subscription request"))
+    monkeypatch.setattr(driver, "observe_subscriptions", subscription_probe)
+    monkeypatch.setattr(driver, "hold_subscriptions", subscription_probe)
+    for name in ("_verify_subscription_dimension", "_verify_alert_dimension"):
+        monkeypatch.setattr(driver, name, Mock(side_effect=AssertionError("Preview assertion")))
+    monkeypatch.setattr(driver, "_verify_gp_dimensions", Mock())
+    observations = await driver.run()
+    subscription_probe.assert_not_called()
+    assert observations["subscriptions"]["samples"] == []
+    assert observations["alerts"]["samples"] == []
+    driver._verify_gp_dimensions.assert_called_once()

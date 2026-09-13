@@ -220,8 +220,7 @@ jobs:
         run: |
           set -euo pipefail
           # Licensing:DevGrantEdition is refused under the Production startup policy by design, and
-          # the declared envelope covers Pro surfaces (feature-stream subscriptions), so the soak
-          # runs against a real signed license on the same verification path a customer uses. The
+          # the soak keeps a real signed license on the same verification path a customer uses. The
           # key pair is generated here, used once, and never leaves the runner.
           mkdir -p "$RUNNER_TEMP/license"
           dotnet run --project src/Honua.LicenseMint -c Release -- keygen --key-id soak \

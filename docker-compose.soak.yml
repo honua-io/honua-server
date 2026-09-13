@@ -90,9 +90,8 @@ services:
       # test here.
       ExecutionAdmission__MaxSubmissionsPerWindow: "0"
       # A real signed Pro license, minted for this run only (scripts/soak/mint_license.sh).
-      # Licensing:DevGrantEdition is refused in Production by design, and the declared envelope
-      # covers Pro surfaces (feature streams), so the soak runs on the same licensing path a
-      # customer does.
+      # Licensing:DevGrantEdition is refused in Production by design. The soak retains the
+      # same licensing verification path a customer uses.
       Licensing__LicenseContent: ${SOAK_LICENSE_CONTENT:?Set SOAK_LICENSE_CONTENT}
       Licensing__TrustedKeys__soak: ${SOAK_LICENSE_TRUSTED_KEY:?Set SOAK_LICENSE_TRUSTED_KEY}
       # Operator ruling A 2026-09-13: Preview dimensions carry no GA capacity promise.
