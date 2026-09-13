@@ -183,7 +183,20 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
                 Status = MigrationBatchRunStatus.Running,
                 StartedAt = now,
                 TotalChildren = 2,
-                SucceededChildren = 1
+                SucceededChildren = 1,
+                FidelityVerdict = MigrationFidelityVerdicts.Unverified,
+                FidelityDifferences =
+                [
+                    new MigrationFidelityDifference
+                    {
+                        Code = MigrationFidelityDifferenceCodes.ServiceLayerUnverified,
+                        Severity = MigrationFidelityDifferenceSeverities.Unverified,
+                        Subject = "resource:x:layer:0",
+                        Expected = MigrationFidelityVerdicts.FullFidelity,
+                        Actual = MigrationFidelityVerdicts.Unverified,
+                        Summary = "Layer 'resource:x:layer:0' completed, but its import did not prove full fidelity."
+                    }
+                ]
             },
             new MigrationBatchChildRecord
             {
@@ -195,6 +208,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
                 TableName = "origin",
                 Status = MigrationBatchChildStatus.Succeeded,
                 PublishedLayerId = 42,
+                FidelityVerdict = MigrationFidelityVerdicts.Unverified,
                 UpdatedAt = now
             },
             new MigrationBatchChildRecord
@@ -220,6 +234,15 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         children[0].GetProperty("status").GetString().Should().Be("succeeded");
         children[0].GetProperty("publishedLayerId").GetInt32().Should().Be(42);
         children[1].GetProperty("dependsOn")[0].GetString().Should().Be("resource:x:layer:0");
+
+        // #4600: the service-level verdict and its differences, and each child's verdict, are on the wire.
+        doc.RootElement.GetProperty("fidelityVerdict").GetString().Should().Be("unverified");
+        var difference = doc.RootElement.GetProperty("fidelityDifferences").EnumerateArray().Should().ContainSingle().Subject;
+        difference.GetProperty("code").GetString().Should().Be("fidelity.service.layer-unverified");
+        difference.GetProperty("severity").GetString().Should().Be("unverified");
+        difference.GetProperty("subject").GetString().Should().Be("resource:x:layer:0");
+        children[0].GetProperty("fidelityVerdict").GetString().Should().Be("unverified");
+        children[1].TryGetProperty("fidelityVerdict", out _).Should().BeFalse("a running child has no verdict yet");
     }
 
     private sealed class RecordingMigrationBatchOrchestrator : IMigrationBatchOrchestrator
@@ -296,6 +319,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
             int? publishedLayerId,
             string? statusNote,
             DateTimeOffset updatedAt,
+            string? fidelityVerdict = null,
             CancellationToken cancellationToken = default)
         {
             if (!_children.TryGetValue(batchId, out var children))
@@ -315,6 +339,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
                 JobId = jobId ?? children[index].JobId,
                 PublishedLayerId = publishedLayerId ?? children[index].PublishedLayerId,
                 StatusNote = statusNote ?? children[index].StatusNote,
+                FidelityVerdict = fidelityVerdict ?? children[index].FidelityVerdict,
                 UpdatedAt = updatedAt
             };
             children[index] = updated;
@@ -330,6 +355,8 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
             DateTimeOffset? completedAt,
             bool? relationshipsApplied,
             string? statusNote,
+            string? fidelityVerdict = null,
+            MigrationFidelityDifference[]? fidelityDifferences = null,
             CancellationToken cancellationToken = default)
         {
             if (!_batches.TryGetValue(batchId, out var record))
@@ -345,7 +372,9 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
                 CancelledChildren = cancelledChildren,
                 CompletedAt = completedAt ?? record.CompletedAt,
                 RelationshipsApplied = relationshipsApplied ?? record.RelationshipsApplied,
-                StatusNote = statusNote ?? record.StatusNote
+                StatusNote = statusNote ?? record.StatusNote,
+                FidelityVerdict = fidelityVerdict ?? record.FidelityVerdict,
+                FidelityDifferences = fidelityDifferences ?? record.FidelityDifferences
             };
             _batches[batchId] = updated;
             return Task.FromResult<MigrationBatchRunRecord?>(updated);

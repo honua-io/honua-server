@@ -229,6 +229,8 @@ internal static partial class MigrationBatchEndpoints
             ApplyRelationships = batch.ApplyRelationships,
             RelationshipsApplied = batch.RelationshipsApplied,
             StatusNote = batch.StatusNote,
+            FidelityVerdict = batch.FidelityVerdict,
+            FidelityDifferences = batch.FidelityDifferences,
             Children = children.Select(static c => new MigrationBatchChildResponse
             {
                 Ordinal = c.Ordinal,
@@ -241,7 +243,8 @@ internal static partial class MigrationBatchEndpoints
                 Status = ChildStatusToText(c.Status),
                 JobId = c.JobId,
                 PublishedLayerId = c.PublishedLayerId,
-                StatusNote = c.StatusNote
+                StatusNote = c.StatusNote,
+                FidelityVerdict = c.FidelityVerdict
             }).ToArray()
         };
 
@@ -380,6 +383,16 @@ public sealed record MigrationBatchResponse
 
     /// <summary>Per-child progress, ordered by execution ordinal.</summary>
     public MigrationBatchChildResponse[] Children { get; init; } = [];
+
+    /// <summary>
+    /// Service-level migration fidelity verdict (issue #4600): <c>full-fidelity</c>, <c>unverified</c> or
+    /// <c>incomplete</c>. Null while the batch is running. The status says whether the batch finished; this
+    /// says whether the migrated service is proven equivalent to the source.
+    /// </summary>
+    public string? FidelityVerdict { get; init; }
+
+    /// <summary>Per-resource differences that produced <see cref="FidelityVerdict"/>, ordered by code then subject.</summary>
+    public MigrationFidelityDifference[] FidelityDifferences { get; init; } = [];
 }
 
 /// <summary>
@@ -419,6 +432,9 @@ public sealed record MigrationBatchChildResponse
 
     /// <summary>Operator-visible note recorded on failure or review.</summary>
     public string? StatusNote { get; init; }
+
+    /// <summary>Per-layer fidelity verdict reported by the child import job (issue #4600); null until terminal.</summary>
+    public string? FidelityVerdict { get; init; }
 }
 
 /// <summary>

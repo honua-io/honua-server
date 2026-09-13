@@ -147,6 +147,18 @@ public static class MigrationFidelityEvaluator
         CollectDataReconciliation(input, subject, differences);
         CollectCatalogReconciliation(input, subject, differences);
 
+        return Fold(differences);
+    }
+
+    /// <summary>
+    /// Orders differences deterministically and folds them into a verdict: any blocking difference
+    /// is <see cref="MigrationFidelityVerdicts.Incomplete"/>, any other difference is
+    /// <see cref="MigrationFidelityVerdicts.Unverified"/>, none is
+    /// <see cref="MigrationFidelityVerdicts.FullFidelity"/>. Shared with the service-level fold in
+    /// <see cref="MigrationBatchFidelityEvaluator"/> so both levels classify identically.
+    /// </summary>
+    internal static MigrationFidelityEvaluation Fold(IEnumerable<MigrationFidelityDifference> differences)
+    {
         var ordered = differences
             .OrderBy(static difference => difference.Code, StringComparer.Ordinal)
             .ThenBy(static difference => difference.Subject ?? string.Empty, StringComparer.Ordinal)

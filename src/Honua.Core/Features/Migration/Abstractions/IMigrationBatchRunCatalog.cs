@@ -63,8 +63,10 @@ public interface IMigrationBatchRunCatalog
 
     /// <summary>
     /// Update a single child's status (and optional job id / published layer id /
-    /// note). Returns the updated child, or null if the batch/ordinal is unknown.
-    /// Terminal child states (succeeded, failed, cancelled) are sticky.
+    /// note / fidelity verdict). Returns the updated child, or null if the
+    /// batch/ordinal is unknown. Terminal child states (succeeded, failed,
+    /// cancelled, needs-review) are sticky. Null optional values leave the stored
+    /// value unchanged.
     /// </summary>
     Task<MigrationBatchChildRecord?> UpdateChildAsync(
         string batchId,
@@ -74,11 +76,15 @@ public interface IMigrationBatchRunCatalog
         int? publishedLayerId,
         string? statusNote,
         DateTimeOffset updatedAt,
+        string? fidelityVerdict = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Update the rolled-up batch status and child counts. Returns the updated
-    /// record, or null if the batch is unknown. Terminal batch states are sticky.
+    /// Update the rolled-up batch status, child counts and — at the terminal
+    /// transition — the service-level fidelity verdict and its differences (issue
+    /// #4600). Returns the updated record, or null if the batch is unknown.
+    /// Terminal batch states are sticky. Null optional values leave the stored
+    /// value unchanged.
     /// </summary>
     Task<MigrationBatchRunRecord?> UpdateBatchAsync(
         string batchId,
@@ -89,6 +95,8 @@ public interface IMigrationBatchRunCatalog
         DateTimeOffset? completedAt,
         bool? relationshipsApplied,
         string? statusNote,
+        string? fidelityVerdict = null,
+        MigrationFidelityDifference[]? fidelityDifferences = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

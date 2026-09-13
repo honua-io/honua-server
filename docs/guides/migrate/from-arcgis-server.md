@@ -111,6 +111,26 @@ A skipped check is never treated as a passing check. An import run on a deployme
 catalog read-back seam, for example, completes as `unverified` rather than `full-fidelity`, because
 counts can match while the schema is wrong.
 
+A job routed to review keeps its `needs-review` status, `fidelityVerdict` and `fidelityDifferences`
+when it finishes, so the evidence is still there when you come back to it.
+
+#### Service imports
+
+A batch migration run imports a whole footprint of layers and applies the manifest relationships
+after every layer has published. The run carries its own service-level `fidelityVerdict`, and each
+child layer carries the verdict its import job reported. The service is `full-fidelity` only when
+every layer is `full-fidelity` and every requested relationship reached the target:
+
+| Difference code | Severity | Cause |
+|---|---|---|
+| `fidelity.service.layer-incomplete` | blocking | A layer failed, was cancelled, never ran, or was routed to review. |
+| `fidelity.service.layer-unverified` | unverified | A layer completed without proving parity. Check that layer's own `fidelityDifferences`. |
+| `fidelity.relationship.omitted` | blocking | Relationship apply deferred a relationship (composite, many-to-many, or unresolved keys). |
+| `fidelity.relationship-apply.not-executed` | blocking | Relationship apply was requested but never ran, for example because the manifest could not be parsed. |
+
+A run with a blocking difference and no failed or cancelled layer reports `needs-review` rather than
+`succeeded`, even when every layer imported cleanly.
+
 The runtime-neutral `honua-migrate reconcile compare` command exists for a durable `MigrationRun` plus portable source and target snapshots. The ArcGIS service adapter does not yet emit that run/snapshot bundle, so this guide does not present a command that would fail. Automated ArcGIS reconciliation remains deferred until that adapter is wired.
 
 ## 6. Repoint clients
