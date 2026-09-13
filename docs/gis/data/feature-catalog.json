@@ -6950,6 +6950,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.GetItems_WithOutputCrsAndNoBboxCrs_DefaultsBboxToCrs84",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.GetItems_WithProjectedBboxCrs_AllowsProjectedRange",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.GetItems_WithUnsupportedExplicitGeometryCrs_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStreamingTests.GetItems_KeepAlive_CompletesPagesAndReusesConnection",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStreamingTests.GetItems_LargeLimit_Streaming_ProvidesAdvisorySnapshotNumberMatched",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStreamingTests.GetItems_LargeLimit_UsesStreamingResponse",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.GetItems_WithNumericLookingStringCollectionId_ResolvesCollectionName",
@@ -12607,6 +12608,49 @@
       "capability": "serve.sensorthings"
     },
     {
+      "id": "get-sta-v1-1-datastreams-id-observedproperty",
+      "route": "/sta/v1.1/Datastreams({id})/ObservedProperty",
+      "method": "GET",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.Navigation_FollowEveryEmittedLink_ReturnsRelatedSeededEntities"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "preview",
+      "capability": "serve.sensorthings"
+    },
+    {
+      "id": "get-sta-v1-1-datastreams-id-sensor",
+      "route": "/sta/v1.1/Datastreams({id})/Sensor",
+      "method": "GET",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.Navigation_FollowEveryEmittedLink_ReturnsRelatedSeededEntities"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "preview",
+      "capability": "serve.sensorthings"
+    },
+    {
+      "id": "get-sta-v1-1-datastreams-id-thing",
+      "route": "/sta/v1.1/Datastreams({id})/Thing",
+      "method": "GET",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.Navigation_FollowEveryEmittedLink_ReturnsRelatedSeededEntities",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsServiceRootPublicUrlTests.Navigation_WithPublicBaseUrl_PreservesExternalOriginAndPrefix"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "preview",
+      "capability": "serve.sensorthings"
+    },
+    {
       "id": "get-sta-v1-1-observations",
       "route": "/sta/v1.1/Observations",
       "method": "GET",
@@ -12647,6 +12691,23 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsQueryOptionsTests.Observation_ById_WithFilter_Returns400BecauseItCannotApply",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Observations_ById_ReturnsEntity"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "preview",
+      "capability": "serve.sensorthings"
+    },
+    {
+      "id": "get-sta-v1-1-observations-id-datastream",
+      "route": "/sta/v1.1/Observations({id})/Datastream",
+      "method": "GET",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.Navigation_DistinctForeignKeys_ResolveTargetsAndOmitUnsupportedFeatureOfInterest",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.Navigation_FollowEveryEmittedLink_ReturnsRelatedSeededEntities",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.Navigation_MissingParentsAndUnsupportedOptions_ReturnExplicitErrors",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsServiceRootPublicUrlTests.Navigation_WithPublicBaseUrl_PreservesExternalOriginAndPrefix"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "preview",
@@ -12705,6 +12766,21 @@
       "capability": "serve.sensorthings"
     },
     {
+      "id": "get-sta-v1-1-observedproperties-id-datastreams",
+      "route": "/sta/v1.1/ObservedProperties({id})/Datastreams",
+      "method": "GET",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.Navigation_FollowEveryEmittedLink_ReturnsRelatedSeededEntities",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.RelatedDatastreams_QueryOptions_ApplyWithinRelationshipBeforePagingAndCount"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "preview",
+      "capability": "serve.sensorthings"
+    },
+    {
       "id": "get-sta-v1-1-sensors",
       "route": "/sta/v1.1/Sensors",
       "method": "GET",
@@ -12730,6 +12806,21 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Sensors_ById_ReturnsEntity"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "preview",
+      "capability": "serve.sensorthings"
+    },
+    {
+      "id": "get-sta-v1-1-sensors-id-datastreams",
+      "route": "/sta/v1.1/Sensors({id})/Datastreams",
+      "method": "GET",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.Navigation_FollowEveryEmittedLink_ReturnsRelatedSeededEntities",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.RelatedDatastreams_QueryOptions_ApplyWithinRelationshipBeforePagingAndCount"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "preview",
@@ -12766,6 +12857,22 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsQueryOptionsTests.Things_SelectOnASingleEntity_ReturnsOnlyTheSelectedMembers",
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Things_ById_ReturnsEntityEnvelope"
+      ],
+      "proof_ledger_surface": "sensorthings-1.1",
+      "maturity": "preview",
+      "capability": "serve.sensorthings"
+    },
+    {
+      "id": "get-sta-v1-1-things-id-datastreams",
+      "route": "/sta/v1.1/Things({id})/Datastreams",
+      "method": "GET",
+      "family": "OGC SensorThings API v1.1",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsFeatureGateTests.Navigation_WhenFeatureDisabled_Returns404",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.Navigation_FollowEveryEmittedLink_ReturnsRelatedSeededEntities",
+        "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsNavigationTests.RelatedDatastreams_QueryOptions_ApplyWithinRelationshipBeforePagingAndCount"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
       "maturity": "preview",

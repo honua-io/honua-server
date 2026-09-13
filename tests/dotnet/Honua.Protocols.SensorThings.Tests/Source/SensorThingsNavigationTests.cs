@@ -101,9 +101,8 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
             createdIds.Add(entity.RootElement.GetProperty("@iot.id").GetInt64());
         }
 
-        foreach (var parent in new[] { "Things", "Sensors", "ObservedProperties" })
+        foreach (var path in new[] { "/sta/v1.1/Things(1)/Datastreams", "/sta/v1.1/Sensors(1)/Datastreams", "/sta/v1.1/ObservedProperties(1)/Datastreams" })
         {
-            var path = $"/sta/v1.1/{parent}(1)/Datastreams";
             // The unrelated row also matches the OR filter: the relationship must AND
             // the entire expression, and its parameter must not collide with filter literals.
             using var first = await GetAsync(path + "?$filter=" + Uri.EscapeDataString("name ne 'Demo Air Temperature' or name eq 'Unrelated'") + "&$orderby=name%20desc&$top=1&$count=true&$select=id,name");
