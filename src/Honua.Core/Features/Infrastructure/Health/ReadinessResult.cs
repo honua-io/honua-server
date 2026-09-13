@@ -20,6 +20,12 @@ public sealed record ReadinessResult
     /// <summary>Gets the exception that caused the check to fail, if any.</summary>
     public Exception? Exception { get; init; }
 
+    /// <summary>
+    /// Gets the machine-readable reason code of a failed result (a <see cref="ReadinessReasonCodes"/>
+    /// value), if any.
+    /// </summary>
+    public string? ReasonCode { get; init; }
+
     /// <summary>Creates a successful readiness result.</summary>
     /// <returns>A successful readiness result.</returns>
     public static ReadinessResult Ready() => new()
@@ -40,4 +46,12 @@ public sealed record ReadinessResult
         Message = $"Not Ready - {reason}",
         Exception = exception
     };
+
+    /// <summary>Creates a failed readiness result carrying a machine-readable reason code.</summary>
+    /// <param name="reason">Reason for failure.</param>
+    /// <param name="reasonCode">A <see cref="ReadinessReasonCodes"/> value.</param>
+    /// <param name="exception">Exception that caused the failure.</param>
+    /// <returns>A failed readiness result.</returns>
+    public static ReadinessResult NotReady(string reason, string reasonCode, Exception? exception = null)
+        => NotReady(reason, exception) with { ReasonCode = reasonCode };
 }
