@@ -279,7 +279,9 @@ jobs:
 
       - name: Stage current-run envelopes
         shell: bash
-        run: scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output
+        run: |
+          scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output
+          python3 scripts/client-compat/validate-envelope-source.py docker/client-compat/output "${{ github.sha }}"
 
       - name: Compare against baselines and refresh gap report
         id: diff
