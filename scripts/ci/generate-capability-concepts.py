@@ -88,9 +88,28 @@ def citing_pages(key: str, display_name: str, pages: dict[pathlib.Path, str]) ->
 def render(entry: dict, facts: dict) -> str:
     key = entry["key"]
     title = entry.get("displayName") or key
+    # Never truncate. A registry description is longer than 300 characters
+    # precisely when it carries caveats, so a length cut removes the constraint
+    # and keeps the opening clause that reads like a feature announcement. All
+    # four descriptions this used to cut lost something load-bearing - that
+    # cross-tenant disclosure stays a full-severity defect, that control-plane
+    # isolation remains mandatory, that durable jobs require Redis, and what
+    # serve.grpc does not cover. OKF sets no length limit on `description`.
     description = " ".join((entry.get("description") or "").split())
-    if len(description) > 300:
-        description = description[:297].rsplit(" ", 1)[0] + "…"
+    # A capability description is a licensing and safety statement, not a
+    # summary: it is where "Preview status never lowers the security severity of
+    # cross-tenant disclosure" and "the Elastic License 2.0 prohibits providing
+    # Honua to third parties as a hosted or managed service" are said. Emitting
+    # anything other than the registry's exact words - shortened, reflowed,
+    # elided - drops the caveat and keeps the opening clause that reads like a
+    # feature announcement. Fail rather than publish a softened claim.
+    source_description = " ".join((entry.get("description") or "").split())
+    if description != source_description:
+        raise SystemExit(
+            f"{key}: emitted description differs from the registry. Capability "
+            "descriptions carry licensing and severity statements and must be "
+            "published verbatim."
+        )
 
     tags = ["capability"]
     for field in ("category", "edition"):
@@ -154,7 +173,7 @@ def render(entry: dict, facts: dict) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_index(entries: list[tuple[str, str, str, str]]) -> str:
+def render_index(entries: list[tuple[str, str, str, str, str]]) -> str:
     lines = [
         "---",
         "type: index",
@@ -184,11 +203,22 @@ def render_index(entries: list[tuple[str, str, str, str]]) -> str:
         "`scripts/ci/generate-capability-concepts.py --report` for that view and for the",
         "capabilities no page in the bundle names yet.",
         "",
-        "| Capability | Category | Edition |",
-        "| --- | --- | --- |",
+        "A capability appearing here is not a statement that it is generally available.",
+        "**Status** is the registry's own lifecycle value, and 22 of these are not GA:",
+        "`preview` and `experimental` capabilities carry usage restrictions stated in full on",
+        "each page. Multi-tenant operation, for one, is Preview/trial-only, is not offered as a",
+        "hosted or managed service, and is restricted by the Elastic License 2.0.",
+        "",
+        "| Capability | Category | Edition | Status |",
+        "| --- | --- | --- | --- |",
     ]
-    for key, title, category, edition in entries:
-        lines.append(f"| [{title}]({key}.md) | {category or '—'} | {edition or '—'} |")
+    for key, title, category, edition, status in entries:
+        # A table that omits status presents a Preview capability exactly like a
+        # GA one. Column order puts it last so it reads as a qualifier on the row.
+        label = f"**{status}**" if status and status.lower() != "ga" else (status or "—")
+        lines.append(
+            f"| [{title}]({key}.md) | {category or '—'} | {edition or '—'} | {label} |"
+        )
     lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -210,6 +240,7 @@ def build() -> dict[str, str]:
             entry.get("displayName") or key,
             facts.get("category") or entry.get("category"),
             facts.get("edition") or entry.get("edition"),
+            facts.get("status") or entry.get("status") or "ga",
         ))
     written["README.md"] = render_index(index_rows)
     return written

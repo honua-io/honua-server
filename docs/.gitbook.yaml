@@ -165,3 +165,7 @@ redirects:
   sdks/python/common-tasks: sdks/python/python-common-tasks.md
   # Promoted out of the contributor tree into the published bundle.
   internal/contributor/ARCHITECTURE_DIAGRAMS: concepts/architecture-diagrams.md
+  # Flattened so the two v1.0 indexes stop colliding on the slug 'v1.0'.
+  developer/spec-grammar/v1.0: developer/spec-grammar/spec-grammar-v1.0.md
+  developer/spec-grounding/v1.0: developer/spec-grounding/spec-grounding-v1.0.md
+

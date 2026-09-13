@@ -23,7 +23,7 @@ internal sealed partial class SpecGroundingService
 {
     private static readonly string[] CrsCandidates = ["EPSG:3857", "EPSG:32604", "EPSG:26910"];
     private static readonly string[] UnitCandidates = ["km", "m", "mi", "ft", "nm"];
-    private const string RoadmapPointer = "See docs/developer/spec-grammar/v1.0/README.md for the supported S1 scope.";
+    private const string RoadmapPointer = "See docs/developer/spec-grammar/spec-grammar-v1.0.md for the supported S1 scope.";
 
     private readonly ISpecCanonicalizer _canonicalizer;
     private readonly ISpecValidator _validator;

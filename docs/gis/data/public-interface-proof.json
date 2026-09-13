@@ -4480,7 +4480,7 @@
             "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecGroundingServiceTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Spec/SpecContractRegressionTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Grounding/Spec/SpecMutationApplierTests.cs",
-            "docs/developer/spec-grounding/v1.0/README.md"
+            "docs/developer/spec-grounding/spec-grounding-v1.0.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
