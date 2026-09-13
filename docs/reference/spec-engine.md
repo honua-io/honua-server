@@ -5,7 +5,7 @@ resource: "honua://capability/ai.spec-apply"
 ---
 # Spec engine
 
-The spec engine executes canonical spec documents with Terraform-style plan/apply semantics: `plan` compiles a spec into a DAG with per-node cost estimates and warnings; `apply` streams per-node progress events and serves cache hits without re-invoking compute. Specs are written in the spec grammar — see the [spec grammar v1.0 reference](../developer/spec-grammar/v1.0/README.md) (EBNF + JSON schema).
+The spec engine executes canonical spec documents with Terraform-style plan/apply semantics: `plan` compiles a spec into a DAG with per-node cost estimates and warnings; `apply` streams per-node progress events and serves cache hits without re-invoking compute. Specs are written in the spec grammar — see the [spec grammar v1.0 reference](../developer/spec-grammar/spec-grammar-v1.0.md) (EBNF + JSON schema).
 
 ## Endpoints
 
@@ -88,6 +88,6 @@ Open Honua Console's Spec IDE, paste the following spec, and choose **Apply**. T
 
 ## Related pages
 
-- [Spec grammar v1.0](../developer/spec-grammar/v1.0/README.md)
+- [Spec grammar v1.0](../developer/spec-grammar/spec-grammar-v1.0.md)
 - [gRPC reference](protocols/grpc.md)
 - [Geoprocessing operations](geoprocessing-operations.md)

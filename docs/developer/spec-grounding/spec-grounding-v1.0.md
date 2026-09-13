@@ -5,11 +5,11 @@ description: "/v1/grounding/spec/ turns natural-language edit requests into vali
 ---
 # Spec Grounding v1.0
 
-`/v1/grounding/spec/*` turns natural-language edit requests into validated canonical-spec mutations and deterministic per-section summaries for the [Honua spec grammar v1.0](../../spec-grammar/v1.0/README.md). The surface is the spec-workspace counterpart to the workflow-focused [`GROUNDING.md`](../../../internal/developer/GROUNDING.md) pipeline — it operates on the structured `SpecDocument` model rather than on ranked catalog candidates, and it never returns a spec that would fail `ISpecValidator`.
+`/v1/grounding/spec/*` turns natural-language edit requests into validated canonical-spec mutations and deterministic per-section summaries for the [Honua spec grammar v1.0](../spec-grammar/spec-grammar-v1.0.md). The surface is the spec-workspace counterpart to the workflow-focused [`GROUNDING.md`](../../internal/developer/GROUNDING.md) pipeline — it operates on the structured `SpecDocument` model rather than on ranked catalog candidates, and it never returns a spec that would fail `ISpecValidator`.
 
 - **Implementation**: `src/Honua.Server/Features/Grounding/Spec/*`
 - **Endpoint registration**: `EndpointRegistry` (`/v1/grounding/spec/mutate`, `/v1/grounding/spec/summarize`)
-- **Related ADRs**: [ADR-0027 deterministic intent / clarification workflow](../../../internal/contributor/adr/0027-deterministic-intent-clarification-workflow.md), [ADR-0028 no AI data editing](../../../internal/contributor/adr/0028-ai-data-editing-not-allowed.md)
+- **Related ADRs**: [ADR-0027 deterministic intent / clarification workflow](../../internal/contributor/adr/0027-deterministic-intent-clarification-workflow.md), [ADR-0028 no AI data editing](../../internal/contributor/adr/0028-ai-data-editing-not-allowed.md)
 
 ## Endpoints
 
@@ -97,7 +97,7 @@ An empty `{}` spec is accepted here as well and yields `title_summary = "No sour
 
 ## Closed mutation catalog
 
-The S1 scope enumerates exactly nine mutation kinds. Explicit roadmap keywords (`schedule`, `publish`, `deploy`, `dashboard`, `app`) short-circuit to `error.kind = "out_of_scope"` with a pointer to `docs/developer/spec-grammar/v1.0/README.md`, which structurally honours ADR-0028 (no mutation kind targets row-level data). Other turns that do not map to one of the supported mutations remain `unresolvable`.
+The S1 scope enumerates exactly nine mutation kinds. Explicit roadmap keywords (`schedule`, `publish`, `deploy`, `dashboard`, `app`) short-circuit to `error.kind = "out_of_scope"` with a pointer to `docs/developer/spec-grammar/spec-grammar-v1.0.md`, which structurally honours ADR-0028 (no mutation kind targets row-level data). Other turns that do not map to one of the supported mutations remain `unresolvable`.
 
 | `kind` wire value | Payload | Effect |
 |---|---|---|
@@ -157,7 +157,7 @@ Clarification `intent_id` values are server-generated from the outstanding clari
 |---|---|
 | `unresolvable` | Input spec already has error-severity diagnostics; no clause parses; a referenced source/compute/output id does not exist; no catalog layers available to resolve a dataset phrase; map/output target cannot be resolved. |
 | `invalid_mutation` | The applier threw `InvalidOperationException` (e.g. `remove-source` on a missing id), or the post-apply `ISpecValidator` returned error-severity diagnostics. |
-| `out_of_scope` | Turn contains an S2/S3 keyword (`schedule`, `publish`, `deploy`, `dashboard`, `app`). The warnings list includes a pointer to `docs/developer/spec-grammar/v1.0/README.md`. |
+| `out_of_scope` | Turn contains an S2/S3 keyword (`schedule`, `publish`, `deploy`, `dashboard`, `app`). The warnings list includes a pointer to `docs/developer/spec-grammar/spec-grammar-v1.0.md`. |
 
 Problem Details (`application/problem+json`) with status `400` is reserved for malformed wire payloads: missing or blank `turn`; missing, `null`, non-object, or unreadable `spec`; missing `clarification_answer.intent_id`; empty `clarification_answer.answers`; blank question ids; blank answer values; or malformed JSON. Ambiguous turns return `200` with `clarifications[]` and no `error`; other validation or grounding failures return `200` with a structured `error` envelope.
 Malformed JSON is handled by the shared exception mapper and currently returns the generic `Bad Request` / `Invalid JSON payload.` envelope. Endpoint-level shape validation returns `title = "Invalid spec grounding request"` with a field-specific `detail`.
