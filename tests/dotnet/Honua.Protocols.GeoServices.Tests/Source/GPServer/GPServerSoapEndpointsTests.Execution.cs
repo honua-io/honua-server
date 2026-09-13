@@ -198,6 +198,30 @@ public sealed partial class GPServerSoapEndpointsTests
         XDocument.Parse(body).Descendants("Result").Should().BeEmpty();
     }
 
+    [IntegrationTheory]
+    [InlineData("GetJobStatus", "esriJobExecuting")]
+    [InlineData("GetJobMessages", "")]
+    [InlineData("GetJobToolName", AreaTool)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    [InterfaceOperation(TestProtocols.GPServer, "GetJobMessages")]
+    [InterfaceOperation(TestProtocols.GPServer, "GetJobToolName")]
+    public async Task SoapJobOperation_ValidBinding_ReturnsCanonicalStatus(string operation, string expected)
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        jobs.GetJobAsync("soap-job", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(SoapJob());
+        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
+        {
+            services.RemoveAll<IGeoprocessingJobService>();
+            services.AddSingleton(jobs);
+        });
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var response = await PostAsync(client, operation, "<JobID>soap-job</JobID>");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        XDocument.Parse(body).Descendants("Result").Single().Value.Should().Be(expected);
+    }
+
     private static ExecutionJobRecord SoapJob(string serviceId = "alpha") => new()
     {
         OperationId = "soap-job", Status = ExecutionJobStatus.Running,

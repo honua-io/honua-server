@@ -25,7 +25,7 @@ internal static partial class GPServerEndpoints
         try
         {
             IResult response;
-            XElement result;
+            XElement? result;
             if (name is "SubmitJob" or "Execute")
             {
                 var taskName = operation.Element("ToolName")?.Value ?? string.Empty;
@@ -82,8 +82,12 @@ internal static partial class GPServerEndpoints
                 switch (name)
                 {
                     case "GetJobStatus":
-                    case "CancelJob":
                         result = new XElement("Result", status.JobStatus);
+                        break;
+                    case "CancelJob":
+                        // The SOAP CancelJob method returns void. A successful
+                        // response is emitted only after canonical confirmation.
+                        result = null;
                         break;
                     case "GetJobToolName":
                         result = new XElement("Result", taskName);

@@ -162,6 +162,8 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
     [InlineData("SubmitJob")]
     [Operation(Operations.Create)]
     [Endpoint("POST /services/{serviceId}/GPServer")]
+    [InterfaceOperation(TestProtocols.GPServer, "GetJobStatus")]
+    [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
     public async Task SoapArea_WithProductionExecutor_ReturnsIndependentRectangleAreaAndMetadata(string operation)
     {
         await DeleteControlPlaneKeysAsync(redis.ConnectionString);

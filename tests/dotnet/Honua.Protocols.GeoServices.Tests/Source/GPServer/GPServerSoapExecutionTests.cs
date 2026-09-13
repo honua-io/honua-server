@@ -59,6 +59,35 @@ public sealed class GPServerSoapExecutionTests
     }
 
     [UnitTest]
+    public void Submission_ArcPyDefaultEnvironment_IsNeutralForScalarGeometryOnly()
+    {
+        var xml = Submission("""
+            <Values/>
+            <Options><DensifyFeatures>false</DensifyFeatures><TransportType>esriGDSTransportTypeUrl</TransportType>
+            <ReturnData>false</ReturnData><UpdateValues>true</UpdateValues></Options>
+            <EnvironmentValues><PropertyArray>
+            <PropertySetProperty><Key>outputZFlag</Key><Value xsi:type="tns:GPString"><Value>Same As Input</Value></Value></PropertySetProperty>
+            <PropertySetProperty><Key>outputMFlag</Key><Value xsi:type="tns:GPString"><Value>Same As Input</Value></Value></PropertySetProperty>
+            <PropertySetProperty><Key>randomGenerator</Key><Value xsi:type="tns:GPRandomNumberGenerator"><Value>0</Value><GPRandomNumberGenerator>ACM599</GPRandomNumberGenerator></Value></PropertySetProperty>
+            <PropertySetProperty><Key>autoCommit</Key><Value xsi:type="tns:GPLong"><Value>1000</Value></Value></PropertySetProperty>
+            <PropertySetProperty><Key>cellSizeProjectionMethod</Key><Value xsi:type="tns:GPString"><Value>CONVERT_UNITS</Value></Value></PropertySetProperty>
+            <PropertySetProperty><Key>nodata</Key><Value xsi:type="tns:GPString"><Value>NONE</Value></Value></PropertySetProperty>
+            </PropertyArray></EnvironmentValues>
+            """);
+        var task = TaskInfo();
+        task.ExecutionType = GPServerExecutionPolicy.SynchronousExecutionType;
+        GPServerSoapExecution.ReadSubmission(xml, task).Should().BeEmpty();
+        // A changed setting must reach the shared environment validator rather
+        // than disappear with the client's defaults.
+        xml.Descendants("PropertySetProperty").Single(property => property.Element("Key")!.Value == "nodata")
+            .Element("Value")!.Element("Value")!.Value = "MAXIMUM";
+        GPServerSoapExecution.ReadSubmission(xml, task)["env:nodata"].Should().Be("MAXIMUM");
+        task.ExecutionType = GPServerExecutionPolicy.AsynchronousExecutionType;
+        var act = () => GPServerSoapExecution.ReadSubmission(xml, task);
+        act.Should().Throw<GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
     public void Result_ScalarArtifact_PreservesExactValueAndEscapesXml()
     {
         var result = GPServerSoapExecution.BuildResult(

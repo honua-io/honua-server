@@ -175,7 +175,7 @@ public static class OperationRegistry
         new(GeoservicesCatalog, "GetTokenServiceURL"),
         new(GeoservicesCatalog, "RequiresTokens"),
 
-        // ArcGIS SOAP GPServer discovery operations.
+        // ArcGIS SOAP GPServer discovery and execution operations.
         new(GPServer, "GetToolInfos"),
         new(GPServer, "GetTaskInfos"),
         new(GPServer, "GetToolNames"),
@@ -183,6 +183,13 @@ public static class OperationRegistry
         new(GPServer, "GetToolInfo"),
         new(GPServer, "GetExecutionType"),
         new(GPServer, "GetResultMapServerName"),
+        new(GPServer, "SubmitJob"),
+        new(GPServer, "Execute"),
+        new(GPServer, "GetJobStatus"),
+        new(GPServer, "GetJobMessages"),
+        new(GPServer, "GetJobResult"),
+        new(GPServer, "GetJobToolName"),
+        new(GPServer, "CancelJob"),
 
         // ArcGIS SOAP ImageServer operations dispatched through POST /services/{serviceId}/ImageServer.
         new(ImageServer, "GetVersion"),
