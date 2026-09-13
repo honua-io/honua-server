@@ -18,6 +18,21 @@ public static class BuiltInGuardrailActions
     /// </summary>
     public const string StudioPublicationProposal = "studio.publication_proposal";
 
+    /// <summary>
+    /// A Studio publication request that moves the published pointer when it executes
+    /// (honua-server#4758). It keeps the edition tier, so Community still publishes directly,
+    /// but as a governed step it never takes the <c>Licensing:Mode=Disabled</c> direct tier
+    /// that Studio draft composition receives.
+    /// </summary>
+    public const string StudioPublicationRequest = "studio.publication_request";
+
+    /// <summary>
+    /// A Studio rollback that moves a content pointer when it executes (honua-server#4758).
+    /// Like <see cref="StudioPublicationRequest"/>, it keeps the edition tier and is excluded
+    /// from the <c>Licensing:Mode=Disabled</c> Studio composition tier.
+    /// </summary>
+    public const string StudioRollback = "studio.rollback";
+
     /// <summary>Resolves the declared tier floor of a built-in action.</summary>
     /// <param name="action">Action discriminator.</param>
     /// <param name="tier">The declared tier when the action is built in.</param>
@@ -27,6 +42,13 @@ public static class BuiltInGuardrailActions
         if (string.Equals(action, StudioPublicationProposal, StringComparison.Ordinal))
         {
             tier = GuardrailTier.RequiresApproval;
+            return true;
+        }
+
+        if (string.Equals(action, StudioPublicationRequest, StringComparison.Ordinal) ||
+            string.Equals(action, StudioRollback, StringComparison.Ordinal))
+        {
+            tier = GuardrailTier.DirectExecute;
             return true;
         }
 

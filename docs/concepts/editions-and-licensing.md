@@ -41,6 +41,18 @@ Preview; all four cloud-native formats and the whole GA process catalog
 retain their release scope. `Licensing__DevGrantEdition` remains a development-only
 override and is refused in Production, including when Mode is Disabled.
 
+Disabled mode also sets the default guardrail posture, because the guardrail ladder
+treats the host as Enterprise-equivalent. Administrative configuration changes,
+deploy and rollback, metadata release, seed and service publish operations route
+through approval by default. Studio draft composition is the exception. An
+authorized owner creates, updates, validates, previews, saves, reopens and deletes
+drafts directly, as on a Community host. Studio publication and rollback still wait
+for approval, and so does every agent publication proposal.
+`Guardrails__Overrides__<OperationClass>` still takes precedence and applies to the
+whole class. `Guardrails__Overrides__StudioDraftMutation=RequiresApproval` puts
+composition behind approval too. `DirectExecute` on that class removes the approval
+step from Studio publication and rollback; agent publication proposals keep theirs.
+
 Licensing bands, metering and marketplace integration are scheduled for hardening
 and re-enablement in 2026.2. The edition and signed-license behavior below applies
 when `Licensing__Mode=Enabled`; it is not a license requirement for the 2026.1
