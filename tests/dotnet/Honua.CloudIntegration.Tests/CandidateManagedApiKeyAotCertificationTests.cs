@@ -54,7 +54,7 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
 
         var image = await Docker.ResolveImageAsync(reference!);
         await using var server = await CandidateServer.StartAsync(image, output);
-        var replay = new Replay(server.BaseUrl, output);
+        using var replay = new Replay(server.BaseUrl, output);
         var startedAt = DateTimeOffset.UtcNow;
         var reflectionFailures = -1;
         try
@@ -70,7 +70,6 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
         {
             reflectionFailures = await server.CountLogOccurrencesAsync(ReflectionDisabledMessage);
             await replay.WriteReceiptAsync(image, startedAt, reflectionFailures, Environment.GetEnvironmentVariable(ReceiptDirectoryEnvVar));
-            replay.Dispose();
         }
 
         reflectionFailures.Should().Be(0, "no managed-key path may reach reflection-based serialization");
