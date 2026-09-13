@@ -1044,7 +1044,8 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
 
         public static async Task<string> ContainerAddressAsync(string name)
         {
-            var (exitCode, stdout, stderr) = await RunAsync(["inspect", "-f", "{{.NetworkSettings.IPAddress}}", name]);
+            // Docker Engine 29 dropped the top-level NetworkSettings.IPAddress; read the per-network address.
+            var (exitCode, stdout, stderr) = await RunAsync(["inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name]);
             var address = stdout.Trim();
             if (exitCode != 0 || string.IsNullOrWhiteSpace(address))
             {
