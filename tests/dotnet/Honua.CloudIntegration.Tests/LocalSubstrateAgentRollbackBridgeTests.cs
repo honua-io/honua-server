@@ -623,10 +623,10 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
                     observedProtection.Should().BeTrue("cutover must enter its durable observation window before success");
                     var deploy = last.Deploy;
                     deploy.Should().NotBeNull("a succeeded deploy must retain its deployment payload");
-                    var protection = deploy!.Protection;
-                    protection.Should().NotBeNull("a succeeded protected deploy must retain its protection state");
-                    protection!.Phase.Should().Be(DeployProtectionPhase.Expired);
-                    last.CompletedAt.Should().BeOnOrAfter(protection.ObservationDeadline,
+                    var successProtection = deploy!.Protection;
+                    successProtection.Should().NotBeNull("a succeeded protected deploy must retain its protection state");
+                    successProtection!.Phase.Should().Be(DeployProtectionPhase.Expired);
+                    last.CompletedAt.Should().BeOnOrAfter(successProtection.ObservationDeadline,
                         "a healthy candidate still must serve through the entire configured window");
                     deploy.DesiredRevision.Should().Be(expectedDesiredRevision);
                     return last;
