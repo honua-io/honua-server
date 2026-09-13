@@ -338,6 +338,35 @@ public sealed class ExportJobServiceTests
         using var warningReader = new StreamReader(warningEntry!.Open());
         var warnings = await warningReader.ReadToEndAsync();
         warnings.Should().Contain("descriptive_name");
+
+        static async Task<byte[]> ReadEntryAsync(System.IO.Compression.ZipArchive archive, string name)
+        {
+            var entry = archive.GetEntry(name);
+            entry.Should().NotBeNull();
+            using var bytes = new MemoryStream();
+            await using var source = entry!.Open();
+            await source.CopyToAsync(bytes);
+            return bytes.ToArray();
+        }
+        // Independently decode the shapefile records: one Null Shape occupies a 100-byte
+        // header, an 8-byte record header and a 4-byte shape type; SHX stores offset/length in words.
+        var shp = await ReadEntryAsync(archive, "export.shp");
+        shp.Should().HaveCount(112);
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(shp.AsSpan(0, 4)).Should().Be(9994);
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(shp.AsSpan(108, 4)).Should().Be(0);
+        var shx = await ReadEntryAsync(archive, "export.shx");
+        shx.Should().HaveCount(108);
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(shx.AsSpan(100, 4)).Should().Be(50);
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(shx.AsSpan(104, 4)).Should().Be(2);
+        var dbf = await ReadEntryAsync(archive, "export.dbf");
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(dbf.AsSpan(4, 4)).Should().Be(1);
+        var rowOffset = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(dbf.AsSpan(8, 2));
+        rowOffset.Should().Be(97, "two field descriptors plus the fixed header and terminator");
+        dbf[rowOffset].Should().Be((byte)' ', "the preserved null-geometry row is not deleted");
+        var nameLength = dbf[32 + 16];
+        var detailLength = dbf[64 + 16];
+        System.Text.Encoding.UTF8.GetString(dbf, rowOffset + 1, nameLength).TrimEnd().Should().Be("Unlocated");
+        System.Text.Encoding.UTF8.GetString(dbf, rowOffset + 1 + nameLength, detailLength).TrimEnd().Should().Be("Retained detail");
     }
 
     [UnitTest]
