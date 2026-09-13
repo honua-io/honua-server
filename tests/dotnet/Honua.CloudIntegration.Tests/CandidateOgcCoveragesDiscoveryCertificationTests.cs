@@ -117,6 +117,8 @@ public sealed class CandidateOgcCoveragesDiscoveryCertificationTests
             [
                 "run", "-d", "--name", postgres, "--network", network,
                 "-e", "POSTGRES_USER=postgres", "-e", $"POSTGRES_PASSWORD={DatabasePassword}", "-e", "POSTGRES_DB=honua",
+                // Coverage export encodes GeoTIFF inside PostGIS, which loads no GDAL output driver by default.
+                "-e", "POSTGIS_GDAL_ENABLED_DRIVERS=ENABLE_ALL",
                 PostgresImage
             ]);
             await WaitForPostgresAsync(postgres);
