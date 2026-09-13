@@ -73,6 +73,21 @@ internal static partial class GPServerEndpoints
                     return ExecutionFault(bindingError, soap);
                 }
 
+                // Metadata is complete in the authorized job record. Reading a
+                // result package here would couple polling and diagnostics to
+                // artifact storage availability after the job has succeeded.
+                if (name is "GetJobStatus" or "GetJobMessages" or "GetJobToolName")
+                {
+                    var metadata = name switch
+                    {
+                        "GetJobStatus" => new XElement("Result", GPServerStatusMapping.ToEsriJobStatus(job.Status)),
+                        "GetJobToolName" => new XElement("Result", taskName),
+                        _ => GPServerSoapExecution.BuildMessages(BuildJobMessages(job))
+                    };
+                    metadata.Name = "Result";
+                    return CreateSoapResponse(soap, operation.Name.Namespace, name + "Response", metadata);
+                }
+
                 response = name == "CancelJob"
                     ? await HandleCancelJob(context, ct).ConfigureAwait(false)
                     : await HandleJobStatus(context, ct).ConfigureAwait(false);
@@ -83,20 +98,10 @@ internal static partial class GPServerEndpoints
 
                 switch (name)
                 {
-                    case "GetJobStatus":
-                        result = new XElement("Result", status.JobStatus);
-                        break;
                     case "CancelJob":
                         // The SOAP CancelJob method returns void. A successful
                         // response is emitted only after canonical confirmation.
                         result = null;
-                        break;
-                    case "GetJobToolName":
-                        result = new XElement("Result", taskName);
-                        break;
-                    case "GetJobMessages":
-                        result = GPServerSoapExecution.BuildMessages(status.Messages ?? []);
-                        result.Name = "Result";
                         break;
                     case "GetJobResult":
                         GPServerSoapExecution.ValidateResultOptions(operation.Element("Options"));

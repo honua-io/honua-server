@@ -89,6 +89,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [InlineData("GetJobStatus")]
     [InlineData("GetJobMessages")]
     [InlineData("GetJobResult")]
+    [InlineData("GetJobToolName")]
     [InlineData("CancelJob")]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /services/{serviceId}/GPServer")]
@@ -115,6 +116,7 @@ public sealed partial class GPServerSoapEndpointsTests
     [InlineData("GetJobStatus")]
     [InlineData("GetJobMessages")]
     [InlineData("GetJobResult")]
+    [InlineData("GetJobToolName")]
     [InlineData("CancelJob")]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /services/{serviceId}/GPServer")]
@@ -220,6 +222,49 @@ public sealed partial class GPServerSoapEndpointsTests
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         XDocument.Parse(body).Descendants("Result").Single().Value.Should().Be(expected);
+    }
+
+    [IntegrationTheory]
+    [InlineData("GetJobStatus")]
+    [InlineData("GetJobMessages")]
+    [InlineData("GetJobToolName")]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    public async Task SoapJobMetadata_SucceededJob_DoesNotRequireResultStore(string operation)
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var job = SoapJob() with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CurrentPhase = "Completed",
+            Warnings = ["A retained warning"],
+            ErrorMessage = "A retained diagnostic"
+        };
+        jobs.GetJobAsync("soap-job", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(job);
+        jobs.GetJobResultsAsync("soap-job", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Result store unavailable."));
+        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
+        {
+            services.RemoveAll<IGeoprocessingJobService>();
+            services.AddSingleton(jobs);
+        });
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var response = await PostAsync(client, operation, "<JobID>soap-job</JobID>");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        var result = XDocument.Parse(body).Descendants("Result").Single();
+        if (operation == "GetJobMessages")
+        {
+            result.Descendants("MessageDesc").Select(message => message.Value)
+                .Should().Equal("Completed", "A retained warning", "A retained diagnostic");
+            result.Descendants("MessageType").Select(message => message.Value)
+                .Should().Equal("esriJobMessageTypeInformative", "esriJobMessageTypeWarning", "esriJobMessageTypeError");
+        }
+        else
+        {
+            result.Value.Should().Be(operation == "GetJobStatus" ? "esriJobSucceeded" : AreaTool);
+        }
+        await jobs.DidNotReceiveWithAnyArgs().GetJobResultsAsync(default!, default!, default);
     }
 
     private static ExecutionJobRecord SoapJob(string serviceId = "alpha") => new()

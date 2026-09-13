@@ -892,6 +892,39 @@ internal static partial class GPServerEndpoints
         return true;
     }
 
+    private static GPJobMessage[] BuildJobMessages(ExecutionJobRecord job)
+    {
+        var messages = new List<GPJobMessage>();
+        if (job.CurrentPhase != null)
+        {
+            messages.Add(new GPJobMessage
+            {
+                Type = "esriJobMessageTypeInformative",
+                Description = job.CurrentPhase
+            });
+        }
+
+        foreach (var warning in job.Warnings)
+        {
+            messages.Add(new GPJobMessage
+            {
+                Type = "esriJobMessageTypeWarning",
+                Description = warning
+            });
+        }
+
+        if (job.ErrorMessage != null)
+        {
+            messages.Add(new GPJobMessage
+            {
+                Type = "esriJobMessageTypeError",
+                Description = job.ErrorMessage
+            });
+        }
+
+        return [.. messages];
+    }
+
     private static async Task<IResult> HandleJobStatus(HttpContext context, CancellationToken ct)
     {
         ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -935,33 +968,7 @@ internal static partial class GPServerEndpoints
             var esriStatus = GPServerStatusMapping.ToEsriJobStatus(job.Status);
             GPServerLog.JobStatusPolled(logger, jobId, esriStatus);
 
-            var messages = new List<GPJobMessage>();
-            if (job.CurrentPhase != null)
-            {
-                messages.Add(new GPJobMessage
-                {
-                    Type = "esriJobMessageTypeInformative",
-                    Description = job.CurrentPhase
-                });
-            }
-
-            foreach (var warning in job.Warnings)
-            {
-                messages.Add(new GPJobMessage
-                {
-                    Type = "esriJobMessageTypeWarning",
-                    Description = warning
-                });
-            }
-
-            if (job.ErrorMessage != null)
-            {
-                messages.Add(new GPJobMessage
-                {
-                    Type = "esriJobMessageTypeError",
-                    Description = job.ErrorMessage
-                });
-            }
+            var messages = BuildJobMessages(job);
 
             // Include result references when job succeeded
             Dictionary<string, GPJobResultRef>? results = null;
