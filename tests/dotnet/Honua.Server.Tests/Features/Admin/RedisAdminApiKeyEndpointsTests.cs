@@ -275,6 +275,161 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
         Assert.Equal("expired", record.GetProperty("status").GetString());
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
+    [Endpoint("GET /api/v1/admin/api-keys/{id}/effective-permissions")]
+    public async Task ScopedAndWrongKeys_WithRedisRegistry_AreHeldToTheSharedAdminPolicy()
+    {
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+        var (scopedId, scopedKey) = await CreateKeyAsync("redis-scoped-compat", expiresAt, ["read:arcgis_compat_scoped"]);
+        var (_, readerKey) = await CreateKeyAsync("redis-scoped-admin-read", expiresAt, ["admin:read"]);
+
+        // The scope round-trips through the generated Redis representation.
+        using (var effective = await _admin.GetAsync($"/api/v1/admin/api-keys/{scopedId}/effective-permissions"))
+        {
+            Assert.Equal(HttpStatusCode.OK, effective.StatusCode);
+            using var metadata = JsonDocument.Parse(await effective.Content.ReadAsStringAsync());
+            var data = metadata.RootElement.GetProperty("data");
+            Assert.Equal("active", data.GetProperty("status").GetString());
+            Assert.True(data.GetProperty("canAuthenticate").GetBoolean());
+            Assert.Equal("read:arcgis_compat_scoped", Assert.Single(data.GetProperty("permissions").EnumerateArray()).GetString());
+        }
+
+        // A non-admin scope authenticates (its usage is written back) but the admin policy refuses it.
+        using var scoped = CreateClient(scopedKey);
+        using (var refused = await scoped.GetAsync("/api/v1/admin/api-keys"))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        }
+
+        var store = _fixture.GetService<IAdminApiKeyStore>();
+        Assert.NotNull((await store.GetAsync(scopedId, CancellationToken.None))!.LastUsedAt);
+
+        // admin:read reads the registry but cannot mint, rotate or revoke through it.
+        using var reader = CreateClient(readerKey);
+        using (var read = await reader.GetAsync("/api/v1/admin/api-keys"))
+        {
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        }
+
+        using var escalation = new StringContent("{\"name\":\"redis-scoped-escalation\",\"permissions\":[\"admin:*\"]}", Encoding.UTF8, "application/json");
+        using (var mint = await reader.PostAsync("/api/v1/admin/api-keys", escalation))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, mint.StatusCode);
+        }
+
+        using (var rotate = await reader.PostAsync($"/api/v1/admin/api-keys/{scopedId}/rotate", null))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, rotate.StatusCode);
+        }
+
+        using (var revoke = await reader.PostAsync($"/api/v1/admin/api-keys/{scopedId}/revoke", null))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, revoke.StatusCode);
+        }
+
+        // Wrong keys: well-formed but never issued, and an issued key missing its last character.
+        using var unissued = CreateClient(InMemoryAdminApiKeyStore.GenerateForDurableStore());
+        using (var denied = await unissued.GetAsync("/api/v1/admin/api-keys"))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        }
+
+        using var truncated = CreateClient(readerKey[..^1]);
+        using (var denied = await truncated.GetAsync("/api/v1/admin/api-keys"))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        }
+
+        // None of the refused writes touched the scoped record.
+        var after = (await store.GetAsync(scopedId, CancellationToken.None))!;
+        Assert.Null(after.RotatedAt);
+        Assert.Null(after.RevokedAt);
+        Assert.Equal(expiresAt, after.ExpiresAt);
+        Assert.Equal(["read:arcgis_compat_scoped"], after.Permissions);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
+    public async Task RotateAndRevoke_UnderConcurrentUse_TakeEffectWithoutDenyingValidRequests()
+    {
+        var (id, originalKey) = await CreateKeyAsync("redis-concurrent-use", DateTimeOffset.UtcNow.AddHours(1));
+        using var original = CreateClient(originalKey);
+
+        // Concurrent requests with one key race their LastUsedAt compare-and-set; none may be denied.
+        var burst = await Task.WhenAll(Enumerable.Range(0, 24).Select(async _ =>
+        {
+            using var response = await original.GetAsync("/api/v1/admin/api-keys");
+            return response.StatusCode;
+        }));
+        Assert.All(burst, status => Assert.Equal(HttpStatusCode.OK, status));
+
+        var (rotatedKey, rotationTraffic) = await WithTrafficAsync(original, async () =>
+        {
+            using var rotate = await _admin.PostAsync($"/api/v1/admin/api-keys/{id}/rotate", null);
+            Assert.Equal(HttpStatusCode.OK, rotate.StatusCode);
+            using var rotated = JsonDocument.Parse(await rotate.Content.ReadAsStringAsync());
+            return rotated.RootElement.GetProperty("data").GetProperty("key").GetString()!;
+        });
+        Assert.All(rotationTraffic, status => Assert.Contains(status, new[] { HttpStatusCode.OK, HttpStatusCode.Unauthorized }));
+        using (var stale = await original.GetAsync("/api/v1/admin/api-keys"))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, stale.StatusCode);
+        }
+
+        using var current = CreateClient(rotatedKey);
+        using (var accepted = await current.GetAsync("/api/v1/admin/api-keys"))
+        {
+            Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        }
+
+        // A revocation issued while the live key is in constant use must win over its usage writes.
+        var (revokeStatus, revocationTraffic) = await WithTrafficAsync(current, async () =>
+        {
+            using var revoke = await _admin.PostAsync($"/api/v1/admin/api-keys/{id}/revoke", null);
+            return revoke.StatusCode;
+        });
+        Assert.Equal(HttpStatusCode.OK, revokeStatus);
+        Assert.All(revocationTraffic, status => Assert.Contains(status, new[] { HttpStatusCode.OK, HttpStatusCode.Unauthorized }));
+        using (var denied = await current.GetAsync("/api/v1/admin/api-keys"))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        }
+
+        Assert.NotNull((await _fixture.GetService<IAdminApiKeyStore>().GetAsync(id, CancellationToken.None))!.RevokedAt);
+    }
+
+    private static async Task<(T Result, HttpStatusCode[] Traffic)> WithTrafficAsync<T>(HttpClient client, Func<Task<T>> action)
+    {
+        using var stop = new CancellationTokenSource();
+        var statuses = new System.Collections.Concurrent.ConcurrentQueue<HttpStatusCode>();
+        var loops = Enumerable.Range(0, 4).Select(_ => Task.Run(async () =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                using var response = await client.GetAsync("/api/v1/admin/api-keys");
+                statuses.Enqueue(response.StatusCode);
+            }
+        })).ToArray();
+
+        while (statuses.IsEmpty)
+        {
+            await Task.Delay(10);
+        }
+
+        var result = await action();
+        await Task.Delay(100);
+        await stop.CancelAsync();
+        await Task.WhenAll(loops);
+        return (result, statuses.ToArray());
+    }
+
     private static async Task WaitPastAsync(DateTimeOffset expiresAt)
     {
         var delay = expiresAt.AddMilliseconds(250) - DateTimeOffset.UtcNow;
@@ -284,12 +439,12 @@ public sealed class RedisAdminApiKeyEndpointsTests(RedisFixture redis) : IAsyncL
         }
     }
 
-    private async Task<(Guid Id, string Key)> CreateKeyAsync(string name, DateTimeOffset expiresAt)
+    private async Task<(Guid Id, string Key)> CreateKeyAsync(string name, DateTimeOffset expiresAt, string[]? permissions = null)
     {
         using var body = new StringContent(JsonSerializer.Serialize(new
         {
             name,
-            permissions = new[] { "admin:*" },
+            permissions = permissions ?? ["admin:*"],
             expiresAt,
         }), Encoding.UTF8, "application/json");
         using var create = await _admin.PostAsync("/api/v1/admin/api-keys", body);
