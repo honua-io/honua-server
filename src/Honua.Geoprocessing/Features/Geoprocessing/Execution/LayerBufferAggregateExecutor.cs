@@ -62,14 +62,13 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
                 "'outStatistics' requires dissolve=true; per-feature output cannot carry aggregate columns.");
         }
 
-        // #4629: without dissolve every buffered geometry is emitted as-is, so the running
-        // vertex total of the buffers is already a lower bound on the artifact; charge it WHILE
-        // buffering instead of discovering the overflow after every buffer was computed. With
-        // dissolve the union can shrink the output, so the base's pre-serialization check
-        // bounds the final result instead.
-        long? maxOutputVertices = dissolve ? null : Options.CurrentValue.MaxArtifactBytes / MinSerializedBytesPerVertex;
+        // Charge intermediate vertices even when dissolve can shrink the final output.
+        // Undissolved output also has a minimum serialized-size bound.
+        long? maxOutputVertices = dissolve
+            ? Options.CurrentValue.MaxLayerVertices
+            : Math.Min(Options.CurrentValue.MaxLayerVertices, Options.CurrentValue.MaxArtifactBytes / MinSerializedBytesPerVertex);
         var bufferedGeometries = await BufferSourceFeaturesAsync(
-                context, inputs, source, distanceMeters, maxOutputVertices, cancellationToken)
+                context, inputs, source, distanceMeters, maxOutputVertices, Options.CurrentValue.MaxTopologyWork, cancellationToken)
             .ConfigureAwait(false);
 
         var buffered = new List<(IFeature Feature, NtsGeometry Geometry, string GroupKey)>(source.Count);
@@ -98,6 +97,9 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
 
             return perFeature;
         }
+
+        var vertices = buffered.Sum(entry => (long)entry.Geometry.NumPoints);
+        LayerComputationBudget.EnsureTopologyWork(vertices, vertices, Options.CurrentValue.MaxTopologyWork);
 
         var groups = new Dictionary<string, GroupAccumulator>(StringComparer.Ordinal);
         var order = new List<string>();
@@ -178,6 +180,7 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
         List<IFeature> source,
         double distanceMeters,
         long? maxOutputVertices,
+        long maxTopologyWork,
         CancellationToken cancellationToken)
     {
         var results = new NtsGeometry?[source.Count];
@@ -213,6 +216,8 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
                 continue;
             }
 
+            LayerComputationBudget.EnsureTopologyWork(geometry.NumPoints, geometry.NumPoints, maxTopologyWork);
+
             byte[] bufferedWkb;
             try
             {
@@ -233,8 +238,8 @@ internal sealed class LayerBufferAggregateExecutor : LayerSourcedFeatureExecutor
             {
                 throw new TransformInputException(
                     $"the buffered output reached {outputVertices} vertices after {i + 1} of {source.Count} features, more than "
-                    + "the configured MaxArtifactBytes can hold; stopped during buffering. Narrow the selection, set dissolve=true, "
-                    + "or raise Geoprocessing:Executor:MaxArtifactBytes, then resubmit.");
+                    + "the configured MaxArtifactBytes or MaxLayerVertices budget can hold; stopped during buffering. Narrow the selection, "
+                    + "or qualify a larger Geoprocessing:Executors budget, then resubmit.");
             }
 
             results[i] = buffered;

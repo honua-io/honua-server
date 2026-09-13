@@ -46,6 +46,8 @@ internal sealed class LayerSimplifyExecutor : LayerSourcedFeatureExecutor
         var tolerance = ReadTolerance(inputs);
         var preserveTopology = ReadBool(inputs, "preserveTopology", defaultValue: true);
 
+        var vertices = LayerComputationBudget.CountVertices(source);
+        LayerComputationBudget.EnsureTopologyWork(vertices, vertices, Options.CurrentValue.MaxTopologyWork);
         var output = new List<IFeature>(source.Count);
         foreach (var feature in source)
         {

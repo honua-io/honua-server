@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -105,6 +106,26 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         IJobExecutionContext context,
         CancellationToken cancellationToken)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var seconds = Options.CurrentValue.MaxLayerExecutionSeconds;
+        deadline.CancelAfter(TimeSpan.FromSeconds(seconds));
+        try
+        {
+            return await ExecuteCoreAsync(job, context, deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            return JobExecutionResult.Failed(
+                $"{ProcessId} exceeded Geoprocessing:Executors:MaxLayerExecutionSeconds={seconds}; " +
+                "narrow the selection or simplify the input, then resubmit.");
+        }
+    }
+
+    private async Task<JobExecutionResult> ExecuteCoreAsync(
+        ExecutionJobRecord job,
+        IJobExecutionContext context,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(context);
 
@@ -168,7 +189,8 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     $"layer {request.LayerId}",
                     Limits.Geometry.MaxVerticesPerGeometry,
                     Limits.Geometry.MaxGeometrySize,
-                    Limits.Analytics.MaxInputBytes)
+                    Limits.Analytics.MaxInputBytes,
+                    Options.CurrentValue.MaxLayerVertices)
                 .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
@@ -218,11 +240,9 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // #4629: serialization allocates the GeoJSON text, a parsed copy and the re-emitted
-        // payload, so checking MaxArtifactBytes only afterwards let an oversized output cost
-        // several times its size before failing. Refuse up front when even the smallest possible
-        // encoding of the output's coordinates cannot fit; the post-serialization check below
-        // still covers attributes and real ordinate widths.
+        // Refuse before encoding when even the smallest coordinate representation cannot
+        // fit. The streaming writer then charges attributes and actual ordinate widths
+        // before each bounded write, without a second JSON document (#4629).
         var maxBytes = Options.CurrentValue.MaxArtifactBytes;
         var outputVertices = output.Sum(feature => (long)(feature.Geometry?.NumPoints ?? 0));
         if (outputVertices * MinSerializedBytesPerVertex > maxBytes)
@@ -233,17 +253,20 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                 $"{ProcessId} output has {outputVertices} vertices across {output.Count} features, which needs at least " +
                 $"{outputVertices * MinSerializedBytesPerVertex} bytes once serialized and exceeds the configured " +
                 $"MaxArtifactBytes={maxBytes}; stopped before serialization. Narrow the selection (where/objectIds/geometry/time), " +
-                "simplify the input, or raise Geoprocessing:Executor:MaxArtifactBytes, then resubmit.");
+                "simplify the input, or raise Geoprocessing:Executors:MaxArtifactBytes, then resubmit.");
         }
 
         await context.ReportProgressAsync(80, $"Encoding {ProcessId} artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = FeatureCollectionArtifact.WriteFeatureCollection(output, ProcessId,
-            request.OutputSrid is { } outputSrid ? [("srid", outputSrid)] : null);
-        if (payload.Length > maxBytes)
+        byte[] payload;
+        try
         {
-            return JobExecutionResult.Failed(
-                $"{ProcessId} artifact size {payload.Length} bytes exceeds configured MaxArtifactBytes={maxBytes}.");
+            payload = BoundedArtifactWriter.WriteFeatureCollection(output, ProcessId, maxBytes, cancellationToken,
+                request.OutputSrid is { } outputSrid ? [("srid", outputSrid)] : null);
+        }
+        catch (TransformInputException ex)
+        {
+            return JobExecutionResult.Failed($"{ProcessId} {ex.PublicMessage}");
         }
 
         var artifactUri = FeatureCollectionArtifact.BuildDataUri(payload);
@@ -340,6 +363,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     /// BEFORE the geometry is parsed into NetTopologySuite objects, so neither a single huge
     /// geometry nor a moderate count of large features is materialized past its budget.
     /// </para>
+    /// <para><paramref name="maxTotalVertices"/> caps cumulative vertices across the complete streamed layer.</para>
     /// </summary>
     internal static async Task<List<IFeature>> ReadLayerAsync(
         IDagFeatureSource source,
@@ -349,11 +373,13 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         string? limitLabel = null,
         int? maxVerticesPerGeometry = null,
         long? maxGeometryBytes = null,
-        long? maxInputBytes = null)
+        long? maxInputBytes = null,
+        int? maxTotalVertices = null)
     {
         var geoJsonReader = new GeoJsonReader();
         var features = new List<IFeature>();
         long inputBytes = 0;
+        long totalVertices = 0;
         await foreach (var sourceFeature in source.ReadAsync(request, cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -368,7 +394,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     + "narrow the selection (where/bbox) or raise the limit.");
             }
 
-            long geometryBytes = sourceFeature.GeometryGeoJson?.Length ?? 0;
+            long geometryBytes = sourceFeature.GeometryGeoJson is { } geometryJson ? Encoding.UTF8.GetByteCount(geometryJson) : 0;
             if (maxGeometryBytes is { } geometryCap && geometryBytes > geometryCap)
             {
                 throw new TransformInputException(
@@ -377,7 +403,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     + "geometry or raise the limit.");
             }
 
-            inputBytes += geometryBytes + EstimateAttributeBytes(sourceFeature.Attributes);
+            inputBytes += geometryBytes + EstimateAttributeBytes(sourceFeature.Attributes, maxInputBytes ?? long.MaxValue);
             if (maxInputBytes is { } inputCap && inputBytes > inputCap)
             {
                 throw new TransformInputException(
@@ -398,6 +424,14 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
                     + "raise the limit.");
             }
 
+            totalVertices += feature.Geometry?.NumPoints ?? 0;
+            if (maxTotalVertices is { } totalCap && totalVertices > totalCap)
+            {
+                throw new TransformInputException(
+                    $"{limitLabel ?? "layer"} exceeds Geoprocessing:Executors:MaxLayerVertices={totalCap} " +
+                    "while streaming; narrow the selection or simplify the input, then resubmit.");
+            }
+
             features.Add(feature);
         }
 
@@ -408,21 +442,103 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
     /// Serialized-size estimate of a streamed feature's attributes for the input byte budget:
     /// key and string lengths as written, a fixed width for scalars.
     /// </summary>
-    private static long EstimateAttributeBytes(IEnumerable<KeyValuePair<string, object?>> attributes)
+    private static long EstimateAttributeBytes(IEnumerable<KeyValuePair<string, object?>> attributes, long budget)
     {
         long bytes = 0;
         foreach (var (key, value) in attributes)
         {
-            bytes += key.Length + value switch
+            bytes += Encoding.UTF8.GetByteCount(key);
+            ChargeValue(value, ref bytes, budget, 0);
+            if (bytes > budget)
             {
-                null => 4,
-                string text => text.Length + 2,
-                byte[] blob => blob.Length,
-                _ => 8,
-            };
+                break;
+            }
         }
 
         return bytes;
+    }
+
+    private static void ChargeValue(object? value, ref long bytes, long budget, int depth)
+    {
+        if (bytes > budget)
+        {
+            return;
+        }
+
+        if (depth > 32)
+        {
+            throw new TransformInputException("attribute nesting exceeds the supported depth of 32; flatten the attributes, then resubmit.");
+        }
+
+        switch (value)
+        {
+            case null:
+                bytes += 4;
+                break;
+            case string text:
+                bytes += Encoding.UTF8.GetByteCount(text) + 2L;
+                break;
+            case byte[] blob:
+                bytes += blob.LongLength;
+                break;
+            case System.Text.Json.JsonElement json:
+                bytes += 8;
+                if (json.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (var item in json.EnumerateArray())
+                    {
+                        ChargeValue(item, ref bytes, budget, depth + 1);
+                        if (bytes > budget) { break; }
+                    }
+                }
+                else if (json.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    foreach (var property in json.EnumerateObject())
+                    {
+                        bytes += Encoding.UTF8.GetByteCount(property.Name);
+                        ChargeValue(property.Value, ref bytes, budget, depth + 1);
+                        if (bytes > budget) { break; }
+                    }
+                }
+                else if (json.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    ChargeValue(json.GetString(), ref bytes, budget, depth + 1);
+                }
+                else
+                {
+                    bytes += json.GetRawText().Length;
+                }
+                break;
+            case IEnumerable<KeyValuePair<string, object?>> map:
+                bytes += 8;
+                foreach (var (key, item) in map)
+                {
+                    bytes += Encoding.UTF8.GetByteCount(key);
+                    ChargeValue(item, ref bytes, budget, depth + 1);
+                    if (bytes > budget) { break; }
+                }
+                break;
+            case System.Collections.IDictionary dictionary:
+                bytes += 8;
+                foreach (System.Collections.DictionaryEntry entry in dictionary)
+                {
+                    ChargeValue(entry.Key, ref bytes, budget, depth + 1);
+                    ChargeValue(entry.Value, ref bytes, budget, depth + 1);
+                    if (bytes > budget) { break; }
+                }
+                break;
+            case System.Collections.IEnumerable items:
+                bytes += 8;
+                foreach (var item in items)
+                {
+                    ChargeValue(item, ref bytes, budget, depth + 1);
+                    if (bytes > budget) { break; }
+                }
+                break;
+            default:
+                bytes += 32;
+                break;
+        }
     }
 
     /// <summary>

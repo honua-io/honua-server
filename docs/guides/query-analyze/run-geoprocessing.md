@@ -105,3 +105,33 @@ Expected (trimmed):
 - [Automate workflows](automate-workflows.md)
 - [Geoprocessing operations reference](../../reference/geoprocessing-operations.md)
 - [Connect AI agents over MCP](../connect/ai-agents-mcp.md)
+
+### Bounded layer execution
+
+Layer-sourced buffer, dissolve, simplify, project, spatial-join and enrichment jobs
+apply the configured input limits while reading. Both join layers are bounded.
+`Limits:Analytics:MaxInputFeatures`, `Limits:Analytics:MaxInputBytes`,
+`Limits:Geometry:MaxGeometrySize` and `Limits:Geometry:MaxVerticesPerGeometry`
+remain authoritative. Non-ASCII text is charged in UTF-8 bytes, and nested
+attribute values count toward the input budget.
+
+The shared `Geoprocessing:Executors` configuration also limits computation:
+
+| Setting | Default | Enforced behavior |
+| --- | ---: | --- |
+| `MaxLayerVertices` | 100,000 | Cumulative vertices per input layer and buffered intermediate set; stops the read/buffer loop on overflow. |
+| `MaxTopologyWork` | 4,000,000 | Before managed topology, rejects squared vertex count for each buffer input, squared total vertex count for dissolve/simplify and buffered unions, or the product of both layers' vertex counts for joins/enrichment. This conservative estimate bounds admission even when a spatial index would later reduce the actual work. |
+| `MaxLayerExecutionSeconds` | 300 | Cancels layer reading, computation between topology calls, and serialization; a smaller job deadline still applies. |
+| `MaxArtifactBytes` | 52,428,800 | Stops UTF-8 serialization as the byte ceiling is reached, including attribute expansion; publishes no partial artifact. |
+
+An individual managed topology call cannot be interrupted. Its admitted work is
+bounded before entry; cancellation is observed as soon as it returns. These
+settings do not promise a hard wall-clock interrupt inside NetTopologySuite.
+Qualify the selected topology and limits under the worker's actual CPU and memory
+constraints before raising them. A failed resource budget returns its setting
+name and guidance to narrow the selection or simplify the input before resubmission.
+The job is failed, never silently truncated or reported as a partial success.
+
+The [layer resource qualification fixture](../../../tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerResourceQualification.md)
+documents the constrained deployment, independent geometry oracle, serving probes,
+and the currently failing manifest-pinned candidate receipt.

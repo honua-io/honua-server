@@ -689,14 +689,30 @@ public sealed class EnrichmentJobExecutorTests
         (string Name, string Value)[] inputs)
         => ExecuteAsync(services, inputs, stampAuthorizedDatasetLayer: true);
 
+    [UnitTest]
+    public async Task Enrich_InlineSourceAboveVertexBudget_FailsWithoutPublishing()
+    {
+        using var services = DefaultServices(dataset: Dataset());
+        var (status, uri, error) = await ExecuteAsync(
+            services,
+            [("datasetId", DatasetId), ("input", InlineFeatureCollection(PointNtsFeature(5, 5), PointNtsFeature(6, 6)))],
+            stampAuthorizedDatasetLayer: true,
+            options: Options(maxLayerVertices: 1));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+        error.Should().Contain("MaxLayerVertices");
+    }
+
     private static async Task<(ExecutionJobStatus Status, string? Uri, string? Error)> ExecuteAsync(
         ServiceProvider services,
         (string Name, string Value)[] inputs,
-        bool stampAuthorizedDatasetLayer)
+        bool stampAuthorizedDatasetLayer,
+        IOptionsMonitor<GeoprocessingExecutorOptions>? options = null)
     {
         var executor = new EnrichmentJobExecutor(
             services.GetRequiredService<IServiceScopeFactory>(),
-            Options(),
+            options ?? Options(),
             NullLogger<EnrichmentJobExecutor>.Instance);
 
         var context = Substitute.For<IJobExecutionContext>();
@@ -751,11 +767,12 @@ public sealed class EnrichmentJobExecutorTests
         return (result.Status, publishedUri, result.ErrorMessage);
     }
 
-    private static IOptionsMonitor<GeoprocessingExecutorOptions> Options()
+    private static IOptionsMonitor<GeoprocessingExecutorOptions> Options(int maxLayerVertices = 100_000)
     {
         var options = new GeoprocessingExecutorOptions
         {
             MaxArtifactBytes = 50L * 1024L * 1024L,
+            MaxLayerVertices = maxLayerVertices,
             ResultRetention = TimeSpan.FromDays(7),
         };
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
