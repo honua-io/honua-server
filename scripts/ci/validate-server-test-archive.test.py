@@ -111,6 +111,40 @@ class ArchiveValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unpacked-byte"):
             MODULE.validate_archive(str(path), 3, 10)
 
+    def test_accepts_entries_within_declared_payload_roots(self) -> None:
+        path = self.write_archive([
+            (".", b"", "dir"),
+            ("./samples/", b"", "dir"),
+            ("./samples/Demo/", b"", "dir"),
+            ("./samples/Demo/bin/Release/net10.0/wwwroot/", b"", "dir"),
+            ("./samples/Demo/bin/Release/net10.0/wwwroot/_framework/blazor.js", b"js", "file"),
+            ("./tests/Fixture/bin/Release/test.dll", b"a", "file"),
+            ("./tests/Fixture/obj/project.assets.json", b"{}", "file"),
+        ])
+        roots = ("tests/Fixture/bin/Release", "tests/Fixture/obj", "samples/Demo/bin/Release/net10.0/wwwroot")
+        self.assertEqual(MODULE.validate_archive(str(path), 100, 10, roots), (3, 5))
+
+    def test_rejects_file_outside_declared_payload_roots(self) -> None:
+        path = self.write_archive([
+            ("./tests/Fixture/bin/Release/test.dll", b"a", "file"),
+            ("./samples/Demo/wwwroot/index.html", b"<html>", "file"),
+        ])
+        roots = ("tests/Fixture/bin/Release", "tests/Fixture/obj")
+        with self.assertRaisesRegex(ValueError, "outside the declared payload roots"):
+            MODULE.validate_archive(str(path), 100, 10, roots)
+
+    def test_rejects_file_named_like_an_ancestor_of_a_root(self) -> None:
+        path = self.write_archive([("./tests/Fixture/bin", b"x", "file")])
+        with self.assertRaisesRegex(ValueError, "outside the declared payload roots"):
+            MODULE.validate_archive(str(path), 100, 10, ("tests/Fixture/bin/Release",))
+
+    def test_rejects_unnormalized_declared_root(self) -> None:
+        path = self.write_archive([("./tests/Fixture/bin/Release/test.dll", b"a", "file")])
+        for root in ("../escape/bin", "/abs/bin", "tests/./bin", "tests/bin/"):
+            with self.subTest(root=root):
+                with self.assertRaisesRegex(ValueError, "normalized relative path"):
+                    MODULE.validate_archive(str(path), 100, 10, (root,))
+
     def test_rejects_control_character(self) -> None:
         path = self.write_archive([("tests/bin/bad\nname.dll", b"x", "file")])
         with self.assertRaisesRegex(ValueError, "unsafe path"):

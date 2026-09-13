@@ -128,39 +128,15 @@ if [[ -n "${budget_violations}" ]]; then
   exit 1
 fi
 
-# #3204: when two shards run the SAME csproj, ci.yml sorts the matrix by
-# -dispatch_rank and scripts/ci/server-test-shard-cache.sh makes the first
-# selected shard for that project the exact-head cache WRITER; every later
-# sibling materializes the writer's packaged bin/obj instead of building.
-# package-server-test-binaries.sh stages only the test project's own bin/ and
-# obj/, so a static web asset whose content root is another project's BUILD
-# output is absent from that payload — which is exactly how
-# StacOpsDemoEndpointTests saw `/samples/stac-ops/_framework/blazor.webassembly.js`
-# 404 on the materializing attempt 2 of run 34039679229 while passing on the
-# building attempt 1. The pin narrows that exposure, it does not remove it:
-# server-test-shard-cache.sh tests `run_attempt > 1` BEFORE the writer
-# designation, so on a rerun every shard of the project materializes the payload
-# and the writer 404s too (which is what attempt 2 above actually was). What the
-# pin buys is attempt 1, where only the writer builds and every sibling
-# materializes. #4453 carries the real fix.
-echo "Validating hosted-Blazor shard is its project's cache writer..."
-stac_writer="$(jq -r '
-  [.shards[] | select(.csproj == "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj")]
-  | sort_by(-.dispatch_rank)
-  | first
-  | .shard_name
-' .github/ci-shards.json)"
-if [[ "${stac_writer}" != "STAC Protocol" ]]; then
-  echo "::error::the exact-head cache writer for the STAC test project must be 'STAC Protocol' (highest dispatch_rank), got '${stac_writer}'; StacOpsDemoEndpointTests needs a locally built hosted Blazor content root" >&2
-  exit 1
-fi
-
 echo "Validating shard headroom instrumentation..."
 scripts/ci/fixtures/validate-shard-headroom.sh
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Validating GitHub Actions baseline measurement contract..."
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-actions-baseline.py
+
+  echo "Validating server-test archive entry checks..."
+  "${PYTHON_BIN}" scripts/ci/validate-server-test-archive.test.py
 
   echo "Validating native-image impact observation contract..."
   node --test scripts/ci/trusted-pr-workflow-run.test.js
@@ -1483,8 +1459,9 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "STAC and API Governance" \
   `# #3204 STAC capacity split: the two heaviest classes of the serialized STAC` \
-  `# timeline move to their own shard, and StacOpsDemoEndpointTests must stay on` \
-  `# the writer shard pinned below so its hosted Blazor assets are always built.` \
+  `# timeline move to their own shard. StacOpsDemoEndpointTests no longer needs the` \
+  `# cache-writer shard: since #4453 the payload carries its hosted Blazor content` \
+  `# roots, which validate-server-test-binary-artifacts.sh above enforces.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests" \
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \

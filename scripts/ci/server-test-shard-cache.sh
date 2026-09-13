@@ -214,6 +214,20 @@ case "${mode}" in
       cat "${restore_log}" >&2 || true
       project_dir="${REPO_ROOT}/$(dirname "${project}")"
       rm -rf "${project_dir}/bin/${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}" "${project_dir}/obj"
+      # Also drop any other project's build output the payload may have partially
+      # extracted (#4453), so the fallback build cannot trust a truncated file.
+      # Only normalized bin/obj paths inside the repository are ever removed.
+      if [[ -f "${manifest}" ]]; then
+        while IFS= read -r payload_root; do
+          rm -rf "${REPO_ROOT:?}/${payload_root}"
+        done < <(jq -r '
+          (.static_web_asset_content_roots.payload? // [])
+          | if type == "array" then .[] else empty end
+          | strings
+          | select(test("^[A-Za-z0-9_.@+-]+(/[A-Za-z0-9_.@+-]+)*$"))
+          | select(split("/") | all(.[]; . != "." and . != "..") and (index("bin") != null or index("obj") != null))
+        ' "${manifest}" 2>/dev/null || true)
+      fi
       emit restored false
       emit reason rejected_cache_evidence
       emit integrity_check_ms 0

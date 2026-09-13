@@ -121,4 +121,136 @@ if HONUA_SERVER_TEST_ARTIFACT_MAX_ARCHIVE_BYTES=1 \
   exit 1
 fi
 
-echo "Server-test binary artifact contract validation passed (10 projects + fixture integrity)."
+# #4453: a static web asset content root that is another project's build output must
+# travel with the payload, and a root no consumer could reproduce must fail loudly on
+# one side or the other. A materialized shard must serve what a building shard serves.
+echo "Validating static web asset content roots travel with the payload..."
+swa="${fixture}/swa"
+swa_repo="${swa}/repo"
+swa_output="${swa}/output"
+swa_nuget="${swa}/nuget"
+swa_project="tests/dotnet/Hosted.Tests/Hosted.Tests.csproj"
+swa_bin="${swa_repo}/tests/dotnet/Hosted.Tests/bin/Release/net10.0"
+mkdir -p "${swa_repo}/.github" "${swa_bin}" "${swa_repo}/tests/dotnet/Hosted.Tests/obj" "${swa_output}" \
+  "${swa_repo}/samples/Demo/wwwroot" \
+  "${swa_repo}/samples/Demo/bin/Release/net10.0/wwwroot/_framework" \
+  "${swa_repo}/samples/Demo/obj/Release/net10.0/compressed/_framework" \
+  "${swa_nuget}/demo.auth/1.0.0/staticwebassets"
+printf '<Project Sdk="Microsoft.NET.Sdk" />\n' > "${swa_repo}/${swa_project}"
+printf '{"contract_version":1,"projects":[{"artifact_suffix":"hosted","csproj":"%s","proof_filter":"Category=Unit"}]}\n' "${swa_project}" \
+  > "${swa_repo}/.github/server-test-artifact-projects.json"
+printf '{}\n' > "${swa_repo}/tests/dotnet/Hosted.Tests/obj/project.assets.json"
+for file in Hosted.Tests.dll Hosted.Tests.pdb Hosted.Tests.deps.json Hosted.Tests.runtimeconfig.json; do
+  printf 'fixture-%s\n' "${file}" > "${swa_bin}/${file}"
+done
+printf '<html></html>\n' > "${swa_repo}/samples/Demo/wwwroot/index.html"
+printf 'blazor\n' > "${swa_repo}/samples/Demo/bin/Release/net10.0/wwwroot/_framework/blazor.webassembly.js"
+printf 'gzip\n' > "${swa_repo}/samples/Demo/obj/Release/net10.0/compressed/_framework/blazor.webassembly.js.gz"
+printf 'auth\n' > "${swa_nuget}/demo.auth/1.0.0/staticwebassets/AuthenticationService.js"
+printf 'bin/\nobj/\n' > "${swa_repo}/.gitignore"
+git -C "${swa_repo}" init -q
+git -C "${swa_repo}" add .gitignore samples/Demo/wwwroot/index.html "${swa_project}"
+
+swa_roots=(
+  "${swa_nuget}/demo.auth/1.0.0/staticwebassets/"
+  "${swa_repo}/samples/Demo/wwwroot/"
+  "${swa_repo}/samples/Demo/bin/Release/net10.0/wwwroot/"
+  "${swa_repo}/samples/Demo/obj/Release/net10.0/compressed/"
+  "${swa_repo}/src/Server/obj/Release/net10.0/compressed/"
+  "${swa_bin}/wwwroot/"
+)
+write_swa_manifest() {
+  jq -n '{ContentRoots: $ARGS.positional, Root: {Children: {}}}' --args "$@" \
+    > "${swa_bin}/Hosted.staticwebassets.runtime.json"
+}
+swa_package() {
+  HONUA_SERVER_TEST_ARTIFACT_REPO_ROOT="${swa_repo}" \
+  HONUA_SERVER_TEST_ARTIFACT_REGISTRY="${swa_repo}/.github/server-test-artifact-projects.json" \
+  HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="fixture-sdk" \
+  HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH=1000 \
+  NUGET_PACKAGES="${swa_nuget}" \
+    "${SCRIPT_DIR}/package-server-test-binaries.sh" \
+      --project "${swa_project}" --output "${swa_output}" --source-sha "${source_sha}"
+}
+swa_manifest="${swa_output}/server-test-binaries-hosted.manifest.json"
+swa_archive="${swa_output}/server-test-binaries-hosted.tar.gz"
+swa_restore() {
+  HONUA_SERVER_TEST_ARTIFACT_NOW_EPOCH=1001 \
+  HONUA_SERVER_TEST_ARTIFACT_DOTNET_SDK="fixture-sdk" \
+    "${SCRIPT_DIR}/restore-server-test-binaries.sh" \
+      --manifest "${swa_manifest}" --destination "$1" \
+      --project "${swa_project}" --source-sha "${source_sha}"
+}
+
+write_swa_manifest "${swa_roots[@]}"
+swa_package >/dev/null
+jq -e --arg repo "${swa_repo}" --arg nuget "${swa_nuget}/demo.auth/1.0.0/staticwebassets" '
+  .repo_root == $repo and
+  .static_web_asset_content_roots == {
+    payload: [
+      "samples/Demo/bin/Release/net10.0/wwwroot",
+      "samples/Demo/obj/Release/net10.0/compressed",
+      "src/Server/obj/Release/net10.0/compressed"
+    ],
+    checkout: ["samples/Demo/wwwroot"],
+    nuget: [$nuget]
+  }
+' "${swa_manifest}" >/dev/null || {
+  echo "::error::Static web asset content roots were not classified as payload/checkout/nuget." >&2
+  jq '.static_web_asset_content_roots' "${swa_manifest}" >&2
+  exit 1
+}
+swa_listing="$(tar -tzf "${swa_archive}")"
+grep -qx './samples/Demo/bin/Release/net10.0/wwwroot/_framework/blazor.webassembly.js' <<<"${swa_listing}"
+grep -qx './samples/Demo/obj/Release/net10.0/compressed/_framework/blazor.webassembly.js.gz' <<<"${swa_listing}"
+grep -qx './src/Server/obj/Release/net10.0/compressed/' <<<"${swa_listing}"
+grep -qx './tests/dotnet/Hosted.Tests/bin/Release/net10.0/wwwroot/' <<<"${swa_listing}"
+if grep -Eq 'samples/Demo/wwwroot/index\.html|AuthenticationService\.js' <<<"${swa_listing}"; then
+  echo "::error::Payload staged checkout or NuGet content that a consumer already has." >&2
+  exit 1
+fi
+
+# A clean checkout holds only tracked files; the payload must supply the rest.
+swa_consumer="${swa}/consumer"
+mkdir -p "${swa_consumer}/samples/Demo/wwwroot"
+cp "${swa_repo}/samples/Demo/wwwroot/index.html" "${swa_consumer}/samples/Demo/wwwroot/"
+swa_restore "${swa_consumer}" >/dev/null
+[[ -f "${swa_consumer}/samples/Demo/bin/Release/net10.0/wwwroot/_framework/blazor.webassembly.js" ]]
+[[ -f "${swa_consumer}/samples/Demo/obj/Release/net10.0/compressed/_framework/blazor.webassembly.js.gz" ]]
+[[ -d "${swa_consumer}/src/Server/obj/Release/net10.0/compressed" ]]
+[[ -d "${swa_consumer}/tests/dotnet/Hosted.Tests/bin/Release/net10.0/wwwroot" ]]
+
+if swa_restore "${swa}/consumer-without-checkout-root" >/dev/null 2>&1; then
+  echo "::error::Restore accepted a consumer missing a checkout content root." >&2
+  exit 1
+fi
+mv "${swa_nuget}" "${swa}/nuget-away"
+if swa_restore "${swa}/consumer-without-nuget-root" >/dev/null 2>&1; then
+  echo "::error::Restore accepted a consumer missing a NuGet content root." >&2
+  exit 1
+fi
+mv "${swa}/nuget-away" "${swa_nuget}"
+
+cp "${swa_manifest}" "${swa_manifest}.valid"
+jq '.static_web_asset_content_roots.payload += ["../escape/bin"]' "${swa_manifest}.valid" > "${swa_manifest}"
+if swa_restore "${swa}/consumer-unsafe-root" >/dev/null 2>&1; then
+  echo "::error::Restore accepted an unsafe declared payload root." >&2
+  exit 1
+fi
+mv "${swa_manifest}.valid" "${swa_manifest}"
+
+printf 'generated\n' > "${swa_repo}/samples/Demo/wwwroot/generated.js"
+if swa_package >/dev/null 2>&1; then
+  echo "::error::Packaging accepted a checkout content root holding files a clean checkout lacks." >&2
+  exit 1
+fi
+rm "${swa_repo}/samples/Demo/wwwroot/generated.js"
+
+write_swa_manifest "${swa_roots[@]}" "${swa}/elsewhere/wwwroot/"
+mkdir -p "${swa}/elsewhere/wwwroot"
+if swa_package >/dev/null 2>&1; then
+  echo "::error::Packaging accepted a content root outside the repository and NuGet package folder." >&2
+  exit 1
+fi
+
+echo "Server-test binary artifact contract validation passed (10 projects + fixture integrity + static web asset content roots)."

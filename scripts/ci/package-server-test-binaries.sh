@@ -8,8 +8,10 @@ DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 REPO_ROOT="${HONUA_SERVER_TEST_ARTIFACT_REPO_ROOT:-${DEFAULT_REPO_ROOT}}"
 REGISTRY="${HONUA_SERVER_TEST_ARTIFACT_REGISTRY:-${REPO_ROOT}/.github/server-test-artifact-projects.json}"
 CONFIGURATION="${HONUA_SERVER_TEST_ARTIFACT_CONFIGURATION:-Release}"
-MAX_ARCHIVE_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_ARCHIVE_BYTES:-268435456}"
-MAX_UNPACKED_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_UNPACKED_BYTES:-536870912}"
+# 320 MiB / 768 MiB since #4453 staged hosted Blazor content roots; measured basis in
+# docs/internal/ci/server-test-binary-artifacts.md ("Bounds and integrity").
+MAX_ARCHIVE_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_ARCHIVE_BYTES:-335544320}"
+MAX_UNPACKED_BYTES="${HONUA_SERVER_TEST_ARTIFACT_MAX_UNPACKED_BYTES:-805306368}"
 MAX_PACKAGE_MILLISECONDS="${HONUA_SERVER_TEST_ARTIFACT_MAX_PACKAGE_MILLISECONDS:-120000}"
 EVIDENCE_TTL_SECONDS="${HONUA_SERVER_TEST_ARTIFACT_TTL_SECONDS:-86400}"
 CONTRACT="honua.server-test-binaries.v1"
@@ -85,6 +87,93 @@ mkdir -p "${stage_project_dir}/bin"
 cp -a --reflink=auto "${bin_dir}" "${stage_project_dir}/bin/${CONFIGURATION}"
 cp -a --reflink=auto "${obj_dir}" "${stage_project_dir}/obj"
 
+# Static web asset content roots (#4453). Every *.staticwebassets.runtime.json in the test
+# output names the directories the host serves static web assets from, as absolute paths on
+# the building machine. A consumer must find each of them exactly as the builder did, or a
+# materialized shard silently 404s where a building shard serves 200. Every referenced root
+# is therefore classified, and anything a consumer could not reproduce fails packaging:
+#   payload  - another project's bin/ or obj/ build output inside the repository; staged here
+#   checkout - repository content outside bin/obj; must hold nothing a clean checkout lacks
+#   nuget    - a restored package's staticwebassets/ folder; provided by the NuGet cache
+# The test project's own bin/<Configuration> and obj are already staged above.
+nuget_root="${NUGET_PACKAGES:-${HOME}/.nuget/packages}"
+nuget_root="${nuget_root%/}"
+referenced_roots=""
+while IFS= read -r -d '' swa_manifest; do
+  roots="$(jq -r '.ContentRoots
+    | if type == "array" and all(.[]; type == "string") then .[] else error("ContentRoots is not a string array") end
+  ' "${swa_manifest}")" || {
+    echo "::error::Static web assets manifest '${swa_manifest#"${REPO_ROOT}/"}' has no readable ContentRoots." >&2
+    exit 1
+  }
+  # Blank lines between manifests are skipped by the classification loop below.
+  referenced_roots="$(printf '%s\n%s' "${referenced_roots}" "${roots}")"
+done < <(find "${bin_dir}" -type f -name '*.staticwebassets.runtime.json' -print0 | LC_ALL=C sort -z)
+
+payload_roots=()
+checkout_roots=()
+nuget_roots=()
+while IFS= read -r root; do
+  root="${root%/}"
+  [[ -n "${root}" ]] || continue
+  case "${root}" in
+    "${bin_dir}" | "${bin_dir}"/* | "${obj_dir}" | "${obj_dir}"/*)
+      mkdir -p "${stage_root}/${root#"${REPO_ROOT}/"}"
+      continue
+      ;;
+  esac
+  if [[ "/${root}/" == */../* || "/${root}/" == */./* ]]; then
+    echo "::error::Static web asset content root '${root}' is not a normalized path." >&2
+    exit 1
+  fi
+  if [[ "${root}" == "${REPO_ROOT}"/* ]]; then
+    relative="${root#"${REPO_ROOT}/"}"
+    if [[ "/${relative}/" == */bin/* || "/${relative}/" == */obj/* ]]; then
+      payload_roots+=("${relative}")
+    else
+      checkout_roots+=("${relative}")
+    fi
+  elif [[ "${root}" == "${nuget_root}"/* ]]; then
+    nuget_roots+=("${root}")
+  else
+    echo "::error::Static web asset content root '${root}' is outside the repository and the NuGet package folder, so no consumer of this payload can reproduce it." >&2
+    exit 1
+  fi
+done < <(printf '%s' "${referenced_roots}" | LC_ALL=C sort -u)
+
+payload_raw_bytes=0
+for relative in "${payload_roots[@]}"; do
+  mkdir -p "${stage_root}/${relative}"
+  # A root the build never materialized is staged empty: that is exactly what the building
+  # host sees once LoadHostedBlazorStaticWebAssets pre-creates it (#2904).
+  if [[ -d "${REPO_ROOT}/${relative}" ]]; then
+    cp -a --reflink=auto "${REPO_ROOT}/${relative}/." "${stage_root}/${relative}/"
+    payload_raw_bytes="$(( payload_raw_bytes + $(du -sb "${REPO_ROOT}/${relative}" | cut -f1) ))"
+  fi
+done
+for relative in "${checkout_roots[@]}"; do
+  if [[ ! -d "${REPO_ROOT}/${relative}" ]]; then
+    echo "::error::Static web asset content root '${relative}' is referenced but absent from the repository." >&2
+    exit 1
+  fi
+  command -v git >/dev/null && git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+    echo "::error::Cannot prove checkout content root '${relative}' matches a clean checkout: '${REPO_ROOT}' is not a git work tree." >&2
+    exit 1
+  }
+  # Without --exclude-standard this lists ignored files too: both are absent from a clean checkout.
+  untracked="$(git -C "${REPO_ROOT}" ls-files --others -- "${relative}" | awk 'NR <= 5' | paste -sd, -)"
+  if [[ -n "${untracked}" ]]; then
+    echo "::error::Static web asset content root '${relative}' holds files a clean checkout does not have: ${untracked}" >&2
+    exit 1
+  fi
+done
+for root in "${nuget_roots[@]}"; do
+  [[ -d "${root}" ]] || {
+    echo "::error::Static web asset content root '${root}' names a NuGet package folder that is not restored." >&2
+    exit 1
+  }
+done
+
 # GitHub shard runners are ubuntu-latest x64. Keep neutral Unix assets and the exact
 # Linux/Linux-x64 native payload; remove mobile, browser, Windows, macOS, musl and
 # other-architecture RID directories. PDBs, test data and project assets are retained.
@@ -106,7 +195,7 @@ if find "${stage_root}" -type d -path '*/runtimes/*' \
   exit 1
 fi
 
-raw_bytes="$(( $(du -sb "${bin_dir}" | cut -f1) + $(du -sb "${obj_dir}" | cut -f1) ))"
+raw_bytes="$(( $(du -sb "${bin_dir}" | cut -f1) + $(du -sb "${obj_dir}" | cut -f1) + payload_raw_bytes ))"
 unpacked_bytes="$(du -sb "${stage_root}" | cut -f1)"
 file_count="$(find "${stage_root}" -type f | wc -l)"
 if (( unpacked_bytes > MAX_UNPACKED_BYTES )); then
@@ -143,7 +232,14 @@ if [[ ! "${created_at_epoch}" =~ ^[0-9]+$ ]] || (( created_at_epoch < 1 )); then
   exit 2
 fi
 expires_at_epoch="$(( created_at_epoch + EVIDENCE_TTL_SECONDS ))"
+json_array() {
+  if (( $# == 0 )); then printf '[]'; else printf '%s\n' "$@" | jq -R . | jq -sc .; fi
+}
 jq -nS \
+  --arg repo_root "${REPO_ROOT}" \
+  --argjson payload_roots "$(json_array "${payload_roots[@]}")" \
+  --argjson checkout_roots "$(json_array "${checkout_roots[@]}")" \
+  --argjson nuget_roots "$(json_array "${nuget_roots[@]}")" \
   --arg contract "${CONTRACT}" \
   --arg source_sha "${source_sha,,}" \
   --arg dotnet_sdk "${dotnet_sdk}" \
@@ -173,7 +269,13 @@ jq -nS \
     package_milliseconds: $package_milliseconds,
     created_at_epoch: $created_at_epoch,
     expires_at_epoch: $expires_at_epoch,
-    retained_runtime_ids: ["linux", "linux-x64", "unix"]
+    retained_runtime_ids: ["linux", "linux-x64", "unix"],
+    repo_root: $repo_root,
+    static_web_asset_content_roots: {
+      payload: $payload_roots,
+      checkout: $checkout_roots,
+      nuget: $nuget_roots
+    }
   }' > "${manifest_path}"
 
 echo "Packaged ${project}: raw=${raw_bytes} staged=${unpacked_bytes} archive=${archive_bytes} bytes duration=${package_milliseconds}ms"
