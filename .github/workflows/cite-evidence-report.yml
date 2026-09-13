@@ -167,6 +167,11 @@ jobs:
           HONUA_CITE_SERVER_IMAGE: honua-server:latest
         run: bash docker/cite/shared/tests/test-wfs-bootstrap.sh
 
+      - name: Verify WCS raster migration and seed restart
+        env:
+          HONUA_CITE_SERVER_IMAGE: honua-server:latest
+        run: bash docker/cite/shared/tests/test-wcs-bootstrap.sh
+
       - name: Run CITE suites
         id: run-cite
         env:
