@@ -238,6 +238,48 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
         _effects.Should().ContainSingle("the exact approved upload grant must survive the shared semantic gate");
     }
 
+    [Theory]
+    [InlineData("POST", "/api/v1/admin/import/preview")]
+    [InlineData("GET", "/api/v1/admin/services/test/layers/0/export")]
+    [InlineData("POST", "/api/v1/admin/tile-operations/jobs")]
+    [InlineData("GET", "/api/v1/admin/tile-operations/jobs")]
+    [InlineData("GET", "/api/v1/admin/tile-operations/jobs/missing")]
+    [InlineData("POST", "/api/v1/admin/tile-operations/jobs/missing/cancel")]
+    [InlineData("POST", "/api/v1/admin/tile-operations/jobs/missing/retry")]
+    [InlineData("POST", "/api/v1/admin/tile-operations/evict")]
+    [InlineData("GET", "/api/v1/admin/tile-operations/cache/inventory")]
+    [Trait("Category", "Integration")]
+    [Trait("Tier", "Integration")]
+    [Operation(Operations.Import)]
+    [Endpoint("POST /api/v1/admin/import/preview")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("GET /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("GET /api/v1/admin/tile-operations/jobs/{jobId}")]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs/{jobId}/cancel")]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs/{jobId}/retry")]
+    [Endpoint("POST /api/v1/admin/tile-operations/evict")]
+    [Endpoint("GET /api/v1/admin/tile-operations/cache/inventory")]
+    public async Task AdminImportExportAndTiles_AnonymousAndUnprivilegedPrincipalsAreDenied(string method, string path)
+    {
+        foreach (var profile in new[] { PrincipalProfile.Anonymous, PrincipalProfile.AuthenticatedNoGrant, PrincipalProfile.WorkspaceCreate })
+        {
+            _importService.ClearReceivedCalls();
+            using var client = CreateClient(profile);
+            var isPreview = path.EndsWith("/preview", StringComparison.Ordinal);
+            using var request = isPreview ? BuildRestRequest(profile) : new HttpRequestMessage(new HttpMethod(method), path);
+            request.RequestUri = new Uri(path, UriKind.Relative);
+            if (method == "POST" && !isPreview)
+            {
+                request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+            }
+            using var response = await client.SendAsync(request);
+            response.StatusCode.Should().Be(profile == PrincipalProfile.Anonymous
+                ? HttpStatusCode.Unauthorized : HttpStatusCode.Forbidden, $"{method} {path} / {profile}");
+            await _importService.DidNotReceive().PreviewFileAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        }
+    }
+
     private HttpClient CreateClient(PrincipalProfile profile) => profile switch
     {
         PrincipalProfile.Anonymous => _fixture.CreateClient(),

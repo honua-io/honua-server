@@ -34,7 +34,7 @@ internal sealed class ExportJobService(
     ILogger<ExportJobService> logger,
     IConnectionMultiplexer? redis = null,
     TimeSpan? recoveryPollInterval = null,
-    ILicenseOperationPolicy? licensePolicy = null) : IExportJobService
+    ILicenseOperationPolicy? licensePolicy = null) : IExportJobService, IJobCancellationNotifier
 {
     private const string ExportFailureMessage = "Export failed.";
     private const string MissingRequestFailureMessage = "Export request metadata is no longer available.";
@@ -54,6 +54,25 @@ internal sealed class ExportJobService(
     private readonly IConnectionMultiplexer? _redis = redis;
     private readonly ConcurrentDictionary<string, CachedExportJob> _jobRequests = new(StringComparer.Ordinal);
     private readonly TimeSpan _recoveryPollInterval = recoveryPollInterval ?? TimeSpan.FromSeconds(10);
+
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeCancellations = new(StringComparer.Ordinal);
+
+    public bool Cancel(string jobId)
+    {
+        if (!_activeCancellations.TryGetValue(jobId, out var source))
+        {
+            return false;
+        }
+        try
+        {
+            source.Cancel();
+            return true;
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
+    }
 
     public async Task<string> StartAsync(ExportJob job, CancellationToken cancellationToken = default)
     {
@@ -204,14 +223,27 @@ internal sealed class ExportJobService(
                     Status = OperationStatus.Processing,
                     CurrentPhase = "Exporting features"
                 };
-            await _progressStore.SetProgressAsync(job.JobId, progress, _jobRetention, processingToken).ConfigureAwait(false);
+            if (existing is null)
+            {
+                await _progressStore.SetProgressAsync(job.JobId, progress, _jobRetention, processingToken).ConfigureAwait(false);
+            }
+            else
+            {
+                var admission = await _progressStore.TrySetProgressAsync(job.JobId, progress,
+                    existing.Status, _jobRetention, processingToken).ConfigureAwait(false);
+                if (admission.Outcome != ProgressCompareAndSetOutcome.Updated)
+                {
+                    return;
+                }
+            }
 
             // "honua-export" is a compile-time relative literal and job.JobId is always the
             // server-generated Guid.NewGuid().ToString("N") minted in ExportEndpoints (never
             // caller-supplied), so this combine cannot silently drop Path.GetTempPath().
             var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", job.JobId);
             var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
-            using var licensedProcessing = CancellationTokenSource.CreateLinkedTokenSource(processingToken, licenseCancellation);
+            using var userCancellation = new CancellationTokenSource();
+            using var licensedProcessing = CancellationTokenSource.CreateLinkedTokenSource(processingToken, licenseCancellation, userCancellation.Token);
             processingToken = licensedProcessing.Token;
             Directory.CreateDirectory(scratchDir);
             var shouldRequeue = false;
@@ -231,6 +263,13 @@ internal sealed class ExportJobService(
             string? uploadedFileId = null;
             try
             {
+                _activeCancellations[job.JobId] = userCancellation;
+                // A cancellation may have been persisted before this worker registered locally.
+                if ((await _progressStore.GetProgressAsync<ExportProgress>(job.JobId, processingToken).ConfigureAwait(false))?.Status == OperationStatus.Cancelled)
+                {
+                    userCancellation.Cancel();
+                }
+                processingToken.ThrowIfCancellationRequested();
                 var streamingStore = scope.ServiceProvider.GetRequiredService<IStreamingFeatureStore>();
                 var crsRegistry = scope.ServiceProvider.GetRequiredService<ICrsRegistry>();
 
@@ -254,7 +293,7 @@ internal sealed class ExportJobService(
                         uploadResult.File.FileId, _jobRetention, processingToken).ConfigureAwait(false)
                     : null;
 
-                licenseCancellation.ThrowIfCancellationRequested();
+                processingToken.ThrowIfCancellationRequested();
                 var completed = progress with
                 {
                     Status = OperationStatus.Completed,
@@ -265,11 +304,33 @@ internal sealed class ExportJobService(
                     CompletedAt = DateTimeOffset.UtcNow,
                     CurrentPhase = "Export completed"
                 };
-                await _progressStore.SetProgressAsync(job.JobId, completed, _jobRetention, processingToken).ConfigureAwait(false);
-                licenseCancellation.ThrowIfCancellationRequested();
-
+                var completion = await _progressStore.TrySetProgressAsync(job.JobId, completed,
+                    OperationStatus.Processing, _jobRetention, processingToken).ConfigureAwait(false);
+                if (completion.Outcome != ProgressCompareAndSetOutcome.Updated)
+                {
+                    // Preserve the state accepted on another node and retract the losing artifact.
+                    if (completion.CurrentProgress?.Status == OperationStatus.Cancelled)
+                    {
+                        userCancellation.Cancel();
+                        processingToken.ThrowIfCancellationRequested();
+                    }
+                    if (uploadedFileId is not null)
+                    {
+                        await DeleteArtifactBestEffortAsync(cloudStorage, job.JobId, uploadedFileId).ConfigureAwait(false);
+                    }
+                    if (completion.CurrentProgress?.Status is OperationStatus.Completed or OperationStatus.Failed)
+                    {
+                        _jobRequests.TryRemove(job.JobId, out _);
+                        await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    // A recovery worker may have requeued the job before lease loss was observed.
+                    // Keep its request available so that retry can actually execute.
+                    return;
+                }
+                // Completion is terminal once its compare-and-set wins, even if a late
+                // cancellation signal arrives before request cleanup finishes.
                 _jobRequests.TryRemove(job.JobId, out _);
-                await RemovePersistedJobRequestAsync(job.JobId, processingToken).ConfigureAwait(false);
+                await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
                 activity?.SetTag("export.output_size_bytes", fileInfo.Length);
                 activity?.SetStatus(ActivityStatusCode.Ok);
                 ExportLog.AsyncExportCompleted(_logger, job.JobId, job.TotalFeatures, fileInfo.Length);
@@ -290,7 +351,32 @@ internal sealed class ExportJobService(
                 await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
                 if (uploadedFileId is not null)
                 {
-                    await cloudStorage.DeleteAsync(uploadedFileId, CancellationToken.None).ConfigureAwait(false);
+                    await DeleteArtifactBestEffortAsync(cloudStorage, job.JobId, uploadedFileId).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (userCancellation.IsCancellationRequested)
+            {
+                var cancelled = progress with
+                {
+                    Status = OperationStatus.Cancelled,
+                    DownloadUrl = null,
+                    OutputSizeBytes = 0,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = "Cancelled by user"
+                };
+                var cancellation = await _progressStore.TrySetProgressAsync(job.JobId, cancelled,
+                    OperationStatus.Processing, _jobRetention, CancellationToken.None).ConfigureAwait(false);
+                if (cancellation.Outcome != ProgressCompareAndSetOutcome.Updated &&
+                    cancellation.CurrentProgress?.Status != OperationStatus.Cancelled)
+                {
+                    // Another terminal state or a recovery attempt won the race.
+                    return;
+                }
+                _jobRequests.TryRemove(job.JobId, out _);
+                await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
+                if (uploadedFileId is not null)
+                {
+                    await DeleteArtifactBestEffortAsync(cloudStorage, job.JobId, uploadedFileId).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (leaseCoordinator?.LeaseLostToken.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
@@ -338,6 +424,7 @@ internal sealed class ExportJobService(
             }
             finally
             {
+                _activeCancellations.TryRemove(job.JobId, out _);
                 try
                 {
                     Directory.Delete(scratchDir, recursive: true);
@@ -571,6 +658,19 @@ internal sealed class ExportJobService(
         }
 
         return recovered;
+    }
+
+    private async Task DeleteArtifactBestEffortAsync(ICloudFileStorage storage, string jobId, string fileId)
+    {
+        try
+        {
+            await storage.DeleteAsync(fileId, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Cloud cleanup must not replace a cancellation or recovery winner's state.
+            ExportJobServiceLog.ArtifactCleanupFailed(_logger, jobId, fileId, ex);
+        }
     }
 
     private static string GetRequestCacheKey(string jobId) => $"{RequestCacheKeyPrefix}{jobId}";

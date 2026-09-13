@@ -15392,6 +15392,7 @@
         "Honua.Server.Tests.Import.StreamingImportTests.Import_KmlFile_StreamsPlacemarks",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_KmzFile_StreamsPlacemarks",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_LargeGeoJsonFile_StreamsWithConstantMemory",
+        "Honua.Server.Tests.Import.StreamingImportTests.Import_UpsertRepeatedKeys_UpdatesGeometryAndValuesWithoutDuplicatingRows",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_WithForceBackground_QueuesJob",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_WkbPayload_AutoDetectsAndImports",
         "Honua.Server.Tests.Import.StreamingImportTests.Import_WktFile_StreamsLineByLine"

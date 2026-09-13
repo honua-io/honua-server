@@ -509,6 +509,169 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Integration")]
+    [Trait("Tier", "Integration")]
+    public async Task ImportFileAsync_ReplaceInterruptedAfterCommittedBatch_PreservesLiveRowsAndReclaimsAllStagingRelations(bool cancel)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("replace_interrupt");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await SeedOverwriteGuardTargetAsync(schema);
+            var liveOid = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
+            using var cancellation = new CancellationTokenSource();
+            var committedBatches = 0;
+            var progress = new InlineImportProgress(value =>
+            {
+                if (value.BatchesCommitted > 0)
+                {
+                    committedBatches = value.BatchesCommitted;
+                    if (cancel)
+                    {
+                        cancellation.Cancel();
+                        cancellation.Token.ThrowIfCancellationRequested();
+                    }
+                    throw new IOException("fixture failure after committed batch");
+                }
+            });
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(), new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance, ImportLimits.Default with { BatchSize = 1 });
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
+            var request = new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "interrupted.geojson",
+                TableName = OverwriteGuardLogicalTable,
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true
+            };
+            var action = () => service.ImportFileAsync(request, progress, cancellation.Token);
+            if (cancel)
+            {
+                await action.Should().ThrowAsync<OperationCanceledException>();
+            }
+            else
+            {
+                (await action()).Success.Should().BeFalse();
+            }
+            committedBatches.Should().Be(1, "interrupt only after a batch has committed to staging");
+            (await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable)).Should().Be(liveOid);
+            var rows = await ReadOverwriteGuardRowsAsync(schema);
+            rows.Select(row => (row.Name, row.Code, row.Wkt)).Should().Equal(SeededLiveRows);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            // Include indexes and sequences, not just tables: no staging relation may remain.
+            command.CommandText = "SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=@schema AND relname LIKE '%__staging%'";
+            command.Parameters.AddWithValue("schema", schema);
+            (await command.ExecuteScalarAsync()).Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_LargeGeneratedFixture_BoundsRetainedMemoryAndPersistsEveryValue()
+    {
+        const int count = 20_000;
+        var schema = await fixture.CreateIsolatedSchemaAsync("streaming_memory");
+        var filePath = Path.Join(Path.GetTempPath(), $"import-memory-{Guid.NewGuid():N}.geojson");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            // Generate on disk: the test must not itself retain the large source in memory.
+            await using (var writer = new StreamWriter(filePath))
+            {
+                await writer.WriteAsync("{\"type\":\"FeatureCollection\",\"features\":[");
+                var padding = new string('x', 4096);
+                for (var index = 0; index < count; index++)
+                {
+                    if (index > 0) await writer.WriteAsync(',');
+                    await writer.WriteAsync($"{{\"type\":\"Feature\",\"geometry\":{{\"type\":\"Point\",\"coordinates\":[1,2]}},\"properties\":{{\"ordinal\":{index},\"padding\":\"{padding}\"}}}}");
+                }
+                await writer.WriteAsync("]}");
+            }
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(), new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance, ImportLimits.Default with { BatchSize = 500 });
+            await using var stream = File.OpenRead(filePath);
+            var baseline = GC.GetTotalMemory(forceFullCollection: true);
+            var peakRetained = baseline;
+            var samples = 0;
+            var progress = new InlineImportProgress(value =>
+            {
+                if (value.BatchesCommitted == 1)
+                {
+                    stream.Position.Should().BeLessThan(stream.Length / 2,
+                        "the first committed batch must not require buffering the entire source");
+                }
+                if (value.FeaturesProcessed > 0 && value.FeaturesProcessed % 2500 == 0)
+                {
+                    peakRetained = Math.Max(peakRetained, GC.GetTotalMemory(forceFullCollection: true));
+                    samples++;
+                }
+            });
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "memory.geojson",
+                TableName = "memory_proof",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true
+            }, progress);
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(count);
+            samples.Should().BeGreaterThanOrEqualTo(8);
+            // Source is >80 MB (below the 100 MB preflight cap); materializing all parsed features would retain >160 MB of strings.
+            // Allow 64 MB for JIT, buffers and provider caches, below the default 100 MB import target.
+            (peakRetained - baseline).Should().BeLessThan(64L * 1024 * 1024);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT count(*), sum((properties->>'ordinal')::bigint),
+                    count(DISTINCT (properties->>'ordinal')::int),
+                    min((properties->>'ordinal')::int), max((properties->>'ordinal')::int),
+                    bool_and((properties->>'padding') IS NOT DISTINCT FROM repeat('x', 4096)),
+                    bool_and(geometry IS NOT NULL AND ST_X(geometry)=1 AND ST_Y(geometry)=2 AND ST_SRID(geometry)=4326)
+                FROM "{schema}".imported_memory_proof
+                """;
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt64(0).Should().Be(count);
+            reader.GetDecimal(1).Should().Be((long)count * (count - 1) / 2);
+            reader.GetInt64(2).Should().Be(count, "every generated ordinal must occur exactly once");
+            reader.GetInt32(3).Should().Be(0);
+            reader.GetInt32(4).Should().Be(count - 1);
+            reader.GetBoolean(5).Should().BeTrue("every padding value must match the generated fixture");
+            reader.GetBoolean(6).Should().BeTrue();
+        }
+        finally
+        {
+            File.Delete(filePath);
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private sealed class InlineImportProgress(Action<ImportProgress> report) : IProgress<ImportProgress>
+    {
+        public void Report(ImportProgress value) => report(value);
+    }
+
     private async Task<bool> TableExistsAsync(string schema, string tableName)
     {
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
