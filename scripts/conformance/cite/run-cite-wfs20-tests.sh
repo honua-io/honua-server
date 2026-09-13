@@ -167,10 +167,11 @@ export HOST_UID="$(id -u)"
 export HOST_GID="$(id -g)"
 
 # Start all services
-if [[ "$VERBOSE" == "true" ]]; then
-    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d
-else
-    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d > /dev/null 2>&1
+# Compose rejects a failed migration/seed dependency before the readiness wait.
+# Retain its full diagnostic, including the exact missing migration name.
+if ! $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server seed cite-teamengine; then
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" logs honua-server seed postgres >&2 || true
+    exit 1
 fi
 
 # Wait for services to be healthy
@@ -277,9 +278,9 @@ CITE_RUNNER_EXIT_CODE=0
 
 # Run the CITE test runner container
 if [[ "$VERBOSE" == "true" ]]; then
-    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up cite-runner || CITE_RUNNER_EXIT_CODE=$?
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up --no-deps --abort-on-container-exit --exit-code-from cite-runner cite-runner || CITE_RUNNER_EXIT_CODE=$?
 else
-    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up cite-runner > /dev/null 2>&1 || CITE_RUNNER_EXIT_CODE=$?
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up --no-deps --abort-on-container-exit --exit-code-from cite-runner cite-runner > /dev/null 2>&1 || CITE_RUNNER_EXIT_CODE=$?
 fi
 
 TEST_END_TIME=$(date +%s)

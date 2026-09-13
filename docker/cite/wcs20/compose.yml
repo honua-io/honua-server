@@ -1,6 +1,6 @@
 services:
   honua-server:
-    image: honua-server:latest
+    image: "${HONUA_CITE_SERVER_IMAGE:-honua-server:latest}"
     build:
       context: ../../..
       dockerfile: Dockerfile
@@ -51,6 +51,10 @@ services:
       - POSTGIS_GDAL_ENABLED_DRIVERS=ENABLE_ALL
       - POSTGIS_ENABLE_OUTDB_RASTERS=1
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    # Extension availability controls discovery of the provider migration root.
+    # Provision it before Honua's first boot, never while seeding raster data.
+    volumes:
+      - ./init-extensions.sql:/docker-entrypoint-initdb.d/20-raster-extension.sql:ro
     ports:
       - "${HONUA_CITE_WCS20_POSTGRES_PORT:-5438}:5432"
     networks:

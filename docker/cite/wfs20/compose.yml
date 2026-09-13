@@ -1,15 +1,17 @@
 services:
   # Honua Server under test
   honua-server:
-    image: honua-server:latest
+    image: "${HONUA_CITE_SERVER_IMAGE:-honua-server:latest}"
     ports:
       - "${HONUA_CITE_WFS20_SERVER_PORT:-8090}:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Test
       - ASPNETCORE_URLS=http://+:8080
+      - PUBLIC_BASE_URL=http://cite-auth-proxy:8080
       - HONUA_DEV_AUTH=true
       - HONUA_REGISTER_TEST_INFRASTRUCTURE=true
-      - HONUA_SKIP_MIGRATIONS=true
+      - HONUA_SKIP_MIGRATIONS=false
+      - HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false
       # Disable metadata/catalog caching so WFS-T insert/update/delete are
       # immediately visible to the read-back the ETS transaction tests perform.
       # Otherwise a cached GetFeature/resourceId response serves the pre-mutation
@@ -23,12 +25,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # healthcheck:
-    #   test: ["CMD", "sh", "-c", "netstat -tlnp | grep :8080 || ss -tlnp | grep :8080"]
-    #   interval: 15s
-    #   timeout: 10s
-    #   retries: 5
-    #   start_period: 60s
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     networks:
       - cite-network
 
@@ -49,10 +51,49 @@ services:
       retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../shared/test-data/01-init-cite-test-data.sql:/docker-entrypoint-initdb.d/01-init-cite-test-data.sql:ro
-      - ./test-data/99-prune-wfs1-cite-fixtures.sql:/docker-entrypoint-initdb.d/99-prune-wfs1-cite-fixtures.sql:ro
     networks:
       - cite-network
+
+  # Use the image's migration runner before inserting data; never initialize
+  # migration-owned tables through PostgreSQL's initdb hook.
+  seed:
+    image: postgis/postgis:15-3.3
+    entrypoint: ["/bin/bash", "/cite-scripts/seed-wfs.sh"]
+    environment:
+      PGHOST: postgres
+      PGDATABASE: honua_cite
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    volumes:
+      - ../shared/scripts/seed-wfs.sh:/cite-scripts/seed-wfs.sh:ro
+      - ../shared/test-data/01-init-cite-test-data.sql:/cite-data/01-init-cite-test-data.sql:ro
+      - ${HONUA_CITE_MIGRATIONS_DIR:-../../../src/Honua.Server/Migrations}:/migrations:ro
+      - ./test-data/99-prune-wfs1-cite-fixtures.sql:/cite-data/99-prune-wfs1-cite-fixtures.sql:ro
+    depends_on:
+      honua-server:
+        condition: service_healthy
+    networks:
+      - cite-network
+    restart: "no"
+
+  # Authenticate the ETS client using the same configured fixture API key as
+  # ordinary clients. Direct unauthenticated backend management remains denied.
+  cite-auth-proxy:
+    image: caddy:2
+    environment:
+      HONUA_CITE_API_KEY: CiteAdminPassword123!
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    networks:
+      - cite-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   # OGC CITE Team Engine for WFS 2.0 conformance testing
   cite-teamengine:
@@ -64,7 +105,8 @@ services:
       - TE_BASE=/root/te_base
       - TE_HOME=/root/teamengine
     depends_on:
-      - honua-server
+      cite-auth-proxy:
+        condition: service_healthy
     volumes:
       - cite_data:/root/te_base
       - ./config:/cite-config:ro
@@ -87,7 +129,7 @@ services:
       honua-server:
         condition: service_started
     environment:
-      - WFS_ENDPOINT=http://honua-server:8080/wfs
+      - WFS_ENDPOINT=http://cite-auth-proxy:8080/wfs
       - CITE_ENGINE=http://cite-teamengine:8080/teamengine
       - TEST_PROFILE=${CITE_PROFILE:-basic}
       - HOST_UID=${HOST_UID:-1000}
