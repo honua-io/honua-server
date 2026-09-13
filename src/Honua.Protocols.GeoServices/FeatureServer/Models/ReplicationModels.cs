@@ -544,6 +544,16 @@ public sealed class SynchronizeReplicaResponse
     public int? AppliedDeletes { get; set; }
 
     /// <summary>
+    /// Per-layer results of the uploaded adds, returned when the request sets
+    /// <c>returnIdsForAdds=true</c>: each entry carries the layer <c>id</c> and an <c>addResults</c>
+    /// array index-aligned with that layer's uploaded adds, holding the server-assigned
+    /// <c>objectId</c> (and <c>globalId</c> when the layer has one). Clients use it to map local rows to
+    /// the rows the server created (#4016). Omitted otherwise.
+    /// </summary>
+    [JsonPropertyName("editResults")]
+    public ServiceLayerEditResult[]? EditResults { get; set; }
+
+    /// <summary>
     /// Conflicts detected while applying the uploaded edits, when any. A non-empty list does not by
     /// itself fail the sync under last-write-wins; durable conflict records are written for review
     /// when supported (#1287).

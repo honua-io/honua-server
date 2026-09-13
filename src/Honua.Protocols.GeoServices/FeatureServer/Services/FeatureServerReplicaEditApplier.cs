@@ -30,12 +30,21 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
 {
     private readonly FeatureServerEditsHandler _editsHandler;
     private readonly EditLimits _editLimits;
+    private readonly List<ServiceLayerEditResult> _addResults = [];
 
     public FeatureServerReplicaEditApplier(FeatureServerEditsHandler editsHandler, EditLimits editLimits)
     {
         _editsHandler = editsHandler ?? throw new ArgumentNullException(nameof(editsHandler));
         _editLimits = editLimits;
     }
+
+    /// <summary>
+    /// Per-layer <c>addResults</c> (server-assigned object ids and global ids) of every uploaded add this
+    /// applier dispatched, in dispatch order and index-aligned with each layer's uploaded adds. The
+    /// synchronize adapter returns them for <c>returnIdsForAdds=true</c> so a client can map its local
+    /// rows to the rows the server created (#4016).
+    /// </summary>
+    public IReadOnlyList<ServiceLayerEditResult> AddResults => _addResults;
 
     public async Task<ReplicaLayerApplyResult> ApplyAsync(
         string serviceId,
@@ -104,6 +113,11 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             return new ReplicaLayerApplyResult(
                 publicLayerId, 0, 0, 0, Failed: true,
                 FailureMessage: "Uploaded replica edits failed to apply.");
+        }
+
+        if (response.AddResults is { Length: > 0 } addResults)
+        {
+            _addResults.Add(new ServiceLayerEditResult { Id = publicLayerId, AddResults = addResults });
         }
 
         var appliedAdds = CountSuccessful(response.AddResults);
