@@ -125,20 +125,50 @@ internal sealed partial class GeoservicesImportService
         if (domainFieldCount > 0)
         {
             var domains = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceDomains);
+
+            // #4600: the automated tier is only honest for domains the edit validator enforces. Each field's
+            // domain goes through EsriFieldDomainParser, the parser the importer persists from: a coded-value
+            // domain over the capture cap is not persisted at all, and an unknown domain type, an empty
+            // coded-value list or a malformed range is persisted but accepts every value on edit.
+            var (truncatedDomainCount, unenforceableDomainCount) = CountUnenforcedDomains(resourceElement);
+            var domainMetadata = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["domainFieldCount"] = domainFieldCount.ToString(CultureInfo.InvariantCulture)
+            };
+            if (truncatedDomainCount > 0)
+            {
+                domainMetadata["truncatedDomainCount"] = truncatedDomainCount.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (unenforceableDomainCount > 0)
+            {
+                domainMetadata["unenforceableDomainCount"] = unenforceableDomainCount.ToString(CultureInfo.InvariantCulture);
+            }
+
+            var (domainStatus, domainCode, domainReason, domainSteps) = truncatedDomainCount > 0
+                ? (domains.UnsupportedAutomationStatus ?? MigrationFidelityAutomationStatuses.ManualReview,
+                    domains.UnsupportedCode ?? ImportCompatibilityCodes.ArcGisDomainTruncated,
+                    domains.UnsupportedReason ?? domains.Reason,
+                    domains.UnsupportedManualSteps)
+                : unenforceableDomainCount > 0
+                    ? (MigrationFidelityAutomationStatuses.ManualReview,
+                        ImportCompatibilityCodes.ManualReview,
+                        "At least one field domain has an unsupported type, no coded values, or no numeric range bounds, "
+                        + "so the published field accepts every value on edit.",
+                        new[] { "Define an enforceable coded-value or range domain on the target field configuration before cutover." })
+                    : (domains.AutomationStatus, domains.Code, domains.Reason, domains.ManualSteps);
+
             records.Add(CreateFidelityRecord(
                 $"{resource.Id}:domains",
                 resource.Id,
                 "field-domain",
                 "domains",
                 resource.Name,
-                domains.AutomationStatus,
-                domains.Code,
-                domains.Reason,
-                domains.ManualSteps,
-                metadata: new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["domainFieldCount"] = domainFieldCount.ToString(CultureInfo.InvariantCulture)
-                }));
+                domainStatus,
+                domainCode,
+                domainReason,
+                domainSteps,
+                metadata: domainMetadata));
         }
 
         if (HasSubtypeMetadata(resourceElement))
@@ -164,15 +194,17 @@ internal sealed partial class GeoservicesImportService
                 .Where(static dependency => string.Equals(dependency.Kind, "attachments", StringComparison.Ordinal))
                 .Select(static dependency => dependency.Id)
                 .ToArray();
+            var attachments = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceAttachments);
             records.Add(CreateFidelityRecord(
                 $"{resource.Id}:attachments",
                 resource.Id,
                 "attachment",
                 "attachments",
                 resource.Name,
-                MigrationFidelityAutomationStatuses.Automated,
-                ImportCompatibilityCodes.Compatible,
-                "Attachments are automatically copied to the Honua attachment store during import when ImportAttachments is enabled and auto-publish succeeds.",
+                attachments.AutomationStatus,
+                attachments.Code,
+                attachments.Reason,
+                attachments.ManualSteps,
                 relatedIds: attachmentDependencyIds));
         }
 
@@ -246,6 +278,38 @@ internal sealed partial class GeoservicesImportService
                     .ToDictionary(static item => item.Key, static item => item.Value, StringComparer.Ordinal)
         };
 
+    private static (int Truncated, int Unenforceable) CountUnenforcedDomains(JsonElement resourceElement)
+    {
+        if (!resourceElement.TryGetProperty("fields", out var fields) || fields.ValueKind != JsonValueKind.Array)
+        {
+            return (0, 0);
+        }
+
+        var truncated = 0;
+        var unenforceable = 0;
+        foreach (var field in fields.EnumerateArray())
+        {
+            if (field.ValueKind != JsonValueKind.Object
+                || !field.TryGetProperty("domain", out var domain)
+                || domain.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var parsed = EsriFieldDomainParser.Parse(field);
+            if (parsed.Truncated)
+            {
+                truncated++;
+            }
+            else if (!EsriFieldDomainParser.IsEnforceable(parsed.Domain))
+            {
+                unenforceable++;
+            }
+        }
+
+        return (truncated, unenforceable);
+    }
+
     private static string ToFidelityAutomationStatus(string compatibilityLevel)
     {
         if (string.Equals(compatibilityLevel, "incompatible", StringComparison.OrdinalIgnoreCase))
@@ -263,7 +327,7 @@ internal sealed partial class GeoservicesImportService
             HasNonEmptyArray(resourceElement, "subtypes") ||
             !string.IsNullOrWhiteSpace(GetOptionalStringProperty(resourceElement, "subtypeField"));
 
-    private static IEnumerable<MigrationFidelityClassificationRecord> BuildRelationshipFidelityRecords(
+    private IEnumerable<MigrationFidelityClassificationRecord> BuildRelationshipFidelityRecords(
         MigrationInventoryResource resource,
         JsonElement resourceElement)
     {
@@ -271,6 +335,8 @@ internal sealed partial class GeoservicesImportService
         {
             yield break;
         }
+
+        var descriptor = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceRelationships);
 
         foreach (var relationship in relationships.EnumerateArray())
         {
@@ -300,24 +366,27 @@ internal sealed partial class GeoservicesImportService
             var isManyToMany = !string.IsNullOrWhiteSpace(cardinality) &&
                 cardinality.Trim().Equals("esriRelCardinalityManyToMany", StringComparison.OrdinalIgnoreCase);
 
-            var automationStatus = isComposite || isManyToMany
-                ? MigrationFidelityAutomationStatuses.ManualReview
-                : MigrationFidelityAutomationStatuses.Automated;
-            var compatibilityCode = automationStatus == MigrationFidelityAutomationStatuses.Automated
-                ? ImportCompatibilityCodes.Compatible
-                : ImportCompatibilityCodes.ArcGisRelationshipsManualReview;
+            // #4600: status and code come from the registry so the classifier and the registry cannot
+            // disagree; the fallback reason keeps the relationship-specific explanation.
+            var automated = !(isComposite || isManyToMany);
+            var automationStatus = automated
+                ? descriptor.AutomationStatus
+                : descriptor.UnsupportedAutomationStatus ?? MigrationFidelityAutomationStatuses.ManualReview;
+            var compatibilityCode = automated
+                ? descriptor.Code
+                : descriptor.UnsupportedCode ?? ImportCompatibilityCodes.ArcGisRelationshipsManualReview;
 
-            var reason = automationStatus == MigrationFidelityAutomationStatuses.Automated
-                ? "Simple relationship class captured for automated migration to honua.relationships and MetadataV2Resource.Relationships."
+            var reason = automated
+                ? descriptor.Reason
                 : isComposite
                     ? $"Relationship type '{derivedType ?? "composite"}' carries side-effects (composite delete or junction attributes) that this slice does not recreate automatically."
                     : isManyToMany
                         ? "Many-to-many relationships require a junction table and are deferred from automated migration."
                         : "Relationship metadata was captured but the source did not advertise enough of the relationship shape to recreate it automatically; map it onto the target before cutover.";
 
-            var manualSteps = automationStatus == MigrationFidelityAutomationStatuses.ManualReview
-                ? new[] { "Map related layers or tables to target relationship configuration before cutover." }
-                : Array.Empty<string>();
+            IEnumerable<string> manualSteps = automated
+                ? []
+                : descriptor.UnsupportedManualSteps;
 
             var metadata = new SortedDictionary<string, string>(StringComparer.Ordinal);
             if (relationshipId.HasValue)

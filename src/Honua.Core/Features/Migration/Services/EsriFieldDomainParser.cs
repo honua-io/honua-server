@@ -213,6 +213,39 @@ public static class EsriFieldDomainParser
             Truncated: false);
     }
 
+    /// <summary>
+    /// True when a parsed domain is one the shared edit validator actually enforces: a coded-value
+    /// domain with at least one code, or a range domain with exactly two numeric bounds. Mirrors the
+    /// rules in <c>FeatureMutationValidator.ValidateAgainstDomain</c>, which accepts every value for an
+    /// unknown domain type, an empty coded-value list, or a missing/malformed range (issue #4600).
+    /// </summary>
+    /// <param name="domain">The parsed domain, or <c>null</c> when none was persisted.</param>
+    /// <returns><c>true</c> when edits against the published field are validated by this domain.</returns>
+    public static bool IsEnforceable(MetadataV2FieldDomain? domain)
+    {
+        if (domain is null)
+        {
+            return false;
+        }
+
+        if (string.Equals(domain.Type, CodedValueDomainType, StringComparison.OrdinalIgnoreCase))
+        {
+            return domain.CodedValues.Count > 0;
+        }
+
+        if (string.Equals(domain.Type, RangeDomainType, StringComparison.OrdinalIgnoreCase))
+        {
+            return domain.Range is { Count: 2 } range && IsNumericBound(range[0]) && IsNumericBound(range[1]);
+        }
+
+        return false;
+    }
+
+    private static bool IsNumericBound(JsonElement bound)
+        => (bound.ValueKind == JsonValueKind.Number && bound.TryGetDouble(out _))
+            || (bound.ValueKind == JsonValueKind.String
+                && double.TryParse(bound.GetString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _));
+
     private static bool IsSupportedCode(JsonElement codeElement)
         => codeElement.ValueKind is JsonValueKind.String
             or JsonValueKind.Number
