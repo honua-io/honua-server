@@ -193,7 +193,9 @@ internal sealed partial class YarpRollingDeployBackend(
             SupportsTrafficShifting = false,
             RequiresOutOfBandMigrations = true,
             SupportsProgressPolling = true,
-            SupportsRevisionPinning = true
+            SupportsRevisionPinning = true,
+            // The standby replica serves no traffic until PromoteAsync swaps the proxy to it.
+            StagesCandidateWithoutTraffic = true
         });
 
     public async Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default)

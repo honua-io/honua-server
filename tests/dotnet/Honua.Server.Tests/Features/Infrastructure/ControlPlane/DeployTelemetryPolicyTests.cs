@@ -691,6 +691,25 @@ public sealed class DeployTelemetryPolicyTests
         policy.IsCandidateScoped.Should().BeFalse();
     }
 
+    [Fact]
+    public void Parse_HonuaHttpPreset_ErrorRateReadsZeroWhenThereAreNoServerErrors()
+    {
+        // A healthy Honua server exports no 5xx series, and sum() over no series is an empty vector. Checked
+        // against a real Prometheus scraping the 9f2f16a server image: with 108 requests, all HTTP 200, the
+        // plain ratio came back empty (absent evidence, which never passes the gate) while the "or vector(0)"
+        // numerator read 0. With no traffic at all the denominator stays empty, so the ratio stays absent.
+        var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = "prod-prom",
+            ["telemetry.prometheus.job"] = "honua-prod"
+        }));
+
+        policy!.IsValid.Should().BeTrue(policy.ValidationError);
+        policy.ErrorRateQuery.Should().Be(
+            "(sum(rate(honua_http_request_total{job=\"honua-prod\",status_code=~\"5..\"}[5m])) or vector(0)) / " +
+            "clamp_min(sum(rate(honua_http_request_total{job=\"honua-prod\"}[5m])), 0.001)");
+    }
+
     private static DeployOperationSpec CreateSpec(IReadOnlyDictionary<string, string> parameters)
         => new()
         {

@@ -17,6 +17,21 @@ internal interface IDeployTelemetrySignalEvaluator
     Task<DeployTelemetryDecision?> EvaluateAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Evaluates a candidate that its backend has staged without live traffic, before promotion cuts
+    /// over to it (honua-server#4617). Only checks that do not depend on candidate traffic apply; the
+    /// full gate runs from cutover inside the post-activation observation window. Returns
+    /// <see langword="null"/> when the deploy carries no telemetry policy.
+    /// </summary>
+    /// <param name="operation">The staged deploy operation.</param>
+    /// <param name="candidateReady">Whether the backend's own health gate recommends promotion.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<DeployTelemetryDecision?> EvaluateStagedCandidateAsync(
+        WorkflowOperationRecord operation,
+        bool candidateReady,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<DeployTelemetryDecision?>(null);
 }
 
 internal sealed record DeployTelemetryDecision
@@ -69,30 +84,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
 
         if (!policy.IsValid)
         {
-            // Bounded wait (#2161): an invalid policy is a configuration error that will never
-            // self-heal from telemetry, so an unbounded WaitForMoreTelemetry silently parks the
-            // deploy in Reconciling forever. Hold for a finite grace window (so a transient
-            // mid-edit config is tolerated), then escalate to a rollback recommendation rather
-            // than promoting a deploy whose health gate is broken. The grace window is bounded
-            // even when misconfigured to a non-positive value.
-            var grace = ResolveInvalidPolicyGrace(operation.Deploy);
-            var elapsed = DateTimeOffset.UtcNow - operation.CreatedAt;
-            var validationDetail = policy.ValidationError ?? "Deploy telemetry policy is invalid.";
-            if (elapsed < grace)
-            {
-                var remaining = grace - elapsed;
-                return new DeployTelemetryDecision
-                {
-                    WaitForMoreTelemetry = true,
-                    Message = $"{validationDetail} Holding for up to {Math.Ceiling(Math.Max(remaining.TotalSeconds, 0))}s before escalating an invalid telemetry policy."
-                };
-            }
-
-            return new DeployTelemetryDecision
-            {
-                RollbackRecommended = true,
-                Message = $"Automatic rollback requested because the deploy telemetry policy is invalid and could not be evaluated within the configured grace window: {validationDetail}"
-            };
+            return InvalidPolicyDecision(operation.Deploy, operation.CreatedAt, policy);
         }
 
         // Before the candidate receives traffic there is no evidence to evaluate (#4617). Hold only until
@@ -100,22 +92,11 @@ internal sealed class DeployTelemetrySignalEvaluator(
         // that never reaches exposure must neither wait forever nor promote.
         if (operation.Status == WorkflowOperationStatus.Submitted && operation.Deploy.TrafficExposedAt == null)
         {
-            var sinceCreated = DateTimeOffset.UtcNow - operation.CreatedAt;
-            if (sinceCreated < policy.ExposureDeadline)
-            {
-                var remainingExposure = policy.ExposureDeadline - sinceCreated;
-                return new DeployTelemetryDecision
-                {
-                    WaitForMoreTelemetry = true,
-                    Message = $"Waiting for the candidate revision to receive traffic before evaluating telemetry ({Math.Ceiling(Math.Max(remainingExposure.TotalSeconds, 0))}s remaining before the exposure deadline)."
-                };
-            }
-
-            return new DeployTelemetryDecision
-            {
-                RollbackRecommended = true,
-                Message = $"Automatic rollback requested because the candidate revision was never observed receiving traffic within the {policy.ExposureDeadline.TotalSeconds:0}-second exposure deadline; the rollout is failed without activating the candidate."
-            };
+            return HoldUntilExposureDeadline(
+                operation,
+                policy,
+                "the candidate revision to receive traffic before evaluating telemetry",
+                "the candidate revision was never observed receiving traffic");
         }
 
         // Warmup/bake anchors on when the candidate actually started receiving traffic, not when the
@@ -140,7 +121,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
         // promote on its own — it falls through to the metrics gate, which must also pass.
         if (policy.HasHealthProbe)
         {
-            var healthDecision = await EvaluateHealthProbeAsync(operation, policy, exposureAnchor, cancellationToken).ConfigureAwait(false);
+            var healthDecision = await EvaluateHealthProbeAsync(operation, policy, EvidenceDeadline.AfterExposure(exposureAnchor, policy), cancellationToken).ConfigureAwait(false);
             if (healthDecision != null)
             {
                 return healthDecision;
@@ -154,7 +135,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
         // debounce); a passing one falls through to the metrics gate, which must also pass.
         if (policy.HasGoldenQuery)
         {
-            var goldenDecision = await EvaluateGoldenQueryAsync(operation, policy, exposureAnchor, cancellationToken).ConfigureAwait(false);
+            var goldenDecision = await EvaluateGoldenQueryAsync(operation, policy, EvidenceDeadline.AfterExposure(exposureAnchor, policy), cancellationToken).ConfigureAwait(false);
             if (goldenDecision != null)
             {
                 return goldenDecision;
@@ -231,6 +212,154 @@ internal sealed class DeployTelemetrySignalEvaluator(
         }
     }
 
+    /// <inheritdoc />
+    public async Task<DeployTelemetryDecision?> EvaluateStagedCandidateAsync(
+        WorkflowOperationRecord operation,
+        bool candidateReady,
+        CancellationToken cancellationToken = default)
+    {
+        if (operation.Deploy == null)
+        {
+            return null;
+        }
+
+        var policy = DeployTelemetryPolicy.Parse(operation.Deploy);
+        if (policy == null)
+        {
+            return null;
+        }
+
+        if (!policy.IsValid)
+        {
+            return InvalidPolicyDecision(operation.Deploy, operation.CreatedAt, policy);
+        }
+
+        // A staged candidate serves no traffic, so nothing traffic-dependent can describe it yet. Until
+        // the backend's own health gate passes, hold only to the exposure deadline, then fail the rollout
+        // without activating the candidate. The deadline bounds the whole staged phase: a standby that
+        // only turns ready after it is rolled back too, never cut over late.
+        var exposureDeadlineElapsed = DateTimeOffset.UtcNow - operation.CreatedAt >= policy.ExposureDeadline;
+        if (!candidateReady || exposureDeadlineElapsed)
+        {
+            return HoldUntilExposureDeadline(
+                operation,
+                policy,
+                "the staged candidate revision to pass the backend health gate before cutover",
+                candidateReady
+                    ? "the staged candidate revision was not ready for cutover"
+                    : "the staged candidate revision never passed the backend health gate");
+        }
+
+        // The readiness and golden-query probes can run against the staged revision. A failing probe
+        // drives the same rollback path as after exposure; a probe that cannot run holds, bounded by the
+        // exposure deadline rather than by a warmup that has not started.
+        var evidenceDeadline = EvidenceDeadline.BeforeExposure(operation.CreatedAt, policy);
+        if (policy.HasHealthProbe)
+        {
+            var healthDecision = await EvaluateHealthProbeAsync(operation, policy, evidenceDeadline, cancellationToken).ConfigureAwait(false);
+            if (healthDecision != null)
+            {
+                return healthDecision;
+            }
+        }
+
+        if (policy.HasGoldenQuery)
+        {
+            var goldenDecision = await EvaluateGoldenQueryAsync(operation, policy, evidenceDeadline, cancellationToken).ConfigureAwait(false);
+            if (goldenDecision != null)
+            {
+                return goldenDecision;
+            }
+        }
+
+        // The pre-cutover checks clear promotion only. The reconciler stamps exposure at the cutover and
+        // runs the full gate (warmup, probes and metrics) inside the post-activation observation window,
+        // which cannot commit while that gate is still waiting for evidence.
+        return ApplyBreachDebounce(operation, new DeployTelemetryDecision
+        {
+            Message = policy.IsHealthOnly
+                ? "Staged candidate passed its pre-cutover probes; the health-only gate is evaluated again from cutover during the post-activation observation window."
+                : "Staged candidate passed its pre-cutover checks; the telemetry gate is evaluated from cutover during the post-activation observation window."
+        });
+    }
+
+    private static DeployTelemetryDecision InvalidPolicyDecision(
+        DeployOperationSpec spec,
+        DateTimeOffset createdAt,
+        DeployTelemetryPolicy policy)
+    {
+        // Bounded wait (#2161): an invalid policy is a configuration error that will never
+        // self-heal from telemetry, so an unbounded WaitForMoreTelemetry silently parks the
+        // deploy in Reconciling forever. Hold for a finite grace window (so a transient
+        // mid-edit config is tolerated), then escalate to a rollback recommendation rather
+        // than promoting a deploy whose health gate is broken. The grace window is bounded
+        // even when misconfigured to a non-positive value.
+        var grace = ResolveInvalidPolicyGrace(spec);
+        var elapsed = DateTimeOffset.UtcNow - createdAt;
+        var validationDetail = policy.ValidationError ?? "Deploy telemetry policy is invalid.";
+        if (elapsed < grace)
+        {
+            var remaining = grace - elapsed;
+            return new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = $"{validationDetail} Holding for up to {Math.Ceiling(Math.Max(remaining.TotalSeconds, 0))}s before escalating an invalid telemetry policy."
+            };
+        }
+
+        return new DeployTelemetryDecision
+        {
+            RollbackRecommended = true,
+            Message = $"Automatic rollback requested because the deploy telemetry policy is invalid and could not be evaluated within the configured grace window: {validationDetail}"
+        };
+    }
+
+    /// <summary>
+    /// Holds a candidate that is not yet exposed to traffic until the policy's exposure deadline
+    /// (measured from operation creation), then recommends rolling the rollout back without the
+    /// candidate ever being activated (#4617).
+    /// </summary>
+    private static DeployTelemetryDecision HoldUntilExposureDeadline(
+        WorkflowOperationRecord operation,
+        DeployTelemetryPolicy policy,
+        string waitingFor,
+        string failure)
+    {
+        var sinceCreated = DateTimeOffset.UtcNow - operation.CreatedAt;
+        if (sinceCreated < policy.ExposureDeadline)
+        {
+            var remainingExposure = policy.ExposureDeadline - sinceCreated;
+            return new DeployTelemetryDecision
+            {
+                WaitForMoreTelemetry = true,
+                Message = $"Waiting for {waitingFor} ({Math.Ceiling(Math.Max(remainingExposure.TotalSeconds, 0))}s remaining before the exposure deadline)."
+            };
+        }
+
+        return new DeployTelemetryDecision
+        {
+            RollbackRecommended = true,
+            Message = $"Automatic rollback requested because {failure} within the {policy.ExposureDeadline.TotalSeconds:0}-second exposure deadline; the rollout is failed without activating the candidate."
+        };
+    }
+
+    /// <summary>
+    /// The point past which missing or unusable evidence stops holding a rollout and escalates to a
+    /// rollback recommendation, with the operator-facing name of that bound (honua-server#4617).
+    /// </summary>
+    private readonly record struct EvidenceDeadline(DateTimeOffset At, string Name)
+    {
+        /// <summary>After exposure: warmup plus the evidence grace window, anchored on exposure.</summary>
+        public static EvidenceDeadline AfterExposure(DateTimeOffset exposureAnchor, DeployTelemetryPolicy policy)
+            => new(exposureAnchor + policy.WarmupDuration + policy.EvidenceGraceDuration, "configured evidence grace window");
+
+        /// <summary>Before a staged candidate is exposed: the exposure deadline, anchored on operation creation.</summary>
+        public static EvidenceDeadline BeforeExposure(DateTimeOffset createdAt, DeployTelemetryPolicy policy)
+            => new(
+                createdAt + policy.ExposureDeadline,
+                $"{policy.ExposureDeadline.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)}-second exposure deadline");
+    }
+
     /// <summary>
     /// Bounds a "missing/invalid evidence" wait decision to <see cref="DeployTelemetryPolicy.EvidenceGraceDuration"/>
     /// past the end of warmup (honua-server#4617): once warmup has elapsed, evidence that never
@@ -243,12 +372,14 @@ internal sealed class DeployTelemetrySignalEvaluator(
         DateTimeOffset exposureAnchor,
         DeployTelemetryPolicy policy,
         string waitMessage)
+        => BoundEvidenceWait(EvidenceDeadline.AfterExposure(exposureAnchor, policy), waitMessage);
+
+    private static DeployTelemetryDecision BoundEvidenceWait(EvidenceDeadline deadline, string waitMessage)
     {
-        var deadline = exposureAnchor + policy.WarmupDuration + policy.EvidenceGraceDuration;
         var now = DateTimeOffset.UtcNow;
-        if (now < deadline)
+        if (now < deadline.At)
         {
-            var remaining = deadline - now;
+            var remaining = deadline.At - now;
             return new DeployTelemetryDecision
             {
                 WaitForMoreTelemetry = true,
@@ -259,7 +390,7 @@ internal sealed class DeployTelemetrySignalEvaluator(
         return new DeployTelemetryDecision
         {
             RollbackRecommended = true,
-            Message = $"Automatic rollback requested because telemetry evidence remained unavailable beyond the configured evidence grace window: {waitMessage}"
+            Message = $"Automatic rollback requested because telemetry evidence remained unavailable beyond the {deadline.Name}: {waitMessage}"
         };
     }
 
@@ -273,14 +404,13 @@ internal sealed class DeployTelemetrySignalEvaluator(
     private async Task<DeployTelemetryDecision?> EvaluateHealthProbeAsync(
         WorkflowOperationRecord operation,
         DeployTelemetryPolicy policy,
-        DateTimeOffset exposureAnchor,
+        EvidenceDeadline evidenceDeadline,
         CancellationToken cancellationToken)
     {
         if (healthProbe == null)
         {
             return BoundEvidenceWait(
-                exposureAnchor,
-                policy,
+                evidenceDeadline,
                 "Waiting for telemetry confirmation because a synthetic health probe is configured but no health-probe service is available.");
         }
 
@@ -303,16 +433,14 @@ internal sealed class DeployTelemetrySignalEvaluator(
         {
             DeployTelemetrySignalEvaluatorLog.EvaluationFailed(logger, operation.OperationId, ex);
             return BoundEvidenceWait(
-                exposureAnchor,
-                policy,
+                evidenceDeadline,
                 "Waiting for telemetry confirmation because the synthetic health probe could not be executed.");
         }
 
         if (!result.Validated)
         {
             return BoundEvidenceWait(
-                exposureAnchor,
-                policy,
+                evidenceDeadline,
                 $"Waiting for telemetry confirmation because the synthetic health probe is misconfigured: {result.Detail}");
         }
 
@@ -343,14 +471,13 @@ internal sealed class DeployTelemetrySignalEvaluator(
     private async Task<DeployTelemetryDecision?> EvaluateGoldenQueryAsync(
         WorkflowOperationRecord operation,
         DeployTelemetryPolicy policy,
-        DateTimeOffset exposureAnchor,
+        EvidenceDeadline evidenceDeadline,
         CancellationToken cancellationToken)
     {
         if (healthProbe == null)
         {
             return BoundEvidenceWait(
-                exposureAnchor,
-                policy,
+                evidenceDeadline,
                 "Waiting for telemetry confirmation because a golden-query correctness gate is configured but no probe service is available.");
         }
 
@@ -375,16 +502,14 @@ internal sealed class DeployTelemetrySignalEvaluator(
         {
             DeployTelemetrySignalEvaluatorLog.EvaluationFailed(logger, operation.OperationId, ex);
             return BoundEvidenceWait(
-                exposureAnchor,
-                policy,
+                evidenceDeadline,
                 "Waiting for telemetry confirmation because the golden-query correctness probe could not be executed.");
         }
 
         if (!result.Validated)
         {
             return BoundEvidenceWait(
-                exposureAnchor,
-                policy,
+                evidenceDeadline,
                 $"Waiting for telemetry confirmation because the golden-query correctness gate is misconfigured: {result.Detail}");
         }
 

@@ -621,8 +621,12 @@ internal sealed record DeployTelemetryPolicy
         return new DeployTelemetryPolicy
         {
             ConnectionId = string.Empty,
+            // A healthy candidate has no 5xx series, and sum() over no series is an empty vector, not 0.
+            // Without the "or vector(0)" the ratio is empty for exactly the release that should pass, and
+            // absent evidence never satisfies the gate (#4617). With no traffic at all the denominator is
+            // still empty, so the ratio stays absent rather than reading as a healthy 0.
             ErrorRateQuery =
-                $"sum(rate(honua_http_request_total{WrapSelector(errorSelector)}[5m])) / clamp_min(sum(rate(honua_http_request_total{metricSelector}[5m])), 0.001)",
+                $"(sum(rate(honua_http_request_total{WrapSelector(errorSelector)}[5m])) or vector(0)) / clamp_min(sum(rate(honua_http_request_total{metricSelector}[5m])), 0.001)",
             ErrorRateThreshold = 0.05,
             LatencyP95Query =
                 $"histogram_quantile(0.95, sum(rate(honua_http_request_duration_ms_bucket{metricSelector}[5m])) by (le))",

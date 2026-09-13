@@ -49,4 +49,15 @@ internal static class CloudIntegrationTraits
     /// the project still builds and runs (skipping) on forks and credential-less environments.
     /// </summary>
     public const string RealAwsCertification = "RealAwsCertification";
+
+    /// <summary>
+    /// Trait value applied to the exact-candidate deploy-gate lane (honua-server#4617). These tests
+    /// roll a real published Honua server image (the candidate) over a real previous image through
+    /// the self-hosted rolling backend, with a real Prometheus scraping the candidate, and inject
+    /// failures. They need both image references (<c>HONUA_CANDIDATE_IMAGE</c> and
+    /// <c>HONUA_PREVIOUS_IMAGE</c>), so they are kept out of the <c>CloudIntegration</c> and
+    /// <c>LocalSubstrate</c> filters and run only when a release or operator names the candidate;
+    /// every test <c>[SkippableFact]</c>-skips when the images or Docker are not available.
+    /// </summary>
+    public const string CandidateCertification = "CandidateCertification";
 }

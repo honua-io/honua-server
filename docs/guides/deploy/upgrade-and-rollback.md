@@ -218,6 +218,8 @@ At runtime, a reading only counts as evidence when it is present, finite, non-ne
 
 Warmup and bake windows start when the backend first reports the candidate serving traffic, not when the operation was created. That exposure time is stored on the operation, so a control-plane restart or lease hand-off resumes the same window rather than restarting it. There is no path on which missing data promotes a rollout: before exposure it holds until the exposure deadline, and after exposure it holds until warmup plus the evidence grace, then rolls back.
 
+The self-hosted rolling backend (`honua-yarp-rolling`) stages the candidate as a standby replica that serves no traffic until the proxy swaps to it, so its exposure starts at the cutover. Before the cutover, only the checks that need no candidate traffic run: the backend's standby health gate, plus `telemetry.healthz.url` and the golden query when you set them (point them at the standby replica). Those checks are bounded by `telemetry.exposure_deadline_seconds`: a standby that has not passed them by the deadline is rolled back without being activated, even if it becomes ready later. Error-rate, latency, and sample-floor metrics are evaluated from the cutover, inside the post-activation observation window below.
+
 ## Promotion requirements
 
 A rollout does not auto-promote (cut over to the new revision) until its **promotion gate** is satisfied. The gate is chosen with the `deployment.promotion_gate` parameter and defaults by target kind. This is independent of the automatic-rollback signals above — rollback still fires on a telemetry breach or an unhealthy probe regardless of the promotion gate.
@@ -251,6 +253,11 @@ reports the window as a `protection` object on the operation:
 | `recovering` | A rollback trigger fired and deterministic recovery to `protection.previousRevision` is in progress. |
 | `expired` | The window elapsed with no trigger; the deploy is fully committed and the previous revision's retained capacity has been retired. |
 | `unavailable` | Recovery (or retiring retained capacity) could not be proven; the operation moved to `ManualInterventionRequired` and needs an operator. |
+
+The window never commits on missing evidence. If the telemetry gate is still waiting for evidence when
+the window's deadline arrives, `protection.reasonCode` reads `telemetry-evidence-pending` and the
+operation stays in `observing`. It commits once the gate passes, and it rolls back once warmup plus
+`telemetry.evidence_grace_seconds` has elapsed without usable evidence.
 
 `protection.policyDigest` is a hash of the promotion/telemetry/rollback parameters in effect when the
 candidate was activated, so drifting that configuration mid-window is detectable; `protection.reasonCode`
