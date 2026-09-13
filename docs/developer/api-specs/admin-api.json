@@ -30798,6 +30798,23 @@
             "nullable": true,
             "additionalProperties": true,
             "description": "Catalog parity report produced by the Validating phase."
+          },
+          "fidelityVerdict": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "full-fidelity",
+              "unverified",
+              "incomplete"
+            ],
+            "description": "Migration fidelity verdict for the imported layer. `status` says whether the job finished; this says whether the migrated layer is proven equivalent to the source. Null until the job has run its fidelity evaluation; persisted on the final job record, including `needs-review` runs."
+          },
+          "fidelityDifferences": {
+            "type": "array",
+            "description": "Per-resource differences that produced `fidelityVerdict`, ordered by code then subject.",
+            "items": {
+              "$ref": "#/components/schemas/ImportMigrationFidelityDifference"
+            }
           }
         }
       },
