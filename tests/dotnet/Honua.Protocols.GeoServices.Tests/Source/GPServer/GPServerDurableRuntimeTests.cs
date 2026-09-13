@@ -193,6 +193,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
                 <GPValue xsi:type="tns:GPString"><Value>{Convert.ToBase64String(bytes.ToArray())}</Value></GPValue>
                 <GPValue xsi:type="tns:GPLong"><Value>3857</Value></GPValue></Values>
                 """;
+            arguments += GPServerSoapRequestFixtures.ArcPyDefaultControls;
             var result = await SendSoapAsync(client, operation, arguments);
             if (operation == "SubmitJob")
             {

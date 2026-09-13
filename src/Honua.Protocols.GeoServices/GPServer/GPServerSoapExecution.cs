@@ -20,7 +20,7 @@ internal static class GPServerSoapExecution
         => name is "SubmitJob" or "Execute" or "GetJobStatus" or "GetJobMessages"
             or "GetJobResult" or "GetJobToolName" or "CancelJob";
 
-    internal static IReadOnlyDictionary<string, string> ReadSubmission(XElement operation, GPTaskInfoResponse task)
+    internal static IReadOnlyDictionary<string, string> ReadSubmission(XElement operation, GPTaskInfoResponse task, bool scalarGeometryTask = false)
     {
         ValidateChildren(operation, "ToolName", "Values", "Options", "EnvironmentValues");
         RequiredScalar(operation, "ToolName");
@@ -55,7 +55,7 @@ internal static class GPServerSoapExecution
             parameters.Add(input.Name!, ReadValue(value, type));
         }
         ReadEnvironment(operation.Element("EnvironmentValues"), parameters,
-            task.ExecutionType == GPServerExecutionPolicy.SynchronousExecutionType &&
+            scalarGeometryTask &&
             (task.Parameters ?? []).Where(parameter => parameter.Direction == "esriGPParameterDirectionOutput")
                 .All(parameter => parameter.DataType is "GPString" or "GPDouble" or "GPLong" or "GPBoolean"));
         return parameters;
