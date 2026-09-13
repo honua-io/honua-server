@@ -99,6 +99,7 @@ jobs:
           python scripts/qualification/gp-candidate-binding.py \
             --manifest artifacts/gp-candidate/platform-manifest.yaml \
             --summary artifacts/gp-candidate/output-store-dr/summary.json \
+            --crash-summary artifacts/gp-candidate/crash-boundaries/summary.json \
             --output artifacts/gp-candidate/receipt.json
       - name: Retain executed receipts and findings
         if: always()

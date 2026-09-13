@@ -41,10 +41,11 @@ run_store_crash_boundary() {
     [[ "$(jq -r .status <<<"$before_record")" == running ]] || {
       scenario_fail "worker escaped the pre-terminal crash fence"; return 1; }
   fi
-  record_disruption "$disruption" "$target" inject
   if [[ "$disruption" == worker ]]; then
+    record_disruption worker "$target" SIGKILL
     compose kill -s SIGKILL worker >/dev/null || return 1
   else
+    record_disruption store "$target" hide-marker-and-bytes
     # Hide both the marker and the actual bytes; no synthetic Redis outage.
     outage_root="$receipt_root/.outage-$job"
     mkdir "$outage_root" || return 1
@@ -89,5 +90,7 @@ run_store_crash_boundary() {
     --slurpfile descriptor "$receipt_root/.$scenario.descriptor.json" \
     '{fence:$fence,job_before:$before,job_after:$after,inventory_before:$before_inventory,inventory_after:$after_inventory,sha256_before:$before_sha,sha256_after:$after_sha,result_package_before:$package_before,result_package_after:$package_after,descriptor:$descriptor[0]}' > "$scenario_evidence_file" || return 1
   record_attempt "$(jq -r .attemptCount <<<"$after_record")"
+  jq -n --arg sha "$after_sha" --argjson bytes "$(wc -c < "$content")" \
+    '{sha256:$sha,bytes:$bytes}' > "$scenario_state_file" || return 1
   write_receipt "$scenario" pass "" "$job" "$state" "$after_sha"
 }

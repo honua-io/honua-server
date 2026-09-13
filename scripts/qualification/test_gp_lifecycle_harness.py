@@ -59,6 +59,19 @@ class GpQualificationHarnessTests(unittest.TestCase):
         self.assertEqual("fail", receipts["output-store-dr"]["outcome"])
         self.assertEqual([], summary["missing_scenarios"])
 
+    def test_crash_preflight_never_qualifies_unexecuted_boundaries(self):
+        completed, receipts, summary = self.run_harness(
+            "crash-boundaries", HONUA_SERVER_IMAGE="unattested:latest"
+        )
+        self.assertNotEqual(0, completed.returncode)
+        self.assertEqual(8, summary["declared_scenario_count"])
+        self.assertEqual(8, summary["receipt_count"])
+        self.assertEqual([], summary["missing_scenarios"])
+        self.assertEqual(6, sum(name.startswith("crash-") for name in receipts))
+        for name, receipt in receipts.items():
+            if name.startswith("crash-"):
+                self.assertEqual("fail", receipt["outcome"])
+
     def test_result_semantics_follow_submitted_process_across_subshells(self):
         source = HARNESS.read_text(encoding="utf-8")
         functions = "\n".join(
