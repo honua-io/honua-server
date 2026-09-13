@@ -10,6 +10,10 @@
          GPServer / NAServer / Catalog / GeometryService). The largest
          protocol surface; the audit called it out as the most-entangled. -->
     <RootNamespace>Honua.Server.Tests.Features.Protocols.GeoServices</RootNamespace>
+    <!-- honua-server#4747: the test assembly supplies its own entry point so a test can re-run
+         the cloud-native writers in a child process with JSON reflection disabled, the way the
+         shipped server runs. See ReflectionDisabledCloudNativeProbe. -->
+    <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
 
   <ItemGroup>

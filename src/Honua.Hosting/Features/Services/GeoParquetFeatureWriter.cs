@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Apache.Arrow;
 using Apache.Arrow.Types;
@@ -306,7 +308,7 @@ public static partial class GeoParquetFeatureWriter
         var geometryTypesPart = isEmpty || resource.ReadGeometryType() == MetadataV2GeometryType.Mixed
             ? "[]"
             : geometryTypes is { Count: > 0 }
-                ? JsonSerializer.Serialize(geometryTypes.OrderBy(static type => type, StringComparer.Ordinal))
+                ? SerializeGeometryTypes(geometryTypes)
                 : "[]";
 
         // GeoParquet stores the column CRS as PROJJSON. EPSG:4326 output keeps the default
@@ -326,6 +328,36 @@ public static partial class GeoParquetFeatureWriter
         metadata[GeoMetadataKey] = geoJson;
 
         return metadata;
+    }
+
+    /// <summary>
+    /// Encodes a GeoParquet <c>geometry_types</c> value: a JSON array of the given type names,
+    /// sorted ordinally and JSON-escaped.
+    /// </summary>
+    /// <remarks>
+    /// Written with <see cref="Utf8JsonWriter"/> instead of the <c>JsonSerializer.Serialize</c>
+    /// overload that takes no type info. The shipped server sets
+    /// <c>JsonSerializerIsReflectionEnabledByDefault=false</c>, so that overload threw for every
+    /// page with a concrete geometry type, and <c>f=parquet</c> / <c>f=geoarrow</c> answered with a
+    /// 500 error envelope instead of a file (honua-server#4747).
+    /// </remarks>
+    public static string SerializeGeometryTypes(IEnumerable<string> geometryTypes)
+    {
+        ArgumentNullException.ThrowIfNull(geometryTypes);
+
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartArray();
+            foreach (var geometryType in geometryTypes.OrderBy(static type => type, StringComparer.Ordinal))
+            {
+                writer.WriteStringValue(geometryType);
+            }
+
+            writer.WriteEndArray();
+        }
+
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
     /// <summary>

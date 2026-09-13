@@ -746,6 +746,66 @@ public sealed class GeoArrowQueryFormatterTests
             ]
         };
 
+    /// <summary>
+    /// honua-server#4747: GeoArrow encoded <c>geometry_types</c> with the same reflection-based
+    /// serializer overload as GeoParquet, and unconditionally, so every <c>f=geoarrow</c> response
+    /// with geometry failed on the shipped server. This runs the formatter in a child process with
+    /// JSON reflection disabled and decodes the stream it produced.
+    /// </summary>
+    [Fact]
+    public async Task FormatAsGeoArrowAsync_WithReflectionDisabled_WritesConcreteGeometryTypesAndValues()
+    {
+        var run = await ReflectionDisabledCloudNativeProbe.RunAsync(ReflectionDisabledCloudNativeProbe.GeoArrowFormat);
+
+        run.StandardOutput.Should().Contain($"{ReflectionDisabledCloudNativeProbe.ReflectionStatePrefix}False",
+            "the probe is only meaningful when the child really runs without reflection. {0}", run.Transcript);
+        run.StandardOutput.Should().Contain($"{ReflectionDisabledCloudNativeProbe.CanaryPrefix}threw",
+            "a reflection-based serializer call must fail in the child, as it does on the image. {0}", run.Transcript);
+        run.ExitCode.Should().Be(0, "the formatter must not depend on reflection metadata. {0}", run.Transcript);
+
+        var rows = ReflectionDisabledCloudNativeProbe.Rows;
+        using var stream = new MemoryStream(run.Payload);
+        using var reader = new ArrowStreamReader(stream);
+        var batch = await reader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        batch!.Length.Should().Be(rows.Length);
+        reader.Schema.FieldsList.Select(f => f.Name).Should().Equal("objectid", "name", "population", "geometry");
+
+        var objectIds = batch.Column("objectid").Should().BeOfType<Int64Array>().Which;
+        var names = batch.Column("name").Should().BeOfType<StringArray>().Which;
+        var populations = batch.Column("population").Should().BeOfType<Int32Array>().Which;
+        var geometries = batch.Column("geometry").Should().BeOfType<BinaryArray>().Which;
+        for (var index = 0; index < rows.Length; index++)
+        {
+            var row = rows[index];
+            objectIds.GetValue(index).Should().Be(row.ObjectId);
+            names.GetString(index).Should().Be(row.Name);
+            populations.GetValue(index).Should().Be(row.Population);
+
+            var point = new WKBReader().Read(geometries.GetBytes(index).ToArray())
+                .Should().BeOfType<Point>().Which;
+            point.X.Should().BeApproximately(row.X, 1e-9);
+            point.Y.Should().BeApproximately(row.Y, 1e-9);
+            if (row.Z is { } z)
+            {
+                point.Coordinate.Z.Should().BeApproximately(z, 1e-9);
+            }
+            else
+            {
+                double.IsNaN(point.Coordinate.Z).Should().BeTrue("row {0} is a 2D point", row.ObjectId);
+            }
+        }
+
+        reader.Schema.GetFieldByName("geometry").Metadata["ARROW:extension:name"].Should().Be("geoarrow.wkb");
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geoDoc.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry");
+        var geometryColumn = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+        geometryColumn.GetProperty("encoding").GetString().Should().Be("WKB");
+        geometryColumn.GetProperty("geometry_types").EnumerateArray()
+            .Select(element => element.GetString()).Should().Equal("Point", "Point Z");
+    }
+
     private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)
         => CreateResource(fields);
 
