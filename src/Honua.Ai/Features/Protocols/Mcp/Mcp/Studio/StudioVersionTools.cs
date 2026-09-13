@@ -75,8 +75,10 @@ internal sealed class SaveStudioVersionTool(IGeoprocessingJobService jobService,
         var actor = ActorIdFor(authorization, principal);
         var receipt = await RequireMutationRuntime(httpContext).SaveVersionAsync(argument.DraftId, argument.Generation,
             argument.ChangeNote, actor, MutationContext(httpContext, principal, actor), cancellationToken).ConfigureAwait(false);
-        var generationAfter = receipt.Value is not null
-            ? (await lifecycle.GetDraftAsync(draft.DraftId, cancellationToken).ConfigureAwait(false))?.Generation
+        long? generationAfter = receipt.Value is not null
+            ? (await RequireAuthorizedDraftAsync(httpContext, principal, lifecycle, draft.DraftId,
+                StudioAuthorizationOperation.CreateVersion, OperatorOperation.Create, cancellationToken)
+                .ConfigureAwait(false)).Generation
             : null;
         Audit(principal, Name, draft.DraftId, draft.Generation, generationAfter);
         return McpToolHelpers.SuccessResult(new McpStudioSaveVersionOutput
