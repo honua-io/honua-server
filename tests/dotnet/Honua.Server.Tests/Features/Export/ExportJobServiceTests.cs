@@ -661,7 +661,8 @@ public sealed class ExportJobServiceTests
         var sut = services.GetRequiredService<IExportJobService>();
         var job = CreateJob(Guid.NewGuid().ToString("N"));
         await sut.StartAsync(job);
-        var processing = sut.ProcessQueuedJobAsync(job.JobId);
+        using var shutdown = new CancellationTokenSource();
+        var processing = sut.ProcessQueuedJobAsync(job.JobId, shutdown.Token);
         try
         {
             await reachedPhase.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -678,6 +679,21 @@ public sealed class ExportJobServiceTests
                 var notified = services.GetServices<IJobCancellationNotifier>().Count(notifier => notifier.Cancel(job.JobId));
                 notified.Should().Be(1, "the registered export worker must own user cancellation");
             }
+        }
+        catch
+        {
+            // A failing regression assertion must still release the worker and its scratch files.
+            shutdown.Cancel();
+            releaseUpload.TrySetResult();
+            try
+            {
+                await processing.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            catch (OperationCanceledException)
+            {
+                // Host-style shutdown is expected when testing a missing cancellation notifier.
+            }
+            throw;
         }
         finally
         {

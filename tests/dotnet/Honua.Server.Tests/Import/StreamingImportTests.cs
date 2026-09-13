@@ -1140,7 +1140,6 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_UpsertRepeatedKeys_UpdatesGeometryAndValuesWithoutDuplicatingRows()
     {
         var logicalName = "upsert_proof_" + Guid.NewGuid().ToString("N")[..12];

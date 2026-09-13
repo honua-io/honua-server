@@ -26,6 +26,7 @@ namespace Honua.Core.Features.FileImport.Services;
 internal sealed record JsonProcessingState
 {
     public bool InFeaturesArray { get; init; }
+    public bool AwaitingFeaturesArray { get; init; }
     public int FeatureDepth { get; init; }
     public bool IsCollectingFeature { get; init; }
     public int FeatureStartIndex { get; init; } = -1;
@@ -118,6 +119,15 @@ internal sealed class StreamingGeoJsonReader
                 // Utf8JsonReader treats it as an invalid start-of-value token otherwise.
                 if (firstChunk)
                 {
+                    // A stream may return fewer than the three bytes needed to recognize a BOM.
+                    if (data.Length < 3 && bytesRead > 0)
+                    {
+                        leftoverBuffer ??= MemoryPool.RentByteArray(3);
+                        data.Span.CopyTo(leftoverBuffer);
+                        leftoverLength = data.Length;
+                        if (combinedBuffer != null) MemoryPool.ReturnByteArray(combinedBuffer, clearArray: false);
+                        continue;
+                    }
                     firstChunk = false;
                     var span = data.Span;
                     if (span.Length >= 3 && span[0] == 0xEF && span[1] == 0xBB && span[2] == 0xBF)
@@ -318,6 +328,7 @@ internal sealed class StreamingGeoJsonReader
         var lastConsumed = 0;
 
         var inFeaturesArray = processingState.InFeaturesArray;
+        var awaitingFeaturesArray = processingState.AwaitingFeaturesArray;
         var featureDepth = processingState.FeatureDepth;
         var isCollectingFeature = processingState.IsCollectingFeature;
         var featureStartIndex = processingState.FeatureStartIndex;
@@ -345,15 +356,20 @@ internal sealed class StreamingGeoJsonReader
 
             lastConsumed = (int)reader.BytesConsumed;
 
-            if (reader.TokenType == JsonTokenType.PropertyName && reader.GetString() == "features" && !inFeaturesArray)
+            if (awaitingFeaturesArray)
             {
-                // Next token should be the start of the features array
-                if (reader.Read() && reader.TokenType == JsonTokenType.StartArray)
+                // Preserve this state when the property name and opening array arrive in different reads.
+                awaitingFeaturesArray = false;
+                if (reader.TokenType == JsonTokenType.StartArray)
                 {
                     inFeaturesArray = true;
                     featureDepth = reader.CurrentDepth;
-                    lastConsumed = (int)reader.BytesConsumed;
                 }
+            }
+            else if (reader.TokenType == JsonTokenType.PropertyName && reader.CurrentDepth == 1
+                && reader.GetString() == "features" && !inFeaturesArray)
+            {
+                awaitingFeaturesArray = true;
             }
             else if (inFeaturesArray)
             {
@@ -405,12 +421,14 @@ internal sealed class StreamingGeoJsonReader
         {
             if (featureBuffer == null && featureStartIndex >= 0 && featureStartIndex < data.Length)
             {
-                featureBuffer = new ArrayBufferWriter<byte>(data.Length - featureStartIndex);
-                featureBuffer.Write(data.Span.Slice(featureStartIndex));
+                featureBuffer = new ArrayBufferWriter<byte>(Math.Max(1, lastConsumed - featureStartIndex));
+                // Only retain consumed tokens here. The incomplete token suffix is already
+                // carried by leftoverBuffer; copying it twice corrupts every spanning feature.
+                featureBuffer.Write(data.Span.Slice(featureStartIndex, lastConsumed - featureStartIndex));
             }
             else
             {
-                BufferFeatureBytes(data.Length);
+                BufferFeatureBytes(lastConsumed);
             }
 
             // A single feature object that spans many chunks accumulates here across
@@ -430,6 +448,7 @@ internal sealed class StreamingGeoJsonReader
         var newProcessingState = new JsonProcessingState
         {
             InFeaturesArray = inFeaturesArray,
+            AwaitingFeaturesArray = awaitingFeaturesArray,
             FeatureDepth = featureDepth,
             IsCollectingFeature = isCollectingFeature,
             FeatureStartIndex = featureStartIndex,

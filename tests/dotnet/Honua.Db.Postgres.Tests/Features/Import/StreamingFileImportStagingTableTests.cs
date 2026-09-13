@@ -578,7 +578,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
     [IntegrationTest]
     public async Task ImportFileAsync_LargeGeneratedFixture_BoundsRetainedMemoryAndPersistsEveryValue()
     {
-        const int count = 30_000;
+        const int count = 20_000;
         var schema = await fixture.CreateIsolatedSchemaAsync("streaming_memory");
         var filePath = Path.Join(Path.GetTempPath(), $"import-memory-{Guid.NewGuid():N}.geojson");
         try
@@ -612,7 +612,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                     stream.Position.Should().BeLessThan(stream.Length / 2,
                         "the first committed batch must not require buffering the entire source");
                 }
-                if (value.FeaturesProcessed > 0 && value.FeaturesProcessed % 5000 == 0)
+                if (value.FeaturesProcessed > 0 && value.FeaturesProcessed % 2500 == 0)
                 {
                     peakRetained = Math.Max(peakRetained, GC.GetTotalMemory(forceFullCollection: true));
                     samples++;
@@ -626,8 +626,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             }, progress);
             result.Success.Should().BeTrue(result.ErrorMessage);
             result.FeatureCount.Should().Be(count);
-            samples.Should().BeGreaterThanOrEqualTo(6);
-            // Source is >120 MB; materializing all parsed features would retain >240 MB of strings.
+            samples.Should().BeGreaterThanOrEqualTo(8);
+            // Source is >80 MB (below the 100 MB preflight cap); materializing all parsed features would retain >160 MB of strings.
             // Allow 64 MB for JIT, buffers and provider caches, below the default 100 MB import target.
             (peakRetained - baseline).Should().BeLessThan(64L * 1024 * 1024);
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
