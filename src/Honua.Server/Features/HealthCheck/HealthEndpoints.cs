@@ -31,8 +31,12 @@ internal static class HealthEndpoints
     /// </summary>
     public static void MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        // Probe answers must reflect the live process on every request (honua-server#4805): the
+        // entitled output-cache base policy otherwise stores the anonymous 200 for its default
+        // expiration, so a store loss or dependency outage stays invisible to orchestration.
         _ = endpoints.MapMethods("/healthz/live", [HttpMethods.Get], HandleLivenessProbe)
             .WithDisplayName("Liveness Probe")
+            .CacheOutput(static policy => policy.NoCache())
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
         _ = endpoints.MapMethods("/healthz/live", NonGetMethods, HandleGetMethodNotAllowed)
             .WithDisplayName("Liveness Probe Method Not Allowed")
@@ -40,6 +44,7 @@ internal static class HealthEndpoints
 
         _ = endpoints.MapMethods("/healthz/ready", [HttpMethods.Get], HandleReadinessProbe)
             .WithDisplayName("Readiness Probe")
+            .CacheOutput(static policy => policy.NoCache())
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
         _ = endpoints.MapMethods("/healthz/ready", NonGetMethods, HandleGetMethodNotAllowed)
             .WithDisplayName("Readiness Probe Method Not Allowed")
@@ -64,6 +69,7 @@ internal static class HealthEndpoints
     {
         context.Response.StatusCode = 200;
         context.Response.ContentType = "text/plain; charset=utf-8";
+        context.Response.Headers.CacheControl = "no-store";
         await context.Response.WriteAsync("Healthy");
     }
 
@@ -218,6 +224,12 @@ internal static class HealthEndpoints
     {
         context.Response.StatusCode = result.StatusCode;
         context.Response.ContentType = "text/plain; charset=utf-8";
+        context.Response.Headers.CacheControl = "no-store";
+        if (!result.IsReady && result.ReasonCode is { } reasonCode)
+        {
+            context.Response.Headers[ReadinessReasonCodes.HeaderName] = reasonCode;
+        }
+
         await context.Response.WriteAsync(result.IsReady ? "Ready" : "Not Ready");
     }
 

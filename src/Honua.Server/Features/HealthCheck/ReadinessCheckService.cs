@@ -66,6 +66,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
     public async Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
     {
         var currentCheckName = "Database";
+        var currentReasonCode = ReadinessReasonCodes.DatabaseUnavailable;
         try
         {
             // Durable job substrate (honua-server#4502): an unattested Redis is healthy-but-degraded,
@@ -85,17 +86,17 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
 
             if (_migrationState.IsFailed)
             {
-                return ReadinessResult.NotReady("Database migrations failed");
+                return ReadinessResult.NotReady("Database migrations failed", ReadinessReasonCodes.MigrationsFailed);
             }
 
             if (_migrationState.IsRunning)
             {
-                return ReadinessResult.NotReady("Database migrations in progress");
+                return ReadinessResult.NotReady("Database migrations in progress", ReadinessReasonCodes.MigrationsInProgress);
             }
 
             if (!_migrationState.IsReady)
             {
-                return ReadinessResult.NotReady("Database migrations not completed");
+                return ReadinessResult.NotReady("Database migrations not completed", ReadinessReasonCodes.MigrationsNotCompleted);
             }
 
             // Check database health
@@ -107,7 +108,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
             {
                 // Log unhealthy database without exception
                 Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Unhealthy", databaseStopwatch.Elapsed.TotalMilliseconds);
-                return ReadinessResult.NotReady("Database unavailable");
+                return ReadinessResult.NotReady("Database unavailable", ReadinessReasonCodes.DatabaseUnavailable);
             }
 
             Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Healthy", databaseStopwatch.Elapsed.TotalMilliseconds);
@@ -116,6 +117,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
             if (_cacheHealthChecker != null)
             {
                 currentCheckName = "Cache";
+                currentReasonCode = ReadinessReasonCodes.CacheUnavailable;
                 var cacheStopwatch = Stopwatch.StartNew();
                 bool isCacheHealthy = await _cacheHealthChecker.IsCacheHealthyAsync(cancellationToken);
                 cacheStopwatch.Stop();
@@ -126,13 +128,14 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
 
                 if (!isCacheHealthy)
                 {
-                    return ReadinessResult.NotReady("Cache unavailable");
+                    return ReadinessResult.NotReady("Cache unavailable", ReadinessReasonCodes.CacheUnavailable);
                 }
             }
 
             if (_featureChangeEventStoreHealth is not null)
             {
                 currentCheckName = "Feature-change event storage";
+                currentReasonCode = ReadinessReasonCodes.FeatureChangeEventStorageUnavailable;
                 var featureChangeStoreStopwatch = Stopwatch.StartNew();
                 var canPersistEvents = _featureChangeEventStoreHealth.CanPersistEvents;
                 featureChangeStoreStopwatch.Stop();
@@ -144,7 +147,9 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
                         "FeatureChangeEventStore",
                         "Unhealthy",
                         featureChangeStoreStopwatch.Elapsed.TotalMilliseconds);
-                    return ReadinessResult.NotReady("Feature-change event storage unavailable");
+                    return ReadinessResult.NotReady(
+                        "Feature-change event storage unavailable",
+                        ReadinessReasonCodes.FeatureChangeEventStorageUnavailable);
                 }
 
                 // In-memory single-node mode (no Redis configured) is healthy-but-degraded,
@@ -165,26 +170,31 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
             var now = DateTimeOffset.UtcNow;
 
             currentCheckName = "Alert dispatch";
+            currentReasonCode = ReadinessReasonCodes.AlertDispatchStalled;
             if (IsAlertDispatchStalled(now, out var dispatchReason))
             {
                 Log.HealthCheckExecuted(_logger, "AlertDispatch", "Unhealthy", 0);
-                return ReadinessResult.NotReady(dispatchReason);
+                return ReadinessResult.NotReady(dispatchReason, ReadinessReasonCodes.AlertDispatchStalled);
             }
 
             currentCheckName = "Alert evaluation";
+            currentReasonCode = ReadinessReasonCodes.AlertEvaluationStalled;
             if (IsAlertEvaluationStalled(now, out var evaluationReason))
             {
                 Log.HealthCheckExecuted(_logger, "AlertEvaluation", "Unhealthy", 0);
-                return ReadinessResult.NotReady(evaluationReason);
+                return ReadinessResult.NotReady(evaluationReason, ReadinessReasonCodes.AlertEvaluationStalled);
             }
 
             if (_outputStoreHealth is not null)
             {
                 currentCheckName = "Referenced output store";
+                currentReasonCode = ReadinessReasonCodes.GeoprocessingOutputStoreAttestationUnavailable;
                 var outputHealth = await _outputStoreHealth.CheckHealthAsync(new HealthCheckContext(), cancellationToken);
                 if (outputHealth.Status != HealthStatus.Healthy)
                 {
-                    return ReadinessResult.NotReady("Referenced output store attestation unavailable");
+                    return ReadinessResult.NotReady(
+                        "Referenced output store attestation unavailable",
+                        ReadinessReasonCodes.GeoprocessingOutputStoreAttestationUnavailable);
                 }
             }
 
@@ -202,7 +212,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         {
             var failureMessage = $"{currentCheckName} health check failed";
             Log.DatabaseConnectionFailed(_logger, $"{failureMessage}: {ex.Message}", ex);
-            return ReadinessResult.NotReady(failureMessage, ex);
+            return ReadinessResult.NotReady(failureMessage, currentReasonCode, ex);
         }
     }
 
