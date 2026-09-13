@@ -7000,7 +7000,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 87,
+      "line": 114,
       "language": "json"
     },
     {

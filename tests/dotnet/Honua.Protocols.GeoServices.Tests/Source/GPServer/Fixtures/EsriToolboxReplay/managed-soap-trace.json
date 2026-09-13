@@ -1,0 +1,116 @@
+{
+  "source": "working-tree-managed-diagnostic",
+  "image": "sha256:1b4600cce5f2d885ec54b8d18ca3329fd27fe08c6ce8446961caf2f36a855788",
+  "workflow_run": "https://github.com/honua-io/honua-esri-compat/actions/runs/34741056478",
+  "capture_window_utc": [
+    "2026-09-13T05:44:00Z",
+    "2026-09-13T05:50:00Z"
+  ],
+  "sanitization": "Headers and query strings omitted; request text replaced with [value], except the six named ArcPy default environment controls and result options. One row per distinct SOAP operation/status retained.",
+  "operations": [
+    {
+      "method": "POST",
+      "path": "/services",
+      "operation": "{http://www.esri.com/schemas/ArcGIS/9.0}GetMessageVersion",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/services",
+      "operation": "{http://www.esri.com/schemas/ArcGIS/9.0}GetMessageFormats",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/services/desktop_ui_features/GPServer",
+      "operation": "{http://www.esri.com/schemas/ArcGIS/10.8}GetToolInfos",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/services/desktop_ui_features/GPServer",
+      "operation": "{http://www.esri.com/schemas/ArcGIS/10.8}GetExecutionType",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/services/desktop_ui_features/GPServer",
+      "operation": "{http://www.esri.com/schemas/ArcGIS/10.8}GetResultMapServerName",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/services/desktop_ui_features/GPServer",
+      "operation": "{http://www.esri.com/schemas/ArcGIS/10.8}SubmitJob",
+      "status": 200,
+      "shape": "<ns0:Body xmlns:ns0=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"http://www.esri.com/schemas/ArcGIS/10.8\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><ns1:SubmitJob><ToolName>[value]</ToolName><Values xsi:type=\"tns:GPValues\"><GPValue xsi:type=\"tns:GPString\"><Value>[value]</Value></GPValue><GPValue xsi:type=\"tns:GPLong\"><Value>[value]</Value></GPValue></Values><Options xsi:type=\"tns:GPResultOptions\"><DensifyFeatures>[value]</DensifyFeatures><TransportType>[value]</TransportType><ReturnData>[value]</ReturnData><UpdateValues>[value]</UpdateValues></Options><EnvironmentValues xsi:type=\"tns:PropertySet\"><PropertyArray xsi:type=\"tns:ArrayOfPropertySetProperty\"><PropertySetProperty xsi:type=\"tns:PropertySetProperty\"><Key>[value]</Key><Value xsi:type=\"tns:GPString\"><Value>[value]</Value></Value></PropertySetProperty><PropertySetProperty xsi:type=\"tns:PropertySetProperty\"><Key>[value]</Key><Value xsi:type=\"tns:GPString\"><Value>[value]</Value></Value></PropertySetProperty><PropertySetProperty xsi:type=\"tns:PropertySetProperty\"><Key>[value]</Key><Value xsi:type=\"tns:GPRandomNumberGenerator\"><Value>[value]</Value><GPRandomNumberGenerator>[value]</GPRandomNumberGenerator></Value></PropertySetProperty><PropertySetProperty xsi:type=\"tns:PropertySetProperty\"><Key>[value]</Key><Value xsi:type=\"tns:GPLong\"><Value>[value]</Value></Value></PropertySetProperty><PropertySetProperty xsi:type=\"tns:PropertySetProperty\"><Key>[value]</Key><Value xsi:type=\"tns:GPString\"><Value>[value]</Value></Value></PropertySetProperty><PropertySetProperty xsi:type=\"tns:PropertySetProperty\"><Key>[value]</Key><Value xsi:type=\"tns:GPString\"><Value>[value]</Value></Value></PropertySetProperty></PropertyArray></EnvironmentValues></ns1:SubmitJob></ns0:Body>",
+      "controls": {
+        "options": {
+          "DensifyFeatures": "false",
+          "TransportType": "esriGDSTransportTypeUrl",
+          "ReturnData": "false",
+          "UpdateValues": "true"
+        },
+        "environment": {
+          "outputZFlag": [
+            "Same As Input"
+          ],
+          "outputMFlag": [
+            "Same As Input"
+          ],
+          "randomGenerator": [
+            "0",
+            "ACM599"
+          ],
+          "autoCommit": [
+            "1000"
+          ],
+          "cellSizeProjectionMethod": [
+            "CONVERT_UNITS"
+          ],
+          "nodata": [
+            "NONE"
+          ]
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/services/desktop_ui_features/GPServer",
+      "operation": "{http://www.esri.com/schemas/ArcGIS/10.8}GetJobMessages",
+      "status": 200,
+      "shape": "<ns0:Body xmlns:ns0=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"http://www.esri.com/schemas/ArcGIS/10.8\"><ns1:GetJobMessages><JobID>[value]</JobID></ns1:GetJobMessages></ns0:Body>",
+      "controls": {
+        "options": {},
+        "environment": {}
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/services/desktop_ui_features/GPServer",
+      "operation": "{http://www.esri.com/schemas/ArcGIS/10.8}GetJobStatus",
+      "status": 200,
+      "shape": "<ns0:Body xmlns:ns0=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"http://www.esri.com/schemas/ArcGIS/10.8\"><ns1:GetJobStatus><JobID>[value]</JobID></ns1:GetJobStatus></ns0:Body>",
+      "controls": {
+        "options": {},
+        "environment": {}
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/services/desktop_ui_features/GPServer",
+      "operation": "{http://www.esri.com/schemas/ArcGIS/10.8}GetJobResult",
+      "status": 200,
+      "shape": "<ns0:Body xmlns:ns0=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"http://www.esri.com/schemas/ArcGIS/10.8\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><ns1:GetJobResult><JobID>[value]</JobID><Options xsi:type=\"tns:GPResultOptions\"><DensifyFeatures>[value]</DensifyFeatures><TransportType>[value]</TransportType><ReturnData>[value]</ReturnData><UpdateValues>[value]</UpdateValues></Options></ns1:GetJobResult></ns0:Body>",
+      "controls": {
+        "options": {
+          "DensifyFeatures": "false",
+          "TransportType": "esriGDSTransportTypeUrl",
+          "ReturnData": "false",
+          "UpdateValues": "true"
+        },
+        "environment": {}
+      }
+    }
+  ]
+}

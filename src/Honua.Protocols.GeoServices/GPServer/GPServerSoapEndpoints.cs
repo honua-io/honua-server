@@ -12,7 +12,7 @@ using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
 namespace Honua.Protocols.GeoServices.GPServer;
 
 /// <summary>
-/// ArcGIS SOAP discovery adapter over the same authorized process catalog as
+/// ArcGIS SOAP adapter over the same authorized process catalog as
 /// GPServer REST. Execution must use the canonical job runtime.
 /// </summary>
 internal static class GPServerSoapEndpoints
@@ -22,7 +22,7 @@ internal static class GPServerSoapEndpoints
         endpoints.MapPost("/services/{serviceId}/GPServer", HandleRequestAsync)
             .WithName("ArcGisSoapGPServer")
             .WithDisplayName("ArcGIS SOAP GPServer")
-            .WithSummary("Discover GPServer tasks through ArcGIS SOAP")
+            .WithSummary("Discover and execute GPServer tasks through ArcGIS SOAP")
             .WithTags("GPServer")
             .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
@@ -59,6 +59,11 @@ internal static class GPServerSoapEndpoints
             if (!validation.IsValid)
             {
                 return Complete(scope, CreateSoapFaultFromResult(validation.ErrorResult!, "GP service was not found or is not accessible.", soap));
+            }
+
+            if (GPServerSoapExecution.IsExecutionOperation(name))
+            {
+                return Complete(scope, await GPServerEndpoints.HandleSoapExecutionAsync(context, operation, soap, ct).ConfigureAwait(false));
             }
 
             var catalog = context.RequestServices.GetRequiredService<IProcessCatalog>();

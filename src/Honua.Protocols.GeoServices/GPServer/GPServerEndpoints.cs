@@ -23,7 +23,7 @@ namespace Honua.Protocols.GeoServices.GPServer;
 /// Maps GeoServices GPServer REST endpoints as a protocol adapter
 /// over the canonical process runtime.
 /// </summary>
-internal static class GPServerEndpoints
+internal static partial class GPServerEndpoints
 {
     private const string RouteBase = "/rest/services/{serviceId}/GPServer";
     private const string ProtocolName = "GPServer";
@@ -277,7 +277,8 @@ internal static class GPServerEndpoints
             contentType: "application/json");
     }
 
-    private static async Task<IResult> HandleSubmitJob(HttpContext context, CancellationToken ct)
+    private static async Task<IResult> HandleSubmitJob(HttpContext context, CancellationToken ct,
+        Func<IReadOnlyDictionary<string, string>>? readSoapParameters = null)
     {
         ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
@@ -303,13 +304,15 @@ internal static class GPServerEndpoints
                 OperatorOperation.Execute,
                 ct).ConfigureAwait(false);
 
-            var contentTypeError = ValidateFormPostContentType(context);
+            var contentTypeError = readSoapParameters is null ? ValidateFormPostContentType(context) : null;
             if (contentTypeError is not null)
             {
                 return contentTypeError;
             }
 
-            var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+            var parameters = readSoapParameters is null
+                ? await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct)
+                : readSoapParameters();
             var formatError = ValidateJsonFormat(context, parameters);
             if (formatError != null)
             {
@@ -379,7 +382,8 @@ internal static class GPServerEndpoints
         }
     }
 
-    private static async Task<IResult> HandleExecute(HttpContext context, CancellationToken ct)
+    private static async Task<IResult> HandleExecute(HttpContext context, CancellationToken ct,
+        Func<IReadOnlyDictionary<string, string>>? readSoapParameters = null)
     {
         ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
@@ -414,13 +418,15 @@ internal static class GPServerEndpoints
                 OperatorOperation.Execute,
                 ct).ConfigureAwait(false);
 
-            var contentTypeError = ValidateFormPostContentType(context);
+            var contentTypeError = readSoapParameters is null ? ValidateFormPostContentType(context) : null;
             if (contentTypeError is not null)
             {
                 return contentTypeError;
             }
 
-            var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+            var parameters = readSoapParameters is null
+                ? await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct)
+                : readSoapParameters();
             var formatError = ValidateJsonFormat(context, parameters);
             if (formatError != null)
             {
@@ -886,6 +892,39 @@ internal static class GPServerEndpoints
         return true;
     }
 
+    private static GPJobMessage[] BuildJobMessages(ExecutionJobRecord job)
+    {
+        var messages = new List<GPJobMessage>();
+        if (job.CurrentPhase != null)
+        {
+            messages.Add(new GPJobMessage
+            {
+                Type = "esriJobMessageTypeInformative",
+                Description = job.CurrentPhase
+            });
+        }
+
+        foreach (var warning in job.Warnings)
+        {
+            messages.Add(new GPJobMessage
+            {
+                Type = "esriJobMessageTypeWarning",
+                Description = warning
+            });
+        }
+
+        if (job.ErrorMessage != null)
+        {
+            messages.Add(new GPJobMessage
+            {
+                Type = "esriJobMessageTypeError",
+                Description = job.ErrorMessage
+            });
+        }
+
+        return [.. messages];
+    }
+
     private static async Task<IResult> HandleJobStatus(HttpContext context, CancellationToken ct)
     {
         ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -929,33 +968,7 @@ internal static class GPServerEndpoints
             var esriStatus = GPServerStatusMapping.ToEsriJobStatus(job.Status);
             GPServerLog.JobStatusPolled(logger, jobId, esriStatus);
 
-            var messages = new List<GPJobMessage>();
-            if (job.CurrentPhase != null)
-            {
-                messages.Add(new GPJobMessage
-                {
-                    Type = "esriJobMessageTypeInformative",
-                    Description = job.CurrentPhase
-                });
-            }
-
-            foreach (var warning in job.Warnings)
-            {
-                messages.Add(new GPJobMessage
-                {
-                    Type = "esriJobMessageTypeWarning",
-                    Description = warning
-                });
-            }
-
-            if (job.ErrorMessage != null)
-            {
-                messages.Add(new GPJobMessage
-                {
-                    Type = "esriJobMessageTypeError",
-                    Description = job.ErrorMessage
-                });
-            }
+            var messages = BuildJobMessages(job);
 
             // Include result references when job succeeded
             Dictionary<string, GPJobResultRef>? results = null;

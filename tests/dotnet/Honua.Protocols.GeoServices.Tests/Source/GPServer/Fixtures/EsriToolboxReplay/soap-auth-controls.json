@@ -1,0 +1,28 @@
+{
+  "image": "sha256:1b4600cce5f2d885ec54b8d18ca3329fd27fe08c6ce8446961caf2f36a855788",
+  "source": "working-tree-managed-diagnostic",
+  "tls_verified": true,
+  "checks": [
+    {
+      "case": "anonymous",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "passed": true
+    },
+    {
+      "case": "invalid-key",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "passed": true
+    },
+    {
+      "case": "authorized-invalid-parameters",
+      "expected_status": 400,
+      "actual_status": 400,
+      "soap_fault": true,
+      "passed": true
+    }
+  ]
+}

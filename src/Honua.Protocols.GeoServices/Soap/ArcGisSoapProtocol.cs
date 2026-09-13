@@ -98,7 +98,7 @@ internal static class ArcGisSoapProtocol
         XNamespace soap,
         XNamespace operationNamespace,
         string responseName,
-        XElement result)
+        XElement? result)
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         XNamespace xsd = XmlSchemaNamespace;

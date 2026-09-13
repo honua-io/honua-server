@@ -3464,7 +3464,7 @@
     },
     {
       "surfaceId": "gpserver-soap-discovery",
-      "displayName": "GeoServices SOAP GPServer Discovery",
+      "displayName": "GeoServices SOAP GPServer Discovery and Execution",
       "surfaceKind": "http-route-family",
       "protocol": "GeoServices SOAP GPServer",
       "canonicalIdentifier": "/services/{serviceId}/GPServer",
@@ -3475,13 +3475,20 @@
       ],
       "endpointContains": [],
       "operationKeys": [
+        "GPServer::CancelJob",
+        "GPServer::Execute",
         "GPServer::GetExecutionType",
+        "GPServer::GetJobMessages",
+        "GPServer::GetJobResult",
+        "GPServer::GetJobStatus",
+        "GPServer::GetJobToolName",
         "GPServer::GetResultMapServerName",
         "GPServer::GetTaskInfos",
         "GPServer::GetTaskNames",
         "GPServer::GetToolInfo",
         "GPServer::GetToolInfos",
-        "GPServer::GetToolNames"
+        "GPServer::GetToolNames",
+        "GPServer::SubmitJob"
       ],
       "proofs": [
         {
@@ -3490,6 +3497,21 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#4614",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "SOAP scalar Execute and SubmitJob use the real canonical Redis job runtime and production geometry executor, independently asserting rectangle area 3 * 4 = 12 and all measure/CRS metadata. Adapter regressions cover service/process authorization, ownership and route binding, metadata reads independent of result storage, terminal failure faults, result loading and truthful cancellation outcomes. Installed SDK/ArcPy receipts are retained as diagnostic observations; new-candidate and native Pro desktop certification remain pending.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerDurableRuntimeTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapEndpointsTests.Execution.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapExecutionTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/README.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
