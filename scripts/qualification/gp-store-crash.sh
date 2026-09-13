@@ -71,9 +71,9 @@ run_store_crash_boundary() {
     release_barrier "$job" "$barrier"
   done
   unset HONUA_GP_QUALIFICATION_BARRIER_ROOT HONUA_GP_WORKER_REDIS
-  compose up -d --force-recreate worker >/dev/null || return 1
   compose restart server server-peer redis postgres >/dev/null || return 1
   wait_ready && wait_peer_ready || return 1
+  compose up -d --force-recreate worker >/dev/null || return 1
   record_disruption "$disruption" "$target" recovered
   terminal="$(wait_terminal "$job")" || { scenario_fail "job did not converge after the crash"; return 1; }
   state="$(jq -r .status <<<"$terminal")"
