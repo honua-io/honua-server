@@ -52,12 +52,12 @@ internal sealed class ImageServerTileExportProducer(IServiceScopeFactory scopeFa
 
         var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, descriptor.MosaicRule);
         var rasterFormat = ResolveRasterFormat(plan.TileImageFormat);
-        var timestamp = ResolveTimestamp(descriptor.TimeSelection);
+        var (timestamp, timeStart) = ResolveTimeSelection(descriptor.TimeSelection);
 
         await TileExportPackagePipeline.WriteAsync(
             plan,
             destination,
-            RenderTilesAsync(rasterStore, plan, layerId, mergeStrategy, rasterFormat, timestamp, cancellationToken),
+            RenderTilesAsync(rasterStore, plan, layerId, mergeStrategy, rasterFormat, timestamp, timeStart, cancellationToken),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -68,6 +68,7 @@ internal sealed class ImageServerTileExportProducer(IServiceScopeFactory scopeFa
         RasterMergeStrategy mergeStrategy,
         RasterFormat rasterFormat,
         DateTimeOffset? timestamp,
+        DateTimeOffset? timeStart,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         // The grid planner yields coordinates in canonical bundle order without materializing the
@@ -78,7 +79,7 @@ internal sealed class ImageServerTileExportProducer(IServiceScopeFactory scopeFa
             var envelope = CreateTileEnvelope(tile.Level, tile.Row, tile.Column);
             var selected = await rasterStore.QueryRastersAsync(
                 layerId,
-                new RasterSelectionQuery { Geometry = envelope, GeometrySrid = 3857, Timestamp = timestamp },
+                new RasterSelectionQuery { Geometry = envelope, GeometrySrid = 3857, Timestamp = timestamp, TimeStart = timeStart },
                 cancellationToken).ConfigureAwait(false);
             if (selected.Length == 0)
             {
@@ -117,8 +118,10 @@ internal sealed class ImageServerTileExportProducer(IServiceScopeFactory scopeFa
         _ => RasterFormat.PNG
     };
 
-    private static DateTimeOffset? ResolveTimestamp(string? timeSelection)
-        => ImageServerMosaicHelpers.TryParseTime(timeSelection, out var timestamp, out _) ? timestamp : null;
+    private static (DateTimeOffset? Timestamp, DateTimeOffset? TimeStart) ResolveTimeSelection(string? timeSelection)
+        => ImageServerMosaicHelpers.TryParseTime(timeSelection, out var timestamp, out var timeStart, out _)
+            ? (timestamp, timeStart)
+            : (null, null);
 
     // Web Mercator (EPSG:3857) tile envelope in WKB, matching the synchronous exportTiles handler.
     private static byte[] CreateTileEnvelope(int level, int row, int col)

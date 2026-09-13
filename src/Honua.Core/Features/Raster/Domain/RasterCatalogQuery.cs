@@ -243,9 +243,16 @@ public sealed record RasterCatalogQuery
     /// Optional temporal instant applying "newest batch" snapshot semantics: only rasters whose
     /// effective acquisition (acquisition date, falling back to created-at) equals the single
     /// most-recent effective acquisition across the layer at or before this instant match. When no
-    /// acquisition is at or before the instant, nothing matches.
+    /// acquisition is at or before the instant, nothing matches. For an Esri <c>start,end</c> time
+    /// extent this is the extent end (or <c>null</c> for an open end).
     /// </summary>
     public DateTimeOffset? Timestamp { get; init; }
+
+    /// <summary>
+    /// Optional start of an Esri <c>start,end</c> time extent: the newest-batch acquisition must also
+    /// be at or after this instant. When no acquisition falls inside the window, nothing matches.
+    /// </summary>
+    public DateTimeOffset? TimeStart { get; init; }
 
     /// <summary>Zero-based paging offset. Ignored when <see cref="Limit"/> is <c>null</c>.</summary>
     public int Offset { get; init; }

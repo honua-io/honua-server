@@ -114,13 +114,13 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 return StandardErrorHelpers.CreateBadRequest(context, bandIdsError ?? "Invalid bandIds.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, timeError ?? "Invalid time");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -189,6 +189,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                     new RasterSelectionQuery
                     {
                         Timestamp = timestamp,
+                        TimeStart = timeStart,
                         Geometry = selectionGeometry,
                         GeometrySrid = selectionSrid,
                     },

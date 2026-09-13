@@ -14,6 +14,16 @@ public readonly record struct RasterQuery
     public RasterClipRegion? ClipRegion { get; init; }
 
     /// <summary>
+    /// When <c>true</c> and both <see cref="ClipRegion"/> and explicit output dimensions are set,
+    /// the exported image covers the clip region's envelope exactly (the Esri exportImage
+    /// <c>bbox</c> contract): the raster is warped onto an <see cref="OutputWidth"/> x
+    /// <see cref="OutputHeight"/> grid spanning that envelope in the output SRID, and pixels outside
+    /// the raster footprint are NoData. When <c>false</c> the output covers only the intersection of
+    /// the clip region and the raster (trim semantics).
+    /// </summary>
+    public bool CoverClipExtent { get; init; }
+
+    /// <summary>
     /// Optional additional clip region from a renderingRule <c>Clip</c> raster function.
     /// Applied as a second mask after <see cref="ClipRegion"/> so a non-rectangular
     /// area-of-interest can refine the output window. When <c>null</c> no extra clip applies.

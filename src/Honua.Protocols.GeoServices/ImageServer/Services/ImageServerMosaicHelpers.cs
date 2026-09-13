@@ -12,9 +12,24 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 internal static class ImageServerMosaicHelpers
 {
-    internal static bool TryParseTime(string? value, out DateTimeOffset? timestamp, out string? error)
+    /// <summary>
+    /// Parses the Esri ImageServer <c>time</c> parameter: <c>time=&lt;timeInstant&gt;</c> or
+    /// <c>time=&lt;startTime&gt;,&lt;endTime&gt;</c>, where each value is epoch milliseconds (the
+    /// form the service advertises in <c>timeInfo.timeExtent</c>) or an ISO 8601 instant and either
+    /// extent bound may be <c>null</c>/empty for an open interval. An instant is returned in
+    /// <paramref name="timestamp"/> with a null <paramref name="timeStart"/>; an extent returns its
+    /// end bound in <paramref name="timestamp"/> and its start bound in <paramref name="timeStart"/>.
+    /// Shares <see cref="GeoServicesTemporalQueryBuilder.TryParseTimeParameter"/> with
+    /// MapServer/FeatureServer so every GeoServices surface accepts the same values.
+    /// </summary>
+    internal static bool TryParseTime(
+        string? value,
+        out DateTimeOffset? timestamp,
+        out DateTimeOffset? timeStart,
+        out string? error)
     {
         timestamp = null;
+        timeStart = null;
         error = null;
 
         if (string.IsNullOrWhiteSpace(value))
@@ -24,31 +39,32 @@ internal static class ImageServerMosaicHelpers
 
         // Esri clients send time=null (and the ArcGIS JS API sends an empty value) to mean
         // "no temporal filter / all times". Treat the literal token as the absence of a time
-        // constraint rather than attempting to parse it as an ISO 8601 instant.
-        if (string.Equals(value.Trim(), "null", StringComparison.OrdinalIgnoreCase))
+        // constraint rather than attempting to parse it as an instant.
+        var trimmed = value.Trim();
+        if (string.Equals(trimmed, "null", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
-        if (value.Contains(',') || value.Contains('/'))
+        if (!GeoServicesTemporalQueryBuilder.TryParseTimeParameter(trimmed, out var start, out var end))
         {
-            error = "Only single instant timestamps are supported for raster temporal mosaics.";
+            error = $"Invalid time value '{value}'. Use an epoch-millisecond or ISO 8601 instant, " +
+                "or a '<startTime>,<endTime>' extent whose start is not after its end.";
             return false;
         }
 
-        if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+        if (trimmed.Contains(','))
         {
-            error = $"Invalid time value '{value}'. Use an ISO 8601 instant.";
-            return false;
+            timeStart = start;
         }
 
-        timestamp = parsed;
+        timestamp = end;
         return true;
     }
 
-    internal static IResult? RequireTemporalMosaicAccess(HttpContext context, DateTimeOffset? timestamp)
+    internal static IResult? RequireTemporalMosaicAccess(HttpContext context, DateTimeOffset? timestamp, DateTimeOffset? timeStart = null)
     {
-        if (!timestamp.HasValue)
+        if (!timestamp.HasValue && !timeStart.HasValue)
         {
             return null;
         }

@@ -52,6 +52,7 @@ public class ImageServerTileCacheKeyTests
         int layerId = 7,
         RasterFormat format = RasterFormat.PNG,
         DateTimeOffset? timestamp = null,
+        DateTimeOffset? timeStart = null,
         IReadOnlyList<RasterInfo>? rasters = null,
         int level = 3,
         int row = 2,
@@ -68,6 +69,7 @@ public class ImageServerTileCacheKeyTests
             selectedRasters: rasters ?? Rasters,
             mergeStrategy: RasterMergeStrategy.Newest,
             timestamp: timestamp,
+            timeStart: timeStart,
             mosaicRule: string.Empty,
             rasterFormat: format,
             level: level,
@@ -104,6 +106,18 @@ public class ImageServerTileCacheKeyTests
     {
         Build(timestamp: null)
             .Should().NotBe(Build(timestamp: DateTimeOffset.Parse("2020-06-01T00:00:00Z", CultureInfo.InvariantCulture)));
+    }
+
+    [UnitTest]
+    public void Build_VariesByTimeExtentStart()
+    {
+        // #4061: an Esri start,end extent shares its end with an instant request, so the start bound
+        // must partition the key or the two windows would serve each other's cached tiles.
+        var end = DateTimeOffset.Parse("2020-06-01T00:00:00Z", CultureInfo.InvariantCulture);
+        var start = DateTimeOffset.Parse("2020-01-01T00:00:00Z", CultureInfo.InvariantCulture);
+
+        Build(timestamp: end).Should().NotBe(Build(timestamp: end, timeStart: start));
+        Build(timestamp: null).Should().NotBe(Build(timestamp: null, timeStart: start));
     }
 
     [UnitTest]

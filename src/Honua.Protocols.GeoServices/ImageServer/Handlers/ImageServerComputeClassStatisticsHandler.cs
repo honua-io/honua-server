@@ -119,13 +119,13 @@ internal sealed class ImageServerComputeClassStatisticsHandler
                 return StandardErrorHelpers.CreateBadRequest(context, rasterIdsError ?? "Invalid rasterIds.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidClassStatisticsParameters(_logger, layerId, timeError ?? "Invalid time");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -153,7 +153,7 @@ internal sealed class ImageServerComputeClassStatisticsHandler
             {
                 var selected = await _rasterStore.QueryRastersAsync(
                     layerId,
-                    new RasterSelectionQuery { Timestamp = timestamp },
+                    new RasterSelectionQuery { Timestamp = timestamp, TimeStart = timeStart },
                     cancellationToken).ConfigureAwait(false);
                 if (selected.Length == 0)
                 {

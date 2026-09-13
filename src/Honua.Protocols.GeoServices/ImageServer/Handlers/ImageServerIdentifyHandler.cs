@@ -116,7 +116,7 @@ internal sealed class ImageServerIdentifyHandler
                     .ConfigureAwait(false);
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, timeError ?? "Invalid time parameter");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
@@ -138,7 +138,7 @@ internal sealed class ImageServerIdentifyHandler
                     : StandardErrorHelpers.CreateBadRequest(context, renderingError ?? "renderingRule is not supported.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -149,7 +149,8 @@ internal sealed class ImageServerIdentifyHandler
             {
                 Geometry = ImageServerMosaicHelpers.CreatePointGeometry(x.Value, y.Value),
                 GeometrySrid = srid,
-                Timestamp = timestamp
+                Timestamp = timestamp,
+                TimeStart = timeStart
             };
             var selectedRasters = await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
             if (selectedRasters.Length == 0)
