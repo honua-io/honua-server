@@ -16,9 +16,9 @@ Query sensor observation data through OGC SensorThings API v1.1.
 | Capability key | `serve.sensorthings` |
 | Category | Serve |
 | Edition | Community |
-| Surface maturity | 16 preview |
-| Registry entries | 16 |
-| Proving tests | 83 |
+| Surface maturity | 23 preview |
+| Registry entries | 23 |
+| Proving tests | 98 |
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
