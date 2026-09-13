@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1133,
+    "total": 1132,
     "byStatus": {
-      "not-executable": 1121,
+      "not-executable": 1120,
       "unvalidated": 9,
       "passed": 3
     }
@@ -3997,20 +3997,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 217,
-      "language": "powershell"
-    },
-    {
-      "id": "34923aa9ba8510ab",
-      "kind": "docs-fence",
-      "path": "docs/get-started/one-terminal-setup.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 6,
-      "line": 223,
+      "line": 229,
       "language": "powershell"
     },
     {
@@ -4036,8 +4023,8 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 170,
-      "language": "json"
+      "line": 223,
+      "language": "powershell"
     },
     {
       "id": "dd3c9a27fcfff1fa",
@@ -4538,7 +4525,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 341,
+      "line": 351,
       "language": "jsonc"
     },
     {
