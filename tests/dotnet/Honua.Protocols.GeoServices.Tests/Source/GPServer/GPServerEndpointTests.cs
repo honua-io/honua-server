@@ -267,20 +267,30 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData("geometry.buffer", "geodesic", JsonValueKind.False)]
-    [InlineData("geometry.simplify", "preserveTopology", JsonValueKind.True)]
-    [InlineData("geometry.buffer", "wkb", JsonValueKind.Null)]
+    [InlineData("geometry.buffer", "geodesic", "GPBoolean", JsonValueKind.False, "false")]
+    [InlineData("geometry.simplify", "preserveTopology", "GPBoolean", JsonValueKind.True, "true")]
+    [InlineData("enrichment.enrich", "maxInputFeatures", "GPLong", JsonValueKind.Number, "250000")]
+    [InlineData("surface.slope", "zFactor", "GPDouble", JsonValueKind.Number, "1")]
+    [InlineData("analytics.spatial-join-managed", "predicate", "GPString", JsonValueKind.String, "\"intersects\"")]
+    [InlineData("geometry.buffer", "wkb", "GPString", JsonValueKind.Null, "null")]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
-    public async Task TaskInfo_ScalarDefault_HasItsDeclaredJsonType(string taskName, string parameterName, JsonValueKind expectedKind)
+    public async Task TaskInfo_ScalarDefault_HasItsDeclaredJsonType(
+        string taskName, string parameterName, string dataType, JsonValueKind expectedKind, string expectedJson)
     {
+        // Regression (#4634): Esri's Python SDK writes non-string defaults into
+        // generated code with str(), so a "false" string became an unbound name.
         using var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{taskName}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var parameter = document.RootElement.GetProperty("parameters").EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == parameterName);
-        parameter.GetProperty("defaultValue").ValueKind.Should().Be(expectedKind,
+        parameter.GetProperty("dataType").GetString().Should().Be(dataType);
+        var defaultValue = parameter.GetProperty("defaultValue");
+        defaultValue.ValueKind.Should().Be(expectedKind,
             "Esri's SDK generates Python defaults from the JSON value type");
+        defaultValue.GetRawText().Should().Be(expectedJson,
+            "the published default must carry the catalog's canonical value, not just its type");
     }
 
     [IntegrationTest]
