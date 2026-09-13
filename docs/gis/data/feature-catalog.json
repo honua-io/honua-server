@@ -21488,6 +21488,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Sharing.SharingManagedKeyAuthorityTests.ClientCredentials_ConstrainedManagedKeys_RefusesRoleProjection",
+        "Honua.Server.Tests.Features.Sharing.SharingManagedKeyAuthorityTests.ClientCredentials_FullAdminManagedKeys_PassAuthorityCheck",
+        "Honua.Server.Tests.Features.Sharing.SharingManagedKeyAuthorityTests.ClientCredentials_RevokedAndExpiredManagedKeys_RejectsExchange",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Token_AuthorizationCodeGrantViaGetQueryString_Returns405MethodNotAllowed",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Token_AuthorizationCodeGrantWithPkce_ReturnsAccessTokenAndRefreshToken",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Token_AuthorizationCodeWithMismatchedRedirectUri_ReturnsInvalidGrant",

@@ -334,9 +334,10 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         // does NOT populate Connection.RemoteIpAddress, so the endpoint correctly
         // returns invalid_request here rather than minting an unbound token. This
         // proves the flag is honored and the request reaches the IP-binding step;
-        // the full happy path (valid secret + resolvable IP -> opaque IP-bound token
-        // carrying the key's permissions, no refresh token) is covered without a
-        // TestServer by PortalOAuthClientCredentialsTests.
+        // the full happy path (valid full-admin secret + resolvable IP -> opaque
+        // IP-bound admin token, no refresh token) is covered without a TestServer by
+        // PortalOAuthClientCredentialsTests. Constrained keys are refused before the
+        // binding step (SharingManagedKeyAuthorityTests, #4577).
         var fixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
@@ -352,7 +353,7 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
             var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
             var created = await apiKeyStore.CreateAsync(
                 name: "etl-worker",
-                permissions: ["services:read"],
+                permissions: ["admin:*"],
                 expiresAt: null,
                 createdBy: "test",
                 CancellationToken.None);

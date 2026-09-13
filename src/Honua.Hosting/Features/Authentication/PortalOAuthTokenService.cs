@@ -146,6 +146,7 @@ internal sealed class PortalOAuthTokenService(
         // secret alone authenticates. This keeps every flag-gated Increment-1
         // deployment working byte-for-byte.
         AdminApiKeyValidationResult? validation = null;
+        IReadOnlyList<string>? keyRoles = null;
         if (client is null)
         {
             validation = await _apiKeyStore.ValidateAsync(secret, cancellationToken).ConfigureAwait(false);
@@ -153,6 +154,19 @@ internal sealed class PortalOAuthTokenService(
             {
                 // Do not distinguish unknown-client from bad-secret (RFC 6749 §5.2).
                 return PortalOAuthTokenResult.Failure("invalid_client", "Client authentication failed.");
+            }
+
+            // A token carries roles only, so the key goes through the same canonical
+            // rule as the generateToken bridge (#4577): a full-admin key maps to the
+            // admin role; a constrained key, whose authority lives in claims a token
+            // cannot hold, is refused rather than having its permission labels
+            // turned into roles.
+            keyRoles = ManagedKeyExchangeAuthority.ResolveTokenRoles(validation.Record.Permissions);
+            if (keyRoles is null)
+            {
+                return PortalOAuthTokenResult.Failure(
+                    "unauthorized_client",
+                    "This API key cannot be exchanged for a portal token; use it with X-API-Key.");
             }
         }
 
@@ -175,12 +189,11 @@ internal sealed class PortalOAuthTokenService(
         }
 
         // Identity is the API-key record: its name labels the principal and its
-        // permissions become the principal's roles, so the existing RBAC resolver
-        // (#1375) makes the per-operation decision exactly as for any other principal.
-        var roles = ResolveRoles(validation!.Record.Permissions, request.Scope);
+        // canonically projected roles (resolved above) are all the token may carry.
+        var roles = ResolveRoles(keyRoles!, request.Scope);
 
         return await MintClientCredentialsTokenAsync(
-            principalId: validation.Record.Name,
+            principalId: validation!.Record.Name,
             roles: roles,
             clientIp: clientIp,
             grantedScope: null,

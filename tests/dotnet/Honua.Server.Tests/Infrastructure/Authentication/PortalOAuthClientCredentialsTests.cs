@@ -19,9 +19,11 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 /// <see cref="PortalOAuthTokenService"/>. These prove, independent of the HTTP
 /// pipeline: (1) with the grant disabled the request is rejected with
 /// <c>unsupported_grant_type</c> exactly as before — the no-behaviour-change-by-default
-/// guarantee; (2) with the grant enabled a valid API-key secret mints an opaque,
-/// IP-bound portal token carrying the key's permissions as roles, and no refresh
-/// token; (3) an unknown/missing secret is rejected with <c>invalid_client</c>.
+/// guarantee; (2) with the grant enabled a full-admin API-key secret mints an opaque,
+/// IP-bound portal token carrying the admin role, and no refresh token; (3) a
+/// constrained key is refused with <c>unauthorized_client</c> rather than having its
+/// permission labels turned into roles (#4577); (4) an unknown/missing secret is
+/// rejected with <c>invalid_client</c>.
 /// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
@@ -53,11 +55,11 @@ public sealed class PortalOAuthClientCredentialsTests
     }
 
     [UnitTest]
-    public async Task Exchange_ClientCredentials_WhenEnabledWithValidSecret_MintsIpBoundTokenWithRolesAndNoRefresh()
+    public async Task Exchange_ClientCredentials_WhenEnabledWithFullAdminSecret_MintsIpBoundAdminTokenAndNoRefresh()
     {
         var (service, issuer, secret) = await CreateServiceAsync(
             enableClientCredentials: true,
-            permissions: ["services:read", "services:write"]);
+            permissions: ["admin:*", "field-editor"]);
 
         var result = await service.ExchangeAsync(
             ClientCredentialsRequest(secret),
@@ -70,16 +72,17 @@ public sealed class PortalOAuthClientCredentialsTests
         // client_credentials never issues a refresh token (RFC 6749 §4.4.3).
         result.RefreshToken.Should().BeNull();
 
-        // The token is IP-bound: it validates only from the issuing client IP and the
-        // hydrated principal carries the API key's permissions as roles, so the RBAC
-        // resolver decides per-operation access exactly as for any other principal.
+        // The token is IP-bound: it validates only from the issuing client IP. The
+        // hydrated principal carries the admin role the key confers on X-API-Key, and
+        // no permission label becomes a role (#4577).
         var validation = await issuer.ValidateAsync(
             result.AccessToken!,
             new PortalTokenBinding(Referer: null, ClientIp: ClientIp),
             CancellationToken.None);
         validation.Should().NotBeNull();
-        validation!.Principal.IsInRole("services:read").Should().BeTrue();
-        validation.Principal.IsInRole("services:write").Should().BeTrue();
+        validation!.Principal.IsInRole("admin").Should().BeTrue();
+        validation.Principal.IsInRole("admin:*").Should().BeFalse();
+        validation.Principal.IsInRole("field-editor").Should().BeFalse();
         validation.Principal.FindFirstValue("auth_type").Should().NotBeNull();
 
         var wrongIp = await issuer.ValidateAsync(
@@ -90,13 +93,13 @@ public sealed class PortalOAuthClientCredentialsTests
     }
 
     [UnitTest]
-    public async Task Exchange_ClientCredentials_ScopeNarrowsToHeldPermissionsOnly()
+    public async Task Exchange_ClientCredentials_ScopeNeverAddsUnheldRoles()
     {
         var (service, issuer, secret) = await CreateServiceAsync(
             enableClientCredentials: true,
-            permissions: ["services:read", "services:write"]);
+            permissions: ["admin:*"]);
 
-        var request = ClientCredentialsRequest(secret) with { Scope = "services:read admin:everything" };
+        var request = ClientCredentialsRequest(secret) with { Scope = "field-editor admin:everything" };
         var result = await service.ExchangeAsync(request, requestBinding: "x", CancellationToken.None);
 
         result.Succeeded.Should().BeTrue();
@@ -105,11 +108,48 @@ public sealed class PortalOAuthClientCredentialsTests
             new PortalTokenBinding(Referer: null, ClientIp: ClientIp),
             CancellationToken.None);
         validation.Should().NotBeNull();
-        // The requested scope narrows to the held permission; the unheld scope is
-        // dropped, never escalated.
-        validation!.Principal.IsInRole("services:read").Should().BeTrue();
-        validation.Principal.IsInRole("services:write").Should().BeFalse();
+        // Requested scopes the token would not hold are dropped, never escalated.
+        validation!.Principal.IsInRole("admin").Should().BeTrue();
+        validation.Principal.IsInRole("field-editor").Should().BeFalse();
         validation.Principal.IsInRole("admin:everything").Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task Exchange_ClientCredentials_ConstrainedKeys_AreRefusedNotProjectedAsRoles()
+    {
+        // #4577: X-API-Key authenticates these keys as non-admin principals with
+        // permission claims. A token holds roles only, so the exchange is refused
+        // instead of turning a label such as "field-editor" into a role.
+        var operation = AdminApiKeyPermission.CreateApprovedOperationGrants(
+            "PUT", "/api/v1/admin/metadata/layers/1/filter", "tenant-a");
+        string[][] grants =
+        [
+            ["services:read", "services:write"],
+            ["field-editor"],
+            ["read:allowed-service"],
+            ["write:allowed-service/1"],
+            ["admin:read"],
+            ["admin:read", "admin:approve"],
+            ["ops:read"],
+            operation.ToArray(),
+            [.. operation, "admin:*"]
+        ];
+
+        foreach (var permissions in grants)
+        {
+            var (service, _, secret) = await CreateServiceAsync(
+                enableClientCredentials: true,
+                permissions: permissions);
+
+            var result = await service.ExchangeAsync(
+                ClientCredentialsRequest(secret),
+                requestBinding: "x",
+                CancellationToken.None);
+
+            result.Succeeded.Should().BeFalse(string.Join(',', permissions));
+            result.Error.Should().Be("unauthorized_client");
+            result.AccessToken.Should().BeNull();
+        }
     }
 
     [UnitTest]

@@ -112,13 +112,20 @@ synchronous (evict the cache entry) and there is one validator.
 
 ### 5. Authorization / scopes
 
-The first increment issues a token carrying the **roles already attached to the
-API-key record** projected onto `PortalCredentialPrincipal.Roles`, so the
-existing RBAC resolver (#1375) makes the per-operation decision exactly as for
-any other principal. A `scope` request parameter is accepted but, in the first
-increment, may only **narrow** to roles the key already holds (a request for a
-scope the key lacks is ignored, never escalated). Full OAuth2 scope→permission
-mapping is deferred (below).
+The first increment originally issued a token carrying the API-key record's
+permission labels as `PortalCredentialPrincipal.Roles`. That widened constrained
+keys (#4577). `X-API-Key` authenticates a key that is not full admin as a
+non-admin principal and exposes its grants as `permission` claims, never as roles.
+A label that matched a resource's `allowedRoles` therefore granted access only
+through the exchange.
+
+The API-key fallback now applies the same canonical rule as the `generateToken`
+admin bridge (`ManagedKeyExchangeAuthority`). A portal token holds roles only, so
+only a full-admin key is representable: it maps to the `admin` role. Every other
+key is refused with `unauthorized_client`. A `scope` request parameter may still
+only **narrow** to roles the token would hold (a request for a scope it lacks is
+ignored, never escalated). Scoped per-application tokens use the first-class
+client registry and scope catalogue (Increment 2).
 
 ### 6. Coexistence with existing flows (the safety property)
 
@@ -140,8 +147,9 @@ mapping is deferred (below).
   revocation honoured. No new secret-at-rest surface.
 - **HTTPS-only.** Issuance obeys the existing `RequireHttps` gate, so the
   `client_secret` is never accepted over plaintext in production.
-- **No privilege escalation.** Roles come from the key record; `scope` can only
-  narrow. A key with no roles yields a token with no roles.
+- **No privilege escalation.** Only a full-admin key is exchanged, as the `admin`
+  role; a constrained key is refused rather than having its permission labels
+  projected as roles (#4577). `scope` can only narrow.
 - **Short TTL, no refresh.** `client_credentials` tokens get the standard
   clamped portal-token TTL and no refresh token, bounding leaked-token blast
   radius; the client re-authenticates with its own secret to renew.
