@@ -86,10 +86,11 @@ internal static class AdminAccessOperationDriftGate
         var findings = new List<string>();
         var operations = ReadOperations(root).ToDictionary(static operation => operation.OperationId, StringComparer.Ordinal);
 
-        foreach (var operation in operations.Values.Where(static operation => operation.IsAccessFamily))
+        foreach (var operation in operations.Values
+                     .Where(static operation => operation.IsAccessFamily)
+                     .Where(operation => !definitions.Any(definition => definition.OpenApiOperationId == operation.OperationId)))
         {
-            if (!definitions.Any(definition => definition.OpenApiOperationId == operation.OperationId))
-                findings.Add($"missing: access operation '{operation.OperationId}' ({operation.Method} {operation.Path}) has no lane-C descriptor or executor.");
+            findings.Add($"missing: access operation '{operation.OperationId}' ({operation.Method} {operation.Path}) has no lane-C descriptor or executor.");
         }
 
         foreach (var group in definitions.GroupBy(static definition => definition.OpenApiOperationId).Where(static group => group.Count() > 1))
@@ -230,10 +231,11 @@ internal static class AdminAccessOperationDriftGate
         var required = new HashSet<string>(StringComparer.Ordinal);
         if (operation.TryGetProperty("parameters", out var parameters))
         {
-            foreach (var parameter in parameters.EnumerateArray().Select(parameter => Resolve(root, parameter)))
+            foreach (var parameter in parameters.EnumerateArray()
+                         .Select(parameter => Resolve(root, parameter))
+                         .Where(static parameter => parameter.TryGetProperty("required", out var isRequired) && isRequired.ValueKind == JsonValueKind.True))
             {
-                if (parameter.TryGetProperty("required", out var isRequired) && isRequired.ValueKind == JsonValueKind.True)
-                    required.Add(parameter.GetProperty("name").GetString()!);
+                required.Add(parameter.GetProperty("name").GetString()!);
             }
         }
 
@@ -304,12 +306,12 @@ internal static class AdminAccessOperationDriftGate
                 yield return nested;
         }
 
-        foreach (var combinator in new[] { "allOf", "oneOf", "anyOf" })
+        foreach (var nested in new[] { "allOf", "oneOf", "anyOf" }
+                     .Where(combinator => schema.TryGetProperty(combinator, out _))
+                     .SelectMany(combinator => schema.GetProperty(combinator).EnumerateArray())
+                     .SelectMany(variant => Walk(root, variant, depth + 1)))
         {
-            if (!schema.TryGetProperty(combinator, out var variants))
-                continue;
-            foreach (var nested in variants.EnumerateArray().SelectMany(variant => Walk(root, variant, depth + 1)))
-                yield return nested;
+            yield return nested;
         }
     }
 

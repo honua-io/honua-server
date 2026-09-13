@@ -166,7 +166,12 @@ public sealed class AdminAccessProposalRestartTests(RedisFixture redis)
     private static string RequiredId(JsonElement handle, string name)
     {
         var value = handle.TryGetProperty(name, out var element) ? element.GetString() : null;
-        value.Should().NotBeNullOrWhiteSpace("the handle must expose '{0}': {1}", name, handle.GetRawText());
-        return value!;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new Xunit.Sdk.XunitException(
+                $"the handle must expose '{name}': {handle.GetRawText()}");
+        }
+
+        return value;
     }
 }
