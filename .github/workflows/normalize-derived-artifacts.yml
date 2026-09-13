@@ -119,7 +119,7 @@ jobs:
             install -d "${projection_root}/$(dirname "${projection}")"
             install -m 0600 "${projection}" "${projection_root}/${projection}"
           done
-          if (( total > 6488064 )); then
+          if (( total > 6553600 )); then
             echo "normalization projections exceed the bounded aggregate" >&2
             exit 1
           fi
