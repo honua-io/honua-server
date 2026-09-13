@@ -16,10 +16,10 @@ public sealed class EsriConstructCapabilityRegistryTests
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceIdentity, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceCapabilities, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceFields, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceDomains, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, true)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceDomains, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceSubtypes, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisSubtypesManualReview, false, false, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRelationships, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisRelationshipsManualReview, false, false, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisAttachments, false, false, true)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRelationships, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRenderers, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview, false, false, true)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceTimeMetadata, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisTimeMetadataManualReview, false, false, true)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.FacadeFeatureService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
@@ -56,6 +56,9 @@ public sealed class EsriConstructCapabilityRegistryTests
     [InlineData(EsriConstructCapabilityRegistry.Keys.ServiceCapabilities, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceCapabilities, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ArcGisQueryCapabilityMissing)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceFields, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceDomains, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisDomainTruncated)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRelationships, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisRelationshipsManualReview)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisAttachments)]
     public void ResolveOrUnknown_ConditionalConstruct_ExposesUnsupportedFallback(
         string constructKey,
         string expectedFallbackStatus,
