@@ -104,8 +104,7 @@ services:
     image: ogccite/ets-wfs20:latest
     user: "0:0"
     depends_on:
-      # OGC CITE Team Engine for WFS 2.0 conformance testing
-  cite-teamengine:
+      cite-teamengine:
         condition: service_healthy
       honua-server:
         condition: service_started
