@@ -308,7 +308,7 @@ internal sealed class ExportJobService(
                     OperationStatus.Processing, _jobRetention, processingToken).ConfigureAwait(false);
                 if (completion.Outcome != ProgressCompareAndSetOutcome.Updated)
                 {
-                    // Preserve the terminal state accepted on another node and retract the artifact.
+                    // Preserve the state accepted on another node and retract the losing artifact.
                     if (completion.CurrentProgress?.Status == OperationStatus.Cancelled)
                     {
                         userCancellation.Cancel();
@@ -318,8 +318,13 @@ internal sealed class ExportJobService(
                     {
                         await cloudStorage.DeleteAsync(uploadedFileId, CancellationToken.None).ConfigureAwait(false);
                     }
-                    _jobRequests.TryRemove(job.JobId, out _);
-                    await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
+                    if (completion.CurrentProgress?.Status is OperationStatus.Completed or OperationStatus.Failed)
+                    {
+                        _jobRequests.TryRemove(job.JobId, out _);
+                        await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    // A recovery worker may have requeued the job before lease loss was observed.
+                    // Keep its request available so that retry can actually execute.
                     return;
                 }
                 processingToken.ThrowIfCancellationRequested();
