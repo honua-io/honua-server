@@ -108,50 +108,64 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
 
     public Task<AdminApiKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var now = _timeProvider.GetUtcNow();
-        // Rotation keeps the record's ExpiresAt, so rotating an expired key would hand back
-        // material ValidateAsync immediately rejects. Report it as gone instead.
-        if (!_keys.TryGetValue(id, out var existing) || existing.RevokedAt is not null ||
-            existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant) ||
-            (existing.ExpiresAt.HasValue && existing.ExpiresAt.Value <= now))
+        while (true)
         {
-            return Task.FromResult<AdminApiKeyCreateResult?>(null);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var now = _timeProvider.GetUtcNow();
+            // Rotation keeps the record's ExpiresAt, so rotating an expired key would hand back
+            // material ValidateAsync immediately rejects. Report it as gone instead.
+            if (!_keys.TryGetValue(id, out var existing) || existing.RevokedAt is not null ||
+                existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant) ||
+                (existing.ExpiresAt.HasValue && existing.ExpiresAt.Value <= now))
+            {
+                return Task.FromResult<AdminApiKeyCreateResult?>(null);
+            }
+
+            var generated = GenerateKeyMaterial();
+            var updated = existing with
+            {
+                KeyPrefix = CreateDisplayPrefix(generated),
+                KeyHash = HashKey(generated),
+                UpdatedAt = now,
+                RotatedAt = now,
+                LastUsedAt = null,
+            };
+
+            // Replace only the snapshot checked above. An unconditional write would put an
+            // unrevoked record back over a concurrent revocation.
+            if (_keys.TryUpdate(id, updated, existing))
+            {
+                return Task.FromResult<AdminApiKeyCreateResult?>(new AdminApiKeyCreateResult(updated, generated));
+            }
         }
-
-        var generated = GenerateKeyMaterial();
-        var updated = existing with
-        {
-            KeyPrefix = CreateDisplayPrefix(generated),
-            KeyHash = HashKey(generated),
-            UpdatedAt = now,
-            RotatedAt = now,
-            LastUsedAt = null,
-        };
-
-        _keys[id] = updated;
-        return Task.FromResult<AdminApiKeyCreateResult?>(new AdminApiKeyCreateResult(updated, generated));
     }
 
     public Task<AdminApiKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (!_keys.TryGetValue(id, out var existing))
+        while (true)
         {
-            return Task.FromResult<AdminApiKeyRecord?>(null);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!_keys.TryGetValue(id, out var existing))
+            {
+                return Task.FromResult<AdminApiKeyRecord?>(null);
+            }
+
+            var now = _timeProvider.GetUtcNow();
+            var updated = existing with
+            {
+                UpdatedAt = now,
+                RevokedAt = existing.RevokedAt ?? now,
+            };
+
+            // A concurrent usage or rotation write replaced the snapshot: revoke the current
+            // record rather than report a revocation that was never stored.
+            if (_keys.TryUpdate(id, updated, existing))
+            {
+                return Task.FromResult<AdminApiKeyRecord?>(updated);
+            }
         }
-
-        var now = _timeProvider.GetUtcNow();
-        var updated = existing with
-        {
-            UpdatedAt = now,
-            RevokedAt = existing.RevokedAt ?? now,
-        };
-
-        _ = _keys.TryUpdate(id, updated, existing);
-        return Task.FromResult<AdminApiKeyRecord?>(updated);
     }
 
     public Task<AdminApiKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken)
@@ -166,32 +180,29 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         var providedHash = HashKey(keyMaterial);
         var now = _timeProvider.GetUtcNow();
 
-        foreach (var record in _keys.Values)
+        foreach (var candidate in _keys.Values)
         {
-            if (record.RevokedAt is not null ||
-                (record.ExpiresAt.HasValue && record.ExpiresAt.Value <= now))
+            var record = candidate;
+            while (record is not null &&
+                record.RevokedAt is null &&
+                (!record.ExpiresAt.HasValue || record.ExpiresAt.Value > now) &&
+                CryptographicOperations.FixedTimeEquals(providedHash, record.KeyHash))
             {
-                continue;
-            }
+                var updated = record with
+                {
+                    LastUsedAt = now,
+                    UpdatedAt = now,
+                };
+                if (_keys.TryUpdate(record.Id, updated, record))
+                {
+                    return Task.FromResult<AdminApiKeyValidationResult?>(new AdminApiKeyValidationResult(updated));
+                }
 
-            if (!CryptographicOperations.FixedTimeEquals(providedHash, record.KeyHash))
-            {
-                continue;
+                // A concurrent write won the update. Never return the stale snapshot: re-check
+                // the current record, so a revoke or rotate still denies while a sibling
+                // request's usage write does not.
+                record = _keys.TryGetValue(record.Id, out var current) ? current : null;
             }
-
-            var updated = record with
-            {
-                LastUsedAt = now,
-                UpdatedAt = now,
-            };
-            if (_keys.TryUpdate(record.Id, updated, record))
-            {
-                return Task.FromResult<AdminApiKeyValidationResult?>(new AdminApiKeyValidationResult(updated));
-            }
-
-            // A concurrent revoke/rotate won the update. Do not return a stale
-            // validation result; retry against the current dictionary snapshot.
-            continue;
         }
 
         return Task.FromResult<AdminApiKeyValidationResult?>(null);
@@ -245,6 +256,10 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
     // written out-of-band. Diffing against it lets validation catch up on just those ids
     // instead of re-scanning the whole retained registry on every miss.
     private const string SeenIdsKey = Prefix + "seen-ids";
+
+    // Bounds the optimistic retries of rotate and revoke. Revocation withdraws the key from
+    // authentication first, so only requests already in flight can still contend with it.
+    private const int WriteAttempts = 16;
     private readonly IDatabase _database = redis.GetDatabase();
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
@@ -272,27 +287,60 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
 
     public async Task<AdminApiKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken)
     {
-        var existing = await ReadAsync(id, cancellationToken).ConfigureAwait(false);
-        var now = _timeProvider.GetUtcNow();
-        // Retention keeps expired records readable here. Rotation preserves ExpiresAt, so
-        // rotating one would return 200 with material ValidateAsync rejects outright.
-        if (existing is null || !CanAuthenticate(existing, now) || existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant)) return null;
-        var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
-        var updated = existing with { KeyPrefix = key[..Math.Min(12, key.Length)], KeyHash = SHA256.HashData(Encoding.UTF8.GetBytes(key)), UpdatedAt = now, RotatedAt = now, LastUsedAt = null };
-        await _database.StringSetAsync(BuildKey(id), JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated)).ConfigureAwait(false);
-        // Repairs the index for a record indexed before it existed, or pruned by a racing scan.
-        await MarkActiveAndSeenAsync(id).ConfigureAwait(false);
-        return new(updated, key);
+        for (var attempt = 0; attempt < WriteAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = await _database.StringGetAsync(BuildKey(id)).ConfigureAwait(false);
+            var existing = Read(snapshot);
+            var now = _timeProvider.GetUtcNow();
+            // Retention keeps expired records readable here. Rotation preserves ExpiresAt, so
+            // rotating one would return 200 with material ValidateAsync rejects outright.
+            if (existing is null || !CanAuthenticate(existing, now) || existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant)) return null;
+            var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
+            var updated = existing with { KeyPrefix = key[..Math.Min(12, key.Length)], KeyHash = SHA256.HashData(Encoding.UTF8.GetBytes(key)), UpdatedAt = now, RotatedAt = now, LastUsedAt = null };
+            // Conditional on the snapshot just checked: an unconditional write would put an
+            // unrevoked record back over a revocation that landed in between.
+            if (!await TryReplaceAsync(id, snapshot, updated).ConfigureAwait(false)) continue;
+            // Repairs the index for a record indexed before it existed, or pruned by a racing scan.
+            await MarkActiveAndSeenAsync(id).ConfigureAwait(false);
+            return new(updated, key);
+        }
+
+        throw new InvalidOperationException($"Admin API key {id:D} changed on every rotation attempt.");
     }
 
     public async Task<AdminApiKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken)
     {
-        var existing = await ReadAsync(id, cancellationToken).ConfigureAwait(false);
-        if (existing is null) return null;
-        var updated = existing with { UpdatedAt = _timeProvider.GetUtcNow(), RevokedAt = existing.RevokedAt ?? _timeProvider.GetUtcNow() };
-        await _database.StringSetAsync(BuildKey(id), JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated)).ConfigureAwait(false);
+        // Withdraw the key from the authentication candidates first, so a client that keeps using
+        // it cannot keep winning usage writes and starve the conditional revocation below.
         await _database.SetRemoveAsync(ActiveIdsKey, id.ToString("D")).ConfigureAwait(false);
-        return updated;
+        for (var attempt = 0; attempt < WriteAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = await _database.StringGetAsync(BuildKey(id)).ConfigureAwait(false);
+            var existing = Read(snapshot);
+            if (existing is null) return null;
+            var now = _timeProvider.GetUtcNow();
+            var updated = existing with { UpdatedAt = now, RevokedAt = existing.RevokedAt ?? now };
+            if (await TryReplaceAsync(id, snapshot, updated).ConfigureAwait(false))
+            {
+                // A rotation that won the race may have re-indexed the key after the removal above.
+                await _database.SetRemoveAsync(ActiveIdsKey, id.ToString("D")).ConfigureAwait(false);
+                return updated;
+            }
+        }
+
+        throw new InvalidOperationException($"Admin API key {id:D} changed on every revocation attempt.");
+    }
+
+    /// <summary>Writes <paramref name="updated"/> only if the stored bytes still equal <paramref name="snapshot"/>.</summary>
+    private async Task<bool> TryReplaceAsync(Guid id, RedisValue snapshot, AdminApiKeyRecord updated)
+    {
+        var key = BuildKey(id);
+        var transaction = _database.CreateTransaction();
+        transaction.AddCondition(Condition.StringEqual(key, snapshot));
+        _ = transaction.StringSetAsync(key, JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated));
+        return await transaction.ExecuteAsync().ConfigureAwait(false);
     }
 
     public async Task<AdminApiKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken)
@@ -327,13 +375,33 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
 
                 // Another valid request may only have updated LastUsedAt. Re-read and
                 // revalidate authority before retrying so benign usage does not cause a 401.
-                current = attempt < 2
-                    ? await ReadAsync(record.Id, cancellationToken).ConfigureAwait(false)
-                    : null;
+                var latest = await ReadAsync(record.Id, cancellationToken).ConfigureAwait(false);
+                if (attempt == 2 && latest is not null && IsUsageOnlyChange(current, latest))
+                {
+                    // Out of retries, but the write that beat this one only recorded another request's
+                    // use of this key: its authority is exactly what was just checked, so a burst of
+                    // concurrent requests with one key must not turn into 401s.
+                    return new(latest);
+                }
+
+                current = attempt < 2 ? latest : null;
             }
         }
         return null;
     }
+
+    private static bool IsUsageOnlyChange(AdminApiKeyRecord compared, AdminApiKeyRecord latest) =>
+        latest.LastUsedAt != compared.LastUsedAt &&
+        latest.Id == compared.Id &&
+        string.Equals(latest.Name, compared.Name, StringComparison.Ordinal) &&
+        string.Equals(latest.KeyPrefix, compared.KeyPrefix, StringComparison.Ordinal) &&
+        CryptographicOperations.FixedTimeEquals(latest.KeyHash, compared.KeyHash) &&
+        latest.Permissions.SequenceEqual(compared.Permissions, StringComparer.Ordinal) &&
+        latest.CreatedAt == compared.CreatedAt &&
+        latest.ExpiresAt == compared.ExpiresAt &&
+        latest.RotatedAt == compared.RotatedAt &&
+        latest.RevokedAt == compared.RevokedAt &&
+        string.Equals(latest.CreatedBy, compared.CreatedBy, StringComparison.Ordinal);
 
     /// <summary>
     /// Returns the records that can still authenticate and prunes the rest from the active
