@@ -371,6 +371,12 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
 
     private sealed class ServerHostBridgeEnvironment : IAsyncDisposable
     {
+        // Exercise a real, positive protection window within this fixture's 90-second deadline.
+        // The production default remains ten minutes; both promotion directions must observe
+        // and expire their configured window before this test accepts terminal success.
+        private const string ProtectionWindowParameter = "deployment.protection.observation_window_seconds";
+        private const int ProtectionWindowSeconds = 5;
+
         private readonly LocalSubstrateDockerFixture _docker;
         private readonly EnvironmentVariableScope _environmentScope;
         private readonly WebApplication _proxy;
@@ -424,6 +430,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [SelfHostedDeployParameterKeys.Image] = _docker.V2Image,
+                [ProtectionWindowParameter] = ProtectionWindowSeconds.ToString(CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.ActivePort] = _initialActivePort.ToString(CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.StandbyPort] = _initialStandbyPort.ToString(CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.ContainerPort] =
@@ -434,6 +441,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [SelfHostedDeployParameterKeys.Image] = _docker.V1Image,
+                [ProtectionWindowParameter] = ProtectionWindowSeconds.ToString(CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.ActivePort] = _initialStandbyPort.ToString(CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.StandbyPort] = _initialActivePort.ToString(CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.ContainerPort] =
@@ -598,6 +606,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             var service = Factory.Services.GetRequiredService<DeployWorkflowService>();
             var deadline = DateTimeOffset.UtcNow.Add(timeout);
             WorkflowOperationRecord? last = null;
+            var observedProtection = false;
 
             while (DateTimeOffset.UtcNow < deadline)
             {
@@ -611,8 +620,22 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
 
                 if (last.Status == WorkflowOperationStatus.Succeeded)
                 {
+                    observedProtection.Should().BeTrue("cutover must enter its durable observation window before success");
+                    last.Deploy!.Protection!.Phase.Should().Be(DeployProtectionPhase.Expired);
+                    last.CompletedAt.Should().BeOnOrAfter(last.Deploy.Protection.ObservationDeadline,
+                        "a healthy candidate still must serve through the entire configured window");
                     last.Deploy!.DesiredRevision.Should().Be(expectedDesiredRevision);
                     return last;
+                }
+
+                if (last.Deploy?.Protection is { Phase: DeployProtectionPhase.Observing } protection)
+                {
+                    observedProtection = true;
+                    last.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+                    last.CompletedAt.Should().BeNull();
+                    protection.CandidateRevision.Should().Be(expectedDesiredRevision);
+                    (protection.ObservationDeadline - protection.FirstExposureAt)
+                        .Should().Be(TimeSpan.FromSeconds(ProtectionWindowSeconds));
                 }
 
                 last.Status.Should().NotBe(WorkflowOperationStatus.Failed, last.ErrorMessage);
