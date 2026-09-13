@@ -64,7 +64,7 @@ server durably recorded:
 - the durable audit rows, the control-plane operation instance (tenant, audit id) and the
   draft owner are matched to it, so no response field has to be trusted.
 
-Both runs used `ASPNETCORE_ENVIRONMENT=Production`, with PostGIS, append-only Redis and a
+All three runs used `ASPNETCORE_ENVIRONMENT=Production`, with PostGIS, append-only Redis and a
 symmetric-key OIDC resource server on a local Docker network:
 
 - The baseline is the pinned candidate `7ba422672e0c751843b17beb36e954a019cc19fb`
@@ -80,16 +80,24 @@ symmetric-key OIDC resource server on a local Docker network:
   - It also resolves the guardrail ladder as Enterprise, which routes every Studio draft
     mutation, including `create_draft`, through approval. The override keeps composition
     direct, while the built-in publication-proposal floor below still requires approval.
+- The imaged trunk run (2026-09-13) used the published nightly image of trunk
+  `3c52a4bffa8f9b8621a39a8868f839e0e605de78`
+  (`ghcr.io/honua-io/honua-server@sha256:54926040d8b543cac746289c601fb77202ef4446e00a22fa5539836e4bedc8bb`).
+  Nightly Container Build run `34752605479` built it, and its OCI revision label names that
+  commit. The revision contains the repair from
+  [#4752](https://github.com/honua-io/honua-server/pull/4752) (squash `a8c43a25f`). It ran
+  with the same release settings as the source run, and the server was not rebuilt locally.
+  See its [receipt](receipts/dashboard-lifecycle-3c52a4b-release-config.json).
 
-| Row | Candidate `7ba4226` | Source `3b8a650` |
-|---|---|---|
-| All eleven composition verbs through MCP with literal values | pass | pass |
-| Stale generation, re-read retry exactly once, conflicting retry stays failed | pass | pass |
-| `update_draft` shared validator accepts valid and rejects malformed documents | pass | pass |
-| Other owner, other tenant or narrowed scope receives a non-disclosing denial | **fail** | pass |
-| Save, restart, get and reopen preserve version identity and content hash | pass | pass |
-| The saved dashboard enters governed approval without moving a pointer | **fail** | pass |
-| Every mutation joins owner, tenant, actor, durable audit and correlation | pass | pass |
+| Row | Candidate `7ba4226` | Source `3b8a650` | Nightly `3c52a4b` |
+|---|---|---|---|
+| All eleven composition verbs through MCP with literal values | pass | pass | pass |
+| Stale generation, re-read retry exactly once, conflicting retry stays failed | pass | pass | pass |
+| `update_draft` shared validator accepts valid and rejects malformed documents | pass | pass | pass |
+| Other owner, other tenant or narrowed scope receives a non-disclosing denial | **fail** | pass | pass |
+| Save, restart, get and reopen preserve version identity and content hash | pass | pass | pass |
+| The saved dashboard enters governed approval without moving a pointer | **fail** | pass | pass |
+| Every mutation joins owner, tenant, actor, durable audit and correlation | pass | pass | pass |
 
 The candidate failures are product defects that this change repairs:
 
@@ -126,6 +134,11 @@ API-key owners are unchanged. The guardrail posture of `Licensing__Mode=Disabled
 Studio composition is tracked separately in
 [#4758](https://github.com/honua-io/honua-server/issues/4758).
 
-The source-built run passes every row. The pinned candidate predates the repair, so the
-remaining step for #3429 is to rerun the same driver against a re-pinned candidate image that
-contains this change, with the release deployment settings above.
+The source-built run and the published nightly image of trunk both pass every row. Both reopen
+the saved dashboard with the same content hash
+`7271dc07dfa9e78def48658a11578bf5ff289e8d732c1a2acbc4a68a7a2721db`. The manifest-pinned
+candidate `7ba4226` predates the repair. The remaining step for #3429 is therefore a candidate
+re-pin to an imaged trunk revision that contains `a8c43a25f`, such as `3c52a4b`, then a rerun
+of the same driver against that digest with the release deployment settings above. Composing
+under `Licensing__Mode=Disabled` without the StudioDraftMutation override depends on
+[#4758](https://github.com/honua-io/honua-server/issues/4758).
