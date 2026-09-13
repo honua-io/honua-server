@@ -30,7 +30,9 @@ public sealed class GPServerSoapExecutionTests
         var parameters = GPServerSoapExecution.ReadSubmission(xml, TaskInfo());
         parameters.Should().BeEquivalentTo(new Dictionary<string, string>
         {
-            ["wkb"] = "rectangle-wkb", ["srid"] = "3857", ["env:outSR"] = "4326"
+            ["wkb"] = "rectangle-wkb",
+            ["srid"] = "3857",
+            ["env:outSR"] = "4326"
         });
     }
 

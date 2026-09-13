@@ -224,12 +224,16 @@ public sealed partial class GPServerSoapEndpointsTests
 
     private static ExecutionJobRecord SoapJob(string serviceId = "alpha") => new()
     {
-        OperationId = "soap-job", Status = ExecutionJobStatus.Running,
-        CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+        OperationId = "soap-job",
+        Status = ExecutionJobStatus.Running,
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
         Spec = new ExecutionJobSpec
         {
-            TargetKind = BatchComputeTargetKind.KubernetesJob, Backend = "local",
-            Kind = ExecutionJobKind.Geoprocessing, WorkloadName = "soap-contract",
+            TargetKind = BatchComputeTargetKind.KubernetesJob,
+            Backend = "local",
+            Kind = ExecutionJobKind.Geoprocessing,
+            WorkloadName = "soap-contract",
             Parameters = new Dictionary<string, string>
             {
                 [GeoprocessingProtocolMetadataKeys.GPServerServiceId] = serviceId,
