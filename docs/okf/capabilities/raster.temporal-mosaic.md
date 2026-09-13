@@ -19,4 +19,6 @@ Select raster mosaics by acquisition timestamp for time-series imagery.
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
-No page in this bundle declares this capability yet. Add `resource: "honua://capability/raster.temporal-mosaic"` to the page that documents it.
+## Documented in
+
+- [Publish rasters](../../guides/publish/publish-rasters.md)

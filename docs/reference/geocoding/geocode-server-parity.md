@@ -3,6 +3,9 @@ type: reference
 title: "GeocodeServer provider parity matrix"
 description: "This page is the receipt for GeocodeServer parity across Honua's geocoding providers and against Esri GeocodeServer behavior."
 resource: "honua://capability/serve.geoservices-geocodeserver"
+resources:
+  - "honua://capability/geocoding.batch"
+  - "honua://capability/geocoding.reverse"
 ---
 # GeocodeServer provider parity matrix
 

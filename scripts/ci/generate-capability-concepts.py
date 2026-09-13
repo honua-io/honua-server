@@ -101,6 +101,14 @@ UNPUBLISHED_STATUS = {"internal"}
 
 
 RESOURCE_DECLARATION = re.compile(r'^resource:\s*"honua://capability/([^"]+)"\s*$', re.M)
+# OKF reserves singular `resource` for a page's primary identity, which is one
+# value. Most reference pages document several capabilities - the authentication
+# guide covers four - so a singular field capped coverage at one capability per
+# page and left 74 of 117 concepts with no inbound link at all. `resources:` is a
+# producer extension, a YAML list of additional honua://capability/<key> values;
+# v0.2 requires consumers to preserve keys they do not know, so it travels safely.
+RESOURCES_BLOCK = re.compile(r'^resources:\s*$((?:\n[ \t]+-[^\n]*)+)', re.M)
+RESOURCES_ITEM = re.compile(r'-\s*"?honua://capability/([^"\s]+)"?\s*$', re.M)
 FRONTMATTER_TITLE = re.compile(r'^title:\s*"?(.+?)"?\s*$', re.M)
 
 
@@ -127,11 +135,16 @@ def documented_in(root: pathlib.Path) -> dict[str, list[tuple[str, str]]]:
         if end == -1:
             continue
         front = text[3:end]
-        m = RESOURCE_DECLARATION.search(front)
-        if not m:
+        keys = [m.group(1) for m in RESOURCE_DECLARATION.finditer(front)]
+        block = RESOURCES_BLOCK.search(front)
+        if block:
+            keys += RESOURCES_ITEM.findall(block.group(1))
+        if not keys:
             continue
         t = FRONTMATTER_TITLE.search(front)
-        found.setdefault(m.group(1), []).append((t.group(1) if t else rel, rel))
+        entry = (t.group(1) if t else rel, rel)
+        for key in dict.fromkeys(keys):
+            found.setdefault(key, []).append(entry)
     return found
 
 
@@ -224,9 +237,25 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
         for label, rel in documented:
             lines.append(f"- [{label}](../../{rel})")
     else:
+        # An instruction to a contributor is not an answer for a reader. Even
+        # with nothing claiming this key, the registry, the matrix and the
+        # editions page are real places to go, and they are what someone
+        # resolving honua://capability/<key> is usually after.
+        lines.append("## Where to look")
+        lines.append("")
         lines.append(
-            "No page in this bundle declares this capability yet. Add "
-            f'`resource: "honua://capability/{key}"` to the page that documents it.'
+            "No page in this bundle declares this capability, so there is no prose to link. "
+            "Its registry entry and test evidence are still authoritative:"
+        )
+        lines.append("")
+        lines.append("- [All capabilities](README.md) — the full index with editions and status")
+        lines.append("- [Editions and licensing](../../concepts/editions-and-licensing.md) — what each edition includes")
+        lines.append("- [Capability matrix](../../gis/data/capability-matrix.v1.json) — the generated evidence for this key")
+        lines.append("")
+        lines.append(
+            "Writing the page that documents it? Declare "
+            f'`resource: "honua://capability/{key}"` in its frontmatter, or add the key under a '
+            "`resources:` list if the page already claims another one, and it will be linked here."
         )
     return "\n".join(lines).rstrip() + "\n"
 

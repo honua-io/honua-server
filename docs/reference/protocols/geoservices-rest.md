@@ -3,6 +3,14 @@ type: reference
 title: "GeoServices REST (ArcGIS-compatible)"
 description: "Honua serves a GeoServices REST surface under /rest/services, plus a Portal Sharing slice under /sharing/rest for token issuance and item discovery."
 resource: "honua://capability/serve.geoservices-root"
+resources:
+  - "honua://capability/serve.geoservices-featureserver"
+  - "honua://capability/serve.geoservices-mapserver"
+  - "honua://capability/serve.geoservices-geometry-service"
+  - "honua://capability/identity.portal-sharing"
+  - "honua://capability/editing.branch-versioning"
+  - "honua://capability/printing.pdf-output"
+  - "honua://capability/printing.layout-templates"
 ---
 # GeoServices REST (ArcGIS-compatible)
 

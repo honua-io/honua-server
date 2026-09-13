@@ -3,6 +3,9 @@ type: reference
 title: "WMS, WFS, WCS, WMTS (classic OGC)"
 description: "Honua serves the classic OGC KVP/XML web services for clients that have not moved to the OGC API family: desktop GIS, legacy integrations, and CITE-certified workflows."
 resource: "honua://capability/serve.wms"
+resources:
+  - "honua://capability/serve.wmts"
+  - "honua://capability/serve.wcs"
 ---
 # WMS, WFS, WCS, WMTS (classic OGC)
 

@@ -22,4 +22,6 @@ Ingest LAS point clouds into a servable 3D Tiles point tileset preserving per-po
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
-No page in this bundle declares this capability yet. Add `resource: "honua://capability/scene.pointcloud-ingest"` to the page that documents it.
+## Documented in
+
+- [3D Tiles and scenes](../../reference/protocols/3d-tiles-and-scenes.md)

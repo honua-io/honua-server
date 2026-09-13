@@ -3,6 +3,11 @@ type: guide
 title: "Run geoprocessing"
 description: "Discover a server-side process, execute it synchronously or submit it as an asynchronous job, and fetch results — over OGC API Processes, with the same catalog reachable through the ArcGIS-compatible GPServer adapter."
 resource: "honua://capability/process.geoprocessing"
+resources:
+  - "honua://capability/analytics.buffer-aggregate"
+  - "honua://capability/analytics.clustering"
+  - "honua://capability/analytics.density"
+  - "honua://capability/analytics.viewshed"
 ---
 # Run geoprocessing
 

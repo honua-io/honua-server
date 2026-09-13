@@ -3,6 +3,8 @@ type: guide
 title: "Publish rasters"
 description: "You'll have raster data imported into PostGIS and served through ImageServer, WCS, and OGC API Coverages in about 10 minutes."
 resource: "honua://capability/raster.cloud-cog-serving"
+resources:
+  - "honua://capability/raster.temporal-mosaic"
 ---
 # Publish rasters
 

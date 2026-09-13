@@ -3,6 +3,10 @@ type: reference
 title: "3D Tiles and scenes"
 description: "The canonical representation, discovery, authentication, I3S projection, and terrain boundaries are defined by ADR-0078."
 resource: "honua://capability/serve.3d-tiles-scene"
+resources:
+  - "honua://capability/serve.i3s-scene"
+  - "honua://capability/scene.bim-ingest"
+  - "honua://capability/scene.pointcloud-ingest"
 ---
 # 3D Tiles and scenes
 
