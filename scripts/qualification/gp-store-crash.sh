@@ -9,6 +9,7 @@ run_store_crash_boundary() {
   compose --profile crash-boundaries up -d --wait terminal-proxy >/dev/null || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
   job="$(submit_async gdal.ogr2ogr "${native_payload}")" || return 1
+  jq -n --arg job "$job" '{submitted_job:$job}' > "$scenario_evidence_file" || return 1
   wait_barrier "$job" claimed || { scenario_fail "worker did not reach claimed fence"; return 1; }
   # The production worker creates this directory as its unprivileged UID.
   # Permit the host-side qualification controller to publish release files.
@@ -62,6 +63,10 @@ run_store_crash_boundary() {
     local code
     code="$(curl --silent -H "X-API-Key: $api_key" -o /dev/null -w '%{http_code}' "$peer_url/api/geoprocessing/jobs/$job/artifacts/0/content")"
     [[ "$code" != 200 ]] || outage_failed=1
+    jq -n --arg job "$job" --arg readiness "$readiness" --arg content "$code" \
+      --argjson fence "$ready" --argjson before "$before_record" \
+      '{submitted_job:$job,fence:$fence,job_before:$before,store_unavailable:{readiness_http:$readiness,content_http:$content}}' \
+      > "$scenario_evidence_file" || outage_failed=1
     compose exec -T --user 0 worker mv "$mounted_root/.qualification-outage-$job/.honua-gp-store.json" \
       "$mounted_root/.qualification-outage-$job/gp" "$mounted_root/" || return 1
     rmdir "$outage_root"
