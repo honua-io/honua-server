@@ -25,8 +25,11 @@ if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
   echo 'Generated files are up to date; nothing to publish.'
   exit 0
 fi
-# Validation stays bound to the triggering source even on an old rerun. A
-# stale run must not replace the automation PR generated from newer trunk.
+# Validation stays bound to the triggering source even on an old rerun.
+# Capture the branch lease BEFORE observing trunk: a newer publisher racing
+# that observation must never have its automation head overwritten.
+remote_branch="$(git ls-remote origin "refs/heads/${branch}")"
+remote_branch="${remote_branch%%[[:space:]]*}"
 source_sha="$(git rev-parse HEAD)"
 remote_trunk="$(git ls-remote --exit-code origin refs/heads/trunk)"
 remote_trunk="${remote_trunk%%[[:space:]]*}"
@@ -55,10 +58,10 @@ git -c user.name='Mike McDougall' \
 # `git push` whose ref is a shell variable everywhere outside its own
 # allowlist -- that is exactly how a disguised trunk push would read. Keep
 # this literal in sync with `branch` above by hand.
-# Read an explicit lease: an absent branch is valid; an API/network failure
-# is not. Credentials are resolved only for this push and never stored by checkout.
-remote_branch="$(git ls-remote origin "refs/heads/${branch}")"
-remote_branch="${remote_branch%%[[:space:]]*}"
+# Use the lease captured before the freshness observation. This is a CAS of
+# the automation branch, not a lock on trunk. A later trunk push schedules its
+# own refresh through the same reviewed maintenance path as #4695.
+# Credentials are resolved only for this push and never stored by checkout.
 git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
   push --force-with-lease="refs/heads/automation/regenerate-generated-files:${remote_branch}" \
   origin HEAD:refs/heads/automation/regenerate-generated-files

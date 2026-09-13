@@ -71,13 +71,19 @@ push/PR events needed to start admission checks; there is no fallback to it.
 The PAT is not passed to generators, MSBuild or tests.
 
 Before committing a diff, publication compares that validated source with
-remote trunk. If trunk advanced, it reports both identities and leaves the
+remote trunk. If trunk has already advanced, it reports both identities and leaves the
 automation PR untouched. Validation still proves the triggering source; it
 does not check out or certify the later trunk revision. A new source/workflow
 fix requires a new imaged release candidate and certification at that identity.
 Network failures reading remote refs fail publication rather than masquerading
 as an absent branch. The push uses an explicit lease and a temporary Git
-credential helper; no PAT is persisted in the checkout.
+credential helper; no PAT is persisted in the checkout. The automation-branch
+lease is captured before observing trunk, so a racing newer publisher cannot
+be overwritten. This is not an atomic trunk-freshness/admission guarantee:
+trunk can advance during publication or review. As in #4695, these are ordinary
+reviewed maintenance PRs and subsequent trunk pushes schedule another refresh.
+The source trailer and triggering-SHA validation identify exactly what was
+validated; neither claims that trunk stopped moving.
 
 **This workflow never writes trunk directly.** The first version of this
 workflow (#4540) committed on the checked-out trunk ref and pushed straight to

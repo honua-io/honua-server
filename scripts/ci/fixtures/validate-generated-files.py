@@ -230,6 +230,34 @@ class GeneratedFilesContracts(unittest.TestCase):
                                                'refs/heads/automation/regenerate-generated-files').stdout)
             self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
 
+            # A newer publisher wins after our trunk observation. The lease
+            # must have been captured before that observation, so this push
+            # fails instead of overwriting the newer automation head.
+            current_trunk = run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip()
+            run('git', 'reset', '--hard', current_trunk)
+            (repo / paths[0]).write_text('{"racing": true}\n')
+            real_git = shutil.which('git')
+            fake_git = fake_bin / 'git'
+            fake_git.write_text(
+                '#!/usr/bin/env bash\n'
+                'if [[ "$*" == "ls-remote --exit-code origin refs/heads/trunk" ]]; then\n'
+                f'  "{real_git}" "$@" || exit $?\n'
+                f'  "{real_git}" push --force origin {current_trunk}:refs/heads/automation/regenerate-generated-files >&2\n'
+                '  exit $?\n'
+                'fi\n'
+                f'exec "{real_git}" "$@"\n'
+            )
+            fake_git.chmod(fake_git.stat().st_mode | stat.S_IEXEC)
+            raced = run('bash', 'scripts/ci/publish-generated-files.sh', ok=False)
+            self.assertNotEqual(raced.returncode, 0, raced.stdout + raced.stderr)
+            self.assertIn('stale info', raced.stderr)
+            self.assertFalse(gh_calls.exists())
+            self.assertEqual(current_trunk, run('git', '--git-dir', str(remote), 'rev-parse',
+                                               'refs/heads/automation/regenerate-generated-files').stdout.strip())
+            fake_git.unlink()
+            # Restore a working-tree diff for the unreadable-remote case.
+            (repo / paths[0]).write_text('{"unreachable": true}\n')
+
             # An unreachable origin must fail closed, not look like an absent
             # branch that permits an unconditional overwrite.
             run('git', 'remote', 'set-url', 'origin', str(base / 'missing.git'))
