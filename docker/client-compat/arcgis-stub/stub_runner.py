@@ -620,7 +620,7 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
         )
 
     # CERT-PRTL-COMM-01 — anonymous community/self returns the Esri error
-    # envelope (HTTP 200 transport with body error.code 401/499 TokenRequired),
+    # envelope (HTTP 200 transport with body error.code 400 TokenRequired),
     # never an anonymous user document. Field Maps keys its sign-in prompt off
     # this shape.
     comm_anon_status = "fail"
@@ -660,12 +660,12 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
         )
 
     # CERT-PRTL-TOKN-02 — generateToken with bad credentials returns the Esri
-    # error envelope (HTTP 200 transport, body error.code 401/499) and never
+    # error envelope (HTTP 200 transport, body error.code 400) and never
     # leaks a token. Esri clients key their credential-retry prompt off this
     # exact shape; a raw 4xx/5xx or a stray token breaks them. Deterministic —
     # needs no configured credentials, only the reachable token surface.
     tokn2_status = "fail"
-    tokn2_notes = "generateToken with invalid credentials returns Esri error envelope 401/499, no token"
+    tokn2_notes = "generateToken with invalid credentials returns Esri error envelope 400, no token"
     try:
         r = client.post(
             "/sharing/rest/generateToken",
@@ -689,7 +689,13 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
             tokn2_status = "skip"
             tokn2_notes = "generateToken surface disabled in this deployment (error.code 404)."
         else:
-            tokn2_status = "pass" if code in (401, 499) and "token" not in body else "fail"
+            # Matches the retained server boundary regression
+            # GenerateToken_WithInvalidCredentials_Returns400UnableToGenerateToken.
+            tokn2_status = "pass" if (
+                code == 400 and "token" not in body
+                and body.get("error", {}).get("message") == "Unable to generate token."
+                and "no-store" in r.headers.get("Cache-Control", "")
+            ) else "fail"
     except (httpx.HTTPError, ValueError):
         tokn2_status = "fail"
     results["CERT-PRTL-TOKN-02"] = _new_result(

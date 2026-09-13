@@ -24,14 +24,14 @@ KEY = os.environ.get("HONUA_MULTIDIM_KEY", "imageserver/sea-surface-temperature.
 ENDPOINT = os.environ.get("HONUA_S3_ENDPOINT", "http://localstack:4566")
 
 
-def request(path: str, *, method: str = "GET", payload: dict | None = None) -> tuple[int, bytes, str]:
+def request(path: str, *, method: str = "GET", payload: dict | None = None, timeout: float = 30) -> tuple[int, bytes, str]:
     data = None if payload is None else json.dumps(payload).encode()
     headers = {"X-API-Key": API_KEY}
     if data is not None:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(BASE_URL + path, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             return response.status, response.read(), response.headers.get_content_type()
     except urllib.error.HTTPError as error:
         return error.code, error.read(), error.headers.get_content_type()
@@ -126,7 +126,13 @@ def main() -> None:
 
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
-        _, body, _ = request(job["statusUrl"])
+        # First success materializes all derived Zarr metadata via bounded
+        # S3 reads. LocalStack took >30s in run 34730824678 after the native
+        # worker completed; retain the overall 180s job deadline while giving
+        # that one materialization request the remaining budget.
+        status, body, _ = request(job["statusUrl"], timeout=min(120, deadline - time.monotonic()))
+        if status != 200:
+            raise RuntimeError(f"scan status failed: HTTP {status}: {body.decode()}")
         result = json.loads(body)
         if result["status"] == "succeeded":
             break

@@ -330,31 +330,28 @@ def test_ext_declared_conformance_is_honoured(features: Features, collection_id:
     classes = set(features.conformance()["conformsTo"])
     checked: list[str] = []
 
-    crs_class = "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs"
-    if crs_class in classes:
-        features.collection_items(collection_id, crs=EPSG3857, limit=1)
-        assert strip_crs_brackets(features.response_headers.get("Content-Crs")) == EPSG3857
-        checked.append("crs")
+    # Exercise all three behaviors even when the conservative declaration
+    # withholds whole-class CRS/CQL2 conformance. Keep every value assertion.
+    features.collection_items(collection_id, crs=EPSG3857, limit=1)
+    assert strip_crs_brackets(features.response_headers.get("Content-Crs")) == EPSG3857
+    checked.append("crs")
 
-    queryables_class = "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables"
-    if queryables_class in classes:
-        schema = features.collection_queryables(collection_id)
-        assert schema.get("type") == "object" and schema.get("properties")
-        checked.append("queryables")
+    assert "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables" in classes
+    schema = features.collection_queryables(collection_id)
+    assert schema.get("type") == "object" and schema.get("properties")
+    checked.append("queryables")
 
-    cql_text_class = "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text"
-    if cql_text_class in classes:
-        filtered = features.collection_items(
-            collection_id, filter=f"{fx.FILTER_FIELD} = '{fx.FILTER_VALUE}'")
-        assert filtered["numberMatched"] == fx.ACTIVE_FEATURES
-        checked.append("cql2-text")
+    filtered = features.collection_items(
+        collection_id, filter=f"{fx.FILTER_FIELD} = '{fx.FILTER_VALUE}'")
+    assert filtered["numberMatched"] == fx.ACTIVE_FEATURES
+    checked.append("cql2-text")
 
     assert len(checked) >= 3, f"only exercised {checked}; expected crs/queryables/cql2-text"
     oaf_collector.record(
         "NB-OWS-OAF-CONF-02", "pass",
         measured_count=len(checked),
         notes=(
-            "Declared conformance classes were exercised rather than trusted: "
+            "Queryables and the CRS/CQL2 extension behaviors were exercised: "
             f"{checked} all behaved as advertised."
         ),
     )
