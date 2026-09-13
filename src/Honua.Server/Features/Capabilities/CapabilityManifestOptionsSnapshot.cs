@@ -42,6 +42,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IOptions<CapabilityFlagOptions> capabilityFlagOptions,
         IOptions<CapabilityManifestFeatureOptions> manifestFeatureOptions,
         IOptions<TenantSchemaOptions> tenantSchemaOptions,
+        IOptions<TenantContextOptions> tenantContextOptions,
         DeploymentCapabilityProfile deploymentProfile,
         DeploymentIdentity deploymentIdentity,
         IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
@@ -61,6 +62,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         ArgumentNullException.ThrowIfNull(capabilityFlagOptions);
         ArgumentNullException.ThrowIfNull(manifestFeatureOptions);
         ArgumentNullException.ThrowIfNull(tenantSchemaOptions);
+        ArgumentNullException.ThrowIfNull(tenantContextOptions);
         ArgumentNullException.ThrowIfNull(deploymentProfile);
         ArgumentNullException.ThrowIfNull(deploymentIdentity);
 
@@ -77,6 +79,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         ExperimentalCapabilityFlags = capabilityFlagOptions.Value;
         ManifestFromRegistry = manifestFeatureOptions.Value.FromRegistry;
         TenantSchemaRoutingEnabled = tenantSchemaOptions.Value.Enabled;
+        TenantContextEnabled = tenantContextOptions.Value.Enabled;
         DurableJobSubstrateCause = (durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions())
             .Classify(executionJobStore is not null, jobQueue is not null);
         DurableJobRuntimeAvailable =
@@ -127,6 +130,14 @@ internal sealed class CapabilityManifestOptionsSnapshot
 
     /// <summary>Whether schema-per-tenant data routing is active for this deployment.</summary>
     public bool TenantSchemaRoutingEnabled { get; }
+
+    /// <summary>
+    /// Whether tenant context resolution is enabled. Multi-tenant operation is internal to
+    /// Honua's own hosted operation and is not offered to licensees, so this is off in every
+    /// deployment a licensee may run - and the manifest omits tenant scope entirely when it
+    /// is, rather than reporting fields that are always null.
+    /// </summary>
+    public bool TenantContextEnabled { get; }
 
     /// <summary>
     /// Whether the COMPLETE durable job substrate was composed at startup (honua-release#202):

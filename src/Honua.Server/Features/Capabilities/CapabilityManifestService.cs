@@ -121,8 +121,8 @@ internal sealed class CapabilityManifestService(
             IssuedAt = DateTimeOffset.UtcNow,
             Scope = new CapabilityManifestScope
             {
-                TenantId = request.TenantId,
-                TenantSource = request.TenantSource.ToString(),
+                TenantId = options.TenantContextEnabled ? request.TenantId : null,
+                TenantSource = options.TenantContextEnabled ? request.TenantSource.ToString() : null,
                 Environment = request.Environment,
                 WorkspaceId = request.WorkspaceId,
                 WorkspaceAvailable = workspaceAvailable,

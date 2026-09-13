@@ -57,9 +57,9 @@
     {
       "key": "admin.multi-tenancy",
       "displayName": "Multi-Tenant Operation",
-      "category": "ControlPlane",
+      "category": "Internal",
       "edition": "Enterprise",
-      "status": "preview",
+      "status": "internal",
       "entryCount": 7,
       "provingTestCount": 12,
       "maturity": {

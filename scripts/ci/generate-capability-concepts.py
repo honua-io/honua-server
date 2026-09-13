@@ -85,18 +85,19 @@ def citing_pages(key: str, display_name: str, pages: dict[pathlib.Path, str]) ->
     return hits
 
 
-# Capability keys that exist in the licensing registry but must not be published
-# as concepts. The registry is the entitlement vocabulary; it is not a catalogue
-# of things a reader may use, and a generated page with a title, an edition and a
-# proving-test count reads as an available feature no matter what its prose says.
+# Capabilities with this release posture are never published as customer
+# documentation. The registry is the entitlement vocabulary, not a catalogue of
+# things a reader may use, and a generated page with a title, an edition and a
+# proving-test count reads as an available feature whatever its prose says.
 #
-# admin.multi-tenancy: multi-tenant operation is not an available feature. Honua
-# does not provide SaaS, hosting, or a managed service, and the Elastic License
-# 2.0 prohibits providing Honua to third parties as a hosted or managed service.
-# Publishing it as a capability advertises something nobody may use.
-UNPUBLISHED = {
-    "admin.multi-tenancy": "not an available feature; prohibited as a hosted or managed service under ELv2",
-}
+# `internal` marks capabilities that support Honua's own hosted operation and are
+# not offered to licensees - the Elastic License 2.0 prohibits providing Honua to
+# third parties as a hosted or managed service, so a licensee can never be the
+# party operating them, and there is no GA path to document.
+#
+# Keyed on status rather than on a list of keys, so a future internal capability
+# is excluded by classification instead of by someone remembering to add it here.
+UNPUBLISHED_STATUS = {"internal"}
 
 
 def render(entry: dict, facts: dict) -> str:
@@ -246,7 +247,8 @@ def build() -> dict[str, str]:
     index_rows = []
     for entry in sorted(entries, key=lambda e: e["key"]):
         key = entry["key"]
-        if key in UNPUBLISHED:
+        status = (facts_by_key.get(key, {}).get("status") or entry.get("status") or "").lower()
+        if status in UNPUBLISHED_STATUS:
             continue
         facts = facts_by_key.get(key, {})
         written[f"{key}.md"] = render(entry, facts)

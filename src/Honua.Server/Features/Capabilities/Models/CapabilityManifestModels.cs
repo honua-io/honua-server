@@ -51,7 +51,10 @@ internal sealed record CapabilityManifestScope
 {
     public string? TenantId { get; init; }
 
-    public required string TenantSource { get; init; }
+    // Null, and omitted from the response, when tenant context resolution is off -
+    // which is every deployment a licensee may run. A field that is always null
+    // invites the question of how to populate it.
+    public string? TenantSource { get; init; }
 
     public string? Environment { get; init; }
 

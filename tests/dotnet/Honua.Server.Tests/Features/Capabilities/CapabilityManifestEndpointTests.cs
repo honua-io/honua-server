@@ -67,7 +67,8 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         HonuaEdition edition = HonuaEdition.Pro,
         bool manifestFromRegistry = false,
         bool experimentalGlobalEnabled = true,
-        bool tenantSchemaRoutingEnabled = false)
+        bool tenantSchemaRoutingEnabled = false,
+        bool tenantContextEnabled = true)
         => new WebAppFixture()
             .WithTestLicense(edition, entitlements: entitlements)
             .ConfigureServices(services =>
@@ -98,6 +99,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                         ["Capabilities:ManifestFromRegistry"] = manifestFromRegistry ? "true" : "false",
                         ["Capabilities:Experimental:Enabled"] = experimentalGlobalEnabled ? "true" : "false",
                         ["MultiTenancy:SchemaRouting:Enabled"] = tenantSchemaRoutingEnabled ? "true" : "false",
+                        ["MultiTenancy:Enabled"] = tenantContextEnabled ? "true" : "false",
                     });
                 });
             });
@@ -421,6 +423,34 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             .Should().Be("/api/v1/streaming/features/capabilities");
         GetTransport(root, "mcp").GetProperty("available").GetBoolean().Should().BeTrue();
         GetTransport(root, "qgis").GetProperty("available").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithTenantContextDisabled_OmitsTenantScopeEntirely()
+    {
+        // Multi-tenant operation is internal to Honua's own hosted operation and is not
+        // offered to licensees, so tenant context is off in every deployment a licensee
+        // may run. The manifest omits the fields rather than reporting them as null: a
+        // key that is always null on every deployment a customer can legally operate
+        // invites the question of how to populate it.
+        await using var fixture = CreateManifestFixture(tenantContextEnabled: false);
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/api/v1/capabilities/manifest", UriKind.Relative));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = await ReadDocumentAsync(response);
+        var scope = document.RootElement.GetProperty("scope");
+
+        scope.TryGetProperty("tenantId", out _).Should().BeFalse(
+            "tenant scope is not part of the surface a licensee operates");
+        scope.TryGetProperty("tenantSource", out _).Should().BeFalse(
+            "reporting how a tenant was resolved implies there is a tenant to resolve");
+
+        // The rest of the scope is unaffected.
+        scope.GetProperty("authenticated").GetBoolean().Should().BeFalse();
     }
 
     [IntegrationTest]
