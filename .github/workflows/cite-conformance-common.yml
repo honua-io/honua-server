@@ -93,6 +93,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Checkout candidate migration manifest
+        if: inputs.honua-image != ''
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tested-honua-git-sha }}
+          path: .cite-source
+
+      - name: Select candidate migration manifest
+        if: inputs.honua-image != ''
+        run: echo "HONUA_CITE_MIGRATIONS_DIR=$GITHUB_WORKSPACE/.cite-source/src/Honua.Server/Migrations" >> "$GITHUB_ENV"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -156,6 +167,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y curl jq
+
+      - name: Verify WFS migration-first bootstrap and stale-schema rejection
+        if: contains(inputs.runner-script, 'wfs')
+        env:
+          HONUA_CITE_SERVER_IMAGE: honua-server:latest
+        run: bash docker/cite/shared/tests/test-wfs-bootstrap.sh
 
       - name: Run ${{ inputs.display-name }} CITE conformance tests
         id: run-suite
