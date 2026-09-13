@@ -1,0 +1,338 @@
+{
+ "requests": [
+  {
+   "label": "create-label-field-editor",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys",
+   "status": 201,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "2571e889b94b67fdebf3e80653745ffd732ad146fef9a298560c650c1d465ddc"
+  },
+  {
+   "label": "create-label-read-scoped",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys",
+   "status": 201,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "1019d437ca8f83b1cc5696216000c93a76e7ac82bd7b9f1339928d00c43e218c"
+  },
+  {
+   "label": "anonymous-fs",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_role/FeatureServer/2030/query",
+   "status": 200,
+   "error": 499,
+   "tokenIssued": false,
+   "bodySha256": "8f66e22f0f396ea350d614d3b18ffdcdd162b51719c2badc9baf76f2828b59fd"
+  },
+  {
+   "label": "anonymous-ogc",
+   "method": "GET",
+   "path": "/ogc/features/collections/2030/items",
+   "status": 401,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "e1b51256675557dac6dc5d3a8199df054283ec5a79146a552ae4b5ce079114d3"
+  },
+  {
+   "label": "admin-direct-fs",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_role/FeatureServer/2030/query",
+   "status": 200,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "5e567381032dad594debc06fcdfdbdfce2a602730a653873adcfa7879b3f1188"
+  },
+  {
+   "label": "admin-direct-ogc",
+   "method": "GET",
+   "path": "/ogc/features/collections/2030/items",
+   "status": 200,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "6da36a960de34120e10d41eb9eed9c48425856f9b3de73fa43a20ec6a6e857ae"
+  },
+  {
+   "label": "label-field-editor-direct-fs",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_role/FeatureServer/2030/query",
+   "status": 200,
+   "error": 403,
+   "tokenIssued": false,
+   "bodySha256": "6a04fa8a026831dd017738d6e7a1cd672f50ab95869133cd99041dc0e117214a"
+  },
+  {
+   "label": "label-field-editor-direct-ogc",
+   "method": "GET",
+   "path": "/ogc/features/collections/2030/items",
+   "status": 403,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "29653536b8c5ff5e44f0f959ad1f7e0eb2bfe66bb1a7237d08d1b35fb693ab3b"
+  },
+  {
+   "label": "label-field-editor-cc-grant",
+   "method": "POST",
+   "path": "/sharing/rest/oauth2/token",
+   "status": 200,
+   "error": null,
+   "tokenIssued": true,
+   "bodySha256": "762aeea5b8902a970250c95c8c244d8a12263aaa7d3978a4bf172807b9e1f70c"
+  },
+  {
+   "label": "label-field-editor-cc-bearer-fs",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_role/FeatureServer/2030/query",
+   "status": 200,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "5e567381032dad594debc06fcdfdbdfce2a602730a653873adcfa7879b3f1188"
+  },
+  {
+   "label": "label-field-editor-cc-bearer-ogc",
+   "method": "GET",
+   "path": "/ogc/features/collections/2030/items",
+   "status": 200,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "3b7aff853fc7be5ac61d3583df9b31a883c8c5caed4ee600fc1f63eab2ce78b9"
+  },
+  {
+   "label": "label-field-editor-cc-query-fs",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_role/FeatureServer/2030/query",
+   "status": 200,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "5e567381032dad594debc06fcdfdbdfce2a602730a653873adcfa7879b3f1188"
+  },
+  {
+   "label": "label-field-editor-cc-query-ogc",
+   "method": "GET",
+   "path": "/ogc/features/collections/2030/items",
+   "status": 401,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "7b656f69b7c775e66ba75a34f9eb6da1a74c9961f31052285bf4425858db17fa"
+  },
+  {
+   "label": "label-field-editor-generateToken",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "error": 400,
+   "tokenIssued": false,
+   "bodySha256": "798a96753a4c87ed1eddad9977c4ab646d087e47e91a3c963f1564d4c6672c7c"
+  },
+  {
+   "label": "label-read-scoped-direct-fs",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_role/FeatureServer/2030/query",
+   "status": 200,
+   "error": 403,
+   "tokenIssued": false,
+   "bodySha256": "8e4cde038b9417dd8ad78f689cde6b7964c9805fe7fabd503f36195b1caef49d"
+  },
+  {
+   "label": "label-read-scoped-direct-ogc",
+   "method": "GET",
+   "path": "/ogc/features/collections/2030/items",
+   "status": 403,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "8389c213a04e3541f4e26bbf215dc6c71ebd61fe349528405f67cafaf44d79c8"
+  },
+  {
+   "label": "label-read-scoped-cc-grant",
+   "method": "POST",
+   "path": "/sharing/rest/oauth2/token",
+   "status": 200,
+   "error": null,
+   "tokenIssued": true,
+   "bodySha256": "4381d64c07e093f532e4f8a36788ccfa7000e6a9c0780c6a891529c5c5389664"
+  },
+  {
+   "label": "label-read-scoped-cc-bearer-fs",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_role/FeatureServer/2030/query",
+   "status": 200,
+   "error": 403,
+   "tokenIssued": false,
+   "bodySha256": "40841f7c1e52317e5008d4852756255a3b3d54815695c8fb1a66b7d5dae77423"
+  },
+  {
+   "label": "label-read-scoped-cc-bearer-ogc",
+   "method": "GET",
+   "path": "/ogc/features/collections/2030/items",
+   "status": 403,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "b4291b90ff2085c1ffd7bc70543bcdc46d4da22368646400b5580616f127eb23"
+  },
+  {
+   "label": "label-read-scoped-cc-query-fs",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_role/FeatureServer/2030/query",
+   "status": 200,
+   "error": 403,
+   "tokenIssued": false,
+   "bodySha256": "05e9f8f36daa7f3e982390edea14514834ffb992a658b2fedcebd371146b6045"
+  },
+  {
+   "label": "label-read-scoped-cc-query-ogc",
+   "method": "GET",
+   "path": "/ogc/features/collections/2030/items",
+   "status": 401,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "0e35766e4ac0cbd610bac5bb851003342d2d7dad56c6af1f32aed1e9e68d9ca7"
+  },
+  {
+   "label": "label-read-scoped-generateToken",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "error": 400,
+   "tokenIssued": false,
+   "bodySha256": "effcbd9f49df23414bd17e89f21df4a5ddad0a8cf3fb8a999a542116be643063"
+  },
+  {
+   "label": "cleanup-revoke",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys/5472faba-9b12-495e-9148-a18f047a21a8/revoke",
+   "status": 200,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "6e2763e48d5a8763fb2c84ddb42f576da3e81f42743fffc861a1e631a0dc54e8"
+  },
+  {
+   "label": "cleanup-revoke",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys/52b2dc55-eb13-4b58-9474-32d5fdd1acf8/revoke",
+   "status": 200,
+   "error": null,
+   "tokenIssued": false,
+   "bodySha256": "0c51b1a5d68057e9315037bd9187d30fd843d9cefc8dc3cf38a68b6feefc2c9e"
+  }
+ ],
+ "observations": [
+  {
+   "credential": "anonymous",
+   "fs": {
+    "status": 200,
+    "error": 499,
+    "features": []
+   },
+   "ogc": {
+    "status": 401,
+    "error": null,
+    "features": []
+   }
+  },
+  {
+   "credential": "bootstrap-admin X-API-Key",
+   "fs": {
+    "status": 200,
+    "error": null,
+    "features": [
+     "role-alpha"
+    ]
+   },
+   "ogc": {
+    "status": 200,
+    "error": null,
+    "features": [
+     "role-alpha"
+    ]
+   }
+  },
+  {
+   "credential": "label-field-editor direct X-API-Key",
+   "fs": {
+    "status": 200,
+    "error": 403,
+    "features": []
+   },
+   "ogc": {
+    "status": 403,
+    "error": null,
+    "features": []
+   }
+  },
+  {
+   "credential": "label-field-editor client_credentials token (Bearer)",
+   "fs": {
+    "status": 200,
+    "error": null,
+    "features": [
+     "role-alpha"
+    ]
+   },
+   "ogc": {
+    "status": 200,
+    "error": null,
+    "features": [
+     "role-alpha"
+    ]
+   }
+  },
+  {
+   "credential": "label-field-editor client_credentials token (?token= on FS)",
+   "fs": {
+    "status": 200,
+    "error": null,
+    "features": [
+     "role-alpha"
+    ]
+   }
+  },
+  {
+   "credential": "label-field-editor generateToken bridge",
+   "status": 200,
+   "error": 400,
+   "issued": false
+  },
+  {
+   "credential": "label-read-scoped direct X-API-Key",
+   "fs": {
+    "status": 200,
+    "error": 403,
+    "features": []
+   },
+   "ogc": {
+    "status": 403,
+    "error": null,
+    "features": []
+   }
+  },
+  {
+   "credential": "label-read-scoped client_credentials token (Bearer)",
+   "fs": {
+    "status": 200,
+    "error": 403,
+    "features": []
+   },
+   "ogc": {
+    "status": 403,
+    "error": null,
+    "features": []
+   }
+  },
+  {
+   "credential": "label-read-scoped client_credentials token (?token= on FS)",
+   "fs": {
+    "status": 200,
+    "error": 403,
+    "features": []
+   }
+  },
+  {
+   "credential": "label-read-scoped generateToken bridge",
+   "status": 200,
+   "error": 400,
+   "issued": false
+  }
+ ]
+}

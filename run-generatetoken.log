@@ -1,0 +1,76 @@
+{
+ "checks": 71,
+ "failed": [],
+ "requests": 89
+}
+PASS admin discovers protected layer 2010 {"status": 200}
+PASS anonymous fs arcgis_compat_protected denied {"status": 200}
+PASS anonymous fs arcgis_compat_scoped denied {"status": 200}
+PASS anonymous ogc arcgis_compat_protected denied {"status": 401}
+PASS anonymous ogc arcgis_compat_scoped denied {"status": 401}
+PASS scoped key direct fs reads allowed service {"status": 200, "features": ["scoped-alpha"]}
+PASS scoped key direct fs denied protected service {"status": 200}
+PASS scoped key direct ogc reads allowed service {"status": 200, "features": ["scoped-alpha"]}
+PASS scoped key direct ogc denied protected service {"status": 403}
+PASS exchange refused: scoped-read as admin (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: scoped-read as admin (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: scoped-read as desktop-user (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: scoped-read as desktop-user (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: scoped-write as admin (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: scoped-write as admin (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: scoped-write as desktop-user (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: scoped-write as desktop-user (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: admin-read as admin (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: admin-read as admin (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: admin-read as desktop-user (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: admin-read as desktop-user (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: admin-read-approve as admin (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: admin-read-approve as admin (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: admin-read-approve as desktop-user (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: admin-read-approve as desktop-user (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: ops-read as admin (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: ops-read as admin (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: ops-read as desktop-user (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: ops-read as desktop-user (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: unknown as admin (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: unknown as admin (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: unknown as desktop-user (requestip) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange refused: unknown as desktop-user (referer) {"status": 200, "esriError": 400, "tokenIssued": false}
+PASS exchange issued: bootstrap-password as admin (requestip) {"status": 200}
+PASS bootstrap-password token (admin, requestip) fs reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS bootstrap-password token (admin, requestip) fs reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS bootstrap-password token (admin, requestip) ogc reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS bootstrap-password token (admin, requestip) ogc reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS exchange issued: bootstrap-password as admin (referer) {"status": 200}
+PASS bootstrap-password token (admin, referer) fs reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS bootstrap-password token (admin, referer) fs reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS bootstrap-password token (admin, referer) ogc reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS bootstrap-password token (admin, referer) ogc reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS exchange issued: full-admin-key as admin (requestip) {"status": 200}
+PASS full-admin-key token (admin, requestip) fs reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS full-admin-key token (admin, requestip) fs reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS full-admin-key token (admin, requestip) ogc reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS full-admin-key token (admin, requestip) ogc reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS exchange issued: full-admin-key as admin (referer) {"status": 200}
+PASS full-admin-key token (admin, referer) fs reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS full-admin-key token (admin, referer) fs reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS full-admin-key token (admin, referer) ogc reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS full-admin-key token (admin, referer) ogc reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS exchange issued: full-admin-key as desktop-user (requestip) {"status": 200}
+PASS full-admin-key token (desktop-user, requestip) fs reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS full-admin-key token (desktop-user, requestip) fs reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS full-admin-key token (desktop-user, requestip) ogc reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS full-admin-key token (desktop-user, requestip) ogc reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS exchange issued: full-admin-key as desktop-user (referer) {"status": 200}
+PASS full-admin-key token (desktop-user, referer) fs reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS full-admin-key token (desktop-user, referer) fs reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS full-admin-key token (desktop-user, referer) ogc reads arcgis_compat_protected {"status": 200, "features": ["protected-alpha"]}
+PASS full-admin-key token (desktop-user, referer) ogc reads arcgis_compat_scoped {"status": 200, "features": ["scoped-alpha"]}
+PASS exchange rejected: revoked-key as admin {"status": 200, "esriError": 400}
+PASS exchange rejected: revoked-key as desktop-user {"status": 200, "esriError": 400}
+PASS exchange rejected: expired-key as admin {"status": 200, "esriError": 400}
+PASS exchange rejected: expired-key as desktop-user {"status": 200, "esriError": 400}
+PASS exchange rejected: invalid-credential as admin {"status": 200, "esriError": 400}
+PASS exchange rejected: invalid-credential as desktop-user {"status": 200, "esriError": 400}
+PASS exchange rejected: wrong-password as admin {"status": 200, "esriError": 400}
+PASS exchange rejected: wrong-password as desktop-user {"status": 200, "esriError": 400}

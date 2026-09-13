@@ -1,0 +1,10 @@
+anonymous {"fs": {"status": 200, "error": 499, "features": []}, "ogc": {"status": 401, "error": null, "features": []}}
+bootstrap-admin X-API-Key {"fs": {"status": 200, "error": null, "features": ["role-alpha"]}, "ogc": {"status": 200, "error": null, "features": ["role-alpha"]}}
+label-field-editor direct X-API-Key {"fs": {"status": 200, "error": 403, "features": []}, "ogc": {"status": 403, "error": null, "features": []}}
+label-field-editor client_credentials token (Bearer) {"fs": {"status": 200, "error": null, "features": ["role-alpha"]}, "ogc": {"status": 200, "error": null, "features": ["role-alpha"]}}
+label-field-editor client_credentials token (?token= on FS) {"fs": {"status": 200, "error": null, "features": ["role-alpha"]}}
+label-field-editor generateToken bridge {"status": 200, "error": 400, "issued": false}
+label-read-scoped direct X-API-Key {"fs": {"status": 200, "error": 403, "features": []}, "ogc": {"status": 403, "error": null, "features": []}}
+label-read-scoped client_credentials token (Bearer) {"fs": {"status": 200, "error": 403, "features": []}, "ogc": {"status": 403, "error": null, "features": []}}
+label-read-scoped client_credentials token (?token= on FS) {"fs": {"status": 200, "error": 403, "features": []}}
+label-read-scoped generateToken bridge {"status": 200, "error": 400, "issued": false}
