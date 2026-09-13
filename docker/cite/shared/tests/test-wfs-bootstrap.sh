@@ -41,6 +41,19 @@ for suite in wfs10 wfs11 wfs20; do
   "${compose[@]}" exec -T honua-server wget -T 15 -qO- 'http://localhost:8080/wfs?service=WFS&version=2.0.0&request=GetCapabilities' > /tmp/"$project"-capabilities.xml
   grep -q 'admin_boundaries' /tmp/"$project"-capabilities.xml
   rm /tmp/"$project"-capabilities.xml
+  if [[ "$suite" == wfs20 ]]; then
+    "${compose[@]}" up --wait --wait-timeout 120 cite-auth-proxy
+    endpoint="$("${compose[@]}" port honua-server 8080)"
+    query='service=WFS&version=2.0.0&request=DropStoredQuery&storedquery_id=urn:honua:cite:absent'
+    status="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${endpoint##*:}/wfs?$query")"
+    [[ "$status" == 401 ]]
+    if response="$("${compose[@]}" exec -T honua-server wget -T 15 --content-on-error -qO- "http://cite-auth-proxy:8080/wfs?$query")"; then
+      echo 'ERROR: dropping a nonexistent stored query unexpectedly succeeded' >&2
+      exit 1
+    fi
+    grep -q 'InvalidParameterValue' <<< "$response"
+    grep -q 'storedquery_id' <<< "$response"
+  fi
   # A journal mismatch must be rejected before any data mutation, with the
   # exact missing migration in the diagnostic. Only mutate our throwaway DB.
   "${compose[@]}" exec -T postgres psql -U postgres -d honua_cite -v ON_ERROR_STOP=1 -c "DELETE FROM public.schema_versions WHERE scriptname = 'Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql'"
