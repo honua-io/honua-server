@@ -191,6 +191,19 @@ internal abstract class StudioDraftToolBase
         var draft = await lifecycleService.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
         if (draft is null)
         {
+            // Non-disclosure (#3429): authorize a missing draft as an ownerless target first, so a
+            // caller who could not act on another owner's draft receives that same governed denial
+            // instead of learning whether the id exists.
+            await EnsureStudioAuthorizedAsync(
+                httpContext,
+                RequireAuthorizationService(httpContext),
+                principal,
+                studioOperation,
+                resourceOwnerId: null,
+                draftId.ToString("D"),
+                "studio-package-draft",
+                operatorOperation,
+                cancellationToken).ConfigureAwait(false);
             throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
         }
 

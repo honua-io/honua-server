@@ -44,9 +44,10 @@ public static class OperationScopeMapping
         {
             "service.publish" or "style.apply-preset" => OperatorOperation.Publish,
             "control-plane.deploy.rollback" or "control-plane.coordinated-release.rollback" => OperatorOperation.Rollback,
-            "studio.draft.create" => OperatorOperation.Create,
-            "studio.draft.update" or "studio.draft.save-version" => OperatorOperation.Update,
-            "studio.draft.delete" => OperatorOperation.Delete,
+            "studio.draft.create" or "studio.draft.update" or "studio.draft.save-version" or
+                "studio.draft.delete" or "studio.draft.validate" or "studio.draft.preview-plan" or
+                "studio.content.reopen-version" or "studio.content.create-publication-request" or
+                "studio.content.rollback" => ResolveStudioOperation(request.OperationId),
             "admin.layer.publish" => OperatorOperation.Publish,
             "admin.connections.create" or "admin.import.upload" or "admin.import.upload-url" => OperatorOperation.Create,
             "admin.connections.delete" or "admin.import.jobs.cancel" => OperatorOperation.Delete,
@@ -63,15 +64,21 @@ public static class OperationScopeMapping
     }
 
     private static bool IsStudioOperation(string operationId)
-        => operationId is "studio.draft.create" or "studio.draft.update" or
-            "studio.draft.save-version" or "studio.draft.delete";
+        => ResolveStudioOperation(operationId) != default;
 
+    // Every Studio mutation routed through the canonical runtime needs a mapping: the dispatcher
+    // refuses any scope-governed submission it cannot map (#4722), so an unmapped identity made
+    // OAuth reopen, publication proposals, rollback and validation fail before an envelope existed
+    // (#3429). The operations mirror StudioAuthorizationService's scope ceiling.
     private static OperatorOperation ResolveStudioOperation(string operationId)
         => operationId switch
         {
-            "studio.draft.create" => OperatorOperation.Create,
+            "studio.draft.create" or "studio.content.reopen-version" => OperatorOperation.Create,
             "studio.draft.update" or "studio.draft.save-version" => OperatorOperation.Update,
             "studio.draft.delete" => OperatorOperation.Delete,
+            "studio.draft.validate" or "studio.draft.preview-plan" => OperatorOperation.Read,
+            "studio.content.create-publication-request" => OperatorOperation.Publish,
+            "studio.content.rollback" => OperatorOperation.Rollback,
             _ => default,
         };
 

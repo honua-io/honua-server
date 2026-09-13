@@ -73,6 +73,12 @@ public sealed record StudioDraftMutationContext
     public IReadOnlyList<string> Roles { get; init; } = [];
     public bool ScopeGoverned { get; init; }
     public IReadOnlyList<string> RecognizedScopes { get; init; } = [];
+
+    /// <summary>
+    /// Optional guardrail action the adapter declares for this mutation (for example
+    /// <c>studio.publication_proposal</c>). The action tier can only tighten the edition policy.
+    /// </summary>
+    public string? ActionDiscriminator { get; init; }
 }
 
 /// <summary>Durable envelope plus the typed projection produced by its actuator.</summary>

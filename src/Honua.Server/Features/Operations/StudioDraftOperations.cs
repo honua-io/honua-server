@@ -714,6 +714,7 @@ internal sealed class StudioDraftMutationRuntime(
             {
                 OperationId = operationId,
                 Kind = OperationClass.StudioDraftMutation,
+                ActionDiscriminator = context.ActionDiscriminator,
                 RequestedBy = context.PrincipalId,
                 CorrelationId = context.CorrelationId,
                 IdempotencyKey = ScopeIdempotencyKey(context),

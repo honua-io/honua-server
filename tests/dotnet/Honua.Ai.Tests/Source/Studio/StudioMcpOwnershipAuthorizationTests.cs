@@ -634,6 +634,40 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData(DraftToolFamily.Read)]
+    [InlineData(DraftToolFamily.Update)]
+    [InlineData(DraftToolFamily.Validate)]
+    [InlineData(DraftToolFamily.Composition)]
+    [InlineData(DraftToolFamily.PublicationProposal)]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
+    public async Task MissingTarget_NonOwnerReceivesCrossOwnerDenial_AdminLearnsNotFound(DraftToolFamily family)
+    {
+        // Existence must not be an oracle (#3429): an unknown id and another owner's resource
+        // produce the same governed denial for a non-owner; only an admin sees not-found.
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns((StudioPackageDraft?)null);
+        lifecycle.GetPointersAsync(ItemId, Arg.Any<CancellationToken>()).Returns((StudioContentItemPointers?)null);
+        lifecycle.GetVersionAsync(ItemId, VersionId, Arg.Any<CancellationToken>()).Returns((StudioContentVersion?)null);
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+
+        var nonOwnerAuthorization = BuildAuthorization();
+        var nonOwner = BuildContext(CallerKind.NonOwner, lifecycle, validator: null, nonOwnerAuthorization);
+        var (tool, arguments) = BuildInvocation(family, jobService);
+        var denied = await ((Func<Task>)(() => tool.InvokeAsync(nonOwner, arguments, CancellationToken.None)))
+            .Should().ThrowAsync<GeoprocessingAuthorizationException>();
+        denied.Which.PolicyCode.Should().Be(StudioAuthorizationService.CrossUserDeniedCode);
+        denied.Which.Message.Should().NotContain("not found");
+        nonOwnerAuthorization.Calls.Should().ContainSingle(call =>
+            call.Operation == ExpectedStudioOperation(family) && call.ResourceOwnerId == null);
+
+        var adminAuthorization = BuildAuthorization();
+        var admin = BuildContext(CallerKind.Admin, lifecycle, validator: null, adminAuthorization);
+        await ((Func<Task>)(() => tool.InvokeAsync(admin, arguments, CancellationToken.None)))
+            .Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     public void OwnerIdSchemas_AdvertiseAdminOnlyAssignment()

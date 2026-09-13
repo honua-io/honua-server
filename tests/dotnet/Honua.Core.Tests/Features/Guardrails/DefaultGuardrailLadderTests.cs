@@ -238,6 +238,47 @@ public class DefaultGuardrailLadderTests
         Assert.Equal(HonuaEdition.Community, decision.Edition);
     }
 
+    [UnitTest]
+    public void Resolve_StudioPublicationProposal_RequiresApprovalOnDirectExecuteEditionWithoutCatalog()
+    {
+        // #3429: an agent publication proposal must wait for approval even where Studio draft
+        // composition executes directly, and must not depend on a host registering the ops catalog.
+        var ladder = CreateLadder(HonuaEdition.Community);
+
+        var proposal = ladder.Resolve(
+            OperationClass.StudioDraftMutation, BuiltInGuardrailActions.StudioPublicationProposal, HonuaEdition.Community);
+        var composition = ladder.Resolve(OperationClass.StudioDraftMutation, actionDiscriminator: null, HonuaEdition.Community);
+
+        Assert.Equal(GuardrailTier.RequiresApproval, proposal.Tier);
+        Assert.Equal("built-in-action:studio.publication_proposal", proposal.Source);
+        Assert.Equal(GuardrailTier.DirectExecute, composition.Tier);
+    }
+
+    [UnitTest]
+    public void Resolve_StudioPublicationProposal_NeverLoosensBlockedOverride()
+    {
+        var options = new GuardrailLadderOptions();
+        options.Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.Blocked);
+        var ladder = CreateLadder(HonuaEdition.Community, options, new StubActionCatalog());
+
+        var decision = ladder.Resolve(
+            OperationClass.StudioDraftMutation, BuiltInGuardrailActions.StudioPublicationProposal, HonuaEdition.Community);
+
+        Assert.Equal(GuardrailTier.Blocked, decision.Tier);
+    }
+
+    [UnitTest]
+    public void Resolve_StudioPublicationProposal_CatalogCannotRedeclareBuiltInTier()
+    {
+        var catalog = new StubActionCatalog { [BuiltInGuardrailActions.StudioPublicationProposal] = GuardrailTier.DirectExecute };
+        var ladder = CreateLadder(HonuaEdition.Pro, catalog: catalog);
+
+        var decision = ladder.Resolve(
+            OperationClass.StudioDraftMutation, BuiltInGuardrailActions.StudioPublicationProposal, HonuaEdition.Pro);
+
+        Assert.Equal(GuardrailTier.RequiresApproval, decision.Tier);
+    }
+
     private sealed class StubActionCatalog : Honua.Core.Features.Guardrails.Abstractions.IOpsActionGuardrailCatalog
     {
         private readonly Dictionary<string, GuardrailTier> _tiers = new(StringComparer.Ordinal);
