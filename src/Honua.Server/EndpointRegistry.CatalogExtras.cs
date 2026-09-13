@@ -3,6 +3,7 @@
 
 namespace Honua.Server;
 
+/// <summary>Catalog and auxiliary protocol entries in the HTTP endpoint registry.</summary>
 public static partial class EndpointRegistry
 {
     // Expression-bodied (computed) so it is a method, not a static field
