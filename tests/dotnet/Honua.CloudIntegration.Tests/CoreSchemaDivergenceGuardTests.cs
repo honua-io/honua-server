@@ -15,6 +15,7 @@ using Honua.Db.Postgres.Features.Metadata;
 using Honua.Db.Postgres.Features.Raster;
 using Honua.Db.Postgres.Features.SensorThings;
 using Honua.Server.Startup;
+using Honua.TestKit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -592,6 +593,218 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
 
         var after = await CaptureStateAsync(connectionString);
         after.Should().Be(before, "full startup/DR verification must be read-only when a restored table is missing");
+    }
+
+    [SkippableFact]
+    public async Task CanonicalRunner_WhenSeedCreatesRasterTablesAfterVectorOnlyBoot_AdoptsThemOnRestartAndServesStatistics()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the late-raster seed lane.");
+
+        // honua-esri-compat scripts/up.sh + scripts/seed.sh (#4744): Honua boots and migrates
+        // before postgis_raster exists, the seed then enables the extension and creates the
+        // raster tables itself, and the harness restarts Honua.
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+
+        var firstBoot = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        firstBoot.Successful.Should().BeTrue(
+            $"the vector-only first boot must migrate cleanly. Error: {firstBoot.ErrorMessage}");
+        firstBoot.AppliedScripts.Should().NotContain(PostgresCoreSchemaGuard.RasterLayerStatisticsMigration);
+
+        await ExecuteAsync(
+            connectionString,
+            await File.ReadAllTextAsync(RepositoryPaths.Resolve("tests", "seed", "base-schema.sql")));
+        (await CountTablesAsync(connectionString, "honua", "raster_data", "raster_layer_statistics"))
+            .Should().Be(2, "the seed creates the raster tables directly, without journal rows");
+
+        // A 3x2 8BUI band whose zero cell is nodata. Expected statistics are derived from the
+        // literal pixel values below, not from anything the server computes.
+        double[][] pixels = [[1, 2, 3], [4, 0, 6]];
+        const double noData = 0;
+        var probeRasterId = await InsertProbeRasterAsync(connectionString, pixels, noData);
+        var valid = pixels.SelectMany(row => row).Where(value => value != noData).ToArray();
+        var expectedMean = valid.Sum() / valid.Length;
+        var expectedStdDev = Math.Sqrt(valid.Sum(value => (value - expectedMean) * (value - expectedMean)) / valid.Length);
+
+        var rasterStore = new PostgresRasterStore(
+            new TestConnectionProvider(connectionString),
+            NullLogger<PostgresRasterStore>.Instance,
+            guard,
+            schemaName: "honua");
+
+        // Until migrations run again the request path still fails closed, and says what heals it.
+        var beforeRestart = () => rasterStore.GetMosaicStatisticsAsync(0, [probeRasterId], RasterMergeStrategy.Newest);
+        var floor = await beforeRestart.Should().ThrowAsync<DatabaseSchemaFloorException>();
+        floor.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterLayerStatisticsMigration);
+        floor.Which.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal);
+        floor.Which.Detail.Should().Contain("restart the server");
+
+        var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeTrue(
+            $"a complete seed-created statistics table must be adoptable by the pending provider root. Error: {plan.ErrorMessage}");
+        plan.PendingScripts.Should().Contain(new[]
+        {
+            PostgresCoreSchemaGuard.RasterTablesMigration,
+            PostgresCoreSchemaGuard.RasterLayerStatisticsMigration,
+            PostgresCoreSchemaGuard.RasterLateProvisioningMigration,
+        });
+        plan.HasContractScripts.Should().BeFalse();
+
+        var restart = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        restart.Successful.Should().BeTrue(
+            $"the restart after late raster enablement must journal the provider root. Error: {restart.ErrorMessage}");
+        restart.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLayerStatisticsMigration);
+        await guard.Awaiting(instance => instance.VerifyAsync(connectionString)).Should().NotThrowAsync();
+
+        var statistics = await rasterStore.GetMosaicStatisticsAsync(0, [probeRasterId], RasterMergeStrategy.Newest);
+        var band = statistics.Should().ContainSingle().Which;
+        band.Band.Should().Be(1);
+        band.MinValue.Should().Be(valid.Min());
+        band.MaxValue.Should().Be(valid.Max());
+        band.MeanValue.Should().BeApproximately(expectedMean, 1e-9);
+        band.StandardDeviation.Should().BeApproximately(expectedStdDev, 1e-9);
+        band.ValidPixelCount.Should().Be(valid.Length, "the nodata cell is excluded from the statistics");
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT min_value, max_value, mean_value, std_dev, valid_pixel_count
+            FROM honua.raster_layer_statistics
+            WHERE layer_id = 0 AND merge_strategy = 'Newest' AND band_number = 1
+            """;
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            (await reader.ReadAsync()).Should().BeTrue("the adopted table must persist the computed mosaic statistics");
+            reader.GetDouble(0).Should().Be(valid.Min());
+            reader.GetDouble(1).Should().Be(valid.Max());
+            reader.GetDouble(2).Should().BeApproximately(expectedMean, 1e-9);
+            reader.GetDouble(3).Should().BeApproximately(expectedStdDev, 1e-9);
+            reader.GetInt64(4).Should().Be(valid.Length);
+            (await reader.ReadAsync()).Should().BeFalse();
+        }
+    }
+
+    [SkippableTheory]
+    [InlineData(LateRasterStatisticsCase.IncompleteTableWithRasterExtension)]
+    [InlineData(LateRasterStatisticsCase.CompleteTableWithoutRasterExtension)]
+    [InlineData(LateRasterStatisticsCase.ProviderRootJournaledWithoutStatisticsRow)]
+    public async Task CanonicalRunner_WhenUnjournaledRasterStatisticsTableIsNotAdoptable_FailsClosedWithoutMutation(
+        LateRasterStatisticsCase scenario)
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the late-raster seed lane.");
+
+        const string completeTable = """
+            CREATE TABLE honua.raster_layer_statistics (
+                layer_id INTEGER NOT NULL,
+                merge_strategy VARCHAR(32) NOT NULL,
+                raster_signature TEXT NOT NULL,
+                band_number INTEGER NOT NULL,
+                min_value DOUBLE PRECISION,
+                max_value DOUBLE PRECISION,
+                mean_value DOUBLE PRECISION,
+                std_dev DOUBLE PRECISION,
+                valid_pixel_count BIGINT,
+                nodata_pixel_count BIGINT,
+                computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (layer_id, merge_strategy, raster_signature, band_number));
+            """;
+
+        var rasterAtBoot = scenario == LateRasterStatisticsCase.ProviderRootJournaledWithoutStatisticsRow;
+        var connectionString = await postgres.CreateFreshDatabaseAsync(
+            enablePostGis: true,
+            enablePostGisRaster: rasterAtBoot);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+        var boot = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        boot.Successful.Should().BeTrue($"the test requires a clean first boot. Error: {boot.ErrorMessage}");
+
+        switch (scenario)
+        {
+            case LateRasterStatisticsCase.IncompleteTableWithRasterExtension:
+                await ExecuteAsync(connectionString, $"""
+                    CREATE EXTENSION postgis_raster;
+                    {completeTable}
+                    ALTER TABLE honua.raster_layer_statistics DROP CONSTRAINT raster_layer_statistics_pkey;
+                    """);
+                break;
+            case LateRasterStatisticsCase.CompleteTableWithoutRasterExtension:
+                await ExecuteAsync(connectionString, completeTable);
+                break;
+            case LateRasterStatisticsCase.ProviderRootJournaledWithoutStatisticsRow:
+                await ExecuteAsync(connectionString, $"""
+                    DELETE FROM public.schema_versions
+                    WHERE scriptname = '{PostgresCoreSchemaGuard.RasterLayerStatisticsMigration}';
+                    """);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
+        }
+
+        (await CountTablesAsync(connectionString, "honua", "raster_layer_statistics")).Should().Be(1);
+        var before = await CaptureStateAsync(connectionString);
+
+        var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeFalse("only a complete table awaiting the provider root is adoptable");
+        var planError = plan.Error.Should().BeOfType<DatabaseSchemaFloorException>().Which;
+        planError.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterLayerStatisticsMigration);
+        planError.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal);
+        if (scenario == LateRasterStatisticsCase.IncompleteTableWithRasterExtension)
+        {
+            planError.Detail.Should().Contain("index raster_layer_statistics_pkey");
+        }
+
+        var restart = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        restart.Successful.Should().BeFalse();
+        restart.Error.Should().BeOfType<DatabaseSchemaFloorException>();
+
+        (await CaptureStateAsync(connectionString)).Should().Be(before,
+            "a rejected adoption must neither create tables nor advance the journal");
+    }
+
+    public enum LateRasterStatisticsCase
+    {
+        IncompleteTableWithRasterExtension,
+        CompleteTableWithoutRasterExtension,
+        ProviderRootJournaledWithoutStatisticsRow,
+    }
+
+    private static async Task<long> InsertProbeRasterAsync(string connectionString, double[][] pixels, double noData)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO honua.raster_data (layer_id, name, description, raster)
+            VALUES (
+                0,
+                'late-raster-adoption-probe',
+                'honua-server#4744 receipt',
+                ST_SetValues(
+                    ST_AddBand(
+                        ST_MakeEmptyRaster(@width, @height, -122.5, 37.84, 0.001, -0.001, 0, 0, 4326),
+                        '8BUI'::text,
+                        @nodata,
+                        @nodata),
+                    1, 1, 1,
+                    @pixels))
+            RETURNING id
+            """;
+        command.Parameters.AddWithValue("width", pixels[0].Length);
+        command.Parameters.AddWithValue("height", pixels.Length);
+        command.Parameters.AddWithValue("nodata", noData);
+        var grid = new double[pixels.Length, pixels[0].Length];
+        for (var row = 0; row < pixels.Length; row++)
+        {
+            for (var column = 0; column < pixels[row].Length; column++)
+            {
+                grid[row, column] = pixels[row][column];
+            }
+        }
+
+        command.Parameters.AddWithValue("pixels", grid);
+        return (long)(await command.ExecuteScalarAsync())!;
     }
 
     private static async Task ExecuteAsync(string connectionString, string sql)
