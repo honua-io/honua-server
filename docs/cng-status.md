@@ -238,6 +238,38 @@ canonical-client assignment passed: consult `cell_receipt`, each observation's
 The cut must retain the candidate run URL and receipt and rerun qualification
 when the server pin changes.
 
+### Pinned-candidate execution (2026-09-12 Honolulu / 2026-09-13 UTC)
+
+[Run 34728065714](https://github.com/honua-io/honua-server/actions/runs/34728065714)
+qualified the identity in `honua-release@f6c54b4396bdadb76676be7b839de71fb9a3de84`:
+
+- Source and offline producer: `7ba422672e0c751843b17beb36e954a019cc19fb`.
+- Image: `ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd`.
+- Cut: `2026-09-11T19:47:41Z`.
+- Artifact: `cng-conformance-results-42`; fragment SHA-256:
+  `d284c21019edddd1879e4e3892789701d8cdfb2dda29c888121c8f5e835921e2`.
+
+The receipt reports **24 governed cells, 22 executed, five passing, three failing
+and 16 explicit gaps** (including two cells that did not execute). All three COG
+cells and the Zarr subset-transcode cell pass, with evidence digest
+`sha256:8e65c33d0319cede07f2fa28f7f50c5093a22bb713199d70bc4f32860db0dd28`:
+
+- COG: all 65,536 decoded pixels match the independently computed `row * 512 + col`
+  oracle, including nodata at `(3,7)`. EPSG:3857, dimensions, bounds and nodata
+  match. Honua made eight range requests, transferred 89,600 bytes, and downloaded
+  zero whole objects.
+- Zarr: `[2,4,8]` subset, zero formula/xarray/axis mismatches, eight of 32 chunk
+  objects read. The separate FlatGeobuf/Pyogrio cell also passes.
+
+**The qualification run is red.** The candidate's live `f=parquet` response is an
+error envelope: `GeoParquetFeatureWriter.BuildGeoParquetMetadata` calls
+reflection-based JSON serialization, which is disabled in the AOT image. All
+three GeoParquet client cells fail. The native PMTiles structure validator passes,
+but its governed range/client cells remain explicit gaps. This receipt proves the
+COG/Zarr consumer executions and the lane's rejection of the bad candidate; it
+does not certify all four GA formats. Candidate qualification must be repeated
+after the GeoParquet runtime fix and a reviewed manifest re-pin.
+
 The validator's own tests (`test_validate_canonical_artifacts.py`) were in no
 `testpaths` and in no workflow. They now run as the `validator-selftest` job in
 `cng-conformance.yml`, on every change to `scripts/conformance/cng/**`, and the

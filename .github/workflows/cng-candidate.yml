@@ -10,6 +10,10 @@ on:
         type: string
   workflow_call:
     inputs:
+      harness_ref:
+        description: Full honua-server commit containing this qualification harness
+        required: true
+        type: string
       release_ref:
         required: true
         type: string
@@ -26,11 +30,15 @@ jobs:
   identity:
     runs-on: ubuntu-24.04
     outputs:
+      harness_ref: ${{ steps.identity.outputs.harness_ref }}
       server_image: ${{ steps.identity.outputs.server_image }}
       source_sha: ${{ steps.identity.outputs.source_sha }}
       candidate_cut_at: ${{ steps.identity.outputs.candidate_cut_at }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/honua-server
+          ref: ${{ inputs.harness_ref || github.sha }}
       - name: Require an immutable release manifest ref
         env:
           RELEASE_REF: ${{ inputs.release_ref }}
@@ -51,6 +59,7 @@ jobs:
           RELEASE_REF: ${{ inputs.release_ref }}
         run: |
           set -euo pipefail
+          echo "harness_ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           test "$(git -C release-manifest rev-parse HEAD)" = "$RELEASE_REF"
           python3 scripts/conformance/cng/artifact-gen/candidate_identity.py \
             release-manifest/platform-manifest.yaml > candidate-identity.json
@@ -73,6 +82,7 @@ jobs:
     needs: identity
     uses: ./.github/workflows/cng-conformance.yml
     with:
+      harness_ref: ${{ needs.identity.outputs.harness_ref }}
       server_image: ${{ needs.identity.outputs.server_image }}
       source_sha: ${{ needs.identity.outputs.source_sha }}
       candidate_cut_at: ${{ needs.identity.outputs.candidate_cut_at }}

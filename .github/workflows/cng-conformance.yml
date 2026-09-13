@@ -39,6 +39,9 @@ on:
 
   workflow_call:
     inputs:
+      harness_ref:
+        required: true
+        type: string
       server_image:
         required: true
         type: string
@@ -72,6 +75,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
+        with:
+          repository: honua-io/honua-server
+          ref: ${{ inputs.harness_ref || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -95,11 +101,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          repository: honua-io/honua-server
+          ref: ${{ inputs.harness_ref || github.sha }}
 
       - name: Check out the exact candidate source for offline Honua consumers
         if: inputs.server_image != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          repository: honua-io/honua-server
           ref: ${{ inputs.source_sha }}
           path: candidate-source
 
@@ -207,6 +217,7 @@ jobs:
           HONUA_DOCKER_GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
+          harness_sha="$(git rev-parse HEAD)"
           trap 'docker compose -f docker/cng/compose.yml down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
           if [[ -n "$SERVER_IMAGE" ]]; then
             if [[ ! "$SERVER_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
@@ -234,7 +245,7 @@ jobs:
             fi
           else
             image_digest="$(docker image inspect --format '{{.Id}}' honua-server:latest 2>/dev/null)"
-            source_sha="$GITHUB_SHA"
+            source_sha="$harness_sha"
             candidate_cut_at="$(git show -s --format=%cI HEAD)"
           fi
           client_exit=0
@@ -243,10 +254,10 @@ jobs:
             --native-results cng-results \
             --output cng-results/protocol-certification-fragment.json \
             --source-sha "$source_sha" \
-            --generator-source-sha "${CNG_GENERATOR_SOURCE_SHA:-$GITHUB_SHA}" \
+            --generator-source-sha "${CNG_GENERATOR_SOURCE_SHA:-$harness_sha}" \
             --image-digest "$image_digest" \
             --candidate-cut-at "$candidate_cut_at" \
-            --fixture-revision "docker/cng/seed.sql@$GITHUB_SHA" \
+            --fixture-revision "docker/cng/seed.sql@$harness_sha" \
             --evidence-uri "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --base-url "http://localhost:8094" || client_exit=$?
 
