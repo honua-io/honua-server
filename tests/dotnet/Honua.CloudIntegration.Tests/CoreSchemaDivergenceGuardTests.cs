@@ -620,11 +620,11 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
 
         // A 3x2 8BUI band whose zero cell is nodata. Expected statistics are derived from the
         // literal pixel values below, not from anything the server computes.
-        double[][] pixels = [[1, 2, 3], [4, 0, 6]];
-        const double noData = 0;
+        int[][] pixels = [[1, 2, 3], [4, 0, 6]];
+        const int noData = 0;
         var probeRasterId = await InsertProbeRasterAsync(connectionString, pixels, noData);
         var valid = pixels.SelectMany(row => row).Where(value => value != noData).ToArray();
-        var expectedMean = valid.Sum() / valid.Length;
+        var expectedMean = valid.Average();
         var expectedStdDev = Math.Sqrt(valid.Sum(value => (value - expectedMean) * (value - expectedMean)) / valid.Length);
 
         var rasterStore = new PostgresRasterStore(
@@ -660,8 +660,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var statistics = await rasterStore.GetMosaicStatisticsAsync(0, [probeRasterId], RasterMergeStrategy.Newest);
         var band = statistics.Should().ContainSingle().Which;
         band.Band.Should().Be(1);
-        band.MinValue.Should().Be(valid.Min());
-        band.MaxValue.Should().Be(valid.Max());
+        band.MinValue.Should().Be((double)valid.Min());
+        band.MaxValue.Should().Be((double)valid.Max());
         band.MeanValue.Should().BeApproximately(expectedMean, 1e-9);
         band.StandardDeviation.Should().BeApproximately(expectedStdDev, 1e-9);
         band.ValidPixelCount.Should().Be(valid.Length, "the nodata cell is excluded from the statistics");
@@ -677,8 +677,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         await using (var reader = await command.ExecuteReaderAsync())
         {
             (await reader.ReadAsync()).Should().BeTrue("the adopted table must persist the computed mosaic statistics");
-            reader.GetDouble(0).Should().Be(valid.Min());
-            reader.GetDouble(1).Should().Be(valid.Max());
+            reader.GetDouble(0).Should().Be((double)valid.Min());
+            reader.GetDouble(1).Should().Be((double)valid.Max());
             reader.GetDouble(2).Should().BeApproximately(expectedMean, 1e-9);
             reader.GetDouble(3).Should().BeApproximately(expectedStdDev, 1e-9);
             reader.GetInt64(4).Should().Be(valid.Length);
@@ -770,7 +770,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         ProviderRootJournaledWithoutStatisticsRow,
     }
 
-    private static async Task<long> InsertProbeRasterAsync(string connectionString, double[][] pixels, double noData)
+    private static async Task<long> InsertProbeRasterAsync(string connectionString, int[][] pixels, int noData)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -793,7 +793,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             """;
         command.Parameters.AddWithValue("width", pixels[0].Length);
         command.Parameters.AddWithValue("height", pixels.Length);
-        command.Parameters.AddWithValue("nodata", noData);
+        command.Parameters.AddWithValue("nodata", (double)noData);
         var grid = new double[pixels.Length, pixels[0].Length];
         for (var row = 0; row < pixels.Length; row++)
         {
