@@ -66,8 +66,8 @@ services:
       PGPASSWORD: postgres
     volumes:
       - ../shared/scripts/seed-wfs.sh:/cite-scripts/seed-wfs.sh:ro
-      - ../shared/test-data:/cite-data:ro
-      - ../../../src/Honua.Server/Migrations:/migrations:ro
+      - ../shared/test-data/01-init-cite-test-data.sql:/cite-data/01-init-cite-test-data.sql:ro
+      - ${HONUA_CITE_MIGRATIONS_DIR:-../../../src/Honua.Server/Migrations}:/migrations:ro
       - ./test-data/99-prune-wfs1-cite-fixtures.sql:/cite-data/99-prune-wfs1-cite-fixtures.sql:ro
     depends_on:
       honua-server:
